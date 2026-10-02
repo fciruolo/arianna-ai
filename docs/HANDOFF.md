@@ -6,9 +6,20 @@ Aggiornato: 2026-10-02, durante la Fase 0.
 
 ## Dove siamo
 
-- **Fase 0 in corso.** Su `main` (commit `b28ac88`): task 0.1, 0.2, 0.7, 0.4. `main` è avanti di due commit rispetto a `origin/main`.
+- **Fase 0 in corso.** Su `main` (commit `b28ac88`): task 0.1, 0.2, 0.7, 0.4. Su `origin`, `main` è fermo al task 0.2: i commit di 0.7 e 0.4 ci sono comunque, dentro il branch `task/0.3-postgres`, e il merge finale resta un fast-forward.
+- **Cambio di macchina:** dal 2026-10-02 il lavoro passa dal portatile al Mac Studio, con un clone nuovo. Vedi "Su una macchina nuova" più sotto.
 - **Branch `task/0.3-postgres`: un commit di lavoro in corso, non ancora su `main`.** Contiene i task 0.3 (PostgreSQL, migrazioni), 0.5 (verifica hook) e 0.6 (registro eventi con catena di hash), le correzioni della revisione a `packages/policy`, `packages/config` e `packages/evals`, e questo file. Il branch ha un corrispondente su `origin`; il push lo fa l'utente.
 - `pnpm check` passa (53 test). **`pnpm test:db` non è mai stato eseguito**: Docker Desktop non era avviato. L'SQL di `apps/core/migrations/0001_init.sql` è stato solo letto, anche dal revisore, mai eseguito.
+
+## Su una macchina nuova
+
+Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data/`, la cronologia delle conversazioni, i permessi approvati a mano in Claude Code. Prima di riprendere:
+
+1. Controllare di essere sul branch giusto: `git branch --show-current` deve dare `task/0.3-postgres` finché la Fase 0 non è chiusa.
+2. Controllare i prerequisiti: `node -v` (22.18 o più), `pnpm -v`, `docker info`, `git config user.name`. Ciò che manca lo installa l'utente.
+3. `pnpm install`: scarica le dipendenze e attiva l'hook git pre-commit. Verificare con `git config core.hooksPath`, che deve dare `.githooks`.
+4. `pnpm check`: deve passare (53 test) prima di toccare qualsiasi cosa. Se fallisce su una macchina nuova è un problema di portabilità: va capito e corretto, non aggirato.
+5. Si lavora su una macchina alla volta: push prima di lasciarla, pull appena arrivati sull'altra. La cartella non va sincronizzata anche con Synology Drive o simili mentre si usa git.
 
 ## Prossimi passi, in ordine
 
