@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { parse as parseToml } from 'smol-toml';
 
+import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { asInteger, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
@@ -26,6 +27,7 @@ export interface AriannaConfig {
   /** API, WebSocket and web chat of the core (task 1.11). */
   server: { host: string; port: number };
   local: LocalConfig;
+  cloud: CloudConfig;
 }
 
 export function parseConfig(text: string, home: string): AriannaConfig {
@@ -36,7 +38,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'local'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'local', 'cloud'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -68,6 +70,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     },
     server: parseServer(root.server),
     local: parseLocal(root.local),
+    cloud: parseCloud(root.cloud, home, data),
   };
 }
 

@@ -1,4 +1,4 @@
-import { clearanceFor, createContext, labelForUserMessage, scanText, type ConversationMode, type Label } from '@arianna/policy';
+import { clearanceFor, createContext, isAllowlisted, labelForUserMessage, scanText, type ConversationMode, type Label } from '@arianna/policy';
 
 import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
@@ -70,17 +70,19 @@ export function isUuid(value: string): boolean {
 
 /**
  * Opens a conversation. A work conversation may name its repository, relative
- * to ARIANNA_HOME; checking it against the cloud allowlist is task 1.6.
+ * to ARIANNA_HOME; it must be in `cloud.allowlist` (`allowlist`, empty when
+ * not given), since a work conversation exists to send its code to the cloud.
  */
 export async function createConversation(
   sql: Sql,
-  options: { mode: ConversationMode; workspace?: string },
+  options: { mode: ConversationMode; workspace?: string; allowlist?: readonly string[] },
 ): Promise<Conversation> {
   // Callers may pass anything that came over the wire.
   if (!(['work', 'private'] as readonly string[]).includes(options.mode)) throw new ChatError('invalid', 'mode must be work or private');
   if (options.workspace !== undefined) {
     if (options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation has a workspace');
     if (!isRelativePath(options.workspace)) throw new ChatError('invalid', 'workspace must be a relative path inside ARIANNA_HOME');
+    if (!isAllowlisted(options.workspace, options.allowlist ?? [])) throw new ChatError('invalid', 'workspace is not in cloud.allowlist');
   }
   return sql.begin(async (tx) => {
     const [row] = await tx<{ id: string }[]>`

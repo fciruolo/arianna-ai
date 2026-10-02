@@ -53,3 +53,13 @@ export {
 } from './gateway.ts';
 export { contentHash, payloadText, scanParts, sha256Hex } from './payload.ts';
 export { normalizeForScan, scanText, type Finding, type FindingKind } from './scanner.ts';
+export {
+  checkWorkspace,
+  isAllowlisted,
+  type WorkspaceCheck,
+  type WorkspaceDecision,
+  type WorkspaceEntry,
+  type WorkspaceEntryKind,
+  type WorkspaceFinding,
+  type WorkspaceFindingKind,
+} from './workspace.ts';

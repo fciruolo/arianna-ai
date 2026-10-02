@@ -36,5 +36,6 @@
 
 - PostgreSQL ascolta solo su `127.0.0.1` e la configurazione rifiuta host diversi dal loopback, perché il driver non usa TLS.
 - In sviluppo la password del database è un valore fisso, scritto in `compose.yaml` e nel codice (D-028): va bene solo finché il database contiene dati finti. **Prima dei dati veri** serve una password non predefinita, verificata da `arianna doctor`. L'immagine legge la password solo alla prima inizializzazione: per cambiarla dopo serve `ALTER ROLE`, non basta la variabile d'ambiente.
+- La copia di lavoro di un esecutore cloud non è un `git worktree`: altrimenti potrebbe leggere tutta la storia del repository d'origine (segreti cancellati compresi) e scrivere nella sua `.git` (hook, `core.fsmonitor`, filtri) codice eseguito poi fuori dalla sandbox. È un repository nuovo con un solo commit, scritto senza filtri né hook (D-041).
 - Un esecutore cloud gira sulla stessa macchina e può raggiungere via loopback il database, Qdrant e il modello locale: sarebbe un percorso L2 verso il cloud che non passa dal gateway. La sandbox del task 1.6 deve negare queste connessioni, e il test del canarino lo verifica.
 - Il campo `detail` degli errori di PostgreSQL contiene la riga rifiutata, payload compreso: non va scritto nei log per eventi L2 o superiori.

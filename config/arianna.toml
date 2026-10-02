@@ -28,6 +28,13 @@ user = "arianna"
 # command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8000"]
 # models = { "local-large" = "<model name>", "local-small" = "<model name>" }
 
+# Repositories Claude Code and Codex may work on (task 1.6), relative to
+# ARIANNA_HOME. Each needs a [[folder]] rule of at most L1 in labels.toml:
+# allowlisting a repository does not label it. Changing this list is a privacy
+# setting: only the user edits it, never an agent.
+[cloud]
+allowlist = []
+
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).

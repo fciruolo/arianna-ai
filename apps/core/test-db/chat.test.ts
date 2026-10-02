@@ -24,7 +24,7 @@ async function eventsOf(taskId: string) {
 }
 
 test('the clearance of a conversation follows its mode', async () => {
-  const work = await createConversation(db().sql, { mode: 'work', workspace: 'repos/fake-site' });
+  const work = await createConversation(db().sql, { mode: 'work', workspace: 'repos/fake-site', allowlist: ['repos/fake-site'] });
   const own = await createConversation(db().sql, { mode: 'private' });
   assert.deepEqual([work.clearance, work.effectiveLabel, work.workspace], ['L1', 'L0', 'repos/fake-site']);
   assert.deepEqual([own.clearance, own.effectiveLabel, own.workspace], ['L2', 'L0', null]);
@@ -37,6 +37,8 @@ test('a conversation gets no workspace outside ARIANNA_HOME, and only in work mo
     await assert.rejects(createConversation(db().sql, { mode: 'work', workspace }), ChatError, workspace);
   }
   await assert.rejects(createConversation(db().sql, { mode: 'private', workspace: 'repos/x' }), ChatError);
+  await assert.rejects(createConversation(db().sql, { mode: 'work', workspace: 'repos/x', allowlist: ['repos/y'] }), /not in cloud.allowlist/);
+  await assert.rejects(createConversation(db().sql, { mode: 'work', workspace: 'repos/x' }), /not in cloud.allowlist/);
   await assert.rejects(createConversation(db().sql, { mode: 'secret' as 'work' }), ChatError);
 });
 

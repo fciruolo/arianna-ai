@@ -32,6 +32,8 @@ export interface ApiServerOptions {
   live: LiveFeed;
   host: string;
   port: number;
+  /** `cloud.allowlist` of arianna.toml: the only workspaces a work conversation may name. */
+  allowlist?: readonly string[];
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -121,7 +123,7 @@ function idParam(params: Params, key: string): string {
 
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
-function routes(sql: Sql): Route[] {
+function routes(sql: Sql, allowlist: readonly string[]): Route[] {
   return [
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
@@ -137,6 +139,7 @@ function routes(sql: Sql): Route[] {
       const conversation = await createConversation(sql, {
         mode: body.mode,
         ...(body.workspace === undefined ? {} : { workspace: body.workspace }),
+        allowlist,
       });
       return { status: 201, body: { conversation } };
     }),
@@ -265,7 +268,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
-  const table = routes(sql);
+  const table = routes(sql, options.allowlist ?? []);
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

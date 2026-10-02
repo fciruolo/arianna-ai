@@ -35,7 +35,7 @@ before(async () => {
   writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>Arianna</title>');
   writeFileSync(join(staticDir, 'assets', 'app.js'), 'console.log(1)');
   live = await startLiveFeed(db().sql);
-  server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, staticDir });
+  server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, staticDir, allowlist: ['repos/fake-site'] });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
 
@@ -131,11 +131,17 @@ test('requests from another site, or for another host, are refused', async () =>
   assert.deepEqual(field<unknown[]>(await call('GET', `/api/conversations/${id}/messages`), 'messages'), []);
 });
 
+test('a work conversation may name an allowlisted workspace', async () => {
+  const reply = await call('POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/fake-site' } });
+  assert.equal(reply.status, 201);
+});
+
 test('bad input gets a clear status and no internal detail', async () => {
   const id = await newConversation('work');
   const cases: [string, string, Parameters<typeof call>[2], number][] = [
     ['POST', '/api/conversations', { body: { mode: 'public' } }, 400],
     ['POST', '/api/conversations', { body: { mode: 'work', admin: true } }, 400],
+    ['POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/other' } }, 400],
     ['POST', `/api/conversations/${id}/messages`, { raw: '{not json' }, 400],
     ['POST', `/api/conversations/${id}/messages`, { body: ['array'] }, 400],
     ['POST', `/api/conversations/${id}/messages`, { body: { body: '' } }, 400],

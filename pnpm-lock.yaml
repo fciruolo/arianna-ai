@@ -282,7 +282,11 @@ importers:
         specifier: workspace:*
         version: link:../router
 
-  packages/executors: {}
+  packages/executors:
+    dependencies:
+      '@arianna/policy':
+        specifier: workspace:*
+        version: link:../policy
 
   packages/policy: {}
 

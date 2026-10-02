@@ -16,3 +16,13 @@ export {
   type WatchdogOptions,
   type WatchdogState,
 } from './local/watchdog.ts';
+export {
+  prepareWorkspace,
+  removeWorkspace,
+  scanWorkspace,
+  WorkspaceError,
+  WORKTREES_DIR,
+  type PreparedWorkspace,
+  type PrepareOptions,
+  type WorkspaceOptions,
+} from './workspace.ts';

@@ -2,13 +2,13 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-02, dopo il task 1.7 (router).
+Aggiornato: 2026-10-02, dopo la prima parte del task 1.6 (confinamento: allowlist, copia di lavoro, scansione preventiva).
 
 ## Dove siamo
 
-- **Fase 0 chiusa** (via libera dell'utente il 2026-10-02). **Fase 1A in corso:** task 1.1 (policy), 1.2 (gateway, D-032) 1.3 (modello locale: `@arianna/executors` con `createLocalModel`, `Watchdog`, sezione `[[local.endpoints]]` di `arianna.toml`; D-033) 1.9 (schede agente: `@arianna/agents`, `agents/arianna.yaml` e `agents/coder.yaml`; D-034) 1.8 (motore dei task in `apps/core/src/engine.ts`, coda in `jobs.ts`, migrazione `0003_runs.sql`; D-035) su `main`. Del 1.4 sono su `main` harness e 32 casi (`evals/orchestrator/`, D-036): manca solo la corsa con il modello vero. **1.11 fatto** (D-037 `ws`, D-038 `apps/hud` in Vue/Vite/Tailwind, D-039 chat e API): `conversations`/`messages` (`0004_chat.sql`), ogni messaggio crea un task di Arianna, risposta con `openReply` (frammenti via `pg_notify`, messaggio finale dal gateway verso `channel:web`), feed in tempo reale con `LISTEN`, API `node:http` solo loopback con controlli su Host/Origin, esito di passo `declassify` approvabile dalla chat. `pnpm start` avvia il core; finché non c'è il 1.10 un messaggio porta il task in "Attende te" con il motivo. **1.7 fatto** (D-040), anticipato su scelta dell'utente perché 1.4 e 1.5 sono bloccati: `@arianna/router` con `route(step, context, budget, config)` puro, migrazione `0005_router_decisions.sql`, `recordRouteDecision` in `apps/core/src/router-log.ts`, gruppo eval `router` attivo (52 casi). 1.9 e 1.8 sono stati anticipati perché 1.4 aspetta oMLX e 1.5 la verifica di `claude -p`; l'utente ha chiesto di procedere da solo mentre era lontano. Il push su `origin` lo fa l'utente.
+- **Fase 0 chiusa** (via libera dell'utente il 2026-10-02). **Fase 1A in corso:** task 1.1 (policy), 1.2 (gateway, D-032) 1.3 (modello locale: `@arianna/executors` con `createLocalModel`, `Watchdog`, sezione `[[local.endpoints]]` di `arianna.toml`; D-033) 1.9 (schede agente: `@arianna/agents`, `agents/arianna.yaml` e `agents/coder.yaml`; D-034) 1.8 (motore dei task in `apps/core/src/engine.ts`, coda in `jobs.ts`, migrazione `0003_runs.sql`; D-035) su `main`. Del 1.4 sono su `main` harness e 32 casi (`evals/orchestrator/`, D-036): manca solo la corsa con il modello vero. **1.11 fatto** (D-037 `ws`, D-038 `apps/hud` in Vue/Vite/Tailwind, D-039 chat e API): `conversations`/`messages` (`0004_chat.sql`), ogni messaggio crea un task di Arianna, risposta con `openReply` (frammenti via `pg_notify`, messaggio finale dal gateway verso `channel:web`), feed in tempo reale con `LISTEN`, API `node:http` solo loopback con controlli su Host/Origin, esito di passo `declassify` approvabile dalla chat. `pnpm start` avvia il core; finché non c'è il 1.10 un messaggio porta il task in "Attende te" con il motivo. **1.7 fatto** (D-040), anticipato su scelta dell'utente perché 1.4 e 1.5 sono bloccati: `@arianna/router` con `route(step, context, budget, config)` puro, migrazione `0005_router_decisions.sql`, `recordRouteDecision` in `apps/core/src/router-log.ts`, gruppo eval `router` attivo (52 casi). **1.6, prima parte** (D-041): `[cloud] allowlist` in `arianna.toml` (vuota), `checkWorkspace` in `@arianna/policy`, `prepareWorkspace` in `@arianna/executors` (repository nuovo di un solo commit in `data/worktrees/<run>`, non un `git worktree`), casi eval `evals/gateway/workspace.jsonl`; il `workspace` di una conversazione di lavoro dev'essere in allowlist. Mancano MCP, sandbox, ambiente pulito, permessi e canarino, che richiedono `claude -p`. 1.9 e 1.8 sono stati anticipati perché 1.4 aspetta oMLX e 1.5 la verifica di `claude -p`; l'utente ha chiesto di procedere da solo mentre era lontano. Il push su `origin` lo fa l'utente.
 - Dal 2026-10-02 si lavora sul Mac Studio.
-- `pnpm check` passa (334 test, eval gateway 48/48 e router 52/52, `vue-tsc` compreso); `pnpm test:db` passa (105 test) con l'immagine `postgres:17.11-alpine` fissata per digest.
+- `pnpm check` passa (364 test, eval gateway 66/66 e router 52/52, `vue-tsc` compreso); `pnpm test:db` passa (106 test) con l'immagine `postgres:17.11-alpine` fissata per digest.
 - Regole di etichetta in `config/labels.toml`, lette da `@arianna/config` e validate da `@arianna/policy` (D-031). `policy` resta senza dipendenze e senza I/O.
 - `0001_init.sql` è su `main`: d'ora in poi ogni modifica allo schema va in una migrazione nuova.
 
@@ -19,7 +19,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 1. Controllare di essere sul branch giusto: `main`, oppure il branch del task in corso se ce n'è uno.
 2. Controllare i prerequisiti: `node -v` (22.18 o più), `pnpm -v`, `docker info`, `git config user.name`. Ciò che manca lo installa l'utente.
 3. `pnpm install`: scarica le dipendenze e attiva l'hook git pre-commit. Verificare con `git config core.hooksPath`, che deve dare `.githooks`.
-4. `pnpm check`: deve passare (334 test) prima di toccare qualsiasi cosa. Se fallisce su una macchina nuova è un problema di portabilità: va capito e corretto, non aggirato.
+4. `pnpm check`: deve passare (364 test) prima di toccare qualsiasi cosa. Se fallisce su una macchina nuova è un problema di portabilità: va capito e corretto, non aggirato.
 5. Si lavora su una macchina alla volta: push prima di lasciarla, pull appena arrivati sull'altra. La cartella non va sincronizzata anche con Synology Drive o simili mentre si usa git.
 
 ## Prossimi passi, in ordine
@@ -42,7 +42,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 | Prova della chat nel browser | `pnpm hud:build && pnpm start`, poi `http://127.0.0.1:7420`: creare una conversazione, scrivere, vedere il task in "Attende te". Claude non è riuscito a provarla: il core lanciato dalla sua sandbox non è raggiungibile dal Chrome dell'utente |
-| Conferma di D-040 | Router: in particolare il lavoro cloud fermo per budget che aspetta invece di ripiegare sul modello locale, e Fable anche per il coding `critical` |
+| Conferma di D-041 | Confinamento, prima parte: in particolare la copia di lavoro come repository nuovo senza storia invece di un `git worktree`, e l'elenco dei nomi di file di segreti |
 | Conferma di D-039 | Chat e API; in particolare il messaggio di lavoro rifiutato se lo scanner trova qualcosa, e l'API senza autenticazione fino al 1.13 |
 
 ## Modo di lavorare concordato

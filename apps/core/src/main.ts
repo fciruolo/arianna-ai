@@ -52,6 +52,7 @@ const server = await startApiServer({
   live,
   host: config.server.host,
   port: config.server.port,
+  allowlist: config.cloud.allowlist,
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

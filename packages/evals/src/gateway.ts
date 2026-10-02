@@ -1,7 +1,9 @@
 // Subject of the `gateway` eval group: the real gatewayCheck and declassify.
 import {
+  checkWorkspace,
   contentHash,
   createContext,
+  createLabelRules,
   declassify,
   derive,
   gatewayCheck,
@@ -10,6 +12,7 @@ import {
   type Label,
   type Labeled,
   type Target,
+  type WorkspaceEntry,
 } from '@arianna/policy';
 
 /**
@@ -41,10 +44,33 @@ interface GatewayInput {
   declassify?: { to: Label; approval: { kind: string; state: string; from: string; to: string; sha256: string } };
 }
 
+/**
+ * The pre-flight check of a cloud worktree (task 1.6). Without `rules`, the
+ * repository folder `repos` is L1 and `repos/site/private` is L2.
+ */
+interface WorkspaceInput {
+  workspace: {
+    repo: string;
+    allowlist: string[];
+    entries: WorkspaceEntry[];
+    rules?: { path: string; label: Label }[];
+  };
+}
+
+const WORKSPACE_RULES = [
+  { path: 'repos', label: 'L1' as const },
+  { path: 'repos/site/private', label: 'L2' as const },
+];
+
 export type GatewayOutcome =
   | { decision: 'allow'; rule: string }
   | { decision: 'block'; rule: string; next: string; findings?: string[] }
   | { declassify: 'refused' };
+
+/** What a workspace case returns: the rule and the kinds of findings, never the paths. */
+export type WorkspaceOutcome =
+  | { decision: 'allow'; rule: 'workspace' }
+  | { decision: 'block'; rule: 'not-allowlisted' | 'workspace-scan'; findings?: string[] };
 
 function toFragment(input: FragmentInput): Labeled<unknown> {
   const label = Array.isArray(input.derivedFrom)
@@ -58,7 +84,17 @@ function toContext(input: ContextInput): Context {
   return createContext(input.clearance, input.effective);
 }
 
-export function evaluateGateway(raw: unknown): GatewayOutcome {
+function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome {
+  const rules = createLabelRules({ folders: input.rules ?? WORKSPACE_RULES, sources: [] });
+  const decision = checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules });
+  if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule };
+  return decision.findings.length === 0
+    ? { decision: 'block', rule: decision.rule }
+    : { decision: 'block', rule: decision.rule, findings: [...new Set(decision.findings.map((finding) => finding.kind))] };
+}
+
+export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome {
+  if (typeof raw === 'object' && raw !== null && 'workspace' in raw) return evaluateWorkspace((raw as WorkspaceInput).workspace);
   const input = raw as GatewayInput;
   if (!Array.isArray(input.payload)) throw new Error('"payload" must be a list');
   let payload = input.payload.map(toFragment);

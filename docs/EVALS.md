@@ -55,7 +55,7 @@ Regole del runner:
 
 ### Il gruppo gateway
 
-Dal task 1.2 valuta le funzioni vere di `@arianna/policy` (`gatewayCheck`, `declassify`), non una loro copia. Un caso è `{ payload, context, target }` con, facoltativo, `declassify`; il risultato atteso è `{ decision, rule }`, con `next` e i tipi di riscontro dello scanner quando l'uscita è bloccata, oppure `{ declassify: "refused" }`. Un frammento con `derivedFrom` prende l'etichetta per taint dai suoi input; un contesto con `forged: true` è un oggetto finto, non creato dalla policy. I casi su worktree, allowlist e strumenti MCP arrivano con il confinamento (task 1.6), il canarino con il task 1.12.
+Dal task 1.2 valuta le funzioni vere di `@arianna/policy` (`gatewayCheck`, `declassify`), non una loro copia. Un caso è `{ payload, context, target }` con, facoltativo, `declassify`; il risultato atteso è `{ decision, rule }`, con `next` e i tipi di riscontro dello scanner quando l'uscita è bloccata, oppure `{ declassify: "refused" }`. Un frammento con `derivedFrom` prende l'etichetta per taint dai suoi input; un contesto con `forged: true` è un oggetto finto, non creato dalla policy. Dal task 1.6 un caso può essere invece `{ workspace: { repo, allowlist, entries, rules? } }`, che valuta `checkWorkspace` (allowlist e scansione preventiva) e si aspetta `{ decision, rule }` con i tipi di riscontro; senza `rules`, `repos` è L1 e `repos/site/private` è L2. I casi sugli strumenti MCP arrivano con il resto del 1.6, il canarino con il task 1.12.
 
 ### Il gruppo router
 

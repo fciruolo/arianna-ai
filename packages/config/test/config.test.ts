@@ -25,7 +25,38 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
     server: { host: '127.0.0.1', port: 7420 },
     local: { endpoints: [] },
+    cloud: { allowlist: [] },
   });
+});
+
+test('cloud.allowlist keeps repositories inside ARIANNA_HOME, as relative paths', () => {
+  const config = parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/site", "./work/app/"]\n`, HOME);
+  assert.deepEqual(config.cloud, { allowlist: ['repos/site', 'work/app'] });
+});
+
+test('cloud.allowlist rejects home itself, data/, escapes, duplicates and nesting', () => {
+  const rejects = (list: string, pattern: RegExp): void => {
+    assert.throws(
+      () => parseConfig(`${VALID}\n[cloud]\nallowlist = [${list}]\n`, HOME),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+    );
+  };
+  rejects('"."', /ARIANNA_HOME itself/);
+  rejects('"data"', /data\//);
+  rejects('"data/worktrees/x"', /data\//);
+  rejects('"/abs/repo"', /absolute/);
+  rejects('"repos/../../x"', /escapes/);
+  rejects('"repos/a", "repos/a/"', /twice/);
+  rejects('"repos/a", "repos/a/b"', /nested/);
+  rejects('"repos/a/b", "repos/a"', /nested/);
+  rejects('"data/..cache"', /data\//);
+  rejects('"repos/A", "repos/a/b"', /nested/);
+  rejects('"Repos/x", "repos/X"', /twice/);
+});
+
+test('cloud.allowlist accepts siblings that only share a prefix', () => {
+  const config = parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/a", "repos/ab", "..cache/x"]\n`, HOME);
+  assert.deepEqual(config.cloud.allowlist, ['repos/a', 'repos/ab', '..cache/x']);
 });
 
 test('the committed configuration loads', () => {

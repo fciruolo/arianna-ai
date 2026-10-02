@@ -1,3 +1,4 @@
+export { type CloudConfig } from './cloud.ts';
 export { CONFIG_FILE, loadConfig, parseConfig, type AriannaConfig } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
 export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
