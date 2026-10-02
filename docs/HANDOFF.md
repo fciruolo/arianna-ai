@@ -41,7 +41,6 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Server locale e modelli per il task 1.4 | Installare oMLX su questo Mac (scelto dall'utente il 2026-10-02, niente LM Studio), poi nomi esatti di `local-large` e `local-small` |
 | Conferma di D-034 | In particolare: `task.delegate` non apre la comunicazione esterna per chi delega (contesto separato per task) |
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
-| Conferma di D-043 | Correzioni a D-042 dopo la revisione: streaming controllato con i frammenti già inviati, registro nel costruttore di `Secret`, `secrets` obbligatorio nel gateway, nessun a capo tolto da sops |
 | Chiave age vera | D-042 confermata e binari provati. Per l'uso vero (solo dopo il criterio della Fase 1A) la chiave age la genera l'utente, con i passi in `SECURITY.md`, sezione Vault |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 | Prova della chat nel browser | `pnpm hud:build && pnpm start`, poi `http://127.0.0.1:7420`: creare una conversazione, scrivere, vedere il task in "Attende te". Claude non è riuscito a provarla: il core lanciato dalla sua sandbox non è raggiungibile dal Chrome dell'utente |
