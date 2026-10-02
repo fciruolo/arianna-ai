@@ -13,7 +13,18 @@ test('migrations apply from zero and create every table', async () => {
     WHERE table_schema = ${schema} ORDER BY table_name`;
   assert.deepEqual(
     tables.map((table) => table.name),
-    ['approvals', 'events', 'gateway_log', 'jobs', 'label_changes', 'runs', 'schema_migrations', 'tasks'],
+    [
+      'approvals',
+      'conversations',
+      'events',
+      'gateway_log',
+      'jobs',
+      'label_changes',
+      'messages',
+      'runs',
+      'schema_migrations',
+      'tasks',
+    ],
   );
 });
 

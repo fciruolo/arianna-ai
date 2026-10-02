@@ -15,6 +15,7 @@
 | Costi o cicli fuori controllo | Tetti di passi, tempo, costo/quota per task; scheduler deterministico |
 | Manomissione del registro | Eventi append-only con catena di hash, verificata da `arianna doctor` |
 | Accesso remoto al server | VPN (WireGuard o Tailscale), nessuna porta esposta, autenticazione sull'HUD |
+| Pagina web ostile che usa il browser dell'utente contro l'API locale (DNS rebinding, CSRF, WebSocket da un altro sito) | API solo su loopback; `Host` ammesso solo se è l'indirizzo del core; `Origin` dello stesso host per scritture e WebSocket; scritture solo in JSON; nessun header CORS; CSP stretta (D-039). Fino all'autenticazione (1.13) ogni processo locale può usare l'API: gli esecutori cloud ne sono esclusi dalla sandbox (1.6) |
 | Chiamate telefoniche | Audio nel cloud: nessuna lettura di L2 salvo abilitazione per chiamata; numeri ammessi in lista |
 | Cambio regole degli abbonamenti | Adattatori sostituibili, test di contratto, controllo periodico delle pagine ufficiali |
 | Perdita di dati | Backup cifrati di archivio, KB e database; ripristino provato in Fase 2 |

@@ -27,3 +27,10 @@ user = "arianna"
 # url = "http://127.0.0.1:8000/v1"
 # command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8000"]
 # models = { "local-large" = "<model name>", "local-small" = "<model name>" }
+
+# API, WebSocket and web chat of the core (task 1.11). Loopback only: the
+# history holds L2 in clear and there is no authentication yet. Access from
+# the phone over the VPN comes with a proxy and authentication (task 1.13).
+[server]
+host = "127.0.0.1"
+port = 7420

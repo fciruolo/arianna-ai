@@ -7,6 +7,7 @@
     "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
     "@arianna/policy": "workspace:*",
-    "postgres": "3.4.9"
+    "postgres": "3.4.9",
+    "ws": "8.22.0"
   }
 }

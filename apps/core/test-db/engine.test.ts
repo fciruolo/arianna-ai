@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import {
   createWorker,
-  decideAction,
+  recordDecision,
   processStepJob,
   resumeTask,
   STEP_QUEUE,
@@ -141,10 +141,10 @@ test('an approval stops the task; once approved the next step sees it', async ()
   assert.equal(approval.kind, 'action');
   assert.deepEqual(await drain(executor), [], 'nothing runs while waiting');
 
-  await decideAction(db().sql, approval.id, 'approved', 'web');
+  await recordDecision(db().sql, approval.id, 'approved', 'web');
   assert.deepEqual(await drain(executor), ['to-verify']);
   assert.equal(executor.seen.at(-1)?.approval?.id, approval.id);
-  await assert.rejects(decideAction(db().sql, approval.id, 'rejected', 'web'), /already decided/);
+  await assert.rejects(recordDecision(db().sql, approval.id, 'rejected', 'web'), /already decided/);
 });
 
 test('a rejected approval reaches the executor as rejected', async () => {
@@ -156,7 +156,7 @@ test('a rejected approval reaches the executor as rejected', async () => {
   await drain(executor);
   const [approval] = await db().sql<{ id: string }[]>`SELECT id::text FROM approvals WHERE task_id = ${task.id}`;
   assert.ok(approval !== undefined);
-  await decideAction(db().sql, approval.id, 'rejected', 'telegram');
+  await recordDecision(db().sql, approval.id, 'rejected', 'telegram');
   assert.deepEqual(await drain(executor), ['waiting-user']);
   assert.equal((await loadTask(db().sql, task.id))?.waitingReason, 'got rejected');
 });
@@ -370,7 +370,7 @@ test('resuming a task expires its old approval, which then resumes nothing', asy
   await resumeTask(db().sql, task.id);
   const [row] = await db().sql<{ state: string }[]>`SELECT state FROM approvals WHERE id = ${approval.id}`;
   assert.equal(row?.state, 'expired');
-  await assert.rejects(decideAction(db().sql, approval.id, 'approved', 'web'), /already decided/);
+  await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'web'), /already decided/);
   await drain(scripted([{ kind: 'wait-user', reason: 'other question' }]));
   assert.equal((await loadTask(db().sql, task.id))?.waitingReason, 'other question');
 });

@@ -24,5 +24,7 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["apps/*/src", "apps/*/test", "apps/*/test-db", "packages/*/src", "packages/*/test", "test", "evals", "scripts"]
+  "include": ["apps/*/src", "apps/*/test", "apps/*/test-db", "packages/*/src", "packages/*/test", "test", "evals", "scripts"],
+  // The web chat has its own program, checked by vue-tsc (D-038).
+  "exclude": ["apps/hud"]
 }

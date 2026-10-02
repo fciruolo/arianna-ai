@@ -10,6 +10,8 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 export interface Task {
   id: string;
   parentId: string | null;
+  /** The conversation the task answers in, if a chat message started it. */
+  conversationId: string | null;
   title: string;
   goal: string | null;
   doneCriteria: string | null;
@@ -33,9 +35,13 @@ export interface NewTask {
   goal?: string;
   doneCriteria?: string;
   parentId?: string;
+  /** Its clearance may not exceed the conversation's (database trigger). */
+  conversationId?: string;
   /** Omitted: L2 (default-deny). */
   label?: Label;
   clearance?: Label;
+  /** What the task has already read when it starts, e.g. the user's message. Omitted: L0. */
+  effectiveLabel?: Label;
   assignee?: string;
   /** snake_case, as in the agent cards: max_steps, max_minutes, max_cost. */
   limits?: { max_steps?: number; max_minutes?: number; max_cost?: number };
@@ -48,7 +54,7 @@ export class TaskError extends Error {
 
 function columns(table = ''): string {
   const t = table === '' ? '' : `${table}.`;
-  return `${t}id::text, ${t}parent_id::text AS "parentId", ${t}title, ${t}goal, ${t}done_criteria AS "doneCriteria",
+  return `${t}id::text, ${t}parent_id::text AS "parentId", ${t}conversation_id::text AS "conversationId", ${t}title, ${t}goal, ${t}done_criteria AS "doneCriteria",
   ${t}status, ${t}label, ${t}clearance, ${t}effective_label AS "effectiveLabel", ${t}assignee, ${t}limits, ${t}evidence,
   ${t}waiting_reason AS "waitingReason", ${t}waiting_approval_id::text AS "waitingApprovalId", ${t}created_at AS "createdAt", ${t}updated_at AS "updatedAt"`;
 }
@@ -58,10 +64,13 @@ const COLUMNS = columns();
 export async function createTask(sql: Queryable, task: NewTask): Promise<Task> {
   parseLimits(task.limits ?? {});
   const [row] = await sql<Task[]>`
-    INSERT INTO tasks (title, goal, done_criteria, parent_id, label, clearance, assignee, limits, status)
+    INSERT INTO tasks (
+      title, goal, done_criteria, parent_id, conversation_id, label, clearance, effective_label, assignee, limits, status
+    )
     VALUES (
-      ${task.title}, ${task.goal ?? null}, ${task.doneCriteria ?? null}, ${task.parentId ?? null},
-      ${task.label ?? 'L2'}::privacy_label, ${task.clearance ?? 'L2'}::privacy_label, ${task.assignee ?? 'user'},
+      ${task.title}, ${task.goal ?? null}, ${task.doneCriteria ?? null}, ${task.parentId ?? null}, ${task.conversationId ?? null},
+      ${task.label ?? 'L2'}::privacy_label, ${task.clearance ?? 'L2'}::privacy_label,
+      ${task.effectiveLabel ?? 'L0'}::privacy_label, ${task.assignee ?? 'user'},
       ${sql.json(task.limits ?? {})}, ${task.status ?? 'inbox'}::task_status
     )
     RETURNING ${sql.unsafe(COLUMNS)}`;

@@ -11,6 +11,11 @@ export const CONFIG_FILE = join('config', 'arianna.toml');
 
 const DATA_DIR = 'data';
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+// The API serves L2 history in clear and without authentication: this machine
+// only, until the VPN proxy and authentication (task 1.13). Addresses, not
+// "localhost", which depends on /etc/hosts.
+const SERVER_HOSTS = ['127.0.0.1', '::1'];
+const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
 
 export interface AriannaConfig {
   /** Absolute path of ARIANNA_HOME. */
@@ -18,6 +23,8 @@ export interface AriannaConfig {
   /** Absolute paths, always inside `home`. */
   paths: { data: string };
   database: { host: string; port: number; name: string; user: string };
+  /** API, WebSocket and web chat of the core (task 1.11). */
+  server: { host: string; port: number };
   local: LocalConfig;
 }
 
@@ -29,7 +36,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'local'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'local'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -59,8 +66,19 @@ export function parseConfig(text: string, home: string): AriannaConfig {
       name: asString(database.name, 'database.name'),
       user: asString(database.user, 'database.user'),
     },
+    server: parseServer(root.server),
     local: parseLocal(root.local),
   };
+}
+
+function parseServer(value: unknown): AriannaConfig['server'] {
+  if (value === undefined) return { ...DEFAULT_SERVER };
+  const server = asTable(value, 'server');
+  onlyKeys(server, ['host', 'port'], 'server');
+  const host = server.host === undefined ? DEFAULT_SERVER.host : asString(server.host, 'server.host');
+  if (!SERVER_HOSTS.includes(host)) throw new ConfigError(`server.host: must be one of ${SERVER_HOSTS.join(', ')}`);
+  const port = server.port === undefined ? DEFAULT_SERVER.port : asInteger(server.port, 'server.port', 1, 65535);
+  return { host, port };
 }
 
 /** Reads `config/arianna.toml` from ARIANNA_HOME. */

@@ -23,6 +23,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     home: HOME,
     paths: { data: join(HOME, 'data') },
     database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
+    server: { host: '127.0.0.1', port: 7420 },
     local: { endpoints: [] },
   });
 });
@@ -55,6 +56,18 @@ test('the database must be on this machine', () => {
   assert.throws(() => parseConfig(VALID.replace('127.0.0.1', 'db.example.org'), HOME), ConfigError);
   assert.throws(() => parseConfig(VALID.replace('127.0.0.1', '0.0.0.0'), HOME), ConfigError);
   assert.equal(parseConfig(VALID.replace('127.0.0.1', 'localhost'), HOME).database.host, 'localhost');
+});
+
+test('the server listens on loopback only', () => {
+  const server = (body: string) => parseConfig(`${VALID}\n[server]\n${body}\n`, HOME).server;
+  assert.deepEqual(server('port = 8080'), { host: '127.0.0.1', port: 8080 });
+  assert.deepEqual(server('host = "::1"'), { host: '::1', port: 7420 });
+  assert.throws(() => server('host = "0.0.0.0"'), ConfigError);
+  assert.throws(() => server('host = "192.168.1.10"'), ConfigError);
+  // A name depends on /etc/hosts: addresses only.
+  assert.throws(() => server('host = "localhost"'), ConfigError);
+  assert.throws(() => server('port = 0'), ConfigError);
+  assert.throws(() => server('tls = true'), ConfigError);
 });
 
 test('wrong types and malformed TOML are rejected', () => {

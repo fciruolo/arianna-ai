@@ -33,7 +33,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | Comando | Cosa fa |
 | --- | --- |
 | `pnpm install` | Installa le dipendenze (versioni esatte, lockfile in git) |
-| `pnpm build` | Controllo dei tipi di tutto il monorepo; non produce file (D-026). È l'unico comando che vede gli errori di tipo |
+| `pnpm build` | Controllo dei tipi di tutto il monorepo, `apps/hud` compreso con `vue-tsc`; non produce file (D-026, D-038). È l'unico comando che vede gli errori di tipo |
 | `pnpm test` | Test senza servizi, con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
 | `pnpm lint` | ESLint con regole che vedono i tipi |
 | `pnpm eval` | Eval deterministici (gateway, router): niente modelli né rete; fallisce sotto soglia |
@@ -42,6 +42,9 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
 | `pnpm db:up` / `pnpm db:down` | Avvia o ferma PostgreSQL in Docker con i valori di `config/arianna.toml` |
 | `pnpm db:migrate` | Applica le migrazioni di `apps/core/migrations` |
+| `pnpm start` | Avvia il core: migrazioni, worker dei task, API, WebSocket e chat web su `[server]` di `arianna.toml` (loopback) |
+| `pnpm hud:build` | Compila la chat web in `apps/hud/dist`, servita dal core |
+| `pnpm hud:dev` | Chat web in sviluppo con Vite su `127.0.0.1:5173`, che inoltra `/api` al core avviato con `pnpm start` |
 | `pnpm test:db` | Test che richiedono PostgreSQL (`apps/*/test-db`); avvia il database se serve. Fuori da `pnpm check`: obbligatorio a fine task se tocchi migrazioni o codice che parla con il database (D-029) |
 
 Aggiungi qui ogni comando quando esiste.

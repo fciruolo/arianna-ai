@@ -1,6 +1,6 @@
-import { declassifyRequest, type DeclassifyApproval, type Label, type Labeled } from '@arianna/policy';
+import { declassifyRequest, labelOrDefault, type DeclassifyApproval, type Label, type Labeled } from '@arianna/policy';
 
-import type { Queryable, Sql } from './db/client.ts';
+import type { Queryable } from './db/client.ts';
 
 export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export type DecisionChannel = 'web' | 'telegram' | 'phone';
@@ -9,13 +9,15 @@ export interface StoredApproval extends DeclassifyApproval {
   taskId: string | null;
   action: string;
   detail: Record<string, unknown>;
+  /** Label of the detail: a channel shows the detail only if it may receive this label. */
+  label: Label;
   state: ApprovalState;
   requestedAt: Date;
   decidedAt: Date | null;
   decidedVia: DecisionChannel | null;
 }
 
-const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, state,
+const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, label, state,
   requested_at AS "requestedAt", decided_at AS "decidedAt", decided_via AS "decidedVia"`;
 
 /**
@@ -25,18 +27,30 @@ const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, stat
  * goes into events or the gateway log.
  */
 export async function requestDeclassify(
-  sql: Sql,
+  sql: Queryable,
   item: Labeled<unknown>,
   to: Label,
   options: { taskId?: string } = {},
 ): Promise<StoredApproval> {
   const detail = declassifyRequest(item, to);
   const [row] = await sql<StoredApproval[]>`
-    INSERT INTO approvals (task_id, kind, action, detail)
-    VALUES (${options.taskId ?? null}, 'declassify', 'declassify', ${sql.json(detail)})
+    INSERT INTO approvals (task_id, kind, action, detail, label)
+    VALUES (
+      ${options.taskId ?? null}, 'declassify', 'declassify', ${sql.json(detail)},
+      ${labelOrDefault(item.label)}::privacy_label
+    )
     RETURNING ${sql.unsafe(COLUMNS)}`;
   if (row === undefined) throw new Error('INSERT INTO approvals returned no row');
   return row;
+}
+
+/** Approvals in one state, oldest first. */
+export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100): Promise<StoredApproval[]> {
+  const rows = await sql.unsafe<StoredApproval[]>(
+    `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ORDER BY requested_at, id LIMIT $2`,
+    [state, limit],
+  );
+  return [...rows];
 }
 
 export async function loadApproval(sql: Queryable, id: string): Promise<StoredApproval | undefined> {

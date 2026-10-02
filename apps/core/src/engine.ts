@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { APPROVAL_ACTIONS } from '@arianna/agents';
+import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
-import { decideApproval, loadApproval, type DecisionChannel, type StoredApproval } from './approvals.ts';
+import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type StoredApproval } from './approvals.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue } from './jobs.ts';
@@ -33,6 +34,8 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
  * resuming the interrupted run's session: steps must be idempotent.
  */
 export const STEP_QUEUE = 'task.step';
+/** Longest text a declassification may cover: the user reads all of it on the card. */
+export const MAX_DECLASSIFY_LENGTH = 20_000;
 
 /** Who runs a step: the orchestrator (task 1.10) or a test double. */
 export interface StepExecutor {
@@ -68,6 +71,13 @@ export type StepOutcome = (
   | { kind: 'done'; evidence: Json[] }
   /** An irreversible or external action: the task waits for the user's approval. */
   | { kind: 'approval'; action: string; detail: { [key: string]: Json } }
+  /**
+   * A text that must leave below the task's label, e.g. a brief written after
+   * reading L2 for a cloud executor: the user approves this exact text from the
+   * web chat. The next step gets the decided approval in `approval` and lowers
+   * the text with `applyDeclassify`; nothing else is covered by it.
+   */
+  | { kind: 'declassify'; text: string; to: Label }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
   | { kind: 'wait-user'; reason: string }
   | { kind: 'failed'; reason: string }
@@ -298,6 +308,32 @@ export async function processStepJob(
         });
         return 'waiting-approval';
       }
+      case 'declassify': {
+        // The text was written in the task's context: it carries the task's label.
+        const from = task.effectiveLabel;
+        if (
+          !isLabel(outcome.to) ||
+          isAtMost(from, outcome.to) ||
+          typeof outcome.text !== 'string' ||
+          outcome.text === '' ||
+          outcome.text.length > MAX_DECLASSIFY_LENGTH
+        ) {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
+          return 'waiting-user';
+        }
+        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: `task:${task.id}` }, outcome.to, {
+          taskId: task.id,
+        });
+        await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: declassify', cause: 'approval', approvalId: created.id });
+        await appendEvent(tx, {
+          kind: 'approval.requested',
+          taskId: task.id,
+          runId,
+          label: 'L0',
+          payload: { approvalId: created.id, action: 'declassify', from, to: outcome.to },
+        });
+        return 'waiting-approval';
+      }
       case 'wait-user':
         await moveTask(tx, task.id, 'waiting_user', { reason: outcome.reason, cause: 'executor' });
         return 'waiting-user';
@@ -323,11 +359,12 @@ async function stopAtTimeCap(sql: Sql, taskId: string, runId: string, job: Job, 
 }
 
 /**
- * The user's decision on an action approval. The task resumes, either way,
- * only if it is waiting for this very approval: the executor sees
- * `approval.state` and must not act on a rejection.
+ * The user's decision on an approval of any kind. The task resumes, either
+ * way, only if it is waiting for this very approval: the executor sees
+ * `approval.state` and must not act on a rejection. A declassification is
+ * decided only from the web chat (the database refuses other channels).
  */
-export async function decideAction(
+export async function recordDecision(
   sql: Sql,
   approvalId: string,
   state: 'approved' | 'rejected',
@@ -341,7 +378,7 @@ export async function decideAction(
       label: 'L0',
       payload: { approvalId, state, via },
     });
-    if (decided.kind === 'action' && decided.taskId !== null) {
+    if (decided.taskId !== null) {
       const task = await loadTask(tx, decided.taskId);
       if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {
         await moveTask(tx, task.id, 'ready', { cause: 'approval' });
