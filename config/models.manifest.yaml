@@ -1,0 +1,16 @@
+# Local models to download into data/models/ (docs/INSTALLER-PORTABILITY.md).
+# Weights are never synced: this manifest travels, the files are downloaded again.
+# The real entries are filled in task 1.17 from the oMLX configuration.
+#
+# Example entry (one per model and runtime; a model can have several files):
+#
+#   - name: example-model-mlx
+#     role: orchestrator        # orchestrator | extractor | embedder | voice
+#     runtime: mlx              # mlx | llama.cpp | vllm
+#     files:
+#       - path: model.safetensors
+#         url: https://example.org/example-model/model.safetensors
+#         size_bytes: 1234567890
+#         sha256: 0000000000000000000000000000000000000000000000000000000000000000
+version: 1
+models: []

@@ -1,0 +1,13 @@
+# Arianna configuration. No secrets in this file (docs/INSTALLER-PORTABILITY.md).
+# Every path is relative to ARIANNA_HOME; absolute paths are rejected.
+
+[paths]
+# Models, databases, archive, real knowledge base, vault. Never in git.
+data = "data"
+
+[database]
+# PostgreSQL in Docker, reachable only from this machine.
+host = "127.0.0.1"
+port = 54329
+name = "arianna"
+user = "arianna"

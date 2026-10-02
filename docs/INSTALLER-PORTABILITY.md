@@ -22,7 +22,11 @@ arianna/                  # repository (codice, docs, agents/, evals/)
   scripts/                # installer e utilità
 ```
 
-Regola: nessun percorso assoluto nel codice; tutto è relativo a `ARIANNA_HOME`, impostabile da variabile d'ambiente.
+Regola: nessun percorso assoluto nel codice; tutto è relativo a `ARIANNA_HOME`, impostabile da variabile d'ambiente. Senza la variabile, `ARIANNA_HOME` è la cartella del repository da cui gira il codice.
+
+La configurazione si legge solo tramite `packages/config`, che rifiuta percorsi assoluti, percorsi che escono da `ARIANNA_HOME` e chiavi sconosciute. Un test (`test/portability.test.ts`) fa fallire `pnpm check` se nel codice o nella configurazione compare un percorso legato a una macchina.
+
+Schema del manifest (`version: 1`): ogni modello ha `name`, `role` (`orchestrator`, `extractor`, `embedder`, `voice`), `runtime` (`mlx`, `llama.cpp`, `vllm`) e un elenco `files`, perché un modello MLX è fatto di più file. Ogni file ha `path` (relativo, dentro `data/models/<name>/`), `url` (solo https), `size_bytes` e `sha256`.
 
 ## Installer (`arianna install`)
 
