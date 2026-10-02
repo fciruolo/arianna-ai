@@ -18,7 +18,7 @@ Per ogni task basta far leggere i documenti che lo riguardano (per 1.1 e 1.2 `PR
 1. Piano breve → approvi.
 2. Implementazione con test (scritti prima per `packages/policy` e `packages/router`).
 3. Subagent `reviewer` sul diff.
-4. `pnpm check` (test, lint, eval deterministici); `pnpm eval:models` o `pnpm eval:live` se il task tocca orchestratore o adattatori.
+4. `pnpm check` (controllo dei tipi, test, lint, eval deterministici); `pnpm eval:models` o `pnpm eval:live` se il task tocca orchestratore o adattatori.
 5. Commit; ore reali scritte nella tabella del task.
 
 ## Corsie parallele (facoltativo)

@@ -1,0 +1,23 @@
+{
+  "name": "arianna",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test \"{apps,packages}/*/test/**/*.test.ts\" \"test/**/*.test.ts\" \".claude/hooks/*.test.js\"",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "devDependencies": {
+    "@arianna/policy": "workspace:*",
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.4",
+    "eslint": "10.11.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0"
+  }
+}

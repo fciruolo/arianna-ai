@@ -16,15 +16,24 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 - **Portabilità:** nessun percorso assoluto; tutto relativo a `ARIANNA_HOME`. Pesi dei modelli, database e archivio vivono in `data/` (fuori da git). Dettagli in `docs/INSTALLER-PORTABILITY.md`.
 
 - TypeScript strict, pnpm monorepo, Node LTS. Python solo in `apps/voice`.
+- Node esegue i sorgenti TypeScript senza build (D-026): solo sintassi cancellabile (niente `enum`, `namespace`, parameter properties), `import type` per i tipi, import relativi con estensione `.ts`. Sorgenti in `src/`, test in `test/*.test.ts` con `node:test` e `node:assert/strict`. I pacchetti si importano per nome (`@arianna/policy`).
 - PostgreSQL per stato, eventi e coda. Schema in `docs/DATA-MODEL.md`.
 - Commit piccoli, uno per task di `docs/PHASE-0-1-TASKS.md`; il messaggio cita l'id del task.
 - Documentazione in italiano; codice, nomi e commenti in inglese.
 
 ## Comandi
 
-Da definire nel task 0.1 (sostituisci questa sezione quando esistono):
-`pnpm install` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm eval` · `pnpm check` (test + lint + eval) · `pnpm eval:models` · `pnpm eval:live`
+| Comando | Cosa fa |
+| --- | --- |
+| `pnpm install` | Installa le dipendenze (versioni esatte, lockfile in git) |
+| `pnpm build` | Controllo dei tipi di tutto il monorepo; non produce file (D-026). È l'unico comando che vede gli errori di tipo |
+| `pnpm test` | Test con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
+| `pnpm lint` | ESLint con regole che vedono i tipi |
+
+In arrivo: `pnpm check` (task 0.2), `pnpm eval`, `pnpm eval:models`, `pnpm eval:live` (task 0.4). Aggiungi qui ogni comando quando esiste.
+
+Un file TypeScript si esegue direttamente: `node percorso/file.ts`.
 
 ## Quando finisci un task
 
-Esegui test e lint, aggiorna le ore reali nel task, annota decisioni nuove in `docs/DECISIONS.md`, poi fermati e riassumi in poche righe.
+Esegui build, test e lint, aggiorna le ore reali nel task, annota decisioni nuove in `docs/DECISIONS.md`, poi fermati e riassumi in poche righe.

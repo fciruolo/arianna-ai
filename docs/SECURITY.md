@@ -11,6 +11,7 @@
 | Prompt injection da contenuti non fidati | Lethal trifecta rimosso per scheda; Dual LLM; nessun invio esterno senza approvazione |
 | Agente che esegue comandi dannosi | Permessi minimi (`--allowedTools`), sandbox, worktree; approvazione per le azioni irreversibili |
 | Furto o abuso delle credenziali | `sops` + `age`; nessun token OAuth estratto; L3 solo come riferimenti; ambiente pulito per i processi figli |
+| Catena di fornitura (pacchetto, server MCP o skill ostile) | Versioni esatte e lockfile con hash in git; nessuna release più giovane di un giorno (`minimumReleaseAge`); script di installazione dei pacchetti non eseguiti; ogni dipendenza ha una voce in `DECISIONS.md`; server MCP in container senza accesso ai dati privati |
 | Costi o cicli fuori controllo | Tetti di passi, tempo, costo/quota per task; scheduler deterministico |
 | Manomissione del registro | Eventi append-only con catena di hash, verificata da `arianna doctor` |
 | Accesso remoto al server | VPN (WireGuard o Tailscale), nessuna porta esposta, autenticazione sull'HUD |
@@ -26,6 +27,6 @@
 - Il blocco fuori dal repository è affidato all'hook `.claude/hooks/block-outside-repo.js`:
   - per `Read`, `Edit`, `Write`, `Grep`, `Glob` e `NotebookEdit` il controllo è stretto: ogni percorso fuori dal repository è negato, symlink compresi;
   - per `Bash` è un'euristica: nega i comandi che nominano percorsi nella home, in `/Users`, `/Volumes` e simili fuori dal repository. Si aggira con variabili o sottocomandi, quindi è una rete di sicurezza contro gli errori, non una sandbox;
-  - se l'input non è leggibile, l'hook nega (fail-closed);
-  - i test stanno in `.claude/hooks/block-outside-repo.test.js` (`node --test .claude/hooks/block-outside-repo.test.js`).
+  - se l'input non è leggibile, l'hook nega (fail-closed); se invece lo script va in errore prima di partire, Claude Code prosegue senza blocco, quindi i suoi test girano dentro `pnpm test`;
+  - i test stanno in `.claude/hooks/block-outside-repo.test.js`; `.claude/hooks/package.json` tiene gli script in CommonJS anche se il monorepo è ESM.
 - La protezione vera per i comandi di shell è la sandbox del sistema operativo: da attivare e verificare nel task 0.5 per lo sviluppo e nel task 1.6 per gli esecutori lanciati da Arianna.

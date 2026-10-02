@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Supply chain (docs/SECURITY.md): exact versions only, and no release younger
+# than one day. Do not add minimumReleaseAgeExclude entries: pick a slightly
+# older version instead.
+savePrefix: ''
+minimumReleaseAge: 1440

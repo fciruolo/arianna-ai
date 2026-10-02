@@ -1,0 +1,34 @@
+import js from '@eslint/js';
+import { defineConfig } from 'eslint/config';
+import tseslint from 'typescript-eslint';
+
+export default defineConfig(
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/coverage/**', 'data/**'] },
+  js.configs.recommended,
+  {
+    files: ['**/*.{ts,mts,cts}'],
+    extends: [tseslint.configs.strictTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      // node:test's test/describe/it/suite return promises that are safe to ignore.
+      '@typescript-eslint/no-floating-promises': [
+        'error',
+        {
+          allowForKnownSafeCalls: [
+            { from: 'package', package: 'node:test', name: ['test', 'describe', 'it', 'suite'] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Claude Code hook scripts: plain CommonJS (see .claude/hooks/package.json).
+    files: ['.claude/hooks/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { require: 'readonly', process: 'readonly', console: 'readonly', __dirname: 'readonly' },
+    },
+  },
+);
