@@ -232,9 +232,15 @@ importers:
 
   packages/evals:
     dependencies:
+      '@arianna/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@arianna/config':
         specifier: workspace:*
         version: link:../config
+      '@arianna/executors':
+        specifier: workspace:*
+        version: link:../executors
       '@arianna/policy':
         specifier: workspace:*
         version: link:../policy

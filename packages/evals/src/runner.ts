@@ -10,13 +10,17 @@ import type {
   TierReport,
 } from './types.ts';
 
-async function runCase(evaluate: Evaluate, evalCase: EvalCase): Promise<CaseResult> {
+async function runCase(
+  evaluate: Evaluate,
+  evalCase: EvalCase,
+  compare: (actual: unknown, expect: unknown) => boolean,
+): Promise<CaseResult> {
   const started = performance.now();
   const base = { id: evalCase.id, tags: evalCase.tags };
   try {
     const actual = await evaluate(evalCase.input);
     const durationMs = performance.now() - started;
-    return { ...base, passed: isDeepStrictEqual(actual, evalCase.expect), durationMs, actual };
+    return { ...base, passed: compare(actual, evalCase.expect), durationMs, actual };
   } catch (error) {
     // A crashing evaluator is a failed case, not a crashed run.
     const durationMs = performance.now() - started;
@@ -36,7 +40,7 @@ export async function runGroup(group: EvalGroup, cases: EvalCase[]): Promise<Gro
 
   const results: CaseResult[] = [];
   for (const evalCase of cases) {
-    results.push(await runCase(group.subject.evaluate, evalCase));
+    results.push(await runCase(group.subject.evaluate, evalCase, group.compare ?? isDeepStrictEqual));
   }
 
   const total = results.length;
@@ -54,6 +58,29 @@ export async function runGroup(group: EvalGroup, cases: EvalCase[]): Promise<Gro
     }
   }
 
+  const measures = (group.measures ?? []).map((measure) => {
+    const scope = results.filter(
+      (result) =>
+        (measure.tag === undefined || result.tags.includes(measure.tag)) && !(measure.excludeErrors === true && result.error !== undefined),
+    );
+    const ok = scope.filter((result) => (measure.passed ?? ((r: CaseResult) => r.passed))(result)).length;
+    const measured = { name: measure.name, total: scope.length, passed: ok, rate: scope.length === 0 ? 0 : ok / scope.length, threshold: measure.threshold };
+    // A measure without cases proves nothing, like a group without cases.
+    if (scope.length === 0) reasons.push(`measure "${measure.name}" has no cases`);
+    else if (measured.rate < measure.threshold) reasons.push(`measure "${measure.name}" below threshold`);
+    return measured;
+  });
+
+  // Cases that crashed say nothing about the speed of the subject.
+  const durations = results
+    .filter((result) => result.error === undefined)
+    .map((result) => result.durationMs)
+    .sort((a, b) => a - b);
+  const latency = {
+    medianMs: durations.length === 0 ? 0 : (durations[Math.floor((durations.length - 1) / 2)] ?? 0),
+    maxMs: durations.at(-1) ?? 0,
+  };
+
   return {
     name: group.name,
     status: reasons.length === 0 ? 'passed' : 'failed',
@@ -61,6 +88,8 @@ export async function runGroup(group: EvalGroup, cases: EvalCase[]): Promise<Gro
     total,
     passed,
     rate,
+    measures,
+    latency,
     reasons,
     results,
   };

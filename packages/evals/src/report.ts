@@ -21,6 +21,15 @@ export function formatReport(report: TierReport): string {
       `  ${group.name.padEnd(13)} ${verdict.padEnd(8)} ${String(group.passed)}/${String(group.total)} ` +
         `(${percent(group.rate)}, threshold ${percent(group.threshold)})`,
     );
+    for (const measure of group.measures) {
+      lines.push(
+        `      ${measure.name.padEnd(12)} ${String(measure.passed)}/${String(measure.total)} ` +
+          `(${percent(measure.rate)}, threshold ${percent(measure.threshold)})`,
+      );
+    }
+    if (group.measures.length > 0) {
+      lines.push(`      latency      median ${String(Math.round(group.latency.medianMs))} ms, max ${String(Math.round(group.latency.maxMs))} ms`);
+    }
     for (const reason of group.reasons) lines.push(`      reason: ${reason}`);
     for (const result of group.results.filter((candidate) => !candidate.passed)) {
       const detail = result.error ?? `got ${JSON.stringify(result.actual)}`;

@@ -7,7 +7,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
+    "@arianna/executors": "workspace:*",
     "@arianna/policy": "workspace:*"
   }
 }
