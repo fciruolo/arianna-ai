@@ -23,6 +23,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     home: HOME,
     paths: { data: join(HOME, 'data') },
     database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
+    local: { endpoints: [] },
   });
 });
 
@@ -74,4 +75,48 @@ test('moving the folder moves every path with it', () => {
   } finally {
     rmSync(movedHome, { recursive: true });
   }
+});
+
+const LOCAL = `
+[[local.endpoints]]
+id = "omlx"
+url = "http://127.0.0.1:8000/v1"
+command = ["omlx", "serve", "--port", "8000"]
+models = { "local-large" = "qwen-large", "local-small" = "qwen-small" }
+
+[[local.endpoints]]
+id = "lmstudio"
+url = "http://[::1]:1234/v1"
+models = { "local-large" = "qwen-large-gguf" }
+`;
+
+test('local endpoints are parsed in order, command optional', () => {
+  assert.deepEqual(parseConfig(`${VALID}${LOCAL}`, HOME).local, {
+    endpoints: [
+      {
+        id: 'omlx',
+        url: 'http://127.0.0.1:8000/v1',
+        command: ['omlx', 'serve', '--port', '8000'],
+        models: { 'local-large': 'qwen-large', 'local-small': 'qwen-small' },
+      },
+      { id: 'lmstudio', url: 'http://[::1]:1234/v1', models: { 'local-large': 'qwen-large-gguf' } },
+    ],
+  });
+});
+
+test('local endpoints must be on this machine', () => {
+  for (const url of ['http://192.168.1.10:8000/v1', 'https://api.example.com/v1', 'http://0.0.0.0:8000/v1', 'http://localhost:8000/v1']) {
+    assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('http://127.0.0.1:8000/v1', url)}`, HOME), ConfigError, url);
+  }
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('127.0.0.1:8000/v1', 'u:p@127.0.0.1:8000/v1')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('http://127.0.0.1', 'file://127.0.0.1')}`, HOME), ConfigError);
+});
+
+test('invalid local endpoints are rejected', () => {
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('"lmstudio"', '"omlx"')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('"omlx"', '"Omlx Server"')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('command = ["omlx", "serve", "--port", "8000"]', 'command = []')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('command = ["omlx", "serve", "--port", "8000"]', 'command = "omlx serve"')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('"local-small" = "qwen-small"', '"Local Small" = "x"')}`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('id = "lmstudio"', 'id = "lmstudio"\nkey = "x"')}`, HOME), ConfigError);
 });

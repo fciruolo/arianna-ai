@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 
 import { resolveHome, resolveInHome } from './home.ts';
+import { parseLocal, type LocalConfig } from './local.ts';
 import { asInteger, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 export const CONFIG_FILE = join('config', 'arianna.toml');
@@ -17,6 +18,7 @@ export interface AriannaConfig {
   /** Absolute paths, always inside `home`. */
   paths: { data: string };
   database: { host: string; port: number; name: string; user: string };
+  local: LocalConfig;
 }
 
 export function parseConfig(text: string, home: string): AriannaConfig {
@@ -27,7 +29,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'local'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -57,6 +59,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
       name: asString(database.name, 'database.name'),
       user: asString(database.user, 'database.user'),
     },
+    local: parseLocal(root.local),
   };
 }
 

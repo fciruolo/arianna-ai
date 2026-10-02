@@ -27,7 +27,7 @@ I nomi dei modelli sono alias in `arianna.toml` (`sonnet`, `opus`, `fable`, `loc
 
 | Esecutore | Invocazione | Note |
 | --- | --- | --- |
-| Locale | API compatibile OpenAI verso oMLX | Interfaccia sostituibile; watchdog con riavvio automatico e secondo endpoint di ripiego |
+| Locale | API compatibile OpenAI verso oMLX (`createLocalModel`, task 1.3) | Interfaccia sostituibile `LocalModel`; solo endpoint di loopback; endpoint in ordine di preferenza con ripiego sul successivo se il server è giù, bloccato o in errore 5xx; `Watchdog` con controllo di salute e riavvio automatico (D-033) |
 | Claude Code | `claude -p` con `--output-format stream-json`, `--resume`, `--allowedTools` / `--permission-mode`, `--model` | Non usare `--bare`; solo binario ufficiale; nessun token estratto; sempre con il profilo di confinamento |
 | Codex | `codex exec --json` con accesso ChatGPT | Su server headless: device-code, credenziali nel keyring; stesso profilo di confinamento |
 

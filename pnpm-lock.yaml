@@ -169,6 +169,9 @@ importers:
       '@arianna/config':
         specifier: workspace:*
         version: link:packages/config
+      '@arianna/executors':
+        specifier: workspace:*
+        version: link:packages/executors
       '@arianna/policy':
         specifier: workspace:*
         version: link:packages/policy
@@ -220,6 +223,8 @@ importers:
       '@arianna/policy':
         specifier: workspace:*
         version: link:../policy
+
+  packages/executors: {}
 
   packages/policy: {}
 

@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@arianna/config": "workspace:*",
+    "@arianna/executors": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@eslint/js": "10.0.1",
     "@types/node": "22.20.4",

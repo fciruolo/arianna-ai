@@ -2,13 +2,13 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-02, a fine task 1.2.
+Aggiornato: 2026-10-02, a fine task 1.3.
 
 ## Dove siamo
 
-- **Fase 0 chiusa** (via libera dell'utente il 2026-10-02). **Fase 1A in corso:** task 1.1 (policy) e 1.2 (gateway: `gatewayCheck`, scanner, `declassify`, migrazione `0002` con `approvals`, `label_changes`, `gateway_log`; D-032) su `main`. Il push su `origin` lo fa l'utente.
+- **Fase 0 chiusa** (via libera dell'utente il 2026-10-02). **Fase 1A in corso:** task 1.1 (policy), 1.2 (gateway, D-032) e 1.3 (modello locale: `@arianna/executors` con `createLocalModel`, `Watchdog`, sezione `[[local.endpoints]]` di `arianna.toml`; D-033) su `main`. Il push su `origin` lo fa l'utente.
 - Dal 2026-10-02 si lavora sul Mac Studio.
-- `pnpm check` passa (139 test, eval gateway 48/48); `pnpm test:db` passa (33 test) con l'immagine `postgres:17.11-alpine` fissata per digest.
+- `pnpm check` passa (189 test, eval gateway 48/48); `pnpm test:db` passa (33 test) con l'immagine `postgres:17.11-alpine` fissata per digest.
 - Regole di etichetta in `config/labels.toml`, lette da `@arianna/config` e validate da `@arianna/policy` (D-031). `policy` resta senza dipendenze e senza I/O.
 - `0001_init.sql` è su `main`: d'ora in poi ogni modifica allo schema va in una migrazione nuova.
 
@@ -19,13 +19,13 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 1. Controllare di essere sul branch giusto: `main`, oppure il branch del task in corso se ce n'è uno.
 2. Controllare i prerequisiti: `node -v` (22.18 o più), `pnpm -v`, `docker info`, `git config user.name`. Ciò che manca lo installa l'utente.
 3. `pnpm install`: scarica le dipendenze e attiva l'hook git pre-commit. Verificare con `git config core.hooksPath`, che deve dare `.githooks`.
-4. `pnpm check`: deve passare (139 test) prima di toccare qualsiasi cosa. Se fallisce su una macchina nuova è un problema di portabilità: va capito e corretto, non aggirato.
+4. `pnpm check`: deve passare (189 test) prima di toccare qualsiasi cosa. Se fallisce su una macchina nuova è un problema di portabilità: va capito e corretto, non aggirato.
 5. Si lavora su una macchina alla volta: push prima di lasciarla, pull appena arrivati sull'altra. La cartella non va sincronizzata anche con Synology Drive o simili mentre si usa git.
 
 ## Prossimi passi, in ordine
 
-1. **Task 1.3**, adattatore del modello locale (oMLX, interfaccia sostituibile, watchdog), e subito dopo **1.4** (test di accettazione dell'orchestratore). Poi 1.5, che serve a 1.6 (confinamento) e alla convergenza di 1.7. Prima del task 1.5 bisogna sapere come viene conteggiato `claude -p` nell'abbonamento.
-2. Lasciati da 1.2 ai task successivi: l'adattatore locale deve garantire che il suo endpoint sia in `local_endpoints` (il gateway si fida della `locality` dichiarata, tranne per `claude` e `codex`); gli adattatori inviano `decision.texts`, mai una nuova serializzazione; il testo della notifica con riferimento (`next: notify-reference`) lo scrive il canale (1.15); portare il task in "Attende te" (`next: wait-user`) spetta al task 1.8; i casi eval su worktree e MCP arrivano con 1.6.
+1. **Task 1.4** (test di accettazione dell'orchestratore sul modello vero, `EVALS.md`). Serve prima che l'utente dica quale server locale usa su questo Mac (oMLX non è installato, c'è LM Studio), porta e nomi dei modelli, da scrivere in `[[local.endpoints]]` (oggi solo un esempio commentato). Con 1.4 il contratto dell'adattatore va provato anche sul server vero: finora è verificato solo sul server finto. Poi 1.5, che serve a 1.6 (confinamento) e alla convergenza di 1.7. Prima del task 1.5 bisogna sapere come viene conteggiato `claude -p` nell'abbonamento.
+2. Lasciati da 1.2 e 1.3 ai task successivi: gli adattatori inviano `decision.texts`, mai una nuova serializzazione (oggi `LocalModel.chat` accetta qualsiasi stringa: valutare con 1.10 un tipo che arrivi solo da una decisione `allow`, così nessuna chiamata locale salta la riga in `gateway_log`); il core deve collegare `Watchdog.isAvailable`/`reportFailure` a `createLocalModel` e mandare gli eventi del watchdog in `events`, con il log del server in `data/` (1.8/1.10); un server adottato che si blocca senza morire porta il watchdog in `failed` (file del pid in `data/` da valutare con 1.8, D-033); il riavvio preventivo dopo molte richieste (crolli di oMLX per la cache) non c'è ancora; il testo della notifica con riferimento (`next: notify-reference`) lo scrive il canale (1.15); portare il task in "Attende te" (`next: wait-user`) spetta al task 1.8; i casi eval su worktree e MCP arrivano con 1.6.
 3. Docker serve per `pnpm test:db`: se è spento, chiedere all'utente di avviarlo, mai farlo da soli.
 
 ## In attesa dell'utente
@@ -35,6 +35,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | `git push` di `main` a ogni task chiuso; cancellare il branch remoto `task/0.3-postgres` se ancora presente | Il push è negato a Claude per scelta |
 | Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
 | Conferma delle decisioni | D-004 e da D-013 a D-029 sono "Proposta, applicata" in `DECISIONS.md`; D-030 (cartella di sviluppo separata da quella di installazione, Synology solo sui dati veri) è una proposta nata dalla domanda dell'utente sul Mac Studio |
+| Server locale e modelli per il task 1.4 | Quale server (oMLX, LM Studio, altro), porta, comando di avvio, nomi esatti di `local-large` e `local-small` |
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 
@@ -61,6 +62,8 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 - In `zsh` gli script `node -e` con molte virgolette annidate falliscono: meglio modificare i file con gli strumenti di edit.
 - L'hook legge come home anche una tilde nel testo di un comando Bash: l'operatore regex di SQL dentro uno script viene bloccato, e così una nota che lo cita. SQL e documenti che lo contengono si modificano con lo strumento di edit.
 - In un vincolo CHECK di PostgreSQL un'espressione che vale NULL (per esempio un campo JSON mancante) fa passare la riga: va avvolta in `coalesce(..., false)`.
+- Con `NODE_USE_ENV_PROXY=1` (o `--use-env-proxy`) e `HTTP_PROXY`, `fetch` e gli agent globali di Node mandano al proxy anche le richieste a 127.0.0.1: verso servizi locali si usa `node:http` con un agent proprio (`packages/executors/src/local/http.ts`).
+- Un processo figlio lanciato da un test eredita `NODE_TEST_CONTEXT` e si comporta come un file di test del runner: va tolto dall'ambiente. Un figlio che usa `fetch` attraverso un proxy può non terminare da solo: `process.exit`.
 - Gli strumenti di scrittura possono trasformare gli escape `\uXXXX` in caratteri veri: le espressioni regolari con caratteri invisibili vanno controllate con `od -c`.
 
 ## Prompt per la nuova conversazione
