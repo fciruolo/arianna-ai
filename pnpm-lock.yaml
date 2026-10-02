@@ -166,6 +166,9 @@ importers:
 
   .:
     devDependencies:
+      '@arianna/config':
+        specifier: workspace:*
+        version: link:packages/config
       '@arianna/policy':
         specifier: workspace:*
         version: link:packages/policy
@@ -184,6 +187,18 @@ importers:
       typescript-eslint:
         specifier: 8.71.0
         version: 8.71.0(eslint@10.11.0)(typescript@6.0.3)
+
+  apps/core:
+    dependencies:
+      '@arianna/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@arianna/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
 
   packages/config:
     dependencies:
@@ -555,6 +570,10 @@ packages:
 
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+    engines: {node: '>=12'}
+
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
     engines: {node: '>=12'}
 
   prelude-ls@1.2.1:
@@ -1014,6 +1033,8 @@ snapshots:
   path-key@3.1.1: {}
 
   picomatch@4.0.7: {}
+
+  postgres@3.4.9: {}
 
   prelude-ls@1.2.1: {}
 

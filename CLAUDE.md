@@ -2,6 +2,13 @@
 
 Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. Lavora una fase alla volta e non passare alla successiva senza che l'utente abbia superato il criterio di uscita. Se due documenti si contraddicono, fermati e correggili entrambi (D-013 in `docs/DECISIONS.md`).
 
+## Continuità fra conversazioni
+
+- **All'inizio di ogni sessione leggi `docs/HANDOFF.md`**: dice dove siamo, cosa è in sospeso e cosa aspetta l'utente.
+- **Tienilo aggiornato**: a fine task, prima di fermarti, e quando cambia ciò che è in attesa dell'utente.
+- **Quando la conversazione diventa troppo grande, dillo e proponi di aprirne una nuova.** Segnali: il contesto è stato riassunto, sono stati chiusi più di due o tre task nella stessa conversazione, inizi a perdere dettagli già stabiliti. Prima di proporlo aggiorna `docs/HANDOFF.md` come consegna (stato, prossimi passi, attese, cose non ovvie) e dai all'utente il prompt da incollare nella nuova conversazione. Il momento migliore è fra un task e l'altro, non a metà.
+- La memoria di Claude Code fuori dal repository non è utilizzabile (l'hook la blocca): ciò che va ricordato sta qui o in `docs/HANDOFF.md`.
+
 ## Regole non negoziabili
 
 - **Privacy prima di tutto.** Nessun dato L2/L3 va a un esecutore cloud (Claude Code, Codex) né a un canale esterno (Telegram, telefono). L'unica uscita verso il cloud è il gateway (`packages/policy`). Dati non etichettati = L2 (default-deny). L'output di un modello eredita l'etichetta più alta dei suoi input. Gli esecutori cloud si lanciano solo da `packages/executors`, con il profilo di confinamento di `docs/PRIVACY-POLICY-SPEC.md`.
@@ -16,7 +23,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 - **Portabilità:** nessun percorso assoluto; tutto relativo a `ARIANNA_HOME`. Pesi dei modelli, database e archivio vivono in `data/` (fuori da git). Dettagli in `docs/INSTALLER-PORTABILITY.md`.
 
 - TypeScript strict, pnpm monorepo, Node LTS. Python solo in `apps/voice`.
-- Node esegue i sorgenti TypeScript senza build (D-026): solo sintassi cancellabile (niente `enum`, `namespace`, parameter properties), `import type` per i tipi, import relativi con estensione `.ts`. Sorgenti in `src/`, test in `test/*.test.ts` con `node:test` e `node:assert/strict`. I pacchetti si importano per nome (`@arianna/policy`).
+- Node esegue i sorgenti TypeScript senza build (D-026): solo sintassi cancellabile (niente `enum`, `namespace`, parameter properties), `import type` per i tipi, import relativi con estensione `.ts`. Sorgenti in `src/`, test in `test/*.test.ts` con `node:test` e `node:assert/strict`; i test che richiedono PostgreSQL in `apps/*/test-db/`. I pacchetti si importano per nome (`@arianna/policy`).
 - PostgreSQL per stato, eventi e coda. Schema in `docs/DATA-MODEL.md`.
 - Commit piccoli, uno per task di `docs/PHASE-0-1-TASKS.md`; il messaggio cita l'id del task.
 - Documentazione in italiano; codice, nomi e commenti in inglese.
@@ -27,12 +34,15 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | --- | --- |
 | `pnpm install` | Installa le dipendenze (versioni esatte, lockfile in git) |
 | `pnpm build` | Controllo dei tipi di tutto il monorepo; non produce file (D-026). È l'unico comando che vede gli errori di tipo |
-| `pnpm test` | Test con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
+| `pnpm test` | Test senza servizi, con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
 | `pnpm lint` | ESLint con regole che vedono i tipi |
 | `pnpm eval` | Eval deterministici (gateway, router): niente modelli né rete; fallisce sotto soglia |
 | `pnpm eval:models` | Eval che richiedono il modello locale (orchestratore, estrazione, retrieval) |
 | `pnpm eval:live` | Eval dal vivo con `claude` e `codex` (contratto, canarino); consumano quota |
 | `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
+| `pnpm db:up` / `pnpm db:down` | Avvia o ferma PostgreSQL in Docker con i valori di `config/arianna.toml` |
+| `pnpm db:migrate` | Applica le migrazioni di `apps/core/migrations` |
+| `pnpm test:db` | Test che richiedono PostgreSQL (`apps/*/test-db`); avvia il database se serve. Fuori da `pnpm check`: obbligatorio a fine task se tocchi migrazioni o codice che parla con il database (D-029) |
 
 Aggiungi qui ogni comando quando esiste.
 
@@ -42,4 +52,4 @@ Un file TypeScript si esegue direttamente: `node percorso/file.ts`.
 
 ## Quando finisci un task
 
-Esegui build, test e lint, aggiorna le ore reali nel task, annota decisioni nuove in `docs/DECISIONS.md`, poi fermati e riassumi in poche righe.
+Esegui `pnpm check` (e `pnpm test:db` se hai toccato migrazioni o codice che parla con il database), aggiorna le ore reali nel task, annota decisioni nuove in `docs/DECISIONS.md`, poi fermati e riassumi in poche righe.

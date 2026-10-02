@@ -54,7 +54,9 @@ function parseFile(raw: unknown, where: string): ModelFile {
     throw new ConfigError(`${where}.path: must be relative and stay inside the model folder`);
   }
   const url = asString(file.url, `${where}.url`);
-  if (!url.startsWith('https://')) throw new ConfigError(`${where}.url: must be an https URL`);
+  if (!URL.canParse(url) || new URL(url).protocol !== 'https:') {
+    throw new ConfigError(`${where}.url: must be an https URL`);
+  }
   const sha256 = asString(file.sha256, `${where}.sha256`);
   if (!SHA256.test(sha256)) {
     throw new ConfigError(`${where}.sha256: expected 64 lowercase hex characters`);

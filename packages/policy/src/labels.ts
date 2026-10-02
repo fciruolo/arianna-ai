@@ -6,13 +6,21 @@ export type Label = (typeof LABELS)[number];
 /** Where inference happens. A property of the endpoint, not of the binary. */
 export type Locality = 'local' | 'cloud';
 
-function rank(label: Label): number {
-  return LABELS.indexOf(label);
+export function isLabel(value: unknown): value is Label {
+  return LABELS.some((label) => label === value);
 }
 
-/** Default-deny: data without a label is private (L2). */
-export function labelOrDefault(label: Label | undefined): Label {
-  return label ?? 'L2';
+// Labels also arrive from files and JSON, where the type system does not help:
+// anything that is not a label must stop the decision, never rank as harmless.
+function rank(label: Label): number {
+  const index = LABELS.indexOf(label);
+  if (index === -1) throw new TypeError(`not a privacy label: ${JSON.stringify(label)}`);
+  return index;
+}
+
+/** Default-deny: data without a valid label is private (L2). */
+export function labelOrDefault(label: unknown): Label {
+  return isLabel(label) ? label : 'L2';
 }
 
 /** The most restricted of the given labels; L0 when there is nothing to label. */

@@ -43,6 +43,19 @@ test('absolute and escaping data paths are rejected', () => {
   assert.throws(() => parseConfig(VALID.replace('"data"', '"../data"'), HOME), ConfigError);
 });
 
+test('the data folder must be the one git ignores', () => {
+  assert.throws(() => parseConfig(VALID.replace('"data"', '"storage"'), HOME), ConfigError);
+  assert.throws(() => parseConfig(VALID.replace('"data"', '"."'), HOME), ConfigError);
+  assert.throws(() => parseConfig(VALID.replace('"data"', '"data/../.git"'), HOME), ConfigError);
+  assert.equal(parseConfig(VALID.replace('"data"', '"./data"'), HOME).paths.data, join(HOME, 'data'));
+});
+
+test('the database must be on this machine', () => {
+  assert.throws(() => parseConfig(VALID.replace('127.0.0.1', 'db.example.org'), HOME), ConfigError);
+  assert.throws(() => parseConfig(VALID.replace('127.0.0.1', '0.0.0.0'), HOME), ConfigError);
+  assert.equal(parseConfig(VALID.replace('127.0.0.1', 'localhost'), HOME).database.host, 'localhost');
+});
+
 test('wrong types and malformed TOML are rejected', () => {
   assert.throws(() => parseConfig(VALID.replace('54329', '"54329"'), HOME), ConfigError);
   assert.throws(() => parseConfig(VALID.replace('54329', '70000'), HOME), ConfigError);

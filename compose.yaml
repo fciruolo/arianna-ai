@@ -1,0 +1,25 @@
+# Services that run in Docker (docs/DECISIONS.md, D-009 and D-028).
+# Start it with `pnpm db:up`: scripts/compose.ts fills the variables below from
+# config/arianna.toml. The defaults keep a plain `docker compose up` working too.
+name: arianna
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ARIANNA_DB_USER:-arianna}
+      # Development default for a local database with fake data only.
+      POSTGRES_PASSWORD: ${ARIANNA_DB_PASSWORD:-arianna_dev}
+      POSTGRES_DB: ${ARIANNA_DB_NAME:-arianna}
+    ports:
+      # Loopback only: the database is never reachable from the network.
+      - '127.0.0.1:${ARIANNA_DB_PORT:-54329}:5432'
+    volumes:
+      - ${ARIANNA_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      # Over TCP: during first initialization the server listens on the Unix socket only.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30

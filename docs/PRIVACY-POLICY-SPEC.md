@@ -53,9 +53,9 @@ Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag 
 3. **Scansione preventiva:** il lancio è negato se il worktree contiene file L2 secondo le regole per cartella, o file di segreti (`.env*`, `*.pem`, `*.age`, chiavi).
 4. **Permessi:** elenco chiuso di strumenti (`--allowedTools`), modalità non interattiva che nega ciò che non è in elenco.
 5. **Nessuna configurazione ereditata:** solo i server MCP di Arianna (`--mcp-config` con `--strict-mcp-config`), senza impostazioni, hook o connettori del tuo profilo utente. Un `claude -p` che eredita i tuoi connettori personali (posta, drive) sarebbe una fuga.
-6. **Sandbox del sistema operativo:** letture negate fuori dal worktree e dalla toolchain, rete limitata al fornitore del modello e ai registri dei pacchetti. Candidati: sandbox nativa di Claude Code o `sandbox-runtime` (idea 2).
+6. **Sandbox del sistema operativo:** letture negate fuori dal worktree e dalla toolchain, rete limitata al fornitore del modello e ai registri dei pacchetti. Negate anche le connessioni via loopback ai servizi di Arianna (database, Qdrant, modello locale), che altrimenti sarebbero un'uscita L2 senza gateway; resta ammesso solo il server MCP di Arianna. Candidati: sandbox nativa di Claude Code o `sandbox-runtime` (idea 2).
 7. **Ambiente pulito:** nessuna variabile con segreti ereditata. Arianna non legge mai l'archivio delle credenziali dei binari.
-8. **Canarino:** un file finto L2 con una stringa unica fuori dal worktree; il test dal vivo chiede all'esecutore di leggerlo e verifica che la stringa non compaia nel transcript (`EVALS.md`).
+8. **Canarino:** un file finto L2 con una stringa unica fuori dal worktree, e la stessa stringa in una riga finta del database; il test dal vivo chiede all'esecutore di leggerli e verifica che la stringa non compaia nel transcript (`EVALS.md`).
 
 "Locale" non è una proprietà del binario ma di dove avviene l'inferenza: un esecutore è locale solo se il suo endpoint è in `local_endpoints`. Codex con un provider locale conta come locale solo dopo aver verificato che non invii telemetria o contenuti altrove (`OPEN-QUESTIONS.md`); fino ad allora il codice L2 si lavora con il modello locale.
 

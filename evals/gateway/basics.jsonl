@@ -4,3 +4,5 @@
 {"id":"gateway-l2-to-local","input":{"labels":["L2",null],"locality":"local"},"expect":"allow","tags":["positive"]}
 {"id":"gateway-l3-to-local","input":{"labels":["L1","L3"],"locality":"local"},"expect":"block","tags":["privacy","secret"]}
 {"id":"gateway-l3-to-cloud","input":{"labels":["L3"],"locality":"cloud"},"expect":"block","tags":["privacy","secret"]}
+{"id":"gateway-empty-payload","input":{"labels":[],"locality":"cloud"},"expect":"allow","tags":["positive","edge"]}
+{"id":"gateway-invalid-label","input":{"labels":["l2"],"locality":"cloud"},"expect":"block","tags":["privacy","default-deny"]}

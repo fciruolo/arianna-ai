@@ -28,8 +28,9 @@ Assistente personale e sistema multi-agente che gira in locale o su un server tu
 | `docs/DEV-WORKFLOW.md` | Come si lavora con Claude Code, prompt iniziali |
 | `docs/REFERENCES.md` | Progetti esterni analizzati (pixel-agents, OpenJarvis) e decisioni |
 | `docs/DECISIONS.md` | Registro delle decisioni (ADR) |
+| `docs/HANDOFF.md` | Consegna fra conversazioni: stato, prossimi passi, attese |
 | `docs/OPEN-QUESTIONS.md` | Decisioni aperte e idee da scegliere |
 
 ## Stato
 
-Fase 0 non iniziata; documenti rivisti il 2026-10-02 (revisione critica: privacy, piano, incoerenze). Le stime sono mie, non misurate: si ricalibrano alla fine della Fase 0.
+Fase 0 in corso: lo stato di ogni task è nella colonna "Reali" di `docs/PHASE-0-1-TASKS.md`. Documenti rivisti il 2026-10-02 (revisione critica: privacy, piano, incoerenze). Le stime sono mie, non misurate: si ricalibrano alla fine della Fase 0.

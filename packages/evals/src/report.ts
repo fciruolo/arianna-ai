@@ -28,6 +28,11 @@ export function formatReport(report: TierReport): string {
     }
   }
 
-  lines.push(report.ok ? 'Result: OK' : 'Result: FAILED');
+  // The counts keep an "OK" with nothing evaluated from looking like a success.
+  const pending = report.groups.filter((group) => group.status === 'pending').length;
+  const active = report.groups.length - pending;
+  lines.push(
+    `Result: ${report.ok ? 'OK' : 'FAILED'} (${String(active)} active, ${String(pending)} pending)`,
+  );
   return lines.join('\n');
 }

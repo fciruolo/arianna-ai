@@ -10,14 +10,19 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test \"{apps,packages}/*/test/**/*.test.ts\" \"test/**/*.test.ts\" \".claude/hooks/*.test.js\"",
+    "test:db": "pnpm db:up && node --test --test-timeout=60000 \"apps/*/test-db/**/*.test.ts\"",
     "lint": "eslint . --max-warnings 0",
     "eval": "node packages/evals/src/cli.ts deterministic",
     "eval:models": "node packages/evals/src/cli.ts models",
     "eval:live": "node packages/evals/src/cli.ts live",
     "check": "pnpm build && pnpm test && pnpm lint && pnpm eval",
+    "db:up": "node scripts/compose.ts up --detach --wait",
+    "db:down": "node scripts/compose.ts down",
+    "db:migrate": "node apps/core/src/db/migrate-cli.ts",
     "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
+    "@arianna/config": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@eslint/js": "10.0.1",
     "@types/node": "22.20.4",

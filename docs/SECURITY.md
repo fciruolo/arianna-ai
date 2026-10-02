@@ -29,4 +29,11 @@
   - per `Bash` è un'euristica: nega i comandi che nominano percorsi nella home, in `/Users`, `/Volumes` e simili fuori dal repository. Si aggira con variabili o sottocomandi, quindi è una rete di sicurezza contro gli errori, non una sandbox;
   - se l'input non è leggibile, l'hook nega (fail-closed); se invece lo script va in errore prima di partire, Claude Code prosegue senza blocco, quindi i suoi test girano dentro `pnpm test`;
   - i test stanno in `.claude/hooks/block-outside-repo.test.js`; `.claude/hooks/package.json` tiene gli script in CommonJS anche se il monorepo è ESM.
-- La protezione vera per i comandi di shell è la sandbox del sistema operativo: da attivare e verificare nel task 0.5 per lo sviluppo e nel task 1.6 per gli esecutori lanciati da Arianna.
+- La protezione vera per i comandi di shell è la sandbox del sistema operativo: `node` e `pnpm` eseguono codice arbitrario, e l'hook guarda solo il testo del comando. Per lo sviluppo non è configurata nel repository: la attiva l'utente con `/sandbox` in Claude Code. Per gli esecutori lanciati da Arianna è il task 1.6.
+
+## Servizi locali e database
+
+- PostgreSQL ascolta solo su `127.0.0.1` e la configurazione rifiuta host diversi dal loopback, perché il driver non usa TLS.
+- In sviluppo la password del database è un valore fisso, scritto in `compose.yaml` e nel codice (D-028): va bene solo finché il database contiene dati finti. **Prima dei dati veri** serve una password non predefinita, verificata da `arianna doctor`. L'immagine legge la password solo alla prima inizializzazione: per cambiarla dopo serve `ALTER ROLE`, non basta la variabile d'ambiente.
+- Un esecutore cloud gira sulla stessa macchina e può raggiungere via loopback il database, Qdrant e il modello locale: sarebbe un percorso L2 verso il cloud che non passa dal gateway. La sandbox del task 1.6 deve negare queste connessioni, e il test del canarino lo verifica.
+- Il campo `detail` degli errori di PostgreSQL contiene la riga rifiutata, payload compreso: non va scritto nei log per eventi L2 o superiori.

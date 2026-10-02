@@ -1,18 +1,20 @@
 # Modello dati (bozza PostgreSQL)
 
-Bozza da rifinire task per task; migrazioni con uno strumento a scelta (voce in `DECISIONS.md`). Il task 0.3 crea `events`, `tasks` e `jobs`; le altre tabelle nascono con il task che le usa.
+`events`, `tasks` e `jobs` esistono dal task 0.3: la definizione che fa fede è `apps/core/migrations/0001_init.sql`. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
 
 ```sql
 CREATE TYPE privacy_label AS ENUM ('L0','L1','L2','L3');
 CREATE TYPE task_status AS ENUM ('inbox','ready','running','waiting_user','to_verify','done','failed');
 
 -- Registro eventi append-only con catena di hash: fonte per HUD, ufficio pixel, audit.
--- Si scrive solo con append_event(), che prende un advisory lock, legge l'ultimo hash
--- e calcola hash = sha256(prev_hash || riga canonica). UPDATE e DELETE sono negati
--- al ruolo applicativo e bloccati da un trigger.
+-- Si scrive con un normale INSERT: il trigger events_chain prende un advisory lock,
+-- legge l'ultimo hash e assegna id, ts, prev_hash e hash = sha256(prev_hash || riga
+-- canonica), ignorando i valori passati da chi scrive. UPDATE, DELETE e TRUNCATE sono
+-- bloccati da trigger. verify_event_chain() restituisce l'id del primo evento che
+-- non torna, NULL se la catena è integra.
 CREATE TABLE events (
-  id          bigserial PRIMARY KEY,
-  ts          timestamptz NOT NULL DEFAULT now(),
+  id          bigint PRIMARY KEY,      -- da events_id_seq, assegnato dal trigger
+  ts          timestamptz NOT NULL,    -- assegnato dal trigger
   task_id     uuid,
   run_id      uuid,
   agent       text,
@@ -47,7 +49,7 @@ CREATE TABLE messages (
 CREATE TABLE tasks (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id       uuid REFERENCES tasks(id),
-  conversation_id uuid REFERENCES conversations(id),
+  conversation_id uuid REFERENCES conversations(id),        -- si aggiunge con il task 1.11
   title           text NOT NULL,
   goal            text,
   done_criteria   text,
@@ -63,7 +65,8 @@ CREATE TABLE tasks (
   evidence        jsonb NOT NULL DEFAULT '[]',              -- prove: diff, test, documento
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  CHECK (status <> 'done' OR evidence <> '[]'::jsonb OR assignee = 'user')
+  CHECK (status <> 'done' OR evidence <> '[]'::jsonb OR assignee = 'user'),
+  CHECK (effective_label <= clearance)                      -- sopra il tetto non si legge
 );
 
 -- Una sessione di un esecutore su un passo di un task
@@ -161,5 +164,11 @@ CREATE TABLE documents (
 
 - **Ripresa dopo riavvio:** all'avvio il core rimette in coda i job `running` con lock scaduto; un run interrotto riparte con `resume(session_ref)` se l'esecutore lo consente, altrimenti dal passo. I passi devono essere idempotenti.
 - **Percorsi:** sempre relativi ad `ARIANNA_HOME`.
-- **Verifica della catena:** `arianna doctor` ricalcola gli hash di `events` e segnala la prima riga che non torna.
+- **Verifica della catena:** `verifyEventChain` (in `apps/core/src/events.ts`, poi dentro `arianna doctor`) ricalcola gli hash di `events` e segnala la prima riga che non torna.
+- **Limiti della catena, da chiudere più avanti:**
+  - la cancellazione degli ultimi eventi non si vede dalla sola catena: serve un'ancora esterna, cioè l'ultimo hash salvato periodicamente fuori dal database (con `arianna export`, Fase 2);
+  - oggi c'è un solo ruolo di database, proprietario delle tabelle, che può disattivare i trigger: la manomissione resta rilevabile ma non impedita. Un ruolo applicativo senza diritti di modifica dello schema arriva con il vault (task 1.14);
+  - le transazioni che scrivono eventi devono usare l'isolamento predefinito (READ COMMITTED). Con un altro livello la scrittura fallisce invece di biforcare la catena: lo impone il vincolo `events_single_successor`;
+  - il lock della catena dura fino al commit: l'evento si scrive come ultima istruzione di una transazione breve.
+- **Test con il database:** `pnpm test:db` crea uno schema usa e getta per ogni file di test e applica le migrazioni da zero (D-029).
 - **Ricerca (Fase 2):** Qdrant fuori da Postgres; indice testuale con `tsvector` o BM25 dedicato. Alternativa da valutare: `pgvector` al posto di Qdrant per avere un servizio in meno (`OPEN-QUESTIONS.md`).

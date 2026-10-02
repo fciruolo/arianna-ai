@@ -28,6 +28,7 @@ In Fase 1A le corsie privacy, esecutori e nucleo sono indipendenti fino al route
 - un task per sessione, un commit per task, merge solo dopo `pnpm check` e revisione;
 - mai due sessioni sullo stesso pacchetto;
 - le migrazioni del database le tocca una sola corsia alla volta;
+- il database è uno solo, condiviso fra i worktree (stesso container e stessa porta): i test non si disturbano perché ogni file usa uno schema proprio, ma `pnpm db:up` va lanciato da un solo worktree;
 - il limite è la tua attenzione in revisione: se la revisione di policy e gateway diventa frettolosa, torna a una corsia sola.
 
 ## Regole pratiche

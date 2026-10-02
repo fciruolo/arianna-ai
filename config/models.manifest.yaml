@@ -11,6 +11,6 @@
 #       - path: model.safetensors
 #         url: https://example.org/example-model/model.safetensors
 #         size_bytes: 1234567890
-#         sha256: 0000000000000000000000000000000000000000000000000000000000000000
+#         sha256: "0000000000000000000000000000000000000000000000000000000000000000"
 version: 1
 models: []

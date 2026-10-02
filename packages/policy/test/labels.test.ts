@@ -1,14 +1,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { canSendTo, labelOrDefault, LABELS, maxLabel } from '../src/index.ts';
+import { canSendTo, isLabel, labelOrDefault, LABELS, maxLabel, type Label } from '../src/index.ts';
+
+// Values that reach the policy from files or JSON despite the types.
+const notALabel = (value: unknown): Label => value as Label;
 
 test('labels are listed from least to most restricted', () => {
   assert.deepEqual(LABELS, ['L0', 'L1', 'L2', 'L3']);
 });
 
-test('default-deny: unlabeled data is L2, labeled data keeps its label', () => {
+test('isLabel accepts the four labels and nothing else', () => {
+  assert.equal(isLabel('L0'), true);
+  assert.equal(isLabel('L3'), true);
+  assert.equal(isLabel('l2'), false);
+  assert.equal(isLabel('L9'), false);
+  assert.equal(isLabel(null), false);
+});
+
+test('default-deny: data without a valid label is L2, labeled data keeps its label', () => {
   assert.equal(labelOrDefault(undefined), 'L2');
+  assert.equal(labelOrDefault(null), 'L2');
+  assert.equal(labelOrDefault(''), 'L2');
+  assert.equal(labelOrDefault('l0'), 'L2');
   assert.equal(labelOrDefault('L0'), 'L0');
   assert.equal(labelOrDefault('L3'), 'L3');
 });
@@ -31,4 +45,11 @@ test('local models receive up to L2, never L3', () => {
   assert.equal(canSendTo('local', 'L0'), true);
   assert.equal(canSendTo('local', 'L2'), true);
   assert.equal(canSendTo('local', 'L3'), false);
+});
+
+test('a value that is not a label stops the decision instead of ranking as harmless', () => {
+  assert.throws(() => canSendTo('cloud', notALabel('L9')), TypeError);
+  assert.throws(() => canSendTo('cloud', notALabel('l2')), TypeError);
+  assert.throws(() => canSendTo('local', notALabel(null)), TypeError);
+  assert.throws(() => maxLabel(notALabel('l3'), 'L1'), TypeError);
 });

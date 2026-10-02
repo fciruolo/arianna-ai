@@ -5,9 +5,10 @@ import { LABELS, type Label } from '@arianna/policy';
 
 import { listFiles } from './support/files.ts';
 
-// Must mirror the globs of the "test" script in package.json.
+// Must mirror the globs of the "test" and "test:db" scripts in package.json.
 const RUN_BY_TEST_SCRIPT = [
   /^(apps|packages)\/[^/]+\/test\/.+\.test\.ts$/,
+  /^apps\/[^/]+\/test-db\/.+\.test\.ts$/,
   /^test\/.+\.test\.ts$/,
   /^\.claude\/hooks\/[^/]+\.test\.js$/,
 ];

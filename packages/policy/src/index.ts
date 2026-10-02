@@ -1,1 +1,9 @@
-export { canSendTo, labelOrDefault, LABELS, maxLabel, type Label, type Locality } from './labels.ts';
+export {
+  canSendTo,
+  isLabel,
+  labelOrDefault,
+  LABELS,
+  maxLabel,
+  type Label,
+  type Locality,
+} from './labels.ts';

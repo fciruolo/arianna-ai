@@ -24,7 +24,7 @@ arianna/                  # repository (codice, docs, agents/, evals/)
 
 Regola: nessun percorso assoluto nel codice; tutto è relativo a `ARIANNA_HOME`, impostabile da variabile d'ambiente. Senza la variabile, `ARIANNA_HOME` è la cartella del repository da cui gira il codice.
 
-La configurazione si legge solo tramite `packages/config`, che rifiuta percorsi assoluti, percorsi che escono da `ARIANNA_HOME` e chiavi sconosciute. Un test (`test/portability.test.ts`) fa fallire `pnpm check` se nel codice o nella configurazione compare un percorso legato a una macchina.
+La configurazione si legge solo tramite `packages/config`, che rifiuta percorsi assoluti, percorsi che escono da `ARIANNA_HOME` e chiavi sconosciute. Per ora `paths.data` deve essere `data`, perché `.gitignore` esclude solo quella cartella: un altro nome farebbe entrare dati privati in git. Il limite cade con l'installer (task 1.17). Il controllo sui percorsi è sul testo: un collegamento simbolico dentro `data/` che punta fuori dalla cartella è ammesso (serve per i pesi dei modelli) e lo segnalerà `arianna doctor`. Un test (`test/portability.test.ts`) fa fallire `pnpm check` se nel codice o nella configurazione compare un percorso legato a una macchina.
 
 Schema del manifest (`version: 1`): ogni modello ha `name`, `role` (`orchestrator`, `extractor`, `embedder`, `voice`), `runtime` (`mlx`, `llama.cpp`, `vllm`) e un elenco `files`, perché un modello MLX è fatto di più file. Ogni file ha `path` (relativo, dentro `data/models/<name>/`), `url` (solo https), `size_bytes` e `sha256`.
 

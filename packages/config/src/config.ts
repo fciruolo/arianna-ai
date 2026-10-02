@@ -8,6 +8,9 @@ import { asInteger, asString, asTable, ConfigError, onlyKeys } from './validate.
 
 export const CONFIG_FILE = join('config', 'arianna.toml');
 
+const DATA_DIR = 'data';
+const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+
 export interface AriannaConfig {
   /** Absolute path of ARIANNA_HOME. */
   home: string;
@@ -32,11 +35,24 @@ export function parseConfig(text: string, home: string): AriannaConfig {
   const database = asTable(root.database, 'database');
   onlyKeys(database, ['host', 'port', 'name', 'user'], 'database');
 
+  const data = resolveInHome(home, asString(paths.data, 'paths.data'), 'paths.data');
+  // .gitignore, lint and tests exclude exactly this folder: any other name would
+  // let private data into git. The installer (task 1.17) will lift the limit.
+  if (data !== join(home, DATA_DIR)) {
+    throw new ConfigError(`paths.data: must be "${DATA_DIR}" for now`);
+  }
+
+  // The driver connects without TLS, so the database must be on this machine.
+  const host = asString(database.host, 'database.host');
+  if (!LOOPBACK_HOSTS.includes(host)) {
+    throw new ConfigError(`database.host: must be one of ${LOOPBACK_HOSTS.join(', ')}`);
+  }
+
   return {
     home,
-    paths: { data: resolveInHome(home, asString(paths.data, 'paths.data'), 'paths.data') },
+    paths: { data },
     database: {
-      host: asString(database.host, 'database.host'),
+      host,
       port: asInteger(database.port, 'database.port', 1, 65535),
       name: asString(database.name, 'database.name'),
       user: asString(database.user, 'database.user'),

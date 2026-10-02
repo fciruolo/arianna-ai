@@ -16,7 +16,7 @@ Ore = stima mia (min-max), con colonna per le ore reali da compilare. Ogni task 
 | 0.2 | `pnpm check` (build + test + lint + eval) e hook git pre-commit; CI remota facoltativa (D-018) | 0,5-1 | 0,1 (solo sessione di Claude) | Un commit con un test rotto o un errore di tipo viene rifiutato |
 | 0.3 | Docker Compose con PostgreSQL, migrazioni, tabelle `events` (catena di hash), `tasks`, `jobs` | 3-5 | | Migrazione applicata da zero; UPDATE su `events` negato |
 | 0.4 | Scheletro harness eval a tre livelli, 1 caso per gruppo deterministico | 3-5 | 0,2 (solo sessione di Claude) | `pnpm eval` produce report e fallisce sotto soglia |
-| 0.5 | Verifica di `.claude/settings.json`, hook e subagent reviewer (già presenti) | 0,5-1 | | Test dell'hook verdi dentro `pnpm test`; un `Read` esterno è bloccato in sessione |
+| 0.5 | Verifica di `.claude/settings.json`, hook e subagent reviewer (già presenti) | 0,5-1 | 0,1 (solo sessione di Claude) | Test dell'hook verdi dentro `pnpm test`; un `Read` esterno è bloccato in sessione |
 | 0.6 | Primo test end-to-end: scrivi evento, leggilo, verifica la catena | 2-3 | | Test verde; `DECISIONS.md` riletto e stati confermati |
 | 0.7 | Layout portabile: `ARIANNA_HOME`, `arianna.toml`, schema del manifest modelli (vedi `INSTALLER-PORTABILITY.md`) | 2-3 | 0,2 (solo sessione di Claude) | Percorsi tutti relativi; cambio cartella senza rotture |
 
@@ -31,14 +31,14 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 | 1.3 | Adattatore modello locale (oMLX, interfaccia sostituibile), watchdog e riavvio | 4-6 | | Test di contratto verde; server ucciso → ripartenza automatica |
 | 1.4 | Test di accettazione dell'orchestratore sul modello locale (`EVALS.md`) | 3-4 | | Soglie superate, oppure piano B scelto e annotato |
 | 1.5 | Adattatore `claude -p` (stream-json, resume, permessi, errore di quota) | 5-8 | | Compito banale eseguito e loggato |
-| 1.6 | Confinamento cloud: worktree per run, allowlist, scansione preventiva, MCP stretto, sandbox, canarino | 5-8 | | Canarino mai nel transcript; lancio negato fuori allowlist |
+| 1.6 | Confinamento cloud: worktree per run, allowlist, scansione preventiva, MCP stretto, sandbox (anche verso i servizi locali via loopback), canarino | 5-8 | | Canarino mai nel transcript, né da file né dal database; lancio negato fuori allowlist |
 | 1.7 | Router: filtro privacy, budget, difficoltà a regole, scalata, log decisioni | 5-8 | | Eval router ≥ 95%, privacy 100% |
 | 1.8 | Task, run, approvazioni, tetti di passi/tempo/costo, coda `jobs` e ripresa dopo riavvio | 6-9 | | Task fermato da tetto e da approvazione; `kill -9` del core → il task riprende |
 | 1.9 | Loader e validazione schede agente (trifecta); schede di Arianna e Coder | 3-5 | | Scheda non valida rifiutata |
 | 1.10 | Orchestratore locale con strumenti a schema vincolato, contesto per task | 7-10 | | Task a più passi completato |
 | 1.11 | API + WebSocket eventi + chat web minima: storico, modalità lavoro/privato, schede di approvazione | 5-8 | | Chat dal browser; declassamento approvato dalla chat |
 | 1.12 | Casi eval completi: gateway, router, canarino | 4-6 | | Soglie rispettate |
-| 1.13 | Indurimento e verifica del criterio di uscita | 4-5 | | Criterio Fase 1A superato |
+| 1.13 | Indurimento e verifica del criterio di uscita; password del database non predefinita, controllata da un primo `doctor` | 4-5 | | Criterio Fase 1A superato |
 
 **Traguardo M1 (dopo 1.7, 36-54 h):** da riga di comando un compito L1 va a Claude Code in un worktree confinato e uno L2 resta sul modello locale, con decisione del router e riga del gateway nel database. È il filo teso da un capo all'altro: da qui in poi si allarga, non si scopre.
 

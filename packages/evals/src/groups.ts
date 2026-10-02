@@ -1,24 +1,17 @@
-import { canSendTo, labelOrDefault, LABELS, maxLabel, type Label } from '@arianna/policy';
+import { canSendTo, labelOrDefault, maxLabel } from '@arianna/policy';
 
 import type { EvalGroup } from './types.ts';
 
-function toLabel(value: unknown): Label | undefined {
-  if (value === null) return undefined; // unlabeled data
-  const label = LABELS.find((candidate) => candidate === value);
-  if (label === undefined) throw new Error(`not a label: ${JSON.stringify(value)}`);
-  return label;
-}
-
 /**
  * Input: `{ "labels": ["L1", null, ...], "locality": "local" | "cloud" }`, one label per
- * payload fragment, `null` for unlabeled data. Output: "allow" | "block".
+ * payload fragment; `null` or anything that is not a label counts as unlabeled. Output: "allow" | "block".
  * Grows into the full gateway check with tasks 1.1 and 1.2.
  */
 function evaluateGateway(input: unknown): 'allow' | 'block' {
   const { labels, locality } = input as { labels?: unknown; locality?: unknown };
   if (!Array.isArray(labels)) throw new Error('"labels" must be a list');
   if (locality !== 'local' && locality !== 'cloud') throw new Error('"locality" must be local or cloud');
-  const payloadLabel = maxLabel(...labels.map((label) => labelOrDefault(toLabel(label))));
+  const payloadLabel = maxLabel(...labels.map((label) => labelOrDefault(label)));
   return canSendTo(locality, payloadLabel) ? 'allow' : 'block';
 }
 

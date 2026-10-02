@@ -1,0 +1,11 @@
+{
+  "name": "@arianna/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@arianna/config": "workspace:*",
+    "@arianna/policy": "workspace:*",
+    "postgres": "3.4.9"
+  }
+}
