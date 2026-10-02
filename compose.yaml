@@ -5,7 +5,8 @@ name: arianna
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # Minor version and multi-arch digest pinned (D-028); update both together.
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${ARIANNA_DB_USER:-arianna}

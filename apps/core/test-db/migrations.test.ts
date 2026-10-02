@@ -59,6 +59,10 @@ test('an agent task cannot be closed without evidence, a user task can', async (
   );
   await assert.rejects(
     sql`INSERT INTO tasks (title, assignee, status, evidence) VALUES ('fix bug', 'coder', 'done', '{}')`,
+    /tasks_done_needs_evidence|tasks_evidence_is_list/,
+  );
+  await assert.rejects(
+    sql`INSERT INTO tasks (title, evidence) VALUES ('fix bug', '{"kind":"diff"}')`,
     /tasks_evidence_is_list/,
   );
   await sql`

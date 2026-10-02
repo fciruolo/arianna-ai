@@ -2,14 +2,15 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-02, durante la Fase 0.
+Aggiornato: 2026-10-02, a fine Fase 0.
 
 ## Dove siamo
 
-- **Fase 0 in corso.** Su `main` (commit `b28ac88`): task 0.1, 0.2, 0.7, 0.4. Su `origin`, `main` è fermo al task 0.2: i commit di 0.7 e 0.4 ci sono comunque, dentro il branch `task/0.3-postgres`, e il merge finale resta un fast-forward.
-- **Cambio di macchina:** dal 2026-10-02 il lavoro passa dal portatile al Mac Studio, con un clone nuovo. Vedi "Su una macchina nuova" più sotto.
-- **Branch `task/0.3-postgres`: un commit di lavoro in corso, non ancora su `main`.** Contiene i task 0.3 (PostgreSQL, migrazioni), 0.5 (verifica hook) e 0.6 (registro eventi con catena di hash), le correzioni della revisione a `packages/policy`, `packages/config` e `packages/evals`, e questo file. Il branch ha un corrispondente su `origin`; il push lo fa l'utente.
-- `pnpm check` passa (53 test). **`pnpm test:db` non è mai stato eseguito**: Docker Desktop non era avviato. L'SQL di `apps/core/migrations/0001_init.sql` è stato solo letto, anche dal revisore, mai eseguito.
+- **Fase 0 completata dal lato del codice**, in attesa del via libera dell'utente al criterio di uscita. Su `main`: task da 0.1 a 0.7, branch `task/0.3-postgres` fuso e cancellato in locale. Il push su `origin` lo fa l'utente.
+- Dal 2026-10-02 si lavora sul Mac Studio; i controlli della macchina nuova sono passati.
+- `pnpm check` passa (53 test); `pnpm test:db` passa (18 test, rieseguito più volte) con l'immagine `postgres:17.11-alpine` fissata per digest.
+- La prima corsa di `pnpm test:db` ha trovato due bug, ora corretti: `readEvents` ordinava sull'alias testuale `id` (10 prima di 2) e `tasks_done_needs_evidence` andava in errore sui valori non lista (i CHECK si valutano in ordine di nome).
+- `0001_init.sql` è su `main`: d'ora in poi ogni modifica allo schema va in una migrazione nuova.
 
 ## Su una macchina nuova
 
@@ -23,22 +24,15 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prossimi passi, in ordine
 
-1. Controllare Docker con `docker info`. Se non è avviato, chiedere all'utente di avviare Docker Desktop: non avviarlo da soli, è fuori dalla cartella.
-2. `pnpm test:db` e correzione di ciò che non passa. Punti più incerti alla prima esecuzione:
-   - permessi di inizializzazione sul volume `data/postgres` con Docker Desktop;
-   - `event_hash(v_prev, NEW)` nel trigger `events_chain` (riga `NEW` passata a un parametro di tipo `events`);
-   - il test "a writer on a stale snapshot cannot fork the chain": il messaggio d'errore atteso potrebbe essere diverso;
-   - la migrazione non è mai stata applicata a un database, quindi `0001_init.sql` si può ancora modificare finché resta su questo branch. Dopo il merge su `main` no: si aggiunge una migrazione nuova.
-3. Fissare l'immagine in `compose.yaml` con versione minore e digest (`postgres:17.x-alpine@sha256:…`, da `docker image inspect`) e annotarlo in D-028.
-4. Scrivere le ore reali di 0.3 e 0.6 in `PHASE-0-1-TASKS.md`, fare un commit di chiusura con le correzioni emerse dai test, merge fast-forward su `main`, cancellare il branch.
-5. Riassumere all'utente il criterio di uscita della Fase 0 (`ROADMAP.md`) con le prove, e **fermarsi**: la Fase 1 non parte senza il suo via libera.
+1. Aspettare il via libera dell'utente al criterio di uscita della Fase 0 e la conferma delle decisioni "Proposta" in `DECISIONS.md` (fa parte del "fatto quando" di 0.6). Docker serve solo per `pnpm test:db`: se è spento, chiedere all'utente di avviarlo, mai farlo da soli.
+2. Con il via libera: Fase 1A, nell'ordine di `PHASE-0-1-TASKS.md`. Prima del task 1.5 bisogna sapere come viene conteggiato `claude -p` nell'abbonamento.
 
 ## In attesa dell'utente
 
 | Cosa | Note |
 | --- | --- |
-| Avviare Docker Desktop | Blocca la chiusura della Fase 0 |
-| `git push` di `main` | Il push è negato a Claude per scelta |
+| Via libera alla Fase 1 | Criterio di uscita della Fase 0 riassunto a fine conversazione, con le prove |
+| `git push` di `main`; cancellare il branch remoto `task/0.3-postgres` | Il push è negato a Claude per scelta |
 | Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
 | Conferma delle decisioni | D-004 e da D-013 a D-029 sono "Proposta, applicata" in `DECISIONS.md`; D-030 (cartella di sviluppo separata da quella di installazione, Synology solo sui dati veri) è una proposta nata dalla domanda dell'utente sul Mac Studio |
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
@@ -62,6 +56,8 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 - TypeScript resta alla 6.0.x finché `typescript-eslint` non supporta la 7.
 - `pnpm install` attiva l'hook git solo su un'installazione vera, non quando è "Already up to date".
 - postgres.js restituisce una sottoclasse di `Array`: nei confronti con `assert.deepEqual` va convertita in array semplice.
+- In SQL, se la SELECT ha `id::text AS id`, `ORDER BY id` ordina sull'alias testuale: va scritto `ORDER BY tabella.id`.
+- L'hook risolve i percorsi relativi che compaiono nel testo di un comando Bash a partire dalla home, non dalla cartella corrente: uno script o un heredoc che li contiene viene bloccato. Meglio scrivere il file con lo strumento di scrittura.
 - In `zsh` gli script `node -e` con molte virgolette annidate falliscono: meglio modificare i file con gli strumenti di edit.
 
 ## Prompt per la nuova conversazione

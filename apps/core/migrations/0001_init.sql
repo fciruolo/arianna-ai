@@ -132,10 +132,12 @@ CREATE TABLE tasks (
   evidence        jsonb NOT NULL DEFAULT '[]',
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  -- An agent's card cannot be closed without attached evidence.
+  -- An agent's card cannot be closed without attached evidence. Checks run in
+  -- name order, so tasks_done_needs_evidence must not fail on a non-array itself.
   CONSTRAINT tasks_evidence_is_list CHECK (jsonb_typeof(evidence) = 'array'),
   CONSTRAINT tasks_done_needs_evidence
-    CHECK (status <> 'done' OR assignee = 'user' OR jsonb_array_length(evidence) > 0),
+    CHECK (status <> 'done' OR assignee = 'user'
+           OR (jsonb_typeof(evidence) = 'array' AND jsonb_array_length(evidence) > 0)),
   -- No model reads L3, so no task can be cleared for it.
   CONSTRAINT tasks_clearance_below_secret CHECK (clearance <> 'L3'),
   CONSTRAINT tasks_effective_within_clearance CHECK (effective_label <= clearance)

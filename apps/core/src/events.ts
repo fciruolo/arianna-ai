@@ -66,7 +66,7 @@ export async function readEvents(sql: Sql, options: ReadOptions): Promise<Stored
       encode(prev_hash, 'hex') AS "prevHash", encode(hash, 'hex') AS hash
     FROM events
     WHERE id > ${options.afterId ?? '0'}::bigint
-    ORDER BY id
+    ORDER BY events.id -- not the text alias, which would sort 10 before 2
     LIMIT ${options.limit}`;
   // postgres.js returns an Array subclass; callers get a plain array.
   return [...rows];

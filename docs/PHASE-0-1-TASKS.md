@@ -14,10 +14,10 @@ Ore = stima mia (min-max), con colonna per le ore reali da compilare. Ogni task 
 | --- | --- | --- | --- | --- |
 | 0.1 | Monorepo pnpm, TypeScript strict, lint, script in CLAUDE.md | 2-3 | 0,1 (solo sessione di Claude) | `pnpm build/test/lint` girano |
 | 0.2 | `pnpm check` (build + test + lint + eval) e hook git pre-commit; CI remota facoltativa (D-018) | 0,5-1 | 0,1 (solo sessione di Claude) | Un commit con un test rotto o un errore di tipo viene rifiutato |
-| 0.3 | Docker Compose con PostgreSQL, migrazioni, tabelle `events` (catena di hash), `tasks`, `jobs` | 3-5 | | Migrazione applicata da zero; UPDATE su `events` negato |
+| 0.3 | Docker Compose con PostgreSQL, migrazioni, tabelle `events` (catena di hash), `tasks`, `jobs` | 3-5 | 0,5 (solo sessione di Claude, compresa la prima corsa di `pnpm test:db`) | Migrazione applicata da zero; UPDATE su `events` negato |
 | 0.4 | Scheletro harness eval a tre livelli, 1 caso per gruppo deterministico | 3-5 | 0,2 (solo sessione di Claude) | `pnpm eval` produce report e fallisce sotto soglia |
 | 0.5 | Verifica di `.claude/settings.json`, hook e subagent reviewer (già presenti) | 0,5-1 | 0,1 (solo sessione di Claude) | Test dell'hook verdi dentro `pnpm test`; un `Read` esterno è bloccato in sessione |
-| 0.6 | Primo test end-to-end: scrivi evento, leggilo, verifica la catena | 2-3 | | Test verde; `DECISIONS.md` riletto e stati confermati |
+| 0.6 | Primo test end-to-end: scrivi evento, leggilo, verifica la catena | 2-3 | 0,2 (solo sessione di Claude) | Test verde; `DECISIONS.md` riletto e stati confermati |
 | 0.7 | Layout portabile: `ARIANNA_HOME`, `arianna.toml`, schema del manifest modelli (vedi `INSTALLER-PORTABILITY.md`) | 2-3 | 0,2 (solo sessione di Claude) | Percorsi tutti relativi; cambio cartella senza rotture |
 
 Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e reali.
