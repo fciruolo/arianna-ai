@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import type { ChatState } from '../lib/chat-state.ts';
+import { reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, STATUS_TEXT } from '../lib/labels.ts';
 import type { Conversation, Message, Task } from '../lib/types.ts';
 
@@ -117,7 +118,7 @@ const statusClass: Record<Task['status'], string> = {
             <template v-if="taskOf(message) !== undefined">
               <span aria-hidden="true">·</span>
               <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
-              <span v-if="taskOf(message)!.waitingReason" class="text-stone-500">— {{ taskOf(message)!.waitingReason }}</span>
+              <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined" class="text-stone-500">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
             </template>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue';
 
 import * as api from './lib/api.ts';
 import { applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { addRemoteDecision, remoteDecision, type RemoteDecision } from './lib/remote-decisions.ts';
@@ -26,7 +27,7 @@ export function createChatStore() {
   const current = computed(() => conversations.value.find((conversation) => conversation.id === chat.value?.conversationId));
 
   function fail(cause: unknown): void {
-    error.value = cause instanceof Error ? cause.message : 'Errore imprevisto';
+    error.value = errorText(cause);
   }
 
   async function refreshConversations(): Promise<void> {
