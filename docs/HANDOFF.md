@@ -42,7 +42,6 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 | Prova della chat nel browser | `pnpm hud:build && pnpm start`, poi `http://127.0.0.1:7420`: creare una conversazione, scrivere, vedere il task in "Attende te". Claude non è riuscito a provarla: il core lanciato dalla sua sandbox non è raggiungibile dal Chrome dell'utente |
-| Conferma di D-041 | Confinamento, prima parte: in particolare la copia di lavoro come repository nuovo senza storia invece di un `git worktree`, e l'elenco dei nomi di file di segreti |
 | Conferma di D-039 | Chat e API; in particolare il messaggio di lavoro rifiutato se lo scanner trova qualcosa, e l'API senza autenticazione fino al 1.13 |
 
 ## Modo di lavorare concordato
