@@ -42,10 +42,10 @@ I nomi dei modelli sono alias in `arianna.toml` (`sonnet`, `opus`, `fable`, `loc
 | Esecutore | Invocazione | Note |
 | --- | --- | --- |
 | Locale | API compatibile OpenAI verso oMLX (`createLocalModel`, task 1.3) | Interfaccia sostituibile `LocalModel`; solo endpoint di loopback; endpoint in ordine di preferenza con ripiego sul successivo se il server è giù, bloccato o in errore 5xx; `Watchdog` con controllo di salute e riavvio automatico (D-033) |
-| Claude Code | `claude -p` con `--output-format stream-json`, `--resume`, `--allowedTools` / `--permission-mode`, `--model` | Non usare `--bare`; solo binario ufficiale; nessun token estratto; sempre con il profilo di confinamento |
+| Claude Code | `claude -p` con `--output-format stream-json`, `--resume`, `--tools` / `--allowedTools` / `--permission-mode dontAsk`, `--model` (`createClaudeExecutor`, task 1.5, D-049) | Non usare `--bare`; solo binario ufficiale; nessun token estratto; sempre con il profilo di confinamento; parte solo se `claude` è in `[cloud] executors`, con un brief `allow` del gateway e una cartella di `prepareWorkspace`; prompt su stdin |
 | Codex | `codex exec --json` con accesso ChatGPT | Su server headless: device-code, credenziali nel keyring; stesso profilo di confinamento |
 
-Interfaccia comune: `start(brief, workspace, limits) → flusso di eventi`, `resume(sessionRef)`, `cancel()`. Il `sessionRef` è l'id di sessione restituito dal binario, mai una credenziale.
+Interfaccia comune: `start(brief, workspace, limits) → flusso di eventi`, `resume(sessionRef)`, `cancel()`. Il `sessionRef` è l'id di sessione restituito dal binario, mai una credenziale. Per `claude` (D-049): `start({ brief, workspace, model, tools, limits, onEvent, signal })` e `resume({ ..., sessionRef })` restituiscono `{ result, cancel }`; gli eventi sono `init` (sessione, modello, strumenti), `text`, `tool` (solo il nome), `usage`, `rate-limit`; un errore porta il tipo (`quota`, `timeout`, `cancelled`, `max-turns`, `profile`, `execution`, `exit`, `bad-output`…), la sessione per riprendere, l'ora di ritorno della quota e i consumi. La ripresa va fatta nella stessa cartella: il binario tiene le sessioni per cartella.
 
 ## Budget e quote
 
@@ -53,6 +53,7 @@ Le quote degli abbonamenti non sono interrogabili: il router le stima e reagisce
 
 - **Contabilità propria:** ogni run registra durata, passi e token riportati dal flusso; i tetti in `arianna.toml` valgono per task e per finestra mobile (giorno, settimana).
 - **Reazione ai limiti:** l'errore di quota del binario è un esito previsto dal test di contratto; il router mette il task in attesa con ripresa pianificata o scende di modello, e avvisa.
+- **Misura dal binario (D-049):** `claude -p` riporta a ogni run un `rate_limit_event` con la finestra (`five_hour`, `seven_day`), la percentuale usata e l'ora di ritorno; il core lo scrive come evento `executor.rate_limit`, e un rifiuto come `executor.quota` con `resetsAt`. Il `Budget` del router (1.10) si costruisce da questi eventi.
 - Fable solo dietro approvazione di budget.
 
 ## Vincoli sugli abbonamenti

@@ -1,0 +1,5 @@
+{"id": "claude-trivial", "input": {"steps": [{"prompt": "Reply with exactly: ok"}]}, "expect": [{"text": "ok"}], "tags": ["claude", "trivial"]}
+{"id": "claude-read-workspace", "input": {"steps": [{"prompt": "Read README.md in the current folder and reply with its first line only, exactly as written.", "tools": ["Read"]}]}, "expect": [{"text": "# Fake site"}], "tags": ["claude", "tools"]}
+{"id": "claude-resume", "input": {"steps": [{"prompt": "Remember the word pomegranate. Reply with exactly: ok"}, {"prompt": "Which word did I ask you to remember? Reply with that word only.", "resume": true}]}, "expect": [{"text": "ok"}, {"text": "pomegranate"}], "tags": ["claude", "resume"]}
+{"id": "claude-timeout", "input": {"steps": [{"prompt": "Reply with exactly: ok", "timeoutMs": 1}]}, "expect": [{"error": "timeout"}], "tags": ["claude", "timeout"]}
+{"id": "claude-write-denied", "input": {"steps": [{"prompt": "Create a file named note.txt in the current folder containing the word hello. If you cannot, reply with exactly: denied", "tools": ["Read"]}]}, "expect": [{"changed": false}], "tags": ["claude", "permissions"]}

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  allowedBy,
   createContext,
+  markLogged,
+  spendAllowed,
   derive,
   gatewayCheck as check,
   localityOf,
@@ -206,4 +209,47 @@ test('locality and log name of each target', () => {
       ['web-search', 'cloud'],
     ],
   );
+});
+
+test('allowedBy: an allow made by the gateway records its target, label and texts', () => {
+  const decision = gatewayCheck([fragment('L1', 'fix the typo')], clean(), CLAUDE);
+  const record = allowedBy(decision);
+  assert.deepEqual(record && { target: record.target, label: record.label, texts: [...record.texts] }, {
+    target: CLAUDE,
+    label: 'L1',
+    texts: ['fix the typo'],
+  });
+  assert.ok(Object.isFrozen(record) && Object.isFrozen(record?.target));
+});
+
+test('allowedBy: a block, a forged allow or an edited decision gives nothing new', () => {
+  assert.equal(allowedBy(gatewayCheck([fragment('L2')], clean(), CLAUDE)), undefined);
+  assert.equal(allowedBy({ decision: 'allow', rule: 'cloud', label: 'L0', reason: '', texts: ['anything'] }), undefined);
+  assert.equal(allowedBy(null), undefined);
+  assert.equal(allowedBy('allow'), undefined);
+  // Editing the object does not change what was recorded.
+  const decision = gatewayCheck([fragment('L1', 'checked')], clean(), CLAUDE) as { texts: readonly string[] };
+  decision.texts = ['not checked'];
+  assert.deepEqual(allowedBy(decision)?.texts, ['checked']);
+});
+
+test('allowedBy: the recorded target is the one checked, so a local allow is not a cloud one', () => {
+  const decision = gatewayCheck([fragment('L2')], createContext('L2'), LOCAL_MODEL);
+  assert.deepEqual(allowedBy(decision)?.target, LOCAL_MODEL);
+});
+
+test('spendAllowed: a logged allow is spent once; an unlogged, spent or forged one gives nothing', () => {
+  const decision = gatewayCheck([fragment('L1', 'fix the typo')], clean(), CLAUDE);
+  assert.equal(spendAllowed(decision), undefined, 'not logged yet');
+  assert.ok(markLogged(decision));
+  assert.deepEqual(spendAllowed(decision)?.texts, ['fix the typo']);
+  assert.equal(spendAllowed(decision), undefined, 'already spent');
+  assert.equal(allowedBy(decision), undefined);
+  assert.equal(markLogged(decision), false, 'a spent decision cannot be logged again');
+  const forged = { decision: 'allow', rule: 'cloud', label: 'L0', reason: '', texts: ['anything'] };
+  assert.equal(markLogged(forged), false);
+  assert.equal(spendAllowed(forged), undefined);
+  const blocked = gatewayCheck([fragment('L2')], clean(), CLAUDE);
+  assert.equal(markLogged(blocked), false);
+  assert.equal(spendAllowed(blocked), undefined);
 });

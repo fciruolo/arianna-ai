@@ -4,6 +4,7 @@ import {
   isAtMost,
   isTarget,
   localityOf,
+  markLogged,
   payloadText,
   PolicyError,
   scanText,
@@ -89,6 +90,8 @@ export async function passGateway(
       ${localityOf(target)}, ${decision.label}::privacy_label, ${decision.decision}, ${decision.rule},
       ${decision.reason}, ${measured?.bytes ?? null}, ${measured?.sha256 ?? null}, ${summary}
     )`;
+  // Only now can an adapter spend it: the row is written.
+  if (decision.decision === 'allow') markLogged(decision);
   return decision;
 }
 

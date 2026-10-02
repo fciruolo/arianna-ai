@@ -41,10 +41,14 @@ export {
   type LabelChange,
 } from './declassify.ts';
 export {
+  allowedBy,
   gatewayCheck,
+  markLogged,
+  spendAllowed,
   isTarget,
   localityOf,
   targetName,
+  type Allowed,
   type ChannelId,
   type Decision,
   type GatewayRule,

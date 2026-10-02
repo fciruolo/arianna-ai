@@ -224,6 +224,15 @@ export async function scanWorkspace(root: string): Promise<WorkspaceEntry[]> {
   return entries;
 }
 
+// Workspaces allowed here, and only these, can be the working directory of a
+// cloud executor: a literal `{ path }` could point anywhere.
+const prepared = new WeakMap<PreparedWorkspace, string>();
+
+/** The real path of a workspace that `prepareWorkspace` allowed; undefined for anything else. */
+export function preparedPath(workspace: unknown): string | undefined {
+  return typeof workspace === 'object' && workspace !== null ? prepared.get(workspace as PreparedWorkspace) : undefined;
+}
+
 /**
  * Checks the allowlist, writes the files of `ref` into `data/worktrees/<runId>`,
  * scans them and, when allowed, makes the folder a new git repository with one
@@ -266,7 +275,10 @@ export async function prepareWorkspace(options: PrepareOptions): Promise<Prepare
     await git(target, ['init', '--quiet', '--initial-branch=arianna']);
     await git(target, ['add', '--all']);
     await git(target, [...identity, 'commit', '--quiet', '--allow-empty', '--message', `base ${commit}`]);
-    return { decision, path: target };
+    const workspace: PreparedWorkspace = Object.freeze({ decision, path: target });
+    // The real path: an executor later checks the folder was not replaced by a link.
+    prepared.set(workspace, await realpath(target));
+    return workspace;
   } catch (error) {
     await removeWorkspace(options).catch(() => undefined);
     throw error;

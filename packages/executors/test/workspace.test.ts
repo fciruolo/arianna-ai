@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
-import { prepareWorkspace, removeWorkspace, scanWorkspace, WorkspaceError } from '@arianna/executors';
+import { preparedPath, prepareWorkspace, removeWorkspace, scanWorkspace, WorkspaceError } from '@arianna/executors';
 import { createLabelRules } from '@arianna/policy';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `workspace-${randomUUID()}`);
@@ -78,6 +78,10 @@ describe('prepareWorkspace', () => {
     assert.ok(lstatSync(join(prepared.path, '.git')).isDirectory());
     assert.doesNotMatch(readFileSync(join(prepared.path, '.git', 'config'), 'utf8'), /repos\/|worktree|remote/);
     assert.equal(existsSync(join(prepared.path, '.git', 'objects', 'info', 'alternates')), false);
+    // Only this object opens the folder to an executor; a copy of it does not.
+    assert.equal(preparedPath(prepared), prepared.path);
+    assert.equal(preparedPath({ ...prepared }), undefined);
+    assert.ok(Object.isFrozen(prepared));
     await removeWorkspace(opts);
     assert.equal(existsSync(prepared.path), false);
   });
@@ -122,6 +126,7 @@ describe('prepareWorkspace', () => {
     const opts = options(repo, ['repos/clean']);
     const prepared = await prepareWorkspace(opts);
     assert.equal(prepared.decision.decision === 'block' && prepared.decision.rule, 'not-allowlisted');
+    assert.equal(preparedPath(prepared), undefined);
     assert.equal(existsSync(join(DATA, 'worktrees', opts.runId)), false);
   });
 

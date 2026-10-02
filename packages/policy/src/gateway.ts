@@ -95,6 +95,62 @@ export function targetName(target: Target): string {
   return target.kind === 'web' ? 'web-search' : target.id;
 }
 
+/** What a decision allowed, as recorded when it was made; see `allowedBy`. */
+export interface Allowed {
+  readonly target: Readonly<Target>;
+  readonly label: Label;
+  readonly texts: readonly string[];
+}
+
+// Decisions made here, and only these, can be spent by an adapter: an object
+// literal could claim `allow` for any text, and a real decision could be edited.
+const allowed = new WeakMap<object, Allowed & { logged: boolean }>();
+
+function allow(decision: Extract<Decision, { decision: 'allow' }>, target: Target): Decision {
+  allowed.set(decision, {
+    target: Object.freeze({ ...target }),
+    label: decision.label,
+    texts: decision.texts,
+    logged: false,
+  });
+  return decision;
+}
+
+/**
+ * What `decision` allowed, and towards which target, when it is an `allow`
+ * made by `gatewayCheck` and not yet spent; undefined otherwise. Read-only:
+ * adapters use `spendAllowed`.
+ */
+export function allowedBy(decision: unknown): Allowed | undefined {
+  const record = typeof decision === 'object' && decision !== null ? allowed.get(decision) : undefined;
+  return record === undefined ? undefined : Object.freeze({ target: record.target, label: record.label, texts: record.texts });
+}
+
+/**
+ * Marks an allow as written to gateway_log. The core's `passGateway` calls it
+ * after the INSERT; evals and tests, which have no log, call it themselves.
+ * False for anything that is not an unspent allow of `gatewayCheck`.
+ */
+export function markLogged(decision: unknown): boolean {
+  const record = typeof decision === 'object' && decision !== null ? allowed.get(decision) : undefined;
+  if (record === undefined) return false;
+  record.logged = true;
+  return true;
+}
+
+/**
+ * Takes what an allow permits, once: an adapter sends `texts` from here, never
+ * from the decision object, and checks the target is its own. Undefined when
+ * the decision is not an allow of `gatewayCheck`, was not logged, or was
+ * already spent: one row in gateway_log, one exit.
+ */
+export function spendAllowed(decision: unknown): Allowed | undefined {
+  const record = typeof decision === 'object' && decision !== null ? allowed.get(decision) : undefined;
+  if (record?.logged !== true) return undefined;
+  allowed.delete(decision as object);
+  return Object.freeze({ target: record.target, label: record.label, texts: record.texts });
+}
+
 function block(
   rule: Exclude<GatewayRule, 'local' | 'cloud'>,
   label: Label,
@@ -182,7 +238,7 @@ export function gatewayCheck(
 
   if (locality === 'local') {
     // L3 is out already: local targets take everything else.
-    return { decision: 'allow', rule: 'local', label, reason: `${label} to a local target`, texts };
+    return allow({ decision: 'allow', rule: 'local', label, reason: `${label} to a local target`, texts }, target);
   }
 
   if (!canUseCloud(context)) {
@@ -198,5 +254,5 @@ export function gatewayCheck(
     return block('scanner', label, `scanner matched: ${kinds}`, onBlock === 'notify-reference' ? onBlock : 'wait-user', findings);
   }
 
-  return { decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean`, texts };
+  return allow({ decision: 'allow', rule: 'cloud', label, reason: `${label} to a cloud target, scan clean`, texts }, target);
 }

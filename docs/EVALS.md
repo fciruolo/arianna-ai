@@ -24,6 +24,8 @@ Tenere separati i livelli serve alla velocità: il controllo di ogni commit non 
 | estrazione | Campi giusti da documenti | Fattura finta → importo, data, fornitore | ≥ 90% (da calibrare) |
 | retrieval | Risposte supportate da fonti | Domande su KB finta, con documento atteso | recall@5 ≥ 85% (da calibrare) |
 
+Il gruppo `contratto` è attivo per `claude` dal task 1.5 (D-049, `evals/contract/claude.jsonl`, `packages/evals/src/contract.ts`): compito banale, lettura di un file del worktree con `Read`, ripresa di sessione, timeout, scrittura chiesta con il solo `Read` (il worktree deve restare invariato). Gira solo se `claude` è in `[cloud] executors`, con Sonnet, in un repository finto creato in `data/evals/` e poi cancellato. L'errore di quota non si provoca a comando: lo verificano i test su uno stream registrato da un run vero (`packages/executors/test/fixtures/claude-stream.jsonl`) e piegato dal binario finto `fake-claude.ts`.
+
 ## Test di accettazione dell'orchestratore (task 1.4)
 
 È il controllo "si va o non si va" sul rischio più grande del progetto, e si fa **prima** di costruire l'orchestratore. Una trentina di casi su dati finti, con decodifica vincolata allo schema.

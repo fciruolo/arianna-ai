@@ -7,8 +7,8 @@
 | ~~Linguaggio del nucleo~~ | **Deciso: TypeScript** (D-003) | |
 | Conferma delle decisioni "Proposta, applicata" (D-004, D-013…D-021, D-024) | Rileggerle in `DECISIONS.md` e confermarle o rifiutarle | Task 0.6 |
 | Dove gira il server | Mac Studio all'inizio, dietro interfaccia sostituibile | Fase 1A |
-| Conteggio di `claude -p` e `codex exec` negli abbonamenti | Verificare nel tuo account | Task 1.5 |
-| Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox) | Verificare su `claude --help` e fissare nel test di contratto | Task 1.5 e 1.6 |
+| Conteggio di `claude -p` e `codex exec` negli abbonamenti | `claude -p` (task 1.5, D-049): con il login dell'abbonamento (`apiKeySource: none`) ogni run riporta un `rate_limit_event` con le finestre `five_hour` e `seven_day` dell'abbonamento; non è verificato se esista un credito separato. Da guardare nel tuo account dopo qualche run. `codex exec`: da verificare | Task 1.16 |
+| Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox) | Fissati per `claude` 2.1.288 (D-049, `packages/executors/src/claude/profile.ts`); restano quelli della sandbox | Task 1.6 |
 | Sandbox: nativa di Claude Code oppure `sandbox-runtime` | Provare prima la nativa; microVM solo se il canarino esce | Task 1.6 |
 | oMLX può puntare a `data/models/`? | Sì secondo il README: `omlx serve --model-dir data/models` (da provare); altrimenti collegamenti simbolici | Task 1.17 |
 | oMLX invia telemetria o contenuti fuori dalla macchina? | Il README non ne parla: verificare (codice o traffico di rete) prima di dargli dati L2 veri; non usare `--mcp-config` né `--hf-endpoint` con dati veri. Lasciare `--host 127.0.0.1` | Prima dell'uso con dati veri (fine Fase 1A) |

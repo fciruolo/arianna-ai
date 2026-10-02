@@ -211,6 +211,9 @@ importers:
       '@arianna/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@arianna/executors':
+        specifier: workspace:*
+        version: link:../../packages/executors
       '@arianna/policy':
         specifier: workspace:*
         version: link:../../packages/policy

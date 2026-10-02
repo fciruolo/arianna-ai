@@ -4,6 +4,7 @@ import { AGENTS_DIR, loadAgent } from '@arianna/agents';
 import { loadConfig } from '@arianna/config';
 import { createLocalModel, type LocalModel } from '@arianna/executors';
 
+import { contract, matchesContract } from './contract.ts';
 import { evaluateGateway } from './gateway.ts';
 import { createOrchestratorEvaluator, matchesExpectation, type OrchestratorActual } from './orchestrator.ts';
 import { evaluateRouter, matchesRouterExpectation } from './router.ts';
@@ -84,7 +85,8 @@ export const GROUPS: readonly EvalGroup[] = [
     tier: 'live',
     threshold: 1,
     strictTags: [],
-    subject: { status: 'pending', until: 'task 1.5' },
+    compare: matchesContract,
+    subject: { status: 'active', evaluate: contract() },
   },
   {
     name: 'canary',
