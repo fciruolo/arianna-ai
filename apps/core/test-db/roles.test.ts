@@ -5,7 +5,7 @@ import { loadConfig } from '@arianna/config';
 import { Secret, VaultError } from '@arianna/vault';
 
 import { runDoctor, type DoctorCheck } from '../src/doctor.ts';
-import { useTestDatabase } from './support/database.ts';
+import { useTestDatabase, withClusterLock } from './support/database.ts';
 
 const db = useTestDatabase();
 const config = loadConfig();
@@ -105,35 +105,39 @@ test('doctor reports an unreadable vault without going further', async () => {
 
 test('doctor catches a role with too much, a table without grants and a migration without a file', async () => {
   const { owner, schema } = db();
-  await owner`GRANT UPDATE ON events TO arianna_app`;
-  await owner`GRANT DELETE ON jobs TO arianna_app`;
-  await owner`CREATE TABLE forgotten (id int)`;
-  await owner`INSERT INTO schema_migrations (version, name, sha256) VALUES ('9999', 'ghost', ${'0'.repeat(64)})`;
-  await owner`GRANT INSERT ON schema_migrations TO arianna_app`;
-  await owner`CREATE SEQUENCE orphan_seq`;
-  await owner.unsafe(`GRANT CREATE ON SCHEMA ${schema} TO arianna_app`);
-  // Database-wide, revoked below: the other files never check it.
-  await owner.unsafe(`GRANT TEMPORARY ON DATABASE ${config.database.name} TO arianna_app`);
-  try {
-    const checks = byId(await runDoctor({ config, schema }));
-    assert.equal(checks('database.app-role').ok, false);
-    assert.match(checks('database.app-role').detail, /cannot read forgotten/);
-    assert.match(checks('database.app-role').detail, /may delete, truncate, maintain or add triggers on jobs/);
-    assert.match(checks('database.app-role').detail, /may update append-only events/);
-    assert.match(checks('database.app-role').detail, /may write schema_migrations/);
-    assert.match(checks('database.app-role').detail, /cannot use sequence orphan_seq/);
-    assert.match(checks('database.app-role').detail, /can create objects in the schema/);
-    assert.match(checks('database.app-role').detail, /can create temporary tables/);
-    assert.deepEqual(checks('database.migrations'), { ok: false, detail: 'applied without a file 9999' });
-  } finally {
-    await owner`REVOKE UPDATE ON events FROM arianna_app`;
-    await owner`REVOKE DELETE ON jobs FROM arianna_app`;
-    await owner`DROP TABLE forgotten`;
-    await owner`DELETE FROM schema_migrations WHERE version = '9999'`;
-    await owner`REVOKE INSERT ON schema_migrations FROM arianna_app`;
-    await owner`DROP SEQUENCE orphan_seq`;
-    await owner.unsafe(`REVOKE CREATE ON SCHEMA ${schema} FROM arianna_app`);
-    await owner.unsafe(`REVOKE TEMPORARY ON DATABASE ${config.database.name} FROM arianna_app`);
-  }
-  assert.equal(byId(await runDoctor({ config, schema }))('database.app-role').ok, true);
+  // The TEMPORARY grant is database-wide: another file migrating meanwhile
+  // would revoke it before the doctor looks.
+  await withClusterLock(owner, async () => {
+    await owner`GRANT UPDATE ON events TO arianna_app`;
+    await owner`GRANT DELETE ON jobs TO arianna_app`;
+    await owner`CREATE TABLE forgotten (id int)`;
+    await owner`INSERT INTO schema_migrations (version, name, sha256) VALUES ('9999', 'ghost', ${'0'.repeat(64)})`;
+    await owner`GRANT INSERT ON schema_migrations TO arianna_app`;
+    await owner`CREATE SEQUENCE orphan_seq`;
+    await owner.unsafe(`GRANT CREATE ON SCHEMA ${schema} TO arianna_app`);
+    // Database-wide, revoked below under the lock: the other files never check it.
+    await owner.unsafe(`GRANT TEMPORARY ON DATABASE ${config.database.name} TO arianna_app`);
+    try {
+      const checks = byId(await runDoctor({ config, schema }));
+      assert.equal(checks('database.app-role').ok, false);
+      assert.match(checks('database.app-role').detail, /cannot read forgotten/);
+      assert.match(checks('database.app-role').detail, /may delete, truncate, maintain or add triggers on jobs/);
+      assert.match(checks('database.app-role').detail, /may update append-only events/);
+      assert.match(checks('database.app-role').detail, /may write schema_migrations/);
+      assert.match(checks('database.app-role').detail, /cannot use sequence orphan_seq/);
+      assert.match(checks('database.app-role').detail, /can create objects in the schema/);
+      assert.match(checks('database.app-role').detail, /can create temporary tables/);
+      assert.deepEqual(checks('database.migrations'), { ok: false, detail: 'applied without a file 9999' });
+    } finally {
+      await owner`REVOKE UPDATE ON events FROM arianna_app`;
+      await owner`REVOKE DELETE ON jobs FROM arianna_app`;
+      await owner`DROP TABLE forgotten`;
+      await owner`DELETE FROM schema_migrations WHERE version = '9999'`;
+      await owner`REVOKE INSERT ON schema_migrations FROM arianna_app`;
+      await owner`DROP SEQUENCE orphan_seq`;
+      await owner.unsafe(`REVOKE CREATE ON SCHEMA ${schema} FROM arianna_app`);
+      await owner.unsafe(`REVOKE TEMPORARY ON DATABASE ${config.database.name} FROM arianna_app`);
+    }
+    assert.equal(byId(await runDoctor({ config, schema }))('database.app-role').ok, true);
+  });
 });

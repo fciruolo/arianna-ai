@@ -2,9 +2,9 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-02, dopo il task 1.6 (sandbox e canarino, D-050). D-049 e D-050 confermate dall'utente; `main` pushato fino al commit del 1.6.
+Aggiornato: 2026-10-02, dopo il passaggio al Mac Studio. D-049 e D-050 confermate dall'utente; `main` pushato fino al commit del 1.6.
 
-**Cambio di macchina:** la prossima conversazione parte sul **Mac Studio** (32 GB, macchina di lavoro), non più sul MacBook Pro. Prima di tutto seguire "Su una macchina nuova" qui sotto, compresi i punti 7-9 aggiunti per questo passaggio.
+**Mac Studio pronto (2026-10-02):** fatti i punti 1-9 di "Su una macchina nuova". pnpm 12.8.1 attivato con `corepack enable pnpm`, `sops` e `age` installati con Homebrew (su richiesta dell'utente: "procedi tu"), `pnpm install`, `pnpm check` 497/497, `pnpm test:db` 141/141. La cartella era stata copiata dal MacBook, non clonata: `data/` e `config/arianna.toml` sono arrivati con la copia. `data/` e `data/vault` erano a 755 e sono stati rimessi a 700. `data/postgres`, copiato con il server acceso, non ripartiva (checkpoint non valido): spostato in `data/postgres.macbook-corrupt` (solo dati finti, si può cancellare) e ricreato vuoto. `claude` 2.1.288, la stessa versione provata. **`[cloud] executors = ["claude"]` è arrivato con la copia: la conferma esplicita dell'utente per il Mac Studio (punto 8) non c'è ancora**, quindi niente chiamate a `claude` finché non arriva.
 
 ## Dove siamo
 
@@ -77,7 +77,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 - postgres.js restituisce una sottoclasse di `Array`: nei confronti con `assert.deepEqual` va convertita in array semplice.
 - In SQL, se la SELECT ha `id::text AS id`, `ORDER BY id` ordina sull'alias testuale: va scritto `ORDER BY tabella.id`.
 - L'hook risolve i percorsi relativi che compaiono nel testo di un comando Bash a partire dalla home, non dalla cartella corrente: uno script o un heredoc che li contiene (anche solo una stringa `..` in un test) viene bloccato. Meglio scrivere il file con lo strumento di scrittura o di modifica.
-- `apps/core/test-db/roles.test.ts` ogni tanto fallisce con "tuple concurrently updated" (ruoli toccati da più file di test in parallelo): rilanciato passa. Da rendere stabile se si ripete.
+- I file di `test-db` girano in parallelo sullo stesso cluster, e la migrazione `0007` cambia cose condivise da tutti gli schemi (il ruolo `arianna_app` e i permessi sull'intero database). Sul Mac Studio, più veloce, `roles.test.ts` falliva sempre: un altro file revocava il TEMP concesso dal test. Ora le migrazioni dei test e i test che toccano ruoli o permessi sull'intero database usano `withClusterLock` (`apps/core/test-db/support/database.ts`).
 - In `zsh` gli script `node -e` con molte virgolette annidate falliscono: meglio modificare i file con gli strumenti di edit.
 - L'hook legge come home anche una tilde nel testo di un comando Bash: l'operatore regex di SQL dentro uno script viene bloccato, e così una nota che lo cita. SQL e documenti che lo contengono si modificano con lo strumento di edit.
 - In un vincolo CHECK di PostgreSQL un'espressione che vale NULL (per esempio un campo JSON mancante) fa passare la riga: va avvolta in `coalesce(..., false)`.
