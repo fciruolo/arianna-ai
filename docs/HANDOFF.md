@@ -44,7 +44,6 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Conferma di D-034 | In particolare: `task.delegate` non apre la comunicazione esterna per chi delega (contesto separato per task) |
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Password vere del database | Solo per l'uso vero, dopo il criterio della Fase 1A: passi in `SECURITY.md`, sezione Servizi locali e database (`\password` di psql, poi `pnpm db:migrate` e `pnpm arianna:doctor`) |
-| Conferma di D-046 | Ruolo applicativo, password e doctor; in particolare `pnpm start` che non migra con le password vere |
 | Chiave age vera | D-042 confermata e binari provati. Per l'uso vero (solo dopo il criterio della Fase 1A) la chiave age la genera l'utente, con i passi in `SECURITY.md`, sezione Vault |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 | Conferma di D-039 | Chat e API; in particolare il messaggio di lavoro rifiutato se lo scanner trova qualcosa, e l'API senza autenticazione fino al 1.13 |
