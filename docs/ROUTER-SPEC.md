@@ -18,10 +18,24 @@ Il router è una funzione pura (`route(step, context, budget, config) → decisi
 | Pianificazione, giudizio su L2 | qualsiasi | Locale (modello grande) |
 | Coding L0/L1 | trivial/normal | Claude Code, Sonnet |
 | Coding L0/L1 | hard | Claude Code, Opus (o Codex) |
-| Revisione/architettura critica | critical | Fable, dietro approvazione di budget |
+| Coding, revisione o architettura L0/L1 | critical | Fable, dietro approvazione di budget |
 | Coding su codice L2 | qualsiasi | Modello locale; Codex con provider locale solo dopo verifica (vedi `PRIVACY-POLICY-SPEC.md`) |
 
-I nomi dei modelli sono alias in `arianna.toml` (`sonnet`, `opus`, `fable`, `local-large`, `local-small`), mai cablati nel codice.
+I nomi dei modelli sono alias in `arianna.toml` (`sonnet`, `opus`, `fable`, `local-large`, `local-small`), mai cablati nel codice. Codex ha l'alias `codex` (il modello predefinito del binario).
+
+## Come è fatto (task 1.7, D-040)
+
+`route(step, context, budget, config)` in `packages/router` (`@arianna/router`), senza I/O, modelli né orologio.
+
+- **Ingressi.** `step`: tipo (`extract`, `classify`, `summarize`, `plan`, `judge`, `coding`, `review`), scheda dell'agente, testo per le parole chiave, numero di file, tentativi falliti (`tests-failed`, `review-negative`, `stuck`), budget di Fable già approvato. `context`: il contesto della policy del run; un oggetto non creato dalla policy vale L2. `budget.blocked`: esecutori o singoli modelli fermi per tetto proprio (`cap`) o per errore di quota del binario (`quota`), con l'ora prevista di ritorno se nota (ISO 8601 con fuso, normalizzata in UTC). `config`: i candidati installati (`esecutore`, alias, località), validati da `createRouterConfig` (`claude` e `codex` sempre cloud, alias sull'esecutore giusto); una configurazione non creata da lì viene validata a ogni chiamata, e `claude`/`codex` contano comunque come cloud. Tentativi e blocchi con esecutori o modelli sconosciuti sono rifiutati.
+- **Privacy.** Un candidato cloud passa solo se `effective_label` è al massimo L1 e al massimo `cloud_max_label` della scheda (o `max_label` se manca). Un'etichetta sopra `max_label` dell'agente porta a "Attende te".
+- **Difficoltà.** Valore della scheda; una parola chiave banale (refuso, rinomina, README, commento, formattazione) abbassa `normal` a `trivial` se tocca al massimo un file; una parola chiave difficile (architettura, migrazione, sicurezza, concorrenza, crittografia) o almeno 10 file alzano ad almeno `hard`; ogni tentativo fallito alza di un livello. Il testo del passo non finisce mai nella decisione.
+- **Scale di modelli.** Estrazione, classificazione e riassunto: `local-small`, poi `local-large`. Pianificazione e giudizio: `local-large`. Coding: `sonnet`, poi `opus` o `codex`, poi `fable`. Revisione: `codex` o `sonnet`, poi `opus`, poi `fable`. Coding e revisione usano la scala cloud solo se privacy e scheda permettono almeno un candidato cloud installato; altrimenti `local-large`. Il gradino di partenza dipende dalla difficoltà senza contare i tentativi falliti (`trivial`/`normal` il primo, `hard` il secondo, `critical` il terzo, nei limiti della scala); se nei gradini fino a lì la scheda o la privacy non lasciano nessun candidato installato, si parte dal primo gradino che ne ha uno (per esempio un agente con solo Codex parte da Codex).
+- **Scalata.** Dopo un tentativo fallito non si torna mai su un gradino pari o inferiore a quello fallito: si va al gradino successivo, anche quando il tentativo era già sceso per budget (Sonnet fallito → Opus, non Fable). La difficoltà registrata conta i fallimenti. Finita la scala, "Attende te". Il lavoro L2 non sale mai al cloud.
+- **Budget e modelli mancanti.** Un modello fermo o non installato è sostituito da un'alternativa dello stesso gradino o da un gradino più basso (mai più alto, che costa di più) e mai dal modello locale: il lavoro cloud fermo aspetta. Un candidato torna disponibile quando cadono tutti i blocchi che lo riguardano. Se a fermare tutto è il budget e c'è un'ora di ritorno, `wait` con `retry-later` alla prima ora; altrimenti `wait-user`.
+- **Fable** chiede sempre l'approvazione di budget (`approval: 'budget'`), salvo che il passo l'abbia già.
+- **Registro.** Ogni decisione elenca tutti i candidati configurati con l'esito: scelto, oppure escluso per `not-for-step`, `privacy`, `agent`, `escalation`, `cap`, `quota`, `not-chosen`. Quando coding o revisione ripiegano sul modello locale, i candidati cloud risultano esclusi per `privacy` o `agent` e il motivo lo dice (`cloud excluded: privacy`). Il core la scrive in `router_decisions` con `recordRouteDecision` (`apps/core/src/router-log.ts`) prima di agire.
+- **Da collegare (1.10):** chi crea il passo costruisce `config` da `arianna.toml` e dai binari installati, il budget dalla contabilità dei run e dagli errori di quota (1.5), e trasforma `wait`/`approval` in stato del task.
 
 ## Adattatori degli esecutori (`packages/executors`)
 

@@ -46,7 +46,7 @@ File JSONL in `evals/<gruppo>/*.jsonl`: `{ "id", "input", "expect", "tags" }`. I
 
 Regole del runner:
 
-- **Gruppi in attesa:** un gruppo il cui codice non esiste ancora è registrato come `pending`, con il task o la fase che lo attiverà. Compare nel report, non conta mai come superato e non fa fallire la corsa. Oggi sono attivi `gateway` e `orchestrator`.
+- **Gruppi in attesa:** un gruppo il cui codice non esiste ancora è registrato come `pending`, con il task o la fase che lo attiverà. Compare nel report, non conta mai come superato e non fa fallire la corsa. Oggi sono attivi `gateway`, `router` e `orchestrator`.
 - **Misure:** un gruppo può avere misure con soglia propria, su tutti i casi o su quelli con un'etichetta; una misura senza casi fa fallire il gruppo. Il report riporta anche latenza mediana e massima.
 - **Niente passaggi a vuoto:** un gruppo attivo senza casi fallisce.
 - **Etichette severe:** i casi con un'etichetta dichiarata severa per il gruppo (per esempio `privacy` nel router) devono passare tutti, qualunque sia la soglia.
@@ -56,6 +56,10 @@ Regole del runner:
 ### Il gruppo gateway
 
 Dal task 1.2 valuta le funzioni vere di `@arianna/policy` (`gatewayCheck`, `declassify`), non una loro copia. Un caso è `{ payload, context, target }` con, facoltativo, `declassify`; il risultato atteso è `{ decision, rule }`, con `next` e i tipi di riscontro dello scanner quando l'uscita è bloccata, oppure `{ declassify: "refused" }`. Un frammento con `derivedFrom` prende l'etichetta per taint dai suoi input; un contesto con `forged: true` è un oggetto finto, non creato dalla policy. I casi su worktree, allowlist e strumenti MCP arrivano con il confinamento (task 1.6), il canarino con il task 1.12.
+
+### Il gruppo router
+
+Dal task 1.7 valuta la funzione vera `route` di `@arianna/router` (D-040). Un caso è `{ step, context, budget?, candidates? }`: `step.agent` è il nome di una scheda in `agents/` oppure una scheda scritta nel caso; `context` ha `clearance`, `effective` e, facoltativo, `forged: true` per un oggetto finto non creato dalla policy; `candidates` restringe la configurazione (elenco di `esecutore/modello`), che altrimenti contiene tutti gli esecutori e modelli. Il risultato atteso elenca solo i campi controllati fra `decision`, `executor`, `model`, `locality`, `approval`, `next`, `retryAt`; `null` vuol dire assente (per esempio nessuna approvazione di budget). I casi `privacy` fissano sempre la decisione e devono passare tutti.
 
 ## Strumenti
 

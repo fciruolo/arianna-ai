@@ -29,6 +29,7 @@
     "@arianna/config": "workspace:*",
     "@arianna/executors": "workspace:*",
     "@arianna/policy": "workspace:*",
+    "@arianna/router": "workspace:*",
     "@eslint/js": "10.0.1",
     "@types/node": "22.20.4",
     "@types/ws": "8.18.2",

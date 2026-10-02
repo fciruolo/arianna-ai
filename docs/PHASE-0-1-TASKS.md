@@ -32,7 +32,7 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 | 1.4 | Test di accettazione dell'orchestratore sul modello locale (`EVALS.md`) | 3-4 | 0,4 finora (solo sessione di Claude: harness e casi; manca la corsa con oMLX) | Soglie superate, oppure piano B scelto e annotato |
 | 1.5 | Adattatore `claude -p` (stream-json, resume, permessi, errore di quota) | 5-8 | | Compito banale eseguito e loggato |
 | 1.6 | Confinamento cloud: worktree per run, allowlist, scansione preventiva, MCP stretto, sandbox (anche verso i servizi locali via loopback), canarino | 5-8 | | Canarino mai nel transcript, né da file né dal database; lancio negato fuori allowlist |
-| 1.7 | Router: filtro privacy, budget, difficoltà a regole, scalata, log decisioni | 5-8 | | Eval router ≥ 95%, privacy 100% |
+| 1.7 | Router: filtro privacy, budget, difficoltà a regole, scalata, log decisioni | 5-8 | 1,2 (solo sessione di Claude, compresa la revisione; anticipato prima di 1.5, D-040: collegamento con l'adattatore `claude -p` e con l'orchestratore nel 1.10) | Eval router ≥ 95%, privacy 100% |
 | 1.8 | Task, run, approvazioni, tetti di passi/tempo/costo, coda `jobs` e ripresa dopo riavvio | 6-9 | 1,3 (solo sessione di Claude, compresa la revisione) | Task fermato da tetto e da approvazione; `kill -9` del core → il task riprende |
 | 1.9 | Loader e validazione schede agente (trifecta); schede di Arianna e Coder | 3-5 | 0,3 (solo sessione di Claude) | Scheda non valida rifiutata |
 | 1.10 | Orchestratore locale con strumenti a schema vincolato, contesto per task | 7-10 | | Task a più passi completato |
@@ -48,7 +48,7 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 Corsia privacy     1.1 → 1.2 ─────────→ 1.6 → 1.12
 Corsia esecutori   1.3 → 1.4     1.5 ──┘
 Corsia nucleo      1.8 ─────────────────────→ 1.11
-Convergenza        1.7 (dopo 1.2, 1.3, 1.5) · 1.9 (dopo 1.1) · 1.10 (dopo 1.4, 1.7, 1.8, 1.9) · 1.13
+Convergenza        1.7 (dopo 1.2, 1.3; fatto prima di 1.5, D-040) · 1.9 (dopo 1.1) · 1.10 (dopo 1.4, 1.7, 1.8, 1.9) · 1.13
 ```
 
 Le tre corsie non si toccano fino alla convergenza: si possono portare avanti in worktree paralleli (`DEV-WORKFLOW.md`). 1.4 va fatto appena finito 1.3: se il modello locale non regge, lo si scopre dopo 7-10 ore e non dopo 60.

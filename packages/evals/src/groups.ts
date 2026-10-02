@@ -6,6 +6,7 @@ import { createLocalModel, type LocalModel } from '@arianna/executors';
 
 import { evaluateGateway } from './gateway.ts';
 import { createOrchestratorEvaluator, matchesExpectation, type OrchestratorActual } from './orchestrator.ts';
+import { evaluateRouter, matchesRouterExpectation } from './router.ts';
 import type { Evaluate, EvalGroup } from './types.ts';
 
 /** The orchestrator on the configured local model, created at the first case. */
@@ -40,7 +41,8 @@ export const GROUPS: readonly EvalGroup[] = [
     tier: 'deterministic',
     threshold: 0.95,
     strictTags: ['privacy'],
-    subject: { status: 'pending', until: 'task 1.7' },
+    compare: matchesRouterExpectation,
+    subject: { status: 'active', evaluate: evaluateRouter },
   },
   {
     // Thresholds per measure (docs/EVALS.md); the overall rate is not a criterion.

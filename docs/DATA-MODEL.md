@@ -134,15 +134,23 @@ CREATE TABLE gateway_log (
   summary     text                                          -- mai contenuto L2
 );
 
+-- Task 1.7 (0005_router_decisions.sql, D-040): append-only
 CREATE TABLE router_decisions (
   id          bigserial PRIMARY KEY,
   ts          timestamptz NOT NULL DEFAULT now(),
   task_id     uuid, run_id uuid, step integer,
-  label       privacy_label NOT NULL,
-  difficulty  text, executor text, model text,
-  candidates  jsonb,                                        -- esclusi e perché
-  reason      text, escalated_from text
+  label       privacy_label NOT NULL,                       -- effective_label del run
+  difficulty  text NOT NULL,                                -- trivial|normal|hard|critical
+  decision    text NOT NULL,                                -- route|wait
+  executor text, model text, locality text,                 -- solo per route; model è un alias
+  next text, retry_at timestamptz,                          -- solo per wait: retry-later|wait-user
+  approval    text,                                         -- budget (Fable)
+  candidates  jsonb NOT NULL,                               -- ogni candidato con esito: chosen o motivo d'esclusione
+  reason      text NOT NULL,                                -- etichette, regole e candidati, mai contenuto
+  escalated_from text
 );
+-- Vincoli: route verso il cloud solo fino a L1; claude e codex sempre cloud; mai L3 instradato;
+-- alias coerente con l'esecutore; per wait niente esecutore né approvazione; retry_at solo con retry-later.
 
 -- Coda e scheduler (D-004): FOR UPDATE SKIP LOCKED, dietro l'interfaccia JobQueue
 CREATE TABLE jobs (

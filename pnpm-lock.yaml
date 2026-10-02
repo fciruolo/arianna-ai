@@ -178,6 +178,9 @@ importers:
       '@arianna/policy':
         specifier: workspace:*
         version: link:packages/policy
+      '@arianna/router':
+        specifier: workspace:*
+        version: link:packages/router
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.11.0(jiti@2.7.0))
@@ -208,6 +211,9 @@ importers:
       '@arianna/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@arianna/router':
+        specifier: workspace:*
+        version: link:../../packages/router
       postgres:
         specifier: 3.4.9
         version: 3.4.9
@@ -272,10 +278,22 @@ importers:
       '@arianna/policy':
         specifier: workspace:*
         version: link:../policy
+      '@arianna/router':
+        specifier: workspace:*
+        version: link:../router
 
   packages/executors: {}
 
   packages/policy: {}
+
+  packages/router:
+    dependencies:
+      '@arianna/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@arianna/policy':
+        specifier: workspace:*
+        version: link:../policy
 
 packages:
 
