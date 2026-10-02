@@ -45,7 +45,6 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Chiave age vera | D-042 confermata e binari provati. Per l'uso vero (solo dopo il criterio della Fase 1A) la chiave age la genera l'utente, con i passi in `SECURITY.md`, sezione Vault |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
-| Prova della chat nel browser | `pnpm hud:build && pnpm start`, poi `http://127.0.0.1:7420`: creare una conversazione, scrivere, vedere il task in "Attende te". Claude non è riuscito a provarla: il core lanciato dalla sua sandbox non è raggiungibile dal Chrome dell'utente |
 | Conferma di D-039 | Chat e API; in particolare il messaggio di lavoro rifiutato se lo scanner trova qualcosa, e l'API senza autenticazione fino al 1.13 |
 
 ## Modo di lavorare concordato
@@ -73,7 +72,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 - In un vincolo CHECK di PostgreSQL un'espressione che vale NULL (per esempio un campo JSON mancante) fa passare la riga: va avvolta in `coalesce(..., false)`.
 - Con `NODE_USE_ENV_PROXY=1` (o `--use-env-proxy`) e `HTTP_PROXY`, `fetch` e gli agent globali di Node mandano al proxy anche le richieste a 127.0.0.1: verso servizi locali si usa `node:http` con un agent proprio (`packages/executors/src/local/http.ts`).
 - Un processo figlio lanciato da un test eredita `NODE_TEST_CONTEXT` e si comporta come un file di test del runner: va tolto dall'ambiente. Un figlio che usa `fetch` attraverso un proxy può non terminare da solo: `process.exit`.
-- Un processo lanciato da Claude con Bash (per esempio `pnpm start`) gira nella sandbox: dal terminale risponde, ma il Chrome dell'utente non lo raggiunge. `curl` è negato: per provare l'API si usa `node:http`.
+- Un processo lanciato da Claude con Bash (per esempio `pnpm start`) gira nella sandbox: dal terminale risponde, ma il Chrome dell'utente non lo raggiunge. `curl` è negato: per provare l'API si usa `node:http`. Lanciato fuori dalla sandbox (con il permesso dell'utente) il Chrome dell'utente lo raggiunge: provato il 2026-10-02, la chat si apre.
 - Una migrazione applicata al database di sviluppo da `pnpm start` non si può più modificare (sha256 in `schema_migrations`): le migrazioni non committate vanno finite prima di avviare il core.
 - postgres.js serializza come stringa JSON una stringa passata a un parametro `::jsonb` (`'[]'` diventa `"[]"`): per i valori JSON si usa `sql.json(...)`.
 - In un file di `test-db` che avvia servizi nel proprio `before` (finto Telegram, feed), il database va creato con `createTestDatabase` nello stesso hook: con `useTestDatabase` il suo `before` può non essere ancora finito.
