@@ -10,7 +10,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test \"{apps,packages}/*/test/**/*.test.ts\" \"test/**/*.test.ts\" \".claude/hooks/*.test.js\"",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "check": "pnpm build && pnpm test && pnpm lint",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@arianna/policy": "workspace:*",

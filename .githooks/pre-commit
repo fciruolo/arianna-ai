@@ -1,0 +1,4 @@
+#!/bin/sh
+# Rejects the commit unless type-check, tests and lint pass (docs/DECISIONS.md, D-018).
+# Enabled by `pnpm install` through the "prepare" script (core.hooksPath).
+exec pnpm --silent check
