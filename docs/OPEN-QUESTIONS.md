@@ -9,7 +9,7 @@
 | Dove gira il server | Mac Studio all'inizio, dietro interfaccia sostituibile | Fase 1A |
 | Conteggio di `claude -p` e `codex exec` negli abbonamenti | `claude -p` (task 1.5, D-049): con il login dell'abbonamento (`apiKeySource: none`) ogni run riporta un `rate_limit_event` con le finestre `five_hour` e `seven_day` dell'abbonamento; non è verificato se esista un credito separato. Da guardare nel tuo account dopo qualche run. `codex exec`: da verificare | Task 1.16 |
 | Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox) | Fissati per `claude` 2.1.288, sandbox compresa (D-049, D-050, `packages/executors/src/claude/profile.ts`) | Task 1.6 |
-| Sandbox: nativa di Claude Code oppure `sandbox-runtime` | Proposta: la nativa (D-050, da confermare), il canarino non esce. microVM solo se un giorno esce | Conferma di D-050 |
+| ~~Sandbox: nativa di Claude Code oppure `sandbox-runtime`~~ | **Decisa la nativa** (D-050, confermata): il canarino non esce. microVM solo se un giorno esce | |
 | oMLX può puntare a `data/models/`? | Sì secondo il README: `omlx serve --model-dir data/models` (da provare); altrimenti collegamenti simbolici | Task 1.17 |
 | oMLX invia telemetria o contenuti fuori dalla macchina? | Il README non ne parla: verificare (codice o traffico di rete) prima di dargli dati L2 veri; non usare `--mcp-config` né `--hf-endpoint` con dati veri. Lasciare `--host 127.0.0.1` | Prima dell'uso con dati veri (fine Fase 1A) |
 | Codex con provider locale invia telemetria o contenuti altrove? | Finché non è verificato non conta come locale | Task 1.16 |
