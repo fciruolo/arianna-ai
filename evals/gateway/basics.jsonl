@@ -1,8 +1,8 @@
-{"id":"gateway-l1-to-cloud","input":{"labels":["L0","L1"],"locality":"cloud"},"expect":"allow","tags":["positive"]}
-{"id":"gateway-l2-fragment-in-mixed-payload","input":{"labels":["L0","L1","L2","L1"],"locality":"cloud"},"expect":"block","tags":["privacy"]}
-{"id":"gateway-unlabeled-to-cloud","input":{"labels":["L1",null],"locality":"cloud"},"expect":"block","tags":["privacy","default-deny"]}
-{"id":"gateway-l2-to-local","input":{"labels":["L2",null],"locality":"local"},"expect":"allow","tags":["positive"]}
-{"id":"gateway-l3-to-local","input":{"labels":["L1","L3"],"locality":"local"},"expect":"block","tags":["privacy","secret"]}
-{"id":"gateway-l3-to-cloud","input":{"labels":["L3"],"locality":"cloud"},"expect":"block","tags":["privacy","secret"]}
-{"id":"gateway-empty-payload","input":{"labels":[],"locality":"cloud"},"expect":"allow","tags":["positive","edge"]}
-{"id":"gateway-invalid-label","input":{"labels":["l2"],"locality":"cloud"},"expect":"block","tags":["privacy","default-deny"]}
+{"id":"gateway-l1-to-cloud","input":{"payload":[{"value":"fake text","label":"L0"},{"value":"fake text","label":"L1"}],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"allow","rule":"cloud"},"tags":["positive"]}
+{"id":"gateway-l2-fragment-in-mixed-payload","input":{"payload":[{"value":"fake text","label":"L0"},{"value":"fake text","label":"L1"},{"value":"fake text","label":"L2"},{"value":"fake text","label":"L1"}],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"block","rule":"cloud-label","next":"stay-local"},"tags":["privacy"]}
+{"id":"gateway-unlabeled-to-cloud","input":{"payload":[{"value":"fake text","label":"L1"},{"value":"fake text"}],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"block","rule":"cloud-label","next":"stay-local"},"tags":["privacy","default-deny"]}
+{"id":"gateway-l2-to-local","input":{"payload":[{"value":"fake text","label":"L2"},{"value":"fake text","label":null}],"context":{"clearance":"L2","effective":"L2"},"target":{"kind":"executor","id":"omlx","locality":"local"}},"expect":{"decision":"allow","rule":"local"},"tags":["positive"]}
+{"id":"gateway-l3-to-local","input":{"payload":[{"value":"fake text","label":"L1"},{"value":"fake text","label":"L3"}],"context":{"clearance":"L2"},"target":{"kind":"executor","id":"omlx","locality":"local"}},"expect":{"decision":"block","rule":"secret","next":"stay-local"},"tags":["privacy","secret"]}
+{"id":"gateway-l3-to-cloud","input":{"payload":[{"value":"fake text","label":"L3"}],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"block","rule":"secret","next":"stay-local"},"tags":["privacy","secret"]}
+{"id":"gateway-empty-payload","input":{"payload":[],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"allow","rule":"cloud"},"tags":["positive","edge"]}
+{"id":"gateway-invalid-label","input":{"payload":[{"value":"fake text","label":"l2"}],"context":{"clearance":"L1"},"target":{"kind":"executor","id":"claude","locality":"cloud"}},"expect":{"decision":"block","rule":"cloud-label","next":"stay-local"},"tags":["privacy","default-deny"]}

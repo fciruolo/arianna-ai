@@ -43,6 +43,10 @@ export function clearanceFor(mode: ConversationMode): Label {
   return mode === 'work' ? 'L1' : 'L2';
 }
 
+// Contexts made here, and only these, are accepted by the gateway: an object
+// literal or a context parsed from JSON could claim any effective label.
+const issued = new WeakSet<Context>();
+
 export function createContext(clearance: Label, effective: Label = 'L0'): Context {
   if (!isAtMost(clearance, MAX_CLEARANCE)) {
     throw new PolicyError(`no context can be cleared for ${clearance}`);
@@ -50,16 +54,32 @@ export function createContext(clearance: Label, effective: Label = 'L0'): Contex
   if (!isAtMost(effective, clearance)) {
     throw new PolicyError(`effective label ${effective} is above clearance ${clearance}`);
   }
-  return Object.freeze({ clearance, effective });
+  const context = Object.freeze({ clearance, effective });
+  issued.add(context);
+  return context;
+}
+
+/**
+ * True only for contexts returned by `createContext` or `recordRead`. It stops
+ * forged or deserialized objects, not a caller that builds a fresh context:
+ * where a context comes from (conversation, task, run) is the core's job.
+ */
+export function isContext(value: unknown): value is Context {
+  return typeof value === 'object' && value !== null && issued.has(value as Context);
 }
 
 /**
  * What the user writes in a conversation carries the conversation's clearance.
- * Callers must also record it as a read (`recordRead(context, labelForUserMessage(context))`):
- * otherwise a fresh private conversation would still pass `canUseCloud`.
+ * Use `recordUserMessage` to apply it: a message that is labeled but not
+ * recorded as a read would let a fresh private conversation pass `canUseCloud`.
  */
 export function labelForUserMessage(context: Context): Label {
   return context.clearance;
+}
+
+/** The context after the user wrote a message: it has read its own clearance. */
+export function recordUserMessage(context: Context): Context {
+  return recordRead(context, labelForUserMessage(context)).context;
 }
 
 /** Reads up to the clearance are allowed; L3 never is. */

@@ -6,14 +6,14 @@ import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
 
-test('migrations apply from zero and create the phase 0 tables', async () => {
+test('migrations apply from zero and create every table', async () => {
   const { sql, schema } = db();
   const tables = await sql<{ name: string }[]>`
     SELECT table_name AS name FROM information_schema.tables
     WHERE table_schema = ${schema} ORDER BY table_name`;
   assert.deepEqual(
     tables.map((table) => table.name),
-    ['events', 'jobs', 'schema_migrations', 'tasks'],
+    ['approvals', 'events', 'gateway_log', 'jobs', 'label_changes', 'schema_migrations', 'tasks'],
   );
 });
 

@@ -1,6 +1,6 @@
 # Modello dati (bozza PostgreSQL)
 
-`events`, `tasks` e `jobs` esistono dal task 0.3: la definizione che fa fede è `apps/core/migrations/0001_init.sql`. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
+`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
 
 ```sql
 CREATE TYPE privacy_label AS ENUM ('L0','L1','L2','L3');
@@ -89,36 +89,42 @@ CREATE TABLE runs (
   CHECK (locality = 'local' OR effective_label <= 'L1')     -- difesa in profondità nel database
 );
 
+-- Si decide una volta sola; poi la riga è congelata (trigger), e non si cancella.
 CREATE TABLE approvals (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id     uuid REFERENCES tasks(id),                    -- facoltativo: impostazioni e declassamenti
   kind        text NOT NULL,                                -- action | declassify | budget | setting
   action      text NOT NULL,
-  detail      jsonb NOT NULL,                               -- per declassify: testo esatto e suo sha256
+  detail      jsonb NOT NULL,                               -- per declassify: text, sha256, from, to
   state       text NOT NULL DEFAULT 'pending',              -- pending|approved|rejected|expired
   requested_at timestamptz NOT NULL DEFAULT now(),
-  decided_at  timestamptz,
-  decided_via text                                          -- web | telegram | phone
+  decided_at  timestamptz,                                  -- presente se e solo se non è pending
+  decided_via text                                          -- web | telegram | phone; solo approved/rejected
+  -- declassify: L2 -> L1/L0 o L1 -> L0, mai da L3; sha256 = hash di text; si decide solo da web
 );
 
--- Ogni cambio di etichetta; abbassare richiede un'approvazione
+-- Ogni cambio di etichetta, append-only. Abbassare richiede un'approvazione declassify
+-- approvata per lo stesso testo (subject = content:<sha256>) e le stesse etichette (trigger).
 CREATE TABLE label_changes (
   id          bigserial PRIMARY KEY,
   ts          timestamptz NOT NULL DEFAULT now(),
-  subject     text NOT NULL,                                -- es. document:<id>, task:<id>, brief:<sha256>
+  subject     text NOT NULL,                                -- es. content:<sha256>, document:<id>, task:<id>
   from_label  privacy_label NOT NULL,
   to_label    privacy_label NOT NULL,
-  approval_id uuid REFERENCES approvals(id),
-  CHECK (to_label >= from_label OR approval_id IS NOT NULL)
+  approval_id uuid UNIQUE REFERENCES approvals(id),          -- un'approvazione si usa una volta
+  CHECK (to_label <> from_label),
+  CHECK (to_label > from_label OR approval_id IS NOT NULL)
 );
 
--- Cosa è uscito (o è stato bloccato) dal gateway
+-- Ogni decisione del gateway, consentita o bloccata, scritta prima dell'invio. Append-only.
+-- Vincoli: nessuna uscita consentita di L3; verso il cloud al massimo L1; summary solo se allow e <= L1.
 CREATE TABLE gateway_log (
   id          bigserial PRIMARY KEY,
   ts          timestamptz NOT NULL DEFAULT now(),
   task_id     uuid, run_id uuid,
   target_kind text NOT NULL,                                -- executor | channel | web
   target      text NOT NULL,
+  locality    text NOT NULL,                                -- local | cloud
   label       privacy_label NOT NULL,                       -- massimo del payload
   decision    text NOT NULL,                                -- allow|block
   rule        text NOT NULL,                                -- regola che ha deciso

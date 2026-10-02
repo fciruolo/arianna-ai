@@ -96,7 +96,27 @@ label = "L0"
 
 ## Scanner deterministico
 
-Difesa in profondità, non controllo primario: ogni payload verso cloud o canale esterno passa da espressioni regolari per IBAN, codice fiscale, numeri di carta, chiavi private e token noti. Un riscontro blocca l'uscita e porta il task in "Attende te", anche se l'etichetta dice L1.
+Difesa in profondità, non controllo primario: ogni payload verso cloud o canale esterno passa da espressioni regolari per IBAN, codice fiscale, numeri di carta, chiavi private e token noti. Un riscontro blocca l'uscita anche se l'etichetta dice L1: verso un esecutore o il web porta il task in "Attende te", verso un canale esterno diventa una notifica con riferimento.
+
+- Un valore strutturato si controlla stringa per stringa (chiavi, testi e numeri del JSON già decodificato): nella forma JSON un a capo diventa `\n` e la `n` nasconderebbe l'inizio di un IBAN.
+- I confini di un riscontro sono lettere e cifre, non `\b`: `iban_IT60…` viene trovato.
+- Il testo si normalizza prima (NFKC, caratteri invisibili tolti): cifre a larghezza piena o spazi di larghezza zero non nascondono un riscontro.
+- Si preferisce un falso allarme a una fuga, con due eccezioni dove una somma di controllo tiene fuori hash e identificativi comuni: l'IBAN deve superare il mod-97 (raggruppato a quattro, si riprova togliendo gruppi finali, che potrebbero essere la parola successiva), il numero di carta (cifre separate da spazi, punti o trattini) il controllo di Luhn e iniziare per 2-6 (i timestamp in millisecondi iniziano per 1). Il codice fiscale si riconosce dalla forma, anche con omocodia, senza verificare il carattere di controllo.
+- Token riconosciuti: chiavi PEM private e chiavi `age`, AWS, GitHub, GitLab, chiavi `sk-` (Anthropic, OpenAI), Stripe, Slack, Google, bot Telegram, npm, JWT, password dentro un URL.
+- Un riscontro riporta tipo e posizione, mai il testo trovato: la ragione del blocco finisce nel log.
+- Un valore che non è testo né JSON semplice (funzioni, istanze di classi, cicli) non si può controllare e viene bloccato.
+
+## Come decide il gateway (task 1.2, D-032)
+
+`gatewayCheck` controlla in quest'ordine e si ferma al primo blocco: input ben formati (contesto creato dalla policy, destinazione nota, lista di frammenti) → nessun frammento L3, verso nessuna destinazione → destinazioni locali (modello locale, chat web) fino a L2 → destinazioni cloud (esecutori cloud, Telegram, telefono, ricerca web) solo con contesto a `effective ≤ L1`, payload ≤ L1 e scansione pulita.
+
+- **Il contesto** è quello della sessione a cui il payload appartiene dal lato di chi invia: il run per il brief di un esecutore cloud, il task per un messaggio su un canale o una ricerca web. Un brief declassato esce da un run nuovo, che ha letto solo quel brief.
+- **Contesto non falsificabile:** il gateway accetta solo contesti restituiti da `createContext` o `recordRead`; un oggetto con la stessa forma, o letto da JSON, è bloccato. Chi crea il contesto giusto per un run resta compito del core.
+- **Dopo un blocco** la decisione dice cosa fare (`next`): un canale esterno riceve una notifica con riferimento (`notify-reference`); un riscontro dello scanner verso un esecutore porta il task in "Attende te" (`wait-user`); negli altri casi il lavoro resta locale, oppure l'utente approva il testo esatto (`stay-local`).
+- **Testo congelato:** una decisione `allow` porta `texts`, il testo esatto controllato per ogni frammento, serializzato una sola volta e congelato. Gli adattatori inviano quello, mai una nuova serializzazione dei valori originali, che potrebbero essere cambiati dopo il controllo.
+- **Log:** `passGateway` (`apps/core`) scrive ogni decisione in `gateway_log`, consentita o bloccata, locale o cloud, e solo dopo si può inviare: se il log non si scrive, non esce nulla. Unica eccezione: una destinazione non valida non ha una riga possibile (manca il tipo), e il blocco torna al chiamante senza log. La ragione contiene etichette e regole, mai contenuto; il riassunto si salva solo per uscite consentite fino a L1 e se lo scanner non vi trova nulla.
+- **Declassamento:** `declassifyRequest` prepara l'approvazione (testo esatto, suo sha256, etichetta di partenza e di arrivo); `declassify` abbassa l'etichetta solo con un'approvazione `declassify` approvata per quello stesso testo e quelle stesse etichette, e restituisce la riga per `label_changes` (`subject = content:<sha256>`). L3 non si declassa mai. Un'approvazione vale una volta sola, e un declassamento si decide solo dalla chat web: la scheda mostra il testo, che può essere L2, quindi né Telegram né il telefono possono mostrarlo. Il database ricontrolla tutto con vincoli e trigger, compreso che lo sha256 sia quello del testo mostrato.
+- **Località:** `claude` e `codex` sono sempre cloud: dichiararli locali è un errore e blocca. Per gli altri esecutori il gateway si fida della `locality` dichiarata; che siano davvero locali (endpoint in `local_endpoints`) lo garantiscono gli adattatori (task 1.3). Codex con un provider locale (`OPEN-QUESTIONS.md`) richiederà di cambiare questa regola, con una decisione.
 
 ## Interfaccia (bozza)
 
@@ -116,15 +136,20 @@ function recordRead(ctx: Context, label: Label): ReadResult; // allowed -> effec
 function canUseCloud(ctx: Context): boolean;               // effective <= L1 (also canUseWebTools)
 function createContext(clearance: Label, effective?: Label): Context; // clearance never L3
 function clearanceFor(mode: 'work' | 'private'): Label;    // L1 | L2
-function labelForUserMessage(ctx: Context): Label;         // = clearance; record it with recordRead
+function labelForUserMessage(ctx: Context): Label;         // = clearance
+function recordUserMessage(ctx: Context): Context;         // the message is a read of the clearance
+function isContext(value: unknown): value is Context;      // only contexts made by the policy
 function createLabelRules(input: { folders: FolderRule[]; sources: SourceRule[] }): LabelRules;
 function labelForPath(rules: LabelRules, path: string): Label;   // folder rules, default L2; ".." rejected
 function labelForKbPage(rules: LabelRules, path: string, declared: unknown): Label; // header only raises; invalid -> L3
 function labelForSource(rules: LabelRules, name: string): Label; // default L2
-function canSendTo(target: Target, label: Label): boolean;
-function gatewayCheck(payload: Labeled<unknown>[], ctx: Context, target: Target): Decision; // allow | block + reason
-function checkWorkspace(dir: string, target: Target): Decision; // allowlist + pre-flight scan
-function declassify<T>(item: Labeled<T>, to: Label, approvalId: string): Labeled<T>;
+function canSendTo(locality: 'local' | 'cloud', label: Label): boolean;
+function gatewayCheck(payload: Labeled<unknown>[], ctx: Context, target: Target): Decision;
+  // { decision: 'allow', rule, label, reason, texts } | { decision: 'block', rule, label, reason, next, findings? }
+function scanText(text: string): Finding[];               // { kind, name, index }, never the matched text
+function checkWorkspace(dir: string, target: Target): Decision; // allowlist + pre-flight scan (task 1.6)
+function declassifyRequest(item: Labeled<unknown>, to: Label): { text: string; sha256: string; from: Label; to: Label };
+function declassify<T>(item: Labeled<T>, to: Label, approval: DeclassifyApproval): { item: Labeled<T>; change: LabelChange };
 ```
 
 ## Test minimi (vedi `EVALS.md`, gruppo "gateway")

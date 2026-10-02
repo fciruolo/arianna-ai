@@ -5,8 +5,10 @@ export {
   clearanceFor,
   createContext,
   derive,
+  isContext,
   labelForUserMessage,
   recordRead,
+  recordUserMessage,
   type Context,
   type ConversationMode,
   type Labeled,
@@ -32,3 +34,22 @@ export {
   type LabelRules,
   type SourceRule,
 } from './rules.ts';
+export {
+  declassify,
+  declassifyRequest,
+  type DeclassifyApproval,
+  type LabelChange,
+} from './declassify.ts';
+export {
+  gatewayCheck,
+  isTarget,
+  localityOf,
+  targetName,
+  type ChannelId,
+  type Decision,
+  type GatewayRule,
+  type NextStep,
+  type Target,
+} from './gateway.ts';
+export { contentHash, payloadText, scanParts, sha256Hex } from './payload.ts';
+export { normalizeForScan, scanText, type Finding, type FindingKind } from './scanner.ts';

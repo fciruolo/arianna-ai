@@ -8,9 +8,11 @@ import {
   clearanceFor,
   createContext,
   derive,
+  isContext,
   labelForUserMessage,
   PolicyError,
   recordRead,
+  recordUserMessage,
   type Label,
 } from '../src/index.ts';
 
@@ -109,4 +111,23 @@ test('a contaminated context stays local: no cloud executors, no web tools', () 
   const after = recordRead(createContext('L2'), 'L2').context;
   assert.equal(canUseCloud(after), false);
   assert.equal(canUseWebTools(after), false);
+});
+
+test('a user message is a read: a private conversation that received one stays local', () => {
+  const work = recordUserMessage(createContext('L1'));
+  assert.deepEqual(work, { clearance: 'L1', effective: 'L1' });
+  assert.equal(canUseCloud(work), true);
+
+  const personal = recordUserMessage(createContext('L2'));
+  assert.deepEqual(personal, { clearance: 'L2', effective: 'L2' });
+  assert.equal(canUseCloud(personal), false);
+});
+
+test('only contexts made by the policy are recognized, not look-alike objects', () => {
+  const context = createContext('L1');
+  assert.equal(isContext(context), true);
+  assert.equal(isContext(recordRead(context, 'L1').context), true);
+  assert.equal(isContext({ clearance: 'L1', effective: 'L0' }), false);
+  assert.equal(isContext(JSON.parse(JSON.stringify(context))), false);
+  assert.equal(isContext(null), false);
 });

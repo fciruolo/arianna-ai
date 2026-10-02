@@ -50,6 +50,10 @@ Regole del runner:
 - **Un valutatore che va in errore** fa fallire il caso, non la corsa.
 - Una cartella sotto `evals/` senza un gruppo registrato fa fallire i test.
 
+### Il gruppo gateway
+
+Dal task 1.2 valuta le funzioni vere di `@arianna/policy` (`gatewayCheck`, `declassify`), non una loro copia. Un caso è `{ payload, context, target }` con, facoltativo, `declassify`; il risultato atteso è `{ decision, rule }`, con `next` e i tipi di riscontro dello scanner quando l'uscita è bloccata, oppure `{ declassify: "refused" }`. Un frammento con `derivedFrom` prende l'etichetta per taint dai suoi input; un contesto con `forged: true` è un oggetto finto, non creato dalla policy. I casi su worktree, allowlist e strumenti MCP arrivano con il confinamento (task 1.6), il canarino con il task 1.12.
+
 ## Strumenti
 
 Runner proprio minimo in Fase 0. Promptfoo, Inspect o Langfuse restano idee non scelte (`OPEN-QUESTIONS.md`, voce 4). Dati sempre finti.

@@ -27,7 +27,7 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 | Id | Task | Ore | Reali | Fatto quando |
 | --- | --- | --- | --- | --- |
 | 1.1 | `packages/policy`: etichette, regole per cartella, taint, clearance, contaminazione | 7-10 | 0,5 (solo sessione di Claude) | Casi unitari verdi, positivo e negativo per regola |
-| 1.2 | Gateway (`gatewayCheck`, scanner, declassamento con approvazione) e `gateway_log` | 7-10 | | Eval gateway deterministici 100% |
+| 1.2 | Gateway (`gatewayCheck`, scanner, declassamento con approvazione) e `gateway_log` | 7-10 | 0,8 (solo sessione di Claude) | Eval gateway deterministici 100% |
 | 1.3 | Adattatore modello locale (oMLX, interfaccia sostituibile), watchdog e riavvio | 4-6 | | Test di contratto verde; server ucciso → ripartenza automatica |
 | 1.4 | Test di accettazione dell'orchestratore sul modello locale (`EVALS.md`) | 3-4 | | Soglie superate, oppure piano B scelto e annotato |
 | 1.5 | Adattatore `claude -p` (stream-json, resume, permessi, errore di quota) | 5-8 | | Compito banale eseguito e loggato |
