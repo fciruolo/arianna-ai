@@ -196,6 +196,9 @@ importers:
 
   apps/core:
     dependencies:
+      '@arianna/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@arianna/config':
         specifier: workspace:*
         version: link:../../packages/config

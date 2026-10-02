@@ -1,6 +1,6 @@
 import { labelOrDefault, type Label } from '@arianna/policy';
 
-import type { Sql } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -33,7 +33,7 @@ export interface StoredEvent {
 }
 
 /** Appends to the log. The database assigns id, timestamp and the hash chain. */
-export async function appendEvent(sql: Sql, event: NewEvent): Promise<StoredEvent> {
+export async function appendEvent(sql: Queryable, event: NewEvent): Promise<StoredEvent> {
   const [stored] = await sql<StoredEvent[]>`
     INSERT INTO events (task_id, run_id, agent, kind, label, payload)
     VALUES (

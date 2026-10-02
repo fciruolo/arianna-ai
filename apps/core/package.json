@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
     "@arianna/policy": "workspace:*",
     "postgres": "3.4.9"

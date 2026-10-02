@@ -46,7 +46,7 @@ export async function loadApproval(sql: Queryable, id: string): Promise<StoredAp
 
 /** Records the user's decision. An approval is decided once: a second decision throws. */
 export async function decideApproval(
-  sql: Sql,
+  sql: Queryable,
   id: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
