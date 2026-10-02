@@ -29,9 +29,12 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm build` | Controllo dei tipi di tutto il monorepo; non produce file (D-026). È l'unico comando che vede gli errori di tipo |
 | `pnpm test` | Test con `node:test`: `apps/*/test`, `packages/*/test`, `test/` e hook di `.claude/`; un file di test altrove fa fallire la suite |
 | `pnpm lint` | ESLint con regole che vedono i tipi |
-| `pnpm check` | `build` + `test` + `lint`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
+| `pnpm eval` | Eval deterministici (gateway, router): niente modelli né rete; fallisce sotto soglia |
+| `pnpm eval:models` | Eval che richiedono il modello locale (orchestratore, estrazione, retrieval) |
+| `pnpm eval:live` | Eval dal vivo con `claude` e `codex` (contratto, canarino); consumano quota |
+| `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
 
-In arrivo: `pnpm eval`, `pnpm eval:models`, `pnpm eval:live` (task 0.4; `pnpm eval` entrerà in `pnpm check`). Aggiungi qui ogni comando quando esiste.
+Aggiungi qui ogni comando quando esiste.
 
 Dopo un clone, `pnpm install` attiva l'hook git (`core.hooksPath`). Non aggirarlo con `--no-verify`.
 

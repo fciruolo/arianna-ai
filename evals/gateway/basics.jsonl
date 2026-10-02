@@ -1,0 +1,6 @@
+{"id":"gateway-l1-to-cloud","input":{"labels":["L0","L1"],"locality":"cloud"},"expect":"allow","tags":["positive"]}
+{"id":"gateway-l2-fragment-in-mixed-payload","input":{"labels":["L0","L1","L2","L1"],"locality":"cloud"},"expect":"block","tags":["privacy"]}
+{"id":"gateway-unlabeled-to-cloud","input":{"labels":["L1",null],"locality":"cloud"},"expect":"block","tags":["privacy","default-deny"]}
+{"id":"gateway-l2-to-local","input":{"labels":["L2",null],"locality":"local"},"expect":"allow","tags":["positive"]}
+{"id":"gateway-l3-to-local","input":{"labels":["L1","L3"],"locality":"local"},"expect":"block","tags":["privacy","secret"]}
+{"id":"gateway-l3-to-cloud","input":{"labels":["L3"],"locality":"cloud"},"expect":"block","tags":["privacy","secret"]}

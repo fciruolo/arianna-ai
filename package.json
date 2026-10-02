@@ -11,7 +11,10 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --test \"{apps,packages}/*/test/**/*.test.ts\" \"test/**/*.test.ts\" \".claude/hooks/*.test.js\"",
     "lint": "eslint . --max-warnings 0",
-    "check": "pnpm build && pnpm test && pnpm lint",
+    "eval": "node packages/evals/src/cli.ts deterministic",
+    "eval:models": "node packages/evals/src/cli.ts models",
+    "eval:live": "node packages/evals/src/cli.ts live",
+    "check": "pnpm build && pnpm test && pnpm lint && pnpm eval",
     "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {

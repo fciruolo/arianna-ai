@@ -194,6 +194,15 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
+  packages/evals:
+    dependencies:
+      '@arianna/config':
+        specifier: workspace:*
+        version: link:../config
+      '@arianna/policy':
+        specifier: workspace:*
+        version: link:../policy
+
   packages/policy: {}
 
 packages:

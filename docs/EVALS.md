@@ -40,7 +40,15 @@ Se il modello non passa, in ordine: un altro modello del catalogo; piani a model
 
 ## Formato dei casi
 
-File JSONL in `evals/<gruppo>/*.jsonl`: `{ "id", "input", "expect", "tags" }`. Il runner produce un report (esito, latenza e costo per caso) e un codice d'uscita non zero se una soglia non è rispettata.
+File JSONL in `evals/<gruppo>/*.jsonl`: `{ "id", "input", "expect", "tags" }`. Il runner (`packages/evals`) stampa un report, lo salva in `data/evals/report-<livello>.json` (esito e durata per caso; il costo si aggiunge con gli esecutori) ed esce con codice non zero se una soglia non è rispettata.
+
+Regole del runner:
+
+- **Gruppi in attesa:** un gruppo il cui codice non esiste ancora è registrato come `pending`, con il task o la fase che lo attiverà. Compare nel report, non conta mai come superato e non fa fallire la corsa. Oggi è attivo solo `gateway`.
+- **Niente passaggi a vuoto:** un gruppo attivo senza casi fallisce.
+- **Etichette severe:** i casi con un'etichetta dichiarata severa per il gruppo (per esempio `privacy` nel router) devono passare tutti, qualunque sia la soglia.
+- **Un valutatore che va in errore** fa fallire il caso, non la corsa.
+- Una cartella sotto `evals/` senza un gruppo registrato fa fallire i test.
 
 ## Strumenti
 
