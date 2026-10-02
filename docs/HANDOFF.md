@@ -37,7 +37,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 | Cosa | Note |
 | --- | --- |
-| `git push` di `main` a ogni task chiuso; cancellare i branch remoti `task/0.3-postgres` e `task/1.6-confinement` (quest'ultimo punta al commit del 1.7, già su `main`) | Il push è negato a Claude per scelta |
+| `git push` di `main` a ogni task chiuso; cancellare i branch remoti `task/0.3-postgres`, `task/1.6-confinement` (punta al commit del 1.7, già su `main`) e `task/1.15-telegram` (punta a `91ef390`, già su `main`) | Il push è negato a Claude per scelta |
 | Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
 | Conferma delle decisioni | D-004 e da D-013 a D-029 sono "Proposta, applicata" in `DECISIONS.md`; D-030 (cartella di sviluppo separata da quella di installazione, Synology solo sui dati veri) è una proposta nata dalla domanda dell'utente sul Mac Studio |
 | Server locale e modelli per il task 1.4 | Installare oMLX su questo Mac (scelto dall'utente il 2026-10-02, niente LM Studio), poi nomi esatti di `local-large` e `local-small` |
