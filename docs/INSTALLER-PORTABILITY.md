@@ -64,6 +64,19 @@ I pesi sono decine di GB. Strategia: nel repository e nella cartella sincronizza
 
 Primo manifest: i modelli Qwen che usi già; nomi e versioni esatte da copiare dalla tua configurazione oMLX nel task 1.17. Fino ad allora (Fase 1A) il modello locale si configura a mano in `arianna.toml`.
 
+## Due cartelle: sviluppo e installazione (D-030)
+
+Il codice viaggia con git, i dati con Synology Drive, e le due cose non si mescolano.
+
+| Cartella | Cosa contiene | Chi ci lavora | Come si sincronizza |
+| --- | --- | --- | --- |
+| Sviluppo (per esempio `~/Sites/arianna-ai`, su ogni macchina) | Codice e soli dati finti; `data/` con database e report di prova | Claude Code e Codex per costruire Arianna | Solo git. Mai sotto Synology Drive, iCloud o simili |
+| Installazione (`ARIANNA_HOME` sul server, per esempio `~/Arianna` sul Mac Studio) | Lo stesso codice, aggiornato con `git pull` di `main`, più `data/` con i dati veri | Arianna. Claude Code non si avvia mai qui per sviluppare | Codice con git; `data/` con Synology Drive secondo la tabella sotto |
+
+Il motivo è la privacy: `data/` sta dentro la cartella del progetto, quindi una sessione di sviluppo aperta nella cartella dei dati veri potrebbe leggere archivio e knowledge base, cioè dati L2 verso un esecutore cloud senza passare dal gateway. L'hook di sviluppo blocca ciò che sta fuori dal repository, non ciò che sta dentro. La cartella di installazione nasce alla fine della Fase 1A, quando entrano i dati veri; fino ad allora esiste solo quella di sviluppo.
+
+In Synology Drive l'attività di sincronizzazione punta a `data/` della cartella di installazione, non alla radice, con le sole sottocartelle ammesse dalla tabella selezionate. Il portatile non riceve i dati veri: si collega al server via VPN.
+
 ## Sincronizzazione con Synology Drive
 
 | Cosa | Sincronizzare? | Note |

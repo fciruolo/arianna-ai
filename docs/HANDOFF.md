@@ -40,7 +40,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 | Avviare Docker Desktop | Blocca la chiusura della Fase 0 |
 | `git push` di `main` | Il push è negato a Claude per scelta |
 | Permessi in `.claude/settings.json` | L'utente vuole che Claude lavori nella cartella senza conferme. Claude non può modificare quel file (negato come auto-modifica dei permessi): deve incollarlo l'utente. Proposta: `defaultMode: acceptEdits`; comandi di progetto in `allow`; `pnpm add/install <pkg>/update/dlx`, `git remote` e `git config --global` in `ask`; `|| exit 2` in coda al comando dell'hook, così blocca anche se va in errore. Dopo l'incolla, aggiornare `SECURITY.md` |
-| Conferma delle decisioni | D-004 e da D-013 a D-029 sono "Proposta, applicata" in `DECISIONS.md` |
+| Conferma delle decisioni | D-004 e da D-013 a D-029 sono "Proposta, applicata" in `DECISIONS.md`; D-030 (cartella di sviluppo separata da quella di installazione, Synology solo sui dati veri) è una proposta nata dalla domanda dell'utente sul Mac Studio |
 | Conteggio di `claude -p` nell'abbonamento | Da verificare prima del task 1.5 |
 | Scelta delle 18 idee | Raccomandazioni in `OPEN-QUESTIONS.md` |
 
