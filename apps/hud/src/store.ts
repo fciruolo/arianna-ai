@@ -5,7 +5,7 @@ import { applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatSt
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
-import { addRemoteDecision, remoteDecision, type RemoteDecision } from './lib/remote-decisions.ts';
+import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import type { Approval, Conversation, ConversationMode, Task } from './lib/types.ts';
 
 /**
@@ -19,6 +19,9 @@ export function createChatStore() {
   const approvals = ref<Approval[]>([]);
   /** Approvals decided from Telegram (or the phone) while the page was open. */
   const remoteDecisions = ref<RemoteDecision[]>([]);
+  const storage = typeof window === 'undefined' ? undefined : window.localStorage;
+  const dismissed = loadDismissed(storage);
+  let decided: Approval[] = [];
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
@@ -35,7 +38,14 @@ export function createChatStore() {
   }
 
   async function refreshApprovals(): Promise<void> {
-    approvals.value = await api.listPendingApprovals();
+    const [pending, approved, rejected] = await Promise.all([
+      api.listPendingApprovals(),
+      api.listDecidedApprovals('approved'),
+      api.listDecidedApprovals('rejected'),
+    ]);
+    approvals.value = pending;
+    decided = [...approved, ...rejected];
+    showNotes();
   }
 
   async function refreshTask(id: string): Promise<void> {
@@ -137,15 +147,7 @@ export function createChatStore() {
         }
         break;
       }
-      case 'approval.decided': {
-        // Read the action from the card before the refresh takes it away.
-        const id = payloadString(event, 'approvalId');
-        const decision = remoteDecision(event, approvals.value.find((approval) => approval.id === id)?.action);
-        if (decision !== undefined) remoteDecisions.value = addRemoteDecision(remoteDecisions.value, decision);
-        work.push(refreshApprovals());
-        if (known && event.taskId !== null) work.push(refreshTask(event.taskId));
-        break;
-      }
+      case 'approval.decided':
       case 'approval.requested':
         work.push(refreshApprovals());
         if (known && event.taskId !== null) work.push(refreshTask(event.taskId));
@@ -187,8 +189,14 @@ export function createChatStore() {
     });
   }
 
+  function showNotes(): void {
+    remoteDecisions.value = notesFrom(decided, Date.now(), dismissed);
+  }
+
   function dismissDecision(approvalId: string): void {
-    remoteDecisions.value = remoteDecisions.value.filter((decision) => decision.approvalId !== approvalId);
+    dismissed.add(approvalId);
+    saveDismissed(storage, dismissed, new Set(decided.map((approval) => approval.id)));
+    showNotes();
   }
 
   function stop(): void {

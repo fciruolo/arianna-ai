@@ -46,6 +46,8 @@ export interface Approval {
   label: Label;
   state: ApprovalState;
   requestedAt: string;
+  decidedAt: string | null;
+  decidedVia: 'web' | 'telegram' | 'phone' | null;
 }
 
 /** An entry of the event log: ids and references only, never content. */

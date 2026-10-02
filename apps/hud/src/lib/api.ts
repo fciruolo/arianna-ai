@@ -53,6 +53,11 @@ export async function listPendingApprovals(): Promise<Approval[]> {
   return (await call<{ approvals: Approval[] }>('GET', '/api/approvals?state=pending')).approvals;
 }
 
+/** Decided approvals, most recently decided first. */
+export async function listDecidedApprovals(state: 'approved' | 'rejected', limit = 20): Promise<Approval[]> {
+  return (await call<{ approvals: Approval[] }>('GET', `/api/approvals?state=${state}&limit=${String(limit)}`)).approvals;
+}
+
 export async function decide(approvalId: string, state: 'approved' | 'rejected'): Promise<Approval> {
   return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state })).approval;
 }

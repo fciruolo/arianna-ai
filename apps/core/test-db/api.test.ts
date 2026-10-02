@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { resolveHome } from '@arianna/config';
 
 import { applyDeclassify } from '../src/gateway.ts';
-import { processStepJob, STEP_QUEUE, type StepContext, type StepExecutor, type StepOutcome } from '../src/engine.ts';
+import { processStepJob, recordDecision, STEP_QUEUE, type StepContext, type StepExecutor, type StepOutcome } from '../src/engine.ts';
 import { createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { openReply } from '../src/reply.ts';
@@ -391,4 +391,26 @@ test('the engine refuses a declassification that lowers nothing', async () => {
   assert.equal((await loadTask(db().sql, taskId))?.waitingReason, 'the agent asked for an invalid declassification');
   const approvals = await db().sql`SELECT 1 FROM approvals WHERE task_id = ${taskId}`;
   assert.equal(approvals.length, 0);
+});
+
+test('decided approvals come newest first, with the channel they were decided from', async () => {
+  const ids: string[] = [];
+  for (const via of ['web', 'telegram', 'telegram'] as const) {
+    const [row] = await db().sql<{ id: string }[]>`
+      INSERT INTO approvals (kind, action, detail, label) VALUES ('action', 'send_external', '{}', 'L1') RETURNING id::text`;
+    assert.ok(row);
+    await recordDecision(db().sql, row.id, 'approved', via);
+    ids.push(row.id);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const reply = await call('GET', '/api/approvals?state=approved&limit=200');
+  const listed = (reply.body as { approvals: { id: string; decidedVia: string }[] }).approvals.filter((approval) => ids.includes(approval.id));
+  assert.deepEqual(
+    listed.map((approval) => [approval.id, approval.decidedVia]),
+    [
+      [ids[2], 'telegram'],
+      [ids[1], 'telegram'],
+      [ids[0], 'web'],
+    ],
+  );
 });

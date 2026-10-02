@@ -44,10 +44,14 @@ export async function requestDeclassify(
   return row;
 }
 
-/** Approvals in one state, oldest first. */
+/**
+ * Approvals in one state: pending ones oldest first (the queue to work
+ * through), decided or expired ones most recently decided first.
+ */
 export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100): Promise<StoredApproval[]> {
+  const order = state === 'pending' ? 'requested_at, id' : 'decided_at DESC, id';
   const rows = await sql.unsafe<StoredApproval[]>(
-    `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ORDER BY requested_at, id LIMIT $2`,
+    `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ORDER BY ${order} LIMIT $2`,
     [state, limit],
   );
   return [...rows];
