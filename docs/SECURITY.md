@@ -44,4 +44,4 @@
 
 - Primo avvio, a mano: `age-keygen -o <file>` nella posizione dove `sops` cerca la chiave (su macOS `~/Library/Application Support/sops/age/keys.txt`, oppure un file indicato da `SOPS_AGE_KEY_FILE`), poi `pnpm vault:init <chiave pubblica age1...>` e `pnpm vault:edit`. Le chiavi del file sono di primo livello: `nome: valore`, letto come `vault://nome`.
 - La chiave privata non entra mai in `ARIANNA_HOME`, in git o nella cartella sincronizzata: senza di lei `data/vault/secrets.yaml` è illeggibile, e perderla vuol dire perdere i segreti. Va conservata a parte (per esempio nel gestore di password).
-- Il controllo del gateway confronta valori esatti: un segreto trasformato (in base64, spezzato, abbreviato) non si riconosce. È una rete, non il controllo principale, che resta non mettere mai il valore in un testo.
+- Il controllo del gateway confronta valori esatti: un segreto trasformato (in base64, spezzato fra frammenti dello stesso payload, abbreviato) non si riconosce, e il registro dei valori rivelati si svuota a ogni riavvio del processo (D-043). È una rete, non il controllo principale, che resta non mettere mai il valore in un testo.

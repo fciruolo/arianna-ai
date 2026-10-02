@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { revealSecret, type Secret } from './secret.ts';
+import { Secret } from './secret.ts';
 
 export const VAULT_DIR = 'vault';
 export const VAULT_FILE = 'secrets.yaml';
@@ -21,9 +21,19 @@ const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
  * What sops gets from the environment of the core: where to find the key and
  * little else. No other secret the core may hold reaches the child.
  */
-const PASSED_ENV = ['PATH', 'HOME', 'XDG_CONFIG_HOME', 'TMPDIR', 'SOPS_AGE_KEY_FILE', 'SOPS_AGE_KEY'] as const;
+const PASSED_ENV = [
+  'PATH',
+  'HOME',
+  'XDG_CONFIG_HOME',
+  'TMPDIR',
+  'SOPS_AGE_KEY_FILE',
+  'SOPS_AGE_KEY',
+  // A key kept by an external program (a password manager) or an SSH key.
+  'SOPS_AGE_KEY_CMD',
+  'SOPS_AGE_SSH_PRIVATE_KEY_FILE',
+] as const;
 
-export type VaultErrorCode = 'invalid-reference' | 'no-vault' | 'sops-missing' | 'decrypt-failed' | 'timeout' | 'empty';
+export type VaultErrorCode = 'invalid-reference' | 'no-vault' | 'sops-missing' | 'decrypt-failed' | 'timeout' | 'too-large' | 'empty';
 
 /** Messages carry the reference and a code, never sops output: it may quote the file. */
 export class VaultError extends Error {
@@ -94,6 +104,8 @@ function run(command: readonly string[], args: string[], cwd: string, env: NodeJ
           return;
         }
         if (error.code === 'ENOENT') reject(new VaultError('sops-missing', 'sops is not installed or not on PATH'));
+        // Checked before `killed`: Node also kills a child whose output is too large.
+        else if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') reject(new VaultError('too-large', 'the secret is larger than 1 MiB'));
         else if (error.killed) reject(new VaultError('timeout', 'sops did not answer in time'));
         else reject(new VaultError('decrypt-failed', 'sops could not decrypt the secret'));
       },
@@ -113,17 +125,16 @@ export function createVault(options: VaultOptions): Vault {
     async resolve(ref: string): Promise<Secret> {
       const name = parseVaultRef(ref);
       if (!existsSync(file)) throw new VaultError('no-vault', `no vault file for ${ref}: create it with pnpm vault:edit`);
-      let output: string;
+      let value: string;
       try {
-        output = await run(command, ['--decrypt', '--extract', `["${name}"]`, file], dir, env, timeout);
+        value = await run(command, ['--decrypt', '--extract', `["${name}"]`, file], dir, env, timeout);
       } catch (error) {
         if (error instanceof VaultError) throw new VaultError(error.code, `${ref}: ${error.message}`);
         throw error;
       }
-      // sops ends a scalar with a newline; the value itself does not have one.
-      const value = output.endsWith('\n') ? output.slice(0, -1) : output;
+      // sops prints a string value exactly, without adding a newline (checked on 3.13.3).
       if (value === '') throw new VaultError('empty', `${ref} is empty`);
-      return revealSecret(ref, value);
+      return new Secret(ref, value);
     },
   };
 }

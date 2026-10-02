@@ -54,6 +54,11 @@ export interface DeltaNotice {
 // pg_notify payloads stay under 8000 bytes. Pieces start at 1500 code points
 // and are halved while the JSON notice (escapes included) is too long.
 const CHUNK = 1_500;
+
+// The end of what a reply has already streamed, checked again with each new
+// fragment: a secret split over several fragments is still found. Longer than
+// any secret the vault is meant for (a PEM key is about 3 KB).
+const STREAMED_TAIL = 16_384;
 const MAX_NOTICE_BYTES = 7_000;
 
 /** The JSON notices for a fragment, each under the pg_notify limit. */
@@ -91,14 +96,18 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
   const id = randomUUID();
   let seq = 0;
   let finished = false;
+  let streamed = '';
 
   return {
     id,
     async delta(text) {
       if (finished) throw new Error('the reply is finished');
-      // Fragments skip the gateway (they are not stored), not the vault check.
-      const refs = knownSecrets.find(text);
+      // Fragments skip the gateway (they are not stored), not the vault check;
+      // the new fragment is checked joined to the end of what was already sent.
+      const joined = streamed + text;
+      const refs = knownSecrets.find(joined);
       if (refs.length > 0) throw new Error(`the fragment contains the value of ${refs.join(', ')}`);
+      streamed = joined.slice(-STREAMED_TAIL);
       for (const notice of notices(text, { replyId: id, conversationId, taskId }, seq)) {
         seq += 1;
         // Same channel the live feed listens on: deltaChannel(current_schema()).

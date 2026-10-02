@@ -126,14 +126,15 @@ function block(
  * An allowed decision carries `texts`, the exact text checked for each fragment:
  * adapters send those, never a new serialization of the original values.
  *
- * `secrets` is optional only for callers that cannot have revealed a secret
- * (evals, tests): the core always passes the vault's registry.
+ * `secrets` is required, so no caller can skip the check by forgetting it:
+ * the core passes the vault's registry, evals and tests `secretMatcher([])` or
+ * their fake values.
  */
 export function gatewayCheck(
   payload: readonly Labeled<unknown>[],
   context: Context,
   target: Target,
-  secrets?: KnownSecrets,
+  secrets: KnownSecrets,
 ): Decision {
   // Types do not hold at runtime: payloads also come from model output and JSON.
   const fragments: readonly unknown[] = payload;
@@ -143,6 +144,10 @@ export function gatewayCheck(
   const label = maxLabel(...payload.map((fragment) => labelOrDefault(fragment.label)));
   if (!isContext(context)) return block('invalid-input', label, 'context was not created by the policy', 'stay-local');
   if (!isTarget(target)) return block('invalid-input', label, 'unknown target', 'stay-local');
+  // Types do not hold at runtime: a missing matcher must not mean "no secrets".
+  if (typeof (secrets as Partial<KnownSecrets> | undefined)?.find !== 'function') {
+    return block('invalid-input', label, 'the known secrets were not given', 'stay-local');
+  }
   if (target.kind === 'executor' && CLOUD_EXECUTORS.includes(target.id) && target.locality !== 'cloud') {
     return block('invalid-input', label, `executor ${target.id} is a cloud executor, not ${target.locality}`, 'stay-local');
   }
@@ -164,17 +169,15 @@ export function gatewayCheck(
   }
   Object.freeze(texts);
 
-  if (secrets !== undefined) {
-    let refs: string[];
-    try {
-      refs = parts.flatMap((part) => secrets.find(part));
-    } catch {
-      return block('invalid-input', label, 'the known secrets could not be checked', 'stay-local');
-    }
-    if (refs.length > 0) {
-      // References name secrets, they are not secrets: the reason can be logged.
-      return block('secret', label, `payload contains the value of ${[...new Set(refs)].join(', ')}`, onBlock === 'notify-reference' ? onBlock : 'wait-user');
-    }
+  let refs: string[];
+  try {
+    refs = parts.flatMap((part) => secrets.find(part));
+  } catch {
+    return block('invalid-input', label, 'the known secrets could not be checked', 'stay-local');
+  }
+  if (refs.length > 0) {
+    // References name secrets, they are not secrets: the reason can be logged.
+    return block('secret', label, `payload contains the value of ${[...new Set(refs)].join(', ')}`, onBlock === 'notify-reference' ? onBlock : 'wait-user');
   }
 
   if (locality === 'local') {

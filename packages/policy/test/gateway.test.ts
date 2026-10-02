@@ -4,15 +4,19 @@ import { test } from 'node:test';
 import {
   createContext,
   derive,
-  gatewayCheck,
+  gatewayCheck as check,
   localityOf,
   recordRead,
+  secretMatcher,
   targetName,
   type Context,
   type Label,
   type Labeled,
   type Target,
 } from '../src/index.ts';
+
+// No secret revealed: these tests are about every other rule (secrets.test.ts has the `secret` rule).
+const gatewayCheck = (payload: readonly Labeled<unknown>[], context: Context, target: Target) => check(payload, context, target, secretMatcher([]));
 
 const CLAUDE: Target = { kind: 'executor', id: 'claude', locality: 'cloud' };
 const LOCAL_MODEL: Target = { kind: 'executor', id: 'omlx', locality: 'local' };

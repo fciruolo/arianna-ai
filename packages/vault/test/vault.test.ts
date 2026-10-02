@@ -78,6 +78,11 @@ describe('createVault', () => {
     assert.equal(decision.rule, 'secret');
   });
 
+  it('registers a secret built directly too: no Secret escapes the registry', () => {
+    const secret = new Secret('vault://direct', 'fake-direct-value-31');
+    assert.deepEqual(knownSecrets.find(`x ${secret.reveal()} y`), ['vault://direct']);
+  });
+
   it('passes sops only PATH, HOME and the sops variables', async () => {
     const env = { PATH: process.env.PATH, HOME: '/nonexistent', SOPS_AGE_KEY_FILE: 'k', OTHER_TOKEN: 'x', NODE_OPTIONS: '' };
     const names = JSON.parse((await vault({ env }).resolve('vault://env')).reveal()) as string[];
@@ -103,6 +108,10 @@ describe('createVault', () => {
   it('says when the vault file or sops is missing', async () => {
     await rejectsWith(createVault({ data: join(DATA, 'nowhere'), command: [process.execPath, FAKE_SOPS] }).resolve('vault://demo-token'), 'no-vault');
     await rejectsWith(vault({ command: [join(DATA, 'no-sops-here')] }).resolve('vault://demo-token'), 'sops-missing');
+  });
+
+  it('tells an oversized answer from a timeout', async () => {
+    await rejectsWith(vault().resolve('vault://huge'), 'too-large');
   });
 
   it('stops a sops that does not answer', async () => {

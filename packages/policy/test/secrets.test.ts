@@ -61,6 +61,12 @@ test('a payload without known secrets passes as before', () => {
   assert.equal(gatewayCheck([fragment('fake text')], createContext('L1'), CLAUDE, known).decision, 'allow');
 });
 
+test('a missing matcher blocks: forgetting it does not mean "no secrets"', () => {
+  const decision = gatewayCheck([fragment('fake text', 'L2')], createContext('L2'), LOCAL_MODEL, undefined as unknown as typeof known);
+  assert.equal(decision.decision, 'block');
+  assert.equal(decision.rule, 'invalid-input');
+});
+
 test('a matcher that throws blocks instead of letting the payload through', () => {
   const broken = {
     find(): string[] {

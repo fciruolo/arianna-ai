@@ -119,7 +119,7 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
     }
   }
 
-  const secrets = input.secrets === undefined ? undefined : secretMatcher(input.secrets);
+  const secrets = secretMatcher(input.secrets ?? []);
   const decision = gatewayCheck(payload, toContext(input.context), input.target, secrets);
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule };
   const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };

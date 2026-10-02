@@ -99,6 +99,11 @@ test('a vault secret is used by the code and never reaches a prompt, the chat, g
     // So is a chat reply, as a fragment and as the final message.
     const reply = await openReply(sql, task.id);
     await assert.rejects(reply.delta(`ecco ${secret.reveal()}`), /vault:\/\/service-token/);
+    // Split over fragments, as a model streams it a few tokens at a time.
+    const value = secret.reveal();
+    await reply.delta(`ecco ${value.slice(0, 6)}`);
+    await reply.delta(value.slice(6, 12));
+    await assert.rejects(reply.delta(value.slice(12)), /vault:\/\/service-token/);
     const result = await reply.finish(`Il token è ${secret.reveal()}`, 'L2');
     assert.ok(!result.stored && result.reason === 'blocked');
     assert.equal(result.decision.rule, 'secret');

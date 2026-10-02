@@ -1,6 +1,7 @@
 // A stand-in for `sops --decrypt --extract '["name"]' <file>`: the "encrypted"
 // file is plain JSON with fake values. Special names: `env` prints the names of
-// the variables it received, `fail` writes to stderr and exits 1, `hang` never answers.
+// the variables it received, `fail` writes to stderr and exits 1, `hang` never
+// answers, `huge` prints more than the vault accepts.
 import { readFileSync } from 'node:fs';
 
 const [decrypt, extract, path, file] = process.argv.slice(2);
@@ -15,6 +16,8 @@ if (name === 'env') {
 } else if (name === 'fail') {
   process.stderr.write('fake-stderr-must-not-leak\n');
   process.exit(1);
+} else if (name === 'huge') {
+  process.stdout.write('x'.repeat(2 * 1024 * 1024));
 } else if (name === 'hang') {
   setInterval(() => undefined, 1000);
 } else {
@@ -24,5 +27,5 @@ if (name === 'env') {
     process.stderr.write('component not found\n');
     process.exit(1);
   }
-  process.stdout.write(`${value}\n`);
+  process.stdout.write(value);
 }

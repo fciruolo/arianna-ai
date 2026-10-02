@@ -7,12 +7,32 @@ import { secretMatcher, type KnownSecrets } from '@arianna/policy';
 
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
 
+// Every value revealed in this process, with its reference; a rotated secret
+// keeps its old value too. The core passes this registry to the gateway: a
+// revealed value found in a payload blocks it. It lives as long as the
+// process: after a restart a value is known again once it is resolved again.
+const revealed = new Map<string, string>();
+let matcher = secretMatcher([]);
+
+function register(ref: string, value: string): void {
+  if (revealed.has(value)) return;
+  revealed.set(value, ref);
+  matcher = secretMatcher([...revealed].map(([knownValue, knownRef]) => ({ ref: knownRef, value: knownValue })));
+}
+
+/** The secrets revealed so far in this process, as the gateway reads them. */
+export const knownSecrets: KnownSecrets = {
+  find: (text) => matcher.find(text),
+};
+
 export class Secret {
   /** `vault://name`. */
   readonly ref: string;
   readonly #value: string;
 
+  /** Registers the value before anyone holds it, so the gateway always knows it first. */
   constructor(ref: string, value: string) {
+    register(ref, value);
     this.ref = ref;
     this.#value = value;
     Object.freeze(this);
@@ -34,24 +54,4 @@ export class Secret {
   [INSPECT](): string {
     return `Secret(${this.ref})`;
   }
-}
-
-// Every value revealed in this process, with its reference; a rotated secret
-// keeps its old value too. The core passes this registry to the gateway: a
-// revealed value found in a payload blocks it.
-const revealed = new Map<string, string>();
-let matcher = secretMatcher([]);
-
-/** The secrets revealed so far in this process, as the gateway reads them. */
-export const knownSecrets: KnownSecrets = {
-  find: (text) => matcher.find(text),
-};
-
-/** Registers the value before handing it out, so the gateway knows it first. */
-export function revealSecret(ref: string, value: string): Secret {
-  if (!revealed.has(value)) {
-    revealed.set(value, ref);
-    matcher = secretMatcher([...revealed].map(([knownValue, knownRef]) => ({ ref: knownRef, value: knownValue })));
-  }
-  return new Secret(ref, value);
 }

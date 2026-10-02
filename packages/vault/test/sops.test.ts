@@ -34,7 +34,7 @@ it('decrypts one key of a sops file encrypted with age', { skip }, async () => {
   execFileSync('age-keygen', ['-o', key], { stdio: 'ignore' });
   const recipient = execFileSync('age-keygen', ['-y', key], { encoding: 'utf8' }).trim();
   const plain = join(dir, 'secrets.plain.yaml');
-  writeFileSync(plain, `demo-token: ${FAKE_TOKEN}\nother: fake-other-value\n`);
+  writeFileSync(plain, `demo-token: ${FAKE_TOKEN}\nother: fake-other-value\nmulti: |-\n  fake-line-one\n  fake-line-two\nkept: |\n  fake-kept-line\n`);
   const encrypted = execFileSync('sops', ['--encrypt', '--age', recipient, plain], { cwd: dir, encoding: 'utf8' });
   rmSync(plain);
   assert.ok(!encrypted.includes(FAKE_TOKEN));
@@ -43,6 +43,9 @@ it('decrypts one key of a sops file encrypted with age', { skip }, async () => {
   const env = { PATH: process.env.PATH, SOPS_AGE_KEY_FILE: key };
   const secret = await createVault({ data: DATA, env }).resolve('vault://demo-token');
   assert.equal(secret.reveal(), FAKE_TOKEN);
+  // Values come back exactly, their own newlines included.
+  assert.equal((await createVault({ data: DATA, env }).resolve('vault://multi')).reveal(), 'fake-line-one\nfake-line-two');
+  assert.equal((await createVault({ data: DATA, env }).resolve('vault://kept')).reveal(), 'fake-kept-line\n');
 
   await assert.rejects(createVault({ data: DATA, env }).resolve('vault://missing'), VaultError);
   // Without the key, nothing decrypts.

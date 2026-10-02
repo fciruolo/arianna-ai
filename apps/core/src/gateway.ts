@@ -67,7 +67,9 @@ export async function passGateway(
 
   // Allowed: the texts that will be sent. Blocked: what was offered, for the record.
   // A blocked secret leaves no hash: a guessable value could be found from it.
-  const texts = decision.decision === 'allow' ? decision.texts : decision.rule === 'secret' ? undefined : textsOf(payload);
+  // Nor does invalid input, which is decided before the secret check.
+  const unmeasured = decision.decision === 'block' && (decision.rule === 'secret' || decision.rule === 'invalid-input');
+  const texts = decision.decision === 'allow' ? decision.texts : unmeasured ? undefined : textsOf(payload);
   const measured = texts === undefined ? undefined : measure(texts);
   // The summary is free text from the caller: kept only when it could have left itself.
   const summary =

@@ -38,7 +38,7 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 | 1.10 | Orchestratore locale con strumenti a schema vincolato, contesto per task | 7-10 | | Task a più passi completato |
 | 1.11 | API + WebSocket eventi + chat web minima: storico, modalità lavoro/privato, schede di approvazione | 5-8 | 1,5 (solo sessione di Claude, compresa la revisione; chat nel browser non ancora provata a mano, risposta vera con il 1.10) | Chat dal browser; declassamento approvato dalla chat |
 | 1.12 | Casi eval completi: gateway, router, canarino | 4-6 | | Soglie rispettate |
-| 1.13 | Indurimento e verifica del criterio di uscita; password del database non predefinita, controllata da un primo `doctor` | 4-5 | | Criterio Fase 1A superato |
+| 1.13 | Indurimento e verifica del criterio di uscita; password del database non predefinita (dal vault, D-042) e ruolo applicativo senza diritti sullo schema, controllati da un primo `doctor` | 4-5 | | Criterio Fase 1A superato |
 
 **Traguardo M1 (dopo 1.7, 36-54 h):** da riga di comando un compito L1 va a Claude Code in un worktree confinato e uno L2 resta sul modello locale, con decisione del router e riga del gateway nel database. È il filo teso da un capo all'altro: da qui in poi si allarga, non si scopre.
 

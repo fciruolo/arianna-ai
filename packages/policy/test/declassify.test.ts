@@ -8,6 +8,7 @@ import {
   declassifyRequest,
   gatewayCheck,
   PolicyError,
+  secretMatcher,
   type DeclassifyApproval,
   type Label,
   type Labeled,
@@ -33,7 +34,7 @@ test('with an approval for the exact text the label goes down and the change is 
   assert.deepEqual(item, { value: BRIEF.value, label: 'L1', source: 'declassified:approval-1' });
   assert.deepEqual(change, { subject: `content:${String(contentHash(BRIEF.value))}`, from: 'L2', to: 'L1', approvalId: 'approval-1' });
   // Only that text leaves, from a fresh run context.
-  assert.equal(gatewayCheck([item], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }).decision, 'allow');
+  assert.equal(gatewayCheck([item], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, secretMatcher([])).decision, 'allow');
 });
 
 test('without an approved declassify approval nothing changes', () => {
