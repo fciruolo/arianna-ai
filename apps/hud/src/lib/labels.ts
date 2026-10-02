@@ -42,3 +42,13 @@ export function declassifyLabels(detail: Record<string, unknown>): string | unde
   const { from, to } = detail;
   return typeof from === 'string' && typeof to === 'string' ? `${from} → ${to}` : undefined;
 }
+
+export const DECISION_TEXT: Record<'approved' | 'rejected', string> = {
+  approved: 'Approvata',
+  rejected: 'Rifiutata',
+};
+
+export const REMOTE_CHANNEL_TEXT: Record<'telegram' | 'phone', string> = {
+  telegram: 'Telegram',
+  phone: 'telefono',
+};

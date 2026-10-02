@@ -5,10 +5,15 @@ import ApprovalCard from './components/ApprovalCard.vue';
 import ChatView from './components/ChatView.vue';
 import ConversationList from './components/ConversationList.vue';
 import NewConversation from './components/NewConversation.vue';
+import { ACTION_TEXT, DECISION_TEXT, REMOTE_CHANNEL_TEXT } from './lib/labels.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, chat, current, tasks, approvals, live, error, sending } = store;
+const { conversations, chat, current, tasks, approvals, remoteDecisions, live, error, sending } = store;
+
+function timeOf(ts: string): string {
+  return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
 const showSidebar = ref(false);
 
 onMounted(() => {
@@ -98,15 +103,41 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
 
     <!-- Approvals: "Attende te" -->
     <aside
-      v-if="approvals.length > 0"
+      v-if="approvals.length > 0 || remoteDecisions.length > 0"
       class="max-h-[45vh] overflow-y-auto border-t border-stone-200 bg-white p-4 md:max-h-none md:w-96 md:shrink-0 md:border-t-0 md:border-l dark:border-stone-800 dark:bg-stone-900"
     >
-      <h2 class="mb-3 text-sm font-semibold text-stone-700 dark:text-stone-200">
-        Attende te <span class="font-normal text-stone-500">({{ approvals.length }})</span>
-      </h2>
-      <div class="flex flex-col gap-3">
-        <ApprovalCard v-for="approval in approvals" :key="approval.id" :approval="approval" :decide="store.decide" />
-      </div>
+      <template v-if="approvals.length > 0">
+        <h2 class="mb-3 text-sm font-semibold text-stone-700 dark:text-stone-200">
+          Attende te <span class="font-normal text-stone-500">({{ approvals.length }})</span>
+        </h2>
+        <div class="flex flex-col gap-3">
+          <ApprovalCard v-for="approval in approvals" :key="approval.id" :approval="approval" :decide="store.decide" />
+        </div>
+      </template>
+      <template v-if="remoteDecisions.length > 0">
+        <h2 class="mb-2 text-sm font-semibold text-stone-700 dark:text-stone-200" :class="approvals.length > 0 ? 'mt-5' : ''">Decise altrove</h2>
+        <ul class="flex flex-col gap-2">
+          <li
+            v-for="decision in remoteDecisions"
+            :key="decision.approvalId"
+            class="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs dark:border-sky-900 dark:bg-sky-950/40"
+          >
+            <span class="font-semibold">{{ decision.action === undefined ? 'Richiesta' : (ACTION_TEXT[decision.action] ?? decision.action) }}</span>
+            <span :class="decision.state === 'approved' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'">
+              {{ DECISION_TEXT[decision.state] }}
+            </span>
+            <span class="text-stone-500">da {{ REMOTE_CHANNEL_TEXT[decision.via] }} · {{ timeOf(decision.ts) }}</span>
+            <button
+              type="button"
+              class="ml-auto rounded px-1 text-stone-500 hover:bg-sky-100 dark:hover:bg-sky-900"
+              aria-label="Nascondi"
+              @click="store.dismissDecision(decision.approvalId)"
+            >
+              ×
+            </button>
+          </li>
+        </ul>
+      </template>
     </aside>
   </div>
 </template>

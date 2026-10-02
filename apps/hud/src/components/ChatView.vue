@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import type { ChatState } from '../lib/chat-state.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, STATUS_TEXT } from '../lib/labels.ts';
@@ -10,6 +10,16 @@ const emit = defineEmits<{ send: [body: string] }>();
 
 const draft = ref('');
 const list = ref<HTMLElement | null>(null);
+
+/** Tasks started by a message written on Telegram: their replies go back there. */
+const fromTelegram = computed(
+  () => new Set(props.chat.messages.filter((message) => message.role === 'user' && message.channel === 'telegram').map((message) => message.taskId)),
+);
+
+/** A reply to a Telegram message: sent there, or replaced by a pointer to this chat if the gateway refused it. */
+function repliesToTelegram(message: Message): boolean {
+  return message.role === 'assistant' && message.taskId !== null && fromTelegram.value.has(message.taskId);
+}
 
 /** The task a user message started, shown under it while it is not settled. */
 function taskOf(message: Message): Task | undefined {
@@ -94,6 +104,16 @@ const statusClass: Record<Task['status'], string> = {
           </div>
           <div class="mt-1 flex items-center gap-2 px-1 text-[11px] text-stone-500 dark:text-stone-400">
             <span :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
+            <span
+              v-if="message.channel === 'telegram'"
+              class="rounded bg-sky-100 px-1.5 py-px font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-200"
+              title="Scritto da Telegram"
+            >Telegram</span>
+            <span
+              v-else-if="repliesToTelegram(message)"
+              class="rounded bg-sky-100 px-1.5 py-px font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-200"
+              title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
+            >→ Telegram</span>
             <template v-if="taskOf(message) !== undefined">
               <span aria-hidden="true">·</span>
               <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>

@@ -4,6 +4,7 @@ import * as api from './lib/api.ts';
 import { applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { addRemoteDecision, remoteDecision, type RemoteDecision } from './lib/remote-decisions.ts';
 import type { Approval, Conversation, ConversationMode, Task } from './lib/types.ts';
 
 /**
@@ -15,6 +16,8 @@ export function createChatStore() {
   const chat = shallowRef<ChatState | null>(null);
   const tasks = ref<Record<string, Task>>({});
   const approvals = ref<Approval[]>([]);
+  /** Approvals decided from Telegram (or the phone) while the page was open. */
+  const remoteDecisions = ref<RemoteDecision[]>([]);
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
@@ -133,8 +136,16 @@ export function createChatStore() {
         }
         break;
       }
+      case 'approval.decided': {
+        // Read the action from the card before the refresh takes it away.
+        const id = payloadString(event, 'approvalId');
+        const decision = remoteDecision(event, approvals.value.find((approval) => approval.id === id)?.action);
+        if (decision !== undefined) remoteDecisions.value = addRemoteDecision(remoteDecisions.value, decision);
+        work.push(refreshApprovals());
+        if (known && event.taskId !== null) work.push(refreshTask(event.taskId));
+        break;
+      }
       case 'approval.requested':
-      case 'approval.decided':
         work.push(refreshApprovals());
         if (known && event.taskId !== null) work.push(refreshTask(event.taskId));
         break;
@@ -175,11 +186,15 @@ export function createChatStore() {
     });
   }
 
+  function dismissDecision(approvalId: string): void {
+    remoteDecisions.value = remoteDecisions.value.filter((decision) => decision.approvalId !== approvalId);
+  }
+
   function stop(): void {
     connection?.close();
   }
 
-  return { conversations, chat, current, tasks, approvals, live, error, sending, open, create, send, decide, start, stop };
+  return { conversations, chat, current, tasks, approvals, remoteDecisions, live, error, sending, open, create, send, decide, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
