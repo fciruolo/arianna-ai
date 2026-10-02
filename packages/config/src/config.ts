@@ -6,6 +6,7 @@ import { parse as parseToml } from 'smol-toml';
 import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
+import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 export const CONFIG_FILE = join('config', 'arianna.toml');
@@ -28,6 +29,8 @@ export interface AriannaConfig {
   server: { host: string; port: number };
   local: LocalConfig;
   cloud: CloudConfig;
+  /** Absent when `[telegram]` is not configured: the channel is off. */
+  telegram?: TelegramConfig;
 }
 
 export function parseConfig(text: string, home: string): AriannaConfig {
@@ -38,7 +41,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'local', 'cloud'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'local', 'cloud', 'telegram'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -59,6 +62,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`database.host: must be one of ${LOOPBACK_HOSTS.join(', ')}`);
   }
 
+  const telegram = parseTelegram(root.telegram);
   return {
     home,
     paths: { data },
@@ -71,6 +75,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     server: parseServer(root.server),
     local: parseLocal(root.local),
     cloud: parseCloud(root.cloud, home, data),
+    ...(telegram === undefined ? {} : { telegram }),
   };
 }
 

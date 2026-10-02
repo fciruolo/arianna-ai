@@ -77,6 +77,14 @@ export async function createConversation(
   sql: Sql,
   options: { mode: ConversationMode; workspace?: string; allowlist?: readonly string[] },
 ): Promise<Conversation> {
+  return sql.begin((tx) => writeConversation(tx, options));
+}
+
+/** `createConversation` inside a transaction the caller holds. */
+export async function writeConversation(
+  tx: Queryable,
+  options: { mode: ConversationMode; workspace?: string; allowlist?: readonly string[] },
+): Promise<Conversation> {
   // Callers may pass anything that came over the wire.
   if (!(['work', 'private'] as readonly string[]).includes(options.mode)) throw new ChatError('invalid', 'mode must be work or private');
   if (options.workspace !== undefined) {
@@ -84,17 +92,15 @@ export async function createConversation(
     if (!isRelativePath(options.workspace)) throw new ChatError('invalid', 'workspace must be a relative path inside ARIANNA_HOME');
     if (!isAllowlisted(options.workspace, options.allowlist ?? [])) throw new ChatError('invalid', 'workspace is not in cloud.allowlist');
   }
-  return sql.begin(async (tx) => {
-    const [row] = await tx<{ id: string }[]>`
-      INSERT INTO conversations (mode, clearance, workspace)
-      VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.workspace ?? null})
-      RETURNING id::text`;
-    if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
-    await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode: options.mode } });
-    const created = await loadConversation(tx, row.id);
-    if (created === undefined) throw new Error('the new conversation is missing');
-    return created;
-  });
+  const [row] = await tx<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, workspace)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.workspace ?? null})
+    RETURNING id::text`;
+  if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
+  await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode: options.mode } });
+  const created = await loadConversation(tx, row.id);
+  if (created === undefined) throw new Error('the new conversation is missing');
+  return created;
 }
 
 function isRelativePath(path: string): boolean {
@@ -148,6 +154,8 @@ export async function loadMessage(sql: Queryable, id: string): Promise<Message |
 export function checkMessageBody(body: unknown): string {
   if (typeof body !== 'string' || body.trim() === '') throw new ChatError('invalid', 'the message is empty');
   if (body.length > MAX_MESSAGE_LENGTH) throw new ChatError('invalid', `the message is longer than ${String(MAX_MESSAGE_LENGTH)} characters`);
+  // PostgreSQL text cannot hold a NUL: refused here, not as a database error.
+  if (body.includes(String.fromCharCode(0))) throw new ChatError('invalid', 'the message contains a NUL character');
   return body;
 }
 
@@ -172,45 +180,57 @@ export async function postUserMessage(
   options: { channel?: MessageChannel } = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
-  return sql.begin(async (tx) => {
-    const conversation = isUuid(conversationId)
-      ? (await tx<{ mode: ConversationMode; clearance: Label }[]>`
-          SELECT mode, clearance FROM conversations WHERE id = ${conversationId} FOR UPDATE`)[0]
-      : undefined;
-    if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
+  return sql.begin((tx) => writeUserMessage(tx, conversationId, body, options));
+}
 
-    if (conversation.mode === 'work') {
-      const kinds = [...new Set(scanText(body).map((finding) => finding.kind))];
-      if (kinds.length > 0) {
-        throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
-      }
+/**
+ * `postUserMessage` inside a transaction the caller holds, e.g. together with
+ * the offset of the Telegram update that carried the message.
+ */
+export async function writeUserMessage(
+  tx: Queryable,
+  conversationId: string,
+  body: string,
+  options: { channel?: MessageChannel } = {},
+): Promise<{ message: Message; task: Task }> {
+  checkMessageBody(body);
+  const conversation = isUuid(conversationId)
+    ? (await tx<{ mode: ConversationMode; clearance: Label }[]>`
+        SELECT mode, clearance FROM conversations WHERE id = ${conversationId} FOR UPDATE`)[0]
+    : undefined;
+  if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
+
+  if (conversation.mode === 'work') {
+    const kinds = [...new Set(scanText(body).map((finding) => finding.kind))];
+    if (kinds.length > 0) {
+      throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
     }
+  }
 
-    const label = labelForUserMessage(createContext(conversation.clearance));
-    const task = await createTask(tx, {
-      title: taskTitle(body),
-      conversationId,
-      label,
-      clearance: conversation.clearance,
-      effectiveLabel: label,
-      assignee: CHAT_AGENT,
-      status: 'ready',
-    });
-    if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
-
-    const [row] = await tx<{ id: string }[]>`
-      INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
-      VALUES (${conversationId}, 'user', ${options.channel ?? 'web'}, ${label}::privacy_label, ${body}, ${task.id})
-      RETURNING id::text`;
-    if (row === undefined) throw new Error('INSERT INTO messages returned no row');
-    await appendEvent(tx, {
-      kind: 'message.created',
-      taskId: task.id,
-      label: 'L0',
-      payload: { conversationId, messageId: row.id, role: 'user' },
-    });
-    const message = await loadMessage(tx, row.id);
-    if (message === undefined) throw new Error('the new message is missing');
-    return { message, task };
+  const label = labelForUserMessage(createContext(conversation.clearance));
+  const task = await createTask(tx, {
+    title: taskTitle(body),
+    conversationId,
+    label,
+    clearance: conversation.clearance,
+    effectiveLabel: label,
+    assignee: CHAT_AGENT,
+    status: 'ready',
   });
+  if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
+
+  const [row] = await tx<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
+    VALUES (${conversationId}, 'user', ${options.channel ?? 'web'}, ${label}::privacy_label, ${body}, ${task.id})
+    RETURNING id::text`;
+  if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+  await appendEvent(tx, {
+    kind: 'message.created',
+    taskId: task.id,
+    label: 'L0',
+    payload: { conversationId, messageId: row.id, role: 'user' },
+  });
+  const message = await loadMessage(tx, row.id);
+  if (message === undefined) throw new Error('the new message is missing');
+  return { message, task };
 }

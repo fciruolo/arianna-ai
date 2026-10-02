@@ -59,6 +59,33 @@ test('cloud.allowlist accepts siblings that only share a prefix', () => {
   assert.deepEqual(config.cloud.allowlist, ['repos/a', 'repos/ab', '..cache/x']);
 });
 
+test('telegram is off without its section, and takes a vault reference and private chat ids', () => {
+  assert.equal(parseConfig(VALID, HOME).telegram, undefined);
+  const config = parseConfig(`${VALID}\n[telegram]\ntoken = "vault://telegram-bot-token"\nchats = [123456789]\n`, HOME);
+  assert.deepEqual(config.telegram, { token: 'vault://telegram-bot-token', chats: [123456789] });
+});
+
+test('telegram rejects a token in clear, group chats, duplicates and an empty list', () => {
+  const cases: [string, RegExp][] = [
+    ['token = "123456:AAAAfake"\nchats = [1]', /vault:\/\/ reference/],
+    ['token = "vault://Bad Name"\nchats = [1]', /vault:\/\/ reference/],
+    ['token = "vault://telegram-bot-token"\nchats = [-1001234]', /positive id/],
+    ['token = "vault://telegram-bot-token"\nchats = ["123"]', /positive id/],
+    ['token = "vault://telegram-bot-token"\nchats = [1.5]', /positive id/],
+    ['token = "vault://telegram-bot-token"\nchats = [7, 7]', /listed twice/],
+    ['token = "vault://telegram-bot-token"\nchats = []', /at least one chat/],
+    ['token = "vault://telegram-bot-token"', /expected a list/],
+    ['token = "vault://telegram-bot-token"\nchats = [1]\nwebhook = "https://example.invalid"', /unknown key/],
+  ];
+  for (const [section, pattern] of cases) {
+    assert.throws(
+      () => parseConfig(`${VALID}\n[telegram]\n${section}\n`, HOME),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+      section,
+    );
+  }
+});
+
 test('the committed configuration loads', () => {
   const config = loadConfig({});
   assert.equal(config.home, resolveHome({}));

@@ -41,3 +41,13 @@ allowlist = []
 [server]
 host = "127.0.0.1"
 port = 7420
+
+# Telegram (task 1.15, D-044): an external channel behind the gateway, at most
+# L1; anything above arrives as a notice pointing to the web chat. Off while
+# this section is absent. The token stays in the vault (pnpm vault:edit, key
+# telegram-bot-token); `chats` lists the ids of the private chats the bot
+# talks to. Changing it is a privacy setting: only the user edits it.
+#
+# [telegram]
+# token = "vault://telegram-bot-token"
+# chats = [123456789]

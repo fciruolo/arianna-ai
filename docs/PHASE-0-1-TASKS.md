@@ -60,7 +60,7 @@ Non bloccano il criterio di uscita; l'ordine è per utilità.
 | Id | Task | Ore | Reali | Fatto quando |
 | --- | --- | --- | --- | --- |
 | 1.14 | Vault minimo: `sops` + `age`, riferimenti `vault://` risolti dal codice | 3-5 | 0,8 (solo sessione di Claude; anticipato su scelta dell'utente, D-042; verificato con un `sops` finto e con `sops` 3.13.3 e `age` 1.3.2 veri) | Un segreto finto usato senza comparire in prompt, log o eventi |
-| 1.15 | Telegram: notifiche e chat L0/L1 come canale esterno dietro gateway; approvazioni con pulsanti | 4-6 | | Un contenuto L2 arriva come riferimento; approvazione da telefono |
+| 1.15 | Telegram: notifiche e chat L0/L1 come canale esterno dietro gateway; approvazioni con pulsanti | 4-6 | 1,5 (solo sessione di Claude, contro un finto Bot API, D-044; aperto fino alla prova dal telefono all'installazione vera) | Un contenuto L2 arriva come riferimento; approvazione da telefono |
 | 1.16 | Adattatore `codex exec --json` con lo stesso profilo di confinamento; scheda Reviewer | 4-7 | | Compito banale e canarino; accesso ChatGPT verificato |
 | 1.17 | Installer: prerequisiti, download modelli con sha256, `doctor`, collegamento a oMLX | 8-12 | | Installazione pulita in cartella vuota; modelli Qwen scaricati e verificati |
 | 1.18 | Wizard `init`, schema `arianna.toml`, catalogo modelli curato e ruoli | 6-9 | | Wizard completo da zero; cambio modello di un ruolo senza riavvio |

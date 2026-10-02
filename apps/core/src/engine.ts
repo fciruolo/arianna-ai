@@ -370,23 +370,31 @@ export async function recordDecision(
   state: 'approved' | 'rejected',
   via: DecisionChannel,
 ): Promise<StoredApproval> {
-  return sql.begin(async (tx) => {
-    const decided = await decideApproval(tx, approvalId, state, via);
-    await appendEvent(tx, {
-      kind: 'approval.decided',
-      ...(decided.taskId === null ? {} : { taskId: decided.taskId }),
-      label: 'L0',
-      payload: { approvalId, state, via },
-    });
-    if (decided.taskId !== null) {
-      const task = await loadTask(tx, decided.taskId);
-      if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {
-        await moveTask(tx, task.id, 'ready', { cause: 'approval' });
-        await mustSchedule(tx, task.id, { approvalId });
-      }
-    }
-    return decided;
+  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via));
+}
+
+/** `recordDecision` inside a transaction the caller holds. */
+export async function recordDecisionIn(
+  tx: Queryable,
+  approvalId: string,
+  state: 'approved' | 'rejected',
+  via: DecisionChannel,
+): Promise<StoredApproval> {
+  const decided = await decideApproval(tx, approvalId, state, via);
+  await appendEvent(tx, {
+    kind: 'approval.decided',
+    ...(decided.taskId === null ? {} : { taskId: decided.taskId }),
+    label: 'L0',
+    payload: { approvalId, state, via },
   });
+  if (decided.taskId !== null) {
+    const task = await loadTask(tx, decided.taskId);
+    if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {
+      await moveTask(tx, task.id, 'ready', { cause: 'approval' });
+      await mustSchedule(tx, task.id, { approvalId });
+    }
+  }
+  return decided;
 }
 
 /**

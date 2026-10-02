@@ -25,6 +25,7 @@ test('migrations apply from zero and create every table', async () => {
       'runs',
       'schema_migrations',
       'tasks',
+      'telegram_state',
     ],
   );
 });

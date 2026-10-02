@@ -6,7 +6,7 @@ import { chunk, notices } from '../src/reply.ts';
 
 test('a message must have text and stay under the limit', () => {
   assert.equal(checkMessageBody('ciao'), 'ciao');
-  for (const body of ['', '   \n', 42, undefined, null]) {
+  for (const body of ['', '   \n', 42, undefined, null, `ciao${String.fromCharCode(0)}`]) {
     assert.throws(() => checkMessageBody(body), ChatError, String(body));
   }
   assert.equal(checkMessageBody('x'.repeat(MAX_MESSAGE_LENGTH)).length, MAX_MESSAGE_LENGTH);

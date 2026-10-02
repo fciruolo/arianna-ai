@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
 import { loadConfig } from '@arianna/config';
+import { createVault } from '@arianna/vault';
 
 import { CHAT_AGENT } from './conversations.ts';
 import { connect } from './db/client.ts';
@@ -12,6 +13,8 @@ import { loadMigrations, migrate } from './db/migrate.ts';
 import { createWorker, type StepExecutor } from './engine.ts';
 import { startLiveFeed } from './live.ts';
 import { startApiServer } from './server/http.ts';
+import { createBotApi } from './telegram/api.ts';
+import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
 
 /**
  * Until the orchestrator exists (task 1.10), a chat task waits for the user
@@ -58,6 +61,20 @@ const server = await startApiServer({
 });
 await worker.start();
 
+// Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml. Without
+// a token the core runs anyway: the web chat does not depend on it.
+let telegram: TelegramChannel | undefined;
+if (config.telegram !== undefined) {
+  try {
+    const token = await createVault({ data: config.paths.data }).resolve(config.telegram.token);
+    telegram = await startTelegram({ sql, api: createBotApi({ token }), chats: config.telegram.chats, live, onError: report });
+    console.log(`Telegram on: ${String(config.telegram.chats.length)} chat(s)`);
+  } catch (error) {
+    report(error);
+    console.error('Telegram off: see the error above');
+  }
+}
+
 const shown = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
 console.log(`Arianna core on http://${shown}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 
@@ -65,6 +82,7 @@ let stopping = false;
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
+  await telegram?.close();
   await server.close();
   await worker.stop();
   await live.close();

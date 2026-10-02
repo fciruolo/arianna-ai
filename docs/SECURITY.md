@@ -45,3 +45,13 @@
 - Primo avvio, a mano: `age-keygen -o <file>` nella posizione dove `sops` cerca la chiave (su macOS `~/Library/Application Support/sops/age/keys.txt`, oppure un file indicato da `SOPS_AGE_KEY_FILE`), poi `pnpm vault:init <chiave pubblica age1...>` e `pnpm vault:edit`. Le chiavi del file sono di primo livello: `nome: valore`, letto come `vault://nome`.
 - La chiave privata non entra mai in `ARIANNA_HOME`, in git o nella cartella sincronizzata: senza di lei `data/vault/secrets.yaml` è illeggibile, e perderla vuol dire perdere i segreti. Va conservata a parte (per esempio nel gestore di password).
 - Il controllo del gateway confronta valori esatti: un segreto trasformato (in base64, spezzato fra frammenti dello stesso payload, abbreviato) non si riconosce, e il registro dei valori rivelati si svuota a ogni riavvio del processo (D-043). È una rete, non il controllo principale, che resta non mettere mai il valore in un testo.
+
+## Telegram
+
+- Telegram è un canale cloud (D-016): riceve al massimo L1, solo attraverso il gateway, e un contenuto sopra L1 diventa un rimando alla chat web. Il client del Bot API (`apps/core/src/telegram/api.ts`) accetta solo testi usciti da una decisione `allow` verso `channel:telegram`.
+- In sviluppo nessun bot vero né token reale: i test usano un finto Bot API su loopback (D-044).
+- Per l'uso vero (dopo il criterio della Fase 1A): creare il bot con BotFather, mettere il token nel vault con `pnpm vault:edit` alla chiave `telegram-bot-token`, scrivere in `arianna.toml` la sezione `[telegram]` con `token = "vault://telegram-bot-token"` e l'id della propria chat privata in `chats`. Il token non va mai in `arianna.toml`: la configurazione accetta solo un riferimento `vault://`.
+- Il bot ascolta con long polling: nessuna porta esposta. Risponde solo alle chat private elencate in `chats`, scritte dal loro stesso utente; il resto è ignorato. Cambiare `chats` è un'impostazione di privacy: solo l'utente la modifica.
+- Il token compare solo nel percorso delle richieste a `api.telegram.org`, con un agent proprio che non usa proxy né segue redirect; gli errori riportano metodo e stato HTTP, mai URL o corpo.
+- Un'approvazione su Telegram mostra solo l'azione e, se il task è al massimo L1, il suo titolo: il dettaglio si legge nella chat web. I declassamenti si decidono solo dal web.
+- Chi ha il telefono sbloccato con Telegram aperto può approvare: proteggere l'app con un codice è una buona pratica (da ricordare nel wizard, task 1.18).
