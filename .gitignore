@@ -1,0 +1,22 @@
+# Runtime data: models, databases, archive, real KB, vault, worktrees (never in git)
+data/
+
+# Secrets
+.env*
+!.env.example
+*.age
+*.pem
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+__pycache__/
+.venv/
+
+# Local tooling
+.claude/settings.local.json
+.DS_Store
+*.log
