@@ -25,7 +25,7 @@ const SESSION = '00000000-0000-4000-8000-000000000001';
 const RULES = createLabelRules({ folders: [{ path: 'repos', label: 'L1' }], sources: [] });
 const OPTIONS = { allowedActions: (): readonly string[] => [], agentLimits: (): TaskLimits => ({ maxSteps: 10, maxMinutes: 10 }) };
 
-const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, killGraceMs: 200 });
+const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 });
 
 before(() => {
   const repo = join(HOME, 'repos', 'site');
@@ -184,7 +184,7 @@ test('options claude would refuse fail the step before the gateway: no allow is 
         brief: [{ text: 'scenario: ok', label: 'L1', source: 'test' }],
         workspace: await workspace(),
         model: 'sonnet',
-        tools: ['Bash' as never],
+        tools: ['WebSearch' as never],
       });
       return result.kind === 'failed' ? { kind: 'failed', reason: result.reason } : { kind: 'done', evidence: [] };
     },

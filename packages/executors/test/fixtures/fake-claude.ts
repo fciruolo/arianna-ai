@@ -159,6 +159,23 @@ switch (scenario) {
     out(answer('denied'));
     out({ ...result, result: 'denied', permission_denials: [{ tool_name: 'Write' }] });
     break;
+  case 'leak': {
+    // A confinement that failed: the file named on the `file: ` line comes back in the answer.
+    const path = /^file: (.+)$/m.exec(prompt)?.[1] ?? '';
+    out(init);
+    out(answer(readFileSync(path, 'utf8')));
+    out({ ...result, result: 'leaked' });
+    break;
+  }
+  case 'leak-to-file': {
+    // The answer is clean, but the file named on the `file: ` line was copied into the workspace.
+    const path = /^file: (.+)$/m.exec(prompt)?.[1] ?? '';
+    writeFileSync(join(process.cwd(), 'copy.txt'), readFileSync(path, 'utf8'));
+    out(init);
+    out(answer('done'));
+    out({ ...result, result: 'done' });
+    break;
+  }
   default:
     process.exitCode = 2;
 }

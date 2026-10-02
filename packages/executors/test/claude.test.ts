@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -13,7 +14,9 @@ import {
   claudeArgs,
   claudeEnv,
   ClaudeStream,
+  claudeSettings,
   createClaudeExecutor,
+  nodeToolchain,
   prepareWorkspace,
   profileViolations,
   type ClaudeEvent,
@@ -27,6 +30,7 @@ const DATA = join(HOME, 'data');
 const FAKE = join(import.meta.dirname, 'fixtures', 'fake-claude.ts');
 const CLAUDE: Target = { kind: 'executor', id: 'claude', locality: 'cloud' };
 const SESSION = '00000000-0000-4000-8000-000000000001';
+const SANDBOX = { workspace: '/w', readable: nodeToolchain(), denied: ['/arianna'] };
 const RULES = createLabelRules({ folders: [{ path: 'repos', label: 'L1' }], sources: [] });
 
 after(() => {
@@ -65,6 +69,7 @@ const executor = (options: Partial<ClaudeExecutorOptions> = {}) =>
   createClaudeExecutor({
     enabled: ['claude'],
     command: { file: process.execPath, args: [FAKE] },
+    home: HOME,
     env: { ...process.env, SOPS_AGE_KEY: 'fake-age-key', ANTHROPIC_API_KEY: 'fake-api-key', NODE_OPTIONS: '--inspect' },
     killGraceMs: 200,
     ...options,
@@ -101,7 +106,7 @@ async function failure(promise: Promise<unknown>): Promise<ClaudeError> {
 
 describe('claude profile', () => {
   it('builds the confined arguments, with the prompt kept out of them', () => {
-    const args = claudeArgs({ model: 'sonnet', tools: ['Read', 'Edit'] });
+    const args = claudeArgs({ model: 'sonnet', tools: ['Read', 'Edit'], sandbox: SANDBOX });
     for (const flag of ['-p', '--strict-mcp-config', '--restricted', '--safe-mode', '--disable-slash-commands', '--no-chrome', '--verbose']) {
       assert.ok(args.includes(flag), flag);
     }
@@ -113,14 +118,14 @@ describe('claude profile', () => {
     assert.equal(value('--permission-prompts'), 'none');
     assert.equal(value('--mcp-config'), '{"mcpServers":{}}');
     assert.ok(!args.includes('--bare') && !args.includes('--resume'));
-    assert.deepEqual(claudeArgs({ model: 'opus', tools: [], resume: SESSION }).slice(-2), ['--resume', SESSION]);
+    assert.deepEqual(claudeArgs({ model: 'opus', tools: [], resume: SESSION, sandbox: SANDBOX }).slice(-2), ['--resume', SESSION]);
   });
 
-  it('refuses Bash, unknown tools and models, duplicates and a resume that is not a session id', () => {
-    assert.throws(() => claudeArgs({ model: 'sonnet', tools: ['Bash' as never] }), /not allowed/);
-    assert.throws(() => claudeArgs({ model: 'sonnet', tools: ['Read', 'Read'] }), /twice/);
-    assert.throws(() => claudeArgs({ model: 'haiku' as never, tools: [] }), /unknown model/);
-    assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], resume: '--dangerously-skip-permissions' }), /session id/);
+  it('refuses web tools, unknown tools and models, duplicates and a resume that is not a session id', () => {
+    assert.throws(() => claudeArgs({ model: 'sonnet', tools: ['WebFetch' as never], sandbox: SANDBOX }), /not allowed/);
+    assert.throws(() => claudeArgs({ model: 'sonnet', tools: ['Read', 'Read'], sandbox: SANDBOX }), /twice/);
+    assert.throws(() => claudeArgs({ model: 'haiku' as never, tools: [], sandbox: SANDBOX }), /unknown model/);
+    assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], resume: '--dangerously-skip-permissions', sandbox: SANDBOX }), /session id/);
   });
 
   it('passes on only PATH, HOME and the user, never secrets, proxies or Node options', () => {
@@ -321,10 +326,10 @@ describe('claude executor, after review', () => {
     const { prepared } = await workspace();
     const decision = brief('scenario: ok');
     const base = { brief: decision, workspace: prepared, model: 'sonnet' as const };
-    assert.equal((await failure(executor().start({ ...base, tools: ['Bash' as never] }).result)).kind, 'invalid-options');
+    assert.equal((await failure(executor().start({ ...base, tools: ['WebSearch' as never] }).result)).kind, 'invalid-options');
     assert.equal((await failure(executor().start({ ...base, tools: [], limits: { maxTurns: 0 } }).result)).kind, 'invalid-options');
     assert.equal((await failure(executor().resume({ ...base, tools: [], sessionRef: 'not-a-session' }).result)).kind, 'invalid-options');
-    await assert.rejects(executor().check({ workspace: prepared, model: 'sonnet', tools: ['Bash' as never] }), ClaudeError);
+    await assert.rejects(executor().check({ workspace: prepared, model: 'sonnet', tools: ['WebSearch' as never] }), ClaudeError);
     await executor().check({ workspace: prepared, model: 'sonnet', tools: ['Read'] });
     // Still unspent: the refusals came first.
     assert.equal((await executor().start({ ...base, tools: [] }).result).text, 'ok');
@@ -340,7 +345,7 @@ describe('claude executor, after review', () => {
   });
 
   it('no tools: --tools is empty and nothing is pre-allowed', () => {
-    const args = claudeArgs({ model: 'sonnet', tools: [] });
+    const args = claudeArgs({ model: 'sonnet', tools: [], sandbox: SANDBOX });
     assert.equal(args[args.indexOf('--tools') + 1], '');
     assert.ok(!args.includes('--allowedTools'));
   });
@@ -401,5 +406,70 @@ describe('claude executor, after review', () => {
   it('an onEvent that never settles cannot hang the run past its timeout', async () => {
     const { run } = await start('ok', { limits: { timeoutMs: 300 }, onEvent: () => new Promise<void>(() => undefined) });
     assert.equal((await failure(run.result)).kind, 'timeout');
+  });
+});
+
+describe('claude sandbox (task 1.6)', () => {
+  const settingsOf = (args: string[]) =>
+    JSON.parse(args[args.indexOf('--settings') + 1] ?? '') as {
+      permissions: Record<string, unknown>;
+      sandbox: { network: Record<string, unknown>; filesystem: Record<string, unknown> } & Record<string, unknown>;
+    };
+
+  it('every launch carries the sandbox settings: no unsandboxed retry, no network, no loopback, reads closed outside', () => {
+    const args = claudeArgs({ model: 'sonnet', tools: ['Bash'], sandbox: SANDBOX });
+    const settings = settingsOf(args);
+    assert.equal(settings.permissions.blockReadsOutsideWorkingDirectories, true);
+    assert.equal(settings.permissions.disableBypassPermissionsMode, 'disable');
+    assert.equal(settings.sandbox.enabled, true);
+    assert.equal(settings.sandbox.failIfUnavailable, true);
+    assert.equal(settings.sandbox.allowUnsandboxedCommands, false);
+    assert.deepEqual(settings.sandbox.excludedCommands, []);
+    assert.deepEqual(settings.sandbox.network, { allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowUnixSockets: [], allowAllUnixSockets: false });
+    assert.deepEqual(settings.sandbox.filesystem, { denyRead: ['/arianna'], allowRead: ['/w', ...SANDBOX.readable] });
+    assert.equal(args[args.indexOf('--allowedTools') + 1], 'Bash');
+  });
+
+  it('sandbox folders must be absolute and normalized, never the root, and something must be denied', () => {
+    for (const bad of ['relative/node', '/opt/../etc', '/', '']) {
+      assert.throws(() => claudeSettings({ ...SANDBOX, readable: [bad] }), /readable folder/, bad);
+      assert.throws(() => claudeSettings({ ...SANDBOX, workspace: bad }), /workspace folder/, bad);
+    }
+    assert.throws(() => claudeSettings({ ...SANDBOX, denied: [] }), /deny/);
+    assert.doesNotThrow(() => claudeSettings({ ...SANDBOX, readable: ['/opt/homebrew'] }));
+  });
+
+  it('denies ARIANNA_HOME and the temp folders, and opens the workspace and the binary temp folder again', async () => {
+    const { prepared, path } = await workspace();
+    const run = executor().start({ brief: brief('scenario: ok'), workspace: prepared, model: 'sonnet', tools: ['Bash'] });
+    await run.result;
+    const settings = settingsOf(received(path).argv);
+    const fs = settings.sandbox.filesystem as { denyRead: string[]; allowRead: string[] };
+    assert.ok(fs.denyRead.includes(realpathSync(HOME)), 'ARIANNA_HOME');
+    assert.ok(fs.denyRead.includes(realpathSync(tmpdir())), 'the temp folder');
+    assert.ok(fs.denyRead.includes(realpathSync('/tmp')), '/tmp');
+    assert.equal(fs.allowRead[0], path, 'the workspace first');
+    assert.ok(fs.allowRead.some((folder) => folder.endsWith(`/claude-${String(process.getuid?.() ?? 0)}`)));
+  });
+
+  it('refuses at creation a readable folder that opens the home, a user root or a folder above them, with or without HOME', () => {
+    const fakeHome = join(HOME, 'fake-home');
+    mkdirSync(join(fakeHome, '.tool', 'bin'), { recursive: true });
+    const env = { ...process.env, HOME: fakeHome };
+    for (const folder of [fakeHome, HOME, '/Users', '/home', '/Volumes']) {
+      assert.throws(() => createClaudeExecutor({ enabled: ['claude'], home: HOME, env, readable: [folder] }), /user's files/, folder);
+    }
+    assert.doesNotThrow(() => createClaudeExecutor({ enabled: ['claude'], home: HOME, env, readable: [join(fakeHome, '.tool', 'bin')] }));
+    // No HOME: the account's home directory is protected all the same.
+    const noHome = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'HOME'));
+    assert.throws(() => createClaudeExecutor({ enabled: ['claude'], home: HOME, env: noHome, readable: [homedir()] }), /user's files/);
+    assert.throws(() => createClaudeExecutor({ enabled: ['claude'], home: 'relative' }), /ARIANNA_HOME/);
+  });
+
+  it('observe sees every line of the stream', async () => {
+    const lines: string[] = [];
+    const { run } = await start('ok', {}, { observe: (line) => lines.push(line) });
+    await run.result;
+    assert.equal(lines.length, 4);
   });
 });

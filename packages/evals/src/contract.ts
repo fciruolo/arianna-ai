@@ -44,11 +44,23 @@ export interface ContractStepActual {
 /** The fake repository the runs work in: L1 by its folder rule, in the allowlist. */
 const README = '# Fake site\n\nA repository with fake content for the contract eval.\n';
 
-function scratchWorkspace(data: string): { prepare: () => Promise<PreparedWorkspace>; remove: () => void } {
-  const home = join(data, 'evals', `contract-${randomUUID()}`);
+export interface ScratchWorkspace {
+  /** The scratch ARIANNA_HOME; removed by `remove`. */
+  home: string;
+  prepare: () => Promise<PreparedWorkspace>;
+  remove: () => void;
+}
+
+/**
+ * A fake ARIANNA_HOME under `data/evals/` with one allowlisted repository,
+ * `repos/fixture` (L1), committed with `files` (README.md by default), and
+ * `kb/private` as L2 for the canary.
+ */
+export function scratchWorkspace(data: string, files: Record<string, string> = { 'README.md': README }, name = 'contract'): ScratchWorkspace {
+  const home = join(data, 'evals', `${name}-${randomUUID()}`);
   const repo = join(home, 'repos', 'fixture');
   mkdirSync(repo, { recursive: true });
-  writeFileSync(join(repo, 'README.md'), README);
+  for (const [path, content] of Object.entries(files)) writeFileSync(join(repo, path), content);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const git = (...args: string[]) =>
     execFileSync('git', ['-c', 'user.name=Eval', '-c', 'user.email=eval@example.invalid', '-c', 'commit.gpgsign=false', '-C', repo, ...args], {
@@ -56,10 +68,17 @@ function scratchWorkspace(data: string): { prepare: () => Promise<PreparedWorksp
     });
   git('init', '--quiet', '--initial-branch=main');
   git('add', '--all');
-  git('commit', '--quiet', '--message', 'fixture');
-  const rules = createLabelRules({ folders: [{ path: 'repos', label: 'L1' }], sources: [] });
+  git('commit', '--quiet', '--allow-empty', '--message', 'fixture');
+  const rules = createLabelRules({
+    folders: [
+      { path: 'repos', label: 'L1' },
+      { path: 'kb/private', label: 'L2' },
+    ],
+    sources: [],
+  });
   return {
-    prepare: () => prepareWorkspace({ home, data: join(home, 'data'), repo: 'repos/fixture', runId: 'contract', allowlist: ['repos/fixture'], rules }),
+    home,
+    prepare: () => prepareWorkspace({ home, data: join(home, 'data'), repo: 'repos/fixture', runId: name, allowlist: ['repos/fixture'], rules }),
     remove: () => {
       rmSync(home, { recursive: true, force: true });
     },
@@ -125,7 +144,7 @@ export function contract(): Evaluate {
       if (!config.cloud.executors.includes('claude')) {
         throw new Error('claude is not in [cloud] executors of config/arianna.toml: enable it with pnpm arianna:init --reconfigure');
       }
-      executor = createClaudeExecutor({ enabled: config.cloud.executors });
+      executor = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home });
       data = config.paths.data;
     }
     return executor;

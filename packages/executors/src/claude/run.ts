@@ -3,7 +3,10 @@
 // its stream into events and one outcome. Errors carry kinds and codes, never
 // output: the stream and stderr can quote the brief or the files.
 import { spawn } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { maxLabel, spendAllowed, type Label } from '@arianna/policy';
 
@@ -139,6 +142,64 @@ export interface ClaudeExecutorOptions {
   env?: NodeJS.ProcessEnv;
   /** Between SIGTERM and SIGKILL. Default 5 s. */
   killGraceMs?: number;
+  /** ARIANNA_HOME: sandboxed commands never read it, wherever it is, except the workspace. */
+  home: string;
+  /**
+   * Folders sandboxed commands may read besides the workspace and the system
+   * folders. Default: `bin` and `lib` of the Node installation running the
+   * core, which may live in the home directory. Never a user root, the home
+   * directory or a folder above them.
+   */
+  readable?: readonly string[];
+  /** Evals only: every line of the stream, as it comes, so that the canary can search the whole transcript. */
+  observe?: (line: string) => void;
+}
+
+/** `bin` and `lib` of the Node installation running this process (`<prefix>/bin/node`). */
+export function nodeToolchain(): string[] {
+  const prefix = dirname(dirname(realpathSync(process.execPath)));
+  return [join(prefix, 'bin'), join(prefix, 'lib')].filter((folder) => existsSync(folder));
+}
+
+/** Folders that hold user files: the read block closes them, and no readable folder may open one. */
+const USER_ROOTS = ['/Users', '/home', '/root', '/Volumes', '/mnt', '/media', '/run/media', '/srv'];
+
+/** True when `folder` is `target` or contains it. */
+function covers(folder: string, target: string): boolean {
+  const rel = relative(folder, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+const real = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+/**
+ * The sandbox folders of an executor, checked once: a wrong configuration
+ * fails at creation, not at the first run.
+ */
+function sandboxFolders(options: ClaudeExecutorOptions): { readable: string[]; denied: string[] } {
+  if (typeof options.home !== 'string' || !isAbsolute(options.home)) throw new TypeError('claude: home (ARIANNA_HOME) must be an absolute folder');
+  // Without HOME the user's home is still the account's: default-deny, never "no home to protect".
+  const userHome = real((options.env ?? process.env).HOME ?? homedir());
+  const given = [...(options.readable ?? nodeToolchain())];
+  // Both spellings: on macOS `/home` resolves to a folder of the system data volume.
+  const closed = [userHome, ...USER_ROOTS, ...USER_ROOTS.map(real)];
+  for (const folder of given) {
+    if ([resolve(folder), real(folder)].some((form) => closed.some((root) => covers(form, root)))) {
+      throw new TypeError(`claude: readable folder ${folder} would open the user's files`);
+    }
+  }
+  const readable = given.map(real);
+  const tmp = real('/tmp');
+  // The binary keeps its own temp folder there (`/tmp/claude-<uid>`): without it no command runs.
+  readable.push(join(tmp, `claude-${String(process.getuid?.() ?? 0)}`));
+  const denied = [...new Set([real(options.home), real(tmpdir()), tmp])];
+  return { readable, denied };
 }
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
@@ -154,15 +215,25 @@ interface Checked {
 
 export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExecutor {
   const enabled = [...options.enabled];
+  const folders = sandboxFolders(options);
 
   async function check(launch: ClaudeLaunch): Promise<Checked> {
     if (!enabled.includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
-    let args: string[];
-    try {
-      args = claudeArgs({ model: launch.model, tools: launch.tools, ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }) });
-    } catch (cause) {
-      throw new ClaudeError('invalid-options', 'claude: the profile refuses these options', { cause });
-    }
+    const options = (workspace: string) => ({
+      model: launch.model,
+      tools: launch.tools,
+      sandbox: { workspace, ...folders },
+      ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
+    });
+    const build = (workspace: string): string[] => {
+      try {
+        return claudeArgs(options(workspace));
+      } catch (cause) {
+        throw new ClaudeError('invalid-options', 'claude: the profile refuses these options', { cause });
+      }
+    };
+    // Options first, with a stand-in folder: their errors come before the workspace's.
+    build(folders.denied[0] ?? '/nonexistent');
     const limits = { timeoutMs: launch.limits?.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxTurns: launch.limits?.maxTurns ?? DEFAULT_MAX_TURNS };
     if (!(limits.timeoutMs > 0) || !Number.isSafeInteger(limits.maxTurns) || limits.maxTurns < 1) {
       throw new ClaudeError('invalid-options', 'claude: limits must be positive');
@@ -175,7 +246,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
     } catch (cause) {
       throw new ClaudeError('workspace', 'claude: the workspace folder is gone or was replaced', { cause });
     }
-    return { cwd: path, args, limits };
+    return { cwd: path, args: build(path), limits };
   }
 
   const launch = (start: ClaudeStart, sessionRef?: string): ClaudeRun => {
@@ -273,7 +344,9 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       };
 
       const line = (bytes: Buffer) => {
-        report(stream.feed(bytes.toString('utf8')));
+        const text = bytes.toString('utf8');
+        options.observe?.(text);
+        report(stream.feed(text));
         if (stream.result === undefined) {
           if (stream.usage.turns > job.limits.maxTurns) stop('max-turns');
         } else if (!stream.result.ok) {
@@ -297,6 +370,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
           pendingBytes += chunk.length - start;
         }
         if (pendingBytes > MAX_LINE_BYTES) {
+          options.observe?.(Buffer.concat(pending).toString('utf8'));
           pending = [];
           pendingBytes = 0;
           stop('bad-output');
@@ -322,7 +396,10 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
         // A stopped run leaves nothing behind in its group.
         if (stopped !== undefined) signalGroup('SIGKILL');
         if (killTimer !== undefined) clearTimeout(killTimer);
-        if (pending.length > 0 && stopped === undefined) line(Buffer.concat(pending));
+        if (pending.length > 0) {
+          if (stopped === undefined) line(Buffer.concat(pending));
+          else options.observe?.(Buffer.concat(pending).toString('utf8'));
+        }
         // The time cap still holds while the handlers finish: a stuck onEvent cannot hang the run.
         void Promise.race([handlers, deadline]).then(() => {
           clearTimeout(timer);

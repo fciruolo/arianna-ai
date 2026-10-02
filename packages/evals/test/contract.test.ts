@@ -19,7 +19,7 @@ after(() => {
 });
 
 const evaluate = createContractEvaluator(
-  () => createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, killGraceMs: 200 }),
+  () => createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 }),
   () => DATA,
 );
 

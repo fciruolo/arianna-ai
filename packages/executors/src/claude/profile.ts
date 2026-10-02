@@ -1,14 +1,16 @@
-// The confinement profile of `claude -p` (docs/PRIVACY-POLICY-SPEC.md, task
-// 1.5, D-049): the flags, the environment and what the binary must report in
-// its `init` message. Flag names checked on `claude --help` of 2.1.288 and
-// with two real runs; the live contract eval checks them again.
+// The confinement profile of `claude -p` (docs/PRIVACY-POLICY-SPEC.md, tasks
+// 1.5 and 1.6, D-049 and D-050): the flags, the sandbox settings, the
+// environment and what the binary must report in its `init` message. Checked
+// on `claude --help` of 2.1.288 and with real runs; the live contract and
+// canary evals check them again.
+import { isAbsolute, resolve, sep } from 'node:path';
 
 /**
- * Built-in tools a run may be given. No Bash, WebFetch or WebSearch until the
- * sandbox of task 1.6 exists: without it a command can read outside the
- * workspace and reach the network, the local services included.
+ * Built-in tools a run may be given. Bash runs inside the sandbox of
+ * `claudeSettings` (D-050). Never WebFetch or WebSearch: they run outside the
+ * sandbox, and web search is a gateway target of its own.
  */
-export const CLAUDE_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write'] as const;
+export const CLAUDE_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'] as const;
 export type ClaudeTool = (typeof CLAUDE_TOOLS)[number];
 
 /** Model aliases of the router (`sonnet`, `opus`, `fable`), passed to `--model` as they are. */
@@ -18,13 +20,72 @@ export type ClaudeModel = (typeof CLAUDE_MODELS)[number];
 /** What `--resume` takes: the session id the binary returned, never a credential. */
 export const SESSION_REF = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** No MCP server until Arianna's own (task 1.6). */
+/** No MCP server until Arianna's own, with the tools the orchestrator defines (1.10, D-050). */
 const NO_MCP = JSON.stringify({ mcpServers: {} });
+
+/** Absolute, real folders the sandbox rules name (see `claudeSettings`). */
+export interface SandboxPaths {
+  /** The working directory: readable even inside a denied folder. */
+  workspace: string;
+  /** Read besides the workspace: the toolchain, and the binary's own temp folder. */
+  readable: readonly string[];
+  /** Never read, even outside the user folders: ARIANNA_HOME and the shared temp folders. */
+  denied: readonly string[];
+}
 
 export interface ProfileOptions {
   model: ClaudeModel;
   tools: readonly ClaudeTool[];
   resume?: string;
+  sandbox: SandboxPaths;
+}
+
+function checkFolders(name: string, folders: unknown): readonly string[] {
+  if (!Array.isArray(folders)) throw new TypeError(`claude: ${name} must be a list`);
+  for (const path of folders as unknown[]) {
+    if (typeof path !== 'string' || !isAbsolute(path) || resolve(path) !== path || path === sep) {
+      throw new TypeError(`claude: ${name} folder ${JSON.stringify(path)} must be an absolute, normalized folder other than the root`);
+    }
+  }
+  return folders as readonly string[];
+}
+
+/**
+ * The settings passed with `--settings`, which hold under `--restricted`
+ * (D-050):
+ * - the file tools refuse reads outside the working directory in every mode
+ *   (as `--restricted` does too), and `bypassPermissions` cannot be turned on;
+ * - Bash and what it starts run in the operating system's sandbox, or not at
+ *   all (`failIfUnavailable`), never retried outside it
+ *   (`allowUnsandboxedCommands: false`), with no command excluded;
+ * - reads of sandboxed commands: `blockReadsOutsideWorkingDirectories` closes
+ *   the home directory and the other user roots (`/Users`, `/home`,
+ *   `/Volumes`…); `denied` closes ARIANNA_HOME and the shared temp folders
+ *   wherever they are; the workspace and `readable` are opened again (the
+ *   narrower rule wins). What stays readable: the system folders (`/usr`,
+ *   `/etc`, `/opt`, `/Library`…) and the toolchain;
+ * - writes: only the workspace and the binary's temp folder;
+ * - no network: an empty allowlist that refuses instead of asking, no local
+ *   binding (on macOS the loopback services, database and local model
+ *   included, stay out of reach), no Unix sockets.
+ */
+export function claudeSettings(paths: SandboxPaths): string {
+  const workspace = checkFolders('workspace', [paths.workspace]);
+  const readable = checkFolders('readable', paths.readable);
+  const denied = checkFolders('denied', paths.denied);
+  if (denied.length === 0) throw new TypeError('claude: the sandbox needs the folders to deny (ARIANNA_HOME at least)');
+  return JSON.stringify({
+    permissions: { blockReadsOutsideWorkingDirectories: true, disableBypassPermissionsMode: 'disable' },
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      excludedCommands: [],
+      filesystem: { denyRead: [...denied], allowRead: [...workspace, ...readable] },
+      network: { allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowUnixSockets: [], allowAllUnixSockets: false },
+    },
+  });
 }
 
 /**
@@ -40,6 +101,7 @@ export interface ProfileOptions {
  *   skills, installed plugins, hooks and custom agents; `--strict-mcp-config`
  *   with an empty `--mcp-config` drops every MCP server, the personal connectors
  *   included.
+ * - `--settings` carries the sandbox and the read block (`claudeSettings`).
  * - Never `--bare`: it needs an API key, and Arianna uses the subscription (D-002).
  */
 export function claudeArgs(options: ProfileOptions): string[] {
@@ -66,6 +128,8 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--mcp-config',
     NO_MCP,
     '--strict-mcp-config',
+    '--settings',
+    claudeSettings(options.sandbox),
     '--restricted',
     '--safe-mode',
     '--disable-slash-commands',
