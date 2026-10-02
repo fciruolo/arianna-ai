@@ -249,6 +249,15 @@ importers:
         specifier: 3.3.11
         version: 3.3.11(typescript@6.0.3)
 
+  apps/installer:
+    dependencies:
+      '@arianna/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@arianna/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/agents:
     dependencies:
       '@arianna/policy':

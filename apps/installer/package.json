@@ -1,0 +1,10 @@
+{
+  "name": "@arianna/installer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@arianna/config": "workspace:*",
+    "@arianna/core": "workspace:*"
+  }
+}

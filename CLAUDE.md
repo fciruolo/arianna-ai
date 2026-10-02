@@ -42,7 +42,9 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
 | `pnpm db:up` / `pnpm db:down` | Avvia o ferma PostgreSQL in Docker con i valori di `config/arianna.toml` |
 | `pnpm db:migrate` | Applica le migrazioni di `apps/core/migrations` come proprietario e dà a `arianna_app` la sua password (D-046); con le password vere va lanciato a ogni aggiornamento |
-| `pnpm arianna:doctor` | Controlla che l'installazione sia pronta per i dati veri: password dal vault e rifiutate quelle di sviluppo, migrazioni, limiti di `arianna_app`, catena degli eventi. Con le password di sviluppo fallisce, ed è normale |
+| `pnpm arianna:install` | Installer (D-047): prerequisiti, cartelle di `data/` (`data/` e `data/vault` private), modelli mancanti del manifest, database, migrazioni, doctor. Esce con 1 anche quando l'installazione è riuscita ma il doctor non la dà pronta per i dati veri (con le password di sviluppo, sempre) |
+| `pnpm arianna:doctor` | Controlla che l'installazione sia pronta per i dati veri: prerequisiti, cartelle, modelli presenti, password dal vault e rifiutate quelle di sviluppo, migrazioni, limiti di `arianna_app`, catena degli eventi. Con le password di sviluppo fallisce, ed è normale |
+| `pnpm arianna:models list\|verify\|pull [--verify]` | Confronta `data/models` con `config/models.manifest.yaml` (`verify` calcola gli sha256); `pull` scarica i file mancanti con ripresa e verifica, con `--verify` sostituisce anche quelli con lo sha256 sbagliato |
 | `pnpm vault:init <age1...>` / `pnpm vault:edit` | Li esegue l'utente: scrive `data/vault/.sops.yaml` con la chiave pubblica age; apre `data/vault/secrets.yaml` con `sops` (D-042) |
 | `pnpm start` | Avvia il core come `arianna_app`: migrazioni (solo con le password di sviluppo; con quelle vere prima `pnpm db:migrate`), worker dei task, API, WebSocket e chat web su `[server]` di `arianna.toml` (loopback) |
 | `pnpm hud:build` | Compila la chat web in `apps/hud/dist`, servita dal core |
