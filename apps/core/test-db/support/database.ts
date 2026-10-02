@@ -4,10 +4,13 @@ import { after, before } from 'node:test';
 import { loadConfig } from '@arianna/config';
 
 import { connect, type Sql } from '../../src/db/client.ts';
-import { loadMigrations, migrate } from '../../src/db/migrate.ts';
+import { prepareDatabase, resolveLogins } from '../../src/db/logins.ts';
 
 export interface TestDatabase {
+  /** As the application role, like the core (D-046). */
   sql: Sql;
+  /** As the owner of the schema: for tests that alter tables or check triggers below the grants. */
+  owner: Sql;
   schema: string;
   /** Drops the schema and closes the connections. */
   close: () => Promise<void>;
@@ -16,25 +19,28 @@ export interface TestDatabase {
 /** A throwaway schema with every migration applied from zero. Needs `pnpm db:up`. */
 export async function createTestDatabase(): Promise<TestDatabase> {
   const config = loadConfig();
+  const logins = await resolveLogins(config);
   const schema = `test_${randomBytes(6).toString('hex')}`;
 
-  const admin = connect(config);
-  const sql = connect(config, process.env, { schema });
+  const admin = connect(config, logins.owner);
+  const owner = connect(config, logins.owner, { schema });
+  const sql = connect(config, logins.app, { schema });
   const close = async (): Promise<void> => {
     await sql.end();
+    await owner.end();
     await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
     await admin.end();
   };
 
   try {
     await admin.unsafe(`CREATE SCHEMA ${schema}`);
-    await migrate(sql, loadMigrations());
+    await prepareDatabase(owner, logins.app);
   } catch (error) {
     // Leave no schema and no open socket behind, or the test run would hang.
     await close().catch(() => undefined);
     throw error;
   }
-  return { sql, schema, close };
+  return { sql, owner, schema, close };
 }
 
 /** Registers setup and teardown for the calling test file; call the result inside tests. */

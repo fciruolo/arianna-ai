@@ -49,3 +49,13 @@ export function asOneOf<const T extends string>(
   }
   return found;
 }
+
+// Same rule as parseVaultRef in @arianna/vault, which checks again when resolving.
+const VAULT_REF = /^vault:\/\/[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** A `vault://name` reference: secrets never sit in a configuration file. */
+export function asVaultRef(value: unknown, where: string): string {
+  const ref = asString(value, where);
+  if (!VAULT_REF.test(ref)) throw new ConfigError(`${where}: must be a vault:// reference, never the secret itself`);
+  return ref;
+}

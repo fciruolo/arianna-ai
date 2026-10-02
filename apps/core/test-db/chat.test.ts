@@ -43,14 +43,16 @@ test('a conversation gets no workspace outside ARIANNA_HOME, and only in work mo
 });
 
 test('the database keeps mode and clearance together and frozen', async () => {
-  const { sql } = db();
+  const { sql, owner } = db();
   await assert.rejects(sql`INSERT INTO conversations (mode, clearance) VALUES ('work', 'L2')`, /conversations_clearance_follows_mode/);
   await assert.rejects(sql`INSERT INTO conversations (mode, clearance) VALUES ('private', 'L3')`, /conversations_clearance_follows_mode/);
   const conversation = await createConversation(sql, { mode: 'private' });
   await assert.rejects(sql`UPDATE conversations SET mode = 'work', clearance = 'L1' WHERE id = ${conversation.id}`, /only the effective label/);
   await sql`UPDATE conversations SET effective_label = 'L1' WHERE id = ${conversation.id}`;
   await assert.rejects(sql`UPDATE conversations SET effective_label = 'L0' WHERE id = ${conversation.id}`, /cannot go down/);
-  await assert.rejects(sql`DELETE FROM conversations WHERE id = ${conversation.id}`, /append-only/);
+  // The role of the core cannot delete; the owner, who can, meets the trigger.
+  await assert.rejects(sql`DELETE FROM conversations WHERE id = ${conversation.id}`, /permission denied/);
+  await assert.rejects(owner`DELETE FROM conversations WHERE id = ${conversation.id}`, /append-only/);
 });
 
 test('a user message starts a task of Arianna in its conversation, with the conversation clearance', async () => {
@@ -103,7 +105,7 @@ test('a message to a missing conversation, or an empty one, is refused', async (
 });
 
 test('the database keeps messages within the clearance, tied to their own tasks, and unchanged', async () => {
-  const { sql } = db();
+  const { sql, owner } = db();
   const work = await createConversation(sql, { mode: 'work' });
   await assert.rejects(
     sql`INSERT INTO messages (conversation_id, role, label, body) VALUES (${work.id}, 'assistant', 'L2', 'x')`,
@@ -123,8 +125,10 @@ test('the database keeps messages within the clearance, tied to their own tasks,
   await assert.rejects(sql`UPDATE tasks SET clearance = 'L2' WHERE id = ${task.id}`, /above the clearance/);
   await assert.rejects(sql`INSERT INTO conversations (mode, clearance, workspace) VALUES ('private', 'L2', 'repos/x')`, /conversations_workspace_only_work/);
 
-  await assert.rejects(sql`UPDATE messages SET body = 'changed' WHERE task_id = ${task.id}`, /append-only/);
-  await assert.rejects(sql`DELETE FROM messages WHERE task_id = ${task.id}`, /append-only/);
+  await assert.rejects(sql`UPDATE messages SET body = 'changed' WHERE task_id = ${task.id}`, /permission denied/);
+  await assert.rejects(sql`DELETE FROM messages WHERE task_id = ${task.id}`, /permission denied/);
+  await assert.rejects(owner`UPDATE messages SET body = 'changed' WHERE task_id = ${task.id}`, /append-only/);
+  await assert.rejects(owner`DELETE FROM messages WHERE task_id = ${task.id}`, /append-only/);
 });
 
 test('the history pages backwards and comes back in chronological order', async () => {

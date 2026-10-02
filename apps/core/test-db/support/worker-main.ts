@@ -5,10 +5,12 @@
 import { loadConfig } from '@arianna/config';
 
 import { connect } from '../../src/db/client.ts';
+import { resolveLogins } from '../../src/db/logins.ts';
 import { createWorker, type StepExecutor } from '../../src/engine.ts';
 
 const [schema = '', mode = '', lockTimeout = '1000'] = process.argv.slice(2);
-const sql = connect(loadConfig(), process.env, { schema });
+const config = loadConfig();
+const sql = connect(config, (await resolveLogins(config)).app, { schema });
 
 const executor: StepExecutor = {
   plan: () => ({ agent: 'coder', executor: 'local-model', locality: 'local' }),

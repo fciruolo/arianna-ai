@@ -116,6 +116,27 @@ test('the database must be on this machine', () => {
   assert.equal(parseConfig(VALID.replace('127.0.0.1', 'localhost'), HOME).database.host, 'localhost');
 });
 
+test('database passwords are vault references, both or neither, and distinct', () => {
+  const database = (lines: string) => parseConfig(VALID.replace('user = "arianna"', `user = "arianna"\n${lines}`), HOME).database;
+  assert.deepEqual(database('password = "vault://db-owner"\napp_password = "vault://db-app"'), {
+    host: '127.0.0.1',
+    port: 54329,
+    name: 'arianna',
+    user: 'arianna',
+    password: 'vault://db-owner',
+    appPassword: 'vault://db-app',
+  });
+  const rejects = (lines: string, pattern: RegExp): void => {
+    assert.throws(() => database(lines), (error: unknown) => error instanceof ConfigError && pattern.test(error.message));
+  };
+  rejects('password = "s3cret-in-clear"\napp_password = "vault://db-app"', /vault:\/\/ reference/);
+  rejects('password = "vault://db-owner"\napp_password = "plain"', /vault:\/\/ reference/);
+  rejects('password = "vault://db-owner"', /together/);
+  rejects('app_password = "vault://db-app"', /together/);
+  rejects('password = "vault://db"\napp_password = "vault://db"', /different secret/);
+  assert.throws(() => parseConfig(VALID.replace('user = "arianna"', 'user = "arianna_app"'), HOME), /application role/);
+});
+
 test('the server listens on loopback only', () => {
   const server = (body: string) => parseConfig(`${VALID}\n[server]\n${body}\n`, HOME).server;
   assert.deepEqual(server('port = 8080'), { host: '127.0.0.1', port: 8080 });

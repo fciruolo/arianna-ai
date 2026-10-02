@@ -96,8 +96,10 @@ test('the database refuses claude declared local', async () => {
 
 test('router decisions are append-only', async () => {
   await recordRouteDecision(db().sql, route({ kind: 'coding', agent: CODER }, createContext('L2', 'L2'), { blocked: [] }, CONFIG));
-  await assert.rejects(db().sql`UPDATE router_decisions SET reason = 'changed'`, /append-only/);
-  await assert.rejects(db().sql`DELETE FROM router_decisions`, /append-only/);
+  await assert.rejects(db().sql`UPDATE router_decisions SET reason = 'changed'`, /permission denied/);
+  await assert.rejects(db().sql`DELETE FROM router_decisions`, /permission denied/);
+  await assert.rejects(db().owner`UPDATE router_decisions SET reason = 'changed'`, /append-only/);
+  await assert.rejects(db().owner`DELETE FROM router_decisions`, /append-only/);
 });
 
 test('a wait for the user and a budget approval are stored', async () => {

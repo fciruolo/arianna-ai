@@ -31,16 +31,16 @@ test('migrations apply from zero and create every table', async () => {
 });
 
 test('applying again does nothing', async () => {
-  assert.deepEqual(await migrate(db().sql, loadMigrations()), []);
+  assert.deepEqual(await migrate(db().owner, loadMigrations()), []);
 });
 
 test('an applied migration that was edited is rejected', async () => {
   const edited = loadMigrations().map((migration) => ({ ...migration, sha256: 'f'.repeat(64) }));
-  await assert.rejects(migrate(db().sql, edited), MigrationError);
+  await assert.rejects(migrate(db().owner, edited), MigrationError);
 });
 
 test('an applied migration whose file is missing is rejected', async () => {
-  await assert.rejects(migrate(db().sql, []), MigrationError);
+  await assert.rejects(migrate(db().owner, []), MigrationError);
 });
 
 test('a migration older than the last applied one is rejected', async () => {
@@ -48,11 +48,11 @@ test('a migration older than the last applied one is rejected', async () => {
     { version: '0000', name: 'late', sql: 'SELECT 1;', sha256: 'c'.repeat(64) },
     ...loadMigrations(),
   ];
-  await assert.rejects(migrate(db().sql, late), MigrationError);
+  await assert.rejects(migrate(db().owner, late), MigrationError);
 });
 
 test('a failing migration leaves nothing behind', async () => {
-  const { sql } = db();
+  const { owner: sql } = db();
   const broken = [
     ...loadMigrations(),
     { version: '9998', name: 'ok', sql: 'CREATE TABLE half_done (id int);', sha256: 'a'.repeat(64) },

@@ -6,14 +6,19 @@ import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
 const ALL = { limit: 1000 };
+const CHANGES = ["UPDATE events SET kind = 'changed'", 'DELETE FROM events', 'TRUNCATE events'];
 
-test('an empty log cannot be updated, deleted or truncated either', async () => {
-  const { sql } = db();
-  await assert.rejects(sql`UPDATE events SET kind = 'changed'`, /append-only/);
-  await assert.rejects(sql`DELETE FROM events`, /append-only/);
-  await assert.rejects(sql`TRUNCATE events`, /append-only/);
+async function assertUnchangeable(): Promise<void> {
+  const { sql, owner } = db();
+  for (const statement of CHANGES) {
+    // The role of the core lacks the privilege; the owner, who has it, meets the trigger.
+    await assert.rejects(sql.unsafe(statement), /permission denied/);
+    await assert.rejects(owner.unsafe(statement), /append-only/);
+  }
   assert.deepEqual(await verifyEventChain(sql), { ok: true });
-});
+}
+
+test('an empty log cannot be updated, deleted or truncated either', assertUnchangeable);
 
 test('an event is written, read back and chained to the previous one', async () => {
   const { sql } = db();
@@ -59,13 +64,7 @@ test('callers cannot choose id, timestamp or hashes', async () => {
   assert.deepEqual(await verifyEventChain(sql), { ok: true });
 });
 
-test('stored events cannot be updated, deleted or truncated', async () => {
-  const { sql } = db();
-  await assert.rejects(sql`UPDATE events SET kind = 'changed'`, /append-only/);
-  await assert.rejects(sql`DELETE FROM events`, /append-only/);
-  await assert.rejects(sql`TRUNCATE events`, /append-only/);
-  assert.deepEqual(await verifyEventChain(sql), { ok: true });
-});
+test('stored events cannot be updated, deleted or truncated', assertUnchangeable);
 
 test('concurrent writers still produce one valid chain', async () => {
   const { sql } = db();
@@ -104,14 +103,15 @@ test('a writer on a stale snapshot cannot fork the chain', async () => {
 
 // Last on purpose: it corrupts the log of this throwaway schema.
 test('tampering with a stored event is detected at that event', async () => {
-  const { sql } = db();
+  const { sql, owner } = db();
   const victim = (await readEvents(sql, ALL))[1];
   assert.ok(victim !== undefined);
 
-  // Only someone who can alter the table can get past the trigger.
-  await sql`ALTER TABLE events DISABLE TRIGGER events_append_only`;
-  await sql`UPDATE events SET payload = '{"tampered":true}' WHERE id = ${victim.id}::bigint`;
-  await sql`ALTER TABLE events ENABLE TRIGGER events_append_only`;
+  // Only the owner, who can alter the table, can get past the trigger.
+  await assert.rejects(sql`ALTER TABLE events DISABLE TRIGGER events_append_only`, /must be owner/);
+  await owner`ALTER TABLE events DISABLE TRIGGER events_append_only`;
+  await owner`UPDATE events SET payload = '{"tampered":true}' WHERE id = ${victim.id}::bigint`;
+  await owner`ALTER TABLE events ENABLE TRIGGER events_append_only`;
 
   assert.deepEqual(await verifyEventChain(sql), { ok: false, brokenAt: victim.id });
 });

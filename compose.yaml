@@ -10,8 +10,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${ARIANNA_DB_USER:-arianna}
-      # Development default for a local database with fake data only.
-      POSTGRES_PASSWORD: ${ARIANNA_DB_PASSWORD:-arianna_dev}
+      # Read only when data/postgres is created. Always the development
+      # default, for fake data only: before real data the owner changes it with
+      # psql's \password and pnpm arianna:doctor checks it is refused (D-046). A real
+      # password here would stay readable with `docker inspect`.
+      POSTGRES_PASSWORD: arianna_dev
       POSTGRES_DB: ${ARIANNA_DB_NAME:-arianna}
     ports:
       # Loopback only: the database is never reachable from the network.

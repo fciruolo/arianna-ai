@@ -1,4 +1,4 @@
-import { asArray, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
+import { asArray, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
 
 /** The Telegram channel (task 1.15, D-044). Absent: the channel is off. */
 export interface TelegramConfig {
@@ -11,15 +11,11 @@ export interface TelegramConfig {
   chats: number[];
 }
 
-// Same rule as parseVaultRef in @arianna/vault, which checks again when resolving.
-const VAULT_REF = /^vault:\/\/[a-z0-9][a-z0-9_-]{0,63}$/;
-
 export function parseTelegram(value: unknown): TelegramConfig | undefined {
   if (value === undefined) return undefined;
   const telegram = asTable(value, 'telegram');
   onlyKeys(telegram, ['token', 'chats'], 'telegram');
-  const token = asString(telegram.token, 'telegram.token');
-  if (!VAULT_REF.test(token)) throw new ConfigError('telegram.token: must be a vault:// reference, never the token itself');
+  const token = asVaultRef(telegram.token, 'telegram.token');
   const chats = asArray(telegram.chats, 'telegram.chats').map((item, index) => {
     // The id of a private chat is the user's id: a positive integer.
     if (typeof item !== 'number' || !Number.isSafeInteger(item) || item <= 0) {

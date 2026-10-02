@@ -357,13 +357,13 @@ test('after two quiet days the bot accepts lower update ids; before, the offset 
 });
 
 test('an update that always fails is skipped after a few tries, and the next ones go through', async () => {
-  await db().sql`ALTER TABLE messages ADD CONSTRAINT fake_poison CHECK (body <> 'veleno finto')`;
+  await db().owner`ALTER TABLE messages ADD CONSTRAINT fake_poison CHECK (body <> 'veleno finto')`;
   try {
     fake.push(privateMessage(CHAT, 'veleno finto'));
     fake.push(privateMessage(CHAT, 'dopo il veleno'));
     await eventually(async () => (await telegramMessages(db().sql)).find((row) => row.body === 'dopo il veleno'));
   } finally {
-    await db().sql`ALTER TABLE messages DROP CONSTRAINT fake_poison`;
+    await db().owner`ALTER TABLE messages DROP CONSTRAINT fake_poison`;
   }
   const failed = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'telegram.failed'`;
   assert.deepEqual(failed.map((row) => row.payload.stage), ['update']);

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { Sql } from './client.ts';
+import type { Queryable, Sql } from './client.ts';
 
 export const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'migrations');
 
@@ -108,4 +108,27 @@ export async function migrate(sql: Sql, migrations: Migration[]): Promise<string
   } finally {
     connection.release();
   }
+}
+
+export interface MigrationStatus {
+  /** Files not applied yet. */
+  pending: string[];
+  /** Applied, but the file changed since. */
+  edited: string[];
+  /** Applied, but the file is gone. */
+  missing: string[];
+}
+
+/** Compares the database with the files without changing anything; the application role can run it. */
+export async function migrationStatus(sql: Queryable, migrations: Migration[]): Promise<MigrationStatus> {
+  const rows = await sql<{ version: string; sha256: string }[]>`
+    SELECT version, sha256 FROM schema_migrations ORDER BY version`;
+  const applied = new Map(rows.map((row) => [row.version, row.sha256]));
+  return {
+    pending: migrations.filter((file) => !applied.has(file.version)).map((file) => file.version),
+    edited: migrations
+      .filter((file) => applied.has(file.version) && applied.get(file.version) !== file.sha256)
+      .map((file) => file.version),
+    missing: rows.filter((row) => !migrations.some((file) => file.version === row.version)).map((row) => row.version),
+  };
 }

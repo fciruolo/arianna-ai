@@ -9,7 +9,8 @@ import { createVault } from '@arianna/vault';
 
 import { CHAT_AGENT } from './conversations.ts';
 import { connect } from './db/client.ts';
-import { loadMigrations, migrate } from './db/migrate.ts';
+import { prepareDatabase, resolveLogin } from './db/logins.ts';
+import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker, type StepExecutor } from './engine.ts';
 import { startLiveFeed } from './live.ts';
 import { startApiServer } from './server/http.ts';
@@ -35,10 +36,28 @@ function report(error: unknown): void {
 
 const config = loadConfig();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
-const sql = connect(config);
+const app = await resolveLogin(config, 'app');
 
-const applied = await migrate(sql, loadMigrations());
-if (applied.length > 0) console.log(`Applied migrations: ${applied.join(', ')}`);
+// The core works as the application role (D-046). With the development
+// passwords it also migrates, as the owner; with real ones the owner's
+// password, a superuser's, stays out of this process: pnpm db:migrate first.
+if (app.development) {
+  const owner = connect(config, await resolveLogin(config, 'owner'));
+  try {
+    const applied = await prepareDatabase(owner, app);
+    if (applied.length > 0) console.log(`Applied migrations: ${applied.join(', ')}`);
+  } finally {
+    await owner.end();
+  }
+  console.log('Database: development passwords, fake data only (pnpm arianna:doctor)');
+}
+const sql = connect(config, app);
+const status = await migrationStatus(sql, loadMigrations());
+if (status.pending.length + status.edited.length + status.missing.length > 0) {
+  console.error('The database is not at the migrations of this version: run pnpm db:migrate, then pnpm arianna:doctor');
+  await sql.end();
+  process.exit(1);
+}
 
 const worker = createWorker({
   sql,

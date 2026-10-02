@@ -7,7 +7,7 @@ import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
-import { asInteger, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
+import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
 
 export const CONFIG_FILE = join('config', 'arianna.toml');
 
@@ -18,13 +18,31 @@ const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 // "localhost", which depends on /etc/hosts.
 const SERVER_HOSTS = ['127.0.0.1', '::1'];
 const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
+// The role the core works as (task 1.13, D-046), created by migration 0007:
+// fixed, because migrations are in git and cannot read this file.
+const APP_ROLE = 'arianna_app';
+
+export interface DatabaseConfig {
+  host: string;
+  port: number;
+  name: string;
+  /** Owner of the schema: migrations and setup only. */
+  user: string;
+  /**
+   * `vault://name` of the owner's password and of the password of the
+   * application role. Absent: the development defaults, for fake data only;
+   * `pnpm arianna:doctor` fails until both are set.
+   */
+  password?: string;
+  appPassword?: string;
+}
 
 export interface AriannaConfig {
   /** Absolute path of ARIANNA_HOME. */
   home: string;
   /** Absolute paths, always inside `home`. */
   paths: { data: string };
-  database: { host: string; port: number; name: string; user: string };
+  database: DatabaseConfig;
   /** API, WebSocket and web chat of the core (task 1.11). */
   server: { host: string; port: number };
   local: LocalConfig;
@@ -47,7 +65,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
   onlyKeys(paths, ['data'], 'paths');
 
   const database = asTable(root.database, 'database');
-  onlyKeys(database, ['host', 'port', 'name', 'user'], 'database');
+  onlyKeys(database, ['host', 'port', 'name', 'user', 'password', 'app_password'], 'database');
 
   const data = resolveInHome(home, asString(paths.data, 'paths.data'), 'paths.data');
   // .gitignore, lint and tests exclude exactly this folder: any other name would
@@ -66,16 +84,33 @@ export function parseConfig(text: string, home: string): AriannaConfig {
   return {
     home,
     paths: { data },
-    database: {
-      host,
-      port: asInteger(database.port, 'database.port', 1, 65535),
-      name: asString(database.name, 'database.name'),
-      user: asString(database.user, 'database.user'),
-    },
+    database: parseDatabase(database, host),
     server: parseServer(root.server),
     local: parseLocal(root.local),
     cloud: parseCloud(root.cloud, home, data),
     ...(telegram === undefined ? {} : { telegram }),
+  };
+}
+
+function parseDatabase(database: Record<string, unknown>, host: string): DatabaseConfig {
+  const user = asString(database.user, 'database.user');
+  if (user === APP_ROLE) throw new ConfigError(`database.user: ${APP_ROLE} is the application role, not the owner`);
+  const password = database.password === undefined ? undefined : asVaultRef(database.password, 'database.password');
+  const appPassword =
+    database.app_password === undefined ? undefined : asVaultRef(database.app_password, 'database.app_password');
+  if ((password === undefined) !== (appPassword === undefined)) {
+    throw new ConfigError('database: set password and app_password together, or neither');
+  }
+  if (password !== undefined && password === appPassword) {
+    throw new ConfigError('database.app_password: must be a different secret from database.password');
+  }
+  return {
+    host,
+    port: asInteger(database.port, 'database.port', 1, 65535),
+    name: asString(database.name, 'database.name'),
+    user,
+    ...(password === undefined ? {} : { password }),
+    ...(appPassword === undefined ? {} : { appPassword }),
   };
 }
 

@@ -93,10 +93,12 @@ test('the database refuses log rows the policy would never allow', async () => {
 });
 
 test('the gateway log is append-only', async () => {
-  const { sql } = db();
-  await assert.rejects(sql`UPDATE gateway_log SET decision = 'allow'`, /append-only/);
-  await assert.rejects(sql`DELETE FROM gateway_log`, /append-only/);
-  await assert.rejects(sql`TRUNCATE gateway_log`, /append-only/);
+  const { sql, owner } = db();
+  for (const statement of ["UPDATE gateway_log SET decision = 'allow'", 'DELETE FROM gateway_log', 'TRUNCATE gateway_log']) {
+    // The role of the core lacks the privilege; the owner, who has it, meets the trigger.
+    await assert.rejects(sql.unsafe(statement), /permission denied/);
+    await assert.rejects(owner.unsafe(statement), /append-only/);
+  }
 });
 
 test('declassify: request, approval from the chat, change recorded, then the brief leaves', async () => {
@@ -137,12 +139,13 @@ test('declassify: a rejected approval or an edited text changes nothing', async 
 });
 
 test('approvals are decided once and their content cannot change', async () => {
-  const { sql } = db();
+  const { sql, owner } = db();
   const request = await requestDeclassify(sql, { value: 'fake', label: 'L2', source: 'test' }, 'L1');
   await decideApproval(sql, request.id, 'approved', 'web');
   await assert.rejects(decideApproval(sql, request.id, 'rejected', 'web'), /already decided/);
   await assert.rejects(sql`UPDATE approvals SET state = 'rejected' WHERE id = ${request.id}`, /already approved/);
-  await assert.rejects(sql`DELETE FROM approvals`, /append-only/);
+  await assert.rejects(sql`DELETE FROM approvals`, /permission denied/);
+  await assert.rejects(owner`DELETE FROM approvals`, /append-only/);
 
   const pending = await requestDeclassify(sql, { value: 'other', label: 'L2', source: 'test' }, 'L1');
   await assert.rejects(sql`UPDATE approvals SET detail = '{"sha256":"x"}' WHERE id = ${pending.id}`, /only the decision/);
@@ -197,7 +200,7 @@ test('a summary with a scanner match is not stored', async () => {
 });
 
 test('the database refuses a lowering without a matching approved approval; raising needs none', async () => {
-  const { sql } = db();
+  const { sql, owner } = db();
   const insert = (subject: string, from: string, to: string, approval: string | null) => sql`
     INSERT INTO label_changes (subject, from_label, to_label, approval_id)
     VALUES (${subject}, ${from}::privacy_label, ${to}::privacy_label, ${approval})`;
@@ -214,7 +217,8 @@ test('the database refuses a lowering without a matching approved approval; rais
   await assert.rejects(insert(`content:${SHA}`, 'L2', 'L1', request.id), /not covered/);
   await assert.rejects(insert(subject, 'L2', 'L0', request.id), /not covered/);
   await insert(subject, 'L2', 'L1', request.id);
-  await assert.rejects(sql`DELETE FROM label_changes`, /append-only/);
+  await assert.rejects(sql`DELETE FROM label_changes`, /permission denied/);
+  await assert.rejects(owner`DELETE FROM label_changes`, /append-only/);
 });
 
 test('local exits are logged as local, and a contaminated run is refused the cloud', async () => {

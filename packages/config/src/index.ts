@@ -1,5 +1,5 @@
 export { type CloudConfig } from './cloud.ts';
-export { CONFIG_FILE, loadConfig, parseConfig, type AriannaConfig } from './config.ts';
+export { CONFIG_FILE, loadConfig, parseConfig, type AriannaConfig, type DatabaseConfig } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
 export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
 export { type TelegramConfig } from './telegram.ts';

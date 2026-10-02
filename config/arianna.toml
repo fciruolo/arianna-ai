@@ -6,11 +6,17 @@
 data = "data"
 
 [database]
-# PostgreSQL in Docker, reachable only from this machine.
+# PostgreSQL in Docker, reachable only from this machine. `user` owns the
+# schema and only migrates; the core works as arianna_app (D-046). Without
+# `password` and `app_password` the development defaults apply, for fake data
+# only: before real data set both as vault references (two different secrets)
+# and run pnpm arianna:doctor. Steps in docs/SECURITY.md.
 host = "127.0.0.1"
 port = 54329
 name = "arianna"
 user = "arianna"
+# password = "vault://db-owner-password"
+# app_password = "vault://db-app-password"
 
 # Local inference (task 1.3): OpenAI-compatible servers on this machine only,
 # because requests carry L2 data in clear. Endpoints in order of preference:
