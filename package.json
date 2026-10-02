@@ -22,6 +22,7 @@
     "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
+    "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
     "@arianna/executors": "workspace:*",
     "@arianna/policy": "workspace:*",

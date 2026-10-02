@@ -1,0 +1,17 @@
+# Arianna, the orchestrator (docs/AGENT-CARDS.md). Runs on the local model only.
+name: arianna
+description: Plans, assigns and reports; the user's main contact
+max_label: L2
+executors: [local]
+tools: [kb.read, kb.search, kb.write, task.create, task.update, task.delegate, user.ask]
+trifecta:
+  private_data: true
+  untrusted_content: true
+  # Removed: delegations to cloud agents leave from a separate per-task context
+  # and pass the gateway (task.delegate opens nothing by itself).
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 30, max_minutes: 20, max_cost: 0 }
+approvals: [delete, send_external]
+prompt: arianna.md

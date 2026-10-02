@@ -1,0 +1,20 @@
+# Coder (docs/AGENT-CARDS.md): Claude Code or Codex on L0/L1 code, the local
+# model on L2 code. In the cloud the private data side is removed by
+# cloud_max_label (the router and the gateway enforce it); locally the
+# external communication side is removed.
+name: coder
+description: Writes and changes code in a worktree, with tests
+max_label: L2
+cloud_max_label: L1
+executors: [claude, codex, local]
+tools: [repo.read, repo.write, repo.test, task.update, user.ask]
+trifecta:
+  private_data: true
+  # Repositories, dependencies and issue text are not trusted.
+  untrusted_content: true
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 50, max_minutes: 45, max_cost: 0 }
+approvals: []
+prompt: coder.md

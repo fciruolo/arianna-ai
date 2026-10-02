@@ -34,7 +34,7 @@ Criterio di uscita: vedi `ROADMAP.md`. A fine fase confronta ore previste e real
 | 1.6 | Confinamento cloud: worktree per run, allowlist, scansione preventiva, MCP stretto, sandbox (anche verso i servizi locali via loopback), canarino | 5-8 | | Canarino mai nel transcript, né da file né dal database; lancio negato fuori allowlist |
 | 1.7 | Router: filtro privacy, budget, difficoltà a regole, scalata, log decisioni | 5-8 | | Eval router ≥ 95%, privacy 100% |
 | 1.8 | Task, run, approvazioni, tetti di passi/tempo/costo, coda `jobs` e ripresa dopo riavvio | 6-9 | | Task fermato da tetto e da approvazione; `kill -9` del core → il task riprende |
-| 1.9 | Loader e validazione schede agente (trifecta); schede di Arianna e Coder | 3-5 | | Scheda non valida rifiutata |
+| 1.9 | Loader e validazione schede agente (trifecta); schede di Arianna e Coder | 3-5 | 0,3 (solo sessione di Claude) | Scheda non valida rifiutata |
 | 1.10 | Orchestratore locale con strumenti a schema vincolato, contesto per task | 7-10 | | Task a più passi completato |
 | 1.11 | API + WebSocket eventi + chat web minima: storico, modalità lavoro/privato, schede di approvazione | 5-8 | | Chat dal browser; declassamento approvato dalla chat |
 | 1.12 | Casi eval completi: gateway, router, canarino | 4-6 | | Soglie rispettate |
