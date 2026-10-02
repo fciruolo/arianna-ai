@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { resolveHome, type ModelManifest } from '@arianna/config';
+import { resolveHome, type CatalogEntry } from '@arianna/config';
 
 import { createFetcher } from '../src/http.ts';
 import { fileTarget, modelStatus, ModelError, PART_SUFFIX, pullFile, pullModels } from '../src/models.ts';
@@ -68,13 +68,18 @@ after(() => {
 
 const fetch = createFetcher({ allowHttp: true });
 
-function manifest(path: string, sha = SHA): ModelManifest {
-  return {
-    version: 1,
-    models: [
-      { name: 'fake-model', role: 'orchestrator', runtime: 'mlx', files: [{ path: 'weights/model.bin', url: `${base}${path}`, sizeBytes: BODY.length, sha256: sha }] },
-    ],
-  };
+function models(path: string, sha = SHA): CatalogEntry[] {
+  return [
+    {
+      id: 'fake-model',
+      family: 'fake',
+      runtime: 'mlx',
+      ramMinGib: 1,
+      roles: ['orchestrator'],
+      status: 'experimental',
+      files: [{ path: 'weights/model.bin', url: `${base}${path}`, sizeBytes: BODY.length, sha256: sha }],
+    },
+  ];
 }
 
 function freshData(): string {
@@ -85,7 +90,7 @@ function freshData(): string {
 
 test('a missing model is downloaded, verified and then reported present and ok', async () => {
   const data = freshData();
-  const wanted = manifest('/weights');
+  const wanted = models('/weights');
   assert.deepEqual((await modelStatus(wanted, data)).map((status) => status.state), ['missing']);
   const pulled = await pullModels(wanted, data, { fetch });
   assert.equal(pulled.length, 1);
@@ -102,11 +107,11 @@ test('a missing model is downloaded, verified and then reported present and ok',
 
 test('an interrupted download resumes from the .part with a Range request', async () => {
   const data = freshData();
-  const [status] = await modelStatus(manifest('/weights'), data);
+  const [status] = await modelStatus(models('/weights'), data);
   assert.ok(status !== undefined);
   mkdirSync(dirname(status.target), { recursive: true });
   writeFileSync(`${status.target}${PART_SUFFIX}`, BODY.subarray(0, 1000));
-  assert.equal((await modelStatus(manifest('/weights'), data))[0]?.state, 'partial');
+  assert.equal((await modelStatus(models('/weights'), data))[0]?.state, 'partial');
   await pullFile(status, { fetch });
   assert.equal(seen.at(-1)?.range, 'bytes=1000-');
   assert.deepEqual(readFileSync(status.target), BODY);
@@ -114,7 +119,7 @@ test('an interrupted download resumes from the .part with a Range request', asyn
 
 test('a server that ignores Range restarts the file, and redirects are followed', async () => {
   const data = freshData();
-  const [status] = await modelStatus(manifest('/no-range'), data);
+  const [status] = await modelStatus(models('/no-range'), data);
   assert.ok(status !== undefined);
   mkdirSync(dirname(status.target), { recursive: true });
   writeFileSync(`${status.target}${PART_SUFFIX}`, BODY.subarray(0, 5000));
@@ -122,20 +127,20 @@ test('a server that ignores Range restarts the file, and redirects are followed'
   assert.deepEqual(readFileSync(status.target), BODY);
 
   const redirected = freshData();
-  await pullModels(manifest('/redirect'), redirected, { fetch });
-  assert.deepEqual((await modelStatus(manifest('/redirect'), redirected, { hash: true })).map((s) => s.state), ['ok']);
+  await pullModels(models('/redirect'), redirected, { fetch });
+  assert.deepEqual((await modelStatus(models('/redirect'), redirected, { hash: true })).map((s) => s.state), ['ok']);
 });
 
 test('a file with the wrong hash is discarded, never installed', async () => {
   const data = freshData();
-  await assert.rejects(pullModels(manifest('/corrupt'), data, { fetch }), (error: unknown) => error instanceof ModelError && error.code === 'wrong-hash');
-  const [status] = await modelStatus(manifest('/corrupt'), data);
+  await assert.rejects(pullModels(models('/corrupt'), data, { fetch }), (error: unknown) => error instanceof ModelError && error.code === 'wrong-hash');
+  const [status] = await modelStatus(models('/corrupt'), data);
   assert.equal(status?.state, 'missing');
 });
 
-test('a file larger than the manifest, an HTTP error, a redirect loop and plain HTTP are refused', async () => {
+test('a file larger than the catalog, an HTTP error, a redirect loop and plain HTTP are refused', async () => {
   const code = (path: string, expected: string, fetcher = fetch) =>
-    assert.rejects(pullModels(manifest(path), freshData(), { fetch: fetcher }), (error: unknown) => error instanceof ModelError && error.code === expected);
+    assert.rejects(pullModels(models(path), freshData(), { fetch: fetcher }), (error: unknown) => error instanceof ModelError && error.code === expected);
   await code('/bigger', 'too-large');
   await code('/missing', 'http-status');
   await code('/loop', 'redirects');
@@ -144,27 +149,27 @@ test('a file larger than the manifest, an HTTP error, a redirect loop and plain 
 
 test('a file of the wrong size is replaced; a wrong hash shows only when verifying', async () => {
   const data = freshData();
-  const [status] = await modelStatus(manifest('/weights'), data);
+  const [status] = await modelStatus(models('/weights'), data);
   assert.ok(status !== undefined);
   mkdirSync(dirname(status.target), { recursive: true });
   writeFileSync(status.target, 'short');
-  assert.equal((await modelStatus(manifest('/weights'), data))[0]?.state, 'wrong-size');
-  await pullModels(manifest('/weights'), data, { fetch });
+  assert.equal((await modelStatus(models('/weights'), data))[0]?.state, 'wrong-size');
+  await pullModels(models('/weights'), data, { fetch });
   assert.deepEqual(readFileSync(status.target), BODY);
 
   const flipped = Buffer.from(BODY);
   flipped[10] = (flipped[10] ?? 0) ^ 1;
   writeFileSync(status.target, flipped);
-  assert.equal((await modelStatus(manifest('/weights'), data))[0]?.state, 'present');
-  assert.equal((await modelStatus(manifest('/weights'), data, { hash: true }))[0]?.state, 'wrong-hash');
+  assert.equal((await modelStatus(models('/weights'), data))[0]?.state, 'present');
+  assert.equal((await modelStatus(models('/weights'), data, { hash: true }))[0]?.state, 'wrong-hash');
 });
 
 test('an invalid redirect, a 206 from the wrong offset and a file changed upstream are handled', async () => {
-  await assert.rejects(pullModels(manifest('/bad-location'), freshData(), { fetch }), (error: unknown) => error instanceof ModelError && error.code === 'redirects');
+  await assert.rejects(pullModels(models('/bad-location'), freshData(), { fetch }), (error: unknown) => error instanceof ModelError && error.code === 'redirects');
 
   // Wrong offset: start over from zero instead of appending the wrong bytes.
   const data = freshData();
-  const [status] = await modelStatus(manifest('/wrong-range'), data);
+  const [status] = await modelStatus(models('/wrong-range'), data);
   assert.ok(status !== undefined);
   mkdirSync(dirname(status.target), { recursive: true });
   writeFileSync(`${status.target}${PART_SUFFIX}`, BODY.subarray(0, 3000));
@@ -173,7 +178,7 @@ test('an invalid redirect, a 206 from the wrong offset and a file changed upstre
 
   // 416: the .part no longer matches the server and is discarded.
   const changed = freshData();
-  const [stale] = await modelStatus(manifest('/changed'), changed);
+  const [stale] = await modelStatus(models('/changed'), changed);
   assert.ok(stale !== undefined);
   mkdirSync(dirname(stale.target), { recursive: true });
   writeFileSync(`${stale.target}${PART_SUFFIX}`, BODY.subarray(0, 10));
@@ -184,21 +189,21 @@ test('an invalid redirect, a 206 from the wrong offset and a file changed upstre
 test('a server that stops sending fails with the file name, and the .part is kept for resuming', async () => {
   const data = freshData();
   await assert.rejects(
-    pullModels(manifest('/stall'), data, { fetch: createFetcher({ allowHttp: true, idleTimeoutMs: 200 }) }),
+    pullModels(models('/stall'), data, { fetch: createFetcher({ allowHttp: true, idleTimeoutMs: 200 }) }),
     (error: unknown) => error instanceof ModelError && error.code === 'network' && /fake-model\/weights\/model\.bin/.test(error.message),
   );
-  assert.equal((await modelStatus(manifest('/stall'), data))[0]?.state, 'partial');
+  assert.equal((await modelStatus(models('/stall'), data))[0]?.state, 'partial');
 });
 
 test('pull with verify replaces a file of the right size but the wrong hash', async () => {
   const data = freshData();
-  await pullModels(manifest('/weights'), data, { fetch });
-  const [status] = await modelStatus(manifest('/weights'), data);
+  await pullModels(models('/weights'), data, { fetch });
+  const [status] = await modelStatus(models('/weights'), data);
   assert.ok(status !== undefined);
   const flipped = Buffer.from(BODY);
   flipped[0] = (flipped[0] ?? 0) ^ 1;
   writeFileSync(status.target, flipped);
-  assert.deepEqual(await pullModels(manifest('/weights'), data, { fetch }), []);
-  assert.equal((await pullModels(manifest('/weights'), data, { fetch, verify: true })).length, 1);
+  assert.deepEqual(await pullModels(models('/weights'), data, { fetch }), []);
+  assert.equal((await pullModels(models('/weights'), data, { fetch, verify: true })).length, 1);
   assert.deepEqual(readFileSync(status.target), BODY);
 });

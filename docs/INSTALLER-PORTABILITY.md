@@ -16,8 +16,9 @@ arianna/                  # repository (codice, docs, agents/, evals/)
     worktrees/            # worktree git dei run degli esecutori cloud
     backups/              # dump cifrati
   config/
-    models.manifest.yaml  # elenco modelli: nome, runtime, URL, dimensione, sha256, ruolo
-    arianna.toml          # percorsi, porte, opzioni, allowlist dei repository; nessun segreto
+    models.catalog.yaml   # catalogo curato: id, famiglia, runtime, RAM, ruoli, stato, file con URL e sha256
+    arianna.example.toml  # configurazione di esempio, in git: i valori di sviluppo
+    arianna.toml          # configurazione di questa installazione, FUORI da git, scritta da arianna init; nessun segreto
     labels.toml           # regole di etichetta per cartella e sorgente
   scripts/                # installer e utilità
 ```
@@ -26,13 +27,15 @@ Regola: nessun percorso assoluto nel codice; tutto è relativo a `ARIANNA_HOME`,
 
 La configurazione si legge solo tramite `packages/config`, che rifiuta percorsi assoluti, percorsi che escono da `ARIANNA_HOME` e chiavi sconosciute. Per ora `paths.data` deve essere `data`, perché `.gitignore` esclude solo quella cartella: un altro nome farebbe entrare dati privati in git. Il limite resta finché l'installer non sa scrivere `.gitignore` per un'altra cartella (rinviato dalla prima parte del 1.17, D-047). Il controllo sui percorsi è sul testo: un collegamento simbolico dentro `data/` che punta fuori dalla cartella è ammesso (serve per i pesi dei modelli) e lo segnalerà `arianna doctor`. Un test (`test/portability.test.ts`) fa fallire `pnpm check` se nel codice o nella configurazione compare un percorso legato a una macchina.
 
-Schema del manifest (`version: 1`): ogni modello ha `name`, `role` (`orchestrator`, `extractor`, `embedder`, `voice`), `runtime` (`mlx`, `llama.cpp`, `vllm`) e un elenco `files`, perché un modello MLX è fatto di più file. Ogni file ha `path` (relativo, dentro `data/models/<name>/`), `url` (solo https), `size_bytes` e `sha256`.
+Schema del catalogo (`version: 1`, D-048, sostituisce il manifest del 1.17): ogni modello ha `id` (minuscole, cifre, punto, trattino, trattino basso: è anche la cartella `data/models/<id>/` e quindi il nome che oMLX serve), `family`, `runtime` (`mlx`, `llama.cpp`, `vllm`), `ram_min_gib`, `roles` (uno o più fra `orchestrator`, `extractor`, `embedder`, `voice`), `status` (`verified` o `experimental`) e un elenco `files`, perché un modello MLX è fatto di più file. Ogni file ha `path` (relativo, dentro `data/models/<id>/`), `url` (solo https), `size_bytes` e `sha256`. Si scaricano solo i modelli assegnati a un ruolo in `[roles]` di `arianna.toml`.
+
+**`arianna.toml` fuori da git (D-048).** La cartella di installazione è un clone aggiornato con `git pull`: un file di configurazione tracciato e modificato in locale andrebbe in conflitto a ogni aggiornamento, e valori come l'id della chat Telegram finirebbero in git. Nel repository c'è `config/arianna.example.toml`, generato dal codice con i valori di sviluppo (un test lo tiene identico); `config/arianna.toml` è in `.gitignore` e lo scrive `pnpm arianna:init`. Senza il file, il core, `db:up` e il doctor si fermano e dicono di lanciare il wizard; `pnpm check` non ne ha bisogno.
 
 ## Installer (`arianna install`)
 
 1. Verifica prerequisiti: Node, pnpm, Docker, spazio libero, RAM, architettura.
 2. Crea la struttura `data/` e `config/` se mancano.
-3. Legge `models.manifest.yaml` e scarica solo i modelli mancanti in `data/models/`, con ripresa, verifica sha256 e barra di avanzamento.
+3. Legge il catalogo e scarica solo i modelli mancanti fra quelli assegnati a un ruolo in `data/models/`, con ripresa, verifica sha256 e barra di avanzamento.
 4. Configura il runtime locale (oMLX) perché punti a `data/models/`; se il runtime non lo consente, crea collegamenti simbolici. **Da verificare** nelle opzioni di oMLX.
 5. Avvia Postgres e Qdrant con Docker Compose usando volumi dentro `data/`.
 6. Applica le migrazioni e lancia `arianna doctor`: controlli di salute, modelli presenti, gateway attivo, catena di hash del registro eventi, test di contratto degli esecutori.
@@ -40,31 +43,35 @@ Schema del manifest (`version: 1`): ogni modello ha `name`, `role` (`orchestrato
 
 Comandi collegati: `arianna doctor` (diagnosi), `arianna models pull|list|verify`, `arianna export`, `arianna import`.
 
-**Stato (task 1.17, prima parte, D-047).** Esistono `pnpm arianna:install`, `pnpm arianna:doctor` e `pnpm arianna:models list|verify|pull` (`apps/installer`). Fatti i passi 1 (senza soglie di spazio e RAM: le dà il catalogo del 1.18), 2 (solo `data/`, perché `config/` è nel repository; `data/` e `data/vault` private, anche se esistevano già), 3, 5 (solo Postgres: Qdrant arriva con la Fase 2) e in parte 6 (prerequisiti, cartelle, modelli presenti, password, ruolo del database, migrazioni, catena degli eventi; gateway attivo e test di contratto degli esecutori arrivano con 1.10 e 1.5). Mancano il passo 4 (oMLX non è ancora installato) e le voci vere del manifest, da copiare dalla configurazione oMLX: fino ad allora il manifest è vuoto e `install` non scarica nulla. Il download accetta solo HTTPS, segue al massimo 5 redirect, scrive `<file>.part`, riprende con `Range` e rinomina solo dopo dimensione e sha256 giusti; un file con lo sha256 sbagliato si scarta. `doctor` controlla le dimensioni (secondi), `models verify` gli sha256 (minuti per decine di GB); `models pull --verify` sostituisce anche un file della dimensione giusta con lo sha256 sbagliato. Una risposta 206 che parte dal byte sbagliato fa ripartire da zero; un 416 (file cambiato sul server) cancella il `.part`; il `.part` va su disco con `fsync` prima della rinomina. Non ancora gestiti: due `pull` contemporanei sullo stesso file (lo sha256 scarta il risultato), conflitti fra percorsi dello stesso modello nel manifest (`a` e `a/b`, stesso percorso due volte), spazio misurato sul disco di `data/models` anche quando un modello è un collegamento verso un altro disco.
+Se `config/arianna.toml` manca, `install` parte dal wizard: i modelli da scaricare dipendono dalle risposte.
+
+**Stato (task 1.17, prima parte, D-047; catalogo al posto del manifest con il 1.18, D-048).** Esistono `pnpm arianna:install`, `pnpm arianna:doctor` e `pnpm arianna:models list|verify|pull` (`apps/installer`). Fatti i passi 1 (spazio libero per i download; la RAM dei modelli assegnati la controllano il wizard e il doctor, `models.ram`, dal 1.18), 2 (solo `data/`, perché `config/` è nel repository; `data/` e `data/vault` private, anche se esistevano già), 3, 5 (solo Postgres: Qdrant arriva con la Fase 2) e in parte 6 (prerequisiti, cartelle, modelli presenti, password, ruolo del database, migrazioni, catena degli eventi; gateway attivo e test di contratto degli esecutori arrivano con 1.10 e 1.5). Mancano il passo 4 (oMLX non è ancora installato; il wizard propone già un server oMLX con `--model-dir data/models`, così non servono collegamenti) e le voci vere del catalogo, da copiare dalla configurazione oMLX: fino ad allora il catalogo è vuoto e `install` non scarica nulla. Il download accetta solo HTTPS, segue al massimo 5 redirect, scrive `<file>.part`, riprende con `Range` e rinomina solo dopo dimensione e sha256 giusti; un file con lo sha256 sbagliato si scarta. `doctor` controlla le dimensioni (secondi), `models verify` gli sha256 (minuti per decine di GB); `models pull --verify` sostituisce anche un file della dimensione giusta con lo sha256 sbagliato. Una risposta 206 che parte dal byte sbagliato fa ripartire da zero; un 416 (file cambiato sul server) cancella il `.part`; il `.part` va su disco con `fsync` prima della rinomina. Non ancora gestiti: due `pull` contemporanei sullo stesso file (lo sha256 scarta il risultato), conflitti fra percorsi dello stesso modello nel catalogo (`a` e `a/b`; lo stesso percorso due volte ora è rifiutato), spazio misurato sul disco di `data/models` anche quando un modello è un collegamento verso un altro disco.
 
 ## Wizard iniziale e impostazioni
 
-**Wizard (`arianna init`, al primo avvio dopo `install`).** Procedura guidata a domande, in italiano, che scrive `config/arianna.toml`:
+**Wizard (`pnpm arianna:init`, prima di `install`, che lo lancia da solo se manca la configurazione).** Procedura guidata a domande, in italiano, che scrive `config/arianna.toml`:
 
-1. Cartella dei dati e controllo dello spazio libero.
-2. Scelta dei modelli locali dal catalogo (vedi sotto), con avviso se non stanno nella RAM della macchina.
-3. Esecutori cloud: abilita o no Claude Code e Codex; mostra le istruzioni di login manuale (il wizard non tocca le credenziali).
-4. Livello di autonomia iniziale (A1 predefinito) e tetti di passi, tempo e costo.
-5. Percorsi di sincronizzazione (es. Synology) con avvisi su ciò che non va sincronizzato.
-6. Canali: chat web, Telegram (opzionale, canale esterno: al massimo L1, vedi D-016); voce e telefono rimandati alle fasi successive.
-7. Riepilogo, `arianna doctor`, avvio.
+1. Cartella dei dati e spazio libero (solo informativo: `paths.data` per ora è sempre `data`).
+2. Scelta dei modelli locali dal catalogo per orchestratore (`local-large`) ed estrattore (`local-small`), con avviso se insieme non stanno nella RAM della macchina o nello spazio libero; se non c'è un server locale propone oMLX su `127.0.0.1:8001` con i modelli in `data/models`. Embedder e voce arrivano con le fasi successive.
+3. Esecutori cloud: abilita o no Claude Code e Codex (`[cloud] executors`); dice se il binario è nel PATH (cercato, non eseguito) e mostra le istruzioni di login manuale (il wizard non tocca le credenziali).
+4. Autonomia: solo informativo (D-048). Tutti partono da A1; un agente sale solo per decisione dell'utente, per agente, registrata (`AGENT-CARDS.md`); i tetti stanno nelle schede degli agenti.
+5. Sincronizzazione (es. Synology): solo avvisi su ciò che va e non va sincronizzato.
+6. Canali: chat web sempre attiva; Telegram facoltativo (canale esterno: al massimo L1, D-016), con gli id delle chat; il token resta un riferimento al vault (`vault://telegram-bot-token`) e si inserisce con `pnpm vault:edit`. Voce e telefono rimandati alle fasi successive.
+7. Riepilogo e conferma; poi il prossimo passo è `pnpm arianna:install` (modelli, database, doctor).
 
-Il wizard è rilanciabile (`arianna init --reconfigure`) e non sovrascrive nulla senza conferma.
+Il wizard è rilanciabile (`pnpm arianna:init --reconfigure`): parte dai valori attuali, conserva ciò che non chiede (database, server, allowlist, password, endpoint aggiuntivi) e non scrive nulla senza conferma; riscrive però tutto il file, quindi i commenti aggiunti a mano si perdono. Un file non valido va corretto a mano prima di `--reconfigure`, che altrimenti si ferma con l'errore e la chiave. `pnpm arianna:init --defaults` scrive i valori di sviluppo senza domande, solo se il file manca. Il file si scrive accanto e si rinomina, dopo averlo validato come lo legge il core.
+
+**Stato (task 1.18, D-048).** Fatti: catalogo, ruoli, `[cloud] executors`, wizard, `arianna.toml` fuori da git e ricarica senza riavvio. Il core controlla `arianna.toml` e il catalogo ogni secondo: i ruoli e i nomi dei modelli che danno ai server locali si applicano subito; tutto il resto solo al riavvio, e il core lo scrive nel log: la privacy (esecutori cloud, allowlist, Telegram), ma anche `url` e `command` dei server locali, perché decidono dove vanno le richieste L2 e cosa lancia il watchdog. `[cloud] executors` oggi non lo legge ancora nessuno: l'adattatore degli esecutori (1.5, 1.16) dovrà rifiutare di lanciare un binario che non vi compare. Chi chiama un modello locale (l'orchestratore, 1.10) deve leggere la configurazione corrente a ogni chiamata: oggi nessuno la usa, quindi il cambio di modello senza riavvio è provato sulla configurazione, non ancora su una chiamata vera. Non ancora fatto: registrare le ricariche nel registro eventi (con la pagina Impostazioni, 3.5), voci vere del catalogo (dopo oMLX).
 
 **Impostazioni.** Ogni valore del wizard è modificabile dopo, in due modi equivalenti: file `arianna.toml` e pagina Impostazioni nella chat/HUD. Le modifiche sono validate (schema), applicate senza riavvio quando possibile e registrate nel registro eventi. Le impostazioni che toccano la privacy (livelli, regole di etichetta, gateway, allowlist dei repository, abilitazione degli esecutori cloud e dei canali esterni) richiedono una conferma esplicita e non si cambiano da un agente.
 
-**Catalogo modelli curato (`config/models.catalog.yaml`).** Una lista corta scelta da te, non un elenco infinito. Ogni voce ha: id, famiglia, runtime, dimensione, RAM minima, ruoli adatti (`orchestrator`, `extractor`, `embedder`, `voice`), URL e sha256, stato (`verified` se ha superato gli eval, `experimental` altrimenti). Oggi contiene **solo il Qwen che hai già provato**; versione e quantizzazione esatte vanno copiate dalla tua configurazione oMLX nel task 1.17. Per aggiungere un modello: si inserisce la voce, si lancia `pnpm eval` sui gruppi router ed estrazione, e solo dopo passa a `verified`. Nelle impostazioni si assegna un modello a ogni ruolo scegliendo fra quelli del catalogo.
+**Catalogo modelli curato (`config/models.catalog.yaml`).** Una lista corta scelta da te, non un elenco infinito. Ogni voce ha: id, famiglia, runtime, RAM minima, ruoli adatti (`orchestrator`, `extractor`, `embedder`, `voice`), file con URL, dimensione e sha256, stato (`verified` se ha superato gli eval, `experimental` altrimenti). Dovrà contenere **solo il Qwen che hai già provato**; versione e quantizzazione esatte vanno copiate dalla tua configurazione oMLX: oggi è vuoto. Per aggiungere un modello: si inserisce la voce, si lancia `pnpm eval` sui gruppi router ed estrazione, e solo dopo passa a `verified`. Nelle impostazioni si assegna un modello a ogni ruolo scegliendo fra quelli del catalogo.
 
-## Modelli: manifest, non copia
+## Modelli: catalogo, non copia
 
-I pesi sono decine di GB. Strategia: nel repository e nella cartella sincronizzata viaggia il **manifest**, i pesi si scaricano di nuovo dove servono. Sul Mac si usano modelli MLX; su un server Linux serviranno formati e runtime diversi (llama.cpp o vLLM), quindi il manifest ha una voce per runtime e lo stesso ruolo (es. `orchestrator`, `extractor`, `embedder`).
+I pesi sono decine di GB. Strategia: nel repository e nella cartella sincronizzata viaggia il **catalogo**, i pesi si scaricano di nuovo dove servono. Sul Mac si usano modelli MLX; su un server Linux serviranno formati e runtime diversi (llama.cpp o vLLM), quindi il catalogo ha una voce per runtime e lo stesso ruolo (es. `orchestrator`, `extractor`, `embedder`).
 
-Primo manifest: i modelli Qwen che usi già; nomi e versioni esatte da copiare dalla tua configurazione oMLX nel task 1.17. Fino ad allora (Fase 1A) il modello locale si configura a mano in `arianna.toml`.
+Prime voci: i modelli Qwen che usi già; nomi e versioni esatte da copiare dalla tua configurazione oMLX. Fino ad allora il modello locale si configura a mano in `arianna.toml` (`[[local.endpoints]]` con `models`).
 
 ## Due cartelle: sviluppo e installazione (D-030)
 
@@ -85,7 +92,7 @@ In Synology Drive l'attività di sincronizzazione punta a `data/` della cartella
 | --- | --- | --- |
 | Codice, docs, `config/`, `agents/` | Sì (meglio via git) | Con Drive, escludi `node_modules` e build |
 | `data/kb/`, `data/archive/` | Sì | Contenuti L2: solo verso il tuo NAS, mai verso cloud di terzi senza cifratura |
-| `data/models/` | No | Si riscaricano dal manifest; escludere per risparmiare spazio e banda |
+| `data/models/` | No | Si riscaricano dal catalogo; escludere per risparmiare spazio e banda |
 | `data/postgres/`, `data/qdrant/` | **Mai dal vivo** | Rischio di corruzione; si sincronizzano i dump in `backups/` |
 | `data/vault/` | Sì, cifrato | La chiave `age` resta fuori dalla cartella sincronizzata |
 | `.git` | Con cautela | Conflitti di sincronizzazione; preferire un remote git e non sincronizzare `.git` |
@@ -94,7 +101,7 @@ Per privacy: Synology Drive sul tuo NAS è locale e va bene per L2; iCloud, Goog
 
 ## Export e import
 
-- `arianna export`: dump di Postgres, snapshot Qdrant, archivio, KB, configurazione e vault cifrato in `backups/arianna-AAAA-MM-GG.tar.age`. I modelli non sono inclusi, ma il manifest sì.
+- `arianna export`: dump di Postgres, snapshot Qdrant, archivio, KB, configurazione e vault cifrato in `backups/arianna-AAAA-MM-GG.tar.age`. I modelli non sono inclusi, ma il catalogo e `arianna.toml` sì.
 - `arianna import <file>`: ripristina su una macchina nuova dopo `arianna install`.
 - Il ripristino va provato davvero (criterio di uscita della Fase 2).
 
@@ -113,5 +120,5 @@ Totale aggiunto: 28-44 ore, già incluse nei totali (stime mie, non misurate).
 ## Rischi
 
 - Dimensioni dei pesi e banda di download: gli installer vanno ripresi dopo interruzioni.
-- Differenze Mac/Linux nei runtime dei modelli: le prestazioni cambiano, il manifest per runtime attenua il problema.
+- Differenze Mac/Linux nei runtime dei modelli: le prestazioni cambiano, il catalogo con una voce per runtime attenua il problema.
 - Sincronizzazione che copia database aperti o che porta L2 su cloud di terzi: regole nella tabella sopra e controllo in `doctor`.

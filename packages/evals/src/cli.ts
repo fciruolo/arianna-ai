@@ -1,9 +1,9 @@
 // Usage: node packages/evals/src/cli.ts <deterministic|models|live>
 // Prints a report, saves it as JSON under data/evals/, exits 1 when a threshold is missed.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadConfig } from '@arianna/config';
+import { CONFIG_FILE, DATA_DIR, loadConfig, resolveHome } from '@arianna/config';
 
 import { loadCases } from './cases.ts';
 import { GROUPS } from './groups.ts';
@@ -17,10 +17,13 @@ if (tier === undefined) {
   process.exit(2);
 }
 
-const config = loadConfig();
-const report = await runTier(tier, GROUPS, (group) => loadCases(join(config.home, 'evals', group)));
+// The deterministic evals run in `pnpm check`, also on a fresh clone without
+// config/arianna.toml: the configuration only says where to save the report.
+const home = resolveHome();
+const data = existsSync(join(home, CONFIG_FILE)) ? loadConfig().paths.data : join(home, DATA_DIR);
+const report = await runTier(tier, GROUPS, (group) => loadCases(join(home, 'evals', group)));
 
-const reportDir = join(config.paths.data, 'evals');
+const reportDir = join(data, 'evals');
 mkdirSync(reportDir, { recursive: true });
 writeFileSync(join(reportDir, `report-${tier}.json`), `${JSON.stringify(report, null, 2)}\n`);
 

@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { CONFIG_FILE, ConfigError, loadConfig, parseConfig, resolveHome } from '../src/index.ts';
+import {
+  CATALOG_FILE,
+  CONFIG_FILE,
+  ConfigError,
+  EXAMPLE_CONFIG_FILE,
+  loadConfig,
+  parseCatalog,
+  parseConfig,
+  resolveHome,
+} from '../src/index.ts';
 
 const HOME = resolve('some-home');
 const VALID = `
@@ -24,14 +33,15 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     paths: { data: join(HOME, 'data') },
     database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
     server: { host: '127.0.0.1', port: 7420 },
+    roles: {},
     local: { endpoints: [] },
-    cloud: { allowlist: [] },
+    cloud: { allowlist: [], executors: [] },
   });
 });
 
 test('cloud.allowlist keeps repositories inside ARIANNA_HOME, as relative paths', () => {
   const config = parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/site", "./work/app/"]\n`, HOME);
-  assert.deepEqual(config.cloud, { allowlist: ['repos/site', 'work/app'] });
+  assert.deepEqual(config.cloud, { allowlist: ['repos/site', 'work/app'], executors: [] });
 });
 
 test('cloud.allowlist rejects home itself, data/, escapes, duplicates and nesting', () => {
@@ -86,10 +96,23 @@ test('telegram rejects a token in clear, group chats, duplicates and an empty li
   }
 });
 
-test('the committed configuration loads', () => {
-  const config = loadConfig({});
-  assert.equal(config.home, resolveHome({}));
-  assert.equal(config.paths.data, join(config.home, 'data'));
+test('the committed example configuration is valid', () => {
+  const home = resolveHome({});
+  const config = parseConfig(readFileSync(join(home, EXAMPLE_CONFIG_FILE), 'utf8'), home);
+  assert.equal(config.paths.data, join(home, 'data'));
+});
+
+test('without config/arianna.toml loading fails and names the wizard', () => {
+  const emptyHome = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
+  mkdirSync(join(emptyHome, 'config'), { recursive: true });
+  try {
+    assert.throws(
+      () => loadConfig({ ARIANNA_HOME: emptyHome }),
+      (error: unknown) => error instanceof ConfigError && /arianna:init/.test(error.message),
+    );
+  } finally {
+    rmSync(emptyHome, { recursive: true });
+  }
 });
 
 test('unknown keys are rejected', () => {
@@ -156,11 +179,12 @@ test('wrong types and malformed TOML are rejected', () => {
 });
 
 test('moving the folder moves every path with it', () => {
-  // A second home inside data/ (never in git), with a copy of the committed configuration.
+  // A second home inside data/ (never in git), with a copy of the committed example.
   const movedHome = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
   mkdirSync(join(movedHome, 'config'), { recursive: true });
   try {
-    cpSync(join(resolveHome({}), CONFIG_FILE), join(movedHome, CONFIG_FILE));
+    cpSync(join(resolveHome({}), EXAMPLE_CONFIG_FILE), join(movedHome, CONFIG_FILE));
+    cpSync(join(resolveHome({}), CATALOG_FILE), join(movedHome, CATALOG_FILE));
     const config = loadConfig({ ARIANNA_HOME: movedHome });
     assert.equal(config.home, movedHome);
     assert.equal(config.paths.data, join(movedHome, 'data'));
@@ -211,4 +235,67 @@ test('invalid local endpoints are rejected', () => {
   assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('command = ["omlx", "serve", "--port", "8000"]', 'command = "omlx serve"')}`, HOME), ConfigError);
   assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('"local-small" = "qwen-small"', '"Local Small" = "x"')}`, HOME), ConfigError);
   assert.throws(() => parseConfig(`${VALID}${LOCAL.replace('id = "lmstudio"', 'id = "lmstudio"\nkey = "x"')}`, HOME), ConfigError);
+});
+
+const SHA = 'b'.repeat(64);
+const CATALOG = parseCatalog(`
+version: 1
+models:
+  - id: big-mlx
+    family: fake
+    runtime: mlx
+    ram_min_gib: 20
+    roles: [orchestrator]
+    status: verified
+    files: [{ path: m.bin, url: "https://example.org/big", size_bytes: 1, sha256: ${SHA} }]
+  - id: small-mlx
+    family: fake
+    runtime: mlx
+    ram_min_gib: 4
+    roles: [extractor, orchestrator]
+    status: experimental
+    files: [{ path: m.bin, url: "https://example.org/small", size_bytes: 1, sha256: ${SHA} }]
+`);
+
+const ROLES = '\n[roles]\norchestrator = "big-mlx"\nextractor = "small-mlx"\n';
+const OMLX = '\n[[local.endpoints]]\nid = "omlx"\nurl = "http://127.0.0.1:8001/v1"\n';
+
+test('roles name catalog models suited to them, and endpoints without models take their names', () => {
+  const config = parseConfig(`${VALID}${ROLES}${OMLX}`, HOME, CATALOG);
+  assert.deepEqual(config.roles, { orchestrator: 'big-mlx', extractor: 'small-mlx' });
+  assert.deepEqual(config.local.endpoints[0]?.models, { 'local-large': 'big-mlx', 'local-small': 'small-mlx' });
+  // Explicit names win over the roles: a fallback server with other names.
+  const explicit = parseConfig(`${VALID}${ROLES}${OMLX}models = { "local-large" = "other" }\n`, HOME, CATALOG);
+  assert.deepEqual(explicit.local.endpoints[0]?.models, { 'local-large': 'other' });
+});
+
+test('roles outside the catalog, unsuited to the role or unknown are rejected', () => {
+  const rejects = (roles: string, pattern: RegExp): void => {
+    assert.throws(
+      () => parseConfig(`${VALID}\n[roles]\n${roles}\n`, HOME, CATALOG),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+      roles,
+    );
+  };
+  rejects('orchestrator = "missing-mlx"', /not in config\/models\.catalog\.yaml/);
+  rejects('extractor = "big-mlx"', /not suited/);
+  rejects('planner = "big-mlx"', /expected one of/);
+  rejects('orchestrator = ""', /non-empty/);
+  // Without a catalog no role can be assigned.
+  assert.throws(() => parseConfig(`${VALID}${ROLES}`, HOME), ConfigError);
+});
+
+test('an endpoint with neither models nor roles is rejected', () => {
+  assert.throws(
+    () => parseConfig(`${VALID}${OMLX}`, HOME, CATALOG),
+    (error: unknown) => error instanceof ConfigError && /\[roles\]/.test(error.message),
+  );
+  assert.throws(() => parseConfig(`${VALID}${OMLX}models = {}\n`, HOME, CATALOG), ConfigError);
+});
+
+test('cloud.executors lists the enabled official binaries, once each', () => {
+  assert.deepEqual(parseConfig(`${VALID}\n[cloud]\nexecutors = ["claude", "codex"]\n`, HOME).cloud.executors, ['claude', 'codex']);
+  assert.throws(() => parseConfig(`${VALID}\n[cloud]\nexecutors = ["gemini"]\n`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}\n[cloud]\nexecutors = ["claude", "claude"]\n`, HOME), ConfigError);
+  assert.throws(() => parseConfig(`${VALID}\n[cloud]\nexecutors = "claude"\n`, HOME), ConfigError);
 });

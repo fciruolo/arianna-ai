@@ -1,5 +1,7 @@
-# Arianna configuration. No secrets in this file (docs/INSTALLER-PORTABILITY.md).
-# Every path is relative to ARIANNA_HOME; absolute paths are rejected.
+# Arianna configuration of this installation, written by pnpm arianna:init and
+# kept out of git; the repository carries config/arianna.example.toml. No secrets
+# in this file (docs/INSTALLER-PORTABILITY.md). Every path is relative to
+# ARIANNA_HOME; absolute paths are rejected.
 
 [paths]
 # Models, databases, archive, real knowledge base, vault. Never in git.
@@ -18,27 +20,41 @@ user = "arianna"
 # password = "vault://db-owner-password"
 # app_password = "vault://db-app-password"
 
+# Local models by role (task 1.18): ids of config/models.catalog.yaml, which
+# pnpm arianna:install downloads into data/models/<id>/. The orchestrator is
+# the router alias local-large, the extractor local-small. A change here
+# applies to the running core without a restart.
+[roles]
+# orchestrator = "<catalog id>"
+# extractor = "<catalog id>"
+# embedder = "<catalog id>"
+# voice = "<catalog id>"
+
 # Local inference (task 1.3): OpenAI-compatible servers on this machine only,
 # because requests carry L2 data in clear. Endpoints in order of preference:
 # the first is the main one, the others are fallbacks. `command` is optional:
 # with it the watchdog can restart the server; without it, it only monitors.
-# Model names are copied by hand from the server until the installer (task 1.17).
 # The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are
-# relative to ARIANNA_HOME. Model names are the ones `GET /v1/models` returns
-# (folder name or alias). Do not also run it as a Homebrew service: the
-# watchdog would only adopt it, without being able to restart it.
+# relative to ARIANNA_HOME. Without `models` the names come from [roles]: the
+# catalog id is the folder in data/models, the name oMLX serves. A server
+# with other names lists them, e.g. models = { "local-large" = "<name>" }.
+# Port 8000 may be taken by another container: 8001 is the suggestion. Do not
+# also run oMLX as a Homebrew service: the watchdog would only adopt it,
+# without being able to restart it.
 #
 # [[local.endpoints]]
 # id = "omlx"
-# url = "http://127.0.0.1:8000/v1"
-# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8000"]
-# models = { "local-large" = "<model name>", "local-small" = "<model name>" }
+# url = "http://127.0.0.1:8001/v1"
+# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8001"]
 
-# Repositories Claude Code and Codex may work on (task 1.6), relative to
-# ARIANNA_HOME. Each needs a [[folder]] rule of at most L1 in labels.toml:
-# allowlisting a repository does not label it. Changing this list is a privacy
-# setting: only the user edits it, never an agent.
+# Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user
+# enabled ("claude", "codex"); their login stays manual. `allowlist` lists
+# the repositories they may work on, relative to ARIANNA_HOME; each needs a
+# [[folder]] rule of at most L1 in labels.toml: allowlisting a repository
+# does not label it. Both are privacy settings: only the user edits them,
+# never an agent, and a change needs a restart of the core.
 [cloud]
+executors = []
 allowlist = []
 
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the

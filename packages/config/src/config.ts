@@ -1,23 +1,30 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse as parseToml } from 'smol-toml';
 
+import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
 import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
+import { parseRoles, type Roles } from './roles.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
 
+/**
+ * The configuration of this installation, written by `pnpm arianna:init` and
+ * kept out of git (task 1.18): the repository carries only the example.
+ */
 export const CONFIG_FILE = join('config', 'arianna.toml');
+export const EXAMPLE_CONFIG_FILE = join('config', 'arianna.example.toml');
 
-const DATA_DIR = 'data';
+export const DATA_DIR = 'data';
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 // The API serves L2 history in clear and without authentication: this machine
 // only, until the VPN proxy and authentication (task 1.13). Addresses, not
 // "localhost", which depends on /etc/hosts.
 const SERVER_HOSTS = ['127.0.0.1', '::1'];
-const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
+export const DEFAULT_SERVER = { host: '127.0.0.1', port: 7420 };
 // The role the core works as (task 1.13, D-046), created by migration 0007:
 // fixed, because migrations are in git and cannot read this file.
 const APP_ROLE = 'arianna_app';
@@ -45,13 +52,16 @@ export interface AriannaConfig {
   database: DatabaseConfig;
   /** API, WebSocket and web chat of the core (task 1.11). */
   server: { host: string; port: number };
+  /** Role → id in config/models.catalog.yaml (task 1.18). */
+  roles: Roles;
   local: LocalConfig;
   cloud: CloudConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
 }
 
-export function parseConfig(text: string, home: string): AriannaConfig {
+/** `catalog` checks `[roles]`: without it no role can be assigned. */
+export function parseConfig(text: string, home: string, catalog: ModelCatalog = EMPTY_CATALOG): AriannaConfig {
   let raw: unknown;
   try {
     raw = parseToml(text);
@@ -59,7 +69,7 @@ export function parseConfig(text: string, home: string): AriannaConfig {
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'local', 'cloud', 'telegram'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'telegram'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -81,12 +91,14 @@ export function parseConfig(text: string, home: string): AriannaConfig {
   }
 
   const telegram = parseTelegram(root.telegram);
+  const roles = parseRoles(root.roles, catalog);
   return {
     home,
     paths: { data },
     database: parseDatabase(database, host),
     server: parseServer(root.server),
-    local: parseLocal(root.local),
+    roles,
+    local: parseLocal(root.local, roles),
     cloud: parseCloud(root.cloud, home, data),
     ...(telegram === undefined ? {} : { telegram }),
   };
@@ -124,8 +136,12 @@ function parseServer(value: unknown): AriannaConfig['server'] {
   return { host, port };
 }
 
-/** Reads `config/arianna.toml` from ARIANNA_HOME. */
+/** Reads `config/arianna.toml` from ARIANNA_HOME, with the catalog its roles refer to. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AriannaConfig {
   const home = resolveHome(env);
-  return parseConfig(readFileSync(join(home, CONFIG_FILE), 'utf8'), home);
+  const path = join(home, CONFIG_FILE);
+  if (!existsSync(path)) {
+    throw new ConfigError(`${CONFIG_FILE} is missing: run pnpm arianna:init (pnpm arianna:init --defaults for development)`);
+  }
+  return parseConfig(readFileSync(path, 'utf8'), home, loadCatalog(home));
 }

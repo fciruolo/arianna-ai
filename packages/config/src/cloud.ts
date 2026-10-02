@@ -1,7 +1,11 @@
 import { isAbsolute, relative, sep } from 'node:path';
 
 import { resolveInHome } from './home.ts';
-import { asArray, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
+import { asArray, asOneOf, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
+
+/** The official binaries a step may run on (CLAUDE.md: never modified, login manual). */
+export const CLOUD_EXECUTORS = ['claude', 'codex'] as const;
+export type CloudExecutor = (typeof CLOUD_EXECUTORS)[number];
 
 /** Cloud executors (docs/PRIVACY-POLICY-SPEC.md, "Confinamento"). */
 export interface CloudConfig {
@@ -10,6 +14,11 @@ export interface CloudConfig {
    * `/` separators. Changing it is a privacy setting: only the user edits it.
    */
   allowlist: string[];
+  /**
+   * Cloud executors the user enabled (task 1.18). None by default. Changing it
+   * is a privacy setting: only the user edits it.
+   */
+  executors: CloudExecutor[];
 }
 
 /** True when `inner` is `outer` or inside it; a folder named `..x` is inside. */
@@ -30,9 +39,13 @@ function fold(path: string): string {
  * symbolic link is checked when a workspace is prepared.
  */
 export function parseCloud(value: unknown, home: string, data: string): CloudConfig {
-  if (value === undefined) return { allowlist: [] };
+  if (value === undefined) return { allowlist: [], executors: [] };
   const cloud = asTable(value, 'cloud');
-  onlyKeys(cloud, ['allowlist'], 'cloud');
+  onlyKeys(cloud, ['allowlist', 'executors'], 'cloud');
+  const executors = asArray(cloud.executors ?? [], 'cloud.executors').map((item, index) =>
+    asOneOf(item, CLOUD_EXECUTORS, `cloud.executors[${String(index)}]`),
+  );
+  if (new Set(executors).size !== executors.length) throw new ConfigError('cloud.executors: an executor is listed twice');
   const allowlist = asArray(cloud.allowlist ?? [], 'cloud.allowlist').map((item, index) => {
     const where = `cloud.allowlist[${String(index)}]`;
     const absolute = resolveInHome(home, asString(item, where), where);
@@ -52,5 +65,5 @@ export function parseCloud(value: unknown, home: string, data: string): CloudCon
       }
     }
   }
-  return { allowlist };
+  return { allowlist, executors };
 }

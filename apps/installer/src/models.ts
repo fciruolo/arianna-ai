@@ -1,7 +1,8 @@
-// Local model weights (task 1.17, docs/INSTALLER-PORTABILITY.md): the manifest
-// travels, the files are downloaded again where they are needed. Each file is
-// written to `<file>.part`, resumed with an HTTP Range request after an
-// interruption, and renamed only once its size and sha256 match the manifest.
+// Local model weights (task 1.17, docs/INSTALLER-PORTABILITY.md): the catalog
+// travels, the files of the models assigned to a role are downloaded again
+// where they are needed (task 1.18). Each file is written to `<file>.part`,
+// resumed with an HTTP Range request after an interruption, and renamed only
+// once its size and sha256 match the catalog.
 // Downloads only fetch public files: nothing about the user leaves this machine
 // except the request itself.
 import { createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import type { ModelFile, ModelManifest } from '@arianna/config';
+import type { AriannaConfig, CatalogEntry, ModelCatalog, ModelFile } from '@arianna/config';
 
 export const MODELS_DIR = 'models';
 export const PART_SUFFIX = '.part';
@@ -67,22 +68,28 @@ function sizeOf(path: string): number | undefined {
   return existsSync(path) ? statSync(path).size : undefined;
 }
 
+/** The catalog entries assigned to a role, each once. */
+export function selectedModels(config: Pick<AriannaConfig, 'roles'>, catalog: ModelCatalog): CatalogEntry[] {
+  const ids = new Set(Object.values(config.roles));
+  return catalog.models.filter((model) => ids.has(model.id));
+}
+
 /**
- * Compares `data/models` with the manifest. Without `hash` only sizes are
+ * Compares `data/models` with the models to install. Without `hash` only sizes are
  * checked (seconds); with it every present file is read (minutes for tens of GB).
  */
-export async function modelStatus(manifest: ModelManifest, data: string, options: { hash?: boolean } = {}): Promise<FileStatus[]> {
+export async function modelStatus(models: readonly CatalogEntry[], data: string, options: { hash?: boolean } = {}): Promise<FileStatus[]> {
   const statuses: FileStatus[] = [];
-  for (const model of manifest.models) {
+  for (const model of models) {
     for (const file of model.files) {
-      const target = fileTarget(data, model.name, file);
+      const target = fileTarget(data, model.id, file);
       const size = sizeOf(target);
       let state: FileState;
       if (size === undefined) state = sizeOf(`${target}${PART_SUFFIX}`) === undefined ? 'missing' : 'partial';
       else if (size !== file.sizeBytes) state = 'wrong-size';
       else if (options.hash !== true) state = 'present';
       else state = (await sha256Of(target)) === file.sha256 ? 'ok' : 'wrong-hash';
-      statuses.push({ model: model.name, file, target, state });
+      statuses.push({ model: model.id, file, target, state });
     }
   }
   return statuses;
@@ -129,7 +136,7 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
       for await (const chunk of source) {
         const buffer = chunk as Buffer;
         written += buffer.length;
-        if (written > file.sizeBytes) throw new ModelError('too-large', `${label}: larger than the manifest says`);
+        if (written > file.sizeBytes) throw new ModelError('too-large', `${label}: larger than the catalog says`);
         options.onProgress?.(status, written);
         yield buffer;
       }
@@ -150,7 +157,7 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
   }
   if ((await sha256Of(part)) !== file.sha256) {
     rmSync(part);
-    throw new ModelError('wrong-hash', `${label}: sha256 does not match the manifest, download discarded`);
+    throw new ModelError('wrong-hash', `${label}: sha256 does not match the catalog, download discarded`);
   }
   // On disk before the rename: after a power cut a file of the right size
   // must also have the right bytes, since the doctor only checks sizes.
@@ -173,9 +180,9 @@ function rangeStart(contentRange: string | undefined): number | undefined {
  * replaced. With `verify` every present file is hashed first and one with the
  * wrong sha256 is replaced too.
  */
-export async function pullModels(manifest: ModelManifest, data: string, options: PullOptions & { verify?: boolean }): Promise<FileStatus[]> {
+export async function pullModels(models: readonly CatalogEntry[], data: string, options: PullOptions & { verify?: boolean }): Promise<FileStatus[]> {
   const pulled: FileStatus[] = [];
-  for (const status of await modelStatus(manifest, data, { hash: options.verify === true })) {
+  for (const status of await modelStatus(models, data, { hash: options.verify === true })) {
     if (status.state === 'present' || status.state === 'ok') continue;
     if (status.state === 'wrong-size' || status.state === 'wrong-hash') rmSync(status.target);
     await pullFile(status, options);

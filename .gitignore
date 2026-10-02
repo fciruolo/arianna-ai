@@ -1,6 +1,11 @@
 # Runtime data: models, databases, archive, real KB, vault, worktrees (never in git)
 data/
 
+# Configuration of this installation, written by pnpm arianna:init (task 1.18);
+# the repository carries config/arianna.example.toml
+config/arianna.toml
+config/.arianna.toml.*
+
 # Secrets
 .env*
 !.env.example

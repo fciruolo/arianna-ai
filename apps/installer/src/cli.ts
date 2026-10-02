@@ -1,18 +1,31 @@
 // Usage: node apps/installer/src/cli.ts <command>
+//   init [--reconfigure|--defaults]  the wizard that writes config/arianna.toml
 //   install                   prerequisites, data/ layout, models, database, doctor
 //   doctor                    is this installation ready for real data? (exit 1 if not)
-//   models list|verify|pull   compare data/models with the manifest; verify reads every byte
-// (task 1.17, docs/INSTALLER-PORTABILITY.md). Credentials of Claude Code and
-// Codex are never touched: their login stays manual.
+//   models list|verify|pull   compare data/models with the models assigned to a role
+// (tasks 1.17 and 1.18, docs/INSTALLER-PORTABILITY.md). Credentials of Claude
+// Code and Codex are never touched: their login stays manual.
 import { spawnSync } from 'node:child_process';
+import { totalmem } from 'node:os';
 import { join } from 'node:path';
+import { stdin, stdout } from 'node:process';
+import { createInterface } from 'node:readline/promises';
 
-import { loadConfig, loadManifest, type AriannaConfig } from '@arianna/config';
+import {
+  DEFAULT_SETTINGS,
+  loadCatalog,
+  loadConfig,
+  resolveHome,
+  type AriannaConfig,
+  type CatalogEntry,
+} from '@arianna/config';
 import { runDoctor, type DoctorCheck } from '@arianna/core/doctor';
 
 import { createFetcher } from './http.ts';
-import { MODELS_DIR, modelStatus, pullModels, type FileStatus } from './models.ts';
+import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
+import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from './models.ts';
 import { ensureLayout, freeBytes, layoutCheck, systemChecks } from './system.ts';
+import { runWizard, type Prompter } from './wizard.ts';
 
 // Room left on the disk after the downloads, for the database and the archive.
 const SPARE_BYTES = 10 * 2 ** 30;
@@ -27,25 +40,39 @@ function print(checks: DoctorCheck[]): number {
   return checks.filter((check) => !check.ok).length;
 }
 
-async function modelsCheck(config: AriannaConfig): Promise<DoctorCheck> {
-  const statuses = await modelStatus(loadManifest(config.home), config.paths.data);
-  if (statuses.length === 0) return { id: 'models', ok: true, detail: 'the manifest lists no model yet' };
+function selected(config: AriannaConfig): CatalogEntry[] {
+  return selectedModels(config, loadCatalog(config.home));
+}
+
+async function modelsChecks(config: AriannaConfig): Promise<DoctorCheck[]> {
+  const models = selected(config);
+  if (models.length === 0) return [{ id: 'models', ok: true, detail: 'no model assigned to a role yet (pnpm arianna:init)' }];
+  const statuses = await modelStatus(models, config.paths.data);
   const absent = statuses.filter((status) => status.state !== 'present');
-  return {
-    id: 'models',
-    ok: absent.length === 0,
-    detail:
-      absent.length === 0
-        ? `${String(statuses.length)} file(s) present with the right size (pnpm arianna:models verify checks the hashes)`
-        : `${String(absent.length)} of ${String(statuses.length)} file(s) missing or wrong: pnpm arianna:models pull`,
-  };
+  const ram = models.reduce((sum, model) => sum + model.ramMinGib, 0);
+  const machine = Math.floor(totalmem() / 2 ** 30);
+  return [
+    {
+      id: 'models',
+      ok: absent.length === 0,
+      detail:
+        absent.length === 0
+          ? `${String(statuses.length)} file(s) present with the right size (pnpm arianna:models verify checks the hashes)`
+          : `${String(absent.length)} of ${String(statuses.length)} file(s) missing or wrong: pnpm arianna:models pull`,
+    },
+    {
+      id: 'models.ram',
+      ok: ram <= machine,
+      detail: `the assigned models need ${String(ram)} GiB together, this machine has ${String(machine)} GiB`,
+    },
+  ];
 }
 
 async function doctor(config: AriannaConfig): Promise<number> {
   const checks = [
     ...(await systemChecks()),
     ...layoutCheck(config.home, config.paths.data),
-    await modelsCheck(config),
+    ...(await modelsChecks(config)),
     ...(await runDoctor({ config })),
   ];
   const failed = print(checks);
@@ -60,8 +87,8 @@ function describe(status: FileStatus): string {
 async function pull(config: AriannaConfig, verify = false): Promise<void> {
   // Also makes data/ private before anything is written in it.
   ensureLayout(config.paths.data);
-  const manifest = loadManifest(config.home);
-  const needed = (await modelStatus(manifest, config.paths.data))
+  const models = selected(config);
+  const needed = (await modelStatus(models, config.paths.data))
     .filter((status) => status.state !== 'present')
     .reduce((sum, status) => sum + status.file.sizeBytes, 0);
   const free = freeBytes(join(config.paths.data, MODELS_DIR));
@@ -69,7 +96,7 @@ async function pull(config: AriannaConfig, verify = false): Promise<void> {
     throw new Error(`not enough disk: ${gib(needed)} to download plus ${gib(SPARE_BYTES)} spare, ${gib(free)} free`);
   }
   let last = 0;
-  const pulled = await pullModels(manifest, config.paths.data, {
+  const pulled = await pullModels(models, config.paths.data, {
     verify,
     fetch: createFetcher(),
     onProgress: (status, bytes) => {
@@ -79,7 +106,7 @@ async function pull(config: AriannaConfig, verify = false): Promise<void> {
       console.log(`${status.model}/${status.file.path}: ${gib(bytes)} of ${gib(status.file.sizeBytes)}`);
     },
   });
-  if (manifest.models.length === 0) console.log('The manifest lists no model yet (config/models.manifest.yaml).');
+  if (models.length === 0) console.log('No model assigned to a role yet (pnpm arianna:init).');
   else console.log(pulled.length === 0 ? 'Every model is present.' : `Downloaded and verified: ${String(pulled.length)} file(s).`);
 }
 
@@ -110,21 +137,87 @@ async function install(config: AriannaConfig): Promise<number> {
   return doctor(config);
 }
 
-const [command, sub, flag] = process.argv.slice(2);
+/** Lines are queued, so answers typed or pasted ahead are not lost. */
+function terminal(): Prompter & { close(): void } {
+  const lines = createInterface({ input: stdin, terminal: false });
+  const next = lines[Symbol.asyncIterator]();
+  return {
+    say: (text) => {
+      console.log(text);
+    },
+    ask: async (question) => {
+      stdout.write(question);
+      const line = await next.next();
+      if (line.done === true) throw new Error('input closed before the last answer: nothing was written');
+      return line.value.trim();
+    },
+    close: () => {
+      lines.close();
+    },
+  };
+}
+
+/** The wizard; `true` when config/arianna.toml was written. */
+async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean> {
+  const home = resolveHome();
+  const catalog = loadCatalog(home);
+  const current = currentSettings(home, catalog);
+  if (current !== undefined && mode !== 'reconfigure') {
+    console.error(`${configPath(home)} already exists: pnpm arianna:init --reconfigure changes it, after a confirmation.`);
+    return false;
+  }
+  if (mode === 'defaults') {
+    writeSettings(home, catalog, DEFAULT_SETTINGS);
+    console.log('Written config/arianna.toml with the development defaults (fake data only).');
+    return true;
+  }
+  if (!stdin.isTTY) throw new Error('the wizard asks questions: run it in a terminal (or pnpm arianna:init --defaults)');
+  const io = terminal();
+  try {
+    const settings = await runWizard(io, {
+      catalog,
+      settings: current ?? DEFAULT_SETTINGS,
+      home,
+      freeBytes: freeBytes(home),
+      ramBytes: totalmem(),
+      installed: installedExecutors(),
+    });
+    if (settings === undefined) {
+      console.log('Nulla è stato scritto.');
+      return false;
+    }
+    writeSettings(home, catalog, settings);
+    console.log('Scritto config/arianna.toml. Un core avviato applica subito i modelli; il resto al riavvio.');
+    return true;
+  } finally {
+    io.close();
+  }
+}
+
+const [command, sub, flag, ...extra] = process.argv.slice(2);
 try {
-  const config = loadConfig();
-  if (command === 'install') process.exitCode = await install(config);
-  else if (command === 'doctor') process.exitCode = await doctor(config);
+  if (extra.length > 0 || (command === 'init' && flag !== undefined)) {
+    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify]');
+    process.exitCode = 2;
+  } else if (command === 'init' && (sub === undefined || sub === '--reconfigure' || sub === '--defaults')) {
+    const written = await init(sub === undefined ? 'first' : sub === '--reconfigure' ? 'reconfigure' : 'defaults');
+    if (written && sub !== '--defaults') console.log('Prossimo passo: pnpm arianna:install (modelli, database, doctor).');
+    process.exitCode = written ? 0 : 1;
+  } else if (command === 'install') {
+    // A first installation starts from the questions.
+    if (currentSettings(resolveHome(), loadCatalog(resolveHome())) === undefined && !(await init('first'))) process.exitCode = 1;
+    else process.exitCode = await install(loadConfig());
+  } else if (command === 'doctor') process.exitCode = await doctor(loadConfig());
   else if (command === 'models' && (sub === 'list' || sub === 'verify')) {
-    const statuses = await modelStatus(loadManifest(config.home), config.paths.data, { hash: sub === 'verify' });
+    const config = loadConfig();
+    const statuses = await modelStatus(selected(config), config.paths.data, { hash: sub === 'verify' });
     for (const status of statuses) console.log(describe(status));
-    if (statuses.length === 0) console.log('The manifest lists no model yet (config/models.manifest.yaml).');
+    if (statuses.length === 0) console.log('No model assigned to a role yet (pnpm arianna:init).');
     process.exitCode = statuses.every((status) => status.state === (sub === 'verify' ? 'ok' : 'present')) ? 0 : 1;
   } else if (command === 'models' && sub === 'pull' && (flag === undefined || flag === '--verify')) {
-    await pull(config, flag === '--verify');
-  }
-  else {
-    console.error('usage: cli.ts install | doctor | models list | models verify | models pull [--verify]');
+    await pull(loadConfig(), flag === '--verify');
+  } else {
+    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify]');
     process.exitCode = 2;
   }
 } catch (error) {

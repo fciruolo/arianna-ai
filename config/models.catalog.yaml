@@ -1,0 +1,26 @@
+# Curated catalog of local models (docs/INSTALLER-PORTABILITY.md, task 1.18).
+# A short list chosen by the user, not every model there is. `pnpm arianna:init`
+# assigns entries to roles in config/arianna.toml; `pnpm arianna:install`
+# downloads the assigned ones into data/models/<id>/. Weights are never synced:
+# this catalog travels, the files are downloaded again.
+#
+# The id is also the folder in data/models, hence the model name oMLX serves.
+# A new model enters as `experimental` and becomes `verified` only after
+# `pnpm eval` (router) and `pnpm eval:models` (extraction) pass with it.
+# The real entries come from the oMLX configuration on the Mac Studio (task 1.17).
+#
+# Example entry (one per model and runtime; a model can have several files):
+#
+#   - id: example-model-4bit-mlx
+#     family: example
+#     runtime: mlx              # mlx | llama.cpp | vllm
+#     ram_min_gib: 20           # memory once loaded
+#     roles: [orchestrator]     # orchestrator | extractor | embedder | voice
+#     status: experimental      # experimental | verified
+#     files:
+#       - path: model.safetensors
+#         url: https://example.org/example-model/model.safetensors
+#         size_bytes: 1234567890
+#         sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+version: 1
+models: []

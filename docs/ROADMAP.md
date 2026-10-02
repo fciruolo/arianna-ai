@@ -52,6 +52,6 @@ Se serve stringere ancora, queste parti non reggono altre parti e si possono rin
 
 | Parte | Ore | Cosa perdi |
 | --- | --- | --- |
-| Wizard `init` (1.18) | 6-9 | Configurazione guidata; resta `arianna.toml` a mano con validazione |
+| Wizard `init` (1.18) | 6-9 | Configurazione guidata; resta `arianna.toml` a mano con validazione (fatto, D-048) |
 | Ufficio pixel | 12-18 | La vista pixel-art; l'HUD mostra comunque gli agenti |
 | Telefonia SIP e chiamate in uscita | 22-41 | Le telefonate; restano voce nel browser e Telegram |

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
-import { loadConfig } from '@arianna/config';
+import { loadConfig, watchConfig } from '@arianna/config';
 import { createVault } from '@arianna/vault';
 
 import { CHAT_AGENT } from './conversations.ts';
@@ -94,6 +94,23 @@ if (config.telegram !== undefined) {
   }
 }
 
+// Task 1.18: a model changed for a role applies without a restart. Whoever
+// calls a local model (the orchestrator, task 1.10) reads settings.current()
+// at each call; every other section waits for a restart.
+const settings = watchConfig({
+  initial: config,
+  onChange: ({ applied, restart }) => {
+    if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
+    if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
+  },
+  onError: (error) => {
+    // A ConfigError names a key and a rule, never a value read elsewhere.
+    if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
+    else report(error);
+    console.error('arianna.toml: not reloaded, the previous configuration stays');
+  },
+});
+
 const shown = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
 console.log(`Arianna core on http://${shown}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 
@@ -101,6 +118,7 @@ let stopping = false;
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
+  settings.close();
   await telegram?.close();
   await server.close();
   await worker.stop();

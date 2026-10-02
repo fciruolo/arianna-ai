@@ -22,7 +22,7 @@ Assistente personale e sistema multi-agente che gira in locale o su un server tu
 | `docs/DATA-MODEL.md` | Bozza dello schema PostgreSQL |
 | `docs/EVALS.md` | Harness di valutazione e casi di test |
 | `docs/SECURITY.md` | Minacce, controlli, gestione segreti |
-| `docs/INSTALLER-PORTABILITY.md` | Installer, modelli da manifest, cartella unica, sincronizzazione Synology |
+| `docs/INSTALLER-PORTABILITY.md` | Installer e wizard, modelli dal catalogo, cartella unica, sincronizzazione Synology |
 | `docs/ROADMAP.md` | Fasi, criteri di uscita, stime di tempo |
 | `docs/PHASE-0-1-TASKS.md` | Task con ore, ordine e criteri di completamento |
 | `docs/DEV-WORKFLOW.md` | Come si lavora con Claude Code, prompt iniziali |

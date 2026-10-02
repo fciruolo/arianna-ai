@@ -1,3 +1,4 @@
+import { aliasesOf, type Roles } from './roles.ts';
 import { asArray, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 /** Local inference (task 1.3): OpenAI-compatible servers on this machine. */
@@ -11,7 +12,10 @@ export interface LocalEndpointConfig {
   url: string;
   /** argv that starts the server, so the watchdog can restart it. */
   command?: string[];
-  /** Model alias (e.g. "local-large") → model name on this server. */
+  /**
+   * Model alias (e.g. "local-large") → model name on this server. Without
+   * `models` in the file, the names come from `[roles]` (task 1.18).
+   */
   models: Record<string, string>;
 }
 
@@ -20,12 +24,12 @@ const NAME = /^[a-z0-9][a-z0-9-]*$/;
 // keeps the two in step. Addresses only: "localhost" depends on /etc/hosts.
 const LOOPBACK_HOSTNAMES = ['127.0.0.1', '[::1]'];
 
-export function parseLocal(value: unknown): LocalConfig {
+export function parseLocal(value: unknown, roles: Roles = {}): LocalConfig {
   if (value === undefined) return { endpoints: [] };
   const local = asTable(value, 'local');
   onlyKeys(local, ['endpoints'], 'local');
   const endpoints = asArray(local.endpoints ?? [], 'local.endpoints').map((item, index) =>
-    parseEndpoint(item, `local.endpoints[${String(index)}]`),
+    parseEndpoint(item, `local.endpoints[${String(index)}]`, roles),
   );
   const ids = endpoints.map(({ id }) => id);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
@@ -33,17 +37,20 @@ export function parseLocal(value: unknown): LocalConfig {
   return { endpoints };
 }
 
-function parseEndpoint(value: unknown, where: string): LocalEndpointConfig {
+function parseEndpoint(value: unknown, where: string, roles: Roles): LocalEndpointConfig {
   const table = asTable(value, where);
   onlyKeys(table, ['id', 'url', 'command', 'models'], where);
 
   const id = asString(table.id, `${where}.id`);
   if (!NAME.test(id)) throw new ConfigError(`${where}.id: lowercase letters, digits and dashes only`);
 
-  const models: Record<string, string> = {};
-  for (const [alias, name] of Object.entries(asTable(table.models, `${where}.models`))) {
+  const models: Record<string, string> = table.models === undefined ? aliasesOf(roles) : {};
+  for (const [alias, name] of Object.entries(table.models === undefined ? {} : asTable(table.models, `${where}.models`))) {
     if (!NAME.test(alias)) throw new ConfigError(`${where}.models: invalid alias ${JSON.stringify(alias)}`);
     models[alias] = asString(name, `${where}.models.${alias}`);
+  }
+  if (Object.keys(models).length === 0) {
+    throw new ConfigError(`${where}.models: list the models, or assign them in [roles] (pnpm arianna:init)`);
   }
 
   const endpoint: LocalEndpointConfig = { id, url: loopbackUrl(table.url, `${where}.url`), models };

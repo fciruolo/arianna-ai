@@ -418,7 +418,7 @@ Si scrivono le parti che contengono le tue regole (privacy, router, task, regist
 
 ## Installazione e portabilità
 
-Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac o server, anche tramite Synology Drive. Un installer (`arianna install`) controlla i prerequisiti, scarica i modelli locali (i Qwen che usi già) leggendo un manifest con dimensione e checksum, avvia Postgres e Qdrant in Docker con i volumi dentro `data/` e lancia una diagnosi (`arianna doctor`). I pesi dei modelli non si sincronizzano: viaggia il manifest e si riscaricano dove servono. I database non si sincronizzano mai dal vivo, solo come dump cifrati (`arianna export` e `arianna import`). Al primo avvio un wizard (`arianna init`) guida la configurazione; poi tutto è modificabile dal file `arianna.toml` o dalla pagina Impostazioni. I modelli si scelgono da un catalogo corto deciso da te, che oggi contiene solo il Qwen già provato; un modello nuovo entra come sperimentale e diventa verificato solo dopo gli eval. Dettagli e stime (28-44 ore, già incluse nei totali) in `docs/INSTALLER-PORTABILITY.md`.
+Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac o server, anche tramite Synology Drive. Un installer (`arianna install`) controlla i prerequisiti, scarica i modelli locali (i Qwen che usi già) leggendo un catalogo con dimensione e checksum, avvia Postgres e Qdrant in Docker con i volumi dentro `data/` e lancia una diagnosi (`arianna doctor`). I pesi dei modelli non si sincronizzano: viaggia il catalogo e si riscaricano dove servono. I database non si sincronizzano mai dal vivo, solo come dump cifrati (`arianna export` e `arianna import`). Al primo avvio un wizard (`arianna init`) guida la configurazione; poi tutto è modificabile dal file `arianna.toml` o dalla pagina Impostazioni. I modelli si scelgono da un catalogo corto deciso da te, che conterrà solo il Qwen già provato (oggi è vuoto: le voci vere arrivano con oMLX sul Mac Studio); un modello nuovo entra come sperimentale e diventa verificato solo dopo gli eval. Dettagli e stime (28-44 ore, già incluse nei totali) in `docs/INSTALLER-PORTABILITY.md`.
 
 ## Roadmap
 
@@ -474,7 +474,7 @@ arianna/
   agents/                schede degli agenti (YAML più prompt)
   evals/                 casi di valutazione
   kb/                    knowledge base di esempio con dati finti
-  config/                arianna.toml, regole di etichetta, manifest dei modelli
+  config/                arianna.toml (fuori da git), regole di etichetta, catalogo dei modelli
   data/                  modelli, database, archivio, KB vera (fuori da git)
   .claude/               permessi, hook, sottoagenti, skill
 ```

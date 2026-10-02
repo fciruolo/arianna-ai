@@ -26,7 +26,7 @@ Sintesi operativa della sezione "Architettura" di `SPEC.md`. In caso di conflitt
 | Esecutori | Adattatori: modello locale, `claude -p`, `codex exec`; profilo di confinamento | `packages/executors` |
 | Agenti | Loader e validazione delle schede | `packages/agents` |
 | Vault | Segreti cifrati con `sops` + `age`, riferimenti `vault://`; il gateway conosce i valori rivelati | `packages/vault` |
-| Configurazione | `ARIANNA_HOME`, `arianna.toml`, manifest dei modelli; unico punto che legge la configurazione | `packages/config` |
+| Configurazione | `ARIANNA_HOME`, `arianna.toml`, catalogo dei modelli e ruoli, ricarica senza riavvio; unico punto che legge la configurazione | `packages/config` |
 | Valutazione | Runner degli eval a tre livelli; i casi stanno in `evals/` | `packages/evals` |
 | Schede agente | YAML + prompt | `agents/` |
 | HUD / ufficio pixel / cardwall | Interfaccia Vue 3 + Tailwind | `apps/hud` |
@@ -60,7 +60,7 @@ arianna/
   agents/        # schede agente (YAML + prompt)
   evals/         # casi di valutazione
   kb/            # knowledge base di esempio, solo dati finti (in git)
-  config/        # arianna.toml, labels.toml, manifest e catalogo modelli
+  config/        # arianna.example.toml (arianna.toml è fuori da git), labels.toml, catalogo modelli
   docs/  .claude/  scripts/
   data/          # modelli, db, archivio, kb vera, vault, worktree (fuori da git)
 ```

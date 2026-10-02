@@ -1,0 +1,194 @@
+// The editable form of arianna.toml (task 1.18): what the wizard reads, changes
+// and writes back, comments included. `config/arianna.example.toml` is
+// `renderSettings(DEFAULT_SETTINGS)`, and a test keeps the two identical.
+import { parse as parseToml } from 'smol-toml';
+
+import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
+import type { CloudExecutor } from './cloud.ts';
+import { DATA_DIR, DEFAULT_SERVER, parseConfig } from './config.ts';
+import type { Roles } from './roles.ts';
+import { asTable } from './validate.ts';
+
+export interface EndpointSettings {
+  id: string;
+  url: string;
+  command?: string[];
+  /** Absent: the names come from `[roles]`. */
+  models?: Record<string, string>;
+}
+
+export interface Settings {
+  database: {
+    host: string;
+    port: number;
+    name: string;
+    user: string;
+    password?: string;
+    appPassword?: string;
+  };
+  server: { host: string; port: number };
+  roles: Roles;
+  endpoints: EndpointSettings[];
+  cloud: { allowlist: string[]; executors: CloudExecutor[] };
+  telegram?: { token: string; chats: number[] };
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  database: { host: '127.0.0.1', port: 54329, name: 'arianna', user: 'arianna' },
+  server: { ...DEFAULT_SERVER },
+  roles: {},
+  endpoints: [],
+  cloud: { allowlist: [], executors: [] },
+};
+
+/** Token reference of the Telegram bot (key `telegram-bot-token` in the vault). */
+export const TELEGRAM_TOKEN_REF = 'vault://telegram-bot-token';
+
+/**
+ * Validates `text` exactly as `loadConfig` does, then returns it in editable
+ * form: an endpoint keeps `models` only when the file lists them.
+ */
+export function readSettings(text: string, home: string, catalog: ModelCatalog): Settings {
+  const config = parseConfig(text, home, catalog);
+  const raw = asTable(parseToml(text), 'arianna.toml');
+  const local = raw.local === undefined ? {} : asTable(raw.local, 'local');
+  const rawEndpoints = Array.isArray(local.endpoints) ? (local.endpoints as unknown[]) : [];
+  const { password, appPassword } = config.database;
+  return {
+    database: {
+      host: config.database.host,
+      port: config.database.port,
+      name: config.database.name,
+      user: config.database.user,
+      ...(password === undefined ? {} : { password }),
+      ...(appPassword === undefined ? {} : { appPassword }),
+    },
+    server: { ...config.server },
+    roles: { ...config.roles },
+    endpoints: config.local.endpoints.map((endpoint, index) => {
+      const explicit = asTable(rawEndpoints[index], 'local.endpoints').models !== undefined;
+      return {
+        id: endpoint.id,
+        url: endpoint.url,
+        ...(endpoint.command === undefined ? {} : { command: [...endpoint.command] }),
+        ...(explicit ? { models: { ...endpoint.models } } : {}),
+      };
+    }),
+    cloud: { allowlist: [...config.cloud.allowlist], executors: [...config.cloud.executors] },
+    ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
+  };
+}
+
+/** A TOML basic string: JSON escapes are a subset of TOML's; TOML also forbids a raw DEL. */
+function str(value: string): string {
+  return JSON.stringify(value).replaceAll('\x7f', '\\u007f');
+}
+
+function list(values: readonly (string | number)[]): string {
+  return `[${values.map((value) => (typeof value === 'number' ? String(value) : str(value))).join(', ')}]`;
+}
+
+function inlineTable(record: Record<string, string>): string {
+  return `{ ${Object.entries(record).map(([key, value]) => `${str(key)} = ${str(value)}`).join(', ')} }`;
+}
+
+function rolesSection(roles: Roles): string[] {
+  const lines = MODEL_ROLES.map((role: ModelRole) =>
+    roles[role] === undefined ? `# ${role} = "<catalog id>"` : `${role} = ${str(roles[role])}`,
+  );
+  return ['[roles]', ...lines];
+}
+
+function endpointSection(endpoint: EndpointSettings): string[] {
+  return [
+    '[[local.endpoints]]',
+    `id = ${str(endpoint.id)}`,
+    `url = ${str(endpoint.url)}`,
+    ...(endpoint.command === undefined ? [] : [`command = ${list(endpoint.command)}`]),
+    ...(endpoint.models === undefined ? [] : [`models = ${inlineTable(endpoint.models)}`]),
+  ];
+}
+
+/** Writes the whole file, with the comments that explain each section. */
+export function renderSettings(settings: Settings): string {
+  const { database, server, cloud, telegram } = settings;
+  const lines = [
+    '# Arianna configuration of this installation, written by pnpm arianna:init and',
+    '# kept out of git; the repository carries config/arianna.example.toml. No secrets',
+    '# in this file (docs/INSTALLER-PORTABILITY.md). Every path is relative to',
+    '# ARIANNA_HOME; absolute paths are rejected.',
+    '',
+    '[paths]',
+    '# Models, databases, archive, real knowledge base, vault. Never in git.',
+    `data = ${str(DATA_DIR)}`,
+    '',
+    '[database]',
+    '# PostgreSQL in Docker, reachable only from this machine. `user` owns the',
+    '# schema and only migrates; the core works as arianna_app (D-046). Without',
+    '# `password` and `app_password` the development defaults apply, for fake data',
+    '# only: before real data set both as vault references (two different secrets)',
+    '# and run pnpm arianna:doctor. Steps in docs/SECURITY.md.',
+    `host = ${str(database.host)}`,
+    `port = ${String(database.port)}`,
+    `name = ${str(database.name)}`,
+    `user = ${str(database.user)}`,
+    database.password === undefined ? '# password = "vault://db-owner-password"' : `password = ${str(database.password)}`,
+    database.appPassword === undefined
+      ? '# app_password = "vault://db-app-password"'
+      : `app_password = ${str(database.appPassword)}`,
+    '',
+    '# Local models by role (task 1.18): ids of config/models.catalog.yaml, which',
+    '# pnpm arianna:install downloads into data/models/<id>/. The orchestrator is',
+    '# the router alias local-large, the extractor local-small. A change here',
+    '# applies to the running core without a restart.',
+    ...rolesSection(settings.roles),
+    '',
+    '# Local inference (task 1.3): OpenAI-compatible servers on this machine only,',
+    '# because requests carry L2 data in clear. Endpoints in order of preference:',
+    '# the first is the main one, the others are fallbacks. `command` is optional:',
+    '# with it the watchdog can restart the server; without it, it only monitors.',
+    '# The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are',
+    '# relative to ARIANNA_HOME. Without `models` the names come from [roles]: the',
+    '# catalog id is the folder in data/models, the name oMLX serves. A server',
+    '# with other names lists them, e.g. models = { "local-large" = "<name>" }.',
+    '# Port 8000 may be taken by another container: 8001 is the suggestion. Do not',
+    '# also run oMLX as a Homebrew service: the watchdog would only adopt it,',
+    '# without being able to restart it.',
+    ...(settings.endpoints.length === 0
+      ? [
+          '#',
+          '# [[local.endpoints]]',
+          '# id = "omlx"',
+          '# url = "http://127.0.0.1:8001/v1"',
+          '# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8001"]',
+        ]
+      : settings.endpoints.flatMap((endpoint, index) => [...(index === 0 ? [] : ['']), ...endpointSection(endpoint)])),
+    '',
+    '# Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user',
+    '# enabled ("claude", "codex"); their login stays manual. `allowlist` lists',
+    '# the repositories they may work on, relative to ARIANNA_HOME; each needs a',
+    '# [[folder]] rule of at most L1 in labels.toml: allowlisting a repository',
+    '# does not label it. Both are privacy settings: only the user edits them,',
+    '# never an agent, and a change needs a restart of the core.',
+    '[cloud]',
+    `executors = ${list(cloud.executors)}`,
+    `allowlist = ${list(cloud.allowlist)}`,
+    '',
+    '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
+    '# history holds L2 in clear and there is no authentication yet. Access from',
+    '# the phone over the VPN comes with a proxy and authentication (task 1.13).',
+    '[server]',
+    `host = ${str(server.host)}`,
+    `port = ${String(server.port)}`,
+    '',
+    '# Telegram (task 1.15, D-044): an external channel behind the gateway, at most',
+    '# L1; anything above arrives as a notice pointing to the web chat. Off while',
+    '# this section is absent. The token stays in the vault (pnpm vault:edit, key',
+    '# telegram-bot-token); `chats` lists the ids of the private chats the bot',
+    '# talks to. Changing it is a privacy setting: only the user edits it.',
+    ...(telegram === undefined
+      ? ['#', '# [telegram]', `# token = ${str(TELEGRAM_TOKEN_REF)}`, '# chats = [123456789]']
+      : ['[telegram]', `token = ${str(telegram.token)}`, `chats = ${list(telegram.chats)}`]),
+  ];
+  return `${lines.join('\n')}\n`;
+}

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { isToolId, type ToolId } from '@arianna/agents';
-import { loadConfig, resolveHome } from '@arianna/config';
+import { CONFIG_FILE, loadConfig, resolveHome } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { loadCases } from '../src/cases.ts';
@@ -173,13 +174,13 @@ describe('orchestrator cases', () => {
   });
 
   // Only meaningful until a local model is configured: then the real run is `pnpm eval:models`.
-  const configured = loadConfig({}).local.endpoints.length > 0;
+  const configured = existsSync(join(resolveHome({}), CONFIG_FILE)) && loadConfig({}).local.endpoints.length > 0;
   it('fail clearly when no local endpoint is configured', { skip: configured }, async () => {
     const group = GROUPS.find((candidate) => candidate.name === 'orchestrator');
     assert.ok(group !== undefined);
     const first = cases[0];
     assert.ok(first !== undefined);
     const report = await runGroup(group, [first]);
-    assert.ok(report.status === 'failed' && /local\.endpoints/.test(report.results[0]?.error ?? ''), JSON.stringify(report));
+    assert.ok(report.status === 'failed' && /local\.endpoints|arianna:init/.test(report.results[0]?.error ?? ''), JSON.stringify(report));
   });
 });
