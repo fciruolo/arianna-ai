@@ -10,7 +10,8 @@
 | Conteggio di `claude -p` e `codex exec` negli abbonamenti | Verificare nel tuo account | Task 1.5 |
 | Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox) | Verificare su `claude --help` e fissare nel test di contratto | Task 1.5 e 1.6 |
 | Sandbox: nativa di Claude Code oppure `sandbox-runtime` | Provare prima la nativa; microVM solo se il canarino esce | Task 1.6 |
-| oMLX può puntare a `data/models/`? | Altrimenti collegamenti simbolici | Task 1.17 |
+| oMLX può puntare a `data/models/`? | Sì secondo il README: `omlx serve --model-dir data/models` (da provare); altrimenti collegamenti simbolici | Task 1.17 |
+| oMLX invia telemetria o contenuti fuori dalla macchina? | Il README non ne parla: verificare (codice o traffico di rete) prima di dargli dati L2 veri; non usare `--mcp-config` né `--hf-endpoint` con dati veri. Lasciare `--host 127.0.0.1` | Prima dell'uso con dati veri (fine Fase 1A) |
 | Codex con provider locale invia telemetria o contenuti altrove? | Finché non è verificato non conta come locale | Task 1.16 |
 | Codice clienti con NDA | Locale (L2) finché non leggi i contratti | Quando serve |
 | Remote git (GitHub privato, NAS, nessuno) | NAS o nessuno all'inizio; la CI remota è facoltativa (D-018) | Quando serve |

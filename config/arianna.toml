@@ -17,15 +17,13 @@ user = "arianna"
 # the first is the main one, the others are fallbacks. `command` is optional:
 # with it the watchdog can restart the server; without it, it only monitors.
 # Model names are copied by hand from the server until the installer (task 1.17).
-# The entries below are examples: check the real command, port and names.
+# The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are
+# relative to ARIANNA_HOME. Model names are the ones `GET /v1/models` returns
+# (folder name or alias). Do not also run it as a Homebrew service: the
+# watchdog would only adopt it, without being able to restart it.
 #
 # [[local.endpoints]]
 # id = "omlx"
 # url = "http://127.0.0.1:8000/v1"
-# command = ["omlx", "serve", "--port", "8000"]
+# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8000"]
 # models = { "local-large" = "<model name>", "local-small" = "<model name>" }
-#
-# [[local.endpoints]]
-# id = "lmstudio"
-# url = "http://127.0.0.1:1234/v1"
-# models = { "local-large" = "<model name>" }
