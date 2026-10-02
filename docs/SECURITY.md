@@ -10,7 +10,7 @@
 | Contenuti L2 su Telegram o al telefono | Canali esterni dietro gateway (D-016): al massimo L1, L2 come riferimento |
 | Prompt injection da contenuti non fidati | Lethal trifecta rimosso per scheda; Dual LLM; nessun invio esterno senza approvazione |
 | Agente che esegue comandi dannosi | Permessi minimi (`--allowedTools`), sandbox, worktree; approvazione per le azioni irreversibili |
-| Furto o abuso delle credenziali | `sops` + `age`; nessun token OAuth estratto; L3 solo come riferimenti; ambiente pulito per i processi figli |
+| Furto o abuso delle credenziali | `sops` + `age` (`@arianna/vault`, D-042): chiave age fuori da `ARIANNA_HOME`, `sops` lanciato con un ambiente ridotto, valore solo con `reveal()`; il gateway blocca ogni uscita che contiene un valore rivelato; nessun token OAuth estratto; L3 solo come riferimenti; ambiente pulito per i processi figli |
 | Catena di fornitura (pacchetto, server MCP o skill ostile) | Versioni esatte e lockfile con hash in git; nessuna release più giovane di un giorno (`minimumReleaseAge`); script di installazione dei pacchetti non eseguiti; ogni dipendenza ha una voce in `DECISIONS.md`; server MCP in container senza accesso ai dati privati |
 | Costi o cicli fuori controllo | Tetti di passi, tempo, costo/quota per task; scheduler deterministico |
 | Manomissione del registro | Eventi append-only con catena di hash, verificata da `arianna doctor` |
@@ -39,3 +39,9 @@
 - La copia di lavoro di un esecutore cloud non è un `git worktree`: altrimenti potrebbe leggere tutta la storia del repository d'origine (segreti cancellati compresi) e scrivere nella sua `.git` (hook, `core.fsmonitor`, filtri) codice eseguito poi fuori dalla sandbox. È un repository nuovo con un solo commit, scritto senza filtri né hook (D-041).
 - Un esecutore cloud gira sulla stessa macchina e può raggiungere via loopback il database, Qdrant e il modello locale: sarebbe un percorso L2 verso il cloud che non passa dal gateway. La sandbox del task 1.6 deve negare queste connessioni, e il test del canarino lo verifica.
 - Il campo `detail` degli errori di PostgreSQL contiene la riga rifiutata, payload compreso: non va scritto nei log per eventi L2 o superiori.
+
+## Vault
+
+- Primo avvio, a mano: `age-keygen -o <file>` nella posizione dove `sops` cerca la chiave (su macOS `~/Library/Application Support/sops/age/keys.txt`, oppure un file indicato da `SOPS_AGE_KEY_FILE`), poi `pnpm vault:init <chiave pubblica age1...>` e `pnpm vault:edit`. Le chiavi del file sono di primo livello: `nome: valore`, letto come `vault://nome`.
+- La chiave privata non entra mai in `ARIANNA_HOME`, in git o nella cartella sincronizzata: senza di lei `data/vault/secrets.yaml` è illeggibile, e perderla vuol dire perdere i segreti. Va conservata a parte (per esempio nel gestore di password).
+- Il controllo del gateway confronta valori esatti: un segreto trasformato (in base64, spezzato, abbreviato) non si riconosce. È una rete, non il controllo principale, che resta non mettere mai il valore in un testo.

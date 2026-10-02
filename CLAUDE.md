@@ -42,6 +42,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
 | `pnpm db:up` / `pnpm db:down` | Avvia o ferma PostgreSQL in Docker con i valori di `config/arianna.toml` |
 | `pnpm db:migrate` | Applica le migrazioni di `apps/core/migrations` |
+| `pnpm vault:init <age1...>` / `pnpm vault:edit` | Li esegue l'utente: scrive `data/vault/.sops.yaml` con la chiave pubblica age; apre `data/vault/secrets.yaml` con `sops` (D-042) |
 | `pnpm start` | Avvia il core: migrazioni, worker dei task, API, WebSocket e chat web su `[server]` di `arianna.toml` (loopback) |
 | `pnpm hud:build` | Compila la chat web in `apps/hud/dist`, servita dal core |
 | `pnpm hud:dev` | Chat web in sviluppo con Vite su `127.0.0.1:5173`, che inoltra `/api` al core avviato con `pnpm start` |

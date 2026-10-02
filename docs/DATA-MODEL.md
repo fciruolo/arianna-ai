@@ -184,7 +184,7 @@ CREATE TABLE documents (
 - **Verifica della catena:** `verifyEventChain` (in `apps/core/src/events.ts`, poi dentro `arianna doctor`) ricalcola gli hash di `events` e segnala la prima riga che non torna.
 - **Limiti della catena, da chiudere più avanti:**
   - la cancellazione degli ultimi eventi non si vede dalla sola catena: serve un'ancora esterna, cioè l'ultimo hash salvato periodicamente fuori dal database (con `arianna export`, Fase 2);
-  - oggi c'è un solo ruolo di database, proprietario delle tabelle, che può disattivare i trigger: la manomissione resta rilevabile ma non impedita. Un ruolo applicativo senza diritti di modifica dello schema arriva con il vault (task 1.14);
+  - oggi c'è un solo ruolo di database, proprietario delle tabelle, che può disattivare i trigger: la manomissione resta rilevabile ma non impedita. Un ruolo applicativo senza diritti di modifica dello schema arriva con la password non predefinita (task 1.13), che il vault (task 1.14, D-042) può custodire;
   - le transazioni che scrivono eventi devono usare l'isolamento predefinito (READ COMMITTED). Con un altro livello la scrittura fallisce invece di biforcare la catena: lo impone il vincolo `events_single_successor`;
   - il lock della catena dura fino al commit: l'evento si scrive come ultima istruzione di una transazione breve.
 - **Test con il database:** `pnpm test:db` crea uno schema usa e getta per ogni file di test e applica le migrazioni da zero (D-029).

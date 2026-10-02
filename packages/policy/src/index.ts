@@ -52,6 +52,7 @@ export {
   type Target,
 } from './gateway.ts';
 export { contentHash, payloadText, scanParts, sha256Hex } from './payload.ts';
+export { MIN_SECRET_LENGTH, secretMatcher, type KnownSecret, type KnownSecrets } from './secrets.ts';
 export { normalizeForScan, scanText, type Finding, type FindingKind } from './scanner.ts';
 export {
   checkWorkspace,

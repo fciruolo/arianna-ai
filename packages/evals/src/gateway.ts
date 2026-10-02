@@ -7,6 +7,7 @@ import {
   declassify,
   derive,
   gatewayCheck,
+  secretMatcher,
   type Context,
   type DeclassifyApproval,
   type Label,
@@ -36,11 +37,13 @@ interface ContextInput {
  * `{ payload, context, target }` checks the payload. With `declassify`, the
  * single fragment is first declassified with the given approval; its `sha256`
  * is `"exact"` for the hash of that fragment or any other string for a wrong one.
+ * `secrets` are values the vault has revealed (task 1.14); fake ones only.
  */
 interface GatewayInput {
   payload: FragmentInput[];
   context: ContextInput;
   target: Target;
+  secrets?: { ref: string; value: string }[];
   declassify?: { to: Label; approval: { kind: string; state: string; from: string; to: string; sha256: string } };
 }
 
@@ -116,7 +119,8 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
     }
   }
 
-  const decision = gatewayCheck(payload, toContext(input.context), input.target);
+  const secrets = input.secrets === undefined ? undefined : secretMatcher(input.secrets);
+  const decision = gatewayCheck(payload, toContext(input.context), input.target, secrets);
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule };
   const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };
   return decision.findings === undefined

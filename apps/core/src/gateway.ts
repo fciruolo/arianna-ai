@@ -15,6 +15,7 @@ import {
   type Labeled,
   type Target,
 } from '@arianna/policy';
+import { knownSecrets } from '@arianna/vault';
 
 import { loadApproval } from './approvals.ts';
 import type { Sql } from './db/client.ts';
@@ -60,18 +61,21 @@ export async function passGateway(
   target: Target,
   meta: GatewayMeta = {},
 ): Promise<Decision> {
-  const decision = gatewayCheck(payload, context, target);
+  // Every value the vault revealed in this process is checked, local targets included.
+  const decision = gatewayCheck(payload, context, target, knownSecrets);
   if (!isTarget(target)) return decision;
 
   // Allowed: the texts that will be sent. Blocked: what was offered, for the record.
-  const texts = decision.decision === 'allow' ? decision.texts : textsOf(payload);
+  // A blocked secret leaves no hash: a guessable value could be found from it.
+  const texts = decision.decision === 'allow' ? decision.texts : decision.rule === 'secret' ? undefined : textsOf(payload);
   const measured = texts === undefined ? undefined : measure(texts);
   // The summary is free text from the caller: kept only when it could have left itself.
   const summary =
     meta.summary !== undefined &&
     decision.decision === 'allow' &&
     isAtMost(decision.label, 'L1') &&
-    scanText(meta.summary).length === 0
+    scanText(meta.summary).length === 0 &&
+    knownSecrets.find(meta.summary).length === 0
       ? meta.summary
       : null;
   await sql`

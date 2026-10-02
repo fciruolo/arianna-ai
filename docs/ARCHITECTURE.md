@@ -25,6 +25,7 @@ Sintesi operativa della sezione "Architettura" di `SPEC.md`. In caso di conflitt
 | Router | Sceglie esecutore e modello per ogni passo (funzione pura) | `packages/router` |
 | Esecutori | Adattatori: modello locale, `claude -p`, `codex exec`; profilo di confinamento | `packages/executors` |
 | Agenti | Loader e validazione delle schede | `packages/agents` |
+| Vault | Segreti cifrati con `sops` + `age`, riferimenti `vault://`; il gateway conosce i valori rivelati | `packages/vault` |
 | Configurazione | `ARIANNA_HOME`, `arianna.toml`, manifest dei modelli; unico punto che legge la configurazione | `packages/config` |
 | Valutazione | Runner degli eval a tre livelli; i casi stanno in `evals/` | `packages/evals` |
 | Schede agente | YAML + prompt | `agents/` |
@@ -55,7 +56,7 @@ Sintesi operativa della sezione "Architettura" di `SPEC.md`. In caso di conflitt
 arianna/
   apps/core  apps/hud  apps/voice
   packages/policy  packages/router  packages/executors  packages/agents
-  packages/config  packages/evals
+  packages/config  packages/evals  packages/vault
   agents/        # schede agente (YAML + prompt)
   evals/         # casi di valutazione
   kb/            # knowledge base di esempio, solo dati finti (in git)

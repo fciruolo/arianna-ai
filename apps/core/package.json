@@ -8,6 +8,7 @@
     "@arianna/config": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@arianna/router": "workspace:*",
+    "@arianna/vault": "workspace:*",
     "postgres": "3.4.9",
     "ws": "8.22.0"
   }

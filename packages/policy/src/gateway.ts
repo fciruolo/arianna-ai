@@ -4,6 +4,7 @@ import { canUseCloud, isContext, type Context, type Labeled } from './context.ts
 import { canSendTo, labelOrDefault, maxLabel, type Label, type Locality } from './labels.ts';
 import { payloadText, scanParts } from './payload.ts';
 import { scanText, type Finding } from './scanner.ts';
+import type { KnownSecrets } from './secrets.ts';
 
 export type ChannelId = 'web' | 'telegram' | 'phone';
 
@@ -111,8 +112,10 @@ function block(
  *    locality matches what is known about it, a list of fragments);
  * 2. no fragment is L3, whatever the target;
  * 3. every fragment has a text form (text or plain JSON);
- * 4. local targets take up to L2;
- * 5. cloud targets (cloud executors, Telegram, phone, web search) need a context
+ * 4. no fragment contains the value of a secret revealed by the vault
+ *    (`secrets`), whatever its label and the target;
+ * 5. local targets take up to L2;
+ * 6. cloud targets (cloud executors, Telegram, phone, web search) need a context
  *    that has read at most L1, a payload of at most L1, and a clean scan.
  *
  * `context` is the session the payload belongs to on the sending side: the run
@@ -122,8 +125,16 @@ function block(
  *
  * An allowed decision carries `texts`, the exact text checked for each fragment:
  * adapters send those, never a new serialization of the original values.
+ *
+ * `secrets` is optional only for callers that cannot have revealed a secret
+ * (evals, tests): the core always passes the vault's registry.
  */
-export function gatewayCheck(payload: readonly Labeled<unknown>[], context: Context, target: Target): Decision {
+export function gatewayCheck(
+  payload: readonly Labeled<unknown>[],
+  context: Context,
+  target: Target,
+  secrets?: KnownSecrets,
+): Decision {
   // Types do not hold at runtime: payloads also come from model output and JSON.
   const fragments: readonly unknown[] = payload;
   if (!Array.isArray(fragments) || !fragments.every((fragment) => typeof fragment === 'object' && fragment !== null)) {
@@ -152,6 +163,19 @@ export function gatewayCheck(payload: readonly Labeled<unknown>[], context: Cont
     parts.push(...scanParts(text, typeof fragment.value !== 'string'));
   }
   Object.freeze(texts);
+
+  if (secrets !== undefined) {
+    let refs: string[];
+    try {
+      refs = parts.flatMap((part) => secrets.find(part));
+    } catch {
+      return block('invalid-input', label, 'the known secrets could not be checked', 'stay-local');
+    }
+    if (refs.length > 0) {
+      // References name secrets, they are not secrets: the reason can be logged.
+      return block('secret', label, `payload contains the value of ${[...new Set(refs)].join(', ')}`, onBlock === 'notify-reference' ? onBlock : 'wait-user');
+    }
+  }
 
   if (locality === 'local') {
     // L3 is out already: local targets take everything else.

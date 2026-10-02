@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { createContext, isAtMost, isLabel, maxLabel, type Decision, type Label } from '@arianna/policy';
+import { knownSecrets } from '@arianna/vault';
 
 import { loadMessage, type Message } from './conversations.ts';
 import type { Sql } from './db/client.ts';
@@ -12,14 +13,15 @@ import { loadTask, type Task } from './tasks.ts';
  * How a step executor answers in the chat (task 1.11, D-039): fragments while
  * the text is being written, then the final message. Fragments go to the web
  * chat only (local, reached over the VPN), through `pg_notify`: they are never
- * stored and never reach another channel. The final message passes the
+ * stored and never reach another channel; one that contains a value revealed
+ * by the vault is refused. The final message passes the
  * gateway towards `channel:web`, is logged in gateway_log, and is stored only
  * if allowed.
  */
 export interface ChatReply {
   /** Correlates the fragments with the final message on the client. */
   readonly id: string;
-  /** Appends a fragment of the answer being written. */
+  /** Appends a fragment of the answer being written; rejects one with a vault secret in it. */
   delta(text: string): Promise<void>;
   /**
    * Stores the answer. `label` is what the executor read to write it; the
@@ -94,6 +96,9 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
     id,
     async delta(text) {
       if (finished) throw new Error('the reply is finished');
+      // Fragments skip the gateway (they are not stored), not the vault check.
+      const refs = knownSecrets.find(text);
+      if (refs.length > 0) throw new Error(`the fragment contains the value of ${refs.join(', ')}`);
       for (const notice of notices(text, { replyId: id, conversationId, taskId }, seq)) {
         seq += 1;
         // Same channel the live feed listens on: deltaChannel(current_schema()).
