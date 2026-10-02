@@ -1,5 +1,6 @@
 export { CONFIG_FILE, loadConfig, parseConfig, type AriannaConfig } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
+export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
 export {
   loadManifest,
   MANIFEST_FILE,

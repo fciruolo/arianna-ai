@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { canSendTo, isLabel, labelOrDefault, LABELS, maxLabel, type Label } from '../src/index.ts';
+import { canSendTo, isAtMost, isLabel, labelOrDefault, LABELS, maxLabel, type Label } from '../src/index.ts';
 
 // Values that reach the policy from files or JSON despite the types.
 const notALabel = (value: unknown): Label => value as Label;
@@ -32,6 +32,14 @@ test('maxLabel returns the most restricted label', () => {
   assert.equal(maxLabel('L1', 'L1'), 'L1');
   assert.equal(maxLabel('L3', 'L0'), 'L3');
   assert.equal(maxLabel(), 'L0');
+});
+
+test('isAtMost compares a label with a ceiling', () => {
+  assert.equal(isAtMost('L1', 'L1'), true);
+  assert.equal(isAtMost('L0', 'L2'), true);
+  assert.equal(isAtMost('L2', 'L1'), false);
+  assert.equal(isAtMost('L3', 'L2'), false);
+  assert.throws(() => isAtMost(notALabel('L1 '), 'L3'), TypeError);
 });
 
 test('cloud executors receive L0 and L1, never L2 or L3', () => {

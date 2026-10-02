@@ -28,7 +28,12 @@ export function maxLabel(...labels: Label[]): Label {
   return labels.reduce<Label>((max, label) => (rank(label) > rank(max) ? label : max), 'L0');
 }
 
+/** True when `label` is no more restricted than `ceiling`. */
+export function isAtMost(label: Label, ceiling: Label): boolean {
+  return rank(label) <= rank(ceiling);
+}
+
 /** Cloud executors read up to L1, local models up to L2. No model ever reads L3. */
 export function canSendTo(locality: Locality, label: Label): boolean {
-  return rank(label) <= rank(locality === 'local' ? 'L2' : 'L1');
+  return isAtMost(label, locality === 'local' ? 'L2' : 'L1');
 }

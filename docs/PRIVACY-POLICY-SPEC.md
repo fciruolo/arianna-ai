@@ -70,6 +70,30 @@ Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag 
 | Risultato di un esecutore cloud | Massimo degli input inviati (quindi ≤ L1) |
 | Tutto il resto | L2 |
 
+### Regole per cartella e sorgente (`config/labels.toml`, D-031)
+
+```toml
+[[folder]]
+path = "kb/private"        # relativo ad ARIANNA_HOME
+label = "L2"
+
+[[folder]]
+path = "kb/private/shared"
+label = "L1"               # la regola più specifica vince, anche se abbassa
+
+[[source]]
+name = "web"
+label = "L0"
+```
+
+- Vince la regola di cartella più specifica (prefisso di cartella più lungo, per segmenti interi: `kb/pub` non contiene `kb/public`). L'ordine nel file non conta.
+- Un file che nessuna regola contiene è L2; una sorgente senza regola è L2.
+- Rifiutati al caricamento: percorsi assoluti o fuori da `ARIANNA_HOME`, una regola per tutta `ARIANNA_HOME` (spegnerebbe il default-deny), regole doppie anche se scritte diversamente (`kb/work`, `./KB/Work/`), etichette non valide, chiavi sconosciute.
+- **Maiuscole e Unicode:** l'etichetta di un percorso si calcola due volte, una con le maiuscole esatte e una senza distinzione di maiuscole, sempre con i nomi in NFC, e vale la più alta. Su un disco che ignora le maiuscole `Data/Vault/x` resta L3; su un disco che le distingue `KB/Public/x` non eredita L0.
+- I collegamenti simbolici non si risolvono nelle regole: chi legge un file ne etichetta il percorso reale, e la scansione preventiva (task 1.6) li tratta a parte. Un percorso con un segmento `..` viene rifiutato: dopo un collegamento punterebbe altrove, e un percorso reale non ne contiene.
+- **Intestazione della pagina KB:** assente (o vuota come `null`) vuol dire nessuna intestazione; presente ma non valida (`l3`, `L3 `) vale L3, perché leggerla come L2 potrebbe declassare un segreto.
+- Cambiare il file è un'impostazione di privacy: lo modifica solo l'utente.
+
 ## Scanner deterministico
 
 Difesa in profondità, non controllo primario: ogni payload verso cloud o canale esterno passa da espressioni regolari per IBAN, codice fiscale, numeri di carta, chiavi private e token noti. Un riscontro blocca l'uscita e porta il task in "Attende te", anche se l'etichetta dice L1.
@@ -86,8 +110,17 @@ interface Labeled<T> { value: T; label: Label; source: string }
 interface Context { clearance: Label; effective: Label } // per conversation, task and run
 
 function maxLabel(...l: Label[]): Label;
-function derive(inputs: Labeled<unknown>[]): Label;       // taint: max of inputs
+function derive(inputs: Labeled<unknown>[]): Label;       // taint: max of inputs; no inputs -> L2
 function canRead(ctx: Context, label: Label): boolean;     // label <= clearance, never L3
+function recordRead(ctx: Context, label: Label): ReadResult; // allowed -> effective rises; denied -> ctx unchanged
+function canUseCloud(ctx: Context): boolean;               // effective <= L1 (also canUseWebTools)
+function createContext(clearance: Label, effective?: Label): Context; // clearance never L3
+function clearanceFor(mode: 'work' | 'private'): Label;    // L1 | L2
+function labelForUserMessage(ctx: Context): Label;         // = clearance; record it with recordRead
+function createLabelRules(input: { folders: FolderRule[]; sources: SourceRule[] }): LabelRules;
+function labelForPath(rules: LabelRules, path: string): Label;   // folder rules, default L2; ".." rejected
+function labelForKbPage(rules: LabelRules, path: string, declared: unknown): Label; // header only raises; invalid -> L3
+function labelForSource(rules: LabelRules, name: string): Label; // default L2
 function canSendTo(target: Target, label: Label): boolean;
 function gatewayCheck(payload: Labeled<unknown>[], ctx: Context, target: Target): Decision; // allow | block + reason
 function checkWorkspace(dir: string, target: Target): Decision; // allowlist + pre-flight scan
