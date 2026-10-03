@@ -1,6 +1,6 @@
 import type { Sql } from './db/client.ts';
 import { readEvents, type StoredEvent } from './events.ts';
-import { deltaChannel, type DeltaNotice } from './reply.ts';
+import { ACTIVITY_KINDS, activityChannel, deltaChannel, type ActivityNotice, type DeltaNotice } from './reply.ts';
 
 /**
  * Live feed for the web chat (task 1.11, D-039). A trigger announces every
@@ -10,7 +10,10 @@ import { deltaChannel, type DeltaNotice } from './reply.ts';
  */
 export type PublicEvent = Omit<StoredEvent, 'prevHash' | 'hash'>;
 
-export type LiveMessage = { type: 'event'; event: PublicEvent } | ({ type: 'delta' } & DeltaNotice);
+export type LiveMessage =
+  | { type: 'event'; event: PublicEvent }
+  | ({ type: 'delta' } & DeltaNotice)
+  | ({ type: 'activity' } & ActivityNotice);
 
 export interface Subscriber {
   send(message: LiveMessage): void;
@@ -48,6 +51,25 @@ function parseDelta(payload: string): DeltaNotice | undefined {
       typeof value.text === 'string'
     ) {
       return { replyId: value.replyId, conversationId: value.conversationId, taskId: value.taskId, seq: value.seq, text: value.text };
+    }
+  } catch {
+    // Not ours: ignored.
+  }
+  return undefined;
+}
+
+function parseActivity(payload: string): ActivityNotice | undefined {
+  try {
+    const value = JSON.parse(payload) as Partial<ActivityNotice> | null;
+    if (
+      value !== null &&
+      typeof value.conversationId === 'string' &&
+      typeof value.taskId === 'string' &&
+      typeof value.step === 'number' &&
+      ACTIVITY_KINDS.some((kind) => kind === value.kind) &&
+      typeof value.detail === 'string'
+    ) {
+      return { conversationId: value.conversationId, taskId: value.taskId, step: value.step, kind: value.kind as ActivityNotice['kind'], detail: value.detail };
     }
   } catch {
     // Not ours: ignored.
@@ -122,6 +144,11 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
     if (delta === undefined) return;
     for (const entry of entries) entry.subscriber.send({ type: 'delta', ...delta });
   });
+  const activity = await sql.listen(activityChannel(schema), (payload) => {
+    const notice = parseActivity(payload);
+    if (notice === undefined) return;
+    for (const entry of entries) entry.subscriber.send({ type: 'activity', ...notice });
+  });
 
   return {
     async subscribe(subscriber, afterId) {
@@ -152,6 +179,7 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
       entries.clear();
       await events.unlisten();
       await deltas.unlisten();
+      await activity.unlisten();
       await reading;
     },
   };

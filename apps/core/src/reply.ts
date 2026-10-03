@@ -154,3 +154,41 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
     },
   };
 }
+
+/**
+ * What a task is doing, shown under the user's message while it works (task
+ * 1.10, D-054): a kind and a short detail (a query, a path, a card title),
+ * never stored, sent to the web chat only, like reply fragments. The page
+ * writes the line in Italian (D-045).
+ */
+export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error'] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+export interface ActivityNotice {
+  conversationId: string;
+  taskId: string;
+  step: number;
+  kind: ActivityKind;
+  detail: string;
+}
+
+/** Channel of the activity notices: one per schema, like the fragments. */
+export function activityChannel(schema: string): string {
+  return `arianna_activity:${schema}`;
+}
+
+const MAX_DETAIL = 300;
+
+/**
+ * Sends one activity line. A detail holding a value revealed by the vault is
+ * refused, as a fragment would be; a long one is cut.
+ */
+export async function postActivity(sql: Sql, notice: ActivityNotice): Promise<void> {
+  const points = Array.from(notice.detail.replace(/\s+/g, ' ').trim());
+  const detail = points.length > MAX_DETAIL ? `${points.slice(0, MAX_DETAIL - 1).join('')}…` : points.join('');
+  const refs = knownSecrets.find(detail);
+  if (refs.length > 0) throw new Error(`the activity contains the value of ${refs.join(', ')}`);
+  const payload = JSON.stringify({ ...notice, detail });
+  if (Buffer.byteLength(payload) > MAX_NOTICE_BYTES) throw new Error('the activity notice is too long');
+  await sql`SELECT pg_notify(${activityChannel('')} || current_schema(), ${payload})`;
+}

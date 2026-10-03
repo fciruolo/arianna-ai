@@ -11,6 +11,7 @@ import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/exe
 import { createConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
@@ -351,4 +352,32 @@ test('kb.write through the orchestrator writes in the inbox with the task as sou
   assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /error: kb\.write: with autonomy A1 pages can only be written under kb\/inbox\//);
   assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', /written kb\/inbox\/caldaia\.md/);
   assert.match(readFileSync(join(scratch, 'kb', 'inbox', 'caldaia.md'), 'utf8'), new RegExp(`^---\\nlabel: L2\\nsource: task:${task.id}\\n`));
+});
+
+test('the steps show in the chat as activity, never stored', async () => {
+  const { task } = await ask('private', 'Cerca la caparra.');
+  const live = await startLiveFeed(db().sql);
+  const received: LiveMessage[] = [];
+  const stop = await live.subscribe({ send: (message) => received.push(message) });
+  try {
+    const model = scripted([
+      { action: 'call', tool: 'kb.read', arguments: { path: 'kb/private/nessuna.md' } },
+      { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } },
+      { action: 'reply', text: 'Tre mensilità.' },
+    ]);
+    await drain(task.id, model);
+    // Notifications arrive after the commit: give the listener a moment.
+    for (let wait = 0; wait < 50 && received.filter((m) => m.type === 'activity').length < 5; wait += 1) await new Promise((r) => setTimeout(r, 20));
+  } finally {
+    stop();
+    await live.close();
+  }
+  const lines = received.flatMap((m) => (m.type === 'activity' && m.taskId === task.id ? [[m.step, m.kind, m.detail]] : []));
+  assert.deepEqual(lines, [
+    [1, 'thinking', ''],
+    [1, 'error', 'page kb/private/nessuna.md not found'],
+    [2, 'thinking', ''],
+    [2, 'search', 'caparra'],
+    [3, 'thinking', ''],
+  ]);
 });

@@ -1,7 +1,13 @@
-import type { Delta, LiveEvent } from './types.ts';
+import type { Activity, ActivityKind, Delta, LiveEvent } from './types.ts';
 
 /** What the core's WebSocket sends (apps/core/src/live.ts and server/http.ts). */
-export type ServerMessage = { type: 'event'; event: LiveEvent } | ({ type: 'delta' } & Delta) | { type: 'ready' };
+export type ServerMessage =
+  | { type: 'event'; event: LiveEvent }
+  | ({ type: 'delta' } & Delta)
+  | ({ type: 'activity' } & Activity)
+  | { type: 'ready' };
+
+const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -35,6 +41,21 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
         return undefined;
       }
       return { type: 'delta', replyId, conversationId, taskId, seq, text };
+    }
+    case 'activity': {
+      const { conversationId, taskId, step, kind, detail } = value;
+      const known = ACTIVITY_KINDS.find((item) => item === kind);
+      if (
+        typeof conversationId !== 'string' ||
+        typeof taskId !== 'string' ||
+        typeof step !== 'number' ||
+        !Number.isInteger(step) ||
+        known === undefined ||
+        typeof detail !== 'string'
+      ) {
+        return undefined;
+      }
+      return { type: 'activity', conversationId, taskId, step, kind: known, detail };
     }
     case 'event': {
       const event = value.event;

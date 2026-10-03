@@ -17,10 +17,10 @@ import { createContext, maxLabel, type Context, type Label, type Labeled } from 
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
-import { openReply } from '../reply.ts';
+import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import type { Kb } from './kb.ts';
-import { isLocalTool, runTool } from './tools.ts';
+import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { loadTurns, recordTurn, type Turn } from './turns.ts';
 
 /**
@@ -118,6 +118,12 @@ const PLAN_NOTED = 'Plan noted. Now carry out its first step with one tool call,
 export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   const { sql } = options;
 
+  /** One line of activity in the chat (D-054); a task without a conversation shows none. Never fails the step. */
+  async function show(task: Task, step: number, kind: ActivityKind, detail = ''): Promise<void> {
+    if (task.conversationId === null) return;
+    await postActivity(sql, { conversationId: task.conversationId, taskId: task.id, step, kind, detail }).catch(() => undefined);
+  }
+
   async function ask(
     tools: readonly ToolId[],
     prompt: string,
@@ -190,6 +196,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const allowed = history.map((part, index): TurnMessage => ({ role: part.value.role, content: decision.texts[index] ?? '' }));
 
       const tools = orchestratorTools(agent);
+      await show(task, step, 'thinking');
       let asked;
       try {
         asked = await ask(tools, agent.prompt, allowed, ctx.signal);
@@ -227,6 +234,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
       if (answer.action === 'plan') {
         await recordTurn(sql, { ...turn, label, result: PLAN_NOTED });
+        await show(task, step, 'plan', answer.steps.map((item, index) => `${String(index + 1)}. ${item}`).join(' · '));
         return { kind: 'continue', usage };
       }
 
@@ -237,13 +245,29 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const tool = answer.tool;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
-      await sql.begin(async (tx) => {
-        const result = await runTool(tool, answer.arguments, { sql: tx, kb: options.kb, task, context });
-        await recordTurn(tx, { ...turn, label: maxLabel(label, result.label), result: result.text });
+      const result = await sql.begin(async (tx) => {
+        const ran = await runTool(tool, answer.arguments, { sql: tx, kb: options.kb, task, context });
+        await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
+        return ran;
       });
+      if (result.text.startsWith('error: ')) await show(task, step, 'error', result.text.replace(/^error: [^:]+: /, ''));
+      else await show(task, step, TOOL_ACTIVITY[tool], toolDetail(tool, answer.arguments));
       return { kind: 'continue', usage };
     },
   };
+}
+
+const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
+  'kb.search': 'search',
+  'kb.read': 'read',
+  'kb.write': 'write',
+  'task.create': 'card',
+};
+
+/** The argument that tells what the tool did: the query, the path, the card title. */
+function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
+  const field = tool === 'kb.search' ? 'query' : tool === 'task.create' ? 'title' : 'path';
+  return String(args[field]);
 }
 
 const INVALID_ANSWER = 'the local model did not give a valid answer';

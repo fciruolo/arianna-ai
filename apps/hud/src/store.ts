@@ -1,7 +1,7 @@
 import { computed, ref, shallowRef } from 'vue';
 
 import * as api from './lib/api.ts';
-import { applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -125,6 +125,10 @@ export function createChatStore() {
     }
     if (message.type === 'delta') {
       if (chat.value !== null) chat.value = applyDelta(chat.value, message);
+      return;
+    }
+    if (message.type === 'activity') {
+      if (chat.value !== null) chat.value = applyActivity(chat.value, message);
       return;
     }
     const { event } = message;

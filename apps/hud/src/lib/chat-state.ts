@@ -1,4 +1,4 @@
-import type { Delta, Message } from './types.ts';
+import type { Activity, Delta, Message } from './types.ts';
 
 /**
  * The open conversation: stored messages plus the answers being written.
@@ -18,10 +18,28 @@ export interface ChatState {
   conversationId: string;
   messages: Message[];
   streaming: StreamingReply[];
+  /** What each task of this conversation did so far, by task id, oldest first. */
+  activity: Record<string, Activity[]>;
 }
 
 export function emptyChat(conversationId: string): ChatState {
-  return { conversationId, messages: [], streaming: [] };
+  return { conversationId, messages: [], streaming: [], activity: {} };
+}
+
+/** Longest activity kept per task: older lines scroll away. */
+const MAX_ACTIVITY = 30;
+
+/**
+ * Adds a line of activity of a task in this conversation. A "thinking" line
+ * stands for the step in progress, so only the latest one is kept: any next
+ * line replaces it.
+ */
+export function applyActivity(state: ChatState, activity: Activity): ChatState {
+  if (activity.conversationId !== state.conversationId) return state;
+  const lines = (state.activity[activity.taskId] ?? []).filter((line) => line.kind !== 'thinking');
+  const last = lines.at(-1);
+  if (last !== undefined && last.step === activity.step && last.kind === activity.kind && last.detail === activity.detail) return state;
+  return { ...state, activity: { ...state.activity, [activity.taskId]: [...lines, activity].slice(-MAX_ACTIVITY) } };
 }
 
 /** Adds messages of this conversation, without duplicates, in id order. */

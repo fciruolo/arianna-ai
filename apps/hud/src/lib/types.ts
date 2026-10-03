@@ -69,3 +69,14 @@ export interface Delta {
   seq: number;
   text: string;
 }
+
+export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error';
+
+/** One line of what a task is doing (D-054): never stored, gone after a reload. */
+export interface Activity {
+  conversationId: string;
+  taskId: string;
+  step: number;
+  kind: ActivityKind;
+  detail: string;
+}

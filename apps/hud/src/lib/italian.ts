@@ -1,5 +1,6 @@
 import { ApiError } from './api.ts';
 import { ACTION_TEXT } from './labels.ts';
+import type { Activity } from './types.ts';
 
 /**
  * The page is in Italian; the core writes its reasons and errors in English,
@@ -25,6 +26,13 @@ const REASONS: Record<string, string> = {
   'the executor reported an invalid usage': 'l’esecutore ha riportato un consumo non valido',
   'invalid limits': 'limiti non validi',
   'no step or time cap set': 'manca un limite di passi o di tempo',
+  'the local model did not give a valid answer': 'il modello locale non ha dato una risposta valida',
+  'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)':
+    'nessun modello locale per l’orchestratore: assegnalo in [roles] (pnpm arianna:init)',
+  'the gateway blocked the answer': 'il gateway ha fermato la risposta',
+  'the answer is above what the conversation may hold': 'la risposta supera il livello di questa conversazione',
+  'the task has no request to work on': 'il task non ha una richiesta su cui lavorare',
+  'the local model asked for a tool it does not have': 'il modello locale ha chiesto uno strumento che non ha',
 };
 
 function actionName(action: string): string {
@@ -81,4 +89,43 @@ export function errorText(cause: unknown): string {
   if (cause.status === 403) return 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
   if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
   return 'Richiesta non valida.';
+}
+
+// Errors of the orchestrator's tools (apps/core/src/orchestrator/kb.ts): fixed
+// texts around a path the model chose.
+const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
+  [/^"(.*)" is not a page path/, (path) => `${path} non è un percorso di pagina valido (kb/cartella/nome.md)`],
+  [/^page (\S+) not found$/, (path) => `pagina ${path} non trovata`],
+  [/^page (\S+) is above what this conversation may read/, (path) => `${path} è sopra il livello di questa conversazione`],
+  [/^with autonomy A1 pages can only be written under (\S+)\/$/, (path) => `può scrivere solo in ${path}/`],
+  [/^page (\S+) already exists/, (path) => `la pagina ${path} esiste già`],
+  [/^page (\S+) is too large to read$/, (path) => `la pagina ${path} è troppo grande`],
+];
+
+function toolError(detail: string): string {
+  for (const [pattern, text] of TOOL_ERRORS) {
+    const match = pattern.exec(detail);
+    if (match?.[1] !== undefined) return text(match[1]);
+  }
+  return 'uno strumento ha restituito un errore';
+}
+
+/** One line of what a task is doing, in Italian (D-054). */
+export function activityText(activity: Activity): string {
+  switch (activity.kind) {
+    case 'thinking':
+      return `Sto ragionando (passo ${String(activity.step)})…`;
+    case 'search':
+      return `Cerco nella knowledge base: «${activity.detail}»`;
+    case 'read':
+      return `Leggo ${activity.detail}`;
+    case 'write':
+      return `Scrivo ${activity.detail}`;
+    case 'card':
+      return `Creo la carta «${activity.detail}»`;
+    case 'plan':
+      return `Piano: ${activity.detail}`;
+    case 'error':
+      return `Errore: ${toolError(activity.detail)}, provo un’altra strada`;
+  }
 }

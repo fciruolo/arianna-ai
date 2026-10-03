@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { errorText, reasonText } from '../src/lib/italian.ts';
+import { activityText, errorText, reasonText } from '../src/lib/italian.ts';
 
 test('the reasons the core writes become Italian', () => {
   assert.equal(reasonText('the orchestrator is not available yet (task 1.10)'), 'l’orchestratore non è ancora disponibile (task 1.10)');
@@ -48,4 +48,18 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'unknown field(s): x'), 'Richiesta non valida.');
   assert.equal(errorText(new TypeError('Failed to fetch')), 'Il nucleo non risponde: controlla che sia avviato.');
   assert.equal(errorText('boom'), 'Errore imprevisto.');
+});
+
+test('activity lines are written in Italian; an unknown tool error is never shown as it is', () => {
+  const line = (kind: 'search' | 'read' | 'error' | 'thinking', detail = '') => activityText({ conversationId: 'c', taskId: 't', step: 3, kind, detail });
+  assert.equal(line('search', 'caldaia'), 'Cerco nella knowledge base: «caldaia»');
+  assert.equal(line('read', 'kb/private/casa/caldaia.md'), 'Leggo kb/private/casa/caldaia.md');
+  assert.equal(line('thinking'), 'Sto ragionando (passo 3)…');
+  assert.equal(line('error', '"kb/ciao.html" is not a page path: pages look like kb/folder/name.md'), 'Errore: kb/ciao.html non è un percorso di pagina valido (kb/cartella/nome.md), provo un’altra strada');
+  assert.equal(line('error', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore, provo un’altra strada');
+});
+
+test('the orchestrator reasons are translated', () => {
+  assert.equal(reasonText('the local model did not give a valid answer'), 'il modello locale non ha dato una risposta valida');
+  assert.equal(reasonText('the gateway blocked the answer'), 'il gateway ha fermato la risposta');
 });

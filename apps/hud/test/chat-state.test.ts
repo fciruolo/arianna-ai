@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { applyDelta, emptyChat, mergeMessages, settleReply, taskIds } from '../src/lib/chat-state.ts';
-import type { Delta, Message } from '../src/lib/types.ts';
+import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds } from '../src/lib/chat-state.ts';
+import type { Activity, Delta, Message } from '../src/lib/types.ts';
 
 const CONVERSATION = 'c1';
 
@@ -55,4 +55,26 @@ test('task ids come from the messages, once each', () => {
     message('4'),
   ]);
   assert.deepEqual(taskIds(state), ['t1', 't2']);
+});
+
+test('activity lines: per task of this conversation, the latest "thinking" only, no repeats', () => {
+  const line = (step: number, kind: Activity['kind'], detail = '', conversationId = 'c1'): Activity => ({ conversationId, taskId: 't1', step, kind, detail });
+  let state = emptyChat('c1');
+  state = applyActivity(state, line(1, 'thinking'));
+  state = applyActivity(state, line(1, 'search', 'caldaia'));
+  state = applyActivity(state, line(1, 'search', 'caldaia'));
+  state = applyActivity(state, line(2, 'thinking'));
+  assert.deepEqual(
+    state.activity.t1?.map((item) => [item.step, item.kind]),
+    [
+      [1, 'search'],
+      [2, 'thinking'],
+    ],
+  );
+  state = applyActivity(state, line(2, 'read', 'kb/private/casa/caldaia.md'));
+  assert.deepEqual(
+    state.activity.t1?.map((item) => item.kind),
+    ['search', 'read'],
+  );
+  assert.equal(applyActivity(state, line(3, 'thinking', '', 'other')), state, 'another conversation');
 });

@@ -104,3 +104,10 @@ test('after a drop it reconnects from the last event seen', () => {
   // Closed on purpose: no further attempt.
   assert.equal(timers.length, 1);
 });
+
+test('an activity notice is parsed, and one with an unknown kind is dropped', () => {
+  const notice = { type: 'activity', conversationId: 'c', taskId: 't', step: 2, kind: 'read', detail: 'kb/x.md' };
+  assert.deepEqual(parseServerMessage(JSON.stringify(notice)), notice);
+  assert.equal(parseServerMessage(JSON.stringify({ ...notice, kind: 'shell' })), undefined);
+  assert.equal(parseServerMessage(JSON.stringify({ ...notice, step: 1.5 })), undefined);
+});

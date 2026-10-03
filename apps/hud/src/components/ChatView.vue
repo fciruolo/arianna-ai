@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import type { ChatState } from '../lib/chat-state.ts';
-import { reasonText } from '../lib/italian.ts';
+import { activityText, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, STATUS_TEXT } from '../lib/labels.ts';
-import type { Conversation, Message, Task } from '../lib/types.ts';
+import type { Activity, Conversation, Message, Task } from '../lib/types.ts';
 
 const props = defineProps<{ chat: ChatState; conversation: Conversation; tasks: Record<string, Task>; sending: boolean }>();
 const emit = defineEmits<{ send: [body: string] }>();
@@ -25,6 +25,14 @@ function repliesToTelegram(message: Message): boolean {
 /** The task a user message started, shown under it while it is not settled. */
 function taskOf(message: Message): Task | undefined {
   return message.role === 'user' && message.taskId !== null ? props.tasks[message.taskId] : undefined;
+}
+
+/** What the task of a user message is doing, while it is queued or running (D-054). */
+function activityOf(message: Message): Activity[] {
+  if (message.role !== 'user' || message.taskId === null) return [];
+  const status = props.tasks[message.taskId]?.status;
+  if (status !== undefined && status !== 'ready' && status !== 'running') return [];
+  return props.chat.activity[message.taskId] ?? [];
 }
 
 function submit(): void {
@@ -121,6 +129,20 @@ const statusClass: Record<Task['status'], string> = {
               <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined" class="text-stone-500">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
             </template>
           </div>
+          <ul
+            v-if="activityOf(message).length > 0"
+            class="mt-2 flex max-w-[85%] flex-col gap-1 self-start rounded-xl border border-dashed border-stone-300 px-3 py-2 text-xs text-stone-600 dark:border-stone-700 dark:text-stone-400"
+            aria-label="Cosa sta facendo Arianna"
+          >
+            <li v-for="line in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2">
+              <span
+                class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                :class="line.kind === 'thinking' ? 'animate-pulse bg-indigo-500' : line.kind === 'error' ? 'bg-amber-500' : 'bg-stone-400'"
+                aria-hidden="true"
+              />
+              <span class="break-words">{{ activityText(line) }}</span>
+            </li>
+          </ul>
         </div>
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="flex flex-col items-start">
