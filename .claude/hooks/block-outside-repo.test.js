@@ -57,3 +57,68 @@ test('bash: commands naming personal locations outside the repository are blocke
 test('unreadable input fails closed', () => {
   assert.strictEqual(run(null, 'not json'), BLOCK);
 });
+
+// Read-only exceptions (D-059): a throwaway project whose .claude/read-allow.local
+// lists one outside folder.
+const fs = require('node:fs');
+
+function withReadAllow(lines, fn) {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hook-')));
+  const project = path.join(tmp, 'project');
+  const allowed = path.join(tmp, 'allowed');
+  fs.mkdirSync(path.join(project, '.claude'), { recursive: true });
+  fs.mkdirSync(allowed);
+  fs.writeFileSync(path.join(project, '.claude', 'read-allow.local'), lines(allowed).join('\n'));
+  const exec = (toolName, toolInput) =>
+    spawnSync('node', [hook], {
+      input: JSON.stringify({ cwd: project, tool_name: toolName, tool_input: toolInput }),
+      env: { ...process.env, CLAUDE_PROJECT_DIR: project },
+      encoding: 'utf8',
+    }).status;
+  try {
+    fn(exec, allowed, tmp);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+test('read-allow: Read, Grep and Glob may open a listed folder', () => {
+  withReadAllow((a) => ['# reference repository', a], (exec, allowed) => {
+    assert.strictEqual(exec('Read', { file_path: path.join(allowed, 'README.md') }), ALLOW);
+    assert.strictEqual(exec('Grep', { pattern: 'voice', path: allowed }), ALLOW);
+    assert.strictEqual(exec('Glob', { pattern: `${allowed}/**/*.ts` }), ALLOW);
+  });
+});
+
+test('read-allow: writes, other folders and unlisted tools stay blocked', () => {
+  withReadAllow((a) => [a], (exec, allowed, tmp) => {
+    assert.strictEqual(exec('Edit', { file_path: path.join(allowed, 'README.md') }), BLOCK);
+    assert.strictEqual(exec('Write', { file_path: path.join(allowed, 'x.ts') }), BLOCK);
+    assert.strictEqual(exec(undefined, { file_path: path.join(allowed, 'README.md') }), BLOCK);
+    assert.strictEqual(exec('Read', { file_path: path.join(tmp, 'other.txt') }), BLOCK);
+    assert.strictEqual(exec('Read', { file_path: '/etc/hosts' }), BLOCK);
+  });
+});
+
+test('read-allow: entries that contain the home directory are ignored', () => {
+  withReadAllow(() => ['/', os.homedir(), 'relative/path'], (exec) => {
+    assert.strictEqual(exec('Read', { file_path: '/etc/hosts' }), BLOCK);
+    assert.strictEqual(exec('Read', { file_path: path.join(os.homedir(), '.ssh', 'id_rsa') }), BLOCK);
+  });
+});
+
+test('read-allow: bash may name a listed folder only in read-only commands', () => {
+  withReadAllow((a) => [a], (exec, allowed) => {
+    assert.strictEqual(exec('Bash', { command: `ls -la ${allowed}` }), ALLOW);
+    assert.strictEqual(exec('Bash', { command: `find ${allowed} -name '*.ts' | head -50` }), ALLOW);
+    assert.strictEqual(exec('Bash', { command: `sed -n 1,80p ${allowed}/a.ts 2>/dev/null` }), ALLOW);
+    assert.strictEqual(exec('Bash', { command: `find ${allowed} -type f | sort` }), ALLOW);
+    assert.strictEqual(exec('Bash', { command: `sort -o ${allowed}/a.ts ${allowed}/a.ts` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `cat ${allowed}/a.ts > copy.ts` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `rm ${allowed}/a.ts` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `find ${allowed} -delete` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `sed -i '' s/a/b/ ${allowed}/a.ts` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `ls ${allowed} && touch ${allowed}/x` }), BLOCK);
+    assert.strictEqual(exec('Bash', { command: `cat $(echo ${allowed}/a.ts)` }), BLOCK);
+  });
+});

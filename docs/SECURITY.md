@@ -29,6 +29,7 @@
   - per `Read`, `Edit`, `Write`, `Grep`, `Glob` e `NotebookEdit` il controllo è stretto: ogni percorso fuori dal repository è negato, symlink compresi;
   - per `Bash` è un'euristica: nega i comandi che nominano percorsi nella home, in `/Users`, `/Volumes` e simili fuori dal repository. Si aggira con variabili o sottocomandi, quindi è una rete di sicurezza contro gli errori, non una sandbox;
   - se l'input non è leggibile, l'hook nega (fail-closed); se invece lo script va in errore prima di partire, Claude Code prosegue senza blocco, quindi i suoi test girano dentro `pnpm test`;
+  - eccezioni in sola lettura (D-059): le cartelle elencate in `.claude/read-allow.local`, fuori da git, si possono leggere con Read, Grep, Glob e con comandi Bash di sola lettura; scrivere resta bloccato, e la home intera non si può elencare. Solo per codice pubblico scelto dall'utente come riferimento, mai per cartelle con dati personali;
   - i test stanno in `.claude/hooks/block-outside-repo.test.js`; `.claude/hooks/package.json` tiene gli script in CommonJS anche se il monorepo è ESM.
 - La protezione vera per i comandi di shell è la sandbox del sistema operativo: `node` e `pnpm` eseguono codice arbitrario, e l'hook guarda solo il testo del comando. Per lo sviluppo non è configurata nel repository: la attiva l'utente con `/sandbox` in Claude Code. Per gli esecutori lanciati da Arianna è il task 1.6.
 

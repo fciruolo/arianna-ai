@@ -23,6 +23,7 @@ __pycache__/
 
 # Local tooling
 .claude/settings.local.json
+.claude/read-allow.local
 .DS_Store
 *.log
 

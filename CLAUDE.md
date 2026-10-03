@@ -12,7 +12,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 ## Regole non negoziabili
 
 - **Privacy prima di tutto.** Nessun dato L2/L3 va a un esecutore cloud (Claude Code, Codex) né a un canale esterno (Telegram, telefono). L'unica uscita verso il cloud è il gateway (`packages/policy`). Dati non etichettati = L2 (default-deny). L'output di un modello eredita l'etichetta più alta dei suoi input. Gli esecutori cloud si lanciano solo da `packages/executors`, con il profilo di confinamento di `docs/PRIVACY-POLICY-SPEC.md`.
-- **Solo dati finti in sviluppo.** Usa `kb/` con documenti inventati. Non leggere né scrivere fuori dal repository. Mai fatture, contratti o credenziali reali.
+- **Solo dati finti in sviluppo.** Usa `kb/` con documenti inventati. Non leggere né scrivere fuori dal repository. Mai fatture, contratti o credenziali reali. Eccezione: le cartelle di codice pubblico elencate dall'utente in `.claude/read-allow.local` si possono leggere, mai scrivere (D-059).
 - **Mai token OAuth.** Non estrarre, copiare o salvare credenziali degli abbonamenti. Si usano solo i binari ufficiali `claude` e `codex`, non modificati.
 - **Nessuna nuova dipendenza** senza una voce in `docs/DECISIONS.md`.
 - **Test obbligatori** per `packages/policy` e `packages/router`: ogni regola ha almeno un caso positivo e uno negativo. Un cambio a queste cartelle o a `packages/executors` non si chiude se gli eval falliscono.
