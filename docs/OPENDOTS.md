@@ -114,8 +114,8 @@ Una alla volta; ognuna si propone con il dettaglio, l'utente sceglie, poi divent
 
 | # | Proposta | Fase | Stato |
 | --- | --- | --- | --- |
-| P1 | Restyling della chat web con il linguaggio visivo di OpenDots: shell a tre colonne, token di colore e raggi in Tailwind, bolle, intestazione con stato, composer, responsive; tema scuro nostro; icone `lucide-vue-next` | 1A | Da proporre |
-| P2 | Mascotte per Arianna e Coder con gli stati (pensa, lavora, aspetta te, in pausa) | 1A | Da proporre |
+| P1 | Restyling della chat web: struttura e cura di OpenDots (shell a tre colonne, bolle, intestazione con stato, composer, responsive, icone `lucide-vue-next`) **fusa** con una HUD stile Jarvis, in un'unica identità e non come due temi (scelta dell'utente, 2026-10-04) | 1A | In corso: anteprima visiva da approvare |
+| P2 | **Pixel agent al posto delle mascotte** (l'utente non vuole i peluche): personaggi pixel-art con stati (pensa, lavora, aspetta te, in pausa), gli stessi dell'ufficio pixel di fase 3; l'utente vuole poter usare anche personaggi di film, telefilm e cartoni: pacchetti di personaggi caricati da `data/` (fuori da git), mentre il repository contiene solo personaggi originali | 1A | Scelta di massima fatta (2026-10-04), dettagli da proporre |
 | P3 | Schede in chat per passi dell'orchestratore, deleghe al Coder e approvazioni, nello stile delle loro schede strumento | 1A | Da proporre |
 | P4 | Schermata di chiamata (guscio grafico ora, voce locale in fase 4) con il contratto `begin/activate/compute/end` e la ricevuta in chat | 4 (guscio prima) | Da proporre |
 | P5 | Pausa globale e revoca dei permessi che interrompono i run in corso | 1A/1B | Da proporre |
