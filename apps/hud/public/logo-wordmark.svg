@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
   <title id="title">Arianna</title>
-  <!-- The labyrinth of Knossos, Ariadne's thread from the ball of yarn to the Minotaur at its heart. -->
   <rect width="120" height="120" rx="26" fill="#151a2e"/>
   <g fill="none" stroke="#e9dfc8" stroke-width="4" stroke-linecap="round">
     <path d="M65 103.71 A44 44 0 1 0 55 103.71"/>
@@ -15,4 +14,6 @@
   <path d="M55.5 57.5 H64.5 L62.6 66.4 Q60 68.6 57.4 66.4 Z" fill="#e9dfc8"/>
   <circle cx="60" cy="111" r="5" fill="#e4572e"/>
   <path d="M56.5 109 Q60 112 63.5 109 M56 112.5 Q60 115 64 112.5" fill="none" stroke="#151a2e" stroke-width="1" stroke-linecap="round"/>
+  <text x="142" y="74" font-family="'Cormorant Garamond', 'EB Garamond', Georgia, 'Times New Roman', serif" font-size="54" letter-spacing="3" fill="#151a2e">Arianna</text>
+  <rect x="144" y="86" width="64" height="3" rx="1.5" fill="#e4572e"/>
 </svg>
