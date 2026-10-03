@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import {
+  archiveConversation,
   ChatError,
   createConversation,
   isUuid,
@@ -14,6 +15,7 @@ import {
   listMessages,
   loadConversation,
   postUserMessage,
+  renameConversation,
   setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
@@ -133,9 +135,12 @@ function routes(sql: Sql, allowlist: readonly string[], models: () => readonly {
     // The cloud models of this installation: what the selector of a work conversation offers.
     route('GET', '/api/models', () => Promise.resolve({ body: { models: models() } })),
 
-    route('GET', '/api/conversations', async (_request, url) => ({
-      body: { conversations: await listConversations(sql, limitParam(url)) },
-    })),
+    // The list, or with ?archived=1 the archived conversations (D-057).
+    route('GET', '/api/conversations', async (_request, url) => {
+      const archived = url.searchParams.get('archived');
+      if (archived !== null && archived !== '0' && archived !== '1') throw new HttpError(400, 'archived must be 0 or 1');
+      return { body: { conversations: await listConversations(sql, limitParam(url), { archived: archived === '1' }) } };
+    }),
 
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
@@ -164,6 +169,22 @@ function routes(sql: Sql, allowlist: readonly string[], models: () => readonly {
       if (body.model !== null && typeof body.model !== 'string') throw new HttpError(400, 'model must be a string or null');
       const conversation = await setConversationModel(sql, id, body.model, models().map((entry) => entry.model));
       return { body: { conversation } };
+    }),
+
+    route('POST', '/api/conversations/:id/title', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['title']);
+      return { body: { conversation: await renameConversation(sql, id, body.title) } };
+    }),
+
+    // Archives a conversation, or brings it back to the list: nothing is deleted.
+    route('POST', '/api/conversations/:id/archive', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['archived']);
+      if (typeof body.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      return { body: { conversation: await archiveConversation(sql, id, body.archived) } };
     }),
 
     route('GET', '/api/conversations/:id/messages', async (_request, url, params) => {
@@ -275,7 +296,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown, heade
 function errorStatus(error: unknown): { status: number; message: string } | undefined {
   if (error instanceof HttpError) return { status: error.status, message: error.message };
   if (error instanceof ChatError) {
-    const status = error.code === 'not-found' ? 404 : error.code === 'scanner' ? 422 : 400;
+    const status = error.code === 'not-found' ? 404 : error.code === 'scanner' ? 422 : error.code === 'archived' ? 409 : 400;
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };

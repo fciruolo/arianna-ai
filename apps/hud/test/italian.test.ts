@@ -43,6 +43,10 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'the message is longer than 16000 characters'), 'Il messaggio supera 16000 caratteri.');
   assert.equal(api(409, 'the approval is already approved'), 'Questa richiesta è già stata decisa.');
   assert.equal(api(400, 'workspace is not in cloud.allowlist'), 'Questo repository non è fra quelli ammessi (cloud.allowlist in arianna.toml).');
+  assert.equal(api(422, 'a work conversation cannot hold this title (iban)'), 'Il titolo di una conversazione di lavoro non può contenere IBAN.');
+  assert.equal(api(400, 'the title must be one line'), 'Il titolo dev’essere su una riga.');
+  assert.equal(api(409, 'the conversation is archived: restore it to write'), 'La conversazione è archiviata: ripristinala per scrivere.');
+  assert.equal(api(400, 'the conversation of Telegram cannot be archived'), 'La conversazione di Telegram non si può archiviare: il bot scrive lì.');
   assert.equal(api(403, 'cross-origin request'), 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.');
   assert.equal(api(500, 'internal error'), 'Errore del nucleo: riprova fra poco.');
   assert.equal(api(400, 'unknown field(s): x'), 'Richiesta non valida.');

@@ -19,6 +19,12 @@ export interface Conversation {
   workspace: string | null;
   /** The cloud model the user chose for delegated steps (router alias), work conversations only; null lets the router choose. */
   model: string | null;
+  /** One line, from the first user message or the user; null until the first message. Carries the clearance. */
+  title: string | null;
+  /** When the user archived it; null while it is in the list. */
+  archivedAt: Date | null;
+  /** The conversation of the Telegram channel: it cannot be archived. */
+  telegram: boolean;
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
@@ -46,8 +52,10 @@ export const CHAT_AGENT = 'arianna';
 /** Longest message the user can send; longer text belongs in a document. */
 export const MAX_MESSAGE_LENGTH = 16_000;
 const TITLE_LENGTH = 80;
+/** Longest title the user can give a conversation. */
+export const MAX_CONVERSATION_TITLE = 200;
 
-export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner';
+export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner' | 'archived';
 
 export class ChatError extends Error {
   override name = 'ChatError';
@@ -60,6 +68,8 @@ export class ChatError extends Error {
 }
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model,
+  c.title, c.archived_at AS "archivedAt",
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram,
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
 
@@ -135,15 +145,70 @@ export async function loadConversation(sql: Queryable, id: string): Promise<Conv
   return row;
 }
 
-/** Most recently active first. */
-export async function listConversations(sql: Queryable, limit = 50): Promise<Conversation[]> {
+/** Most recently active first: the list, or with `archived` the archived conversations. */
+export async function listConversations(sql: Queryable, limit = 50, options: { archived?: boolean } = {}): Promise<Conversation[]> {
   const rows = await sql.unsafe<Conversation[]>(
-    `SELECT * FROM (SELECT ${CONVERSATION_COLUMNS} FROM conversations c) listed
+    `SELECT * FROM (SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE (c.archived_at IS NOT NULL) = $2) listed
      ORDER BY coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
-    [limit],
+    [limit, options.archived === true],
   );
   return [...rows];
+}
+
+/**
+ * Renames a conversation (D-057). The title is one line the user typed; in a
+ * work conversation the scanner refuses it as it would refuse a message. The
+ * event says that it changed, never what it says.
+ */
+export async function renameConversation(sql: Sql, id: string, title: unknown): Promise<Conversation> {
+  if (typeof title !== 'string') throw new ChatError('invalid', 'the title must be a string');
+  const line = title.trim();
+  if (line === '') throw new ChatError('invalid', 'the title is empty');
+  if (/[\r\n]/.test(line)) throw new ChatError('invalid', 'the title must be one line');
+  if (Array.from(line).length > MAX_CONVERSATION_TITLE) throw new ChatError('invalid', `the title is longer than ${String(MAX_CONVERSATION_TITLE)} characters`);
+  if (line.includes(String.fromCharCode(0))) throw new ChatError('invalid', 'the title contains a NUL character');
+  return sql.begin(async (tx) => {
+    const conversation = await lockConversation(tx, id);
+    if (conversation.mode === 'work') {
+      const kinds = [...new Set(scanText(line).map((finding) => finding.kind))];
+      if (kinds.length > 0) throw new ChatError('scanner', `a work conversation cannot hold this title (${kinds.join(', ')})`);
+    }
+    await tx`UPDATE conversations SET title = ${line} WHERE id = ${id}`;
+    await appendEvent(tx, { kind: 'conversation.title', label: 'L0', payload: { conversationId: id } });
+    return reload(tx, id);
+  });
+}
+
+/** The conversation, its row locked until the transaction ends. */
+async function lockConversation(tx: Queryable, id: string): Promise<Conversation> {
+  if (isUuid(id)) await tx`SELECT 1 FROM conversations WHERE id = ${id} FOR UPDATE`;
+  const conversation = await loadConversation(tx, id);
+  if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
+  return conversation;
+}
+
+async function reload(sql: Queryable, id: string): Promise<Conversation> {
+  const conversation = await loadConversation(sql, id);
+  if (conversation === undefined) throw new Error('the conversation is missing');
+  return conversation;
+}
+
+/**
+ * Archives a conversation or brings it back to the list (D-057). Nothing is
+ * deleted: the messages stay, the conversation leaves the list and takes no
+ * new message until it is restored. The Telegram conversation stays.
+ */
+export async function archiveConversation(sql: Sql, id: string, archived: boolean): Promise<Conversation> {
+  return sql.begin(async (tx) => {
+    const conversation = await lockConversation(tx, id);
+    if (archived && conversation.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be archived');
+    if ((conversation.archivedAt !== null) !== archived) {
+      await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
+      await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
+    }
+    return reload(tx, id);
+  });
 }
 
 export interface MessagePage {
@@ -216,10 +281,11 @@ export async function writeUserMessage(
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
-    ? (await tx<{ mode: ConversationMode; clearance: Label }[]>`
-        SELECT mode, clearance FROM conversations WHERE id = ${conversationId} FOR UPDATE`)[0]
+    ? (await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean }[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived FROM conversations WHERE id = ${conversationId} FOR UPDATE`)[0]
     : undefined;
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
+  if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');
 
   if (conversation.mode === 'work') {
     const kinds = [...new Set(scanText(body).map((finding) => finding.kind))];
@@ -245,6 +311,10 @@ export async function writeUserMessage(
     VALUES (${conversationId}, 'user', ${options.channel ?? 'web'}, ${label}::privacy_label, ${body}, ${task.id})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+  // The first message names the conversation, as in the chat apps (D-057).
+  if (conversation.title === null) {
+    await tx`UPDATE conversations SET title = ${task.title.replace(/\s+/g, ' ')} WHERE id = ${conversationId}`;
+  }
   await appendEvent(tx, {
     kind: 'message.created',
     taskId: task.id,

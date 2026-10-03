@@ -7,7 +7,7 @@ import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT } from '../li
 import type { Activity, CloudModel, Conversation, Message, Task } from '../lib/types.ts';
 
 const props = defineProps<{ chat: ChatState; conversation: Conversation; tasks: Record<string, Task>; sending: boolean; models: CloudModel[] }>();
-const emit = defineEmits<{ send: [body: string]; chooseModel: [model: string | null] }>();
+const emit = defineEmits<{ send: [body: string]; chooseModel: [model: string | null]; restore: [] }>();
 
 /** The selector of the cloud model for delegated steps: work conversations only (D-055). */
 const AUTO = '';
@@ -89,6 +89,7 @@ const statusClass: Record<Task['status'], string> = {
 <template>
   <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
     <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-stone-200 px-4 py-3 dark:border-stone-800">
+      <h1 class="w-full truncate text-sm font-semibold text-stone-800 dark:text-stone-100">{{ conversation.title ?? 'Nuova conversazione' }}</h1>
       <span
         class="rounded-full px-2.5 py-0.5 text-xs font-semibold"
         :class="
@@ -190,7 +191,20 @@ const statusClass: Record<Task['status'], string> = {
       </div>
     </div>
 
-    <form class="border-t border-stone-200 p-3 dark:border-stone-800" @submit.prevent="submit">
+    <div
+      v-if="conversation.archivedAt !== null"
+      class="flex items-center justify-center gap-3 border-t border-stone-200 p-3 text-sm text-stone-600 dark:border-stone-800 dark:text-stone-300"
+    >
+      <span>Conversazione archiviata: ripristinala per scrivere.</span>
+      <button
+        type="button"
+        class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500"
+        @click="emit('restore')"
+      >
+        Ripristina
+      </button>
+    </div>
+    <form v-else class="border-t border-stone-200 p-3 dark:border-stone-800" @submit.prevent="submit">
       <div class="mx-auto flex max-w-3xl items-end gap-2">
         <label for="composer" class="sr-only">Messaggio</label>
         <textarea

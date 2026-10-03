@@ -9,7 +9,7 @@ import { ACTION_TEXT, DECISION_TEXT, REMOTE_CHANNEL_TEXT } from './lib/labels.ts
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending } = store;
+const { conversations, archived, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending } = store;
 
 function timeOf(ts: string): string {
   return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -55,8 +55,11 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
       <ConversationList
         class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-4"
         :conversations="conversations"
+        :archived="archived"
         :selected="chat?.conversationId ?? null"
+        :rename="store.rename"
         @open="openConversation"
+        @archive="store.archive"
       />
     </aside>
 
@@ -91,6 +94,7 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
         :models="models"
         @send="store.send"
         @choose-model="store.chooseModel"
+        @restore="store.archive(current.id, false)"
       />
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center text-stone-500 dark:text-stone-400">
         <div class="max-w-sm">

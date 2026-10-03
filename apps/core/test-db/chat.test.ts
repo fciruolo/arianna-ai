@@ -2,16 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  archiveConversation,
   ChatError,
   createConversation,
   listConversations,
   listMessages,
   loadConversation,
   postUserMessage,
+  renameConversation,
+  taskTitle,
 } from '../src/conversations.ts';
+import { loadMigrations } from '../src/db/migrate.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { openReply } from '../src/reply.ts';
 import { createTask, loadTask } from '../src/tasks.ts';
+import { ensureTelegramState } from '../src/telegram/channel.ts';
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -53,6 +58,116 @@ test('the database keeps mode and clearance together and frozen', async () => {
   // The role of the core cannot delete; the owner, who can, meets the trigger.
   await assert.rejects(sql`DELETE FROM conversations WHERE id = ${conversation.id}`, /permission denied/);
   await assert.rejects(owner`DELETE FROM conversations WHERE id = ${conversation.id}`, /append-only/);
+});
+
+test('the first message names the conversation; the user can rename it, on one line', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  assert.equal(conversation.title, null);
+  await postUserMessage(db().sql, conversation.id, '  Prepara la bozza\r della mail finta\nseconda riga');
+  assert.equal((await loadConversation(db().sql, conversation.id))?.title, 'Prepara la bozza della mail finta');
+  await postUserMessage(db().sql, conversation.id, 'Un altro messaggio');
+  assert.equal((await loadConversation(db().sql, conversation.id))?.title, 'Prepara la bozza della mail finta');
+
+  const renamed = await renameConversation(db().sql, conversation.id, '  Mail al fornitore finto ');
+  assert.equal(renamed.title, 'Mail al fornitore finto');
+  for (const title of ['', '   ', 'due\nrighe', 'x'.repeat(201), `a${String.fromCharCode(0)}b`, 42, null]) {
+    await assert.rejects(renameConversation(db().sql, conversation.id, title), ChatError, String(title));
+  }
+  assert.equal((await renameConversation(db().sql, conversation.id, 'è'.repeat(200))).title, 'è'.repeat(200));
+  await renameConversation(db().sql, conversation.id, 'Mail al fornitore finto');
+  await assert.rejects(renameConversation(db().sql, '00000000-0000-0000-0000-000000000000', 'Titolo'), /does not exist/);
+  // The event says that it changed, never what it says.
+  const [event] = await db().sql<{ payload: Record<string, unknown> }[]>`
+    SELECT payload FROM events WHERE kind = 'conversation.title' ORDER BY id DESC LIMIT 1`;
+  assert.deepEqual(event?.payload, { conversationId: conversation.id });
+  // The database holds the same rule.
+  await assert.rejects(db().sql`UPDATE conversations SET title = ${'a\nb'} WHERE id = ${conversation.id}`, /check constraint/);
+  await assert.rejects(db().sql`UPDATE conversations SET title = '' WHERE id = ${conversation.id}`, /check constraint/);
+  await assert.rejects(db().sql`UPDATE conversations SET title = NULL WHERE id = ${conversation.id}`, /changed, never removed/);
+});
+
+test('the database lets title, model and archive change, and nothing else', async () => {
+  const { sql } = db();
+  const work = await createConversation(sql, { mode: 'work' });
+  await sql`UPDATE conversations SET title = 'Diretto', model = 'opus', archived_at = now() WHERE id = ${work.id}`;
+  await sql`UPDATE conversations SET archived_at = NULL, model = NULL WHERE id = ${work.id}`;
+  const updated = await loadConversation(sql, work.id);
+  assert.deepEqual([updated?.title, updated?.model, updated?.archivedAt], ['Diretto', null, null]);
+  await assert.rejects(sql`UPDATE conversations SET workspace = 'repos/x' WHERE id = ${work.id}`, /only the effective label, title, model and archive/);
+  await assert.rejects(sql`UPDATE conversations SET created_at = now() - interval '1 day' WHERE id = ${work.id}`, /only the effective label/);
+});
+
+test('migration 0011 names the conversations written before it as taskTitle would', async () => {
+  const { sql, owner } = db();
+  // Messages written straight into the table, as before the migration: no title yet.
+  const cases: [string, string | null][] = [
+    ['\n  Primo   messaggio\tfinto  \nseconda riga', 'Primo messaggio finto'],
+    [' \nciao', 'ciao'],
+    [' Ciao finto ', 'Ciao finto'],
+    [`${'parola '.repeat(20)}fine`, taskTitle(`${'parola '.repeat(20)}fine`).replace(/\s+/g, ' ')],
+    [`${'x'.repeat(100)}\nresto`, `${'x'.repeat(79)}…`],
+  ];
+  const ids: string[] = [];
+  for (const [body] of cases) {
+    const conversation = await createConversation(sql, { mode: 'private' });
+    await sql`INSERT INTO messages (conversation_id, role, label, body) VALUES (${conversation.id}, 'user', 'L2', ${body})`;
+    await sql`INSERT INTO messages (conversation_id, role, label, body) VALUES (${conversation.id}, 'user', 'L2', 'Secondo messaggio')`;
+    ids.push(conversation.id);
+  }
+  const empty = await createConversation(sql, { mode: 'private' });
+  const migration = loadMigrations().find((candidate) => candidate.version === '0011');
+  const backfill = migration?.sql.split('-- Conversations written before this migration')[1];
+  assert.ok(backfill !== undefined);
+  await owner.unsafe(`--${backfill}`);
+  for (const [index, [body, expected]] of cases.entries()) {
+    assert.equal((await loadConversation(sql, ids[index] ?? ''))?.title, expected, JSON.stringify(body));
+    assert.equal(expected, taskTitle(body).replace(/\s+/g, ' '), 'the rule of a new conversation');
+  }
+  assert.equal((await loadConversation(sql, empty.id))?.title, null);
+});
+
+test('a work conversation refuses a title the scanner flags; a private one keeps it', async () => {
+  const work = await createConversation(db().sql, { mode: 'work' });
+  await assert.rejects(renameConversation(db().sql, work.id, `Bonifico ${FAKE_IBAN}`), /cannot hold this title \(iban\)/);
+  const own = await createConversation(db().sql, { mode: 'private' });
+  assert.equal((await renameConversation(db().sql, own.id, `Bonifico ${FAKE_IBAN}`)).title, `Bonifico ${FAKE_IBAN}`);
+});
+
+test('an archived conversation leaves the list, keeps its messages and takes no new one until restored', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Messaggio finto da archiviare');
+  const archived = await archiveConversation(db().sql, conversation.id, true);
+  assert.ok(archived.archivedAt instanceof Date);
+  assert.ok(!(await listConversations(db().sql)).some((item) => item.id === conversation.id));
+  assert.ok((await listConversations(db().sql, 50, { archived: true })).some((item) => item.id === conversation.id));
+  assert.equal((await listMessages(db().sql, conversation.id, { limit: 10 })).length, 1);
+
+  await assert.rejects(postUserMessage(db().sql, conversation.id, 'Ancora?'), (error: unknown) => error instanceof ChatError && error.code === 'archived');
+  // The database refuses it too; the reply of a task already running is still written.
+  await assert.rejects(
+    db().sql`INSERT INTO messages (conversation_id, role, label, body) VALUES (${conversation.id}, 'user', 'L2', 'diretto')`,
+    /is archived/,
+  );
+  await db().sql`INSERT INTO messages (conversation_id, role, label, body, task_id) VALUES (${conversation.id}, 'assistant', 'L2', 'risposta', ${task.id})`;
+
+  // Archiving twice records one event; restoring brings it back.
+  await archiveConversation(db().sql, conversation.id, true);
+  const restored = await archiveConversation(db().sql, conversation.id, false);
+  assert.equal(restored.archivedAt, null);
+  assert.ok((await listConversations(db().sql)).some((item) => item.id === conversation.id));
+  await postUserMessage(db().sql, conversation.id, 'Di nuovo nella lista');
+  const events = await db().sql<{ payload: Record<string, unknown> }[]>`
+    SELECT payload FROM events WHERE kind = 'conversation.archived' AND payload ->> 'conversationId' = ${conversation.id} ORDER BY id`;
+  assert.deepEqual(events.map((event) => event.payload.archived), [true, false]);
+});
+
+test('the conversation of Telegram cannot be archived', async () => {
+  const state = await ensureTelegramState(db().sql);
+  const conversation = await loadConversation(db().sql, state.conversationId);
+  assert.equal(conversation?.telegram, true);
+  await assert.rejects(archiveConversation(db().sql, state.conversationId, true), /Telegram cannot be archived/);
+  await assert.rejects(db().sql`UPDATE conversations SET archived_at = now() WHERE id = ${state.conversationId}`, /Telegram cannot be archived/);
+  assert.equal((await createConversation(db().sql, { mode: 'work' })).telegram, false);
 });
 
 test('a user message starts a task of Arianna in its conversation, with the conversation clearance', async () => {

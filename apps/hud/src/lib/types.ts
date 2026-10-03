@@ -10,6 +10,12 @@ export interface Conversation {
   workspace: string | null;
   /** The cloud model chosen for delegated steps (work only); null lets the router choose. */
   model: string | null;
+  /** From the first message or the user; null until the first message (D-057). */
+  title: string | null;
+  /** When it was archived; null while it is in the list. */
+  archivedAt: string | null;
+  /** The conversation of the Telegram channel: it cannot be archived. */
+  telegram: boolean;
   createdAt: string;
   lastMessageAt: string | null;
 }

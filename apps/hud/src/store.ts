@@ -14,6 +14,10 @@ import type { Approval, CloudModel, Conversation, ConversationMode, Task } from 
  */
 export function createChatStore() {
   const conversations = ref<Conversation[]>([]);
+  /** Archived conversations, shown in their own section (D-057). */
+  const archived = ref<Conversation[]>([]);
+  /** The open conversation when it is in neither list (an archived one beyond the first page). */
+  const detached = ref<Conversation | undefined>(undefined);
   const chat = shallowRef<ChatState | null>(null);
   const tasks = ref<Record<string, Task>>({});
   const approvals = ref<Approval[]>([]);
@@ -29,7 +33,11 @@ export function createChatStore() {
   const sending = ref(false);
   let connection: LiveConnection | undefined;
 
-  const current = computed(() => conversations.value.find((conversation) => conversation.id === chat.value?.conversationId));
+  const current = computed(() =>
+    [...conversations.value, ...archived.value, ...(detached.value === undefined ? [] : [detached.value])].find(
+      (conversation) => conversation.id === chat.value?.conversationId,
+    ),
+  );
 
   function fail(cause: unknown): void {
     error.value = errorText(cause);
@@ -37,6 +45,53 @@ export function createChatStore() {
 
   async function refreshConversations(): Promise<void> {
     conversations.value = await api.listConversations();
+    await keepCurrent();
+  }
+
+  /** Both lists: after an archive or a restore, and at the start. */
+  async function refreshAllConversations(): Promise<void> {
+    const [listed, archivedList] = await Promise.all([api.listConversations(), api.listConversations(true)]);
+    conversations.value = listed;
+    archived.value = archivedList;
+    await keepCurrent();
+  }
+
+  /** The open conversation stays shown even when no list holds it. */
+  async function keepCurrent(): Promise<void> {
+    const id = chat.value?.conversationId;
+    const listed = (conversation: Conversation): boolean => conversation.id === id;
+    if (id === undefined || conversations.value.some(listed) || archived.value.some(listed)) {
+      detached.value = undefined;
+      return;
+    }
+    const conversation = await api.loadConversation(id);
+    if (chat.value?.conversationId === id) detached.value = conversation;
+  }
+
+  /** Renames a conversation; false if the core refused the title. */
+  async function rename(id: string, title: string): Promise<boolean> {
+    error.value = null;
+    try {
+      const updated = await api.renameConversation(id, title);
+      conversations.value = conversations.value.map((item) => (item.id === updated.id ? updated : item));
+      archived.value = archived.value.map((item) => (item.id === updated.id ? updated : item));
+      if (detached.value?.id === updated.id) detached.value = updated;
+      return true;
+    } catch (cause) {
+      fail(cause);
+      return false;
+    }
+  }
+
+  /** Archives a conversation or brings it back to the list; the open one stays open. */
+  async function archive(id: string, value: boolean): Promise<void> {
+    error.value = null;
+    try {
+      await api.archiveConversation(id, value);
+      await refreshAllConversations();
+    } catch (cause) {
+      fail(cause);
+    }
   }
 
   async function refreshModels(): Promise<void> {
@@ -85,6 +140,7 @@ export function createChatStore() {
   async function open(id: string): Promise<void> {
     error.value = null;
     chat.value = emptyChat(id);
+    detached.value = undefined;
     tasks.value = {};
     try {
       await refreshMessages();
@@ -134,7 +190,7 @@ export function createChatStore() {
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([refreshConversations(), refreshApprovals(), refreshMessages(), refreshModels()]);
+    await Promise.all([refreshAllConversations(), refreshApprovals(), refreshMessages(), refreshModels()]);
   }
 
   function onLive(message: ServerMessage): void {
@@ -158,6 +214,10 @@ export function createChatStore() {
       case 'conversation.created':
       case 'conversation.model':
         work.push(refreshConversations());
+        break;
+      case 'conversation.title':
+      case 'conversation.archived':
+        work.push(refreshAllConversations());
         break;
       case 'message.created': {
         work.push(refreshConversations());
@@ -227,7 +287,7 @@ export function createChatStore() {
     connection?.close();
   }
 
-  return { conversations, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending, open, create, send, decide, chooseModel, dismissDecision, start, stop };
+  return { conversations, archived, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending, open, create, send, decide, chooseModel, rename, archive, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

@@ -70,6 +70,12 @@ const ERRORS: Record<string, string> = {
   'body too large': 'Il messaggio è troppo grande.',
   'not found': 'Non trovato: forse è stato cancellato o l’indirizzo è sbagliato.',
   'the task cannot do this now': 'Il task non può farlo adesso.',
+  'the title is empty': 'Il titolo è vuoto.',
+  'the title must be one line': 'Il titolo dev’essere su una riga.',
+  'the title contains a NUL character': 'Il titolo contiene un carattere non valido.',
+  'the title is longer than 200 characters': 'Il titolo supera 200 caratteri.',
+  'the conversation is archived: restore it to write': 'La conversazione è archiviata: ripristinala per scrivere.',
+  'the conversation of Telegram cannot be archived': 'La conversazione di Telegram non si può archiviare: il bot scrive lì.',
 };
 
 /** An error of the API (or of the network) as the user reads it. */
@@ -84,6 +90,11 @@ export function errorText(cause: unknown): string {
   if (scanner?.[1] !== undefined) {
     const kinds = scanner[1].split(', ').map((kind) => SCANNER_KIND_TEXT[kind] ?? 'dati riservati');
     return `Una conversazione di lavoro non può contenere questo messaggio (${[...new Set(kinds)].join(', ')}): aprine una privata.`;
+  }
+  const title = /^a work conversation cannot hold this title \(([^)]*)\)/.exec(cause.message);
+  if (title?.[1] !== undefined) {
+    const kinds = title[1].split(', ').map((kind) => SCANNER_KIND_TEXT[kind] ?? 'dati riservati');
+    return `Il titolo di una conversazione di lavoro non può contenere ${[...new Set(kinds)].join(', ')}.`;
   }
   const length = /^the message is longer than (\d+) characters$/.exec(cause.message);
   if (length?.[1] !== undefined) return `Il messaggio supera ${length[1]} caratteri.`;

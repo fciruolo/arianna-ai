@@ -159,6 +159,28 @@ test('a work conversation chooses a cloud model among those of the installation;
   assert.equal((await call('POST', `/api/conversations/${priv}/model`, { body: { model: 'sonnet' } })).status, 400);
 });
 
+test('a conversation is renamed, archived and restored through the API', async () => {
+  const id = await newConversation('private');
+  const renamed = await call('POST', `/api/conversations/${id}/title`, { body: { title: 'Conti finti' } });
+  assert.equal(renamed.status, 200);
+  assert.equal(field<{ title: string | null }>(renamed, 'conversation').title, 'Conti finti');
+  assert.equal((await call('POST', `/api/conversations/${id}/title`, { body: { title: '' } })).status, 400);
+  assert.equal((await call('POST', `/api/conversations/${id}/title`, { body: { title: 'x', extra: 1 } })).status, 400);
+
+  const archived = await call('POST', `/api/conversations/${id}/archive`, { body: { archived: true } });
+  assert.equal(archived.status, 200);
+  const ids = (reply: Reply): string[] => field<{ id: string }[]>(reply, 'conversations').map((conversation) => conversation.id);
+  assert.ok(!ids(await call('GET', '/api/conversations')).includes(id));
+  assert.ok(ids(await call('GET', '/api/conversations?archived=1')).includes(id));
+  assert.equal((await call('GET', '/api/conversations?archived=yes')).status, 400);
+  assert.equal((await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Ancora?' } })).status, 409);
+  assert.equal((await call('POST', `/api/conversations/${id}/archive`, { body: { archived: 'true' } })).status, 400);
+
+  await call('POST', `/api/conversations/${id}/archive`, { body: { archived: false } });
+  assert.ok(ids(await call('GET', '/api/conversations')).includes(id));
+  assert.equal((await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Di nuovo qui' } })).status, 201);
+});
+
 test('bad input gets a clear status and no internal detail', async () => {
   const id = await newConversation('work');
   const cases: [string, string, Parameters<typeof call>[2], number][] = [

@@ -26,8 +26,23 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   return data as T;
 }
 
-export async function listConversations(): Promise<Conversation[]> {
-  return (await call<{ conversations: Conversation[] }>('GET', '/api/conversations')).conversations;
+/** The list, or the archived conversations (up to 200, the most the core gives in one page). */
+export async function listConversations(archived = false): Promise<Conversation[]> {
+  return (await call<{ conversations: Conversation[] }>('GET', archived ? '/api/conversations?archived=1&limit=200' : '/api/conversations')).conversations;
+}
+
+export async function loadConversation(conversationId: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}`)).conversation;
+}
+
+export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/title`, { title })).conversation;
+}
+
+/** Archives a conversation, or brings it back to the list: nothing is deleted. */
+export async function archiveConversation(conversationId: string, archived: boolean): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/archive`, { archived }))
+    .conversation;
 }
 
 export async function createConversation(mode: ConversationMode, workspace?: string): Promise<Conversation> {
