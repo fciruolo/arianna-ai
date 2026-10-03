@@ -115,7 +115,7 @@ Una alla volta; ognuna si propone con il dettaglio, l'utente sceglie, poi divent
 | # | Proposta | Fase | Stato |
 | --- | --- | --- | --- |
 | P1 | Restyling della chat web: struttura e cura di OpenDots (shell a tre colonne, bolle, intestazione con stato, composer, responsive, icone `lucide-vue-next`) **fusa** con una HUD stile Jarvis, in un'unica identità e non come due temi (scelta dell'utente, 2026-10-04) | 1A | Anteprima `docs/mockups/arianna-hud.html` **approvata** dall'utente (2026-10-04: "mi piace davvero tanto"); da costruire nella chat vera |
-| P2 | **Pixel agent al posto delle mascotte** (l'utente non vuole i peluche): personaggi pixel-art con stati (pensa, lavora, aspetta te, in pausa), gli stessi dell'ufficio pixel di fase 3; l'utente vuole poter usare anche personaggi di film, telefilm e cartoni: pacchetti di personaggi caricati da `data/` (fuori da git), mentre il repository contiene solo personaggi originali | 1A | Scelta di massima fatta (2026-10-04), dettagli da proporre |
+| P2 | **Pixel agent al posto delle mascotte** (l'utente non vuole i peluche): personaggi pixel-art con stati (pensa, lavora, aspetta te, in pausa), gli stessi dell'ufficio pixel di fase 3; l'utente vuole poter usare anche personaggi di film, telefilm e cartoni: pacchetti di personaggi caricati da `data/` (fuori da git), mentre il repository contiene solo personaggi originali | 1A | Accettata (D-060): formato di pixel-agents, pacchetti copiati a mano in `data/characters` |
 | P3 | Schede in chat per passi dell'orchestratore, deleghe al Coder e approvazioni, nello stile delle loro schede strumento | 1A | Da proporre |
 | P4 | Schermata di chiamata (guscio grafico ora, voce locale in fase 4) con il contratto `begin/activate/compute/end` e la ricevuta in chat | 4 (guscio prima) | Da proporre |
 | P5 | Pausa globale e revoca dei permessi che interrompono i run in corso | 1A/1B | Da proporre |
@@ -123,3 +123,26 @@ Una alla volta; ognuna si propone con il dettaglio, l'utente sceglie, poi divent
 | P7 | Lettore di pagine pubbliche isolato (Playwright senza JS, anti-SSRF) per il materiale L0 | 2/5 | Da proporre |
 | P8 | Container per esecutore e agente web, sul modello del supervisor OpenBot | dopo 1.6 | Da proporre |
 | P9 | Schemi di Telegram ripresi da Slack: allowlist doppia, serie per thread, errori generici, avviso di pausa | 1B | Da proporre |
+
+## P2 in dettaglio: pacchetti di personaggi (accettata, 2026-10-04, D-060)
+
+**Formato degli sprite di pixel-agents** (letto dal codice, MIT, copia locale in sola lettura con D-059): un personaggio è un PNG di **112×96 pixel**, cioè fotogrammi di **16×32** in 7 colonne e 3 righe (`core/src/assets/constants.ts`). Le righe sono le direzioni **giù, su, destra**; la sinistra si ottiene specchiando la destra. Le colonne: **0–2 camminata** (sequenza 0-1-2-1), **3–4 scrittura**, **5–6 lettura** (`webview-ui/src/office/sprites/spriteData.ts:133-151`). I fumetti "permesso" e "in attesa" li disegna il motore, non il personaggio (`office/types.ts:204`). pixel-agents carica i file `char_N.png` anche da una cartella esterna (Impostazioni → Add Asset Directory). I 6 personaggi inclusi derivano da JIK-A-4 Metro City, la cui licenza non è chiara (`OPEN-QUESTIONS.md`): non li usiamo come base.
+
+**Proposta per Arianna:**
+
+1. **Un personaggio = un foglio nel formato di pixel-agents**, identico byte per byte. Così lo stesso file funziona nella chat, nel pannello degli agenti e nell'ufficio della fase 3 (basta indicare a pixel-agents la stessa cartella).
+2. **Stati di Arianna ricavati da quei fotogrammi**, senza chiedere disegni in più:
+
+   | Stato | Fotogrammi | Aggiunta |
+   | --- | --- | --- |
+   | Inattivo | giù, colonna 1 (in piedi, di fronte) | leggera oscillazione |
+   | Pensa | giù, colonne 5–6 (lettura) | fumetto "…" |
+   | Lavora | giù, colonne 3–4 (scrittura) | fumetto con la tastiera |
+   | Aspetta te | giù, colonna 1 | fumetto "!" ambra, come il "permesso" di pixel-agents |
+   | In pausa | giù, colonna 1 | grigio e "zz" |
+
+   Facoltativo: una quarta riga (112×128) con fotogrammi dedicati a pensa, aspetta, pausa; se c'è la usiamo, pixel-agents la ignora.
+3. **Pacchetto = cartella in `data/characters/<pacchetto>/`**, fuori da git: i fogli PNG più un `pack.json` con nome del pacchetto, fonte (testo libero, per ricordarsi da dove viene) e per ogni personaggio `id`, nome mostrato e file. Il core lo serve in sola lettura alla chat web. **Scelta dell'utente: per ora il pacchetto si copia a mano nella cartella** e Arianna lo trova da sola; il caricamento dalla chat web arriva, se serve, con la pagina Impostazioni (3.5) dopo l'autenticazione. Alla lettura il core controlla dimensioni esatte (112×96 o 112×128), solo PNG e JSON, peso massimo.
+4. **Quale personaggio ha ogni agente** è un'impostazione dell'utente (in `arianna.toml` finché non c'è la pagina Impostazioni 3.5), non una proprietà della scheda agente.
+5. **Personaggi originali nel repository:** Arianna (col filo rosso) e Coder (robot con visiera) ridisegnati nel formato 16×32 con tutte e 21 le pose, licenza del progetto. Sono anche il ripiego quando un pacchetto manca o non è valido.
+6. **Diritti:** i personaggi di film, telefilm e cartoni l'utente li mette in `data/characters` per uso personale; non entrano mai in git né nei backup condivisi, e Claude non li disegna né li scarica.
