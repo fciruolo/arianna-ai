@@ -69,6 +69,11 @@ export type StepOutcome = (
   | { kind: 'continue' }
   /** Finished: the task goes to "Da verificare" with the evidence (references only). */
   | { kind: 'done'; evidence: Json[] }
+  /**
+   * The task was an answer in the chat and the answer is stored: the task is
+   * done, with the message as evidence. The user has already read it (D-053).
+   */
+  | { kind: 'answered'; messageId: string }
   /** An irreversible or external action: the task waits for the user's approval. */
   | { kind: 'approval'; action: string; detail: { [key: string]: Json } }
   /**
@@ -96,6 +101,7 @@ export interface EngineOptions {
 export type StepResult =
   | 'continued'
   | 'to-verify'
+  | 'answered'
   | 'waiting-approval'
   | 'waiting-user'
   | 'limit'
@@ -271,6 +277,17 @@ export async function processStepJob(
       case 'continue':
         await mustSchedule(tx, task.id);
         return 'continued';
+      case 'answered': {
+        const [message] = await tx<{ id: string }[]>`
+          SELECT id::text FROM messages
+          WHERE id = ${outcome.messageId}::bigint AND task_id = ${task.id} AND role = 'assistant'`;
+        if (message === undefined) {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'finished without evidence', cause: 'executor' });
+          return 'waiting-user';
+        }
+        await moveTask(tx, task.id, 'done', { evidence: [{ kind: 'message', ref: message.id }], cause: 'executor' });
+        return 'answered';
+      }
       case 'done':
         if (outcome.evidence.length === 0) {
           await moveTask(tx, task.id, 'waiting_user', { reason: 'finished without evidence', cause: 'executor' });

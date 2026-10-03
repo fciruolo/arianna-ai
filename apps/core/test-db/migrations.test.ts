@@ -24,6 +24,7 @@ test('migrations apply from zero and create every table', async () => {
       'router_decisions',
       'runs',
       'schema_migrations',
+      'task_turns',
       'tasks',
       'telegram_state',
     ],

@@ -8,8 +8,10 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 const MOVES: Record<TaskStatus, readonly TaskStatus[]> = {
   inbox: ['ready', 'waiting_user', 'failed'],
   ready: ['running', 'waiting_user', 'failed'],
-  // `running` → `running` is a further step of the same task.
-  running: ['running', 'waiting_user', 'to_verify', 'failed'],
+  // `running` → `running` is a further step of the same task. `running` →
+  // `done` only for an answer in the chat, whose evidence is the stored
+  // message the user has already read (engine outcome `answered`, D-053).
+  running: ['running', 'waiting_user', 'to_verify', 'done', 'failed'],
   waiting_user: ['ready', 'failed', 'done'],
   to_verify: ['done', 'ready', 'failed'],
   done: [],

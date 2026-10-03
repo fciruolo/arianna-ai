@@ -25,3 +25,6 @@ __pycache__/
 .claude/settings.local.json
 .DS_Store
 *.log
+
+# Pages written by agents in the development knowledge base (kb.write, A1)
+kb/inbox/

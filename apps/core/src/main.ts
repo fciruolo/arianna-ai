@@ -4,28 +4,20 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
-import { loadConfig, watchConfig } from '@arianna/config';
+import { loadConfig, loadLabelRules, watchConfig } from '@arianna/config';
+import { createLocalModel } from '@arianna/executors';
 import { createVault } from '@arianna/vault';
 
-import { CHAT_AGENT } from './conversations.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
-import { createWorker, type StepExecutor } from './engine.ts';
+import { createWorker } from './engine.ts';
 import { startLiveFeed } from './live.ts';
+import { createKb } from './orchestrator/kb.ts';
+import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
-
-/**
- * Until the orchestrator exists (task 1.10), a chat task waits for the user
- * with the reason. The chat, the engine and the reply contract are final:
- * 1.10 replaces only this executor.
- */
-const orchestratorPending: StepExecutor = {
-  plan: () => ({ agent: CHAT_AGENT, executor: 'none', locality: 'local' }),
-  run: () => Promise.resolve({ kind: 'wait-user', reason: 'the orchestrator is not available yet (task 1.10)' }),
-};
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -59,9 +51,35 @@ if (status.pending.length + status.edited.length + status.missing.length > 0) {
   process.exit(1);
 }
 
+// Task 1.18: a model changed for a role applies without a restart: the
+// orchestrator reads settings.current() at each model call. Every other
+// section waits for a restart.
+const settings = watchConfig({
+  initial: config,
+  onChange: ({ applied, restart }) => {
+    if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
+    if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
+  },
+  onError: (error) => {
+    // A ConfigError names a key and a rule, never a value read elsewhere.
+    if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
+    else report(error);
+    console.error('arianna.toml: not reloaded, the previous configuration stays');
+  },
+});
+
+// Task 1.10: the orchestrator on the local model, with the development
+// knowledge base in kb/ (the real one, data/kb, comes after Phase 1A).
+const orchestrator = createOrchestrator({
+  sql,
+  agents,
+  kb: createKb({ home: config.home, rules: loadLabelRules() }),
+  model: () => createLocalModel({ endpoints: settings.current().local.endpoints }),
+});
+
 const worker = createWorker({
   sql,
-  executor: orchestratorPending,
+  executor: orchestrator,
   allowedActions: (task) => agents.get(task.assignee)?.card.approvals ?? [],
   // No card, no caps: the engine then runs no step and the task waits for the user.
   agentLimits: (task) => agents.get(task.assignee)?.card.limits ?? {},
@@ -93,23 +111,6 @@ if (config.telegram !== undefined) {
     console.error('Telegram off: see the error above');
   }
 }
-
-// Task 1.18: a model changed for a role applies without a restart. Whoever
-// calls a local model (the orchestrator, task 1.10) reads settings.current()
-// at each call; every other section waits for a restart.
-const settings = watchConfig({
-  initial: config,
-  onChange: ({ applied, restart }) => {
-    if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
-    if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
-  },
-  onError: (error) => {
-    // A ConfigError names a key and a rule, never a value read elsewhere.
-    if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
-    else report(error);
-    console.error('arianna.toml: not reloaded, the previous configuration stays');
-  },
-});
 
 const shown = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
 console.log(`Arianna core on http://${shown}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);

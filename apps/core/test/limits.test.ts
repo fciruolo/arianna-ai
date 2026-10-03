@@ -63,6 +63,8 @@ describe('task moves', () => {
       ['waiting_user', 'ready'],
       ['running', 'to_verify'],
       ['to_verify', 'done'],
+      // A chat answer (D-053).
+      ['running', 'done'],
       ['failed', 'ready'],
     ] as const) {
       assert.ok(canMove(from, to), `${from} -> ${to}`);
@@ -73,7 +75,6 @@ describe('task moves', () => {
     for (const [from, to] of [
       ['inbox', 'running'],
       ['ready', 'done'],
-      ['running', 'done'],
       ['done', 'ready'],
       ['to_verify', 'running'],
       // resumeTask must not act on a task in progress.

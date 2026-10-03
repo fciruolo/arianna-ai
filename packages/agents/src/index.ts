@@ -22,3 +22,19 @@ export {
   type ToolSpec,
   type TrifectaSide,
 } from './tools.ts';
+export {
+  answerText,
+  chatMessages,
+  offerable,
+  readAnswer,
+  RESPONSE_SCHEMA_NAME,
+  responseSchema,
+  systemPrompt,
+  TOOL_ARGS,
+  toolResult,
+  type Answer,
+  type ModelMessage,
+  type ReadAnswer,
+  type TurnMessage,
+} from './protocol.ts';
+export { validate, type JsonSchema } from './schema.ts';
