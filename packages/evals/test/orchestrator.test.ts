@@ -82,7 +82,7 @@ describe('orchestrator evaluator', () => {
   }
 
   it('asks for constrained decoding with one option per offered tool', async () => {
-    const { model, requests } = stub({ action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } });
+    const { model, requests } = stub({ thought: 'Search the contract.', action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } });
     const input: OrchestratorInput = {
       tools,
       messages: [
@@ -105,16 +105,29 @@ describe('orchestrator evaluator', () => {
   });
 
   it('marks arguments outside the schema, and tools not offered', () => {
-    assert.equal(summarize({ action: 'call', tool: 'kb.search', arguments: {} }, tools).schemaOk, false);
-    assert.equal(summarize({ action: 'call', tool: 'file.delete', arguments: { path: 'x' } }, tools).schemaOk, false);
+    assert.equal(summarize({ thought: 't', action: 'call', tool: 'kb.search', arguments: {} }, tools).schemaOk, false);
+    assert.equal(summarize({ thought: 't', action: 'call', tool: 'file.delete', arguments: { path: 'x' } }, tools).schemaOk, false);
     assert.deepEqual(summarize('nonsense', tools), { action: 'invalid', schemaOk: false });
   });
 
+  it('requires a thought in every option, and keeps it out of the report', () => {
+    const call = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } };
+    assert.deepEqual(summarize({ thought: 'Search first.', ...call }, tools), { ...call, schemaOk: true });
+    assert.equal(summarize(call, tools).schemaOk, false, 'no thought');
+    assert.equal(summarize({ thought: '', ...call }, tools).schemaOk, false, 'empty thought');
+    assert.equal(summarize({ thought: 'x'.repeat(1501), ...call }, tools).schemaOk, false, 'thought too long');
+    for (const schema of (responseSchema(tools) as { anyOf: { properties: object; required: string[] }[] }).anyOf) {
+      assert.equal(Object.keys(schema.properties)[0], 'thought');
+      assert.equal(schema.required[0], 'thought');
+    }
+  });
+
   it('counts plan steps and recognizes replies and refusals', () => {
-    assert.deepEqual(summarize({ action: 'plan', steps: ['a', 'b', 'c'] }, tools), { action: 'plan', steps: '3-5', schemaOk: true });
-    assert.deepEqual(summarize({ action: 'plan', steps: ['a', 'b'] }, tools), { action: 'plan', steps: '2', schemaOk: true });
-    assert.deepEqual(summarize({ action: 'reply', text: 'ok' }, tools), { action: 'reply', schemaOk: true });
-    assert.deepEqual(summarize({ action: 'refuse', reason: 'no tool' }, tools), { action: 'refuse', schemaOk: true });
+    const t = { thought: 't' };
+    assert.deepEqual(summarize({ ...t, action: 'plan', steps: ['a', 'b', 'c'] }, tools), { action: 'plan', steps: '3-5', schemaOk: true });
+    assert.deepEqual(summarize({ ...t, action: 'plan', steps: ['a', 'b'] }, tools), { action: 'plan', steps: '2', schemaOk: true });
+    assert.deepEqual(summarize({ ...t, action: 'reply', text: 'ok' }, tools), { action: 'reply', schemaOk: true });
+    assert.deepEqual(summarize({ ...t, action: 'refuse', reason: 'no tool' }, tools), { action: 'refuse', schemaOk: true });
   });
 });
 

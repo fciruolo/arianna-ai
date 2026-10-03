@@ -38,14 +38,14 @@ user = "arianna"
 # relative to ARIANNA_HOME. Without `models` the names come from [roles]: the
 # catalog id is the folder in data/models, the name oMLX serves. A server
 # with other names lists them, e.g. models = { "local-large" = "<name>" }.
-# Port 8000 may be taken by another container: 8001 is the suggestion. Do not
+# Port 8000 may be taken by another container: 7001 is the suggestion. Do not
 # also run oMLX as a Homebrew service: the watchdog would only adopt it,
 # without being able to restart it.
 #
 # [[local.endpoints]]
 # id = "omlx"
-# url = "http://127.0.0.1:8001/v1"
-# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "8001"]
+# url = "http://127.0.0.1:7001/v1"
+# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "7001"]
 
 # Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user
 # enabled ("claude", "codex"); their login stays manual. `allowlist` lists

@@ -258,7 +258,7 @@ models:
 `);
 
 const ROLES = '\n[roles]\norchestrator = "big-mlx"\nextractor = "small-mlx"\n';
-const OMLX = '\n[[local.endpoints]]\nid = "omlx"\nurl = "http://127.0.0.1:8001/v1"\n';
+const OMLX = '\n[[local.endpoints]]\nid = "omlx"\nurl = "http://127.0.0.1:7001/v1"\n';
 
 test('roles name catalog models suited to them, and endpoints without models take their names', () => {
   const config = parseConfig(`${VALID}${ROLES}${OMLX}`, HOME, CATALOG);

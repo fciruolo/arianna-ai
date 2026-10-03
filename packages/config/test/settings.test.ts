@@ -40,7 +40,7 @@ const FULL: Settings = {
   server: { host: '::1', port: 7500 },
   roles: { orchestrator: 'big-mlx', extractor: 'big-mlx' },
   endpoints: [
-    { id: 'omlx', url: 'http://127.0.0.1:8001/v1', command: ['omlx', 'serve', '--model-dir', 'data/models'] },
+    { id: 'omlx', url: 'http://127.0.0.1:7001/v1', command: ['omlx', 'serve', '--model-dir', 'data/models'] },
     { id: 'spare', url: 'http://[::1]:1234/v1', models: { 'local-large': 'Qwen "large"' } },
   ],
   cloud: { allowlist: ['repos/site', 'repos/odd "name"'], executors: ['claude', 'codex'] },

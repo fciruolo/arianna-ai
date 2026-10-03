@@ -1,6 +1,7 @@
 // Acceptance test of the orchestrator on the local model (task 1.4,
 // docs/EVALS.md): one model call per case, with schema-constrained decoding.
-// The model answers with one JSON object: call a tool, reply, plan, or refuse.
+// The model answers with one JSON object: call a tool, reply, plan, or refuse,
+// after a free `thought` (D-051).
 import type { ToolId } from '@arianna/agents';
 import type { ChatMessage, LocalModel } from '@arianna/executors';
 
@@ -83,19 +84,29 @@ function object(properties: Record<string, JsonSchema>, required: string[]): Jso
   return { type: 'object', properties, required, additionalProperties: false };
 }
 
+/**
+ * One option of the response schema, with `thought` as its first field: the
+ * server constrains decoding from the first token, so the model reasons only
+ * if the schema leaves room for it (D-051). The thought is never shown to the
+ * user and never reaches the report.
+ */
+function option(properties: Record<string, JsonSchema>, required: string[]): JsonSchema {
+  return object({ thought: text(1500), ...properties }, ['thought', ...required]);
+}
+
 /** The response schema: one option per offered tool, plus reply, plan and refuse. */
 export function responseSchema(tools: readonly ToolId[]): JsonSchema {
   const calls = tools.map((tool) => {
     const args = TOOL_ARGS[tool];
     if (args === undefined) throw new Error(`no argument schema for ${tool}`);
-    return object({ action: { const: 'call' }, tool: { const: tool }, arguments: args }, ['action', 'tool', 'arguments']);
+    return option({ action: { const: 'call' }, tool: { const: tool }, arguments: args }, ['action', 'tool', 'arguments']);
   });
   return {
     anyOf: [
       ...calls,
-      object({ action: { const: 'reply' }, text: text(2000) }, ['action', 'text']),
-      object({ action: { const: 'plan' }, steps: { type: 'array', items: text(200), minItems: 1, maxItems: 10 } }, ['action', 'steps']),
-      object({ action: { const: 'refuse' }, reason: text(500) }, ['action', 'reason']),
+      option({ action: { const: 'reply' }, text: text(2000) }, ['action', 'text']),
+      option({ action: { const: 'plan' }, steps: { type: 'array', items: text(200), minItems: 1, maxItems: 10 } }, ['action', 'steps']),
+      option({ action: { const: 'refuse' }, reason: text(500) }, ['action', 'reason']),
     ],
   };
 }
@@ -178,7 +189,8 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
       messages: toChat(input, agentPrompt),
       schema: { name: 'orchestrator_step', schema: responseSchema(input.tools) },
       temperature: 0,
-      maxTokens: 1024,
+      // Room for the thought before the answer: with 1024 the JSON could be cut short.
+      maxTokens: 4096,
       timeoutMs: 120_000,
     });
     return summarize(result.value, input.tools);

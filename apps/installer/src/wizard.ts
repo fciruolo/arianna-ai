@@ -45,7 +45,7 @@ const EXECUTOR_LABELS: Record<CloudExecutor, { name: string; login: string }> = 
 };
 
 /** Suggested port: 8000 may be taken by another container (docs/HANDOFF.md). */
-const OMLX_PORT = 8001;
+const OMLX_PORT = 7001;
 
 function gib(bytes: number): string {
   return `${(bytes / 2 ** 30).toFixed(1)} GiB`;

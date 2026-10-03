@@ -39,7 +39,7 @@ function entry(id: string): string {
 const BASE: Settings = {
   ...DEFAULT_SETTINGS,
   roles: { orchestrator: 'first-mlx' },
-  endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:8001/v1' }],
+  endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:7001/v1' }],
 };
 
 /** Replaced with a rename, as the wizard does. */
@@ -89,7 +89,7 @@ test('a new model for a role applies live; privacy sections wait for a restart; 
     // Where L2 requests go and what the watchdog runs wait for a restart.
     write({ ...BASE, roles: { orchestrator: 'second-mlx' }, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }] });
     assert.deepEqual(await next(seen), { applied: [], restart: ['local.endpoints'] });
-    assert.equal(watcher.current().local.endpoints[0]?.url, 'http://127.0.0.1:8001/v1');
+    assert.equal(watcher.current().local.endpoints[0]?.url, 'http://127.0.0.1:7001/v1');
     assert.equal(watcher.current().local.endpoints[0]?.command, undefined);
 
     write('[paths]\ndata = "/elsewhere"\n');

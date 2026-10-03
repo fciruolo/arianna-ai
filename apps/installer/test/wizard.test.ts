@@ -83,8 +83,8 @@ test('defaults everywhere: the verified model for the orchestrator, oMLX added, 
   assert.deepEqual(settings.endpoints, [
     {
       id: 'omlx',
-      url: 'http://127.0.0.1:8001/v1',
-      command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', '8001'],
+      url: 'http://127.0.0.1:7001/v1',
+      command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', '7001'],
     },
   ]);
   assert.deepEqual(settings.cloud.executors, []);
@@ -123,7 +123,7 @@ test('reconfigure starts from the current values and can remove what was there',
   const current: Settings = {
     ...DEFAULT_SETTINGS,
     roles: { orchestrator: 'small-mlx', extractor: 'small-mlx' },
-    endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:8001/v1' }],
+    endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:7001/v1' }],
     cloud: { allowlist: ['repos/site'], executors: ['claude'] },
     telegram: { token: 'vault://my-bot', chats: [7] },
   };
