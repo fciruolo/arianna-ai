@@ -2,6 +2,7 @@ import type { LoadedAgent, ToolId } from '@arianna/agents';
 import type { AriannaConfig } from '@arianna/config';
 import {
   CLAUDE_MODELS,
+  gitConfigFingerprint,
   openRepository,
   repositoryStatus,
   WorkspaceError,
@@ -102,7 +103,7 @@ async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<Ap
 }
 
 /** Opens the project folder of a delegation, or says why the step cannot run there. */
-async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository } | { error: string }> {
+async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository; repo: string } | { error: string }> {
   const repo = delegation.repo;
   if (repo === null) return { error: 'no repository for the Coder: the user opens a work conversation with one of cloud.allowlist' };
   const config = env.settings();
@@ -117,7 +118,7 @@ async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ ope
     const kinds = opened.decision.decision === 'block' ? [...new Set(opened.decision.findings.map((finding) => finding.kind))].join(', ') : '';
     return { error: `the repository ${repo} cannot go to the cloud (${opened.decision.reason}${kinds === '' ? '' : `: ${kinds}`})` };
   }
-  return { opened };
+  return { opened, repo };
 }
 
 /** The latest budget approval asked for this delegation. */
@@ -164,10 +165,12 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   const dirty = folder.opened.dirty ?? [];
   if (dirty.length > 0) {
     const consent = await workspaceApprovalOf(env.sql, delegation);
-    if (consent === undefined) return { kind: 'workspace', delegation, repo: delegation.repo ?? '', files: dirty };
-    if (consent.state !== 'approved') {
+    if (consent?.state === 'rejected' || consent?.state === 'expired') {
       return closed('refused', 'the user did not want the Coder to work over uncommitted changes: tell the user, or wait for them to commit');
     }
+    // The consent covers the files it named: paths dirtied since are asked again.
+    const covered = new Set(consent?.state === 'approved' && Array.isArray(consent.detail.files) ? consent.detail.files.map(String) : []);
+    if (dirty.some((path) => !covered.has(path))) return { kind: 'workspace', delegation, repo: folder.repo, files: dirty };
   }
 
   // Every attempt is a cloud run of the task after the delegating step; the quota ones failed.
@@ -254,8 +257,11 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const folder = await folderOf(env, delegation);
   if ('error' in folder) return failed(folder.error);
   const workspace = folder.opened;
-  const repo = delegation.repo ?? '';
+  const { repo } = folder;
   const before = new Set(workspace.dirty ?? []);
+  const path = workspace.path ?? '';
+  // Taken before the run: a run that rewrote .git/config, hooks or .gitattributes is caught after it.
+  const fingerprint = await gitConfigFingerprint(path);
   await updateDelegation(sql, delegation.id, { status: 'running', executor: 'claude', model: plan.model, runId });
   await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
 
@@ -287,9 +293,14 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
 
   switch (result.kind) {
     case 'answer': {
+      // No git command of Arianna's runs in a folder whose git configuration the run changed: the user looks first.
+      if ((await gitConfigFingerprint(path)) !== fingerprint) {
+        await close(env, task, step, delegation, 'failed', `error: ${TOOL}: the run changed the git configuration of ${repo} (.git/config, hooks or .gitattributes): the user must check that folder before using git there`);
+        return { kind: 'continue', usage: result.usage };
+      }
       // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
-      const after = workspace.path === undefined ? [] : await repositoryStatus(workspace.path).catch(() => [] as string[]);
-      const changed = after.filter((path) => !before.has(path));
+      const after = await repositoryStatus(path).catch(() => [] as string[]);
+      const changed = after.filter((item) => !before.has(item));
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
       const text = changed.length === 0 ? report : `${report}\n\nFiles changed in ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.join(', ')}`;
       let messageId: string | undefined;

@@ -17,6 +17,7 @@ import {
   claudeSettings,
   createClaudeExecutor,
   nodeToolchain,
+  openRepository,
   prepareWorkspace,
   profileViolations,
   type ClaudeEvent,
@@ -299,6 +300,11 @@ describe('claude executor', () => {
     assert.equal(await kind(executor().start({ ...base, brief: brief('scenario: ok'), workspace: { decision: prepared.decision, path } }).result), 'workspace');
     // Nothing was launched in the workspace.
     assert.throws(() => readFileSync(join(path, '.fake-claude.json')));
+    // The project folder itself, opened by openRepository (D-056), is accepted like a prepared copy.
+    const opened = await openRepository({ home: HOME, repo: 'repos/site', allowlist: ['repos/site'], rules: RULES });
+    assert.ok(opened.path !== undefined);
+    await executor().check({ workspace: opened, model: 'sonnet', tools: ['Read'] });
+    await assert.rejects(executor().check({ workspace: { ...opened }, model: 'sonnet', tools: ['Read'] }), (error: unknown) => (error as { kind?: string }).kind === 'workspace');
   });
 
   it('a binary that cannot start is a spawn error', async () => {

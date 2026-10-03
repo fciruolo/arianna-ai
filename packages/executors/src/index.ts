@@ -45,6 +45,7 @@ export {
 export {
   prepareWorkspace,
   preparedPath,
+  gitConfigFingerprint,
   openRepository,
   removeWorkspace,
   reopenWorkspace,

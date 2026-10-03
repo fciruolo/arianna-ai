@@ -1,6 +1,8 @@
-// Workspace per run for cloud executors (docs/PRIVACY-POLICY-SPEC.md,
-// "Confinamento", points 1-3): allowlist, a dedicated folder in
-// data/worktrees/, and the pre-flight scan before anything is launched.
+// Where a cloud executor works (docs/PRIVACY-POLICY-SPEC.md, "Confinamento",
+// points 1-3): the allowlist, the pre-flight scan, and the folder itself:
+// the project folder for an allowlisted repository (`openRepository`, D-056),
+// or a dedicated copy in data/worktrees/ (`prepareWorkspace`, D-041), used
+// by the evals.
 //
 // Not a `git worktree`: its `.git` file points to the source repository, whose
 // whole history (deleted secrets included) and writable `.git` (hooks, config)
@@ -8,7 +10,8 @@
 // from the object database (no filters, no hooks run) and a new repository
 // with a single commit is created on them, so the executor can still diff.
 import { execFile, spawn } from 'node:child_process';
-import { chmod, lstat, mkdir, readdir, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -55,14 +58,26 @@ function within(inner: string, outer: string): boolean {
 }
 
 /**
- * Git with as little inherited as possible: no GIT_* variables, no system or
- * global configuration (filters, includes, credential helpers of the user), no
- * hooks, no fsmonitor, no network. The configuration of the source repository
- * itself stays: it is the user's, and executors never reach it.
+ * Git with a minimal environment: no secret of the core (database passwords,
+ * the age key), no GIT_* variables, no system or global configuration
+ * (filters, includes, credential helpers of the user), no hooks, no
+ * fsmonitor, no network, no optional locks. The configuration of the
+ * repository itself (`.git/config`, `.gitattributes`) stays and, in the
+ * project folder (D-056), a cloud executor can have written it: every
+ * command run here is one that reads no file content through filters, and
+ * `gitConfigFingerprint` tells when that configuration changed under a run.
  */
 function gitEnv(): NodeJS.ProcessEnv {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-  return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+  const { PATH, HOME, LANG } = process.env;
+  return {
+    ...(PATH === undefined ? {} : { PATH }),
+    ...(HOME === undefined ? {} : { HOME }),
+    LANG: LANG ?? 'en_US.UTF-8',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_OPTIONAL_LOCKS: '0',
+  };
 }
 
 const GIT_FLAGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never'];
@@ -224,8 +239,9 @@ export async function scanWorkspace(root: string): Promise<WorkspaceEntry[]> {
   return entries;
 }
 
-// Workspaces allowed here, and only these, can be the working directory of a
-// cloud executor: a literal `{ path }` could point anywhere.
+// Workspaces allowed here (prepared copies and opened project folders), and
+// only these, can be the working directory of a cloud executor: a literal
+// `{ path }` could point anywhere.
 const prepared = new WeakMap<PreparedWorkspace, string>();
 
 /** The real path of a workspace that `prepareWorkspace` allowed; undefined for anything else. */
@@ -301,20 +317,91 @@ export interface OpenedRepository extends PreparedWorkspace {
   dirty?: string[];
 }
 
-/** `git status --porcelain`: the paths with changes the user has not committed, ignored files left out. */
-export async function repositoryStatus(path: string): Promise<string[]> {
-  const out = await git(path, ['status', '--porcelain', '-z', '--untracked-files=all']);
-  const paths: string[] = [];
-  const fields = out.split('\0');
-  for (let index = 0; index < fields.length; index += 1) {
-    const field = fields[index] ?? '';
-    if (field === '') continue;
-    // "XY path"; a rename carries the old path in the next field.
-    const status = field.slice(0, 2);
-    paths.push(field.slice(3));
-    if (status.startsWith('R') || status.startsWith('C')) index += 1;
+/**
+ * The folder must be exactly the top of its own repository: a `core.worktree`
+ * or a `.git` file written by a run would point git elsewhere.
+ */
+async function checkedRepository(path: string): Promise<void> {
+  let top: string;
+  try {
+    top = (await git(path, ['rev-parse', '--show-toplevel'])).trim();
+  } catch {
+    throw new WorkspaceError('not the top folder of a git repository');
   }
-  return paths.sort();
+  if ((await realpath(top)) !== path) throw new WorkspaceError('not the top folder of a git repository');
+}
+
+const zList = (out: string): string[] => out.split('\0').filter((item) => item !== '');
+
+/**
+ * The paths with changes the user has not committed, ignored files left out:
+ * the work tree against the index by stat (`ls-files`, which converts no
+ * content and so runs no filter), and the index against HEAD (`diff-index
+ * --cached`, which reads no work tree file). Not `git status`: it hashes
+ * modified files through the clean filters of the repository's own
+ * configuration, which a run may have written.
+ */
+export async function repositoryStatus(path: string): Promise<string[]> {
+  await checkedRepository(path);
+  const paths = new Set(zList(await git(path, ['ls-files', '-z', '--modified', '--deleted', '--others', '--exclude-standard', '--deduplicate'])));
+  let hasHead = true;
+  try {
+    await git(path, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+  } catch {
+    hasHead = false;
+  }
+  const staged = hasHead ? await git(path, ['diff-index', '--cached', '--name-only', '-z', 'HEAD']) : await git(path, ['ls-files', '-z', '--cached']);
+  for (const item of zList(staged)) paths.add(item);
+  return [...paths].filter((item) => !item.endsWith('/')).sort();
+}
+
+/** Files git reads configuration and attributes from, as a relative list; all `.gitattributes` of the tree included. */
+async function gitConfigFiles(root: string): Promise<string[]> {
+  const files = ['.git', '.git/config', '.git/info/attributes', '.git/info/exclude'];
+  try {
+    for (const name of await readdir(join(root, '.git', 'hooks'))) if (!name.endsWith('.sample')) files.push(`.git/hooks/${name}`);
+  } catch {
+    // No hooks folder.
+  }
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    for (const name of (await readdir(dir)).sort()) {
+      if (rel === '' && name === '.git') continue;
+      const absolute = join(dir, name);
+      const path = rel === '' ? name : `${rel}/${name}`;
+      const stats = await lstat(absolute);
+      if (stats.isSymbolicLink()) continue;
+      if (stats.isDirectory()) await walk(absolute, path);
+      else if (name === '.gitattributes') files.push(path);
+    }
+  };
+  await walk(root, '');
+  return files;
+}
+
+/**
+ * A fingerprint of everything that makes git run code or read elsewhere in
+ * this folder: `.git` itself (a file would point to another repository),
+ * `.git/config`, hooks, `info/attributes`, `info/exclude` and every
+ * `.gitattributes`. Taken before a run and compared after it (D-056): a
+ * change means the run touched the repository's configuration, and no git
+ * command of Arianna's runs there until the user has looked.
+ */
+export async function gitConfigFingerprint(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  for (const file of await gitConfigFiles(path)) {
+    const absolute = join(path, ...file.split('/'));
+    let stats;
+    try {
+      stats = await lstat(absolute);
+    } catch {
+      continue;
+    }
+    hash.update(`${file}\0${stats.isSymbolicLink() ? 'link' : stats.isDirectory() ? 'dir' : 'file'}\0`);
+    if (stats.isFile()) hash.update(await readFile(absolute));
+    if (stats.isSymbolicLink()) hash.update(await readlink(absolute));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 /** One entry of the scan for a path git lists, without following links. */
@@ -352,24 +439,45 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
     return { decision: checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries: [], rules: options.rules }) };
   }
   const repo = await repoPath(options);
-  let top: string;
   try {
-    top = (await git(repo, ['rev-parse', '--show-toplevel'])).trim();
-  } catch {
-    throw new WorkspaceError(`${options.repo} is not a git repository`);
+    await checkedRepository(repo);
+  } catch (error) {
+    throw new WorkspaceError(`${options.repo} is ${error instanceof Error ? error.message : 'not a git repository'}`);
   }
-  if ((await realpath(top)) !== repo) throw new WorkspaceError(`${options.repo} is not the top folder of a git repository`);
-  const listed = (await git(repo, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']))
-    .split('\0')
-    .filter((path) => path !== '' && safeTreePath(path));
   const entries: WorkspaceEntry[] = [];
-  for (const path of [...new Set(listed)].sort()) {
+  const seen = new Set<string>();
+  // Tracked files with their mode: a submodule (160000) is another repository, not scanned here, so it blocks.
+  for (const line of zList(await git(repo, ['ls-files', '-z', '--stage']))) {
+    const tab = line.indexOf('\t');
+    const mode = line.slice(0, 6);
+    const path = line.slice(tab + 1);
+    if (tab === -1 || !safeTreePath(path) || seen.has(path)) continue;
+    seen.add(path);
+    if (mode === '160000') {
+      entries.push({ path, kind: 'other' });
+      continue;
+    }
+    try {
+      entries.push(await entryOf(repo, repo, path));
+    } catch {
+      // Tracked but gone from the work tree: nothing to scan.
+    }
+  }
+  // Untracked, not ignored. A nested repository comes as `name/`: another repository git does not look into, so it blocks.
+  for (const path of zList(await git(repo, ['ls-files', '-z', '--others', '--exclude-standard']))) {
+    if (path.endsWith('/')) {
+      entries.push({ path: path.slice(0, -1), kind: 'other' });
+      continue;
+    }
+    if (!safeTreePath(path) || seen.has(path)) continue;
+    seen.add(path);
     try {
       entries.push(await entryOf(repo, repo, path));
     } catch {
       // Listed by git but gone meanwhile: nothing to scan.
     }
   }
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const decision = checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries, rules: options.rules });
   if (decision.decision !== 'allow') return { decision };
   const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();

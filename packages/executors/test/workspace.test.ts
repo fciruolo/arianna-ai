@@ -7,7 +7,17 @@ import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
-import { openRepository, preparedPath, prepareWorkspace, removeWorkspace, reopenWorkspace, repositoryStatus, scanWorkspace, WorkspaceError } from '@arianna/executors';
+import {
+  gitConfigFingerprint,
+  openRepository,
+  preparedPath,
+  prepareWorkspace,
+  removeWorkspace,
+  reopenWorkspace,
+  repositoryStatus,
+  scanWorkspace,
+  WorkspaceError,
+} from '@arianna/executors';
 import { createLabelRules } from '@arianna/policy';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `workspace-${randomUUID()}`);
@@ -285,12 +295,54 @@ describe('openRepository (D-056)', () => {
     await assert.rejects(openRepository({ home: HOME, repo: 'repos/inplace-alias', allowlist: ['repos/inplace-alias'], rules: RULES }), /symbolic link/);
   });
 
-  it('repositoryStatus lists uncommitted paths, renames included, ignored files left out', async () => {
-    const repo = makeRepo('inplace-status', { 'a.ts': 'x\n', 'b.ts': 'y\n', '.gitignore': 'tmp/\n' });
+  it('repositoryStatus lists uncommitted paths, staged and unstaged, ignored files left out', async () => {
+    const repo = makeRepo('inplace-status', { 'a.ts': 'x\n', 'b.ts': 'y\n', 'e.ts': 'z\n', '.gitignore': 'tmp/\n' });
     const dir = join(HOME, repo);
     assert.deepEqual(await repositoryStatus(dir), []);
     write(dir, { 'a.ts': 'changed\n', 'c.ts': 'new\n', 'tmp/x': '1\n' });
     git(dir, 'mv', 'b.ts', 'd.ts');
-    assert.deepEqual(await repositoryStatus(dir), ['a.ts', 'c.ts', 'd.ts']);
+    rmSync(join(dir, 'e.ts'));
+    assert.deepEqual(await repositoryStatus(dir), ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
+  });
+
+  it('runs no filter of the repository\'s own configuration, and no hook', async () => {
+    const repo = makeRepo('inplace-filter', { 'a.txt': 'x\n', '.gitattributes': '*.txt filter=evil\n' });
+    const dir = join(HOME, repo);
+    writeFileSync(join(dir, '.git', 'config'), `${readFileSync(join(dir, '.git', 'config'), 'utf8')}[filter "evil"]\n\tclean = touch ${join(dir, 'evil-ran')}\n`);
+    mkdirSync(join(dir, '.git', 'hooks'), { recursive: true });
+    writeFileSync(join(dir, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\ntouch ${join(dir, 'hook-ran')}\n`, { mode: 0o755 });
+    write(dir, { 'a.txt': 'changed\n', 'b.txt': 'new\n' });
+    assert.deepEqual(await repositoryStatus(dir), ['a.txt', 'b.txt']);
+    const opened = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    assert.equal(opened.decision.decision, 'allow');
+    assert.equal(existsSync(join(dir, 'evil-ran')), false);
+    assert.equal(existsSync(join(dir, 'hook-ran')), false);
+  });
+
+  it('a nested repository or a submodule is a special entry that blocks', async () => {
+    const repo = makeRepo('inplace-nested', { 'a.ts': 'x\n' });
+    const dir = join(HOME, repo);
+    mkdirSync(join(dir, 'nested'));
+    git(join(dir, 'nested'), 'init', '--quiet');
+    write(dir, { 'nested/.env': 'TOKEN=fake-nested-0123456789abcdef\n' });
+    const blocked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    assert.equal(blocked.decision.decision === 'block' && blocked.decision.findings.some((f) => f.kind === 'special-file' && f.path === 'nested'), true);
+  });
+
+  it('gitConfigFingerprint changes with .git/config, hooks or any .gitattributes, not with other files', async () => {
+    const repo = makeRepo('inplace-fingerprint', { 'src/a.ts': 'x\n' });
+    const dir = join(HOME, repo);
+    const base = await gitConfigFingerprint(dir);
+    write(dir, { 'src/a.ts': 'changed\n', 'src/b.ts': 'new\n' });
+    assert.equal(await gitConfigFingerprint(dir), base);
+    write(dir, { 'src/.gitattributes': '*.ts filter=x\n' });
+    const withAttributes = await gitConfigFingerprint(dir);
+    assert.notEqual(withAttributes, base);
+    writeFileSync(join(dir, '.git', 'config'), `${readFileSync(join(dir, '.git', 'config'), 'utf8')}[filter "x"]\n\tclean = cat\n`);
+    const withConfig = await gitConfigFingerprint(dir);
+    assert.notEqual(withConfig, withAttributes);
+    mkdirSync(join(dir, '.git', 'hooks'), { recursive: true });
+    writeFileSync(join(dir, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\n');
+    assert.notEqual(await gitConfigFingerprint(dir), withConfig);
   });
 });

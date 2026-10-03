@@ -404,6 +404,47 @@ test('uncommitted changes refused: the delegation ends and Arianna hears it', as
   }
 });
 
+test('the consent covers the files it named: a path dirtied after it is asked again', async () => {
+  writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
+  try {
+    const { task } = await ask('work', 'Consenso sui file.', 'repos/site');
+    const executor = orchestrator({ model: scripted([DELEGATE, REPLY]) });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
+    const first = await waitingFor(task.id);
+    await recordDecision(db().sql, first.waitingApprovalId, 'approved', 'web');
+    // Another file changed between the consent and the run.
+    writeFileSync(join(REPO, 'more.txt'), 'also mine\n');
+    assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+    const second = await waitingFor(task.id);
+    assert.notEqual(second.waitingApprovalId, first.waitingApprovalId);
+    const [approval] = await db().sql<{ detail: { files: string[] } }[]>`SELECT detail FROM approvals WHERE id = ${second.waitingApprovalId}`;
+    assert.deepEqual(approval?.detail.files, ['more.txt', 'notes.txt']);
+    await recordDecision(db().sql, second.waitingApprovalId, 'approved', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+  } finally {
+    unlinkSync(join(REPO, 'notes.txt'));
+    unlinkSync(join(REPO, 'more.txt'));
+  }
+});
+
+test('a run that rewrites the git configuration of the folder fails the delegation, and no git runs there', async () => {
+  const config = readFileSync(join(REPO, '.git', 'config'), 'utf8');
+  try {
+    const { task } = await ask('work', 'Configurazione git.', 'repos/site');
+    const model = scripted([DELEGATE, REPLY]);
+    assert.deepEqual(await drain(task.id, orchestrator({ model, coderPrompt: 'scenario: git-config\nYou are the Coder.' })), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.equal(delegation.status, 'failed');
+    assert.match(delegation.result ?? '', /changed the git configuration of repos\/site/);
+    assert.equal(existsSync(join(REPO, 'evil-ran')), false);
+  } finally {
+    writeFileSync(join(REPO, '.git', 'config'), config);
+    rmSync(join(REPO, '.gitattributes'), { force: true });
+    rmSync(join(REPO, 'evil-ran'), { force: true });
+  }
+});
+
 test('a tracked secret file blocks the launch; an ignored .env does not', async () => {
   writeFileSync(join(REPO, 'keys.pem'), 'not really a key\n');
   try {

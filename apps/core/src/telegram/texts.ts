@@ -51,7 +51,11 @@ export function approvalNotice(kind: string, action: string, title?: string): st
   const head =
     kind === 'declassify'
       ? 'Richiesta di declassamento: si decide solo dalla chat web.'
-      : `Approvazione richiesta: ${actionName(action)}.`;
+      : kind === 'workspace'
+        ? 'Approvazione richiesta: il Coder lavorerebbe in una cartella con modifiche non committate.'
+        : kind === 'budget'
+          ? 'Approvazione richiesta: budget per un modello che costa oltre il piano.'
+          : `Approvazione richiesta: ${actionName(action)}.`;
   const task = title === undefined || oneLine(title) === '' ? '' : `\nTask: ${oneLine(title)}`;
   const tail = kind === 'declassify' ? '' : '\nIl dettaglio è nella chat web.';
   return `${head}${task}${tail}`;

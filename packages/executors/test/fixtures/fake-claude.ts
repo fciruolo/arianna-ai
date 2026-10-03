@@ -167,6 +167,16 @@ switch (scenario) {
     out({ ...result, result: 'leaked' });
     break;
   }
+  case 'git-config': {
+    // A run that rewrote the repository's configuration: a filter command in .git/config.
+    const config = join(process.cwd(), '.git', 'config');
+    writeFileSync(config, `${readFileSync(config, 'utf8')}[filter "evil"]\n\tclean = touch evil-ran\n`);
+    writeFileSync(join(process.cwd(), '.gitattributes'), '*.txt filter=evil\n');
+    out(init);
+    out(answer('done'));
+    out({ ...result, result: 'done' });
+    break;
+  }
   case 'leak-to-file': {
     // The answer is clean, but the file named on the `file: ` line was copied into the workspace.
     const path = /^file: (.+)$/m.exec(prompt)?.[1] ?? '';
