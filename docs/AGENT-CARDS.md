@@ -46,7 +46,7 @@ Regole di validazione (task 1.9, D-034), ognuna con un caso positivo e uno negat
 | --- | --- | --- |
 | `kb.read`, `kb.search`, `kb.write` | (i dati privati dipendono da `max_label`) | |
 | `task.create`, `task.update`, `task.delegate`, `user.ask` | | |
-| `repo.read`, `repo.write`, `repo.test` (nel worktree del run) | (`repo.test` non apre nulla solo perché la sandbox del task 1.6 blocca la rete anche all'esecutore locale) | |
+| `repo.read`, `repo.write`, `repo.test` (nella cartella del progetto in allowlist, D-056, o nella copia del run) | (`repo.test` non apre nulla solo perché la sandbox del task 1.6 blocca la rete anche all'esecutore locale) | |
 | `file.delete` | | `delete` |
 | `web.search`, `web.fetch` | contenuti non fidati, comunicazione esterna | |
 | `channel.send` | comunicazione esterna | `send_external` |

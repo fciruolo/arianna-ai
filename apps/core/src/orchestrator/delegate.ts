@@ -2,13 +2,13 @@ import type { LoadedAgent, ToolId } from '@arianna/agents';
 import type { AriannaConfig } from '@arianna/config';
 import {
   CLAUDE_MODELS,
-  prepareWorkspace,
-  reopenWorkspace,
+  openRepository,
+  repositoryStatus,
   WorkspaceError,
   type ClaudeExecutor,
   type ClaudeModel,
   type ClaudeTool,
-  type PreparedWorkspace,
+  type OpenedRepository,
 } from '@arianna/executors';
 import { createContext, isAtMost, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
@@ -47,6 +47,8 @@ export interface DelegateEnv {
 export type DelegationPlan =
   | { kind: 'cloud'; delegation: Delegation; decision: RouteDecision; model: ClaudeModel; label: Label; declassify?: { approvalId: string; to: Label } }
   | { kind: 'budget'; delegation: Delegation; decision: RouteDecision; model: string }
+  /** The project folder has uncommitted changes: the user approves first (D-056). */
+  | { kind: 'workspace'; delegation: Delegation; repo: string; files: string[] }
   | { kind: 'retry'; delegation: Delegation; decision: RouteDecision; at: Date }
   /** Nothing runs: the delegation ends with this result and the local step goes on with it. */
   | { kind: 'closed'; delegation: Delegation; status: 'failed' | 'refused'; result: string; decision?: RouteDecision };
@@ -90,6 +92,34 @@ async function declassificationOf(sql: Sql, delegation: Delegation): Promise<App
   return row;
 }
 
+/** The latest approval asked for working over uncommitted changes, for this delegation. */
+async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<ApprovalRow | undefined> {
+  const [row] = await sql<ApprovalRow[]>`
+    SELECT id::text, state, detail FROM approvals
+    WHERE task_id = ${delegation.taskId} AND kind = 'workspace' AND (detail ->> 'step')::int = ${delegation.step}
+    ORDER BY requested_at DESC, id DESC LIMIT 1`;
+  return row;
+}
+
+/** Opens the project folder of a delegation, or says why the step cannot run there. */
+async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository } | { error: string }> {
+  const repo = delegation.repo;
+  if (repo === null) return { error: 'no repository for the Coder: the user opens a work conversation with one of cloud.allowlist' };
+  const config = env.settings();
+  let opened: OpenedRepository;
+  try {
+    opened = await openRepository({ home: config.home, repo, allowlist: config.cloud.allowlist, rules: env.rules });
+  } catch (error) {
+    if (!(error instanceof WorkspaceError)) throw error;
+    return { error: `the folder of ${repo} cannot be opened: ${error.message}` };
+  }
+  if (opened.path === undefined) {
+    const kinds = opened.decision.decision === 'block' ? [...new Set(opened.decision.findings.map((finding) => finding.kind))].join(', ') : '';
+    return { error: `the repository ${repo} cannot go to the cloud (${opened.decision.reason}${kinds === '' ? '' : `: ${kinds}`})` };
+  }
+  return { opened };
+}
+
 /** The latest budget approval asked for this delegation. */
 async function budgetApprovalOf(sql: Sql, delegation: Delegation): Promise<ApprovalRow | undefined> {
   const [row] = await sql<ApprovalRow[]>`
@@ -126,6 +156,18 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     if (to !== 'L0' && to !== 'L1') return closed('failed', 'the declassification does not say a cloud label');
     declassify = { approvalId: approval.id, to };
     label = to;
+  }
+
+  // The folder itself (D-056): with changes the user has not committed, the launch waits for their word.
+  const folder = await folderOf(env, delegation);
+  if ('error' in folder) return closed('failed', folder.error);
+  const dirty = folder.opened.dirty ?? [];
+  if (dirty.length > 0) {
+    const consent = await workspaceApprovalOf(env.sql, delegation);
+    if (consent === undefined) return { kind: 'workspace', delegation, repo: delegation.repo ?? '', files: dirty };
+    if (consent.state !== 'approved') {
+      return closed('refused', 'the user did not want the Coder to work over uncommitted changes: tell the user, or wait for them to commit');
+    }
   }
 
   // Every attempt is a cloud run of the task after the delegating step; the quota ones failed.
@@ -183,7 +225,6 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   if (claude === undefined) throw new Error('claude is not available');
   const agent = env.agents.get(delegation.agent);
   if (agent === undefined) throw new Error(`no agent card for ${delegation.agent}`);
-  const config = env.settings();
   const failed = async (result: string): Promise<StepOutcome> => {
     await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result}`);
     return { kind: 'continue', usage: { steps: 1 } };
@@ -209,29 +250,13 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     return { kind: 'continue', usage: { steps: 1 } };
   }
 
-  const repo = delegation.repo;
-  if (repo === null) return failed('no repository for the Coder: the user opens a work conversation with one of cloud.allowlist');
-  const folders = { home: config.home, data: config.paths.data, repo, allowlist: config.cloud.allowlist, rules: env.rules };
-  let workspace: PreparedWorkspace;
-  try {
-    // The folder follows the task across attempts and restarts: made once, reopened after.
-    workspace =
-      delegation.workspaceRun === null ? await prepareWorkspace({ ...folders, runId }) : await reopenWorkspace({ ...folders, runId: delegation.workspaceRun });
-  } catch (error) {
-    if (!(error instanceof WorkspaceError)) throw error;
-    return failed(`the workspace of ${repo} could not be prepared`);
-  }
-  if (workspace.path === undefined) {
-    const kinds = workspace.decision.decision === 'block' ? [...new Set(workspace.decision.findings.map((finding) => finding.kind))].join(', ') : '';
-    return failed(`the repository ${repo} cannot go to the cloud (${workspace.decision.reason}${kinds === '' ? '' : `: ${kinds}`})`);
-  }
-  await updateDelegation(sql, delegation.id, {
-    status: 'running',
-    executor: 'claude',
-    model: plan.model,
-    runId,
-    workspaceRun: delegation.workspaceRun ?? runId,
-  });
+  // The project folder itself (D-056), opened again at every attempt: nothing is copied.
+  const folder = await folderOf(env, delegation);
+  if ('error' in folder) return failed(folder.error);
+  const workspace = folder.opened;
+  const repo = delegation.repo ?? '';
+  const before = new Set(workspace.dirty ?? []);
+  await updateDelegation(sql, delegation.id, { status: 'running', executor: 'claude', model: plan.model, runId });
   await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
@@ -262,10 +287,14 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
 
   switch (result.kind) {
     case 'answer': {
-      const text = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
+      // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
+      const after = workspace.path === undefined ? [] : await repositoryStatus(workspace.path).catch(() => [] as string[]);
+      const changed = after.filter((path) => !before.has(path));
+      const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
+      const text = changed.length === 0 ? report : `${report}\n\nFiles changed in ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.join(', ')}`;
       let messageId: string | undefined;
       if (reply !== undefined) {
-        const saved = await reply.finish(text, result.result.label);
+        const saved = await reply.finish(report, result.result.label);
         if (!saved.stored) {
           // The report cannot be shown to the user (a vault value in it, or above the conversation): it is not read either.
           const why = saved.reason === 'blocked' ? `the gateway refused the report (${saved.decision.reason})` : 'the report is above what the conversation may hold';

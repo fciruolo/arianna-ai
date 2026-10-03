@@ -171,7 +171,7 @@ function workspacePath(options: WorkspaceOptions): string {
  * The repository folder, which must be exactly that path on disk: a link named
  * `repos/site` pointing to `kb/private` would be labeled as `repos/site`.
  */
-async function repoPath(options: PrepareOptions): Promise<string> {
+async function repoPath(options: { home: string; repo: string }): Promise<string> {
   if (isAbsolute(options.repo)) throw new WorkspaceError('repo must be relative to ARIANNA_HOME');
   const home = await realpath(options.home);
   const absolute = resolve(home, options.repo);
@@ -283,6 +283,100 @@ export async function prepareWorkspace(options: PrepareOptions): Promise<Prepare
     await removeWorkspace(options).catch(() => undefined);
     throw error;
   }
+}
+
+export interface OpenRepositoryOptions {
+  /** Absolute ARIANNA_HOME. */
+  home: string;
+  /** The repository, relative to ARIANNA_HOME; in the allowlist. */
+  repo: string;
+  allowlist: readonly string[];
+  rules: LabelRules;
+}
+
+export interface OpenedRepository extends PreparedWorkspace {
+  /** The branch the folder is on; absent when blocked. */
+  branch?: string;
+  /** Files changed or added and not committed (`git status`), ignored files left out; absent when blocked. */
+  dirty?: string[];
+}
+
+/** `git status --porcelain`: the paths with changes the user has not committed, ignored files left out. */
+export async function repositoryStatus(path: string): Promise<string[]> {
+  const out = await git(path, ['status', '--porcelain', '-z', '--untracked-files=all']);
+  const paths: string[] = [];
+  const fields = out.split('\0');
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? '';
+    if (field === '') continue;
+    // "XY path"; a rename carries the old path in the next field.
+    const status = field.slice(0, 2);
+    paths.push(field.slice(3));
+    if (status.startsWith('R') || status.startsWith('C')) index += 1;
+  }
+  return paths.sort();
+}
+
+/** One entry of the scan for a path git lists, without following links. */
+async function entryOf(root: string, realRoot: string, path: string): Promise<WorkspaceEntry> {
+  const absolute = join(root, ...path.split('/'));
+  const stats = await lstat(absolute);
+  if (stats.isSymbolicLink()) {
+    let target: string | null = null;
+    try {
+      const text = await readlink(absolute);
+      const lexical = posix.normalize(posix.join(posix.dirname(path), text.split(sep).join('/')));
+      const stays = !posix.isAbsolute(text) && lexical !== '..' && !lexical.startsWith('../') && lexical !== '.';
+      const fromRoot = relative(realRoot, await realpath(absolute));
+      if (stays && fromRoot !== '' && within(join(realRoot, fromRoot), realRoot)) target = fromRoot.split(sep).join('/');
+    } catch {
+      target = null;
+    }
+    return { path, kind: 'symlink', target };
+  }
+  if (stats.isDirectory()) return { path, kind: 'directory' };
+  return { path, kind: stats.isFile() ? 'file' : 'other' };
+}
+
+/**
+ * Opens the project folder itself as the working directory of a cloud
+ * executor (D-056): the user allowlisted it to let the Coder work there as
+ * they do with the CLI. The folder must be exactly that path (no link), the
+ * top of a git repository; its files are scanned like a prepared workspace,
+ * but only the ones git tracks or does not ignore: an ignored `.env` does
+ * not stop the launch (the user's choice), as it does not stop their own
+ * use of Claude Code. Nothing is copied or created.
+ */
+export async function openRepository(options: OpenRepositoryOptions): Promise<OpenedRepository> {
+  if (!isAllowlisted(options.repo, options.allowlist)) {
+    return { decision: checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries: [], rules: options.rules }) };
+  }
+  const repo = await repoPath(options);
+  let top: string;
+  try {
+    top = (await git(repo, ['rev-parse', '--show-toplevel'])).trim();
+  } catch {
+    throw new WorkspaceError(`${options.repo} is not a git repository`);
+  }
+  if ((await realpath(top)) !== repo) throw new WorkspaceError(`${options.repo} is not the top folder of a git repository`);
+  const listed = (await git(repo, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']))
+    .split('\0')
+    .filter((path) => path !== '' && safeTreePath(path));
+  const entries: WorkspaceEntry[] = [];
+  for (const path of [...new Set(listed)].sort()) {
+    try {
+      entries.push(await entryOf(repo, repo, path));
+    } catch {
+      // Listed by git but gone meanwhile: nothing to scan.
+    }
+  }
+  const decision = checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries, rules: options.rules });
+  if (decision.decision !== 'allow') return { decision };
+  const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  const dirty = await repositoryStatus(repo);
+  const opened: OpenedRepository = Object.freeze({ decision, path: repo, branch, dirty });
+  prepared.set(opened, repo);
+  return opened;
 }
 
 export interface ReopenOptions extends WorkspaceOptions {

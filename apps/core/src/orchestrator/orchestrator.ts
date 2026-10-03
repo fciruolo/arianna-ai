@@ -266,10 +266,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       plans.delete(key);
       if (planned !== undefined) {
         // The decision goes to router_decisions before anything acts on it.
-        if (planned.decision !== undefined) await recordRouteDecision(sql, planned.decision, { taskId: task.id, runId, step });
+        const decision = planned.kind === 'workspace' ? undefined : planned.decision;
+        if (decision !== undefined) await recordRouteDecision(sql, decision, { taskId: task.id, runId, step });
         switch (planned.kind) {
           case 'cloud':
             return runDelegation(env, ctx, planned);
+          case 'workspace':
+            await show(task, step, 'wait', `workspace · ${planned.repo}`);
+            return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step };
           case 'budget':
             await show(task, step, 'wait', `budget · ${planned.model}`);
             return { kind: 'budget', executor: 'claude', model: planned.model, step: planned.delegation.step };

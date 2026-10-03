@@ -88,7 +88,7 @@ Il rischio principale non è un modello che "decide" di barare, ma un agente clo
                       │               GATEWAY: unica uscita, registra tutto
                       ▼                      ▼
  Esecutori     modello locale         claude -p · codex exec · web · canali esterni
-               L0-L2                  solo L0-L1, in worktree confinato
+               L0-L2                  solo L0-L1, nella cartella del progetto in allowlist (sandbox)
 ```
 
 Le interfacce parlano con un solo nucleo; il nucleo usa i modelli locali direttamente e arriva al cloud (Claude Code e Codex) soltanto attraverso il gateway della privacy, che lascia passare solo i dati L0 e L1.
@@ -137,7 +137,7 @@ Un orchestratore, Arianna, trasforma i tuoi obiettivi in task sul cardwall e li 
 | Agente | Compito | Modelli | Privacy massima |
 | --- | --- | --- | --- |
 | Arianna (orchestratore) | Riceve obiettivi da chat, voce e scheduler; li scompone, assegna, riassume | Locale | L2 |
-| Coder | Lavora sui repository con Claude Code o Codex, ciascun task in un worktree git | Claude Code, Codex | L1 |
+| Coder | Lavora sui repository con Claude Code o Codex, nella cartella del progetto in allowlist (D-056) | Claude Code, Codex | L1 |
 | Reviewer | Rilegge il diff con un modello diverso da quello che ha scritto il codice | Codex, Claude Code o locale | L1 |
 | Archivista | Importa documenti e fatture, estrae dati, classifica, aggiorna la KB | Locale | L2 (L3 solo come riferimenti al vault) |
 | Segretario | Mail, calendario, bozze di risposta, promemoria, scadenze | Locale | L2 |
@@ -152,7 +152,7 @@ Il Coder lavora codice L2 solo con il modello locale. Tabella completa con il la
 **Come lavora**
 
 1. Arianna crea un task sul cardwall con obiettivo, criteri di completamento e livello di privacy.
-2. Il router sceglie l'esecutore; l'agente lavora in una sandbox (cartella o worktree dedicato, rete limitata).
+2. Il router sceglie l'esecutore; l'agente lavora in una sandbox (la cartella del progetto in allowlist, o una copia dedicata; rete limitata).
 3. Ogni passo è un evento salvato in un registro; se il sistema si riavvia, il task riparte dall'ultimo evento.
 4. Alla fine l'agente allega la prova (test passati, diff, documento prodotto) e sposta la carta in "Da verificare".
 

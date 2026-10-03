@@ -9,6 +9,12 @@ const busy = ref(false);
 
 const title = computed(() => ACTION_TEXT[props.approval.action] ?? props.approval.action);
 const isDeclassify = computed(() => props.approval.kind === 'declassify');
+/** A workspace approval names the repository and the files with uncommitted changes. */
+const workspace = computed(() => {
+  if (props.approval.kind !== 'workspace') return undefined;
+  const { repo, files } = props.approval.detail;
+  return typeof repo === 'string' && Array.isArray(files) ? { repo, files: files.map(String) } : undefined;
+});
 /** A budget approval names executor and model (router aliases) and the step. */
 const budget = computed(() => {
   if (props.approval.kind !== 'budget') return undefined;
@@ -50,6 +56,15 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       <pre
         class="mt-2 max-h-64 overflow-auto rounded-lg bg-stone-100 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words dark:bg-stone-900"
       >{{ text }}</pre>
+    </template>
+    <template v-else-if="workspace !== undefined">
+      <p class="mt-2 text-xs text-stone-600 dark:text-stone-400">
+        Il Coder lavorerebbe in <span class="font-mono">{{ workspace.repo }}</span>, dove hai modifiche non ancora committate. Approvando lavora
+        sopra di esse, sul branch corrente; rifiutando, Arianna lo saprà. Oppure committa prima e riprendi il task.
+      </p>
+      <ul class="mt-2 max-h-40 overflow-auto rounded-lg bg-stone-100 p-3 font-mono text-xs leading-relaxed dark:bg-stone-900">
+        <li v-for="file in workspace.files" :key="file">{{ file }}</li>
+      </ul>
     </template>
     <p v-else-if="budget !== undefined" class="mt-2 text-xs text-stone-600 dark:text-stone-400">
       Il passo delegato userebbe <strong>{{ MODEL_TEXT[budget.model] ?? budget.model }}</strong> su {{ EXECUTOR_TEXT[budget.executor] ?? budget.executor }},

@@ -50,7 +50,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export interface Approval {
   id: string;
   taskId: string | null;
-  kind: 'action' | 'declassify' | 'budget' | 'setting';
+  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace';
   action: string;
   detail: Record<string, unknown>;
   label: Label;

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
-import { preparedPath, prepareWorkspace, removeWorkspace, reopenWorkspace, scanWorkspace, WorkspaceError } from '@arianna/executors';
+import { openRepository, preparedPath, prepareWorkspace, removeWorkspace, reopenWorkspace, repositoryStatus, scanWorkspace, WorkspaceError } from '@arianna/executors';
 import { createLabelRules } from '@arianna/policy';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `workspace-${randomUUID()}`);
@@ -245,5 +245,52 @@ describe('reopenWorkspace', () => {
     const reopened = await reopenWorkspace(opts);
     assert.equal(reopened.decision.decision, 'block');
     assert.ok(existsSync(prepared.path));
+  });
+});
+
+describe('openRepository (D-056)', () => {
+  it('opens the allowlisted folder itself, scanning tracked and untracked files but not ignored ones', async () => {
+    const repo = makeRepo('inplace', { 'src/a.ts': 'x\n', '.gitignore': '.env\nbuild/\n' });
+    const dir = join(HOME, repo);
+    write(dir, { '.env': 'TOKEN=fake-ignored-0123456789abcdef\n', 'build/out.js': '1\n', 'notes.txt': 'untracked\n' });
+    const opened = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    assert.equal(opened.decision.decision, 'allow');
+    assert.equal(opened.path, dir);
+    assert.equal(preparedPath(opened), dir);
+    assert.equal(opened.branch, 'main');
+    assert.deepEqual(opened.dirty, ['notes.txt']);
+    assert.match(opened.decision.reason, /^3 entries/);
+  });
+
+  it('a tracked or untracked secret file blocks; a link that leaves the folder blocks', async () => {
+    const repo = makeRepo('inplace-secret', { 'a.ts': 'x\n' });
+    const dir = join(HOME, repo);
+    write(dir, { 'keys.pem': 'fake\n' });
+    const blocked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    assert.equal(blocked.decision.decision, 'block');
+    assert.equal(preparedPath(blocked), undefined);
+    rmSync(join(dir, 'keys.pem'));
+    symlinkSync(DATA, join(dir, 'escape'));
+    const linked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    assert.equal(linked.decision.decision === 'block' && linked.decision.findings.some((f) => f.kind === 'symlink-outside'), true);
+  });
+
+  it('refuses a repository outside the allowlist, through a link, or that is not a git repository', async () => {
+    const repo = makeRepo('inplace-plain', { 'a.ts': 'x\n' });
+    const outside = await openRepository({ home: HOME, repo, allowlist: [], rules: RULES });
+    assert.equal(outside.decision.decision, 'block');
+    mkdirSync(join(HOME, 'repos', 'nogit'));
+    await assert.rejects(openRepository({ home: HOME, repo: 'repos/nogit', allowlist: ['repos/nogit'], rules: RULES }), /not the top folder of a git repository/);
+    symlinkSync(join(HOME, repo), join(HOME, 'repos', 'inplace-alias'));
+    await assert.rejects(openRepository({ home: HOME, repo: 'repos/inplace-alias', allowlist: ['repos/inplace-alias'], rules: RULES }), /symbolic link/);
+  });
+
+  it('repositoryStatus lists uncommitted paths, renames included, ignored files left out', async () => {
+    const repo = makeRepo('inplace-status', { 'a.ts': 'x\n', 'b.ts': 'y\n', '.gitignore': 'tmp/\n' });
+    const dir = join(HOME, repo);
+    assert.deepEqual(await repositoryStatus(dir), []);
+    write(dir, { 'a.ts': 'changed\n', 'c.ts': 'new\n', 'tmp/x': '1\n' });
+    git(dir, 'mv', 'b.ts', 'd.ts');
+    assert.deepEqual(await repositoryStatus(dir), ['a.ts', 'c.ts', 'd.ts']);
   });
 });

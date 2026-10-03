@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -40,6 +40,9 @@ before(() => {
   const repo = join(HOME, 'repos', 'site');
   mkdirSync(repo, { recursive: true });
   writeFileSync(join(repo, 'README.md'), '# Fake site\n');
+  // What the fake binary writes is ignored: it is not a change of the user's.
+  writeFileSync(join(repo, '.gitignore'), '.fake-claude.json\n.env\n');
+  writeFileSync(join(repo, '.env'), 'TOKEN=fake-ignored-secret-0123456789abcdef\n');
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const git = (...args: string[]) =>
     execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-C', repo, ...args], {
@@ -138,10 +141,16 @@ async function waitingFor(taskId: string): Promise<Task & { waitingApprovalId: s
   return { ...task, waitingApprovalId: task.waitingApprovalId };
 }
 
-/** What the fake binary received, from the workspace of the delegation. */
-function received(workspaceRun: string | null): { argv: string[]; prompt: string } {
-  assert.ok(workspaceRun !== null);
-  return JSON.parse(readFileSync(join(HOME, 'data', 'worktrees', workspaceRun, '.fake-claude.json'), 'utf8')) as { argv: string[]; prompt: string };
+const REPO = join(HOME, 'repos', 'site');
+
+/** What the fake binary received, written in the project folder itself (D-056). */
+function received(): { argv: string[]; prompt: string } {
+  return JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { argv: string[]; prompt: string };
+}
+
+function gitStatus(): string {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return execFileSync('git', ['-C', REPO, 'status', '--porcelain'], { env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }, encoding: 'utf8' });
 }
 
 test('a work conversation: the step runs on claude, streams to the chat, and its report comes back to Arianna', async () => {
@@ -160,6 +169,9 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
       [1, 'ok', 'claude', 'sonnet', 'L1', 'ok', 'L1', 'repos/site'],
     );
     assert.ok(delegation.messageId !== null && delegation.sessionRef !== null);
+    // Nothing was copied: the run worked in the folder itself, which is still clean for git.
+    assert.equal(delegation.workspaceRun, null);
+    assert.equal(gitStatus(), '');
 
     // The Coder's report is in the chat, marked as its; Arianna's answer closes the task.
     const messages = await db().sql<{ role: string; agent: string | null; body: string; label: string }[]>`
@@ -180,7 +192,7 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
     assert.equal(model.requests[1]?.messages.filter((m) => m.content === 'ok').length, 0);
 
     // The binary got the Coder's prompt and the brief, the model and the tools of the card.
-    const { argv, prompt } = received(delegation.workspaceRun);
+    const { argv, prompt } = received();
     assert.match(prompt, /^You are the Coder/);
     assert.match(prompt, /Add a line to README\.md saying hello\.$/);
     assert.equal(argv[argv.indexOf('--model') + 1], 'sonnet');
@@ -222,7 +234,7 @@ test('the model chosen for the conversation is the one the step runs on', async 
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.ok(delegation !== undefined);
   assert.equal(delegation.model, 'opus');
-  assert.equal(received(delegation.workspaceRun).argv.includes('opus'), true);
+  assert.equal(received().argv.includes('opus'), true);
   const [decision] = await db().sql<{ reason: string }[]>`SELECT reason FROM router_decisions WHERE task_id = ${task.id}`;
   assert.match(decision?.reason ?? '', /chosen by the user/);
 });
@@ -323,7 +335,8 @@ test('a report stored before a crash is not produced twice: the run is not launc
   assert.ok(saved.stored);
   assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
-  assert.deepEqual([delegation?.status, delegation?.result, delegation?.messageId, delegation?.workspaceRun], ['ok', 'report from the first attempt', saved.message.id, null]);
+  assert.deepEqual([delegation?.status, delegation?.result, delegation?.messageId], ['ok', 'report from the first attempt', saved.message.id]);
+  assert.equal(existsSync(join(REPO, '.fake-claude.json')) && readFileSync(join(REPO, '.fake-claude.json'), 'utf8').includes('Crash dopo il rapporto'), false);
   const reports = await db().sql`SELECT 1 FROM messages WHERE task_id = ${task.id} AND agent = 'coder'`;
   assert.equal(reports.length, 1);
 });
@@ -342,6 +355,69 @@ test('after too many quota refusals the delegation fails, and Arianna reads why'
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.equal(delegation?.status, 'failed');
   assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /5 attempts refused by the executor/);
+});
+
+test('uncommitted changes in the folder: the user approves first; the changed files reach Arianna', async () => {
+  writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
+  try {
+    const { task } = await ask('work', 'Con modifiche mie.', 'repos/site');
+    const model = scripted([DELEGATE, REPLY]);
+    const executor = orchestrator({ model, coderPrompt: 'scenario: leak-to-file\nfile: ' + join(REPO, 'README.md') + '\nYou are the Coder.' });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    assert.equal(waiting.waitingReason, 'approval needed: workspace');
+    const [approval] = await db().sql<{ kind: string; action: string; detail: { repo: string; files: string[]; step: number } }[]>`
+      SELECT kind, action, detail FROM approvals WHERE id = ${waiting.waitingApprovalId}`;
+    assert.deepEqual([approval?.kind, approval?.action, approval?.detail.repo, approval?.detail.files, approval?.detail.step], ['workspace', 'dirty-workspace', 'repos/site', ['notes.txt'], 1]);
+    assert.equal((await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`).length, 0);
+
+    await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.equal(delegation.status, 'ok');
+    // The scenario copied README.md to copy.txt: a new file of the Coder's, told apart from the user's notes.txt.
+    assert.match(delegation.result ?? '', /Files changed in repos\/site \(uncommitted, on branch main\): copy\.txt$/);
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /copy\.txt/);
+  } finally {
+    unlinkSync(join(REPO, 'notes.txt'));
+    rmSync(join(REPO, 'copy.txt'), { force: true });
+  }
+});
+
+test('uncommitted changes refused: the delegation ends and Arianna hears it', async () => {
+  writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
+  try {
+    const { task } = await ask('work', 'Rifiuto.', 'repos/site');
+    const model = scripted([DELEGATE, { action: 'reply', text: 'Aspetto che tu committi.' }]);
+    const executor = orchestrator({ model });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
+    const waiting = await waitingFor(task.id);
+    await recordDecision(db().sql, waiting.waitingApprovalId, 'rejected', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.equal(delegation?.status, 'refused');
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /did not want the Coder to work over uncommitted changes/);
+    assert.equal((await db().sql`SELECT 1 FROM runs WHERE task_id = ${task.id} AND locality = 'cloud'`).length, 0);
+  } finally {
+    unlinkSync(join(REPO, 'notes.txt'));
+  }
+});
+
+test('a tracked secret file blocks the launch; an ignored .env does not', async () => {
+  writeFileSync(join(REPO, 'keys.pem'), 'not really a key\n');
+  try {
+    const { task } = await ask('work', 'Segreto tracciato.', 'repos/site');
+    const model = scripted([DELEGATE, REPLY]);
+    // The blocked scan closes the delegation and the local step goes on at once.
+    assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.equal(delegation.status, 'failed');
+    assert.match(delegation.result ?? '', /cannot go to the cloud .*secret-file/);
+  } finally {
+    unlinkSync(join(REPO, 'keys.pem'));
+  }
 });
 
 test('task_delegations: within the clearance, cloud runs of the same task only, never deleted', async () => {

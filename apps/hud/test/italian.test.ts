@@ -71,6 +71,9 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   assert.equal(line('error', 'no repository for the Coder: the user opens a work conversation'), 'Errore: nessun repository per il Coder: apri una conversazione di lavoro con un repository ammesso, provo un’altra strada');
   assert.equal(line('error', 'claude: timeout'), 'Errore: Claude Code si è fermato (timeout), provo un’altra strada');
   assert.equal(reasonText('approval needed: budget'), 'serve la tua approvazione per il budget del modello');
+  assert.equal(reasonText('approval needed: workspace'), 'la cartella del progetto ha modifiche non committate: serve il tuo via libera');
+  assert.equal(line('wait', 'workspace · repos/demo'), 'La cartella repos/demo ha modifiche non committate: aspetto il tuo via libera');
+  assert.equal(line('error', 'the user did not want the Coder to work over uncommitted changes: tell the user'), 'Errore: hai preferito non far lavorare il Coder sopra le tue modifiche non committate, provo un’altra strada');
 });
 
 test('the orchestrator reasons are translated', () => {

@@ -32,6 +32,7 @@ export const STATUS_TEXT: Record<TaskStatus, string> = {
 export const ACTION_TEXT: Record<string, string> = {
   declassify: 'Declassamento',
   budget: 'Budget',
+  'dirty-workspace': 'Cartella con modifiche',
   delete: 'Cancellazione',
   send_external: 'Invio all’esterno',
   payment: 'Pagamento',

@@ -97,6 +97,11 @@ export type StepOutcome = (
    */
   | { kind: 'budget'; executor: string; model: string; step: number }
   /**
+   * The project folder has changes the user has not committed (D-056): they
+   * approve the Coder working over them, from the chat. `files` are paths.
+   */
+  | { kind: 'workspace'; repo: string; files: string[]; step: number }
+  /**
    * The executor refused for now (a quota, task 1.5): the same step runs
    * again at `at`, without the user. The task stays at work; the run failed.
    */
@@ -302,6 +307,23 @@ export async function processStepJob(
         await mustSchedule(tx, task.id, {}, at);
         await appendEvent(tx, { kind: 'task.retry', taskId: task.id, runId, label: 'L0', payload: { step, at: at.toISOString() } });
         return 'continued';
+      }
+      case 'workspace': {
+        // Paths of a work repository: the task's label covers them.
+        const [created] = await tx<{ id: string }[]>`
+          INSERT INTO approvals (task_id, kind, action, detail, label)
+          VALUES (${task.id}, 'workspace', 'dirty-workspace', ${tx.json({ repo: outcome.repo, files: outcome.files, step: outcome.step })}, ${task.effectiveLabel}::privacy_label)
+          RETURNING id::text`;
+        if (created === undefined) throw new Error('INSERT INTO approvals returned no row');
+        await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: workspace', cause: 'approval', approvalId: created.id });
+        await appendEvent(tx, {
+          kind: 'approval.requested',
+          taskId: task.id,
+          runId,
+          label: 'L0',
+          payload: { approvalId: created.id, action: 'dirty-workspace', files: outcome.files.length },
+        });
+        return 'waiting-approval';
       }
       case 'budget': {
         // Names from the router only: executor and model are aliases, never content.

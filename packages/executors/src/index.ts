@@ -45,13 +45,17 @@ export {
 export {
   prepareWorkspace,
   preparedPath,
+  openRepository,
   removeWorkspace,
   reopenWorkspace,
+  repositoryStatus,
   scanWorkspace,
   WorkspaceError,
   WORKTREES_DIR,
   type PreparedWorkspace,
   type PrepareOptions,
+  type OpenedRepository,
+  type OpenRepositoryOptions,
   type ReopenOptions,
   type WorkspaceOptions,
 } from './workspace.ts';

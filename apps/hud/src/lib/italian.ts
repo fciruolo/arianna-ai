@@ -34,6 +34,7 @@ const REASONS: Record<string, string> = {
   'the task has no request to work on': 'il task non ha una richiesta su cui lavorare',
   'the local model asked for a tool it does not have': 'il modello locale ha chiesto uno strumento che non ha',
   'approval needed: budget': 'serve la tua approvazione per il budget del modello',
+  'approval needed: workspace': 'la cartella del progetto ha modifiche non committate: serve il tuo via libera',
 };
 
 function actionName(action: string): string {
@@ -98,6 +99,8 @@ const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
   [/^(\S+) does not take delegated steps$/, (agent) => `${agentName(agent)} non accetta passi delegati`],
   [/^the user did not approve sending the brief to the cloud/, () => 'il brief non è stato approvato per il cloud'],
   [/^the user did not approve the budget for (\S+)/, (model) => `il budget per ${MODEL_TEXT[model] ?? model} non è stato approvato`],
+  [/^the user did not want the Coder to work over uncommitted changes/, () => 'hai preferito non far lavorare il Coder sopra le tue modifiche non committate'],
+  [/^the folder of (\S+) cannot be opened/, (repo) => `la cartella di ${repo} non si apre come repository git`],
   [/^no repository for the Coder/, () => 'nessun repository per il Coder: apri una conversazione di lavoro con un repository ammesso'],
   [/^the gateway refused the brief/, () => 'il gateway ha fermato il brief'],
   [/^no executor can take this step now/, () => 'nessun esecutore può prendere questo passo adesso'],
@@ -157,6 +160,8 @@ function delegateText(detail: string): string {
 
 // `budget · fable`, or `claude · <ISO time>` for a quota.
 function waitText(detail: string): string {
+  const workspace = /^workspace · (\S+)$/.exec(detail);
+  if (workspace?.[1] !== undefined) return `La cartella ${workspace[1]} ha modifiche non committate: aspetto il tuo via libera`;
   const budget = /^budget · (\S+)$/.exec(detail);
   if (budget?.[1] !== undefined) return `Serve la tua approvazione del budget per ${MODEL_TEXT[budget[1]] ?? budget[1]}`;
   const quota = /^(\w+) · (\S+)$/.exec(detail);
