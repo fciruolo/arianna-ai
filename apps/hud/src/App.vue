@@ -9,7 +9,7 @@ import { ACTION_TEXT, DECISION_TEXT, REMOTE_CHANNEL_TEXT } from './lib/labels.ts
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, chat, current, tasks, approvals, remoteDecisions, live, error, sending } = store;
+const { conversations, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending } = store;
 
 function timeOf(ts: string): string {
   return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -88,7 +88,9 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
         :conversation="current"
         :tasks="tasks"
         :sending="sending"
+        :models="models"
         @send="store.send"
+        @choose-model="store.chooseModel"
       />
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center text-stone-500 dark:text-stone-400">
         <div class="max-w-sm">

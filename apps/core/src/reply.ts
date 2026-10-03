@@ -87,8 +87,13 @@ export function chunk(text: string, size: number = CHUNK): string[] {
   return pieces;
 }
 
-/** Opens the reply of a task that answers in a conversation. */
-export async function openReply(sql: Sql, taskId: string, options: { runId?: string } = {}): Promise<ChatReply> {
+/**
+ * Opens the reply of a task that answers in a conversation. `agent` names the
+ * agent that writes it when it is not Arianna (the Coder's report of a
+ * delegated step, task 1.10): the message carries it, and Arianna's own
+ * answer is still awaited.
+ */
+export async function openReply(sql: Sql, taskId: string, options: { runId?: string; agent?: string } = {}): Promise<ChatReply> {
   const task = await loadTask(sql, taskId);
   if (task === undefined) throw new Error(`task ${taskId} does not exist`);
   const conversationId = task.conversationId;
@@ -135,8 +140,8 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
 
       const messageId = await sql.begin(async (tx) => {
         const [row] = await tx<{ id: string }[]>`
-          INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
-          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId})
+          INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent)
+          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null})
           RETURNING id::text`;
         if (row === undefined) throw new Error('INSERT INTO messages returned no row');
         await appendEvent(tx, {
@@ -144,7 +149,7 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
           taskId,
           ...(options.runId === undefined ? {} : { runId: options.runId }),
           label: 'L0',
-          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id },
+          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id, ...(options.agent === undefined ? {} : { agent: options.agent }) },
         });
         return row.id;
       });
@@ -161,7 +166,7 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
  * never stored, sent to the web chat only, like reply fragments. The page
  * writes the line in Italian (D-045).
  */
-export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error'] as const;
+export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export interface ActivityNotice {

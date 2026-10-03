@@ -285,6 +285,9 @@ test('the reply to a Telegram message goes back to Telegram; a reply to the web 
   const webReply = await openReply(db().sql, fromWeb.task.id);
   await webReply.delta('frammento dal web');
   assert.ok((await webReply.finish('Risposta solo per il web', 'L1')).stored);
+  // The Coder's report of a delegated step is stored for the web chat, never sent on.
+  const report = await openReply(db().sql, fromTelegram.taskId, { agent: 'coder' });
+  assert.ok((await report.finish('Rapporto del Coder: fatto.', 'L1')).stored);
   const reply = await openReply(db().sql, fromTelegram.taskId);
   await reply.delta('frammento');
   assert.ok((await reply.finish('Il sito finto ha 12 test.', 'L1')).stored);
@@ -292,6 +295,7 @@ test('the reply to a Telegram message goes back to Telegram; a reply to the web 
   await eventually(() => sentTexts().includes('Il sito finto ha 12 test.'));
   const texts = sentTexts().slice(sent);
   assert.ok(!texts.includes('Risposta solo per il web'));
+  assert.ok(!texts.includes('Rapporto del Coder: fatto.'), 'the Coder report stays in the web chat');
   assert.ok(!texts.some((text) => text.includes('frammento')), 'fragments never reach Telegram');
 });
 

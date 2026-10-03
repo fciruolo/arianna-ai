@@ -59,6 +59,20 @@ test('activity lines are written in Italian; an unknown tool error is never show
   assert.equal(line('error', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore, provo un’altra strada');
 });
 
+test('delegation lines: hand-over, the Coder at work, its tools, the waits, its errors', () => {
+  const line = (kind: 'delegate' | 'tool' | 'wait' | 'error', detail: string) => activityText({ conversationId: 'c', taskId: 't', step: 2, kind, detail });
+  assert.equal(line('delegate', 'coder'), 'Passo delegato al Coder');
+  assert.equal(line('delegate', 'coder · claude/sonnet'), 'Il Coder lavora su Claude Code (Claude Sonnet)');
+  assert.equal(line('tool', 'Edit'), 'Il Coder usa Edit');
+  assert.equal(line('wait', 'budget · fable'), 'Serve la tua approvazione del budget per Claude Fable (con approvazione)');
+  assert.match(line('wait', 'claude · 2026-10-03T15:00:00.000Z'), /^Claude Code ha esaurito la quota: riprovo alle \d\d:\d\d$/);
+  assert.equal(line('wait', 'something else'), 'In attesa dell’esecutore');
+  assert.equal(line('error', 'the user did not approve sending the brief to the cloud: do what you can here'), 'Errore: il brief non è stato approvato per il cloud, provo un’altra strada');
+  assert.equal(line('error', 'no repository for the Coder: the user opens a work conversation'), 'Errore: nessun repository per il Coder: apri una conversazione di lavoro con un repository ammesso, provo un’altra strada');
+  assert.equal(line('error', 'claude: timeout'), 'Errore: Claude Code si è fermato (timeout), provo un’altra strada');
+  assert.equal(reasonText('approval needed: budget'), 'serve la tua approvazione per il budget del modello');
+});
+
 test('the orchestrator reasons are translated', () => {
   assert.equal(reasonText('the local model did not give a valid answer'), 'il modello locale non ha dato una risposta valida');
   assert.equal(reasonText('the gateway blocked the answer'), 'il gateway ha fermato la risposta');

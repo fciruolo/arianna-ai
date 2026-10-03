@@ -8,8 +8,16 @@ export interface Conversation {
   clearance: Label;
   effectiveLabel: Label;
   workspace: string | null;
+  /** The cloud model chosen for delegated steps (work only); null lets the router choose. */
+  model: string | null;
   createdAt: string;
   lastMessageAt: string | null;
+}
+
+/** A cloud model a work conversation may choose: a router alias and its executor. */
+export interface CloudModel {
+  executor: string;
+  model: string;
 }
 
 export interface Message {
@@ -21,6 +29,8 @@ export interface Message {
   label: Label;
   body: string;
   taskId: string | null;
+  /** The agent that wrote an assistant message when it is not Arianna (`coder`); null otherwise. */
+  agent: string | null;
 }
 
 export type TaskStatus = 'inbox' | 'ready' | 'running' | 'waiting_user' | 'to_verify' | 'done' | 'failed';
@@ -70,7 +80,7 @@ export interface Delta {
   text: string;
 }
 
-export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error';
+export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error' | 'delegate' | 'tool' | 'wait';
 
 /** One line of what a task is doing (D-054): never stored, gone after a reload. */
 export interface Activity {

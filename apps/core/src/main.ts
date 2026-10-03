@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
 import { loadConfig, loadLabelRules, watchConfig } from '@arianna/config';
-import { createLocalModel } from '@arianna/executors';
+import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
 import { createVault } from '@arianna/vault';
 
 import { connect } from './db/client.ts';
@@ -15,6 +15,7 @@ import { createWorker } from './engine.ts';
 import { startLiveFeed } from './live.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
@@ -69,13 +70,31 @@ const settings = watchConfig({
 });
 
 // Task 1.10: the orchestrator on the local model, with the development
-// knowledge base in kb/ (the real one, data/kb, comes after Phase 1A).
+// knowledge base in kb/ (the real one, data/kb, comes after Phase 1A), and
+// the Coder on claude -p for delegated steps when the user enabled it
+// (`[cloud] executors`, a restart applies a change). The adapter refuses a
+// Node installation whose folders would open the user's files (D-050): then
+// the core runs without delegation and says so.
+const rules = loadLabelRules();
+let claude: ClaudeExecutor | undefined;
+if (config.cloud.executors.includes('claude')) {
+  try {
+    claude = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home });
+  } catch (error) {
+    report(error);
+    console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
+  }
+}
 const orchestrator = createOrchestrator({
   sql,
   agents,
-  kb: createKb({ home: config.home, rules: loadLabelRules() }),
+  kb: createKb({ home: config.home, rules }),
   model: () => createLocalModel({ endpoints: settings.current().local.endpoints }),
+  settings: () => settings.current(),
+  rules,
+  ...(claude === undefined ? {} : { claude }),
 });
+console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${claude === undefined ? ' (delegation off)' : ' (delegation on)'}`);
 
 const worker = createWorker({
   sql,
@@ -93,6 +112,8 @@ const server = await startApiServer({
   host: config.server.host,
   port: config.server.port,
   allowlist: config.cloud.allowlist,
+  // Without the adapter no delegation runs: the selector offers nothing.
+  models: () => (claude === undefined ? [] : selectableModels(settings.current())),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

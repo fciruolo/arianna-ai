@@ -7,7 +7,7 @@ import type { Activity, Delta, Message } from '../src/lib/types.ts';
 const CONVERSATION = 'c1';
 
 function message(id: string, extra: Partial<Message> = {}): Message {
-  return { id, conversationId: CONVERSATION, ts: '', role: 'user', channel: 'web', label: 'L2', body: `m${id}`, taskId: null, ...extra };
+  return { id, conversationId: CONVERSATION, ts: '', role: 'user', channel: 'web', label: 'L2', body: `m${id}`, taskId: null, agent: null, ...extra };
 }
 
 function delta(seq: number, text: string, extra: Partial<Delta> = {}): Delta {

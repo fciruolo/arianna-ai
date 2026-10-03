@@ -2,12 +2,19 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import type { ChatState } from '../lib/chat-state.ts';
-import { activityText, reasonText } from '../lib/italian.ts';
-import { LABEL_TEXT, MODE_HINT, MODE_TEXT, STATUS_TEXT } from '../lib/labels.ts';
-import type { Activity, Conversation, Message, Task } from '../lib/types.ts';
+import { activityText, agentName, reasonText } from '../lib/italian.ts';
+import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT } from '../lib/labels.ts';
+import type { Activity, CloudModel, Conversation, Message, Task } from '../lib/types.ts';
 
-const props = defineProps<{ chat: ChatState; conversation: Conversation; tasks: Record<string, Task>; sending: boolean }>();
-const emit = defineEmits<{ send: [body: string] }>();
+const props = defineProps<{ chat: ChatState; conversation: Conversation; tasks: Record<string, Task>; sending: boolean; models: CloudModel[] }>();
+const emit = defineEmits<{ send: [body: string]; chooseModel: [model: string | null] }>();
+
+/** The selector of the cloud model for delegated steps: work conversations only (D-055). */
+const AUTO = '';
+function onModel(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value;
+  emit('chooseModel', value === AUTO ? null : value);
+}
 
 const draft = ref('');
 const list = ref<HTMLElement | null>(null);
@@ -94,6 +101,19 @@ const statusClass: Record<Task['status'], string> = {
       </span>
       <span v-if="conversation.workspace" class="font-mono text-xs text-stone-500">{{ conversation.workspace }}</span>
       <span class="text-xs text-stone-500 dark:text-stone-400">{{ MODE_HINT[conversation.mode] }}</span>
+      <label v-if="conversation.mode === 'work'" class="ml-auto flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-300">
+        <span>Coder su</span>
+        <select
+          :value="conversation.model ?? AUTO"
+          class="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-900"
+          aria-label="Modello per i passi delegati"
+          @change="onModel"
+        >
+          <option :value="AUTO">automatico (router)</option>
+          <option v-for="entry in models" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
+        </select>
+      </label>
+      <span v-else class="ml-auto text-xs text-stone-500 dark:text-stone-400">solo modello locale</span>
     </header>
 
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto px-4 py-6" aria-live="polite">
@@ -106,12 +126,19 @@ const statusClass: Record<Task['status'], string> = {
             :class="
               message.role === 'user'
                 ? 'rounded-br-md bg-indigo-600 text-white'
-                : 'rounded-bl-md border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
+                : message.agent !== null
+                  ? 'rounded-bl-md border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30'
+                  : 'rounded-bl-md border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
             "
           >
             {{ message.body }}
           </div>
           <div class="mt-1 flex items-center gap-2 px-1 text-[11px] text-stone-500 dark:text-stone-400">
+            <span
+              v-if="message.agent !== null"
+              class="rounded bg-emerald-100 px-1.5 py-px font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+              title="Rapporto dell’agente a cui Arianna ha delegato il passo"
+            >{{ agentName(message.agent) }}</span>
             <span :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
             <span
               v-if="message.channel === 'telegram'"
@@ -137,7 +164,15 @@ const statusClass: Record<Task['status'], string> = {
             <li v-for="line in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2">
               <span
                 class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                :class="line.kind === 'thinking' ? 'animate-pulse bg-indigo-500' : line.kind === 'error' ? 'bg-amber-500' : 'bg-stone-400'"
+                :class="
+                  line.kind === 'thinking' || line.kind === 'wait'
+                    ? 'animate-pulse bg-indigo-500'
+                    : line.kind === 'error'
+                      ? 'bg-amber-500'
+                      : line.kind === 'delegate' || line.kind === 'tool'
+                        ? 'bg-emerald-500'
+                        : 'bg-stone-400'
+                "
                 aria-hidden="true"
               />
               <span class="break-words">{{ activityText(line) }}</span>

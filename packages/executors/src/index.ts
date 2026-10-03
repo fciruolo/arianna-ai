@@ -46,10 +46,12 @@ export {
   prepareWorkspace,
   preparedPath,
   removeWorkspace,
+  reopenWorkspace,
   scanWorkspace,
   WorkspaceError,
   WORKTREES_DIR,
   type PreparedWorkspace,
   type PrepareOptions,
+  type ReopenOptions,
   type WorkspaceOptions,
 } from './workspace.ts';

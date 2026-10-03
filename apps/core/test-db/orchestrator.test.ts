@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
-import { parseLabelRules, resolveHome } from '@arianna/config';
+import { loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
@@ -43,6 +43,11 @@ function fakeKb() {
   return createKb({ home: scratch, rules });
 }
 const kb = fakeKb();
+const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
+const CONFIG = loadConfig();
+/** An orchestrator without delegation: no cloud executor. */
+const orchestrator = (model: LocalModel) =>
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], allowlist: [] } }), rules: RULES });
 
 type Scripted = (Answer & { thought?: string }) | LocalModelError | 'not-json';
 
@@ -73,7 +78,7 @@ function scripted(answers: Scripted[]): LocalModel & { requests: ChatRequest[] }
 }
 
 /** Runs the steps of `taskId` until none is left. Jobs of other tasks are leftovers of earlier tests: closed. */
-async function drain(taskId: string, model: LocalModel, executor: StepExecutor = createOrchestrator({ sql: db().sql, agents, kb, model: () => model })): Promise<string[]> {
+async function drain(taskId: string, model: LocalModel, executor: StepExecutor = orchestrator(model)): Promise<string[]> {
   const queue = createJobQueue(db().sql);
   const results: string[] = [];
   for (let guard = 0; guard < 40; guard += 1) {
@@ -236,10 +241,10 @@ test('a step that already has its turn does not call the model again', async () 
   const [turn] = await loadTurns(db().sql, task.id);
   assert.ok(turn !== undefined);
   const model = scripted([]);
-  const orchestrator = createOrchestrator({ sql: db().sql, agents, kb, model: () => model });
+  const executor = orchestrator(model);
   const current = await loadTask(db().sql, task.id);
   assert.ok(current !== undefined);
-  const outcome = await orchestrator.run({
+  const outcome = await executor.run({
     task: current,
     step: 1,
     runId: turn.runId,
@@ -315,8 +320,8 @@ test('a step whose answer was not delivered waits again for the user, without ca
   const current = await loadTask(db().sql, task.id);
   assert.ok(current !== undefined);
   const model = scripted([]);
-  const orchestrator = createOrchestrator({ sql: db().sql, agents, kb, model: () => model });
-  const outcome = await orchestrator.run({ task: current, step: 1, runId: run, signal: new AbortController().signal, setSessionRef: () => Promise.resolve() });
+  const executor = orchestrator(model);
+  const outcome = await executor.run({ task: current, step: 1, runId: run, signal: new AbortController().signal, setSessionRef: () => Promise.resolve() });
   assert.deepEqual(outcome, { kind: 'wait-user', reason: 'the gateway blocked the answer', usage: { steps: 0 } });
   assert.equal(model.requests.length, 0);
 });

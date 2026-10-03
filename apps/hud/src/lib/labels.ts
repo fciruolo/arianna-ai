@@ -31,10 +31,25 @@ export const STATUS_TEXT: Record<TaskStatus, string> = {
 
 export const ACTION_TEXT: Record<string, string> = {
   declassify: 'Declassamento',
+  budget: 'Budget',
   delete: 'Cancellazione',
   send_external: 'Invio all’esterno',
   payment: 'Pagamento',
   call: 'Chiamata',
+};
+
+/** The cloud models as the user reads them; an alias not listed is shown as it is. */
+export const MODEL_TEXT: Record<string, string> = {
+  sonnet: 'Claude Sonnet',
+  opus: 'Claude Opus',
+  fable: 'Claude Fable (con approvazione)',
+  codex: 'Codex',
+};
+
+export const EXECUTOR_TEXT: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  local: 'modello locale',
 };
 
 /** "L2 → L1" for a declassification detail, undefined if the detail is not one. */

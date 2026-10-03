@@ -36,6 +36,8 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 export const STEP_QUEUE = 'task.step';
 /** Longest text a declassification may cover: the user reads all of it on the card. */
 export const MAX_DECLASSIFY_LENGTH = 20_000;
+/** A `retry` outcome waits at least this long: an executor that just refused is not asked again at once. */
+export const MIN_RETRY_MS = 60_000;
 
 /** Who runs a step: the orchestrator (task 1.10) or a test double. */
 export interface StepExecutor {
@@ -49,6 +51,11 @@ export interface RunSpec {
   executor: string;
   locality: 'local' | 'cloud';
   model?: string;
+  /**
+   * What this run has read, when it is not the whole task: a delegated step
+   * reads only its brief (docs/PRIVACY-POLICY-SPEC.md). Default: the task's.
+   */
+  effectiveLabel?: Label;
 }
 
 export interface StepContext {
@@ -82,7 +89,18 @@ export type StepOutcome = (
    * web chat. The next step gets the decided approval in `approval` and lowers
    * the text with `applyDeclassify`; nothing else is covered by it.
    */
-  | { kind: 'declassify'; text: string; to: Label }
+  | { kind: 'declassify'; text: string; to: Label; /** Label of the text; default the task's effective label at the start of the step. */ from?: Label }
+  /**
+   * A cloud model that costs beyond the plan (Fable, docs/ROUTER-SPEC.md):
+   * the user approves the budget for this step from the chat. The next step
+   * finds the decided approval in `approval`.
+   */
+  | { kind: 'budget'; executor: string; model: string; step: number }
+  /**
+   * The executor refused for now (a quota, task 1.5): the same step runs
+   * again at `at`, without the user. The task stays at work; the run failed.
+   */
+  | { kind: 'retry'; at: Date; reason: string }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
   | { kind: 'wait-user'; reason: string }
   | { kind: 'failed'; reason: string }
@@ -110,14 +128,14 @@ export type StepResult =
   | 'interrupted'
   | 'lost';
 
-/** Puts a task's next step in the queue. False when a step job is already active. */
-export async function scheduleTask(sql: Queryable, taskId: string, payload: { [key: string]: Json } = {}): Promise<boolean> {
-  const id = await enqueueJob(sql, STEP_QUEUE, { taskId, ...payload }, { key: `task:${taskId}` });
+/** Puts a task's next step in the queue, at once or at `runAt`. False when a step job is already active. */
+export async function scheduleTask(sql: Queryable, taskId: string, payload: { [key: string]: Json } = {}, runAt?: Date): Promise<boolean> {
+  const id = await enqueueJob(sql, STEP_QUEUE, { taskId, ...payload }, { key: `task:${taskId}`, ...(runAt === undefined ? {} : { runAt }) });
   return id !== undefined;
 }
 
-async function mustSchedule(sql: Queryable, taskId: string, payload: { [key: string]: Json } = {}): Promise<void> {
-  if (!(await scheduleTask(sql, taskId, payload))) throw new TaskError(`task ${taskId} already has an active step job`);
+async function mustSchedule(sql: Queryable, taskId: string, payload: { [key: string]: Json } = {}, runAt?: Date): Promise<void> {
+  if (!(await scheduleTask(sql, taskId, payload, runAt))) throw new TaskError(`task ${taskId} already has an active step job`);
 }
 
 /** Creates a task in Pronti and queues its first step. */
@@ -214,7 +232,7 @@ export async function processStepJob(
         agent: spec.agent,
         executor: spec.executor,
         locality: spec.locality,
-        effectiveLabel: task.effectiveLabel,
+        effectiveLabel: spec.effectiveLabel ?? task.effectiveLabel,
         ...(spec.model === undefined ? {} : { model: spec.model }),
         ...(interrupted === undefined ? {} : { resumedFrom: interrupted.id }),
       });
@@ -271,12 +289,37 @@ export async function processStepJob(
       await endRun(tx, runId, 'interrupted', { steps: 0 });
       return 'lost';
     }
-    await endRun(tx, runId, outcome.kind === 'failed' ? 'failed' : 'ok', usage);
+    await endRun(tx, runId, outcome.kind === 'failed' || outcome.kind === 'retry' ? 'failed' : 'ok', usage);
     await completeJob(tx, job.id, worker);
     switch (outcome.kind) {
       case 'continue':
         await mustSchedule(tx, task.id);
         return 'continued';
+      case 'retry': {
+        // The same step again later, never at once: a failed run does not advance the step number.
+        const soonest = Date.now() + MIN_RETRY_MS;
+        const at = outcome.at instanceof Date && outcome.at.getTime() > soonest ? outcome.at : new Date(soonest);
+        await mustSchedule(tx, task.id, {}, at);
+        await appendEvent(tx, { kind: 'task.retry', taskId: task.id, runId, label: 'L0', payload: { step, at: at.toISOString() } });
+        return 'continued';
+      }
+      case 'budget': {
+        // Names from the router only: executor and model are aliases, never content.
+        const [created] = await tx<{ id: string }[]>`
+          INSERT INTO approvals (task_id, kind, action, detail, label)
+          VALUES (${task.id}, 'budget', 'budget', ${tx.json({ executor: outcome.executor, model: outcome.model, step: outcome.step })}, 'L0')
+          RETURNING id::text`;
+        if (created === undefined) throw new Error('INSERT INTO approvals returned no row');
+        await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: budget', cause: 'approval', approvalId: created.id });
+        await appendEvent(tx, {
+          kind: 'approval.requested',
+          taskId: task.id,
+          runId,
+          label: 'L0',
+          payload: { approvalId: created.id, action: 'budget', executor: outcome.executor, model: outcome.model },
+        });
+        return 'waiting-approval';
+      }
       case 'answered': {
         const [message] = await tx<{ id: string }[]>`
           SELECT id::text FROM messages
@@ -326,8 +369,9 @@ export async function processStepJob(
         return 'waiting-approval';
       }
       case 'declassify': {
-        // The text was written in the task's context: it carries the task's label.
-        const from = task.effectiveLabel;
+        // The text was written in the task's context: it carries the task's label,
+        // or the label the executor read for it, when the step raised it.
+        const from = outcome.from !== undefined && isLabel(outcome.from) ? outcome.from : task.effectiveLabel;
         if (
           !isLabel(outcome.to) ||
           isAtMost(from, outcome.to) ||

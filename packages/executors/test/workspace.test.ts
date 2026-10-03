@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
-import { preparedPath, prepareWorkspace, removeWorkspace, scanWorkspace, WorkspaceError } from '@arianna/executors';
+import { preparedPath, prepareWorkspace, removeWorkspace, reopenWorkspace, scanWorkspace, WorkspaceError } from '@arianna/executors';
 import { createLabelRules } from '@arianna/policy';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `workspace-${randomUUID()}`);
@@ -202,5 +202,48 @@ describe('scanWorkspace', () => {
       { path: 'relative', kind: 'symlink', target: null },
       { path: 'x.ts', kind: 'file' },
     ]);
+  });
+});
+
+describe('reopenWorkspace', () => {
+  it('opens again the folder of an earlier process, files changed by the executor included', async () => {
+    const repo = makeRepo('reopen', { 'a.ts': 'x\n' });
+    const opts = options(repo);
+    const prepared = await prepareWorkspace(opts);
+    assert.ok(prepared.path !== undefined);
+    writeFileSync(join(prepared.path, 'b.ts'), 'y\n');
+    const reopened = await reopenWorkspace(opts);
+    assert.equal(reopened.decision.decision, 'allow');
+    assert.equal(reopened.path, prepared.path);
+    assert.equal(preparedPath(reopened), prepared.path);
+    assert.equal(preparedPath({ ...reopened }), undefined);
+  });
+
+  it('refuses a folder that is gone, replaced by a link, not the prepared repository, or no longer allowlisted', async () => {
+    const repo = makeRepo('reopen-bad', { 'a.ts': 'x\n' });
+    const gone = options(repo);
+    await assert.rejects(reopenWorkspace(gone), /is gone/);
+    const prepared = await prepareWorkspace(gone);
+    assert.ok(prepared.path !== undefined);
+    const linked = options(repo);
+    symlinkSync(prepared.path, join(DATA, 'worktrees', linked.runId));
+    await assert.rejects(reopenWorkspace(linked), /symbolic link/);
+    const plain = options(repo);
+    mkdirSync(join(DATA, 'worktrees', plain.runId));
+    await assert.rejects(reopenWorkspace(plain), /not the repository prepareWorkspace made/);
+    const blocked = await reopenWorkspace({ ...gone, allowlist: [] });
+    assert.equal(blocked.decision.decision, 'block');
+    assert.equal(blocked.path, undefined);
+  });
+
+  it('scans the files again: a secret the executor wrote blocks the folder', async () => {
+    const repo = makeRepo('reopen-leak', { 'a.ts': 'x\n' });
+    const opts = options(repo);
+    const prepared = await prepareWorkspace(opts);
+    assert.ok(prepared.path !== undefined);
+    writeFileSync(join(prepared.path, '.env'), 'AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLEKEY0123456789\n');
+    const reopened = await reopenWorkspace(opts);
+    assert.equal(reopened.decision.decision, 'block');
+    assert.ok(existsSync(prepared.path));
   });
 });

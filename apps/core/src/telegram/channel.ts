@@ -378,6 +378,8 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
     if (payload?.role !== 'assistant' || payload.conversationId !== conversationId || typeof payload.messageId !== 'string') return;
     const message = await loadMessage(sql, payload.messageId);
     if (message === undefined || message.taskId === null) return;
+    // The report of a delegated agent (the Coder) is for the web chat: Arianna answers after it.
+    if (message.agent !== null) return;
     // Only the answer to a message written on Telegram goes back there.
     const [fromTelegram] = await sql`
       SELECT 1 FROM messages WHERE task_id = ${message.taskId} AND role = 'user' AND channel = 'telegram' LIMIT 1`;

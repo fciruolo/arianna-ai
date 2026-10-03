@@ -50,6 +50,12 @@ export interface Step {
   attempts?: readonly Attempt[];
   /** The user approved the budget for Fable on this step. */
   budgetApproved?: boolean;
+  /**
+   * The model the user chose for the conversation (task 1.10): taken when it
+   * is an installed candidate of this step that privacy, the agent, the budget
+   * and the escalation allow; otherwise the ladder decides as usual.
+   */
+  preferredModel?: ModelAlias;
 }
 
 /**
@@ -134,6 +140,9 @@ const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\
  */
 function check(step: Step, budget: Budget): Budget {
   if (!(STEP_KINDS as readonly string[]).includes(step.kind)) throw new TypeError(`unknown step kind ${JSON.stringify(step.kind)}`);
+  if (step.preferredModel !== undefined && executorOf(step.preferredModel) === undefined) {
+    throw new TypeError(`unknown preferred model ${JSON.stringify(step.preferredModel)}`);
+  }
   const attempts: unknown = step.attempts ?? [];
   if (!Array.isArray(attempts)) throw new TypeError('attempts must be a list');
   for (const attempt of attempts as readonly (Partial<Attempt> | null)[]) {
@@ -292,25 +301,39 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
     return { decision: 'wait', next: 'wait-user', ...base, reason: describe('no stronger executor is allowed after the failed attempts'), candidates: list() };
   }
 
+  const choose = (chosen: Candidate, note: string): RouteDecision => {
+    outcomes.set(chosen, 'chosen');
+    const approval = NEEDS_BUDGET_APPROVAL.includes(chosen.model) && step.budgetApproved !== true ? { approval: 'budget' as const } : {};
+    return {
+      decision: 'route',
+      executor: chosen.executor,
+      model: chosen.model,
+      locality: localityOf(chosen),
+      ...approval,
+      ...base,
+      reason: describe(`${candidateKey(chosen)}${note}${'approval' in approval ? ', needs budget approval' : ''}`),
+      candidates: list(),
+    };
+  };
+
+  // The user's choice for the conversation wins over the ladder when nothing
+  // excludes it: a stronger model than the ladder would pick is their call,
+  // a weaker one than a failed attempt is not.
+  if (step.preferredModel !== undefined) {
+    const preferred = config.candidates.find((candidate) => candidate.model === step.preferredModel);
+    // `not-chosen` (above the starting tier) is the ladder's exclusion, not a rule's.
+    const excluded = preferred === undefined ? undefined : outcomes.get(preferred);
+    if (preferred !== undefined && (excluded === undefined || excluded === 'not-chosen')) return choose(preferred, ' (chosen by the user)');
+    notes.push(preferred === undefined ? `preferred ${step.preferredModel} not installed` : `preferred ${step.preferredModel} excluded: ${excluded ?? 'not-chosen'}`);
+  }
+
   // From the starting tier down to the floor: a model that is out of budget or
   // not installed is replaced by a weaker one, never by a stronger (costlier) one.
   for (let tier = start; tier >= floor; tier -= 1) {
     for (const model of ladder[tier] ?? []) {
       const chosen = config.candidates.find((candidate) => candidate.model === model && !outcomes.has(candidate));
       if (chosen === undefined) continue;
-      outcomes.set(chosen, 'chosen');
-      const approval = NEEDS_BUDGET_APPROVAL.includes(chosen.model) && step.budgetApproved !== true ? { approval: 'budget' as const } : {};
-      const downgraded = tier < start ? ` (tier ${String(start)} unavailable)` : '';
-      return {
-        decision: 'route',
-        executor: chosen.executor,
-        model: chosen.model,
-        locality: localityOf(chosen),
-        ...approval,
-        ...base,
-        reason: describe(`${candidateKey(chosen)}${downgraded}${'approval' in approval ? ', needs budget approval' : ''}`),
-        candidates: list(),
-      };
+      return choose(chosen, tier < start ? ` (tier ${String(start)} unavailable)` : '');
     }
   }
 

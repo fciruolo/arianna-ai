@@ -51,7 +51,7 @@ Regole di validazione (task 1.9, D-034), ognuna con un caso positivo e uno negat
 | `web.search`, `web.fetch` | contenuti non fidati, comunicazione esterna | |
 | `channel.send` | comunicazione esterna | `send_external` |
 
-Gli schemi degli argomenti stanno in `TOOL_ARGS` di `packages/agents/src/protocol.ts` (task 1.10, D-053), insieme allo schema di risposta e al prompt di sistema che usano sia l'orchestratore sia gli eval. Uno strumento senza schema non viene offerto al modello. L'orchestratore oggi esegue `kb.search`, `kb.read`, `kb.write` (solo `kb/inbox/`), `task.create` (carta in Inbox) e `user.ask` (domanda in chat); `task.update` e `task.delegate` arrivano con la seconda parte del 1.10.
+Gli schemi degli argomenti stanno in `TOOL_ARGS` di `packages/agents/src/protocol.ts` (task 1.10, D-053), insieme allo schema di risposta e al prompt di sistema che usano sia l'orchestratore sia gli eval. Uno strumento senza schema non viene offerto al modello. L'orchestratore oggi esegue `kb.search`, `kb.read`, `kb.write` (solo `kb/inbox/`), `task.create` (carta in Inbox) e `user.ask` (domanda in chat); `task.delegate` (D-055) è offerto solo quando un esecutore cloud è abilitato e disponibile, e manda il passo al Coder su `claude -p` (gli strumenti `repo.read`, `repo.write`, `repo.test` della scheda diventano `Read`/`Glob`/`Grep`, `Edit`/`Write`, `Bash`). `task.update` non è ancora offerto.
 
 ## Agenti iniziali
 

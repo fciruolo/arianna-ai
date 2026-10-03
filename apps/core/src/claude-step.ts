@@ -39,6 +39,11 @@ export interface ClaudeStepInput {
   timeoutMs?: number;
   /** For gateway_log: what leaves, in a few words, without content. */
   summary?: string;
+  /**
+   * Text the model writes and the tools it calls, as they come (task 1.10):
+   * for the chat. Awaited in order; a rejection stops the run.
+   */
+  onEvent?: (event: Extract<ClaudeEvent, { type: 'text' | 'tool' }>) => void | Promise<void>;
 }
 
 export type ClaudeStepResult =
@@ -116,6 +121,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     signal: step.signal,
     onEvent: async (event: ClaudeEvent) => {
       if (event.type === 'init') await step.setSessionRef(event.sessionRef);
+      if (event.type === 'text' || event.type === 'tool') await input.onEvent?.(event);
       if (event.type === 'rate-limit') {
         await appendEvent(sql, {
           ...ids,

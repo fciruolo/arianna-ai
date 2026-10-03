@@ -1,4 +1,4 @@
-import type { Approval, Conversation, ConversationMode, Message, Task } from './types.ts';
+import type { Approval, CloudModel, Conversation, ConversationMode, Message, Task } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -33,6 +33,16 @@ export async function listConversations(): Promise<Conversation[]> {
 export async function createConversation(mode: ConversationMode, workspace?: string): Promise<Conversation> {
   const body = workspace === undefined || workspace === '' ? { mode } : { mode, workspace };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
+}
+
+/** The cloud models a work conversation may choose on this installation. */
+export async function listModels(): Promise<CloudModel[]> {
+  return (await call<{ models: CloudModel[] }>('GET', '/api/models')).models;
+}
+
+/** Sets the model of a work conversation; null lets the router choose. */
+export async function setModel(conversationId: string, model: string | null): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/model`, { model })).conversation;
 }
 
 export async function listMessages(conversationId: string, beforeId?: string): Promise<Message[]> {

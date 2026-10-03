@@ -285,6 +285,53 @@ export async function prepareWorkspace(options: PrepareOptions): Promise<Prepare
   }
 }
 
+export interface ReopenOptions extends WorkspaceOptions {
+  /** The repository the workspace was prepared from, relative to ARIANNA_HOME. */
+  repo: string;
+  allowlist: readonly string[];
+  rules: LabelRules;
+}
+
+/**
+ * Opens again a workspace that `prepareWorkspace` made in an earlier process
+ * (the core restarted while a cloud run was in progress, task 1.10): the
+ * folder must still be a plain folder at that exact path, the top of the
+ * repository the preparation created, and the repository must still be
+ * allowlisted. Its files, which the executor may have changed, are scanned
+ * again. Nothing is removed on a block: the folder belongs to the task.
+ */
+export async function reopenWorkspace(options: ReopenOptions): Promise<PreparedWorkspace> {
+  const target = workspacePath(options);
+  if (!isAllowlisted(options.repo, options.allowlist)) {
+    return { decision: checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries: [], rules: options.rules }) };
+  }
+  let real: string;
+  try {
+    real = await realpath(target);
+  } catch {
+    throw new WorkspaceError(`workspace ${options.runId} is gone`);
+  }
+  if (real !== target) throw new WorkspaceError(`workspace ${options.runId} goes through a symbolic link`);
+  if (!(await lstat(target)).isDirectory()) throw new WorkspaceError(`workspace ${options.runId} is not a folder`);
+  let top: string;
+  try {
+    top = (await git(target, ['rev-parse', '--show-toplevel'])).trim();
+  } catch {
+    throw new WorkspaceError(`workspace ${options.runId} is not the repository prepareWorkspace made`);
+  }
+  if ((await realpath(top)) !== real) throw new WorkspaceError(`workspace ${options.runId} is not the repository prepareWorkspace made`);
+  const decision = checkWorkspace({
+    repo: options.repo,
+    allowlist: options.allowlist,
+    entries: await scanWorkspace(target),
+    rules: options.rules,
+  });
+  if (decision.decision !== 'allow') return { decision };
+  const workspace: PreparedWorkspace = Object.freeze({ decision, path: target });
+  prepared.set(workspace, real);
+  return workspace;
+}
+
 /** Removes the workspace of a run. It is a plain folder: no repository is involved. */
 export async function removeWorkspace(options: WorkspaceOptions): Promise<void> {
   await rm(workspacePath(options), { recursive: true, force: true });

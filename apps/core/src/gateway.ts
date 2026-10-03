@@ -19,7 +19,7 @@ import {
 import { knownSecrets } from '@arianna/vault';
 
 import { loadApproval } from './approvals.ts';
-import type { Sql } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
 
 export interface GatewayMeta {
   taskId?: string;
@@ -101,13 +101,16 @@ export async function passGateway(
  * does not cover this exact text and these labels; the database checks it again.
  */
 export async function applyDeclassify<T>(sql: Sql, item: Labeled<T>, to: Label, approvalId: string): Promise<Labeled<T>> {
-  return sql.begin(async (tx) => {
-    const approval = await loadApproval(tx, approvalId);
-    if (approval === undefined) throw new PolicyError(`declassify: approval ${approvalId} does not exist`);
-    const { item: lowered, change } = declassify(item, to, approval);
-    await tx`
-      INSERT INTO label_changes (subject, from_label, to_label, approval_id)
-      VALUES (${change.subject}, ${change.from}::privacy_label, ${change.to}::privacy_label, ${change.approvalId})`;
-    return lowered;
-  });
+  return sql.begin((tx) => applyDeclassifyIn(tx, item, to, approvalId));
+}
+
+/** `applyDeclassify` inside a transaction the caller holds, with what the lowered text is for. */
+export async function applyDeclassifyIn<T>(tx: Queryable, item: Labeled<T>, to: Label, approvalId: string): Promise<Labeled<T>> {
+  const approval = await loadApproval(tx, approvalId);
+  if (approval === undefined) throw new PolicyError(`declassify: approval ${approvalId} does not exist`);
+  const { item: lowered, change } = declassify(item, to, approval);
+  await tx`
+    INSERT INTO label_changes (subject, from_label, to_label, approval_id)
+    VALUES (${change.subject}, ${change.from}::privacy_label, ${change.to}::privacy_label, ${change.approvalId})`;
+  return lowered;
 }

@@ -28,3 +28,6 @@ __pycache__/
 
 # Pages written by agents in the development knowledge base (kb.write, A1)
 kb/inbox/
+
+# Repositories the Coder may work on (cloud.allowlist): the user's projects, never in this git
+repos/

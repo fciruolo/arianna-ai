@@ -35,7 +35,15 @@ before(async () => {
   writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>Arianna</title>');
   writeFileSync(join(staticDir, 'assets', 'app.js'), 'console.log(1)');
   live = await startLiveFeed(db().sql);
-  server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, staticDir, allowlist: ['repos/fake-site'] });
+  server = await startApiServer({
+    sql: db().sql,
+    live,
+    host: '127.0.0.1',
+    port: 0,
+    staticDir,
+    allowlist: ['repos/fake-site'],
+    models: () => [{ executor: 'claude', model: 'sonnet' }, { executor: 'claude', model: 'opus' }],
+  });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
 
@@ -134,6 +142,21 @@ test('requests from another site, or for another host, are refused', async () =>
 test('a work conversation may name an allowlisted workspace', async () => {
   const reply = await call('POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/fake-site' } });
   assert.equal(reply.status, 201);
+});
+
+test('a work conversation chooses a cloud model among those of the installation; a private one has none', async () => {
+  assert.deepEqual(field<{ model: string }[]>(await call('GET', '/api/models'), 'models').map((entry) => entry.model), ['sonnet', 'opus']);
+  const work = await newConversation('work');
+  const chosen = await call('POST', `/api/conversations/${work}/model`, { body: { model: 'opus' } });
+  assert.equal(chosen.status, 200);
+  assert.equal(field<{ model: string | null }>(chosen, 'conversation').model, 'opus');
+  assert.equal(field<{ model: string | null }>(await call('GET', `/api/conversations/${work}`), 'conversation').model, 'opus');
+  const cleared = await call('POST', `/api/conversations/${work}/model`, { body: { model: null } });
+  assert.equal(field<{ model: string | null }>(cleared, 'conversation').model, null);
+  assert.equal((await call('POST', `/api/conversations/${work}/model`, { body: { model: 'fable' } })).status, 400);
+  assert.equal((await call('POST', `/api/conversations/${work}/model`, { body: { model: 'gpt-5' } })).status, 400);
+  const priv = await newConversation('private');
+  assert.equal((await call('POST', `/api/conversations/${priv}/model`, { body: { model: 'sonnet' } })).status, 400);
 });
 
 test('bad input gets a clear status and no internal detail', async () => {

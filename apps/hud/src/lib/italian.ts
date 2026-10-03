@@ -1,5 +1,5 @@
 import { ApiError } from './api.ts';
-import { ACTION_TEXT } from './labels.ts';
+import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { Activity } from './types.ts';
 
 /**
@@ -33,6 +33,7 @@ const REASONS: Record<string, string> = {
   'the answer is above what the conversation may hold': 'la risposta supera il livello di questa conversazione',
   'the task has no request to work on': 'il task non ha una richiesta su cui lavorare',
   'the local model asked for a tool it does not have': 'il modello locale ha chiesto uno strumento che non ha',
+  'approval needed: budget': 'serve la tua approvazione per il budget del modello',
 };
 
 function actionName(action: string): string {
@@ -94,6 +95,16 @@ export function errorText(cause: unknown): string {
 // Errors of the orchestrator's tools (apps/core/src/orchestrator/kb.ts): fixed
 // texts around a path the model chose.
 const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
+  [/^(\S+) does not take delegated steps$/, (agent) => `${agentName(agent)} non accetta passi delegati`],
+  [/^the user did not approve sending the brief to the cloud/, () => 'il brief non è stato approvato per il cloud'],
+  [/^the user did not approve the budget for (\S+)/, (model) => `il budget per ${MODEL_TEXT[model] ?? model} non è stato approvato`],
+  [/^no repository for the Coder/, () => 'nessun repository per il Coder: apri una conversazione di lavoro con un repository ammesso'],
+  [/^the gateway refused the brief/, () => 'il gateway ha fermato il brief'],
+  [/^no executor can take this step now/, () => 'nessun esecutore può prendere questo passo adesso'],
+  [/^the Coder runs delegated steps on Claude Code only/, () => 'il Coder lavora solo su Claude Code, che non è disponibile per questo passo'],
+  [/^the repository (\S+) cannot go to the cloud/, (repo) => `il repository ${repo} non può andare nel cloud`],
+  [/^the workspace of (\S+) could not be prepared$/, (repo) => `non sono riuscita a preparare la cartella di lavoro di ${repo}`],
+  [/^claude: ([a-z-]+)$/, (kind) => `Claude Code si è fermato (${kind})`],
   [/^"(.*)" is not a page path/, (path) => `${path} non è un percorso di pagina valido (kb/cartella/nome.md)`],
   [/^page (\S+) not found$/, (path) => `pagina ${path} non trovata`],
   [/^page (\S+) is above what this conversation may read/, (path) => `${path} è sopra il livello di questa conversazione`],
@@ -105,7 +116,7 @@ const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
 function toolError(detail: string): string {
   for (const [pattern, text] of TOOL_ERRORS) {
     const match = pattern.exec(detail);
-    if (match?.[1] !== undefined) return text(match[1]);
+    if (match !== null) return text(match[1] ?? '');
   }
   return 'uno strumento ha restituito un errore';
 }
@@ -127,5 +138,39 @@ export function activityText(activity: Activity): string {
       return `Piano: ${activity.detail}`;
     case 'error':
       return `Errore: ${toolError(activity.detail)}, provo un’altra strada`;
+    case 'delegate':
+      return delegateText(activity.detail);
+    case 'tool':
+      return `Il Coder usa ${activity.detail}`;
+    case 'wait':
+      return waitText(activity.detail);
   }
+}
+
+// `coder` when the step is handed over, `coder · claude/sonnet` when it starts.
+function delegateText(detail: string): string {
+  const started = /^(\S+) · (\w+)\/(\S+)$/.exec(detail);
+  if (started === null) return `Passo delegato al ${agentName(detail)}`;
+  const [, agent = '', executor = '', model = ''] = started;
+  return `Il ${agentName(agent)} lavora su ${EXECUTOR_TEXT[executor] ?? executor} (${MODEL_TEXT[model] ?? model})`;
+}
+
+// `budget · fable`, or `claude · <ISO time>` for a quota.
+function waitText(detail: string): string {
+  const budget = /^budget · (\S+)$/.exec(detail);
+  if (budget?.[1] !== undefined) return `Serve la tua approvazione del budget per ${MODEL_TEXT[budget[1]] ?? budget[1]}`;
+  const quota = /^(\w+) · (\S+)$/.exec(detail);
+  if (quota?.[2] !== undefined && !Number.isNaN(Date.parse(quota[2]))) {
+    const at = new Date(quota[2]).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const executor = quota[1] ?? '';
+    return `${EXECUTOR_TEXT[executor] ?? executor} ha esaurito la quota: riprovo alle ${at}`;
+  }
+  return 'In attesa dell’esecutore';
+}
+
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna' };
+
+/** The agent as the user reads it. */
+export function agentName(agent: string): string {
+  return AGENT_TEXT[agent] ?? agent;
 }

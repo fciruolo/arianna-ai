@@ -17,6 +17,11 @@ label = "L1"
 path = "kb/private"
 label = "L2"
 
+# Fake demo site for the Coder (task 1.10): work data, may go to the cloud.
+[[folder]]
+path = "repos/demo"
+label = "L1"
+
 # Real data lives under data/: private by default, secrets at the top.
 [[folder]]
 path = "data"

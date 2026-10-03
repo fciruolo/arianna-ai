@@ -11,17 +11,22 @@ import {
   type ToolId,
   type TurnMessage,
 } from '@arianna/agents';
-import { LocalModelError, type LocalModel } from '@arianna/executors';
-import { createContext, maxLabel, type Context, type Label, type Labeled } from '@arianna/policy';
+import type { AriannaConfig } from '@arianna/config';
+import { LocalModelError, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
+import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
+import { loadConversation } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
+import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
+import { canDelegate, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
+import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
-import { loadTurns, recordTurn, type Turn } from './turns.ts';
+import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
 /**
  * The local orchestrator (task 1.10, D-053): one model call per engine step.
@@ -36,6 +41,10 @@ import { loadTurns, recordTurn, type Turn } from './turns.ts';
  * gateway towards the local executor and is logged in gateway_log; the model
  * gets `decision.texts`. Every turn carries the highest label it read, and
  * the database raises the task's label to it.
+ *
+ * A `task.delegate` call opens a delegation (D-055): the next step of the
+ * task runs on Claude Code (delegate.ts), and the step after reads its
+ * report as the result of the call.
  */
 export const ORCHESTRATOR_EXECUTOR = 'local';
 /** The model alias of the orchestrator role (docs/ROUTER-SPEC.md, planning and judgement). */
@@ -43,6 +52,7 @@ export const ORCHESTRATOR_MODEL = 'local-large';
 
 /** Tools that end the step with a message in the chat instead of running. */
 const CHAT_TOOLS: readonly ToolId[] = ['user.ask'];
+const DELEGATE: ToolId = 'task.delegate';
 /** Messages of the conversation the model reads before the task's turns. */
 const HISTORY_MESSAGES = 20;
 /** Longest message, tool result or turn shown to the model. */
@@ -57,21 +67,41 @@ export interface OrchestratorOptions {
    * model changed for a role in arianna.toml applies at the next step (1.18).
    */
   model: () => LocalModel;
+  /** The current configuration: cloud executors and allowlist for delegation. */
+  settings: () => AriannaConfig;
+  rules: LabelRules;
+  /** The `claude -p` adapter, when `claude` is enabled and runs on this machine. */
+  claude?: ClaudeExecutor;
   /** Room for the thought and the answer. Default 2048 (D-052). */
   maxTokens?: number;
 }
 
-/** The tools of a card the orchestrator can offer now. */
-export function orchestratorTools(agent: LoadedAgent): ToolId[] {
-  return offerable(agent.card.tools).filter((tool) => isLocalTool(tool) || CHAT_TOOLS.includes(tool));
+/** The tools of a card the orchestrator can offer now; `task.delegate` only when a cloud executor can take the step. */
+export function orchestratorTools(agent: LoadedAgent, delegation = false): ToolId[] {
+  return offerable(agent.card.tools).filter((tool) => isLocalTool(tool) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE));
 }
 
 function clip(text: string): string {
   return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n[cut at ${String(MAX_TEXT)} characters]` : text;
 }
 
+/** How the model reads the outcome of a delegation at the step after it. */
+function delegationResult(delegation: Delegation | undefined): { text: string; label: Label } {
+  if (delegation === undefined) return { text: `error: ${DELEGATE}: the delegation was not recorded`, label: 'L0' };
+  switch (delegation.status) {
+    case 'ok':
+      return { text: `${delegation.agent} (${delegation.executor ?? ''}/${delegation.model ?? ''}) reported:\n${clip(delegation.result ?? '')}`, label: delegation.resultLabel ?? delegation.label };
+    case 'failed':
+    case 'refused':
+      return { text: delegation.result ?? `error: ${DELEGATE}: failed`, label: delegation.resultLabel ?? delegation.label };
+    case 'pending':
+    case 'running':
+      return { text: `delegation to ${delegation.agent} in progress`, label: 'L0' };
+  }
+}
+
 /** What the model reads, each part with its label: the conversation, then the task's turns. */
-async function historyOf(sql: Sql, task: Task, turns: readonly Turn[]): Promise<Labeled<TurnMessage>[]> {
+async function historyOf(sql: Sql, task: Task, turns: readonly Turn[], delegations: readonly Delegation[]): Promise<Labeled<TurnMessage>[]> {
   const history: Labeled<TurnMessage>[] = [];
   if (task.conversationId === null) {
     // A task without a conversation: its title and goal are the request.
@@ -79,10 +109,11 @@ async function historyOf(sql: Sql, task: Task, turns: readonly Turn[]): Promise<
     history.push({ value: { role: 'user', content }, label: task.label, source: `task:${task.id}` });
   } else {
     // Up to the message that started this task: later ones belong to other tasks.
+    // Reports of delegated steps are read from their delegation, not as messages.
     const rows = await sql<{ id: string; role: 'user' | 'assistant'; body: string; label: Label }[]>`
       SELECT * FROM (
         SELECT id::text, role, body, label FROM messages
-        WHERE conversation_id = ${task.conversationId} AND role IN ('user', 'assistant')
+        WHERE conversation_id = ${task.conversationId} AND role IN ('user', 'assistant') AND agent IS NULL
           AND id <= (SELECT max(id) FROM messages WHERE task_id = ${task.id} AND role = 'user')
         ORDER BY messages.id DESC LIMIT ${HISTORY_MESSAGES}
       ) recent ORDER BY recent.id::bigint`;
@@ -93,7 +124,13 @@ async function historyOf(sql: Sql, task: Task, turns: readonly Turn[]): Promise<
   for (const turn of turns) {
     const source = `turn:${task.id}:${String(turn.step)}`;
     history.push({ value: { role: 'assistant', content: answerText(turn.answer) }, label: turn.label, source });
-    if (turn.result !== null) history.push({ value: { role: 'tool', content: clip(turn.result) }, label: turn.label, source });
+    if (turn.result !== null) {
+      history.push({ value: { role: 'tool', content: clip(turn.result) }, label: turn.label, source });
+    } else if (turn.answer.action === 'call' && turn.answer.tool === DELEGATE) {
+      // A call that opened a delegation: its outcome is the result.
+      const result = delegationResult(delegations.find((delegation) => delegation.step === turn.step));
+      history.push({ value: { role: 'tool', content: result.text }, label: result.label, source: `delegation:${task.id}:${String(turn.step)}` });
+    }
   }
   return history;
 }
@@ -117,6 +154,16 @@ const PLAN_NOTED = 'Plan noted. Now carry out its first step with one tool call,
 
 export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   const { sql } = options;
+  const env: DelegateEnv = {
+    sql,
+    agents: options.agents,
+    settings: options.settings,
+    rules: options.rules,
+    ...(options.claude === undefined ? {} : { claude: options.claude }),
+  };
+  /** What `plan` decided for a step with an open delegation, for its `run`. */
+  const plans = new Map<string, DelegationPlan>();
+  const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
   /** One line of activity in the chat (D-054); a task without a conversation shows none. Never fails the step. */
   async function show(task: Task, step: number, kind: ActivityKind, detail = ''): Promise<void> {
@@ -157,30 +204,104 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     return { read, tokensIn, tokensOut };
   }
 
+  /** The step that follows a `task.delegate` call: planned by the router, or closed here. */
+  async function delegationPlanFor(task: Task, step: number): Promise<DelegationPlan | undefined> {
+    const delegation = await openDelegation(sql, task.id);
+    if (delegation === undefined || delegation.step >= step) return undefined;
+    return planDelegation(env, task, delegation);
+  }
+
+  /**
+   * The model called `task.delegate`: the turn and the delegation are
+   * written together. A brief above L1 asks the user's declassification
+   * first; the next step runs the delegation (or reads why it could not).
+   */
+  async function delegateCall(
+    ctx: StepContext,
+    turn: Omit<NewTurn, 'label' | 'result' | 'messageId'>,
+    label: Label,
+    args: Record<string, unknown>,
+    usage: { steps: number; tokensIn: number; tokensOut: number },
+  ): Promise<StepOutcome> {
+    const { task, step } = ctx;
+    const agentName = String(args.agent);
+    const brief = String(args.brief).trim();
+    const target = options.agents.get(agentName);
+    const conversation = task.conversationId === null ? undefined : await loadConversation(sql, task.conversationId);
+    const repo = repoFor(conversation?.workspace, options.settings().cloud.allowlist);
+    let error: string | undefined;
+    if (target === undefined || !target.card.executors.includes('claude')) error = `${agentName} does not take delegated steps`;
+    else if (brief === '') error = 'the brief is empty';
+    else if (repo === undefined) error = 'no repository for the Coder: the user opens a work conversation with one of cloud.allowlist';
+    if (error !== undefined || repo === undefined) {
+      const result = `error: ${DELEGATE}: ${error ?? ''}`;
+      await recordTurn(sql, { ...turn, label, result });
+      await show(task, step, 'error', error);
+      return { kind: 'continue', usage };
+    }
+    await sql.begin(async (tx) => {
+      await recordTurn(tx, { ...turn, label });
+      await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, repo });
+    });
+    await show(task, step, 'delegate', agentName);
+    // The brief carries what the step has read: above L1 it leaves only as the text the user approves.
+    return isAtMost(label, 'L1') ? { kind: 'continue', usage } : { kind: 'declassify', text: brief, from: label, to: 'L1', usage };
+  }
+
   return {
-    plan(task: Task): RunSpec {
-      return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL };
+    async plan(task: Task, step: number): Promise<RunSpec> {
+      const planned = await delegationPlanFor(task, step);
+      if (planned === undefined) return localSpec(task);
+      plans.set(`${task.id}:${String(step)}`, planned);
+      // The cloud run reads only the brief: its label, not the task's.
+      return planned.kind === 'cloud'
+        ? { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label }
+        : localSpec(task);
     },
 
     async run(ctx: StepContext): Promise<StepOutcome> {
       const { task, step, runId } = ctx;
+      const key = `${task.id}:${String(step)}`;
+      const planned = plans.get(key) ?? (await delegationPlanFor(task, step));
+      plans.delete(key);
+      if (planned !== undefined) {
+        // The decision goes to router_decisions before anything acts on it.
+        if (planned.decision !== undefined) await recordRouteDecision(sql, planned.decision, { taskId: task.id, runId, step });
+        switch (planned.kind) {
+          case 'cloud':
+            return runDelegation(env, ctx, planned);
+          case 'budget':
+            await show(task, step, 'wait', `budget · ${planned.model}`);
+            return { kind: 'budget', executor: 'claude', model: planned.model, step: planned.delegation.step };
+          case 'retry':
+            await show(task, step, 'wait', `claude · ${planned.at.toISOString()}`);
+            return { kind: 'retry', at: planned.at, reason: planned.decision.reason };
+          case 'closed':
+            // Nothing to run: the local step goes on, with the error as the result of the call.
+            await updateDelegation(sql, planned.delegation.id, { status: planned.status, result: planned.result, resultLabel: planned.delegation.label });
+            await show(task, step, 'error', planned.result.replace(/^error: [^:]+: /, ''));
+            break;
+        }
+      }
+
       const agent = options.agents.get(task.assignee);
       if (agent === undefined) return { kind: 'wait-user', reason: `no agent card for ${task.assignee}` };
       if (!agent.card.executors.includes('local')) return { kind: 'wait-user', reason: `${task.assignee} does not run on the local model` };
 
-      // A chat task ends with one message: if it is there, the task is answered
-      // (a crash after the message, before the engine recorded the step).
+      // A chat task ends with one message of Arianna: if it is there, the task is
+      // answered (a crash after the message, before the engine recorded the step).
       const [answered] = await sql<{ id: string }[]>`
-        SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' ORDER BY id LIMIT 1`;
+        SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
       if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
 
       const turns = await loadTurns(sql, task.id);
+      const delegations = await loadDelegations(sql, task.id);
       // This step already completed before a crash or a lost lock: give the
       // same outcome again, without calling the model.
       const done = turns.find((turn) => turn.step === step);
-      if (done !== undefined) return replay(task, done);
+      if (done !== undefined) return replay(task, done, delegations);
 
-      const history = await historyOf(sql, task, turns);
+      const history = await historyOf(sql, task, turns, delegations);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
       const context: Context = createContext(task.clearance, label);
@@ -195,7 +316,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (decision.texts.length !== history.length) throw new Error('the gateway allowed a different number of texts');
       const allowed = history.map((part, index): TurnMessage => ({ role: part.value.role, content: decision.texts[index] ?? '' }));
 
-      const tools = orchestratorTools(agent);
+      const tools = orchestratorTools(agent, canDelegate(env));
       await show(task, step, 'thinking');
       let asked;
       try {
@@ -239,9 +360,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       }
 
       // A call: the schema allowed only offered tools, checked again here.
-      if (answer.action !== 'call' || !isLocalTool(answer.tool) || !tools.includes(answer.tool)) {
+      if (answer.action !== 'call' || !tools.includes(answer.tool)) {
         return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       }
+      if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage);
+      if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       const tool = answer.tool;
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
@@ -279,13 +402,20 @@ function undelivered(reason: string): string {
 }
 
 /** The outcome a completed step had, from its turn. */
-function replay(task: Task, turn: Turn): StepOutcome {
+function replay(task: Task, turn: Turn, delegations: readonly Delegation[]): StepOutcome {
   if (turn.messageId !== null) return { kind: 'answered', messageId: turn.messageId, usage: { steps: 0 } };
   if (turn.result?.startsWith(UNDELIVERED) === true) {
     return { kind: 'wait-user', reason: undelivered(turn.result.includes('(blocked)') ? 'blocked' : 'above-clearance'), usage: { steps: 0 } };
   }
   if (turn.result === NO_CONVERSATION && task.conversationId === null) {
     return { kind: 'done', evidence: [{ kind: 'turn', ref: String(turn.step) }], usage: { steps: 0 } };
+  }
+  if (turn.answer.action === 'call' && turn.answer.tool === DELEGATE && turn.result === null) {
+    // The declassification was asked and not yet decided: ask it again.
+    const delegation = delegations.find((candidate) => candidate.step === turn.step);
+    if (delegation?.status === 'pending' && !isAtMost(delegation.label, 'L1')) {
+      return { kind: 'declassify', text: delegation.brief, from: delegation.label, to: 'L1', usage: { steps: 0 } };
+    }
   }
   return { kind: 'continue', usage: { steps: 0 } };
 }

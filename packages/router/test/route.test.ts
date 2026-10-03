@@ -345,3 +345,50 @@ describe('decision log', () => {
     );
   });
 });
+
+describe('preferred model (task 1.10)', () => {
+  it('the user\'s choice wins over the ladder, upwards too', () => {
+    const decision = route(coding({ preferredModel: 'opus' }), ctx('L1'), FREE, CONFIG);
+    assert.equal(pick(decision), 'claude/opus');
+    assert.match(decision.reason, /chosen by the user/);
+    assert.deepEqual(
+      decision.candidates.filter((c) => c.outcome === 'chosen').map((c) => c.model),
+      ['opus'],
+    );
+  });
+
+  it('fable chosen by the user still needs the budget approval', () => {
+    const decision = route(coding({ preferredModel: 'fable' }), ctx('L1'), FREE, CONFIG);
+    assert.equal(pick(decision), 'claude/fable');
+    assert.equal(decision.decision === 'route' && decision.approval, 'budget');
+    const approved = route(coding({ preferredModel: 'fable', budgetApproved: true }), ctx('L1'), FREE, CONFIG);
+    assert.equal(approved.decision === 'route' && approved.approval, undefined);
+  });
+
+  it('privacy still excludes a preferred cloud model', () => {
+    const decision = route(coding({ preferredModel: 'opus' }), ctx('L2'), FREE, CONFIG);
+    assert.equal(pick(decision), 'local/local-large');
+    assert.match(decision.reason, /preferred opus excluded: privacy/);
+  });
+
+  it('a preferred model out of quota or below a failed attempt is not taken', () => {
+    const budget: Budget = { blocked: [{ executor: 'claude', model: 'opus', cause: 'quota' }] };
+    assert.equal(pick(route(coding({ preferredModel: 'opus' }), ctx('L1'), budget, CONFIG)), 'claude/sonnet');
+    const escalated = coding({ preferredModel: 'sonnet', attempts: [{ executor: 'claude', model: 'sonnet', outcome: 'tests-failed' }] });
+    const decision = route(escalated, ctx('L1'), FREE, CONFIG);
+    assert.equal(pick(decision), 'claude/opus');
+    assert.match(decision.reason, /preferred sonnet excluded: escalation/);
+  });
+
+  it('a preferred model that is not installed or not for the step is ignored', () => {
+    const noOpus = createRouterConfig(ALL.filter((c) => c.model !== 'opus'));
+    const decision = route(coding({ preferredModel: 'opus' }), ctx('L1'), FREE, noOpus);
+    assert.equal(pick(decision), 'claude/sonnet');
+    assert.match(decision.reason, /preferred opus not installed/);
+    assert.equal(pick(route({ kind: 'plan', agent: ARIANNA, preferredModel: 'sonnet' }, ctx('L1'), FREE, CONFIG)), 'local/local-large');
+  });
+
+  it('an unknown preferred model is rejected', () => {
+    assert.throws(() => route(coding({ preferredModel: 'gpt' as 'opus' }), ctx('L1'), FREE, CONFIG), /unknown preferred model/);
+  });
+});

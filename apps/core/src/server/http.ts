@@ -14,6 +14,7 @@ import {
   listMessages,
   loadConversation,
   postUserMessage,
+  setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import { recordDecision } from '../engine.ts';
@@ -34,6 +35,8 @@ export interface ApiServerOptions {
   port: number;
   /** `cloud.allowlist` of arianna.toml: the only workspaces a work conversation may name. */
   allowlist?: readonly string[];
+  /** The cloud models a work conversation may choose (task 1.10), from the current configuration. */
+  models?: () => readonly { executor: string; model: string }[];
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -123,9 +126,12 @@ function idParam(params: Params, key: string): string {
 
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
-function routes(sql: Sql, allowlist: readonly string[]): Route[] {
+function routes(sql: Sql, allowlist: readonly string[], models: () => readonly { executor: string; model: string }[]): Route[] {
   return [
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
+
+    // The cloud models of this installation: what the selector of a work conversation offers.
+    route('GET', '/api/models', () => Promise.resolve({ body: { models: models() } })),
 
     route('GET', '/api/conversations', async (_request, url) => ({
       body: { conversations: await listConversations(sql, limitParam(url)) },
@@ -147,6 +153,16 @@ function routes(sql: Sql, allowlist: readonly string[]): Route[] {
     route('GET', '/api/conversations/:id', async (_request, _url, params) => {
       const conversation = await loadConversation(sql, idParam(params, 'id'));
       if (conversation === undefined) throw new HttpError(404, 'not found');
+      return { body: { conversation } };
+    }),
+
+    // The user's model for the delegated steps of a work conversation; null lets the router choose.
+    route('POST', '/api/conversations/:id/model', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['model']);
+      if (body.model !== null && typeof body.model !== 'string') throw new HttpError(400, 'model must be a string or null');
+      const conversation = await setConversationModel(sql, id, body.model, models().map((entry) => entry.model));
       return { body: { conversation } };
     }),
 
@@ -268,7 +284,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
-  const table = routes(sql, options.allowlist ?? []);
+  const table = routes(sql, options.allowlist ?? [], options.models ?? (() => []));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

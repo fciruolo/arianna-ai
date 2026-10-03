@@ -17,6 +17,8 @@ export interface Conversation {
   clearance: Label;
   effectiveLabel: Label;
   workspace: string | null;
+  /** The cloud model the user chose for delegated steps (router alias), work conversations only; null lets the router choose. */
+  model: string | null;
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
@@ -35,6 +37,8 @@ export interface Message {
   label: Label;
   body: string;
   taskId: string | null;
+  /** The agent that wrote an assistant message when it is not Arianna (the Coder's report); null otherwise. */
+  agent: string | null;
 }
 
 /** The agent that answers in the chat. */
@@ -55,12 +59,12 @@ export class ChatError extends Error {
   }
 }
 
-const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace,
+const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model,
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
-  task_id::text AS "taskId"`;
+  task_id::text AS "taskId", agent`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -106,6 +110,23 @@ export async function writeConversation(
 function isRelativePath(path: string): boolean {
   if (path === '' || path.length > 200 || path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:/.test(path)) return false;
   return path.split(/[\\/]/).every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+/**
+ * Sets the cloud model of a work conversation (task 1.10): one of `selectable`,
+ * the cloud candidates of this installation, or null to let the router choose.
+ * A private conversation stays on the local model: it has no model to set.
+ */
+export async function setConversationModel(sql: Queryable, id: string, model: string | null, selectable: readonly string[]): Promise<Conversation> {
+  const conversation = await loadConversation(sql, id);
+  if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
+  if (conversation.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
+  if (model !== null && !selectable.includes(model)) throw new ChatError('invalid', 'the model is not one of the cloud models of this installation');
+  await sql`UPDATE conversations SET model = ${model} WHERE id = ${id}`;
+  await appendEvent(sql, { kind: 'conversation.model', label: 'L0', payload: { conversationId: id, model } });
+  const updated = await loadConversation(sql, id);
+  if (updated === undefined) throw new Error('the conversation is missing');
+  return updated;
 }
 
 export async function loadConversation(sql: Queryable, id: string): Promise<Conversation | undefined> {

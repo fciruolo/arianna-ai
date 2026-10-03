@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import { ACTION_TEXT, declassifyLabels, LABEL_TEXT } from '../lib/labels.ts';
+import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, LABEL_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import type { Approval } from '../lib/types.ts';
 
 const props = defineProps<{ approval: Approval; decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void> }>();
@@ -9,6 +9,12 @@ const busy = ref(false);
 
 const title = computed(() => ACTION_TEXT[props.approval.action] ?? props.approval.action);
 const isDeclassify = computed(() => props.approval.kind === 'declassify');
+/** A budget approval names executor and model (router aliases) and the step. */
+const budget = computed(() => {
+  if (props.approval.kind !== 'budget') return undefined;
+  const { executor, model } = props.approval.detail;
+  return typeof executor === 'string' && typeof model === 'string' ? { executor, model } : undefined;
+});
 /** The exact text the approval covers: approving lets out this text, and only this. */
 const text = computed(() => (typeof props.approval.detail.text === 'string' ? props.approval.detail.text : undefined));
 const labels = computed(() => declassifyLabels(props.approval.detail));
@@ -45,6 +51,10 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         class="mt-2 max-h-64 overflow-auto rounded-lg bg-stone-100 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words dark:bg-stone-900"
       >{{ text }}</pre>
     </template>
+    <p v-else-if="budget !== undefined" class="mt-2 text-xs text-stone-600 dark:text-stone-400">
+      Il passo delegato userebbe <strong>{{ MODEL_TEXT[budget.model] ?? budget.model }}</strong> su {{ EXECUTOR_TEXT[budget.executor] ?? budget.executor }},
+      che costa oltre il piano. Approvando, parte con questo modello; rifiutando, Arianna lo saprà e deciderà altrimenti.
+    </p>
     <pre
       v-else
       class="mt-2 max-h-48 overflow-auto rounded-lg bg-stone-100 p-3 font-mono text-xs whitespace-pre-wrap break-words dark:bg-stone-900"
