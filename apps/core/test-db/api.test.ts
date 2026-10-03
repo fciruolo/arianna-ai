@@ -181,6 +181,23 @@ test('a conversation is renamed, archived and restored through the API', async (
   assert.equal((await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Di nuovo qui' } })).status, 201);
 });
 
+test('only an archived conversation with no task at work is deleted for good through the API', async () => {
+  const id = await newConversation('private');
+  assert.equal((await call('POST', `/api/conversations/${id}/purge`, { body: {} })).status, 400);
+  await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Messaggio finto' } });
+  await call('POST', `/api/conversations/${id}/archive`, { body: { archived: true } });
+  // Its task waits in the queue: no worker runs in this test.
+  assert.equal((await call('POST', `/api/conversations/${id}/purge`, { body: {} })).status, 409);
+  const empty = await newConversation('private');
+  await call('POST', `/api/conversations/${empty}/archive`, { body: { archived: true } });
+  assert.equal((await call('POST', `/api/conversations/${empty}/purge`, { body: { force: true } })).status, 400);
+  const purged = await call('POST', `/api/conversations/${empty}/purge`, { body: {} });
+  assert.equal(purged.status, 200);
+  assert.equal((await call('GET', `/api/conversations/${empty}`)).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${empty}/purge`, { body: {} })).status, 404);
+  assert.equal((await call('POST', '/api/conversations/not-a-uuid/purge', { body: {} })).status, 404);
+});
+
 test('bad input gets a clear status and no internal detail', async () => {
   const id = await newConversation('work');
   const cases: [string, string, Parameters<typeof call>[2], number][] = [

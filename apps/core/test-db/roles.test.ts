@@ -51,7 +51,7 @@ test('doctor, with the development passwords: database sound, not ready for real
   assert.equal(checks('database.owner').ok, true);
   assert.equal(checks('database.default-passwords').ok, false);
   assert.match(checks('database.default-passwords').detail, /still accepted for arianna, arianna_app/);
-  assert.deepEqual(checks('database.migrations'), { ok: true, detail: '11 applied' });
+  assert.deepEqual(checks('database.migrations'), { ok: true, detail: '12 applied' });
   assert.equal(checks('database.app-role').ok, true, checks('database.app-role').detail);
   assert.equal(checks('events.chain').ok, true);
 });
@@ -114,6 +114,12 @@ test('doctor catches a role with too much, a table without grants and a migratio
     await owner`INSERT INTO schema_migrations (version, name, sha256) VALUES ('9999', 'ghost', ${'0'.repeat(64)})`;
     await owner`GRANT INSERT ON schema_migrations TO arianna_app`;
     await owner`CREATE SEQUENCE orphan_seq`;
+    // A function that runs as the owner; PUBLIC may execute a new function.
+    await owner`CREATE FUNCTION owner_hands() RETURNS int LANGUAGE sql SECURITY DEFINER AS 'SELECT 1'`;
+    // An overload is not the purge, and the purge itself opened to everyone and unpinned.
+    await owner`CREATE FUNCTION purge_conversation(text) RETURNS int LANGUAGE sql SECURITY DEFINER AS 'SELECT 1'`;
+    await owner`GRANT EXECUTE ON FUNCTION purge_conversation(uuid) TO PUBLIC`;
+    await owner`ALTER FUNCTION purge_conversation(uuid) RESET search_path`;
     await owner.unsafe(`GRANT CREATE ON SCHEMA ${schema} TO arianna_app`);
     // Database-wide, revoked below under the lock: the other files never check it.
     await owner.unsafe(`GRANT TEMPORARY ON DATABASE ${config.database.name} TO arianna_app`);
@@ -127,6 +133,10 @@ test('doctor catches a role with too much, a table without grants and a migratio
       assert.match(checks('database.app-role').detail, /cannot use sequence orphan_seq/);
       assert.match(checks('database.app-role').detail, /can create objects in the schema/);
       assert.match(checks('database.app-role').detail, /can create temporary tables/);
+      assert.match(checks('database.app-role').detail, /may run as the owner through owner_hands/);
+      assert.match(checks('database.app-role').detail, /may run as the owner through owner_hands, purge_conversation/);
+      assert.match(checks('database.app-role').detail, /anyone may run purge_conversation/);
+      assert.match(checks('database.app-role').detail, /purge_conversation has no fixed search_path/);
       assert.deepEqual(checks('database.migrations'), { ok: false, detail: 'applied without a file 9999' });
     } finally {
       await owner`REVOKE UPDATE ON events FROM arianna_app`;
@@ -135,6 +145,10 @@ test('doctor catches a role with too much, a table without grants and a migratio
       await owner`DELETE FROM schema_migrations WHERE version = '9999'`;
       await owner`REVOKE INSERT ON schema_migrations FROM arianna_app`;
       await owner`DROP SEQUENCE orphan_seq`;
+      await owner`DROP FUNCTION owner_hands()`;
+      await owner`DROP FUNCTION purge_conversation(text)`;
+      await owner`REVOKE EXECUTE ON FUNCTION purge_conversation(uuid) FROM PUBLIC`;
+      await owner.unsafe(`ALTER FUNCTION purge_conversation(uuid) SET search_path = ${schema}, pg_temp`);
       await owner.unsafe(`REVOKE CREATE ON SCHEMA ${schema} FROM arianna_app`);
       await owner.unsafe(`REVOKE TEMPORARY ON DATABASE ${config.database.name} FROM arianna_app`);
     }

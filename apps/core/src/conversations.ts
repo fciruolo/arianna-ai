@@ -55,7 +55,7 @@ const TITLE_LENGTH = 80;
 /** Longest title the user can give a conversation. */
 export const MAX_CONVERSATION_TITLE = 200;
 
-export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner' | 'archived';
+export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner' | 'archived' | 'busy';
 
 export class ChatError extends Error {
   override name = 'ChatError';
@@ -141,14 +141,14 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
 
 export async function loadConversation(sql: Queryable, id: string): Promise<Conversation | undefined> {
   if (!isUuid(id)) return undefined;
-  const [row] = await sql.unsafe<Conversation[]>(`SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE c.id = $1`, [id]);
+  const [row] = await sql.unsafe<Conversation[]>(`SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE c.id = $1 AND c.purged_at IS NULL`, [id]);
   return row;
 }
 
 /** Most recently active first: the list, or with `archived` the archived conversations. */
 export async function listConversations(sql: Queryable, limit = 50, options: { archived?: boolean } = {}): Promise<Conversation[]> {
   const rows = await sql.unsafe<Conversation[]>(
-    `SELECT * FROM (SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE (c.archived_at IS NOT NULL) = $2) listed
+    `SELECT * FROM (SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL) listed
      ORDER BY coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
     [limit, options.archived === true],
@@ -209,6 +209,56 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     }
     return reload(tx, id);
   });
+}
+
+/** What purge_conversation changed: the tasks it closed and the approvals it let expire. */
+interface PurgeResult {
+  tasks: number;
+  failed: { taskId: string; from: string }[];
+  expired: { approvalId: string; taskId: string }[];
+}
+
+/**
+ * Deletes the texts of an archived conversation for good (D-057): messages,
+ * steps, briefs and reports, titles, the text of its approval cards. The
+ * skeleton of the audit stays (purge_conversation in migration 0012). Refused
+ * while a task of it is at work. The event carries the id only.
+ */
+export async function purgeConversation(sql: Sql, id: string): Promise<void> {
+  // Checked first for a clear error; purge_conversation checks again under its row locks.
+  const conversation = await loadConversation(sql, id);
+  if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
+  if (conversation.archivedAt === null) throw new ChatError('invalid', 'only an archived conversation can be deleted');
+  const [busy] = await sql<{ busy: boolean }[]>`
+    SELECT EXISTS (SELECT FROM tasks WHERE conversation_id = ${id} AND status IN ('ready', 'running')) AS busy`;
+  if (busy?.busy === true) throw new ChatError('busy', 'a task of the conversation is still at work: wait for it to finish');
+  try {
+    await sql.begin(async (tx) => {
+      const [row] = await tx<{ purged: PurgeResult }[]>`SELECT purge_conversation(${id}::uuid) AS purged`;
+      const purged = row?.purged ?? { tasks: 0, failed: [], expired: [] };
+      // The state changes the purge made, logged as the engine logs its own.
+      for (const task of purged.failed) {
+        await appendEvent(tx, { kind: 'task.status', taskId: task.taskId, payload: { from: task.from, to: 'failed', cause: 'purge' } });
+      }
+      for (const approval of purged.expired) {
+        await appendEvent(tx, {
+          kind: 'approval.decided',
+          taskId: approval.taskId,
+          label: 'L0',
+          payload: { approvalId: approval.approvalId, state: 'expired', via: null },
+        });
+      }
+      await appendEvent(tx, { kind: 'conversation.purged', label: 'L0', payload: { conversationId: id, tasks: purged.tasks } });
+    });
+  } catch (error) {
+    // Something changed between the check and the locks, or a lock did not come in time.
+    const code = (error as { code?: unknown }).code;
+    if (code === 'P0002') throw new ChatError('not-found', `conversation ${id} does not exist`);
+    if (code === '55000') throw new ChatError('invalid', 'only an archived conversation can be deleted');
+    if (code === '55006') throw new ChatError('busy', 'a task of the conversation is still at work: wait for it to finish');
+    if (code === '55P03' || code === '40P01') throw new ChatError('busy', 'the conversation is in use: try again in a moment');
+    throw error;
+  }
 }
 
 export interface MessagePage {
@@ -282,7 +332,8 @@ export async function writeUserMessage(
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
     ? (await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived FROM conversations WHERE id = ${conversationId} FOR UPDATE`)[0]
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived FROM conversations
+        WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`)[0]
     : undefined;
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
   if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');

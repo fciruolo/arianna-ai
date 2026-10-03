@@ -76,6 +76,10 @@ const ERRORS: Record<string, string> = {
   'the title is longer than 200 characters': 'Il titolo supera 200 caratteri.',
   'the conversation is archived: restore it to write': 'La conversazione è archiviata: ripristinala per scrivere.',
   'the conversation of Telegram cannot be archived': 'La conversazione di Telegram non si può archiviare: il bot scrive lì.',
+  'only an archived conversation can be deleted': 'Si elimina definitivamente solo una conversazione archiviata.',
+  'a task of the conversation is still at work: wait for it to finish':
+    'Un task di questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala.',
+  'the conversation is in use: try again in a moment': 'La conversazione è in uso in questo momento: riprova fra poco.',
 };
 
 /** An error of the API (or of the network) as the user reads it. */

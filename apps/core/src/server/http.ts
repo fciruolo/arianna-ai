@@ -15,6 +15,7 @@ import {
   listMessages,
   loadConversation,
   postUserMessage,
+  purgeConversation,
   renameConversation,
   setConversationModel,
 } from '../conversations.ts';
@@ -187,6 +188,14 @@ function routes(sql: Sql, allowlist: readonly string[], models: () => readonly {
       return { body: { conversation: await archiveConversation(sql, id, body.archived) } };
     }),
 
+    // Deletes the texts of an archived conversation for good (D-057): the user confirmed it in the page.
+    route('POST', '/api/conversations/:id/purge', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      await purgeConversation(sql, id);
+      return { body: { purged: id } };
+    }),
+
     route('GET', '/api/conversations/:id/messages', async (_request, url, params) => {
       const id = idParam(params, 'id');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
@@ -296,7 +305,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown, heade
 function errorStatus(error: unknown): { status: number; message: string } | undefined {
   if (error instanceof HttpError) return { status: error.status, message: error.message };
   if (error instanceof ChatError) {
-    const status = error.code === 'not-found' ? 404 : error.code === 'scanner' ? 422 : error.code === 'archived' ? 409 : 400;
+    const status = error.code === 'not-found' ? 404 : error.code === 'scanner' ? 422 : error.code === 'archived' || error.code === 'busy' ? 409 : 400;
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };

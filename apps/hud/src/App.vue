@@ -60,6 +60,7 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
         :rename="store.rename"
         @open="openConversation"
         @archive="store.archive"
+        @purge="store.purge"
       />
     </aside>
 

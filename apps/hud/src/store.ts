@@ -83,6 +83,29 @@ export function createChatStore() {
     }
   }
 
+  /** Deletes an archived conversation for good; closes it if it is open. */
+  async function purge(id: string): Promise<void> {
+    error.value = null;
+    try {
+      await api.purgeConversation(id);
+      forget(id);
+      await Promise.all([refreshAllConversations(), refreshApprovals()]);
+    } catch (cause) {
+      fail(cause);
+      // Another tab may have deleted it already.
+      await refreshAllConversations().catch(() => undefined);
+    }
+  }
+
+  function forget(id: string): void {
+    archived.value = archived.value.filter((item) => item.id !== id);
+    if (chat.value?.conversationId === id) {
+      chat.value = null;
+      detached.value = undefined;
+      tasks.value = {};
+    }
+  }
+
   /** Archives a conversation or brings it back to the list; the open one stays open. */
   async function archive(id: string, value: boolean): Promise<void> {
     error.value = null;
@@ -219,6 +242,10 @@ export function createChatStore() {
       case 'conversation.archived':
         work.push(refreshAllConversations());
         break;
+      case 'conversation.purged':
+        if (conversationId !== undefined) forget(conversationId);
+        work.push(refreshAllConversations(), refreshApprovals());
+        break;
       case 'message.created': {
         work.push(refreshConversations());
         if (conversationId !== undefined && conversationId === chat.value?.conversationId) {
@@ -287,7 +314,7 @@ export function createChatStore() {
     connection?.close();
   }
 
-  return { conversations, archived, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending, open, create, send, decide, chooseModel, rename, archive, dismissDecision, start, stop };
+  return { conversations, archived, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending, open, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

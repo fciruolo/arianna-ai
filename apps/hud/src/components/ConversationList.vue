@@ -10,7 +10,7 @@ const props = defineProps<{
   selected: string | null;
   rename: (id: string, title: string) => Promise<boolean>;
 }>();
-const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean] }>();
+const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; purge: [id: string] }>();
 
 const format = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -29,6 +29,13 @@ const input = ref<HTMLInputElement[]>([]);
 /** The conversation waiting for the user to confirm the archive. */
 const confirming = ref<string | null>(null);
 const showArchived = ref(false);
+/** The archived conversation waiting for the user to confirm its deletion. */
+const purging = ref<string | null>(null);
+
+function confirmPurge(): void {
+  if (purging.value !== null) emit('purge', purging.value);
+  purging.value = null;
+}
 
 async function startRename(conversation: Conversation): Promise<void> {
   confirming.value = null;
@@ -183,33 +190,73 @@ function confirmArchive(id: string): void {
         Archiviate ({{ archived.length }})
       </button>
       <ul v-if="showArchived" class="mt-1 flex flex-col gap-0.5">
-        <li v-for="conversation in archived" :key="conversation.id" class="flex items-center gap-1">
-          <button
-            type="button"
-            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-600 transition dark:text-stone-300"
-            :class="
-              conversation.id === selected
-                ? 'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100'
-                : 'hover:bg-stone-100 dark:hover:bg-stone-800'
-            "
-            :aria-current="conversation.id === selected ? 'true' : undefined"
-            @click="emit('open', conversation.id)"
+        <li v-for="conversation in archived" :key="conversation.id">
+          <div
+            v-if="purging === conversation.id"
+            class="flex flex-col gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm dark:border-rose-900 dark:bg-rose-950/40"
+            role="group"
+            aria-label="Conferma dell'eliminazione definitiva"
           >
-            <span
-              class="size-2 shrink-0 rounded-full opacity-60"
-              :class="conversation.mode === 'private' ? 'bg-violet-500' : 'bg-sky-500'"
-              :title="MODE_TEXT[conversation.mode]"
-            />
-            <span class="truncate">{{ titleOf(conversation) }}</span>
-          </button>
-          <button
-            type="button"
-            class="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-700"
-            :aria-label="`Ripristina ${titleOf(conversation)}`"
-            @click="emit('archive', conversation.id, false)"
-          >
-            Ripristina
-          </button>
+            <p class="font-medium">Eliminare per sempre “{{ titleOf(conversation) }}”?</p>
+            <p class="text-xs leading-snug text-stone-600 dark:text-stone-300">
+              Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede; i task ancora aperti si
+              chiudono. Resta il registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche
+              le carte e le pagine della base di conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e
+              le sessioni di Claude Code dei lavori delegati. Non si può annullare.
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-500"
+                @click="confirmPurge"
+              >
+                Elimina per sempre
+              </button>
+              <button
+                type="button"
+                class="rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-800"
+                @click="purging = null"
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+          <div v-else class="flex items-center gap-1">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-600 transition dark:text-stone-300"
+              :class="
+                conversation.id === selected
+                  ? 'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100'
+                  : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+              "
+              :aria-current="conversation.id === selected ? 'true' : undefined"
+              @click="emit('open', conversation.id)"
+            >
+              <span
+                class="size-2 shrink-0 rounded-full opacity-60"
+                :class="conversation.mode === 'private' ? 'bg-violet-500' : 'bg-sky-500'"
+                :title="MODE_TEXT[conversation.mode]"
+              />
+              <span class="truncate">{{ titleOf(conversation) }}</span>
+            </button>
+            <button
+              type="button"
+              class="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-700"
+              :aria-label="`Ripristina ${titleOf(conversation)}`"
+              @click="emit('archive', conversation.id, false)"
+            >
+              Ripristina
+            </button>
+            <button
+              type="button"
+              class="shrink-0 rounded-md px-2 py-1 text-xs text-rose-700 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950"
+              :aria-label="`Elimina definitivamente ${titleOf(conversation)}`"
+              @click="purging = conversation.id"
+            >
+              Elimina
+            </button>
+          </div>
         </li>
       </ul>
     </div>

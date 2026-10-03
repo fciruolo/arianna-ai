@@ -47,6 +47,10 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'the title must be one line'), 'Il titolo dev’essere su una riga.');
   assert.equal(api(409, 'the conversation is archived: restore it to write'), 'La conversazione è archiviata: ripristinala per scrivere.');
   assert.equal(api(400, 'the conversation of Telegram cannot be archived'), 'La conversazione di Telegram non si può archiviare: il bot scrive lì.');
+  assert.equal(
+    api(409, 'a task of the conversation is still at work: wait for it to finish'),
+    'Un task di questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala.',
+  );
   assert.equal(api(403, 'cross-origin request'), 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.');
   assert.equal(api(500, 'internal error'), 'Errore del nucleo: riprova fra poco.');
   assert.equal(api(400, 'unknown field(s): x'), 'Richiesta non valida.');

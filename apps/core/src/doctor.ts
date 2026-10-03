@@ -225,6 +225,21 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   if (rewritable !== '') problems.push(`may update append-only ${rewritable}`);
   if (names((table) => table.name === 'schema_migrations' && table.writes) !== '') problems.push('may write schema_migrations');
 
+  // A function that runs as its owner gives the core the owner's hands: only the purge of D-057 may.
+  const definers = await owner<{ name: string }[]>`
+    SELECT p.proname AS name FROM pg_proc p
+    WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      AND p.prosecdef AND has_function_privilege(${APP_ROLE}, p.oid, 'EXECUTE')
+      AND p.oid IS DISTINCT FROM to_regprocedure('purge_conversation(uuid)')
+    ORDER BY p.proname`;
+  if (definers.length > 0) problems.push(`may run as the owner through ${definers.map((row) => row.name).join(', ')}`);
+  const [purge] = await owner<{ public: boolean; pinned: boolean }[]>`
+    SELECT has_function_privilege('public', p.oid, 'EXECUTE') AS public,
+           EXISTS (SELECT FROM unnest(coalesce(p.proconfig, '{}')) setting WHERE setting LIKE 'search\\_path=%pg\\_temp') AS pinned
+    FROM pg_proc p WHERE p.oid = to_regprocedure('purge_conversation(uuid)')`;
+  if (purge?.public === true) problems.push('anyone may run purge_conversation');
+  if (purge !== undefined && !purge.pinned) problems.push('purge_conversation has no fixed search_path');
+
   // Without USAGE an insert into a bigserial table fails.
   const sequences = await owner<{ name: string }[]>`
     SELECT c.relname AS name FROM pg_class c

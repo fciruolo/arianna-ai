@@ -31,6 +31,11 @@ export async function listConversations(archived = false): Promise<Conversation[
   return (await call<{ conversations: Conversation[] }>('GET', archived ? '/api/conversations?archived=1&limit=200' : '/api/conversations')).conversations;
 }
 
+/** Deletes the texts of an archived conversation for good (D-057). */
+export async function purgeConversation(conversationId: string): Promise<void> {
+  await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/purge`, {});
+}
+
 export async function loadConversation(conversationId: string): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}`)).conversation;
 }
