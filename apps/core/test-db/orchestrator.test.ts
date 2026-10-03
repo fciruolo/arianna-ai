@@ -96,7 +96,7 @@ async function drain(taskId: string, model: LocalModel, executor: StepExecutor =
 async function ask(mode: 'work' | 'private', body: string) {
   const conversation =
     mode === 'work'
-      ? await createConversation(db().sql, { mode, workspace: 'repos/demo', allowlist: ['repos/demo'] })
+      ? await createConversation(db().sql, { mode, project: 'demo', projects: ['demo'] })
       : await createConversation(db().sql, { mode });
   return postUserMessage(db().sql, conversation.id, body);
 }

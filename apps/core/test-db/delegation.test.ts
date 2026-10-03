@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { AGENTS_DIR, loadAgents, type Answer, type LoadedAgent } from '@arianna/agents';
-import { loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import { loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
@@ -79,7 +79,10 @@ interface Setup {
   model: LocalModel;
   /** The Coder's prompt: its first line picks the scenario of the fake binary. */
   coderPrompt?: string;
-  allowlist?: string[];
+  /** Names of the approved projects, folders under repos/ of the scratch home; `site` by default. */
+  projects?: string[];
+  /** Approved projects as they are, for folders elsewhere. */
+  extraProjects?: Project[];
   executors?: ('claude' | 'codex')[];
   withClaude?: boolean;
 }
@@ -93,7 +96,11 @@ function orchestrator(setup: Setup): StepExecutor {
     ...BASE,
     home: HOME,
     paths: { data: join(HOME, 'data') },
-    cloud: { executors: setup.executors ?? ['claude'], allowlist: setup.allowlist ?? ['repos/site'] },
+    cloud: { executors: setup.executors ?? ['claude'] },
+    projects: [
+      ...(setup.projects ?? ['site']).map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
+      ...(setup.extraProjects ?? []),
+    ],
   });
   return createOrchestrator({
     sql: db().sql,
@@ -123,10 +130,10 @@ async function drain(taskId: string, executor: StepExecutor, max = 40): Promise<
   return results;
 }
 
-async function ask(mode: 'work' | 'private', body: string, workspace?: string) {
+async function ask(mode: 'work' | 'private', body: string, project?: string, projects: string[] = ['site']) {
   const conversation =
     mode === 'work'
-      ? await createConversation(db().sql, { mode, ...(workspace === undefined ? {} : { workspace }), allowlist: ['repos/site'] })
+      ? await createConversation(db().sql, { mode, ...(project === undefined ? {} : { project }), projects })
       : await createConversation(db().sql, { mode });
   return { conversation, ...(await postUserMessage(db().sql, conversation.id, body)) };
 }
@@ -158,7 +165,7 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
   const seen: LiveMessage[] = [];
   const stop = await live.subscribe({ send: (message) => seen.push(message) });
   try {
-    const { task } = await ask('work', 'Aggiungi una riga al README.', 'repos/site');
+    const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
     const model = scripted([DELEGATE, REPLY]);
     assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'continued', 'answered']);
 
@@ -166,7 +173,7 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
     assert.ok(delegation !== undefined);
     assert.deepEqual(
       [delegation.step, delegation.status, delegation.executor, delegation.model, delegation.label, delegation.result, delegation.resultLabel, delegation.repo],
-      [1, 'ok', 'claude', 'sonnet', 'L1', 'ok', 'L1', 'repos/site'],
+      [1, 'ok', 'claude', 'sonnet', 'L1', 'ok', 'L1', 'site'],
     );
     assert.ok(delegation.messageId !== null && delegation.sessionRef !== null);
     // Nothing was copied: the run worked in the folder itself, which is still clean for git.
@@ -228,7 +235,7 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
 });
 
 test('the model chosen for the conversation is the one the step runs on', async () => {
-  const { conversation, task } = await ask('work', 'Rinomina una variabile.', 'repos/site');
+  const { conversation, task } = await ask('work', 'Rinomina una variabile.', 'site');
   await setConversationModel(db().sql, conversation.id, 'opus', ['sonnet', 'opus', 'fable']);
   assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
@@ -280,7 +287,7 @@ test('a refused declassification keeps the brief local, and Arianna hears it', a
 });
 
 test('a quota refusal schedules the same step again, later', async () => {
-  const { task } = await ask('work', 'Prova la quota.', 'repos/site');
+  const { task } = await ask('work', 'Prova la quota.', 'site');
   const executor = orchestrator({ model: scripted([DELEGATE]), coderPrompt: 'scenario: quota\nYou are the Coder.' });
   assert.deepEqual(await drain(task.id, executor), ['continued', 'continued']);
   const [delegation] = await loadDelegations(db().sql, task.id);
@@ -296,7 +303,7 @@ test('a quota refusal schedules the same step again, later', async () => {
 });
 
 test('fable chosen by the user waits for the budget approval, then runs', async () => {
-  const { conversation, task } = await ask('work', 'Un lavoro difficile.', 'repos/site');
+  const { conversation, task } = await ask('work', 'Un lavoro difficile.', 'site');
   await setConversationModel(db().sql, conversation.id, 'fable', ['sonnet', 'opus', 'fable']);
   const executor = orchestrator({ model: scripted([DELEGATE, REPLY]) });
   assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
@@ -314,19 +321,19 @@ test('fable chosen by the user waits for the budget approval, then runs', async 
 test('without a repository, or without a cloud executor, the call fails as a tool error', async () => {
   const noRepo = await ask('work', 'Senza repository.');
   const model = scripted([DELEGATE, REPLY]);
-  assert.deepEqual(await drain(noRepo.task.id, orchestrator({ model, allowlist: ['repos/site', 'repos/other'] })), ['continued', 'answered']);
-  assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /error: task\.delegate: no repository for the Coder/);
+  assert.deepEqual(await drain(noRepo.task.id, orchestrator({ model, projects: ['site', 'other'] })), ['continued', 'answered']);
+  assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /error: task\.delegate: no project for the Coder/);
   assert.equal((await loadDelegations(db().sql, noRepo.task.id)).length, 0);
 
   // No cloud executor: task.delegate is not even offered.
-  const offline = await ask('work', 'Senza cloud.', 'repos/site');
+  const offline = await ask('work', 'Senza cloud.', 'site');
   const local = scripted([REPLY]);
   assert.deepEqual(await drain(offline.task.id, orchestrator({ model: local, executors: [] })), ['answered']);
   assert.equal(JSON.stringify(local.requests[0]?.schema?.schema).includes('task.delegate'), false);
 });
 
 test('a report stored before a crash is not produced twice: the run is not launched again', async () => {
-  const { task } = await ask('work', 'Crash dopo il rapporto.', 'repos/site');
+  const { task } = await ask('work', 'Crash dopo il rapporto.', 'site');
   const executor = orchestrator({ model: scripted([DELEGATE, REPLY]) });
   assert.deepEqual(await drain(task.id, executor, 1), ['continued']);
   // As if the cloud step had stored the report and died before closing the delegation.
@@ -342,7 +349,7 @@ test('a report stored before a crash is not produced twice: the run is not launc
 });
 
 test('after too many quota refusals the delegation fails, and Arianna reads why', async () => {
-  const { task } = await ask('work', 'Quota esaurita a lungo.', 'repos/site');
+  const { task } = await ask('work', 'Quota esaurita a lungo.', 'site');
   const model = scripted([DELEGATE, REPLY]);
   const executor = orchestrator({ model, coderPrompt: 'scenario: quota\nYou are the Coder.' });
   assert.deepEqual(await drain(task.id, executor, 1), ['continued']);
@@ -360,7 +367,7 @@ test('after too many quota refusals the delegation fails, and Arianna reads why'
 test('uncommitted changes in the folder: the user approves first; the changed files reach Arianna', async () => {
   writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
   try {
-    const { task } = await ask('work', 'Con modifiche mie.', 'repos/site');
+    const { task } = await ask('work', 'Con modifiche mie.', 'site');
     const model = scripted([DELEGATE, REPLY]);
     const executor = orchestrator({ model, coderPrompt: 'scenario: leak-to-file\nfile: ' + join(REPO, 'README.md') + '\nYou are the Coder.' });
     assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
@@ -368,7 +375,7 @@ test('uncommitted changes in the folder: the user approves first; the changed fi
     assert.equal(waiting.waitingReason, 'approval needed: workspace');
     const [approval] = await db().sql<{ kind: string; action: string; detail: { repo: string; files: string[]; step: number } }[]>`
       SELECT kind, action, detail FROM approvals WHERE id = ${waiting.waitingApprovalId}`;
-    assert.deepEqual([approval?.kind, approval?.action, approval?.detail.repo, approval?.detail.files, approval?.detail.step], ['workspace', 'dirty-workspace', 'repos/site', ['notes.txt'], 1]);
+    assert.deepEqual([approval?.kind, approval?.action, approval?.detail.repo, approval?.detail.files, approval?.detail.step], ['workspace', 'dirty-workspace', 'site', ['notes.txt'], 1]);
     assert.equal((await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`).length, 0);
 
     await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
@@ -377,7 +384,7 @@ test('uncommitted changes in the folder: the user approves first; the changed fi
     assert.ok(delegation !== undefined);
     assert.equal(delegation.status, 'ok');
     // The scenario copied README.md to copy.txt: a new file of the Coder's, told apart from the user's notes.txt.
-    assert.match(delegation.result ?? '', /Files changed in repos\/site \(uncommitted, on branch main\): copy\.txt$/);
+    assert.match(delegation.result ?? '', /Files changed in the project site \(uncommitted, on branch main\): copy\.txt$/);
     assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /copy\.txt/);
   } finally {
     unlinkSync(join(REPO, 'notes.txt'));
@@ -388,7 +395,7 @@ test('uncommitted changes in the folder: the user approves first; the changed fi
 test('uncommitted changes refused: the delegation ends and Arianna hears it', async () => {
   writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
   try {
-    const { task } = await ask('work', 'Rifiuto.', 'repos/site');
+    const { task } = await ask('work', 'Rifiuto.', 'site');
     const model = scripted([DELEGATE, { action: 'reply', text: 'Aspetto che tu committi.' }]);
     const executor = orchestrator({ model });
     assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
@@ -407,7 +414,7 @@ test('uncommitted changes refused: the delegation ends and Arianna hears it', as
 test('the consent covers the files it named: a path dirtied after it is asked again', async () => {
   writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
   try {
-    const { task } = await ask('work', 'Consenso sui file.', 'repos/site');
+    const { task } = await ask('work', 'Consenso sui file.', 'site');
     const executor = orchestrator({ model: scripted([DELEGATE, REPLY]) });
     assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
     const first = await waitingFor(task.id);
@@ -430,13 +437,13 @@ test('the consent covers the files it named: a path dirtied after it is asked ag
 test('a run that rewrites the git configuration of the folder fails the delegation, and no git runs there', async () => {
   const config = readFileSync(join(REPO, '.git', 'config'), 'utf8');
   try {
-    const { task } = await ask('work', 'Configurazione git.', 'repos/site');
+    const { task } = await ask('work', 'Configurazione git.', 'site');
     const model = scripted([DELEGATE, REPLY]);
     assert.deepEqual(await drain(task.id, orchestrator({ model, coderPrompt: 'scenario: git-config\nYou are the Coder.' })), ['continued', 'continued', 'answered']);
     const [delegation] = await loadDelegations(db().sql, task.id);
     assert.ok(delegation !== undefined);
     assert.equal(delegation.status, 'failed');
-    assert.match(delegation.result ?? '', /changed the git configuration of repos\/site/);
+    assert.match(delegation.result ?? '', /changed the git configuration of the project site/);
     assert.equal(existsSync(join(REPO, 'evil-ran')), false);
   } finally {
     writeFileSync(join(REPO, '.git', 'config'), config);
@@ -445,10 +452,33 @@ test('a run that rewrites the git configuration of the folder fails the delegati
   }
 });
 
+test('tool configuration the Coder leaves, ignored by git, reaches Arianna with a warning', async () => {
+  const exclude = join(REPO, '.git', 'info', 'exclude');
+  const excluded = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
+  mkdirSync(join(REPO, '.git', 'info'), { recursive: true });
+  writeFileSync(exclude, `${excluded}.claude/\n`);
+  try {
+    const { task } = await ask('work', 'Configurazione strumenti.', 'site');
+    const model = scripted([DELEGATE, REPLY]);
+    assert.deepEqual(await drain(task.id, orchestrator({ model, coderPrompt: 'scenario: tool-config\nYou are the Coder.' })), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.equal(delegation.status, 'ok');
+    const read = model.requests[1]?.messages.at(-1)?.content ?? '';
+    assert.match(read, /Tool configuration changed by the Coder in site, .*: \.claude\/settings\.local\.json/);
+    // Ignored by git: not among the files changed.
+    assert.doesNotMatch(read, /Files changed in the project/);
+    assert.equal(existsSync(join(REPO, 'hook-ran')), false);
+  } finally {
+    writeFileSync(exclude, excluded);
+    rmSync(join(REPO, '.claude'), { recursive: true, force: true });
+  }
+});
+
 test('a tracked secret file blocks the launch; an ignored .env does not', async () => {
   writeFileSync(join(REPO, 'keys.pem'), 'not really a key\n');
   try {
-    const { task } = await ask('work', 'Segreto tracciato.', 'repos/site');
+    const { task } = await ask('work', 'Segreto tracciato.', 'site');
     const model = scripted([DELEGATE, REPLY]);
     // The blocked scan closes the delegation and the local step goes on at once.
     assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'answered']);
@@ -463,7 +493,7 @@ test('a tracked secret file blocks the launch; an ignored .env does not', async 
 
 test('task_delegations: within the clearance, cloud runs of the same task only, never deleted', async () => {
   const { sql, owner } = db();
-  const { task } = await ask('work', 'Vincoli.', 'repos/site');
+  const { task } = await ask('work', 'Vincoli.', 'site');
   await assert.rejects(
     sql`INSERT INTO task_delegations (task_id, step, agent, brief, label) VALUES (${task.id}, 1, 'coder', 'x', 'L2')`,
     /above the clearance/,
@@ -480,4 +510,52 @@ test('task_delegations: within the clearance, cloud runs of the same task only, 
   await assert.rejects(sql`UPDATE task_delegations SET status = 'pending' WHERE id = ${row?.id ?? ''}::bigint`, /has ended/);
   await assert.rejects(sql`DELETE FROM task_delegations`, /permission denied/);
   await assert.rejects(owner`DELETE FROM task_delegations`, /append-only/);
+});
+
+test('a project outside ARIANNA_HOME (D-058): the Coder works in the approved folder itself', async () => {
+  // A sibling of the scratch home stands for a folder under the user's home.
+  const user = `${HOME}-user`;
+  const outer = join(user, 'Projects', 'outer');
+  mkdirSync(outer, { recursive: true });
+  try {
+    writeFileSync(join(outer, 'index.html'), '<h1>Fake landing</h1>\n');
+    writeFileSync(join(outer, '.gitignore'), '.fake-claude.json\n');
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-C', outer, ...args], {
+        env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+      });
+    git('init', '--quiet', '--initial-branch=main');
+    git('add', '--all');
+    git('commit', '--quiet', '--message', 'fixture');
+    const extraProjects: Project[] = [{ name: 'outer', path: 'outside', absolute: outer, label: 'L1' }];
+    const { task } = await ask('work', 'Fai la landing page.', 'outer', ['site', 'outer']);
+    assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), extraProjects })), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.deepEqual([delegation?.status, delegation?.repo], ['ok', 'outer']);
+    // The fake binary wrote its trace in the folder it ran in: the approved one.
+    assert.ok(existsSync(join(outer, '.fake-claude.json')));
+  } finally {
+    rmSync(user, { recursive: true, force: true });
+  }
+});
+
+test('a project taken off the list: the delegation ends with an error Arianna reads', async () => {
+  const { task } = await ask('work', 'Progetto tolto.', 'site');
+  const model = scripted([DELEGATE, REPLY]);
+  assert.deepEqual(await drain(task.id, orchestrator({ model, projects: [] })), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.ok(delegation !== undefined);
+  assert.equal(delegation.status, 'failed');
+  assert.match(delegation.result ?? '', /no longer among the projects the user approved/);
+});
+
+test('a conversation from before D-058 names repos/site: it reads as the project site', async () => {
+  const [row] = await db().sql<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, workspace) VALUES ('work', 'L1', 'repos/site') RETURNING id::text`;
+  assert.ok(row !== undefined);
+  const { task } = await postUserMessage(db().sql, row.id, 'Conversazione vecchia.');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([delegation?.status, delegation?.repo], ['ok', 'site']);
 });

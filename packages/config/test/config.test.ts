@@ -35,38 +35,100 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     server: { host: '127.0.0.1', port: 7420 },
     roles: {},
     local: { endpoints: [] },
-    cloud: { allowlist: [], executors: [] },
+    cloud: { executors: [] },
+    projects: [],
   });
 });
 
-test('cloud.allowlist keeps repositories inside ARIANNA_HOME, as relative paths', () => {
-  const config = parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/site", "./work/app/"]\n`, HOME);
-  assert.deepEqual(config.cloud, { allowlist: ['repos/site', 'work/app'], executors: [] });
+// The user's home of these tests: ARIANNA_HOME is not inside it.
+const USER = resolve('some-user');
+const projects = (sections: string, userHome = USER) => parseConfig(`${VALID}\n${sections}\n`, HOME, undefined, userHome).projects;
+const section = (name: string, path: string, label?: string) =>
+  `[[project]]\nname = "${name}"\npath = "${path}"\n${label === undefined ? '' : `label = "${label}"\n`}`;
+
+test('projects (D-058): a folder under the home or repos/<name>, L1 by default', () => {
+  assert.deepEqual(projects(`${section('site', '~/Projects/site')}\n${section('demo', 'repos/demo', 'L0')}`), [
+    { name: 'site', path: '~/Projects/site', absolute: join(USER, 'Projects', 'site'), label: 'L1' },
+    { name: 'demo', path: 'repos/demo', absolute: join(HOME, 'repos', 'demo'), label: 'L0' },
+  ]);
+  assert.deepEqual(projects(''), []);
 });
 
-test('cloud.allowlist rejects home itself, data/, escapes, duplicates and nesting', () => {
-  const rejects = (list: string, pattern: RegExp): void => {
+test('projects refuse the home, hidden folders, Library, other forms and labels above L1', () => {
+  const rejects = (sections: string, pattern: RegExp, userHome = USER): void => {
     assert.throws(
-      () => parseConfig(`${VALID}\n[cloud]\nallowlist = [${list}]\n`, HOME),
+      () => projects(sections, userHome),
       (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
     );
   };
-  rejects('"."', /ARIANNA_HOME itself/);
-  rejects('"data"', /data\//);
-  rejects('"data/worktrees/x"', /data\//);
-  rejects('"/abs/repo"', /absolute/);
-  rejects('"repos/../../x"', /escapes/);
-  rejects('"repos/a", "repos/a/"', /twice/);
-  rejects('"repos/a", "repos/a/b"', /nested/);
-  rejects('"repos/a/b", "repos/a"', /nested/);
-  rejects('"data/..cache"', /data\//);
-  rejects('"repos/A", "repos/a/b"', /nested/);
-  rejects('"Repos/x", "repos/X"', /twice/);
+  rejects(section('home', '~/'), /plain name/);
+  rejects(section('home', '~'), /write ~\/<folder>/);
+  rejects(section('ssh', '~/.ssh'), /plain name/);
+  rejects(section('deep', '~/Projects/.hidden/site'), /plain name/);
+  rejects(section('up', '~/Projects/../x'), /plain name/);
+  rejects(section('dot', '~/Projects/./x'), /plain name/);
+  rejects(section('lib', '~/Library/Mobile Documents'), /Library/);
+  rejects(section('abs', '/opt/site'), /write ~\/<folder>/);
+  rejects(section('rel', 'Projects/site'), /write ~\/<folder>/);
+  rejects(section('demo', 'repos/other'), /repos\/demo/);
+  rejects(section('demo', 'repos/demo/sub'), /repos\/demo/);
+  rejects(section('Site', '~/Projects/site'), /lowercase/);
+  rejects(section('a.b', '~/Projects/site'), /lowercase/);
+  rejects(section('site', '~/Projects/site', 'L2'), /L0 or L1/);
+  rejects(section('site', '~/Projects/site', 'L3'), /L0 or L1/);
+  rejects(section('site', '~/Projects/site', 'top'), /L0, L1/);
+  rejects(`[[project]]\nname = "site"\npath = "~/Projects/site"\nextra = 1\n`, /unknown key/);
 });
 
-test('cloud.allowlist accepts siblings that only share a prefix', () => {
-  const config = parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/a", "repos/ab", "..cache/x"]\n`, HOME);
-  assert.deepEqual(config.cloud.allowlist, ['repos/a', 'repos/ab', '..cache/x']);
+test('projects refuse ARIANNA_HOME, folders inside it and folders around it', () => {
+  // Here ARIANNA_HOME (some-home) sits inside the user's home (the folder that contains it).
+  const userHome = resolve('.');
+  const rejects = (path: string): void => {
+    assert.throws(
+      () => projects(section('x', path), userHome),
+      (error: unknown) => error instanceof ConfigError && /ARIANNA_HOME/.test(error.message),
+    );
+  };
+  rejects('~/some-home');
+  rejects('~/some-home/repos/x');
+  rejects('~/some-home/data');
+  // Case does not open a way around it: on macOS the disk ignores it.
+  rejects('~/Some-Home/repos/x');
+  rejects('~/SOME-HOME');
+  assert.equal(projects(section('x', '~/some-home-other'), userHome)[0]?.name, 'x');
+  // Two levels around: a folder that holds the folder that holds ARIANNA_HOME.
+  const deep = resolve('a', 'b', 'arianna');
+  assert.throws(() => parseConfig(`${VALID}\n${section('x', '~/a')}\n`, deep, undefined, resolve('.')), /ARIANNA_HOME/);
+});
+
+test('projects refuse Library in any case and a home that is not a real folder', () => {
+  assert.throws(() => projects(section('lib', '~/library/x')), /Library/);
+  assert.throws(() => projects(section('lib', '~/LIBRARY')), /Library/);
+  assert.throws(() => projects(section('x', '~/etc'), '/'), /HOME/);
+  assert.throws(() => projects(section('x', '~/etc'), 'relative/home'), /HOME/);
+  assert.deepEqual(projects('', '/'), []);
+});
+
+test('projects: names once, no folder twice nor one inside another, also by case', () => {
+  const rejects = (sections: string, pattern: RegExp): void => {
+    assert.throws(
+      () => projects(sections),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+    );
+  };
+  rejects(`${section('a', '~/P/a')}\n${section('a', '~/P/b')}`, /twice/);
+  rejects(`${section('a', '~/P/a')}\n${section('b', '~/P/a')}`, /same folder/);
+  rejects(`${section('a', '~/P')}\n${section('b', '~/P/b')}`, /one inside the other/);
+  rejects(`${section('a', '~/P/A')}\n${section('b', '~/p/a/x')}`, /one inside the other/);
+  assert.equal(projects(`${section('a', '~/P/a')}\n${section('ab', '~/P/ab')}`).length, 2);
+});
+
+test('cloud.allowlist from before D-058 is refused with the way out, unless empty', () => {
+  assert.throws(
+    () => parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/demo"]\n`, HOME),
+    (error: unknown) => error instanceof ConfigError && /\[\[project\]\]/.test(error.message) && /arianna:init --reconfigure/.test(error.message),
+  );
+  assert.deepEqual(parseConfig(`${VALID}\n[cloud]\nallowlist = []\n`, HOME).cloud, { executors: [] });
 });
 
 test('telegram is off without its section, and takes a vault reference and private chat ids', () => {

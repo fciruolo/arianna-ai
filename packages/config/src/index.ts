@@ -24,9 +24,19 @@ export {
   parseConfig,
   type AriannaConfig,
   type DatabaseConfig,
+  userHomeOf,
 } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';
 export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
+export {
+  parseProjects,
+  PROJECT_LABELS,
+  PROJECT_NAME,
+  projectNamed,
+  PROJECTS_DIR,
+  type Project,
+  type ProjectLabel,
+} from './projects.ts';
 export { aliasesOf, parseRoles, ROLE_ALIASES, type Roles } from './roles.ts';
 export { type TelegramConfig } from './telegram.ts';
 export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
@@ -37,6 +47,7 @@ export {
   renderSettings,
   TELEGRAM_TOKEN_REF,
   type EndpointSettings,
+  type ProjectSettings,
   type Settings,
 } from './settings.ts';
 export { diffConfig, watchConfig, type ConfigChange, type ConfigWatcher } from './watch.ts';

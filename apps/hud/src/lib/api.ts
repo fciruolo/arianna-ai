@@ -1,4 +1,4 @@
-import type { Approval, CloudModel, Conversation, ConversationMode, Message, Task } from './types.ts';
+import type { Approval, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, Task } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -50,9 +50,15 @@ export async function archiveConversation(conversationId: string, archived: bool
     .conversation;
 }
 
-export async function createConversation(mode: ConversationMode, workspace?: string): Promise<Conversation> {
-  const body = workspace === undefined || workspace === '' ? { mode } : { mode, workspace };
+/** Opens a conversation; a work one may name an approved project (D-058). */
+export async function createConversation(mode: ConversationMode, project?: string): Promise<Conversation> {
+  const body = project === undefined || project === '' ? { mode } : { mode, project };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
+}
+
+/** The projects the user approved, which a new work conversation may choose. */
+export async function listProjects(): Promise<ProjectInfo[]> {
+  return (await call<{ projects: ProjectInfo[] }>('GET', '/api/projects')).projects;
 }
 
 /** The cloud models a work conversation may choose on this installation. */

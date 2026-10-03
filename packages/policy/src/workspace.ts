@@ -98,25 +98,12 @@ export function isAllowlisted(repo: string, allowlist: readonly string[]): boole
 }
 
 /**
- * Decides whether a cloud executor may be launched on this worktree. Blocked
- * when the repository is not in the allowlist, or when any entry is a secret
- * file, a file the label rules put above L1 (the path counts as inside the
- * repository, not inside `data/worktrees`), a link that leaves the worktree, or
- * a special file. Each entry is checked; every problem is reported.
+ * The problems of each entry: a secret file, a file `labelOf` puts above L1,
+ * a link that leaves the folder, a special file, a path that is not clean.
  */
-export function checkWorkspace(input: WorkspaceCheck): WorkspaceDecision {
-  if (!isAllowlisted(input.repo, input.allowlist)) {
-    return { decision: 'block', rule: 'not-allowlisted', reason: 'the repository is not in cloud.allowlist', findings: [] };
-  }
-  const repo = input.repo.normalize('NFC').replace(/\/+$/, '');
+function scanEntries(entries: readonly WorkspaceEntry[], labelOf: (path: string) => Label): WorkspaceFinding[] {
   const findings: WorkspaceFinding[] = [];
-  const labelOf = (path: string): Label => labelForPath(input.rules, `${repo}/${path}`);
-  // The repository itself needs a rule at most L1, also when it is empty:
-  // allowlisting it does not label it.
-  const repoLabel = labelForPath(input.rules, repo);
-  if (!isAtMost(repoLabel, CLOUD_CEILING)) findings.push({ kind: 'label', path: '.', label: repoLabel });
-
-  for (const entry of input.entries) {
+  for (const entry of entries) {
     // Entries also come from JSON, where `path` may not be a string at all.
     const raw: unknown = entry.path;
     const path = cleanRelative(raw);
@@ -142,10 +129,53 @@ export function checkWorkspace(input: WorkspaceCheck): WorkspaceDecision {
     const label = labelOf(path);
     if (!isAtMost(label, CLOUD_CEILING)) findings.push({ kind: 'label', path, label });
   }
+  return findings;
+}
 
+function decide(entries: number, findings: WorkspaceFinding[]): WorkspaceDecision {
   if (findings.length === 0) {
-    return { decision: 'allow', rule: 'workspace', reason: `${String(input.entries.length)} entries, none above ${CLOUD_CEILING}, no secrets` };
+    return { decision: 'allow', rule: 'workspace', reason: `${String(entries)} entries, none above ${CLOUD_CEILING}, no secrets` };
   }
   const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
   return { decision: 'block', rule: 'workspace-scan', reason: `${String(findings.length)} finding(s): ${kinds}`, findings };
+}
+
+/**
+ * Decides whether a cloud executor may be launched on this worktree. Blocked
+ * when the repository is not in the allowlist, or when any entry is a secret
+ * file, a file the label rules put above L1 (the path counts as inside the
+ * repository, not inside `data/worktrees`), a link that leaves the worktree, or
+ * a special file. Each entry is checked; every problem is reported.
+ */
+export function checkWorkspace(input: WorkspaceCheck): WorkspaceDecision {
+  if (!isAllowlisted(input.repo, input.allowlist)) {
+    return { decision: 'block', rule: 'not-allowlisted', reason: 'the repository is not in cloud.allowlist', findings: [] };
+  }
+  const repo = input.repo.normalize('NFC').replace(/\/+$/, '');
+  const labelOf = (path: string): Label => labelForPath(input.rules, `${repo}/${path}`);
+  // The repository itself needs a rule at most L1, also when it is empty:
+  // allowlisting it does not label it.
+  const repoLabel = labelForPath(input.rules, repo);
+  const findings: WorkspaceFinding[] = isAtMost(repoLabel, CLOUD_CEILING) ? [] : [{ kind: 'label', path: '.', label: repoLabel }];
+  findings.push(...scanEntries(input.entries, labelOf));
+  return decide(input.entries.length, findings);
+}
+
+export interface ProjectCheck {
+  /** The label the user gave the project in its `[[project]]` section (D-058). */
+  label: Label;
+  entries: readonly WorkspaceEntry[];
+}
+
+/**
+ * Decides whether a cloud executor may be launched in a project folder the
+ * user approved (D-058). Every file has the project's label, which must be at
+ * most L1 (the configuration refuses more; checked again here); the scan is
+ * the one of `checkWorkspace`: secrets, links leaving the folder and special
+ * files block.
+ */
+export function checkProject(input: ProjectCheck): WorkspaceDecision {
+  const findings: WorkspaceFinding[] = isAtMost(input.label, CLOUD_CEILING) ? [] : [{ kind: 'label', path: '.', label: input.label }];
+  findings.push(...scanEntries(input.entries, () => input.label));
+  return decide(input.entries.length, findings);
 }

@@ -41,7 +41,7 @@ before(async () => {
     host: '127.0.0.1',
     port: 0,
     staticDir,
-    allowlist: ['repos/fake-site'],
+    projects: () => [{ name: 'fake-site', path: 'repos/fake-site', label: 'L1' }],
     models: () => [{ executor: 'claude', model: 'sonnet' }, { executor: 'claude', model: 'opus' }],
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
@@ -139,9 +139,11 @@ test('requests from another site, or for another host, are refused', async () =>
   assert.deepEqual(field<unknown[]>(await call('GET', `/api/conversations/${id}/messages`), 'messages'), []);
 });
 
-test('a work conversation may name an allowlisted workspace', async () => {
-  const reply = await call('POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/fake-site' } });
+test('a work conversation may name an approved project, listed by GET /api/projects (D-058)', async () => {
+  assert.deepEqual(field<unknown[]>(await call('GET', '/api/projects'), 'projects'), [{ name: 'fake-site', path: 'repos/fake-site', label: 'L1' }]);
+  const reply = await call('POST', '/api/conversations', { body: { mode: 'work', project: 'fake-site' } });
   assert.equal(reply.status, 201);
+  assert.equal(field<{ workspace: string }>(reply, 'conversation').workspace, 'fake-site');
 });
 
 test('a work conversation chooses a cloud model among those of the installation; a private one has none', async () => {
@@ -203,7 +205,9 @@ test('bad input gets a clear status and no internal detail', async () => {
   const cases: [string, string, Parameters<typeof call>[2], number][] = [
     ['POST', '/api/conversations', { body: { mode: 'public' } }, 400],
     ['POST', '/api/conversations', { body: { mode: 'work', admin: true } }, 400],
-    ['POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/other' } }, 400],
+    ['POST', '/api/conversations', { body: { mode: 'work', project: 'other' } }, 400],
+    ['POST', '/api/conversations', { body: { mode: 'work', project: 7 } }, 400],
+    ['POST', '/api/conversations', { body: { mode: 'work', workspace: 'repos/fake-site' } }, 400],
     ['POST', `/api/conversations/${id}/messages`, { raw: '{not json' }, 400],
     ['POST', `/api/conversations/${id}/messages`, { body: ['array'] }, 400],
     ['POST', `/api/conversations/${id}/messages`, { body: { body: '' } }, 400],

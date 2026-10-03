@@ -15,7 +15,9 @@ import {
   DEFAULT_SETTINGS,
   loadCatalog,
   loadConfig,
+  parseProjects,
   resolveHome,
+  userHomeOf,
   type AriannaConfig,
   type CatalogEntry,
 } from '@arianna/config';
@@ -24,6 +26,7 @@ import { runDoctor, type DoctorCheck } from '@arianna/core/doctor';
 import { createFetcher } from './http.ts';
 import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
 import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from './models.ts';
+import { folderProblem, projectChecks, syncProjectLinks } from './projects.ts';
 import { ensureLayout, freeBytes, layoutCheck, systemChecks } from './system.ts';
 import { runWizard, type Prompter } from './wizard.ts';
 
@@ -73,6 +76,7 @@ async function doctor(config: AriannaConfig): Promise<number> {
     ...(await systemChecks()),
     ...layoutCheck(config.home, config.paths.data),
     ...(await modelsChecks(config)),
+    ...projectChecks(config.home, config.projects),
     ...(await runDoctor({ config })),
   ];
   const failed = print(checks);
@@ -181,13 +185,19 @@ async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean
       freeBytes: freeBytes(home),
       ramBytes: totalmem(),
       installed: installedExecutors(),
+      userHome: userHomeOf(),
+      checkFolder: (absolute, name) => folderProblem(absolute, home, name),
     });
     if (settings === undefined) {
       console.log('Nulla è stato scritto.');
       return false;
     }
     writeSettings(home, catalog, settings);
-    console.log('Scritto config/arianna.toml. Un core avviato applica subito i modelli; il resto al riavvio.');
+    console.log('Scritto config/arianna.toml. Un core avviato applica subito modelli e progetti; il resto al riavvio.');
+    const userHome = userHomeOf();
+    for (const line of syncProjectLinks(home, parseProjects(current?.projects ?? [], home, userHome), parseProjects(settings.projects, home, userHome))) {
+      console.log(line);
+    }
     return true;
   } finally {
     io.close();

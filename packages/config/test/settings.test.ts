@@ -43,7 +43,11 @@ const FULL: Settings = {
     { id: 'omlx', url: 'http://127.0.0.1:7001/v1', command: ['omlx', 'serve', '--model-dir', 'data/models'] },
     { id: 'spare', url: 'http://[::1]:1234/v1', models: { 'local-large': 'Qwen "large"' } },
   ],
-  cloud: { allowlist: ['repos/site', 'repos/odd "name"'], executors: ['claude', 'codex'] },
+  cloud: { executors: ['claude', 'codex'] },
+  projects: [
+    { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
+    { name: 'demo', path: 'repos/demo', label: 'L0' },
+  ],
   telegram: { token: 'vault://telegram-bot-token', chats: [12345, 67890] },
 };
 

@@ -31,7 +31,7 @@ CREATE TABLE conversations (
   mode            text NOT NULL DEFAULT 'private',          -- work | private
   clearance       privacy_label NOT NULL DEFAULT 'L2',      -- tetto di lettura
   effective_label privacy_label NOT NULL DEFAULT 'L0',      -- massimo letto finora, solo crescente
-  workspace       text,                                     -- repository in allowlist (mode = work)
+  workspace       text,                                     -- nome del progetto approvato (mode = work, D-058); prima repos/<nome>
   model           text,                                     -- modello cloud scelto per i passi delegati (solo work; NULL: decide il router)
   title           text,                                     -- una riga: dal primo messaggio o dall'utente (D-057); etichetta della conversazione
   archived_at     timestamptz,                              -- archiviata dall'utente; NULL: nella lista
@@ -206,7 +206,7 @@ CREATE TABLE task_delegations (
   agent         text NOT NULL,                              -- coder
   brief         text NOT NULL,                              -- come l'ha scritto il modello
   label         privacy_label NOT NULL,                     -- del brief; scende solo con un declassamento approvato (label_changes)
-  repo          text,                                       -- repository della conversazione, o l'unico in allowlist
+  repo          text,                                       -- progetto della conversazione, o l'unico approvato (D-058)
   status        text NOT NULL DEFAULT 'pending',            -- pending | running | ok | failed | refused
   executor      text, model text,                           -- scelti dal router
   run_id        uuid REFERENCES runs(id),                   -- run cloud (ultimo tentativo)

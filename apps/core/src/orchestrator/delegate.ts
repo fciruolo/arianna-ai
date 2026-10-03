@@ -1,10 +1,12 @@
 import type { LoadedAgent, ToolId } from '@arianna/agents';
-import type { AriannaConfig } from '@arianna/config';
+import { projectNamed, type AriannaConfig, type Project } from '@arianna/config';
 import {
+  changedToolConfig,
   CLAUDE_MODELS,
   gitConfigFingerprint,
   openRepository,
   repositoryStatus,
+  toolConfigFiles,
   WorkspaceError,
   type ClaudeExecutor,
   type ClaudeModel,
@@ -37,7 +39,7 @@ import { budgetOf, routerConfigOf } from './routing.ts';
 export interface DelegateEnv {
   sql: Sql;
   agents: ReadonlyMap<string, LoadedAgent>;
-  /** The current configuration: executors, allowlist, roles. */
+  /** The current configuration: executors, projects, roles. */
   settings: () => AriannaConfig;
   rules: LabelRules;
   /** Absent when `claude` is not enabled or cannot run on this machine. */
@@ -69,13 +71,14 @@ export function claudeToolsOf(tools: readonly ToolId[]): ClaudeTool[] {
 }
 
 /**
- * The repository a delegated step works on: the conversation's, or the only
- * allowlisted one when the conversation names none (a private conversation
- * has no workspace; the user allowlisted that repository for the cloud).
+ * The project a delegated step works on (D-058): the conversation's, or the
+ * only approved one when the conversation names none (a private conversation
+ * has no project; the user approved that one for the cloud). A name no longer
+ * approved stays as it is: opening it says so.
  */
-export function repoFor(workspace: string | null | undefined, allowlist: readonly string[]): string | undefined {
-  if (workspace !== null && workspace !== undefined) return workspace;
-  return allowlist.length === 1 ? allowlist[0] : undefined;
+export function repoFor(workspace: string | null | undefined, projects: readonly Project[]): string | undefined {
+  if (workspace !== null && workspace !== undefined) return projectNamed(projects, workspace)?.name ?? workspace;
+  return projects.length === 1 ? projects[0]?.name : undefined;
 }
 
 interface ApprovalRow {
@@ -102,14 +105,20 @@ async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<Ap
   return row;
 }
 
+/** What Arianna reads when no project is there for the Coder. */
+export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
+
 /** Opens the project folder of a delegation, or says why the step cannot run there. */
 async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository; repo: string } | { error: string }> {
   const repo = delegation.repo;
-  if (repo === null) return { error: 'no repository for the Coder: the user opens a work conversation with one of cloud.allowlist' };
+  if (repo === null) return { error: NO_PROJECT };
   const config = env.settings();
+  // Read again at every attempt: a project taken off the list closes the delegation.
+  const project = projectNamed(config.projects, repo);
+  if (project === undefined) return { error: `the project ${repo} is no longer among the projects the user approved: tell the user` };
   let opened: OpenedRepository;
   try {
-    opened = await openRepository({ home: config.home, repo, allowlist: config.cloud.allowlist, rules: env.rules });
+    opened = await openRepository({ home: config.home, project });
   } catch (error) {
     if (!(error instanceof WorkspaceError)) throw error;
     return { error: `the folder of ${repo} cannot be opened: ${error.message}` };
@@ -262,6 +271,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const path = workspace.path ?? '';
   // Taken before the run: a run that rewrote .git/config, hooks or .gitattributes is caught after it.
   const fingerprint = await gitConfigFingerprint(path);
+  // Tool configuration (.claude/, .envrc, .vscode/...), ignored by git or not: what changed is told to the user.
+  const tools = await toolConfigFiles(path);
   await updateDelegation(sql, delegation.id, { status: 'running', executor: 'claude', model: plan.model, runId });
   await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
 
@@ -295,14 +306,22 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     case 'answer': {
       // No git command of Arianna's runs in a folder whose git configuration the run changed: the user looks first.
       if ((await gitConfigFingerprint(path)) !== fingerprint) {
-        await close(env, task, step, delegation, 'failed', `error: ${TOOL}: the run changed the git configuration of ${repo} (.git/config, hooks or .gitattributes): the user must check that folder before using git there`);
+        await close(env, task, step, delegation, 'failed', `error: ${TOOL}: the run changed the git configuration of the project ${repo} (.git/config, hooks or .gitattributes): the user must check that folder before using git there`);
         return { kind: 'continue', usage: result.usage };
       }
       // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
       const after = await repositoryStatus(path).catch(() => [] as string[]);
       const changed = after.filter((item) => !before.has(item));
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
-      const text = changed.length === 0 ? report : `${report}\n\nFiles changed in ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.join(', ')}`;
+      const toolChanges = changedToolConfig(tools, await toolConfigFiles(path).catch(() => new Map([['(unreadable)', '']])));
+      const text = [
+        report,
+        ...(changed.length === 0 ? [] : [`Files changed in the project ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.join(', ')}`]),
+        // Run by other tools when the user opens the folder with them, outside any sandbox: the user must know.
+        ...(toolChanges.length === 0
+          ? []
+          : [`Tool configuration changed by the Coder in ${repo}, which can run code when the user opens the folder with that tool (tell the user to check it): ${toolChanges.join(', ')}`]),
+      ].join('\n\n');
       let messageId: string | undefined;
       if (reply !== undefined) {
         const saved = await reply.finish(report, result.result.label);

@@ -1,7 +1,9 @@
 // Reloads arianna.toml and the catalog while the core runs (task 1.18): a new
-// model for a role applies without a restart. Only the roles and the model
-// names they give the local servers change live; everything else waits for a
-// restart, privacy settings first, so that an edited file never turns on a
+// model for a role applies without a restart. Only the roles, the model
+// names they give the local servers and the projects (D-058: the user
+// approves one with the wizard and uses it right away; a project taken off
+// the list is closed at the next delegated step) change live; everything else
+// waits for a restart, privacy settings first, so that an edited file never turns on a
 // cloud executor or a channel by itself, nor changes where L2 requests go
 // (`url`) or what the watchdog runs (`command`).
 import { unwatchFile, watchFile } from 'node:fs';
@@ -14,7 +16,7 @@ import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 const RESTART_SECTIONS = ['paths', 'database', 'server', 'cloud', 'telegram'] as const;
 
 export interface ConfigChange {
-  /** Applied: `current()` returns the new values (`roles`, `local.models`). */
+  /** Applied: `current()` returns the new values (`roles`, `local.models`, `projects`). */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
   restart: string[];
@@ -30,7 +32,7 @@ export interface WatchOptions {
   /** Its `home` is the folder watched and reloaded. */
   initial: AriannaConfig;
   onChange: (change: ConfigChange) => void;
-  /** An invalid file keeps the previous configuration. */
+  /** An invalid file keeps the previous configuration, except the projects, which are closed until it is valid. */
   onError: (error: unknown) => void;
   /** How often the files are checked; 1 s by default. */
   intervalMs?: number;
@@ -49,6 +51,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
     applied: [
       ...(changed('roles') ? ['roles'] : []),
       ...(sameServers && changed('local') ? ['local.models'] : []),
+      ...(changed('projects') ? ['projects'] : []),
     ],
     restart: [...(sameServers ? [] : ['local.endpoints']), ...RESTART_SECTIONS.filter(changed)],
   };
@@ -63,20 +66,31 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
   const env = { ...process.env, ARIANNA_HOME: current.home };
   // The last valid file read: what a new read is compared with.
   let read = options.initial;
+  // The projects are a privacy setting applied live (D-058): a file that
+  // cannot be read closes them all, so that a project taken off by hand next
+  // to a typo is not left open; they come back when the file is valid again.
+  let closed = false;
   const reload = (): void => {
     let next: AriannaConfig;
     try {
       next = loadConfig(env);
     } catch (error) {
+      if (!closed && current.projects.length > 0) {
+        closed = true;
+        current = { ...current, projects: [] };
+        options.onChange({ applied: ['projects'], restart: [] });
+      }
       options.onError(error);
       return;
     }
+    const reopened = closed;
+    closed = false;
     // Reported once per change of the file, not at every check.
-    if (empty(diffConfig(read, next))) return;
+    if (empty(diffConfig(read, next)) && !reopened) return;
     read = next;
     const before = current;
     const sameServers = isDeepStrictEqual(servers(current), servers(next));
-    current = { ...current, roles: next.roles, ...(sameServers ? { local: next.local } : {}) };
+    current = { ...current, roles: next.roles, projects: next.projects, ...(sameServers ? { local: next.local } : {}) };
     const change = { applied: diffConfig(before, current).applied, restart: diffConfig(current, next).restart };
     // A file put back as it was changes nothing.
     if (!empty(change)) options.onChange(change);

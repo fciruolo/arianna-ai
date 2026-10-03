@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { checkWorkspace, createLabelRules, isAllowlisted, type WorkspaceEntry } from '../src/index.ts';
+import { checkProject, checkWorkspace, createLabelRules, isAllowlisted, type WorkspaceEntry } from '../src/index.ts';
 
 const RULES = createLabelRules({
   folders: [
@@ -104,5 +104,41 @@ describe('pre-flight scan', () => {
   it('the reason counts findings and never contains file content', () => {
     const decision = check([file('.env'), file('private/x.md')]);
     assert.equal(decision.reason, '2 finding(s): secret-file, label');
+  });
+});
+
+describe('project (D-058)', () => {
+  it('a project at L1 or L0 with plain files is allowed, whatever the folder rules say', () => {
+    for (const label of ['L0', 'L1'] as const) {
+      const decision = checkProject({ label, entries: [file('index.html'), file('private/notes.md'), { path: 'src', kind: 'directory' }] });
+      assert.equal(decision.decision, 'allow');
+    }
+  });
+
+  it('a project above L1 is blocked even when empty', () => {
+    const decision = checkProject({ label: 'L2', entries: [] });
+    assert.ok(decision.decision === 'block');
+    assert.deepEqual(decision.findings, [{ kind: 'label', path: '.', label: 'L2' }]);
+  });
+
+  it('secrets, links leaving the folder, special files and unclean paths still block', () => {
+    const decision = checkProject({
+      label: 'L1',
+      entries: [file('.env'), { path: 'out', kind: 'symlink', target: null }, { path: 'nested', kind: 'other' }, file('../escape')],
+    });
+    assert.ok(decision.decision === 'block');
+    assert.deepEqual(
+      decision.findings.map((finding) => `${finding.kind}:${finding.path}`),
+      ['secret-file:.env', 'symlink-outside:out', 'special-file:nested', 'invalid-path:../escape'],
+    );
+  });
+
+  it('an unknown label is never taken for an allowed one', () => {
+    assert.throws(() => checkProject({ label: 'L9' as 'L1', entries: [file('a.ts')] }));
+  });
+
+  it('a link inside the folder to a secret is a secret', () => {
+    const decision = checkProject({ label: 'L1', entries: [{ path: 'config.txt', kind: 'symlink', target: 'keys/id_ed25519' }] });
+    assert.equal(decision.decision, 'block');
   });
 });

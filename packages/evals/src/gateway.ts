@@ -1,5 +1,6 @@
 // Subject of the `gateway` eval group: the real gatewayCheck and declassify.
 import {
+  checkProject,
   checkWorkspace,
   contentHash,
   createContext,
@@ -13,6 +14,7 @@ import {
   type Label,
   type Labeled,
   type Target,
+  type WorkspaceDecision,
   type WorkspaceEntry,
 } from '@arianna/policy';
 
@@ -60,6 +62,14 @@ interface WorkspaceInput {
   };
 }
 
+/** The pre-flight check of an approved project folder (D-058): its label, its entries. */
+interface ProjectInput {
+  project: {
+    label: Label;
+    entries: WorkspaceEntry[];
+  };
+}
+
 const WORKSPACE_RULES = [
   { path: 'repos', label: 'L1' as const },
   { path: 'repos/site/private', label: 'L2' as const },
@@ -87,17 +97,24 @@ function toContext(input: ContextInput): Context {
   return createContext(input.clearance, input.effective);
 }
 
-function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome {
-  const rules = createLabelRules({ folders: input.rules ?? WORKSPACE_RULES, sources: [] });
-  const decision = checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules });
+function outcomeOf(decision: WorkspaceDecision): WorkspaceOutcome {
   if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule };
   return decision.findings.length === 0
     ? { decision: 'block', rule: decision.rule }
     : { decision: 'block', rule: decision.rule, findings: [...new Set(decision.findings.map((finding) => finding.kind))] };
 }
 
+function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome {
+  const rules = createLabelRules({ folders: input.rules ?? WORKSPACE_RULES, sources: [] });
+  return outcomeOf(checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules }));
+}
+
 export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome {
   if (typeof raw === 'object' && raw !== null && 'workspace' in raw) return evaluateWorkspace((raw as WorkspaceInput).workspace);
+  if (typeof raw === 'object' && raw !== null && 'project' in raw) {
+    const { label, entries } = (raw as ProjectInput).project;
+    return outcomeOf(checkProject({ label, entries }));
+  }
   const input = raw as GatewayInput;
   if (!Array.isArray(input.payload)) throw new Error('"payload" must be a list');
   let payload = input.payload.map(toFragment);

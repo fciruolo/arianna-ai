@@ -1,4 +1,4 @@
-import { clearanceFor, createContext, isAllowlisted, labelForUserMessage, scanText, type ConversationMode, type Label } from '@arianna/policy';
+import { clearanceFor, createContext, labelForUserMessage, scanText, type ConversationMode, type Label } from '@arianna/policy';
 
 import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
@@ -83,13 +83,15 @@ export function isUuid(value: string): boolean {
 }
 
 /**
- * Opens a conversation. A work conversation may name its repository, relative
- * to ARIANNA_HOME; it must be in `cloud.allowlist` (`allowlist`, empty when
+ * Opens a conversation. A work conversation may name its project (D-058):
+ * one of the projects the user approved (`projects`, their names; empty when
  * not given), since a work conversation exists to send its code to the cloud.
+ * The name goes in `workspace`; conversations opened before D-058 hold a path
+ * there (`repos/demo`), which reads as the project of that name.
  */
 export async function createConversation(
   sql: Sql,
-  options: { mode: ConversationMode; workspace?: string; allowlist?: readonly string[] },
+  options: { mode: ConversationMode; project?: string; projects?: readonly string[] },
 ): Promise<Conversation> {
   return sql.begin((tx) => writeConversation(tx, options));
 }
@@ -97,29 +99,23 @@ export async function createConversation(
 /** `createConversation` inside a transaction the caller holds. */
 export async function writeConversation(
   tx: Queryable,
-  options: { mode: ConversationMode; workspace?: string; allowlist?: readonly string[] },
+  options: { mode: ConversationMode; project?: string; projects?: readonly string[] },
 ): Promise<Conversation> {
   // Callers may pass anything that came over the wire.
   if (!(['work', 'private'] as readonly string[]).includes(options.mode)) throw new ChatError('invalid', 'mode must be work or private');
-  if (options.workspace !== undefined) {
-    if (options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation has a workspace');
-    if (!isRelativePath(options.workspace)) throw new ChatError('invalid', 'workspace must be a relative path inside ARIANNA_HOME');
-    if (!isAllowlisted(options.workspace, options.allowlist ?? [])) throw new ChatError('invalid', 'workspace is not in cloud.allowlist');
+  if (options.project !== undefined) {
+    if (options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation has a project');
+    if (!(options.projects ?? []).includes(options.project)) throw new ChatError('invalid', 'project is not among the approved projects');
   }
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO conversations (mode, clearance, workspace)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.workspace ?? null})
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode: options.mode } });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');
   return created;
-}
-
-function isRelativePath(path: string): boolean {
-  if (path === '' || path.length > 200 || path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:/.test(path)) return false;
-  return path.split(/[\\/]/).every((segment) => segment !== '' && segment !== '.' && segment !== '..');
 }
 
 /**

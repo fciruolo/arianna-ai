@@ -61,6 +61,9 @@ function makeRepo(name: string, files: Record<string, string>, links: Record<str
   return `repos/${name}`;
 }
 
+/** An approved project for a folder of the scratch ARIANNA_HOME (`repos/<name>`), at L1. */
+const project = (repo: string) => ({ name: repo.split('/').at(-1) ?? repo, absolute: join(HOME, repo), label: 'L1' as const });
+
 const options = (repo: string, allowlist: string[] = [repo]) => ({
   home: HOME,
   data: DATA,
@@ -263,7 +266,7 @@ describe('openRepository (D-056)', () => {
     const repo = makeRepo('inplace', { 'src/a.ts': 'x\n', '.gitignore': '.env\nbuild/\n' });
     const dir = join(HOME, repo);
     write(dir, { '.env': 'TOKEN=fake-ignored-0123456789abcdef\n', 'build/out.js': '1\n', 'notes.txt': 'untracked\n' });
-    const opened = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    const opened = await openRepository({ home: HOME, project: project(repo) });
     assert.equal(opened.decision.decision, 'allow');
     assert.equal(opened.path, dir);
     assert.equal(preparedPath(opened), dir);
@@ -276,23 +279,78 @@ describe('openRepository (D-056)', () => {
     const repo = makeRepo('inplace-secret', { 'a.ts': 'x\n' });
     const dir = join(HOME, repo);
     write(dir, { 'keys.pem': 'fake\n' });
-    const blocked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    const blocked = await openRepository({ home: HOME, project: project(repo) });
     assert.equal(blocked.decision.decision, 'block');
     assert.equal(preparedPath(blocked), undefined);
     rmSync(join(dir, 'keys.pem'));
     symlinkSync(DATA, join(dir, 'escape'));
-    const linked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    const linked = await openRepository({ home: HOME, project: project(repo) });
     assert.equal(linked.decision.decision === 'block' && linked.decision.findings.some((f) => f.kind === 'symlink-outside'), true);
   });
 
-  it('refuses a repository outside the allowlist, through a link, or that is not a git repository', async () => {
+  it('refuses a folder through a link, missing, or that is not a git repository', async () => {
     const repo = makeRepo('inplace-plain', { 'a.ts': 'x\n' });
-    const outside = await openRepository({ home: HOME, repo, allowlist: [], rules: RULES });
-    assert.equal(outside.decision.decision, 'block');
     mkdirSync(join(HOME, 'repos', 'nogit'));
-    await assert.rejects(openRepository({ home: HOME, repo: 'repos/nogit', allowlist: ['repos/nogit'], rules: RULES }), /not the top folder of a git repository/);
+    await assert.rejects(openRepository({ home: HOME, project: project('repos/nogit') }), /not the top folder of a git repository/);
     symlinkSync(join(HOME, repo), join(HOME, 'repos', 'inplace-alias'));
-    await assert.rejects(openRepository({ home: HOME, repo: 'repos/inplace-alias', allowlist: ['repos/inplace-alias'], rules: RULES }), /symbolic link/);
+    await assert.rejects(openRepository({ home: HOME, project: project('repos/inplace-alias') }), /symbolic link/);
+    await assert.rejects(openRepository({ home: HOME, project: project('repos/missing') }), /does not exist/);
+  });
+
+  it('a project above L1 is blocked', async () => {
+    const repo = makeRepo('inplace-l2', { 'a.ts': 'x\n' });
+    const blocked = await openRepository({ home: HOME, project: { ...project(repo), label: 'L2' } });
+    assert.equal(blocked.decision.decision, 'block');
+    assert.equal(preparedPath(blocked), undefined);
+  });
+
+  // Outside ARIANNA_HOME (D-058): a sibling of the scratch ARIANNA_HOME stands for a folder under the user's home.
+  const USER = `${HOME}-user`;
+  after(() => {
+    rmSync(USER, { recursive: true, force: true });
+  });
+
+  function outsideRepo(name: string, files: Record<string, string>): string {
+    const dir = join(USER, 'Projects', name);
+    mkdirSync(dir, { recursive: true });
+    git(dir, 'init', '--quiet', '--initial-branch=main');
+    write(dir, files);
+    git(dir, 'add', '--all');
+    git(dir, 'commit', '--quiet', '--message', 'fixture');
+    return dir;
+  }
+
+  it('opens the approved folder where it is, and the link in repos/ does not matter', async () => {
+    const dir = outsideRepo('site', { 'index.html': '<h1>fake</h1>\n' });
+    mkdirSync(join(HOME, 'repos'), { recursive: true });
+    symlinkSync(dir, join(HOME, 'repos', 'site'));
+    const opened = await openRepository({ home: HOME, project: { name: 'site', absolute: dir, label: 'L1' } });
+    assert.equal(opened.decision.decision, 'allow');
+    assert.equal(opened.path, dir);
+    assert.equal(preparedPath(opened), dir);
+  });
+
+  it('refuses an approved path that became a link, even to another approved-looking folder', async () => {
+    const real = outsideRepo('real', { 'a.txt': 'x\n' });
+    const alias = join(USER, 'Projects', 'alias');
+    symlinkSync(real, alias);
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'alias', absolute: alias, label: 'L1' } }), /symbolic link/);
+    // A link higher up on the way: the approved path would follow wherever it is turned.
+    symlinkSync(join(USER, 'Projects'), join(USER, 'Linked'));
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'real', absolute: join(USER, 'Linked', 'real'), label: 'L1' } }), /symbolic link/);
+  });
+
+  it('refuses a folder that contains ARIANNA_HOME, and one inside it other than repos/<name>', async () => {
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'up', absolute: dirname(HOME), label: 'L1' } }), /contains ARIANNA_HOME/);
+    const repo = makeRepo('elsewhere', { 'a.ts': 'x\n' });
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'other', absolute: join(HOME, repo), label: 'L1' } }), /only as repos\/other/);
+    mkdirSync(DATA, { recursive: true });
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'data', absolute: DATA, label: 'L1' } }), /only as repos\/data/);
+  });
+
+  it('refuses a relative or unnormalized path', async () => {
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'rel', absolute: 'Projects/site', label: 'L1' } }), /must be absolute/);
+    await assert.rejects(openRepository({ home: HOME, project: { name: 'dots', absolute: `${USER}/Projects/./site`, label: 'L1' } }), /must be absolute/);
   });
 
   it('repositoryStatus lists uncommitted paths, staged and unstaged, ignored files left out', async () => {
@@ -313,7 +371,7 @@ describe('openRepository (D-056)', () => {
     writeFileSync(join(dir, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\ntouch ${join(dir, 'hook-ran')}\n`, { mode: 0o755 });
     write(dir, { 'a.txt': 'changed\n', 'b.txt': 'new\n' });
     assert.deepEqual(await repositoryStatus(dir), ['a.txt', 'b.txt']);
-    const opened = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    const opened = await openRepository({ home: HOME, project: project(repo) });
     assert.equal(opened.decision.decision, 'allow');
     assert.equal(existsSync(join(dir, 'evil-ran')), false);
     assert.equal(existsSync(join(dir, 'hook-ran')), false);
@@ -325,7 +383,7 @@ describe('openRepository (D-056)', () => {
     mkdirSync(join(dir, 'nested'));
     git(join(dir, 'nested'), 'init', '--quiet');
     write(dir, { 'nested/.env': 'TOKEN=fake-nested-0123456789abcdef\n' });
-    const blocked = await openRepository({ home: HOME, repo, allowlist: [repo], rules: RULES });
+    const blocked = await openRepository({ home: HOME, project: project(repo) });
     assert.equal(blocked.decision.decision === 'block' && blocked.decision.findings.some((f) => f.kind === 'special-file' && f.path === 'nested'), true);
   });
 

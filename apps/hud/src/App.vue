@@ -9,7 +9,7 @@ import { ACTION_TEXT, DECISION_TEXT, REMOTE_CHANNEL_TEXT } from './lib/labels.ts
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, chat, current, tasks, approvals, models, remoteDecisions, live, error, sending } = store;
+const { conversations, archived, chat, current, tasks, approvals, models, projects, remoteDecisions, live, error, sending } = store;
 
 function timeOf(ts: string): string {
   return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -28,9 +28,9 @@ async function openConversation(id: string): Promise<void> {
   await store.open(id);
 }
 
-async function createConversation(mode: 'work' | 'private', workspace?: string): Promise<void> {
+async function createConversation(mode: 'work' | 'private', project?: string): Promise<void> {
   showSidebar.value = false;
-  await store.create(mode, workspace);
+  await store.create(mode, project);
 }
 </script>
 
@@ -51,7 +51,7 @@ async function createConversation(mode: 'work' | 'private', workspace?: string):
           {{ live === 'open' ? 'in linea' : 'riconnessione' }}
         </span>
       </div>
-      <NewConversation class="px-4" @create="createConversation" />
+      <NewConversation class="px-4" :projects="projects" @create="createConversation" @refresh="store.refreshProjects" />
       <ConversationList
         class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-4"
         :conversations="conversations"

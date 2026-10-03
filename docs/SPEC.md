@@ -58,7 +58,7 @@ Ogni dato ha un'etichetta di riservatezza, e un controllo nel codice, non nel pr
 | Livello | Cosa contiene | Chi può leggerlo |
 | --- | --- | --- |
 | L0 Pubblico | Documentazione, articoli, repository open source, web | Qualsiasi modello |
-| L1 Interno | Il tuo codice non sensibile, appunti di lavoro, idee | Modelli locali, Claude Code, Codex (solo repository in allowlist) |
+| L1 Interno | Il tuo codice non sensibile, appunti di lavoro, idee | Modelli locali, Claude Code, Codex (solo progetti approvati, D-058) |
 | L2 Privato | Fatture, documenti fiscali e contratti, dati di famiglia, affitti, codice di clienti con NDA | Solo modelli locali |
 | L3 Segreto | Password, chiavi, IBAN, documenti d'identità | Nessun modello in chiaro: gli agenti usano riferimenti al vault e l'operazione è eseguita dal codice |
 
@@ -70,7 +70,7 @@ Ogni dato ha un'etichetta di riservatezza, e un controllo nel codice, non nel pr
 4. **Un solo punto d'uscita:** tutto ciò che va verso Claude Code, Codex o il web passa da un gateway che controlla etichette, registra cosa esce e blocca se c'è un dato L2 o L3.
 5. **Clienti con NDA:** finché non verifichi i singoli contratti, tratta il loro codice come L2, quindi solo locale.
 6. **L'etichetta segue il contenuto:** ciò che un modello scrive dopo aver letto un dato L2 è L2. Ogni conversazione, task e sessione ha un tetto di lettura; una conversazione "di lavoro" si ferma a L1 e può usare il cloud, una "privata" arriva a L2 e resta locale, salvo tua approvazione del testo esatto che esce.
-7. **Il gateway copre ogni uscita, non solo il prompt:** i file che Claude Code e Codex possono aprire (worktree confinato, repository in allowlist, sandbox), gli strumenti MCP che chiamano, le ricerche web e i canali esterni.
+7. **Il gateway copre ogni uscita, non solo il prompt:** i file che Claude Code e Codex possono aprire (cartella del progetto approvato o copia confinata, sandbox), gli strumenti MCP che chiamano, le ricerche web e i canali esterni.
 8. **Telegram e telefono sono cloud:** ricevono al massimo L1; un contenuto L2 arriva come notifica con riferimento e si legge nella chat web via VPN.
 
 Il rischio principale non è un modello che "decide" di barare, ma un agente cloud che riceve per errore un file privato in un contesto più ampio del previsto, oppure un brief scritto dall'orchestratore locale dopo aver letto dati privati. Per questo il controllo sta sull'uscita, non sulle istruzioni all'agente. Dettagli in `docs/PRIVACY-POLICY-SPEC.md`.
@@ -88,7 +88,7 @@ Il rischio principale non è un modello che "decide" di barare, ma un agente clo
                       │               GATEWAY: unica uscita, registra tutto
                       ▼                      ▼
  Esecutori     modello locale         claude -p · codex exec · web · canali esterni
-               L0-L2                  solo L0-L1, nella cartella del progetto in allowlist (sandbox)
+               L0-L2                  solo L0-L1, nella cartella del progetto approvato (sandbox)
 ```
 
 Le interfacce parlano con un solo nucleo; il nucleo usa i modelli locali direttamente e arriva al cloud (Claude Code e Codex) soltanto attraverso il gateway della privacy, che lascia passare solo i dati L0 e L1.
@@ -137,7 +137,7 @@ Un orchestratore, Arianna, trasforma i tuoi obiettivi in task sul cardwall e li 
 | Agente | Compito | Modelli | Privacy massima |
 | --- | --- | --- | --- |
 | Arianna (orchestratore) | Riceve obiettivi da chat, voce e scheduler; li scompone, assegna, riassume | Locale | L2 |
-| Coder | Lavora sui repository con Claude Code o Codex, nella cartella del progetto in allowlist (D-056) | Claude Code, Codex | L1 |
+| Coder | Lavora sui repository con Claude Code o Codex, nella cartella del progetto approvato (D-056, D-058) | Claude Code, Codex | L1 |
 | Reviewer | Rilegge il diff con un modello diverso da quello che ha scritto il codice | Codex, Claude Code o locale | L1 |
 | Archivista | Importa documenti e fatture, estrae dati, classifica, aggiorna la KB | Locale | L2 (L3 solo come riferimenti al vault) |
 | Segretario | Mail, calendario, bozze di risposta, promemoria, scadenze | Locale | L2 |
@@ -152,7 +152,7 @@ Il Coder lavora codice L2 solo con il modello locale. Tabella completa con il la
 **Come lavora**
 
 1. Arianna crea un task sul cardwall con obiettivo, criteri di completamento e livello di privacy.
-2. Il router sceglie l'esecutore; l'agente lavora in una sandbox (la cartella del progetto in allowlist, o una copia dedicata; rete limitata).
+2. Il router sceglie l'esecutore; l'agente lavora in una sandbox (la cartella del progetto approvato, o una copia dedicata; rete limitata).
 3. Ogni passo è un evento salvato in un registro; se il sistema si riavvia, il task riparte dall'ultimo evento.
 4. Alla fine l'agente allega la prova (test passati, diff, documento prodotto) e sposta la carta in "Da verificare".
 

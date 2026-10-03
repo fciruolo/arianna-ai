@@ -1,7 +1,8 @@
 # Arianna configuration of this installation, written by pnpm arianna:init and
 # kept out of git; the repository carries config/arianna.example.toml. No secrets
 # in this file (docs/INSTALLER-PORTABILITY.md). Every path is relative to
-# ARIANNA_HOME; absolute paths are rejected.
+# ARIANNA_HOME, except the projects under your home; absolute paths are
+# rejected.
 
 [paths]
 # Models, databases, archive, real knowledge base, vault. Never in git.
@@ -48,14 +49,24 @@ user = "arianna"
 # command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "7001"]
 
 # Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user
-# enabled ("claude", "codex"); their login stays manual. `allowlist` lists
-# the repositories they may work on, relative to ARIANNA_HOME; each needs a
-# [[folder]] rule of at most L1 in labels.toml: allowlisting a repository
-# does not label it. Both are privacy settings: only the user edits them,
-# never an agent, and a change needs a restart of the core.
+# enabled ("claude", "codex"); their login stays manual. A privacy setting:
+# only the user edits it, never an agent, and a change needs a restart.
 [cloud]
 executors = []
-allowlist = []
+
+# Projects (D-058): the folders a cloud executor may work on, as the user
+# does with the CLI. `path` is ~/<folder> under your home (never the home
+# itself, hidden folders, Library or Arianna) or repos/<name> for a folder
+# inside Arianna; it must be the top of a git repository. `label` is L0 or
+# L1 (default L1): every file of the project goes to the cloud with it. The
+# wizard links repos/<name> to each folder under your home, as a shortcut:
+# the executor always uses `path`. A privacy setting: only the user edits
+# it, never an agent; it applies without a restart.
+#
+# [[project]]
+# name = "site"
+# path = "~/Projects/site"
+# label = "L1"
 
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from

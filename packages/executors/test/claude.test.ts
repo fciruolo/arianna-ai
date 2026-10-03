@@ -301,7 +301,7 @@ describe('claude executor', () => {
     // Nothing was launched in the workspace.
     assert.throws(() => readFileSync(join(path, '.fake-claude.json')));
     // The project folder itself, opened by openRepository (D-056), is accepted like a prepared copy.
-    const opened = await openRepository({ home: HOME, repo: 'repos/site', allowlist: ['repos/site'], rules: RULES });
+    const opened = await openRepository({ home: HOME, project: { name: 'site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } });
     assert.ok(opened.path !== undefined);
     await executor().check({ workspace: opened, model: 'sonnet', tools: ['Read'] });
     await assert.rejects(executor().check({ workspace: { ...opened }, model: 'sonnet', tools: ['Read'] }), (error: unknown) => (error as { kind?: string }).kind === 'workspace');

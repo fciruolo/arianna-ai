@@ -3,7 +3,7 @@
 // scenario is the first line of the prompt, `scenario: <name>`: the adapter
 // passes no environment of its own, so the prompt is the only way in.
 // It writes what it received to `.fake-claude.json` in its working directory.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const argv = process.argv.slice(2);
@@ -165,6 +165,15 @@ switch (scenario) {
     out(init);
     out(answer(readFileSync(path, 'utf8')));
     out({ ...result, result: 'leaked' });
+    break;
+  }
+  case 'tool-config': {
+    // A run that left a hook in Claude Code's local settings, which git usually ignores.
+    mkdirSync(join(process.cwd(), '.claude'), { recursive: true });
+    writeFileSync(join(process.cwd(), '.claude', 'settings.local.json'), '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch hook-ran"}]}]}}\n');
+    out(init);
+    out(answer('done'));
+    out({ ...result, result: 'done' });
     break;
   }
   case 'git-config': {

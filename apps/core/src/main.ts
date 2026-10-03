@@ -12,6 +12,7 @@ import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
+import { appendEvent } from './events.ts';
 import { startLiveFeed } from './live.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
@@ -59,13 +60,18 @@ const settings = watchConfig({
   initial: config,
   onChange: ({ applied, restart }) => {
     if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
+    // A change of the approved projects is a privacy setting: it goes in the event log (D-058).
+    if (applied.includes('projects')) {
+      const projects = settings.current().projects.map(({ name, path, label }) => ({ name, path, label }));
+      appendEvent(sql, { kind: 'settings.projects', label: 'L1', payload: { projects } }).catch(report);
+    }
     if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
   },
   onError: (error) => {
     // A ConfigError names a key and a rule, never a value read elsewhere.
     if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
     else report(error);
-    console.error('arianna.toml: not reloaded, the previous configuration stays');
+    console.error('arianna.toml: not reloaded, the previous configuration stays; no project is open until the file is valid');
   },
 });
 
@@ -111,7 +117,7 @@ const server = await startApiServer({
   live,
   host: config.server.host,
   port: config.server.port,
-  allowlist: config.cloud.allowlist,
+  projects: () => settings.current().projects,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
   ...(existsSync(dist) ? { staticDir: dist } : {}),

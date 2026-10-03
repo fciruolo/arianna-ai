@@ -20,6 +20,13 @@ export interface Conversation {
   lastMessageAt: string | null;
 }
 
+/** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  label: string;
+}
+
 /** A cloud model a work conversation may choose: a router alias and its executor. */
 export interface CloudModel {
   executor: string;

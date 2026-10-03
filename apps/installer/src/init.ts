@@ -10,6 +10,7 @@ import {
   parseConfig,
   readSettings,
   renderSettings,
+  userHomeOf,
   type CloudExecutor,
   type ModelCatalog,
   type Settings,
@@ -22,12 +23,13 @@ export function configPath(home: string): string {
 /** The settings in the file, or `undefined` when there is no file yet. */
 export function currentSettings(home: string, catalog: ModelCatalog): Settings | undefined {
   const path = configPath(home);
-  return existsSync(path) ? readSettings(readFileSync(path, 'utf8'), home, catalog) : undefined;
+  return existsSync(path) ? readSettings(readFileSync(path, 'utf8'), home, catalog, userHomeOf()) : undefined;
 }
 
 export function writeSettings(home: string, catalog: ModelCatalog, settings: Settings): void {
   const text = renderSettings(settings);
-  parseConfig(text, home, catalog);
+  // The same home the wizard and the links use (HOME), not the account's when they differ.
+  parseConfig(text, home, catalog, userHomeOf());
   const path = configPath(home);
   const temporary = join(dirname(path), `.arianna.toml.${String(process.pid)}`);
   try {

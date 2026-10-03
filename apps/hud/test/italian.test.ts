@@ -42,7 +42,7 @@ test('API errors become Italian, and unknown ones a generic message', () => {
   assert.equal(api(400, 'the message is empty'), 'Il messaggio è vuoto.');
   assert.equal(api(400, 'the message is longer than 16000 characters'), 'Il messaggio supera 16000 caratteri.');
   assert.equal(api(409, 'the approval is already approved'), 'Questa richiesta è già stata decisa.');
-  assert.equal(api(400, 'workspace is not in cloud.allowlist'), 'Questo repository non è fra quelli ammessi (cloud.allowlist in arianna.toml).');
+  assert.equal(api(400, 'project is not among the approved projects'), 'Questo progetto non è fra quelli approvati: aggiungilo con pnpm arianna:init --reconfigure.');
   assert.equal(api(422, 'a work conversation cannot hold this title (iban)'), 'Il titolo di una conversazione di lavoro non può contenere IBAN.');
   assert.equal(api(400, 'the title must be one line'), 'Il titolo dev’essere su una riga.');
   assert.equal(api(409, 'the conversation is archived: restore it to write'), 'La conversazione è archiviata: ripristinala per scrivere.');
@@ -76,7 +76,8 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   assert.match(line('wait', 'claude · 2026-10-03T15:00:00.000Z'), /^Claude Code ha esaurito la quota: riprovo alle \d\d:\d\d$/);
   assert.equal(line('wait', 'something else'), 'In attesa dell’esecutore');
   assert.equal(line('error', 'the user did not approve sending the brief to the cloud: do what you can here'), 'Errore: il brief non è stato approvato per il cloud, provo un’altra strada');
-  assert.equal(line('error', 'no repository for the Coder: the user opens a work conversation'), 'Errore: nessun repository per il Coder: apri una conversazione di lavoro con un repository ammesso, provo un’altra strada');
+  assert.equal(line('error', 'no project for the Coder: the user opens a work conversation'), 'Errore: nessun progetto per il Coder: apri una conversazione di lavoro con un progetto approvato, provo un’altra strada');
+  assert.equal(line('error', 'the project site is no longer among the projects the user approved: tell the user'), 'Errore: il progetto site non è più fra quelli approvati, provo un’altra strada');
   assert.equal(line('error', 'claude: timeout'), 'Errore: Claude Code si è fermato (timeout), provo un’altra strada');
   assert.equal(reasonText('approval needed: budget'), 'serve la tua approvazione per il budget del modello');
   assert.equal(reasonText('approval needed: workspace'), 'la cartella del progetto ha modifiche non committate: serve il tuo via libera');

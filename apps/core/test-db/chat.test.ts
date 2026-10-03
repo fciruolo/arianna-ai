@@ -29,21 +29,21 @@ async function eventsOf(taskId: string) {
 }
 
 test('the clearance of a conversation follows its mode', async () => {
-  const work = await createConversation(db().sql, { mode: 'work', workspace: 'repos/fake-site', allowlist: ['repos/fake-site'] });
+  const work = await createConversation(db().sql, { mode: 'work', project: 'fake-site', projects: ['fake-site'] });
   const own = await createConversation(db().sql, { mode: 'private' });
-  assert.deepEqual([work.clearance, work.effectiveLabel, work.workspace], ['L1', 'L0', 'repos/fake-site']);
+  assert.deepEqual([work.clearance, work.effectiveLabel, work.workspace], ['L1', 'L0', 'fake-site']);
   assert.deepEqual([own.clearance, own.effectiveLabel, own.workspace], ['L2', 'L0', null]);
   const ids = (await listConversations(db().sql)).map((conversation) => conversation.id);
   assert.ok(ids.includes(work.id) && ids.includes(own.id));
 });
 
-test('a conversation gets no workspace outside ARIANNA_HOME, and only in work mode', async () => {
-  for (const workspace of ['/etc', '../outside', 'a/../../b', 'c:drive', '']) {
-    await assert.rejects(createConversation(db().sql, { mode: 'work', workspace }), ChatError, workspace);
+test('a conversation names only an approved project, and only in work mode (D-058)', async () => {
+  for (const project of ['/etc', '../outside', 'repos/x', 'X', '']) {
+    await assert.rejects(createConversation(db().sql, { mode: 'work', project, projects: ['x'] }), /not among the approved projects/, project);
   }
-  await assert.rejects(createConversation(db().sql, { mode: 'private', workspace: 'repos/x' }), ChatError);
-  await assert.rejects(createConversation(db().sql, { mode: 'work', workspace: 'repos/x', allowlist: ['repos/y'] }), /not in cloud.allowlist/);
-  await assert.rejects(createConversation(db().sql, { mode: 'work', workspace: 'repos/x' }), /not in cloud.allowlist/);
+  await assert.rejects(createConversation(db().sql, { mode: 'private', project: 'x', projects: ['x'] }), /only a work conversation/);
+  await assert.rejects(createConversation(db().sql, { mode: 'work', project: 'x', projects: ['y'] }), /not among the approved projects/);
+  await assert.rejects(createConversation(db().sql, { mode: 'work', project: 'x' }), /not among the approved projects/);
   await assert.rejects(createConversation(db().sql, { mode: 'secret' as 'work' }), ChatError);
 });
 

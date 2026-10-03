@@ -31,13 +31,23 @@ import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
  * Every action goes through HTTP; the WebSocket only pushes events and reply
  * fragments.
  */
+/** What the chat sees of an approved project: the path as written, never resolved. */
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  label: string;
+}
+
 export interface ApiServerOptions {
   sql: Sql;
   live: LiveFeed;
   host: string;
   port: number;
-  /** `cloud.allowlist` of arianna.toml: the only workspaces a work conversation may name. */
-  allowlist?: readonly string[];
+  /**
+   * The projects the user approved (`[[project]]` of arianna.toml, D-058), read
+   * at each request: the only ones a work conversation may name.
+   */
+  projects?: () => readonly ProjectInfo[];
   /** The cloud models a work conversation may choose (task 1.10), from the current configuration. */
   models?: () => readonly { executor: string; model: string }[];
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
@@ -129,12 +139,17 @@ function idParam(params: Params, key: string): string {
 
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
-function routes(sql: Sql, allowlist: readonly string[], models: () => readonly { executor: string; model: string }[]): Route[] {
+function routes(sql: Sql, projects: () => readonly ProjectInfo[], models: () => readonly { executor: string; model: string }[]): Route[] {
   return [
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The cloud models of this installation: what the selector of a work conversation offers.
     route('GET', '/api/models', () => Promise.resolve({ body: { models: models() } })),
+
+    // The approved projects (D-058): what a new work conversation may choose.
+    route('GET', '/api/projects', () =>
+      Promise.resolve({ body: { projects: projects().map(({ name, path, label }) => ({ name, path, label })) } }),
+    ),
 
     // The list, or with ?archived=1 the archived conversations (D-057).
     route('GET', '/api/conversations', async (_request, url) => {
@@ -145,13 +160,13 @@ function routes(sql: Sql, allowlist: readonly string[], models: () => readonly {
 
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'workspace']);
+      onlyFields(body, ['mode', 'project']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
-      if (body.workspace !== undefined && typeof body.workspace !== 'string') throw new HttpError(400, 'workspace must be a string');
+      if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
       const conversation = await createConversation(sql, {
         mode: body.mode,
-        ...(body.workspace === undefined ? {} : { workspace: body.workspace }),
-        allowlist,
+        ...(body.project === undefined ? {} : { project: body.project }),
+        projects: projects().map((project) => project.name),
       });
       return { status: 201, body: { conversation } };
     }),
@@ -314,7 +329,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
-  const table = routes(sql, options.allowlist ?? [], options.models ?? (() => []));
+  const table = routes(sql, options.projects ?? (() => []), options.models ?? (() => []));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

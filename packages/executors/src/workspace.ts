@@ -15,7 +15,7 @@ import { chmod, lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
-import { checkWorkspace, isAllowlisted, type LabelRules, type WorkspaceDecision, type WorkspaceEntry } from '@arianna/policy';
+import { checkProject, checkWorkspace, isAllowlisted, type Label, type LabelRules, type WorkspaceDecision, type WorkspaceEntry } from '@arianna/policy';
 
 const run = promisify(execFile);
 
@@ -304,10 +304,8 @@ export async function prepareWorkspace(options: PrepareOptions): Promise<Prepare
 export interface OpenRepositoryOptions {
   /** Absolute ARIANNA_HOME. */
   home: string;
-  /** The repository, relative to ARIANNA_HOME; in the allowlist. */
-  repo: string;
-  allowlist: readonly string[];
-  rules: LabelRules;
+  /** A project of the user's approved list (`[[project]]` of arianna.toml, D-058). */
+  project: { name: string; absolute: string; label: Label };
 }
 
 export interface OpenedRepository extends PreparedWorkspace {
@@ -379,6 +377,50 @@ async function gitConfigFiles(root: string): Promise<string[]> {
 }
 
 /**
+ * Files in the top folder that other tools run code from when the user opens
+ * the project with them, often ignored by git and so missing from
+ * `repositoryStatus`: Claude Code's own settings and hooks, direnv, editors,
+ * dev containers, git hook managers (review of D-058).
+ */
+const TOOL_CONFIG = ['.claude', '.mcp.json', '.envrc', '.vscode', '.idea', '.devcontainer', '.husky', '.githooks', '.pre-commit-config.yaml'];
+const TOOL_CONFIG_MAX_FILES = 5000;
+
+/**
+ * A sha256 for each file of the tool configuration of the folder (links by
+ * their target text, never followed), by relative path. Taken before a run and
+ * compared after it: what changed goes to Arianna with a warning, ignored by
+ * git or not. Past `TOOL_CONFIG_MAX_FILES` the rest counts as one entry.
+ */
+export async function toolConfigFiles(path: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  const visit = async (rel: string): Promise<void> => {
+    if (files.size >= TOOL_CONFIG_MAX_FILES) {
+      files.set('(more files)', 'over the limit');
+      return;
+    }
+    const absolute = join(path, ...rel.split('/'));
+    let stats;
+    try {
+      stats = await lstat(absolute);
+    } catch {
+      return;
+    }
+    if (stats.isSymbolicLink()) files.set(rel, `link:${await readlink(absolute)}`);
+    else if (stats.isDirectory()) for (const name of (await readdir(absolute)).sort()) await visit(`${rel}/${name}`);
+    else if (stats.isFile()) files.set(rel, createHash('sha256').update(await readFile(absolute)).digest('hex'));
+    else files.set(rel, 'other');
+  };
+  for (const name of TOOL_CONFIG) await visit(name);
+  return files;
+}
+
+/** The paths whose tool configuration differs between two `toolConfigFiles`. */
+export function changedToolConfig(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): string[] {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths].filter((rel) => before.get(rel) !== after.get(rel)).sort();
+}
+
+/**
  * A fingerprint of everything that makes git run code or read elsewhere in
  * this folder: `.git` itself (a file would point to another repository),
  * `.git/config`, hooks, `info/attributes`, `info/exclude` and every
@@ -426,23 +468,44 @@ async function entryOf(root: string, realRoot: string, path: string): Promise<Wo
 }
 
 /**
+ * The folder of an approved project, checked on disk (D-058): an absolute,
+ * normalized path that is exactly itself (no link anywhere on the way: a link
+ * changed after the approval would move the executor elsewhere), not
+ * ARIANNA_HOME nor around it, and inside it only as `repos/<name>`. The
+ * configuration checked the path as written; this checks what is on disk.
+ */
+async function projectPath(options: OpenRepositoryOptions): Promise<string> {
+  const { name, absolute } = options.project;
+  if (!isAbsolute(absolute) || resolve(absolute) !== absolute) throw new WorkspaceError(`${name}: the project path must be absolute`);
+  let real: string;
+  try {
+    real = await realpath(absolute);
+  } catch {
+    throw new WorkspaceError(`${name}: the folder ${absolute} does not exist`);
+  }
+  if (real !== absolute) throw new WorkspaceError(`${name}: the folder goes through a symbolic link`);
+  if (!(await lstat(real)).isDirectory()) throw new WorkspaceError(`${name}: not a folder`);
+  const home = await realpath(options.home);
+  if (within(home, real)) throw new WorkspaceError(`${name}: the folder contains ARIANNA_HOME`);
+  if (within(real, home) && real !== join(home, 'repos', name)) throw new WorkspaceError(`${name}: inside ARIANNA_HOME only as repos/${name}`);
+  return real;
+}
+
+/**
  * Opens the project folder itself as the working directory of a cloud
- * executor (D-056): the user allowlisted it to let the Coder work there as
- * they do with the CLI. The folder must be exactly that path (no link), the
- * top of a git repository; its files are scanned like a prepared workspace,
- * but only the ones git tracks or does not ignore: an ignored `.env` does
- * not stop the launch (the user's choice), as it does not stop their own
- * use of Claude Code. Nothing is copied or created.
+ * executor (D-056, D-058): the user approved it to let the Coder work there
+ * as they do with the CLI. The folder must be exactly the approved path (no
+ * link), the top of a git repository; its files are scanned with the
+ * project's label, but only the ones git tracks or does not ignore: an
+ * ignored `.env` does not stop the launch (the user's choice), as it does not
+ * stop their own use of Claude Code. Nothing is copied or created.
  */
 export async function openRepository(options: OpenRepositoryOptions): Promise<OpenedRepository> {
-  if (!isAllowlisted(options.repo, options.allowlist)) {
-    return { decision: checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries: [], rules: options.rules }) };
-  }
-  const repo = await repoPath(options);
+  const repo = await projectPath(options);
   try {
     await checkedRepository(repo);
   } catch (error) {
-    throw new WorkspaceError(`${options.repo} is ${error instanceof Error ? error.message : 'not a git repository'}`);
+    throw new WorkspaceError(`${options.project.name} is ${error instanceof Error ? error.message : 'not a git repository'}`);
   }
   const entries: WorkspaceEntry[] = [];
   const seen = new Set<string>();
@@ -451,8 +514,13 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
     const tab = line.indexOf('\t');
     const mode = line.slice(0, 6);
     const path = line.slice(tab + 1);
-    if (tab === -1 || !safeTreePath(path) || seen.has(path)) continue;
+    if (tab === -1 || seen.has(path)) continue;
     seen.add(path);
+    // A path git lists but that is not plain (a `.git` inside, a backslash): it blocks, it is not skipped.
+    if (!safeTreePath(path)) {
+      entries.push({ path, kind: 'other' });
+      continue;
+    }
     if (mode === '160000') {
       entries.push({ path, kind: 'other' });
       continue;
@@ -469,8 +537,12 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
       entries.push({ path: path.slice(0, -1), kind: 'other' });
       continue;
     }
-    if (!safeTreePath(path) || seen.has(path)) continue;
+    if (seen.has(path)) continue;
     seen.add(path);
+    if (!safeTreePath(path)) {
+      entries.push({ path, kind: 'other' });
+      continue;
+    }
     try {
       entries.push(await entryOf(repo, repo, path));
     } catch {
@@ -478,7 +550,7 @@ export async function openRepository(options: OpenRepositoryOptions): Promise<Op
     }
   }
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  const decision = checkWorkspace({ repo: options.repo, allowlist: options.allowlist, entries, rules: options.rules });
+  const decision = checkProject({ label: options.project.label, entries });
   if (decision.decision !== 'allow') return { decision };
   const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   const dirty = await repositoryStatus(repo);

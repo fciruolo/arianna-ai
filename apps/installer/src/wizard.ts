@@ -5,12 +5,17 @@
 import {
   aliasesOf,
   CLOUD_EXECUTORS,
+  ConfigError,
   modelSize,
+  parseProjects,
+  PROJECT_NAME,
+  PROJECTS_DIR,
   TELEGRAM_TOKEN_REF,
   type CatalogEntry,
   type CloudExecutor,
   type ModelCatalog,
   type ModelRole,
+  type ProjectSettings,
   type Settings,
 } from '@arianna/config';
 
@@ -31,6 +36,10 @@ export interface WizardContext {
   ramBytes: number;
   /** Which official binaries are installed; only reported. */
   installed: Record<CloudExecutor, boolean>;
+  /** Where the `~/` of a project path points. */
+  userHome: string;
+  /** What is wrong with a project folder on disk (`folderProblem`), or `undefined`. */
+  checkFolder: (absolute: string, name: string) => string | undefined;
 }
 
 /** Roles a model can be chosen for today; embedder and voice come with later phases. */
@@ -147,7 +156,7 @@ async function stepModels(io: Prompter, context: WizardContext, settings: Settin
 
 async function stepExecutors(io: Prompter, context: WizardContext, settings: Settings): Promise<void> {
   io.say('\n3. Esecutori cloud');
-  io.say('Ricevono solo dati L0 e L1 passati dal gateway e lavorano solo sui repository di cloud.allowlist.');
+  io.say('Ricevono solo dati L0 e L1 passati dal gateway e lavorano solo nelle cartelle dei progetti approvati (passo 4).');
   io.say('Il login lo fai tu: il wizard non legge né salva credenziali.');
   const executors: CloudExecutor[] = [];
   for (const executor of CLOUD_EXECUTORS) {
@@ -161,22 +170,90 @@ async function stepExecutors(io: Prompter, context: WizardContext, settings: Set
   settings.cloud = { ...settings.cloud, executors };
 }
 
+/** A name for the link from the last folder of the path: lowercase, dashes, nothing else. */
+function suggestName(path: string): string {
+  const last = path.split('/').filter((part) => part !== '' && part !== '~').at(-1) ?? '';
+  const name = last
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+  return PROJECT_NAME.test(name) ? name : '';
+}
+
+/** Validates the list as the configuration will; the error in plain words, or `undefined`. */
+function listProblem(context: WizardContext, projects: ProjectSettings[]): string | undefined {
+  try {
+    parseProjects(projects, context.home, context.userHome);
+    return undefined;
+  } catch (error) {
+    if (error instanceof ConfigError) return error.message;
+    throw error;
+  }
+}
+
+async function addProject(io: Prompter, context: WizardContext, projects: ProjectSettings[]): Promise<ProjectSettings | undefined> {
+  const path = await io.ask(`Cartella (~/... sotto la tua home, oppure ${PROJECTS_DIR}/<nome> dentro Arianna): `);
+  if (path === '') return undefined;
+  const suggested = path.startsWith(`${PROJECTS_DIR}/`) ? path.slice(PROJECTS_DIR.length + 1) : suggestName(path);
+  const name = (await io.ask(`Nome (minuscole, cifre, trattini)${suggested === '' ? '' : ` [${suggested}]`}: `)) || suggested;
+  let label: 'L0' | 'L1' | undefined;
+  while (label === undefined) {
+    const answer = (await io.ask('Etichetta: L1 lavoro, L0 pubblico [L1]: ')).toUpperCase();
+    if (answer === '' || answer === 'L1') label = 'L1';
+    else if (answer === 'L0') label = 'L0';
+    else io.say('Scrivi L0 oppure L1: una cartella privata (L2) non va fra i progetti.');
+  }
+  const project: ProjectSettings = { name, path, label };
+  const problem = listProblem(context, [...projects, project]);
+  if (problem !== undefined) {
+    io.say(`Non lo aggiungo: ${problem}`);
+    return undefined;
+  }
+  const [resolved] = parseProjects([project], context.home, context.userHome);
+  const folder = resolved === undefined ? 'cartella non valida' : context.checkFolder(resolved.absolute, resolved.name);
+  if (folder !== undefined) {
+    io.say(`Non lo aggiungo: ${folder}.`);
+    return undefined;
+  }
+  if (!path.startsWith(`${PROJECTS_DIR}/`)) io.say(`  Dopo la scrittura creo il link ${PROJECTS_DIR}/${name} verso la cartella.`);
+  return project;
+}
+
+async function stepProjects(io: Prompter, context: WizardContext, settings: Settings): Promise<void> {
+  io.say('\n4. Progetti');
+  io.say('Il Coder (Claude Code) lavora solo nelle cartelle che approvi qui, come faresti tu con la CLI: legge e modifica');
+  io.say('tutta la cartella e niente fuori. Ciò che contiene va al cloud con l\'etichetta che scegli (L0 o L1).');
+  io.say('Mai la home intera, cartelle nascoste, Library o cartelle con dati privati. Deve essere un repository git.');
+  const projects: ProjectSettings[] = [];
+  for (const project of settings.projects) {
+    if (await confirm(io, `Tenere ${project.name} (${project.path}, ${project.label})?`, true)) projects.push(project);
+  }
+  while (await confirm(io, 'Aggiungere un progetto?', false)) {
+    const added = await addProject(io, context, projects);
+    if (added !== undefined) projects.push(added);
+  }
+  settings.projects = projects;
+}
+
 function stepAutonomy(io: Prompter): void {
-  io.say('\n4. Autonomia');
+  io.say('\n5. Autonomia');
   io.say('Tutti gli agenti partono da A1: agiscono solo in sandbox e chiedono approvazione per ogni azione irreversibile.');
   io.say('Un agente sale di livello solo per una tua decisione, registrata in docs/DECISIONS.md (docs/AGENT-CARDS.md).');
   io.say('I tetti di passi, tempo e costo stanno nelle schede degli agenti (agents/*.yaml).');
 }
 
 function stepSync(io: Prompter): void {
-  io.say('\n5. Sincronizzazione (per esempio Synology Drive)');
+  io.say('\n6. Sincronizzazione (per esempio Synology Drive)');
   io.say('Sincronizza solo data/kb, data/archive e data/vault, e solo verso il tuo NAS.');
   io.say('Mai data/postgres dal vivo (si salvano i dump), mai data/models (si riscaricano dal catalogo).');
   io.say('Mai questa cartella sotto iCloud o altri cloud di terzi senza cifratura. Dettagli in docs/INSTALLER-PORTABILITY.md.');
 }
 
 async function stepChannels(io: Prompter, settings: Settings): Promise<void> {
-  io.say('\n6. Canali');
+  io.say('\n7. Canali');
   io.say('La chat web è sempre attiva, solo su questa macchina.');
   io.say('Telegram è un canale esterno: riceve al massimo L1, il resto arriva come rimando alla chat web.');
   if (await confirm(io, 'Attivare Telegram?', settings.telegram !== undefined)) {
@@ -190,11 +267,12 @@ async function stepChannels(io: Prompter, settings: Settings): Promise<void> {
 }
 
 function summary(io: Prompter, settings: Settings): void {
-  io.say('\n7. Riepilogo');
+  io.say('\n8. Riepilogo');
   const roles = WIZARD_ROLES.map(({ role, name }) => `${name} ${settings.roles[role] ?? 'nessuno'}`);
   io.say(`  Modelli: ${roles.join(', ')}`);
   io.say(`  Server locali: ${settings.endpoints.length === 0 ? 'nessuno' : settings.endpoints.map((endpoint) => `${endpoint.id} (${endpoint.url})`).join(', ')}`);
   io.say(`  Esecutori cloud: ${settings.cloud.executors.length === 0 ? 'nessuno' : settings.cloud.executors.map((executor) => EXECUTOR_LABELS[executor].name).join(', ')}`);
+  io.say(`  Progetti: ${settings.projects.length === 0 ? 'nessuno' : settings.projects.map((project) => `${project.name} (${project.path}, ${project.label})`).join(', ')}`);
   io.say(`  Telegram: ${settings.telegram === undefined ? 'spento' : `chat ${settings.telegram.chats.join(', ')}`}`);
 }
 
@@ -206,6 +284,7 @@ export async function runWizard(io: Prompter, context: WizardContext): Promise<S
   io.say(`I dati stanno in data/ dentro ${context.home}: ${gib(context.freeBytes)} liberi su quel disco.`);
   await stepModels(io, context, settings);
   await stepExecutors(io, context, settings);
+  await stepProjects(io, context, settings);
   stepAutonomy(io);
   stepSync(io);
   await stepChannels(io, settings);

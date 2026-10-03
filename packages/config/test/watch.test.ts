@@ -80,9 +80,27 @@ test('a new model for a role applies live; privacy sections wait for a restart; 
     assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
     assert.deepEqual(watcher.current().local.endpoints[0]?.models, { 'local-large': 'second-mlx' });
 
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { allowlist: [], executors: ['claude'] } });
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
     assert.deepEqual(await next(seen), { applied: [], restart: ['cloud'] });
     assert.deepEqual(watcher.current().cloud.executors, []);
+
+    // An approved project applies at once (D-058); taking it off too.
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] }, projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }] });
+    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
+    assert.deepEqual(watcher.current().projects.map((project) => project.name), ['demo']);
+    assert.deepEqual(watcher.current().cloud.executors, []);
+    // An unreadable file closes the projects until it is valid again; the rest stays.
+    write('[paths]\ndata = "/elsewhere"\n');
+    assert.deepEqual(await next(seen), { applied: ['projects'], restart: [] });
+    assert.ok((await next(seen)) instanceof Error);
+    assert.deepEqual(watcher.current().projects, []);
+    assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] }, projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }] });
+    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
+    assert.deepEqual(watcher.current().projects.map((project) => project.name), ['demo']);
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
+    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
+    assert.deepEqual(watcher.current().projects, []);
 
     // Put back as it was: nothing to report, the next event is the one below.
     write({ ...BASE, roles: { orchestrator: 'second-mlx' } });

@@ -22,7 +22,7 @@ import { passGateway } from '../gateway.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
-import { canDelegate, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
+import { canDelegate, NO_PROJECT, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
@@ -67,7 +67,7 @@ export interface OrchestratorOptions {
    * model changed for a role in arianna.toml applies at the next step (1.18).
    */
   model: () => LocalModel;
-  /** The current configuration: cloud executors and allowlist for delegation. */
+  /** The current configuration: cloud executors and projects for delegation. */
   settings: () => AriannaConfig;
   rules: LabelRules;
   /** The `claude -p` adapter, when `claude` is enabled and runs on this machine. */
@@ -228,11 +228,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const brief = String(args.brief).trim();
     const target = options.agents.get(agentName);
     const conversation = task.conversationId === null ? undefined : await loadConversation(sql, task.conversationId);
-    const repo = repoFor(conversation?.workspace, options.settings().cloud.allowlist);
+    const repo = repoFor(conversation?.workspace, options.settings().projects);
     let error: string | undefined;
     if (target === undefined || !target.card.executors.includes('claude')) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';
-    else if (repo === undefined) error = 'no repository for the Coder: the user opens a work conversation with one of cloud.allowlist';
+    else if (repo === undefined) error = NO_PROJECT;
     if (error !== undefined || repo === undefined) {
       const result = `error: ${DELEGATE}: ${error ?? ''}`;
       await recordTurn(sql, { ...turn, label, result });

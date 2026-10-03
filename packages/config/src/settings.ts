@@ -6,6 +6,7 @@ import { parse as parseToml } from 'smol-toml';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import type { CloudExecutor } from './cloud.ts';
 import { DATA_DIR, DEFAULT_SERVER, parseConfig } from './config.ts';
+import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { asTable } from './validate.ts';
 
@@ -15,6 +16,12 @@ export interface EndpointSettings {
   command?: string[];
   /** Absent: the names come from `[roles]`. */
   models?: Record<string, string>;
+}
+
+export interface ProjectSettings {
+  name: string;
+  path: string;
+  label: ProjectLabel;
 }
 
 export interface Settings {
@@ -29,7 +36,9 @@ export interface Settings {
   server: { host: string; port: number };
   roles: Roles;
   endpoints: EndpointSettings[];
-  cloud: { allowlist: string[]; executors: CloudExecutor[] };
+  cloud: { executors: CloudExecutor[] };
+  /** As written in the file: `path` keeps its form. */
+  projects: ProjectSettings[];
   telegram?: { token: string; chats: number[] };
 }
 
@@ -38,7 +47,8 @@ export const DEFAULT_SETTINGS: Settings = {
   server: { ...DEFAULT_SERVER },
   roles: {},
   endpoints: [],
-  cloud: { allowlist: [], executors: [] },
+  cloud: { executors: [] },
+  projects: [],
 };
 
 /** Token reference of the Telegram bot (key `telegram-bot-token` in the vault). */
@@ -48,8 +58,8 @@ export const TELEGRAM_TOKEN_REF = 'vault://telegram-bot-token';
  * Validates `text` exactly as `loadConfig` does, then returns it in editable
  * form: an endpoint keeps `models` only when the file lists them.
  */
-export function readSettings(text: string, home: string, catalog: ModelCatalog): Settings {
-  const config = parseConfig(text, home, catalog);
+export function readSettings(text: string, home: string, catalog: ModelCatalog, userHome?: string): Settings {
+  const config = parseConfig(text, home, catalog, userHome);
   const raw = asTable(parseToml(text), 'arianna.toml');
   const local = raw.local === undefined ? {} : asTable(raw.local, 'local');
   const rawEndpoints = Array.isArray(local.endpoints) ? (local.endpoints as unknown[]) : [];
@@ -74,7 +84,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog):
         ...(explicit ? { models: { ...endpoint.models } } : {}),
       };
     }),
-    cloud: { allowlist: [...config.cloud.allowlist], executors: [...config.cloud.executors] },
+    cloud: { executors: [...config.cloud.executors] },
+    projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
   };
 }
@@ -116,7 +127,8 @@ export function renderSettings(settings: Settings): string {
     '# Arianna configuration of this installation, written by pnpm arianna:init and',
     '# kept out of git; the repository carries config/arianna.example.toml. No secrets',
     '# in this file (docs/INSTALLER-PORTABILITY.md). Every path is relative to',
-    '# ARIANNA_HOME; absolute paths are rejected.',
+    '# ARIANNA_HOME, except the projects under your home; absolute paths are',
+    '# rejected.',
     '',
     '[paths]',
     '# Models, databases, archive, real knowledge base, vault. Never in git.',
@@ -165,14 +177,28 @@ export function renderSettings(settings: Settings): string {
       : settings.endpoints.flatMap((endpoint, index) => [...(index === 0 ? [] : ['']), ...endpointSection(endpoint)])),
     '',
     '# Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user',
-    '# enabled ("claude", "codex"); their login stays manual. `allowlist` lists',
-    '# the repositories they may work on, relative to ARIANNA_HOME; each needs a',
-    '# [[folder]] rule of at most L1 in labels.toml: allowlisting a repository',
-    '# does not label it. Both are privacy settings: only the user edits them,',
-    '# never an agent, and a change needs a restart of the core.',
+    '# enabled ("claude", "codex"); their login stays manual. A privacy setting:',
+    '# only the user edits it, never an agent, and a change needs a restart.',
     '[cloud]',
     `executors = ${list(cloud.executors)}`,
-    `allowlist = ${list(cloud.allowlist)}`,
+    '',
+    '# Projects (D-058): the folders a cloud executor may work on, as the user',
+    '# does with the CLI. `path` is ~/<folder> under your home (never the home',
+    '# itself, hidden folders, Library or Arianna) or repos/<name> for a folder',
+    '# inside Arianna; it must be the top of a git repository. `label` is L0 or',
+    '# L1 (default L1): every file of the project goes to the cloud with it. The',
+    '# wizard links repos/<name> to each folder under your home, as a shortcut:',
+    '# the executor always uses `path`. A privacy setting: only the user edits',
+    '# it, never an agent; it applies without a restart.',
+    ...(settings.projects.length === 0
+      ? ['#', '# [[project]]', '# name = "site"', '# path = "~/Projects/site"', '# label = "L1"']
+      : settings.projects.flatMap((project, index) => [
+          ...(index === 0 ? [] : ['']),
+          '[[project]]',
+          `name = ${str(project.name)}`,
+          `path = ${str(project.path)}`,
+          `label = ${str(project.label)}`,
+        ])),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

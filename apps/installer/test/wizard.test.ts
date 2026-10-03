@@ -70,13 +70,16 @@ function context(overrides: Partial<WizardContext> = {}): WizardContext {
     freeBytes: 500 * GIB,
     ramBytes: 32 * GIB,
     installed: { claude: true, codex: false },
+    // A sibling of ARIANNA_HOME: a home that contained it would refuse every project of these tests.
+    userHome: `${HOME}-user`,
+    checkFolder: () => undefined,
     ...overrides,
   };
 }
 
 test('defaults everywhere: the verified model for the orchestrator, oMLX added, nothing cloud, no Telegram', async () => {
-  // Orchestrator, extractor, add oMLX, Claude, Codex, Telegram, write.
-  const io = scripted(['', '', '', '', '', '', '']);
+  // Orchestrator, extractor, add oMLX, Claude, Codex, add a project, Telegram, write.
+  const io = scripted(['', '', '', '', '', '', '', '']);
   const settings = await runWizard(io, context());
   assert.ok(settings !== undefined);
   assert.deepEqual(settings.roles, { orchestrator: 'large-mlx' });
@@ -89,13 +92,14 @@ test('defaults everywhere: the verified model for the orchestrator, oMLX added, 
   ]);
   assert.deepEqual(settings.cloud.executors, []);
   assert.equal(settings.telegram, undefined);
-  // Step 4 only informs: autonomy is not a question.
+  assert.deepEqual(settings.projects, []);
+  // Step 5 only informs: autonomy is not a question.
   assert.ok(io.said.some((line) => line.includes('A1')));
   assert.ok(!io.asked.some((question) => /autonomia/i.test(question)));
 });
 
 test('choices: both roles, Claude and Codex with login hints, Telegram with chat ids', async () => {
-  const io = scripted(['1', '1', 's', 's', 'si', 's', '123, 456', 's']);
+  const io = scripted(['1', '1', 's', 's', 'si', 'n', 's', '123, 456', 's']);
   const settings = await runWizard(io, context());
   assert.ok(settings !== undefined);
   assert.deepEqual(settings.roles, { orchestrator: 'large-mlx', extractor: 'small-mlx' });
@@ -109,7 +113,7 @@ test('choices: both roles, Claude and Codex with login hints, Telegram with chat
 });
 
 test('wrong answers are asked again; models that do not fit RAM or disk are flagged', async () => {
-  const io = scripted(['7', 'x', '1', '1', 'forse', 's', 'n', 'n', 's', '-3', 'abc', '42', 's']);
+  const io = scripted(['7', 'x', '1', '1', 'forse', 's', 'n', 'n', '', 's', '-3', 'abc', '42', 's']);
   const settings = await runWizard(io, context({ ramBytes: 16 * GIB, freeBytes: 10 * GIB }));
   assert.ok(settings !== undefined);
   assert.deepEqual(settings.telegram?.chats, [42]);
@@ -124,24 +128,63 @@ test('reconfigure starts from the current values and can remove what was there',
     ...DEFAULT_SETTINGS,
     roles: { orchestrator: 'small-mlx', extractor: 'small-mlx' },
     endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:7001/v1' }],
-    cloud: { allowlist: ['repos/site'], executors: ['claude'] },
+    cloud: { executors: ['claude'] },
+    projects: [{ name: 'site', path: 'repos/site', label: 'L1' }],
     telegram: { token: 'vault://my-bot', chats: [7] },
   };
-  // Enter keeps: orchestrator, extractor, Claude (on), Codex (off), Telegram (on), chats, write.
-  const kept = await runWizard(scripted(['', '', '', '', '', '', '']), context({ settings: current }));
+  // Enter keeps: orchestrator, extractor, Claude (on), Codex (off), project site, no new project, Telegram (on), chats, write.
+  const kept = await runWizard(scripted(['', '', '', '', '', '', '', '', '']), context({ settings: current }));
   assert.deepEqual(kept, current);
   // No model at all: the endpoint that takes its names from the roles goes too.
-  const io = scripted(['0', '0', 'n', '', 'n', '']);
+  const io = scripted(['0', '0', 'n', '', 'n', '', 'n', '']);
   const cleared = await runWizard(io, context({ settings: current }));
   assert.ok(cleared !== undefined);
   assert.deepEqual(cleared.roles, {});
   assert.deepEqual(cleared.endpoints, []);
-  assert.deepEqual(cleared.cloud, { allowlist: ['repos/site'], executors: [] });
+  assert.deepEqual(cleared.cloud, { executors: [] });
+  assert.deepEqual(cleared.projects, []);
   assert.equal(cleared.telegram, undefined);
 });
 
+test('projects (D-058): added under the home or in repos/, refused when the list or the folder is wrong', async () => {
+  const checked: string[] = [];
+  const io = scripted([
+    // Orchestrator, extractor, add oMLX, Claude, Codex.
+    '', '', '', 's', '',
+    // A folder under the home: the name comes from it, L1 by default.
+    's', '~/Progetti/Sito Più', '', '',
+    // A hidden folder is refused by the rules of the list.
+    's', '~/.ssh', 'ssh', '',
+    // The same name twice is refused.
+    's', '~/Altro/sito-piu', '', '',
+    // A folder inside Arianna, L2 asked again, then L0.
+    's', 'repos/demo', '', 'L2', 'L0',
+    // Done; Telegram off; write.
+    'n', '', '',
+  ]);
+  const settings = await runWizard(io, context({ checkFolder: (absolute) => (checked.push(absolute), undefined) }));
+  assert.ok(settings !== undefined);
+  assert.deepEqual(settings.projects, [
+    { name: 'sito-piu', path: '~/Progetti/Sito Più', label: 'L1' },
+    { name: 'demo', path: 'repos/demo', label: 'L0' },
+  ]);
+  assert.deepEqual(checked, [join(`${HOME}-user`, 'Progetti', 'Sito Più'), join(HOME, 'repos', 'demo')]);
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('plain name')));
+  assert.ok(io.said.some((line) => line.startsWith('Non lo aggiungo') && line.includes('twice')));
+  assert.ok(io.said.some((line) => line.includes('Scrivi L0 oppure L1')));
+  assert.ok(io.said.some((line) => line.includes('creo il link repos/sito-piu')));
+  assert.ok(io.said.some((line) => line.includes('Progetti: sito-piu')));
+});
+
+test('projects: a folder that is not a git repository is not added', async () => {
+  const io = scripted(['', '', '', '', '', 's', '~/Progetti/vuota', '', '', 'n', '', '']);
+  const settings = await runWizard(io, context({ checkFolder: () => 'non è un repository git' }));
+  assert.deepEqual(settings?.projects, []);
+  assert.ok(io.said.some((line) => line === 'Non lo aggiungo: non è un repository git.'));
+});
+
 test('an empty catalog leaves the roles alone; declining the summary writes nothing', async () => {
-  const io = scripted(['', '', '', 'n']);
+  const io = scripted(['', '', '', '', 'n']);
   assert.equal(await runWizard(io, context({ catalog: EMPTY_CATALOG })), undefined);
   assert.ok(io.said.some((line) => line.includes('non ha ancora modelli')));
 });
@@ -151,12 +194,12 @@ test('the written file loads, keeps what the wizard does not ask, and selects th
   writeFileSync(join(HOME, CATALOG_FILE), CATALOG_TEXT);
   assert.equal(currentSettings(HOME, CATALOG), undefined);
 
-  const settings = await runWizard(scripted(['2', '1', '', '', '', '', '']), context());
+  const settings = await runWizard(scripted(['2', '1', '', '', '', '', '', '']), context());
   assert.ok(settings !== undefined);
-  writeSettings(HOME, CATALOG, { ...settings, cloud: { ...settings.cloud, allowlist: ['repos/site'] } });
+  writeSettings(HOME, CATALOG, { ...settings, projects: [{ name: 'site', path: 'repos/site', label: 'L1' }] });
   const config = loadConfig({ ARIANNA_HOME: HOME });
   assert.deepEqual(config.local.endpoints[0]?.models, { 'local-large': 'small-mlx', 'local-small': 'small-mlx' });
-  assert.deepEqual(currentSettings(HOME, CATALOG)?.cloud.allowlist, ['repos/site']);
+  assert.deepEqual(currentSettings(HOME, CATALOG)?.projects, [{ name: 'site', path: 'repos/site', label: 'L1' }]);
   assert.deepEqual(selectedModels(config, CATALOG).map((model) => model.id), ['small-mlx']);
   assert.ok(!existsSync(join(HOME, 'config', `.arianna.toml.${String(process.pid)}`)));
 });

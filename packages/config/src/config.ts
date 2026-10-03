@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { parse as parseToml } from 'smol-toml';
@@ -7,6 +8,7 @@ import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
 import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
+import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
@@ -56,12 +58,17 @@ export interface AriannaConfig {
   roles: Roles;
   local: LocalConfig;
   cloud: CloudConfig;
+  /** The folders a cloud executor may work on (D-058); applied without a restart. */
+  projects: Project[];
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
 }
 
-/** `catalog` checks `[roles]`: without it no role can be assigned. */
-export function parseConfig(text: string, home: string, catalog: ModelCatalog = EMPTY_CATALOG): AriannaConfig {
+/**
+ * `catalog` checks `[roles]`: without it no role can be assigned. `userHome`
+ * is where the `~/` of a project path points.
+ */
+export function parseConfig(text: string, home: string, catalog: ModelCatalog = EMPTY_CATALOG, userHome: string = homedir()): AriannaConfig {
   let raw: unknown;
   try {
     raw = parseToml(text);
@@ -69,7 +76,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'telegram'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'telegram'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -99,7 +106,8 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     server: parseServer(root.server),
     roles,
     local: parseLocal(root.local, roles),
-    cloud: parseCloud(root.cloud, home, data),
+    cloud: parseCloud(root.cloud),
+    projects: parseProjects(root.project, home, userHome, data),
     ...(telegram === undefined ? {} : { telegram }),
   };
 }
@@ -136,6 +144,12 @@ function parseServer(value: unknown): AriannaConfig['server'] {
   return { host, port };
 }
 
+/** The user's home, where `~/` of a project points: HOME, or the account's when it is unset. */
+export function userHomeOf(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env.HOME;
+  return fromEnv === undefined || fromEnv === '' ? homedir() : fromEnv;
+}
+
 /** Reads `config/arianna.toml` from ARIANNA_HOME, with the catalog its roles refer to. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AriannaConfig {
   const home = resolveHome(env);
@@ -143,5 +157,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AriannaConfig 
   if (!existsSync(path)) {
     throw new ConfigError(`${CONFIG_FILE} is missing: run pnpm arianna:init (pnpm arianna:init --defaults for development)`);
   }
-  return parseConfig(readFileSync(path, 'utf8'), home, loadCatalog(home));
+  return parseConfig(readFileSync(path, 'utf8'), home, loadCatalog(home), userHomeOf(env));
 }
