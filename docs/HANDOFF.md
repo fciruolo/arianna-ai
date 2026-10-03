@@ -2,7 +2,7 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-03 notte, D-058 (progetti) fatta e unita a `main` mentre l'utente era lontano ("vai spedito, non chiedere"); prima D-057 (titolo, rinomina, archivio e cancellazione definitiva delle conversazioni) unita a `main` (commit `82da4d6` e `f069605`), dopo D-056 (`bf904ba`). `origin/main` è a `bf904ba` (D-056).
+Aggiornato: 2026-10-04, analisi di OpenDots (D-059 e `docs/OPENDOTS.md`); prima, 2026-10-03 notte, D-058 (progetti) fatta e unita a `main` mentre l'utente era lontano ("vai spedito, non chiedere"); prima D-057 (titolo, rinomina, archivio e cancellazione definitiva delle conversazioni) unita a `main` (commit `82da4d6` e `f069605`), dopo D-056 (`bf904ba`). `origin/main` è a `bf904ba` (D-056).
 
 **D-056 applicata (2026-10-03):** il Coder lavora nella cartella vera del progetto in allowlist, sul branch corrente, come l'utente con la CLI; le modifiche restano lì non committate e Arianna le elenca nella risposta. Migrazione `0010` (approvazione `workspace`) applicata al database di sviluppo al riavvio del core. Le domande di conferma vanno fatte una alla volta e con il dettaglio (regola in "Modo di lavorare concordato").
 
@@ -66,6 +66,8 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 7. **Obsidian (2026-10-03, l'utente l'ha installato):** la specifica lo prevede come editor della KB (SPEC "Editor e viste", OPEN-QUESTIONS: "Obsidian all'inizio", Fase 2). Oggi si può aprire `kb/` come vault per leggere ciò che Arianna legge e scrive (`kb/inbox/`). Da pianificare in Fase 2: intestazione `label:` e cartelle riconosciute da Obsidian, nessun file di configurazione o plugin dentro `data/kb` senza regola di etichetta, plugin con servizi esterni (sync, AI) mai sul vault della KB perché aggirerebbero il gateway.
 8. **Idea dell'utente (2026-10-03), da pianificare:** quando l'utente prova un modello nuovo dalla piattaforma (wizard, poi pagina Impostazioni 3.5), il core lancia in background gli eval del ruolo (`eval:models`) contro quel modello, senza fermare quello in uso, e salva i risultati nel database (modello, sha256, data, punteggio per misura, latenza). Superate le soglie, la voce del catalogo passa da `experimental` a verificata (SPEC, sezione portabilità); lo storico si vede in Impostazioni. Backend anticipabile dopo il 1.10; serve una voce in `DECISIONS.md` e una migrazione.
 
+9. **OpenDots (2026-10-04, chiesto dall'utente):** repository pubblico MIT clonato accanto ad Arianna, leggibile in sola lettura grazie a `.claude/read-allow.local` (D-059, file fuori da git: su un'altra macchina va riscritto, una cartella assoluta per riga). Inventario e proposte P1–P9 in `docs/OPENDOTS.md`. L'utente vuole prendere **il più possibile della grafica**, poi file, chat, Slack (per noi Telegram) e soprattutto **le chiamate**. Si propone **una proposta alla volta**, partendo da P1 (restyling della chat web); ogni proposta accettata diventa voce D- e si aggiorna lo stato nella tabella di `OPENDOTS.md`. Codice o CSS copiati portano la nota MIT (regola in `OPENDOTS.md`).
+
 ## In attesa dell'utente
 
 | Cosa | Note |
@@ -103,6 +105,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 - **L'hook blocca ogni lettura e scrittura fuori dal repository**, compresa la cartella di memoria di Claude Code e la cartella temporanea della sessione. Per questo la memoria del progetto sta in `CLAUDE.md` e in questo file, e i file temporanei vanno in `data/` (ignorata da git).
 - L'hook controlla anche il testo dei comandi Bash: un comando che contiene un percorso della home come stringa di prova viene bloccato.
+- Con D-059 l'hook lascia nominare le cartelle di `read-allow.local` in Bash solo in comandi di lettura; il controllo divide il comando anche sui `|` dentro le virgolette, quindi `grep -E 'a|b'` viene bloccato: usare `grep -e a -e b` o lo strumento Read.
 - Il `"type": "module"` della radice aveva rotto l'hook; `.claude/hooks/package.json` lo tiene in CommonJS. Se l'hook va in errore, oggi Claude Code prosegue senza blocco.
 - `pnpm` applica un'età minima di un giorno alle release: se un pacchetto è troppo recente si sceglie la versione precedente, non si aggiunge un'eccezione.
 - TypeScript resta alla 6.0.x finché `typescript-eslint` non supporta la 7.
