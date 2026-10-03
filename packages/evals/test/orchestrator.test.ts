@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { isToolId, type ToolId } from '@arianna/agents';
 import { CONFIG_FILE, loadConfig, resolveHome } from '@arianna/config';
-import type { ChatRequest, LocalModel } from '@arianna/executors';
+import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { loadCases } from '../src/cases.ts';
 import { GROUPS } from '../src/groups.ts';
@@ -120,6 +120,47 @@ describe('orchestrator evaluator', () => {
       assert.equal(Object.keys(schema.properties)[0], 'thought');
       assert.equal(schema.required[0], 'thought');
     }
+  });
+
+  it('asks once more without the thought when the answer is not JSON', async () => {
+    const requests: ChatRequest[] = [];
+    const value = { action: 'refuse', reason: 'no payment tool' };
+    const model: LocalModel = {
+      chat: (request) => {
+        requests.push(request);
+        if (requests.length === 1) return Promise.reject(new LocalModelError('bad-response', 'stub: content is not JSON', { endpoint: 'stub' }));
+        return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'stub', model: 'stub', durationMs: 1 });
+      },
+    };
+    const input: OrchestratorInput = { tools, messages: [{ role: 'user', content: 'Paga la bolletta.' }] };
+    assert.deepEqual(await createOrchestratorEvaluator(() => model, 'You are Arianna.')(input), { action: 'refuse', schemaOk: true });
+    assert.equal(requests.length, 2);
+    const [first, second] = requests;
+    assert.ok(first !== undefined && second !== undefined);
+    assert.deepEqual(first.schema?.schema, responseSchema(tools));
+    assert.deepEqual(second.schema?.schema, responseSchema(tools, false));
+    assert.match(first.messages[0]?.content ?? '', /"thought"/);
+    assert.doesNotMatch(second.messages[0]?.content ?? '', /thought/);
+  });
+
+  it('does not ask again after other errors', async () => {
+    let calls = 0;
+    const model: LocalModel = {
+      chat: () => {
+        calls += 1;
+        return Promise.reject(new LocalModelError('timeout', 'stub did not answer in time', { endpoint: 'stub' }));
+      },
+    };
+    const input: OrchestratorInput = { tools, messages: [{ role: 'user', content: 'Ciao' }] };
+    const evaluate = createOrchestratorEvaluator(() => model, 'You are Arianna.');
+    await assert.rejects(Promise.resolve(evaluate(input)), /in time/);
+    assert.equal(calls, 1);
+  });
+
+  it('has a schema without the thought for the fallback', () => {
+    const call = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } };
+    assert.deepEqual(summarize(call, tools, false), { ...call, schemaOk: true });
+    assert.equal(summarize({ thought: 't', ...call }, tools, false).schemaOk, false);
   });
 
   it('counts plan steps and recognizes replies and refusals', () => {
