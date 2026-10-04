@@ -141,4 +141,4 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Prompt per la nuova conversazione
 
-> Leggi CLAUDE.md e docs/HANDOFF.md e riprendi dai "Prossimi passi", punto 9, "Prima prova dell'utente": fatti barre collassabili, indirizzo `/c/<id>` e logo "A". Prossimo lavoro: **errori leggibili** (punto esclamativo accanto a "Fallito", finestra con l'errore e chat per risolverlo: locale di base, Claude solo per L1) **insieme al protocollo in stile AG-UI** (punto (6)). Prima leggi la specifica completa degli eventi AG-UI, poi proponimi la decisione D- e fammi le domande una alla volta. Dopo: chiamate vere (P4), poi computer dell'agente (P10).
+> Leggi CLAUDE.md e docs/HANDOFF.md e riprendi dai "Prossimi passi", punto 9, (7): costruisci la prima parte di **D-064** (errori leggibili e chat di sistema) su un branch `task/d-064-errors`, con test, `pnpm check`, `pnpm test:db` e revisione del `reviewer`. AG-UI non si adotta (D-063). Dopo: Claude diretto nelle chat di sistema L1 (seconda parte di D-064), chiamate vere (P4), poi computer dell'agente (P10).
