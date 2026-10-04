@@ -188,6 +188,14 @@ export function createChatStore() {
     }
   }
 
+  /** Back to no open conversation (the browser went back to the root). */
+  function close(): void {
+    error.value = null;
+    chat.value = null;
+    detached.value = undefined;
+    tasks.value = {};
+  }
+
   async function create(mode: ConversationMode, project?: string): Promise<void> {
     error.value = null;
     try {
@@ -366,7 +374,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
+  return { conversations, archived, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

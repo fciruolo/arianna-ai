@@ -10,6 +10,7 @@ import StatusPanel from './components/StatusPanel.vue';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
+import { conversationFromPath, documentTitle, pathFor } from './lib/route.ts';
 import { poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
@@ -50,13 +51,43 @@ const clockText = computed(() => {
   return `${DAYS[date.getDay()] ?? ''} ${pad(date.getDate())} ${MONTHS[date.getMonth()] ?? ''} · ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
+// The address follows the open conversation (/c/<id>), so a reload comes back to it.
+function followAddress(): void {
+  const id = conversationFromPath(window.location.pathname);
+  if (id === undefined) {
+    if (chat.value !== null) store.close();
+    if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
+  } else if (chat.value?.conversationId !== id) {
+    void store.open(id);
+  }
+}
+watch(
+  () => chat.value?.conversationId ?? null,
+  (id) => {
+    const path = pathFor(id);
+    if (window.location.pathname === path) return;
+    if (id === null) window.history.replaceState(null, '', path);
+    else window.history.pushState(null, '', path);
+  },
+);
+watch(
+  () => current.value?.title,
+  (title) => {
+    document.title = documentTitle(title);
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
+  followAddress();
+  window.addEventListener('popstate', followAddress);
   store.start();
   clock = window.setInterval(() => {
     now.value = new Date();
   }, 15_000);
 });
 onBeforeUnmount(() => {
+  window.removeEventListener('popstate', followAddress);
   store.stop();
   window.clearInterval(clock);
 });
