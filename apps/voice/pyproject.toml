@@ -9,12 +9,14 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   # Pipeline, Silero VAD and SmallWebRTCTransport (aiortc); its aiohttp is also our HTTP server.
   "pipecat-ai[webrtc]==1.12.0",
-  # Parakeet, Whisper, Kokoro and Chatterbox on MLX, without PyTorch.
+  # Parakeet, Whisper, Kokoro, Qwen3-TTS and Voxtral on MLX, without PyTorch (D-067).
   "mlx-audio[stt,tts]==0.5.7",
   # Italian phonemes for Kokoro: misaki over espeak-ng, bundled for macOS arm64.
   "misaki==0.9.4",
   "phonemizer-fork==3.3.2",
   "espeakng-loader==0.2.4",
+  # The tekken tokenizer of Voxtral TTS (D-067): mlx-audio leaves it unpinned and 1.9 cannot read it.
+  "mistral-common[audio]==1.11.7",
 ]
 
 [tool.uv]

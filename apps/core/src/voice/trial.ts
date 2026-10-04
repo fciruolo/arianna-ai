@@ -7,10 +7,10 @@ import type { ModelCatalog, Roles } from '@arianna/config';
  * The voice trial page (D-066): the candidates of the catalog for hearing
  * (`stt`) and speaking (`tts`), which of them are on disk and which hold the
  * role now. The request checks are pure: the page sends only audio, text and
- * a model id; the core picks the models and the reference voice.
+ * a model id and one of its voices; the core picks the models.
  */
 export const STT_FAMILIES = ['parakeet', 'whisper'] as const;
-export const TTS_FAMILIES = ['kokoro', 'chatterbox'] as const;
+export const TTS_FAMILIES = ['kokoro', 'qwen3-tts', 'voxtral-tts'] as const;
 export type TrialKind = 'stt' | 'tts';
 
 export interface TrialModel {
@@ -22,7 +22,7 @@ export interface TrialModel {
   /** Assigned to the role in [roles] of arianna.toml. */
   assigned: boolean;
   sizeBytes: number;
-  /** Kokoro: the voices among its files. */
+  /** The voices the model can speak with (D-067); empty for stt. */
   voices: string[];
 }
 
@@ -37,7 +37,23 @@ export const fileSize: FileSize = (path) => {
   }
 };
 
-const VOICE_FILE = /^voices\/([a-z]{2}_[a-z0-9]{1,32})\.safetensors$/;
+// One file per voice: Kokoro in voices/, Voxtral in voice_embedding/ (D-067), as apps/voice reads them.
+const VOICE_FOLDERS: Record<string, string> = { kokoro: 'voices', 'voxtral-tts': 'voice_embedding' };
+const VOICE_FILE = /^([a-z_]+)\/([a-z][a-z0-9_]{1,40})\.safetensors$/;
+/**
+ * The speakers of Qwen3-TTS CustomVoice are in its weights, not in files. Of
+ * its config.json, the native English and Mandarin speakers without a dialect,
+ * asked to speak Italian (the Japanese and Korean ones and the dialects are left out).
+ */
+export const QWEN3_SPEAKERS = ['serena', 'vivian', 'ryan', 'aiden'] as const;
+
+function voicesOf(family: string, paths: readonly string[]): string[] {
+  if (family === 'qwen3-tts') return [...QWEN3_SPEAKERS];
+  return paths.flatMap((path) => {
+    const match = VOICE_FILE.exec(path);
+    return match !== null && match[1] === VOICE_FOLDERS[family] && match[2] !== undefined ? [match[2]] : [];
+  });
+}
 
 export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: string, size: FileSize = fileSize): TrialModel[] {
   const out: TrialModel[] = [];
@@ -54,7 +70,7 @@ export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: stri
       present: entry.files.every((file) => size(join(modelsDir, entry.id, file.path)) === file.sizeBytes),
       assigned: roles[kind] === entry.id,
       sizeBytes: entry.files.reduce((sum, file) => sum + file.sizeBytes, 0),
-      voices: entry.files.flatMap((file) => VOICE_FILE.exec(file.path)?.[1] ?? []),
+      voices: kind === 'tts' ? voicesOf(entry.family, entry.files.map((file) => file.path)) : [],
     });
   }
   return out;
@@ -100,10 +116,9 @@ export interface SpeakCall {
   text: string;
   model: { id: string; family: string };
   voice: string;
-  reference?: { id: string; family: string };
 }
 
-/** One candidate speaks; Chatterbox clones the chosen Kokoro voice. */
+/** One candidate speaks with one of its own voices. */
 export function speakCall(body: Record<string, unknown>, models: readonly TrialModel[]): SpeakCall {
   only(body, ['text', 'model', 'voice']);
   const { text, model: id, voice } = body;
@@ -113,9 +128,6 @@ export function speakCall(body: Record<string, unknown>, models: readonly TrialM
   const model = models.find((candidate) => candidate.kind === 'tts' && candidate.id === id);
   if (model === undefined) throw new TrialError('model: not a text-to-speech candidate of the catalog');
   if (!model.present) throw new TrialError('model: not on disk: pnpm arianna:models pull --trial');
-  const kokoro = models.find((candidate) => candidate.family === 'kokoro' && candidate.present);
-  if (typeof voice !== 'string' || kokoro === undefined || !kokoro.voices.includes(voice)) throw new TrialError('voice: one of the Kokoro voices on disk');
-  const call: SpeakCall = { text: text.trim(), model: { id: model.id, family: model.family }, voice };
-  if (model.family === 'chatterbox') call.reference = { id: kokoro.id, family: kokoro.family };
-  return call;
+  if (typeof voice !== 'string' || !model.voices.includes(voice)) throw new TrialError('voice: one of the voices of the model');
+  return { text: text.trim(), model: { id: model.id, family: model.family }, voice };
 }

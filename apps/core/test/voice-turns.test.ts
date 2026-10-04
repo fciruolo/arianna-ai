@@ -47,17 +47,36 @@ test('speakable and summaryToSay: no markdown, links or emoji; a long answer is 
   assert.equal(summaryToSay('Fatto.'), 'Fatto.');
 });
 
-const model = (id: string, family: string, kind: 'stt' | 'tts', present: boolean, assigned: boolean): TrialModel => ({ id, family, kind, present, assigned, sizeBytes: 1, voices: [] });
+const model = (id: string, family: string, kind: 'stt' | 'tts', present: boolean, assigned: boolean, voices: string[] = []): TrialModel => ({
+  id,
+  family,
+  kind,
+  present,
+  assigned,
+  sizeBytes: 1,
+  voices,
+});
 
-test('callReadiness: the three roles, with stt and tts on disk; Chatterbox also needs a Kokoro to clone', () => {
+test('callReadiness: the three roles, with stt and tts on disk, and a voice of the tts model', () => {
   const parakeet = model('p', 'parakeet', 'stt', true, true);
-  const kokoro = model('k', 'kokoro', 'tts', true, true);
-  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, kokoro]), { ready: true, stt: { id: 'p', family: 'parakeet' }, tts: { id: 'k', family: 'kokoro' } });
+  const kokoro = model('k', 'kokoro', 'tts', true, true, ['if_sara', 'im_nicola']);
+  const ready = { ready: true, stt: { id: 'p', family: 'parakeet' }, tts: { id: 'k', family: 'kokoro' } };
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, kokoro], true, 'im_nicola'), { ...ready, voice: 'im_nicola' });
+  // The voice of [voice] is not one of the model (D-067): its first voice.
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, kokoro], true, 'it_female'), { ...ready, voice: 'if_sara' });
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, kokoro]), { ...ready, voice: 'if_sara' });
   assert.deepEqual(callReadiness({}, [parakeet, kokoro]), { ready: false, missing: ['voice'] });
   assert.deepEqual(callReadiness({ voice: 'q' }, [{ ...parakeet, present: false }, kokoro]), { ready: false, missing: ['stt'] });
   assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...kokoro, assigned: false }]), { ready: false, missing: ['tts'] });
-  const chatterbox = model('c', 'chatterbox', 'tts', true, true);
-  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, chatterbox]), { ready: false, missing: ['tts'] });
-  const withKokoro = callReadiness({ voice: 'q' }, [parakeet, chatterbox, { ...kokoro, assigned: false }]);
-  assert.deepEqual(withKokoro.ready && withKokoro.reference, { id: 'k', family: 'kokoro' });
+  const qwen = model('q', 'qwen3-tts', 'tts', true, true, ['serena', 'vivian']);
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, qwen], true, 'vivian'), {
+    ready: true,
+    stt: { id: 'p', family: 'parakeet' },
+    tts: { id: 'q', family: 'qwen3-tts' },
+    voice: 'vivian',
+  });
+  const fallback = callReadiness({ voice: 'q' }, [parakeet, qwen], true, 'if_sara');
+  assert.equal(fallback.ready && fallback.voice, 'serena');
+  // A tts model without voices cannot speak.
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...kokoro, voices: [] }]), { ready: false, missing: ['tts'] });
 });

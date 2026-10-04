@@ -12,7 +12,7 @@ import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from 
 export interface VoiceConfig {
   /** Loopback port of apps/voice; only the core talks to it. */
   port: number;
-  /** The Kokoro voice (a file of voices/ in the model folder). */
+  /** The voice of the tts model (D-067): Kokoro "if_sara", Voxtral "it_female", a Qwen3-TTS speaker. Missing on that model: its first voice. */
   voice: string;
   limits: VoiceLimits;
   outgoing: OutgoingRules;
@@ -62,7 +62,7 @@ export const DEFAULT_VOICE: VoiceConfig = {
 /** Push key reference (key `vapid-private-key` in the vault). */
 export const VAPID_PRIVATE_KEY_REF = 'vault://vapid-private-key';
 
-const VOICE_ID = /^[a-z]{2}_[a-z0-9]{1,32}$/;
+const VOICE_ID = /^[a-z][a-z0-9_]{1,40}$/;
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
@@ -71,7 +71,7 @@ export function parseVoice(value: unknown): VoiceConfig | undefined {
   const voice = asTable(value, 'voice');
   onlyKeys(voice, ['port', 'voice', 'limits', 'outgoing', 'push'], 'voice');
   const name = voice.voice === undefined ? DEFAULT_VOICE.voice : asString(voice.voice, 'voice.voice');
-  if (!VOICE_ID.test(name)) throw new ConfigError('voice.voice: a Kokoro voice id, e.g. "if_sara"');
+  if (!VOICE_ID.test(name)) throw new ConfigError('voice.voice: a voice of the tts model, e.g. "if_sara" or "it_female"');
   const push = parsePush(voice.push);
   return {
     port: voice.port === undefined ? DEFAULT_VOICE.port : asInteger(voice.port, 'voice.port', 1024, 65535),
@@ -151,7 +151,7 @@ export interface VoicePaths {
   /** Python installs and download cache of uv. */
   uvPython: string;
   uvCache: string;
-  /** Private scratch files of the service (the Chatterbox reference). */
+  /** Private scratch files and log of the service. */
   tmp: string;
   /** Model weights, shared with the catalog: data/models/<id>. */
   models: string;

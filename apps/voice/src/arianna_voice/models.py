@@ -9,9 +9,7 @@ across threads; callers await `run`.
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -22,15 +20,16 @@ from .wav import STT_RATE, encode_wav
 
 # Same rule as the catalog ids (packages/config/src/catalog.ts).
 MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
-VOICE_ID = re.compile(r"^[a-z]{2}_[a-z0-9]{1,32}$")
+# A voice of any family: Kokoro "if_sara", Voxtral "it_female", Qwen3-TTS "serena" (D-067).
+VOICE_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 STT_FAMILIES = ("parakeet", "whisper")
-TTS_FAMILIES = ("kokoro", "chatterbox")
+TTS_FAMILIES = ("kokoro", "qwen3-tts", "voxtral-tts")
 LANGUAGE = "it"
 SENTENCE_END = re.compile(r"([.!?;:])\s+")
 # Kokoro's language code for Italian.
 KOKORO_ITALIAN = "i"
-# What Kokoro says so that Chatterbox, which has no voice of its own, can clone it.
-REFERENCE_TEXT = "Ciao, sono Arianna. Questa è la mia voce di riferimento per la prova."
+# Qwen3-TTS names the language in full.
+QWEN3_ITALIAN = "italian"
 
 
 class ModelError(Exception):
@@ -63,44 +62,11 @@ class Speech:
     rate: int
 
 
-# The folder of the model in data/models where the catalog puts Chatterbox's speech tokenizer.
-S3_TOKENIZER_DIR = "s3tokenizer"
-S3_TOKENIZER_REPO = "mlx-community/S3TokenizerV2"
-
-
-def load_chatterbox(path: str) -> Any:
-    """Chatterbox, with its speech tokenizer from data/models instead of the
-    Hugging Face repository the library would download it from (the service
-    is offline on purpose, D-066)."""
-    import huggingface_hub
-    from mlx_audio.tts.utils import load_model as load_tts
-
-    local = Path(path) / S3_TOKENIZER_DIR
-    if not (local / "model.safetensors").is_file():
-        raise ModelError("missing")
-    # The library imports snapshot_download inside the loading function: replaced
-    # for the time of the load only (one worker thread loads, nothing else runs).
-    original = huggingface_hub.snapshot_download
-
-    def snapshot(*args: Any, **kwargs: Any) -> str:
-        if kwargs.get("repo_id", args[0] if args else None) == S3_TOKENIZER_REPO:
-            return str(local)
-        return original(*args, **kwargs)
-
-    huggingface_hub.snapshot_download = snapshot
-    try:
-        return load_tts(path)
-    finally:
-        huggingface_hub.snapshot_download = original
-
-
 class Models:
-    def __init__(self, models_dir: Path, tmp_dir: Path) -> None:
+    def __init__(self, models_dir: Path) -> None:
         self._dir = models_dir
-        self._tmp = tmp_dir
         self._loaded: dict[str, Any] = {}
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
-        self._references: dict[tuple[str, str], Path] = {}
 
     def path_of(self, ref: ModelRef) -> Path:
         path = self._dir / ref.id
@@ -114,8 +80,6 @@ class Models:
 
     def close(self) -> None:
         self._worker.shutdown(wait=False, cancel_futures=True)
-        for path in self._references.values():
-            path.unlink(missing_ok=True)
 
     # Everything below runs on the worker thread.
 
@@ -128,8 +92,6 @@ class Models:
                 from mlx_audio.stt.utils import load as load_stt
 
                 model = load_stt(path)
-            elif ref.family == "chatterbox":
-                model = load_chatterbox(path)
             else:
                 from mlx_audio.tts.utils import load_model as load_tts
 
@@ -162,30 +124,23 @@ class Models:
             raise ModelError("inference") from error
         return str(getattr(result, "text", "")).strip(), time.monotonic() - started
 
-    def speak(self, ref: ModelRef, text: str, voice: str, reference: ModelRef | None = None) -> tuple[Speech, float]:
+    def speak(self, ref: ModelRef, text: str, voice: str) -> tuple[Speech, float]:
         """The speech as WAV and the seconds spent, loading excluded."""
-        pcm16, rate, spent = self.speak_pcm(ref, text, voice, reference)
+        pcm16, rate, spent = self.speak_pcm(ref, text, voice)
         return Speech(encode_wav(pcm16, rate), len(pcm16) / 2 / rate, rate), spent
 
-    def speak_pcm(self, ref: ModelRef, text: str, voice: str, reference: ModelRef | None = None) -> tuple[bytes, int, float]:
+    def speak_pcm(self, ref: ModelRef, text: str, voice: str) -> tuple[bytes, int, float]:
         """16-bit mono samples, their rate and the seconds spent: what a call plays."""
         model = self._load(ref)
-        kwargs: dict[str, Any] = {}
-        if ref.family == "kokoro":
-            # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
-            text = SENTENCE_END.sub("\\1\n", text)
-            kwargs = {"voice": self._voice_file(ref, voice), "lang_code": KOKORO_ITALIAN, "verbose": False}
-        else:
-            if reference is None:
-                raise ModelError("family")
-            # verbose=False: the library would print what it says to the log.
-            kwargs = {"ref_audio": str(self._reference(reference, voice)), "lang_code": LANGUAGE, "verbose": False}
+        # verbose=False everywhere: the libraries would print what they say to the log.
+        kwargs = speak_arguments(ref.family, voice, self._voice_file(ref, voice))
         started = time.monotonic()
         try:
             pieces, rate = [], 24_000
-            for result in model.generate(text=text, **kwargs):
-                pieces.append(result.audio)
-                rate = int(getattr(result, "sample_rate", rate))
+            for part in speak_parts(ref.family, text):
+                for result in model.generate(text=part, **kwargs):
+                    pieces.append(result.audio)
+                    rate = int(getattr(result, "sample_rate", rate))
         except Exception as error:  # noqa: BLE001
             raise ModelError("inference") from error
         spent = time.monotonic() - started
@@ -194,26 +149,45 @@ class Models:
         samples = np.concatenate([np.asarray(piece, dtype=np.float32).reshape(-1) for piece in pieces]) if pieces else np.zeros(0, np.float32)
         return (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes(), rate, spent
 
-    def _voice_file(self, ref: ModelRef, voice: str) -> str:
+    def _voice_file(self, ref: ModelRef, voice: str) -> str | None:
+        """The file of the voice in the model folder; Qwen3-TTS speakers are not files."""
         if not VOICE_ID.match(voice):
             raise ModelError("family")
-        path = self.path_of(ref) / "voices" / f"{voice}.safetensors"
+        folder = VOICE_FOLDERS.get(ref.family)
+        if folder is None:
+            return None
+        path = self.path_of(ref) / folder / f"{voice}.safetensors"
         if not path.is_file():
             raise ModelError("missing")
         return str(path)
 
-    def _reference(self, kokoro: ModelRef, voice: str) -> Path:
-        """A WAV of Kokoro saying REFERENCE_TEXT, written once in the private tmp folder."""
-        if kokoro.family != "kokoro":
-            raise ModelError("family")
-        key = (kokoro.id, voice)
-        if key not in self._references:
-            speech, _ = self.speak(kokoro, REFERENCE_TEXT, voice)
-            handle, name = tempfile.mkstemp(prefix="reference-", suffix=".wav", dir=self._tmp)
-            with os.fdopen(handle, "wb") as file:
-                file.write(speech.wav)
-            self._references[key] = Path(name)
-        return self._references[key]
+
+# Where each family keeps one file per voice (D-067).
+VOICE_FOLDERS = {"kokoro": "voices", "voxtral-tts": "voice_embedding"}
+
+
+def speak_parts(family: str, text: str) -> list[str]:
+    """The text as each family generates it best; pure, for the tests."""
+    if family == "kokoro":
+        # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
+        return [SENTENCE_END.sub("\\1\n", text)]
+    if family == "qwen3-tts":
+        # CustomVoice generates the whole text at once and drifts on long ones: a sentence each.
+        return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", text).split("\n")) if part]
+    return [text]
+
+
+def speak_arguments(family: str, voice: str, voice_file: str | None) -> dict[str, Any]:
+    """What `generate` of each family wants besides the text; pure, for the tests."""
+    if family == "kokoro":
+        return {"voice": voice_file, "lang_code": KOKORO_ITALIAN, "verbose": False}
+    if family == "voxtral-tts":
+        # Voxtral finds the voice by name among the files of voice_embedding/,
+        # already checked to be there; the name says the language (it_female).
+        return {"voice": voice, "verbose": False}
+    if family == "qwen3-tts":
+        return {"voice": voice, "lang_code": QWEN3_ITALIAN, "verbose": False}
+    raise ModelError("family")
 
 
 __all__ = ["Models", "ModelError", "ModelRef", "Speech", "STT_FAMILIES", "TTS_FAMILIES", "STT_RATE"]

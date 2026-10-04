@@ -252,9 +252,9 @@ models:
         size_bytes: 2776833
         sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
   # Hearing and speaking (D-066), run by apps/voice with mlx-audio, not by oMLX.
-  # Two candidates each for the voice trial page: the user picks by ear and
-  # assigns the winners to the stt and tts roles. Kokoro: only the Italian voices.
-  # Chatterbox has no voice of its own: the trial clones a phrase said by Kokoro.
+  # The first trial chose Parakeet over Whisper and Kokoro over Chatterbox; Kokoro
+  # sounded English, so the second trial (D-067) adds Qwen3-TTS and Voxtral.
+  # Only the Italian voices are downloaded (Kokoro voices/, Voxtral voice_embedding/).
   - id: parakeet-tdt-0.6b-v3-mlx
     family: parakeet
     runtime: mlx
@@ -282,61 +282,6 @@ models:
         url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/vocab.txt
         size_bytes: 46772
         sha256: "3cde1409fd78783a79b29ed4d32da57c746993856f7c8263bcb905d2e5839db7"
-  - id: whisper-large-v3-turbo-mlx
-    family: whisper
-    runtime: mlx
-    ram_min_gib: 3
-    roles: [stt]
-    status: experimental
-    files:
-      - path: added_tokens.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/added_tokens.json
-        size_bytes: 34648
-        sha256: "3c51f66c4c21f9e126970078f11ae77a78c74aee8df606ee9daba86e467108e0"
-      - path: config.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/config.json
-        size_bytes: 1301
-        sha256: "47ef28115e4b7e08c604546cc98eb1ead8ff72152cfaeb5d7bcb7ef1640a5bdd"
-      - path: generation_config.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/generation_config.json
-        size_bytes: 3772
-        sha256: "cce11bfe3aaa6ae9e072ea2637caaec8795e68d9b67e655a5af16ee509681a4c"
-      - path: merges.txt
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/merges.txt
-        size_bytes: 493869
-        sha256: "2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6"
-      - path: model.safetensors
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/model.safetensors
-        size_bytes: 1613977443
-        sha256: "a76ee3af9c01b616ab7caf1eed663dceb7d68e9dc62c990dac48112db6e57e34"
-      - path: model.safetensors.index.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/model.safetensors.index.json
-        size_bytes: 37633
-        sha256: "9cf894da1061ccc1657c6dabf1fa19dfcf1f0603df4194ab4fb913a554da789d"
-      - path: normalizer.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/normalizer.json
-        size_bytes: 52666
-        sha256: "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd"
-      - path: preprocessor_config.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/preprocessor_config.json
-        size_bytes: 340
-        sha256: "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
-      - path: special_tokens_map.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/special_tokens_map.json
-        size_bytes: 2186
-        sha256: "baea4ea09372eb4fca86b4e4346139fd73cb807d5087e9de0948e971739c3e74"
-      - path: tokenizer.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/tokenizer.json
-        size_bytes: 2710337
-        sha256: "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"
-      - path: tokenizer_config.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/tokenizer_config.json
-        size_bytes: 282843
-        sha256: "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389"
-      - path: vocab.json
-        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/vocab.json
-        size_bytes: 1036558
-        sha256: "e2aa043ef015641d363d8288e7c241c85e36a5c761fb303598e0710233344387"
   - id: kokoro-82m-bf16-mlx
     family: kokoro
     runtime: mlx
@@ -360,36 +305,96 @@ models:
         url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/voices/im_nicola.safetensors
         size_bytes: 522320
         sha256: "96b62f7d25c3e7efce4f2506beeaa9f63bcc73524c7b2862738c65433fe9ba16"
-  - id: chatterbox-multilingual-v3-mlx
-    family: chatterbox
+  # Qwen3-TTS CustomVoice (Apache-2.0): Italian is one of its languages; its
+  # speakers are in the weights (listed in apps/core/src/voice/trial.ts).
+  - id: qwen3-tts-1.7b-customvoice-bf16-mlx
+    family: qwen3-tts
     runtime: mlx
-    ram_min_gib: 4
+    ram_min_gib: 6
     roles: [tts]
     status: experimental
     files:
       - path: config.json
-        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/config.json
-        size_bytes: 666
-        sha256: "b2097a15078624f41fcdaad9fc82f7b91ab0d39771aebc1af1775b0feaafe309"
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/config.json
+        size_bytes: 5853
+        sha256: "9c0f62abb48c432361fdcd54da1fd9fe00a993c0acccef5d45c2d3edd5932fb1"
+      - path: generation_config.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/generation_config.json
+        size_bytes: 245
+        sha256: "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"
+      - path: merges.txt
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/merges.txt
+        size_bytes: 1671839
+        sha256: "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
       - path: model.safetensors
-        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/model.safetensors
-        size_bytes: 2711113780
-        sha256: "e702f2c441e040bd360e59a86c85d462539759d665e41cfd1938adadd74187a3"
-      - path: tokenizer.json
-        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/tokenizer.json
-        size_bytes: 69989
-        sha256: "69632f47220a788a52ce2661d096453c5655e9bf25289d89a8d832c46ee07dbf"
-      - path: Cangjie5_TC.json
-        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/Cangjie5_TC.json
-        size_bytes: 1920163
-        sha256: "7073fd9de919443ae88e0bd2449917a65fe54898a4413ed1edcc4b67f28bce8c"
-      # The speech tokenizer Chatterbox loads from a repository of its own:
-      # kept in this folder, apps/voice points the library at it (no network).
-      - path: s3tokenizer/config.json
-        url: https://huggingface.co/mlx-community/S3TokenizerV2/resolve/e0c9886f0e1c35ae85b1f27277416fb19fc72bec/config.json
-        size_bytes: 126
-        sha256: "8591fcc0eaae8c2bbfc69cf9d439933ecdf2d58cb9be63d00ce88736c4f2aa9d"
-      - path: s3tokenizer/model.safetensors
-        url: https://huggingface.co/mlx-community/S3TokenizerV2/resolve/e0c9886f0e1c35ae85b1f27277416fb19fc72bec/model.safetensors
-        size_bytes: 494868984
-        sha256: "928726bc1f206a613d36b8f49e297eae9c5593a21bf9b92ddfe2c23f85eb92cc"
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/model.safetensors
+        size_bytes: 3833402589
+        sha256: "3a791fb8250fc32ab0259b679d834159d3c8516af62f033ff2b9f42913e3fab6"
+      - path: model.safetensors.index.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/model.safetensors.index.json
+        size_bytes: 32458
+        sha256: "abf019e063dcc595d7aef7c9554d2806ffdc58746a7ac6238cb26177af8d431f"
+      - path: preprocessor_config.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/preprocessor_config.json
+        size_bytes: 127
+        sha256: "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119"
+      - path: speech_tokenizer/config.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/speech_tokenizer/config.json
+        size_bytes: 2336
+        sha256: "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"
+      - path: speech_tokenizer/configuration.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/speech_tokenizer/configuration.json
+        size_bytes: 76
+        sha256: "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd"
+      - path: speech_tokenizer/model.safetensors
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/speech_tokenizer/model.safetensors
+        size_bytes: 682293092
+        sha256: "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"
+      - path: speech_tokenizer/preprocessor_config.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/speech_tokenizer/preprocessor_config.json
+        size_bytes: 234
+        sha256: "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"
+      - path: tokenizer_config.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/tokenizer_config.json
+        size_bytes: 7344
+        sha256: "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670"
+      - path: vocab.json
+        url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/vocab.json
+        size_bytes: 2776833
+        sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  # Voxtral TTS (weights CC BY-NC 4.0: non-commercial use only, with attribution; D-067), native Italian voices.
+  - id: voxtral-4b-tts-bf16-mlx
+    family: voxtral-tts
+    runtime: mlx
+    ram_min_gib: 10
+    roles: [tts]
+    status: experimental
+    files:
+      - path: config.json
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/config.json
+        size_bytes: 4140
+        sha256: "190aeec40bb3fed3b9dc84a4b056a865898298f7e9ec663baa1bdb9dc0759624"
+      - path: params.json
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/params.json
+        size_bytes: 3482
+        sha256: "f6408ee76dea8da16ce40ac66729d59406019ea71cdb9d656709a38d2e58691e"
+      - path: model-00001-of-00002.safetensors
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/model-00001-of-00002.safetensors
+        size_bytes: 5347995246
+        sha256: "5c9a69e0d545d2e8ede13c3ae86a4da5dc72be6c1dd4168754ea1b8e7f6af621"
+      - path: model-00002-of-00002.safetensors
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/model-00002-of-00002.safetensors
+        size_bytes: 2656763924
+        sha256: "4f1be4677be52013780d96eb489221c54fbaac71701d631c1803c43f42fd707e"
+      - path: tekken.json
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/tekken.json
+        size_bytes: 14894731
+        sha256: "587989c9f56676b35e7d16d6fc61461301e402d908392a8ce16f0349f61b56d7"
+      - path: voice_embedding/it_female.safetensors
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/voice_embedding/it_female.safetensors
+        size_bytes: 1056856
+        sha256: "378b9bab596a68780ca07f4bf2032a9c70847825772aed9ee148ba8173b477d3"
+      - path: voice_embedding/it_male.safetensors
+        url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/voice_embedding/it_male.safetensors
+        size_bytes: 1032280
+        sha256: "05e313648254a57e4ca7e503b416590a4c832a106f7201efd4dea02ecce79035"

@@ -302,7 +302,7 @@ export function createCalls(options: CallsOptions): Calls {
   /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
   async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
     const { voice, roles, local } = options.config();
-    const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models));
+    const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
     if (!ready.ready) {
       await finish(call.id, 'failed', 'voice-error').catch(() => undefined);
       throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
@@ -321,8 +321,7 @@ export function createCalls(options: CallsOptions): Calls {
           type: offer.type,
           stt: ready.stt,
           tts: ready.tts,
-          ...(ready.reference === undefined ? {} : { reference: ready.reference }),
-          voice: voice.voice,
+          voice: ready.voice,
           limits: { callSeconds: voice.limits.callMinutes * 60, warnSeconds: voice.limits.warnSeconds },
           texts: { greeting, warning: CALL_TEXT.warning, goodbye: CALL_TEXT.goodbye },
         },
@@ -359,8 +358,8 @@ export function createCalls(options: CallsOptions): Calls {
       if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
       if (conversation.archivedAt !== null) throw new CallError('archived', 'the conversation is archived: restore it to call');
       if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
-      const { roles, local } = options.config();
-      const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models));
+      const { roles, local, voice } = options.config();
+      const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
       if (!ready.ready) throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
 
       let call: Call;

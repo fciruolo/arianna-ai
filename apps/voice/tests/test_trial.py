@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import base64
 import struct
+import tempfile
 import unittest
+from pathlib import Path
 
-from arianna_voice.models import ModelError, ModelRef
+from arianna_voice.models import ModelError, ModelRef, Models, speak_arguments, speak_parts
 from arianna_voice.trial import RequestError, parse_speak, parse_transcribe
 from arianna_voice.wav import AudioError, encode_wav
 
 PARAKEET = {"id": "parakeet-tdt-0.6b-v3-mlx", "family": "parakeet"}
 WHISPER = {"id": "whisper-large-v3-turbo-mlx", "family": "whisper"}
 KOKORO = {"id": "kokoro-82m-bf16-mlx", "family": "kokoro"}
-CHATTERBOX = {"id": "chatterbox-multilingual-v3-mlx", "family": "chatterbox"}
+QWEN3 = {"id": "qwen3-tts-1.7b-customvoice-bf16-mlx", "family": "qwen3-tts"}
+VOXTRAL = {"id": "voxtral-4b-tts-bf16-mlx", "family": "voxtral-tts"}
 
 
 def pcm(seconds: float) -> str:
@@ -63,9 +66,9 @@ class TranscribeRequestTest(unittest.TestCase):
 class SpeakRequestTest(unittest.TestCase):
     def test_valid(self) -> None:
         kokoro = parse_speak({"text": " Ciao! ", "model": KOKORO, "voice": "if_sara"})
-        self.assertEqual((kokoro.text, kokoro.reference), ("Ciao!", None))
-        chatterbox = parse_speak({"text": "Ciao", "model": CHATTERBOX, "voice": "im_nicola", "reference": KOKORO})
-        self.assertEqual(chatterbox.reference, ModelRef(KOKORO["id"], "kokoro"))
+        self.assertEqual((kokoro.text, kokoro.voice), ("Ciao!", "if_sara"))
+        self.assertEqual(parse_speak({"text": "Ciao", "model": QWEN3, "voice": "serena"}).model, ModelRef(QWEN3["id"], "qwen3-tts"))
+        self.assertEqual(parse_speak({"text": "Ciao", "model": VOXTRAL, "voice": "it_female"}).voice, "it_female")
 
     def test_invalid(self) -> None:
         bad = [
@@ -74,13 +77,49 @@ class SpeakRequestTest(unittest.TestCase):
             {"text": "a\x00b", "model": KOKORO, "voice": "if_sara"},
             {"text": "Ciao", "model": KOKORO, "voice": "../sara"},
             {"text": "Ciao", "model": PARAKEET, "voice": "if_sara"},
-            {"text": "Ciao", "model": CHATTERBOX, "voice": "if_sara"},
-            {"text": "Ciao", "model": CHATTERBOX, "voice": "if_sara", "reference": CHATTERBOX},
+            {"text": "Ciao", "model": KOKORO, "voice": "Serena"},
+            {"text": "Ciao", "model": KOKORO, "voice": "x"},
+            {"text": "Ciao", "model": {"id": "chatterbox-multilingual-v3-mlx", "family": "chatterbox"}, "voice": "if_sara"},
             {"text": "Ciao", "model": KOKORO, "voice": "if_sara", "reference": KOKORO},
         ]
         for body in bad:
             with self.subTest(body=str(body)[:60]), self.assertRaises(RequestError):
                 parse_speak(body)
+
+    def test_speak_arguments(self) -> None:
+        self.assertEqual(speak_arguments("kokoro", "if_sara", "/m/voices/if_sara.safetensors")["voice"], "/m/voices/if_sara.safetensors")
+        self.assertEqual(speak_arguments("kokoro", "if_sara", "/f")["lang_code"], "i")
+        self.assertEqual(speak_arguments("qwen3-tts", "serena", None), {"voice": "serena", "lang_code": "italian", "verbose": False})
+        self.assertEqual(speak_arguments("voxtral-tts", "it_female", "/f"), {"voice": "it_female", "verbose": False})
+        with self.assertRaises(ModelError):
+            speak_arguments("chatterbox", "if_sara", None)
+
+    def test_speak_parts(self) -> None:
+        text = "Certo! Ti ho segnato la riunione. Vuoi che chiami io?"
+        self.assertEqual(speak_parts("kokoro", text), ["Certo!\nTi ho segnato la riunione.\nVuoi che chiami io?"])
+        self.assertEqual(speak_parts("qwen3-tts", text), ["Certo!", "Ti ho segnato la riunione.", "Vuoi che chiami io?"])
+        self.assertEqual(speak_parts("qwen3-tts", "Una frase sola"), ["Una frase sola"])
+        self.assertEqual(speak_parts("voxtral-tts", text), [text])
+
+    def test_voice_file(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for family_dir, name in (("kokoro-x/voices", "if_sara"), ("voxtral-x/voice_embedding", "it_female"), ("voxtral-x/voices", "it_male")):
+                (root / family_dir).mkdir(parents=True, exist_ok=True)
+                (root / family_dir / f"{name}.safetensors").write_bytes(b"")
+            (root / "qwen-x").mkdir()
+            models = Models(root)
+            kokoro, voxtral, qwen = ModelRef("kokoro-x", "kokoro"), ModelRef("voxtral-x", "voxtral-tts"), ModelRef("qwen-x", "qwen3-tts")
+            self.assertTrue(models._voice_file(kokoro, "if_sara").endswith("kokoro-x/voices/if_sara.safetensors"))
+            self.assertTrue(models._voice_file(voxtral, "it_female").endswith("voxtral-x/voice_embedding/it_female.safetensors"))
+            # Qwen3-TTS speakers are in the weights, not files.
+            self.assertIsNone(models._voice_file(qwen, "serena"))
+            # Each family reads its own folder only; a missing voice and a bad name are refused.
+            for ref, voice, code in ((voxtral, "it_male", "missing"), (kokoro, "im_nicola", "missing"), (kokoro, "../if_sara", "family"), (qwen, "Serena", "family")):
+                with self.subTest(ref=ref.family, voice=voice), self.assertRaises(ModelError) as caught:
+                    models._voice_file(ref, voice)
+                self.assertEqual(caught.exception.code, code)
+            models.close()
 
     def test_model_ref(self) -> None:
         with self.assertRaises(ModelError):

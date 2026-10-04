@@ -33,7 +33,6 @@ class SpeakRequest:
     text: str
     model: ModelRef
     voice: str
-    reference: ModelRef | None
 
 
 def _only(body: Any, allowed: set[str], required: set[str]) -> dict[str, Any]:
@@ -80,7 +79,7 @@ def parse_transcribe(body: Any) -> TranscribeRequest:
 
 
 def parse_speak(body: Any) -> SpeakRequest:
-    body = _only(body, {"text", "model", "voice", "reference"}, {"text", "model", "voice"})
+    body = _only(body, {"text", "model", "voice"}, {"text", "model", "voice"})
     text = body["text"]
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT:
         raise RequestError(f"text: 1 to {MAX_TEXT} characters")
@@ -88,13 +87,5 @@ def parse_speak(body: Any) -> SpeakRequest:
         raise RequestError("text: control characters are not allowed")
     voice = body["voice"]
     if not isinstance(voice, str) or not VOICE_ID.match(voice):
-        raise RequestError("voice: a Kokoro voice id, e.g. if_sara")
-    model = _ref(body["model"], TTS_FAMILIES, "model")
-    reference = None
-    if model.family == "chatterbox":
-        if "reference" not in body:
-            raise RequestError("reference: Chatterbox needs the Kokoro model that says its reference phrase")
-        reference = _ref(body["reference"], ("kokoro",), "reference")
-    elif "reference" in body:
-        raise RequestError("reference: only for Chatterbox")
-    return SpeakRequest(text.strip(), model, voice, reference)
+        raise RequestError("voice: a voice of the model, e.g. if_sara")
+    return SpeakRequest(text.strip(), _ref(body["model"], TTS_FAMILIES, "model"), voice)

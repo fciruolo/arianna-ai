@@ -36,9 +36,10 @@ def changed(**fields):
 class CallRequestTest(unittest.TestCase):
     def test_valid(self) -> None:
         request = parse_call(VALID)
-        self.assertEqual((request.call_seconds, request.warn_seconds, request.reference), (900, 60, None))
-        chatterbox = parse_call(changed(tts={"id": "chatterbox-multilingual-v3-mlx", "family": "chatterbox"}, reference=KOKORO))
-        self.assertEqual(chatterbox.reference.family, "kokoro")
+        self.assertEqual((request.call_seconds, request.warn_seconds, request.voice), (900, 60, "if_sara"))
+        voxtral = parse_call(changed(tts={"id": "voxtral-4b-tts-bf16-mlx", "family": "voxtral-tts"}, voice="it_female"))
+        self.assertEqual((voxtral.tts.family, voxtral.voice), ("voxtral-tts", "it_female"))
+        self.assertEqual(parse_call(changed(tts={"id": "qwen3-tts-1.7b-customvoice-bf16-mlx", "family": "qwen3-tts"}, voice="serena")).voice, "serena")
         self.assertEqual(parse_call(changed(coreUrl="http://[::1]:7420")).core_url, "http://[::1]:7420")
 
     def test_invalid(self) -> None:

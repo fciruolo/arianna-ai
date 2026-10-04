@@ -32,7 +32,7 @@ class FakeModels:
             raise ModelError("missing")
         return "ciao", 0.25
 
-    def speak(self, ref, text, voice, reference=None):
+    def speak(self, ref, text, voice):
         self.calls.append(("speak", ref.id, voice))
         return Speech(encode_wav(b"\x00\x00" * 24, 24_000), 0.001, 24_000), 0.5
 

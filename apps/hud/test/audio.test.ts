@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { concat, downsample, peak, toBase64, toPcm16 } from '../src/lib/audio.ts';
-import { blocker, missingBytes, rolesSnippet, secondsText, sizeText } from '../src/lib/voice-trial.ts';
+import { blocker, missingBytes, rolesSnippet, secondsText, sizeText, voiceFor } from '../src/lib/voice-trial.ts';
 import { isVoiceTrialPath, conversationFromPath, VOICE_TRIAL_PATH } from '../src/lib/route.ts';
 
 test('downsample: 48 kHz to 16 kHz averages each group of three; same rate copies; upsampling is refused', () => {
@@ -37,6 +37,11 @@ test('voice trial texts: what blocks the page, sizes, seconds and the lines for 
   assert.equal(secondsText(1.25), '1,3 s');
   assert.equal(rolesSnippet('a', undefined), '[roles]\nstt = "a"');
   assert.equal(rolesSnippet('a', 'b'), '[roles]\nstt = "a"\ntts = "b"');
+  assert.equal(rolesSnippet(undefined, 'b', 'it_female'), '[roles]\ntts = "b"\n\n[voice]\nvoice = "it_female"');
+  assert.equal(voiceFor(['it_female', 'it_male'], 'it_male', 'if_sara'), 'it_male');
+  assert.equal(voiceFor(['it_female', 'it_male'], 'serena', 'it_male'), 'it_male');
+  assert.equal(voiceFor(['it_female', 'it_male'], undefined, 'if_sara'), 'it_female');
+  assert.equal(voiceFor([], undefined, 'if_sara'), undefined);
   const model = { id: 'x', family: 'kokoro', kind: 'tts' as const, assigned: false, voices: [] };
   assert.equal(missingBytes([{ ...model, present: false, sizeBytes: 5 }, { ...model, present: true, sizeBytes: 7 }]), 5);
 });

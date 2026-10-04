@@ -101,32 +101,26 @@ export function cleanTranscript(text: string): string {
 }
 
 export type CallReadiness =
-  | { ready: true; stt: { id: string; family: string }; tts: { id: string; family: string }; reference?: { id: string; family: string } }
+  | { ready: true; stt: { id: string; family: string }; tts: { id: string; family: string }; voice: string }
   | { ready: false; missing: ('voice' | 'stt' | 'tts')[] };
 
 /**
  * A call needs the three roles assigned, with the stt and tts models on disk,
  * and a local server that serves the voice alias (an endpoint with a `models`
- * table written by hand must list it).
+ * table written by hand must list it). It speaks with the voice of `[voice]`
+ * when the tts model has it, else with the first of its own (D-067).
  */
-export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true): CallReadiness {
+export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string): CallReadiness {
   const stt = models.find((model) => model.kind === 'stt' && model.assigned && model.present);
   const tts = models.find((model) => model.kind === 'tts' && model.assigned && model.present);
-  // Chatterbox has no voice of its own: it clones the one of a Kokoro on disk.
-  const kokoro = models.find((model) => model.family === 'kokoro' && model.present);
-  const noVoice = tts?.family === 'chatterbox' && kokoro === undefined;
+  const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : tts.voices[0];
   const missing = [
     ...(roles.voice === undefined || !voiceServed ? ['voice' as const] : []),
     ...(stt === undefined ? ['stt' as const] : []),
-    ...(tts === undefined || noVoice ? ['tts' as const] : []),
+    ...(tts === undefined || voice === undefined ? ['tts' as const] : []),
   ];
-  if (stt === undefined || tts === undefined || missing.length > 0) return { ready: false, missing };
-  return {
-    ready: true,
-    stt: { id: stt.id, family: stt.family },
-    tts: { id: tts.id, family: tts.family },
-    ...(tts.family === 'chatterbox' && kokoro !== undefined ? { reference: { id: kokoro.id, family: kokoro.family } } : {}),
-  };
+  if (stt === undefined || tts === undefined || voice === undefined || missing.length > 0) return { ready: false, missing };
+  return { ready: true, stt: { id: stt.id, family: stt.family }, tts: { id: tts.id, family: tts.family }, voice };
 }
 
 /** Spoken by the call itself, never by the model. */

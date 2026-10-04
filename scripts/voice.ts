@@ -5,7 +5,7 @@
 //   test  runs the Python tests in that environment (pnpm test:voice)
 //   vapid prints a new key pair for Web Push (pnpm voice:vapid)
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CONFIG_FILE, DATA_DIR, loadConfig, resolveHome, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths } from '@arianna/config';
@@ -58,7 +58,13 @@ if (command === 'vapid') {
 if (command === 'sync') {
   process.exitCode = run('uv', ['sync', '--frozen', '--no-install-project']);
 } else if (command === 'lock') {
-  process.exitCode = run('uv', ['lock']);
+  // UV_NO_CONFIG also hides [tool.uv] of pyproject.toml: its exclude-newer is passed by hand.
+  const excludeNewer = /^exclude-newer = "([^"]+)"$/m.exec(readFileSync(join(paths.project, 'pyproject.toml'), 'utf8'))?.[1];
+  if (excludeNewer === undefined) {
+    console.error('apps/voice/pyproject.toml: exclude-newer is missing from [tool.uv]');
+    process.exit(1);
+  }
+  process.exitCode = run('uv', ['lock', '--exclude-newer', excludeNewer]);
 } else {
   if (!existsSync(paths.python)) {
     console.error('data/voice/venv is missing: pnpm voice:sync');

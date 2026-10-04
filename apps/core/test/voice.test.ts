@@ -33,23 +33,35 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
     models.map(({ id, kind, present, assigned }) => [id, kind, present, assigned]),
     [
       ['parakeet-tdt-0.6b-v3-mlx', 'stt', true, true],
-      ['whisper-large-v3-turbo-mlx', 'stt', true, false],
       ['kokoro-82m-bf16-mlx', 'tts', true, false],
-      ['chatterbox-multilingual-v3-mlx', 'tts', true, false],
+      ['qwen3-tts-1.7b-customvoice-bf16-mlx', 'tts', true, false],
+      ['voxtral-4b-tts-bf16-mlx', 'tts', true, false],
     ],
   );
+  // Each model has its own voices (D-067): files for Kokoro and Voxtral, a fixed list for Qwen3-TTS.
   assert.deepEqual(models.find((model) => model.family === 'kokoro')?.voices, ['if_sara', 'im_nicola']);
+  assert.deepEqual(models.find((model) => model.family === 'voxtral-tts')?.voices, ['it_female', 'it_male']);
+  assert.deepEqual(models.find((model) => model.family === 'qwen3-tts')?.voices, ['serena', 'vivian', 'ryan', 'aiden']);
+  assert.deepEqual(models.find((model) => model.family === 'parakeet')?.voices, []);
+  // A voice file in the folder of another family is not a voice of the model.
+  const mixed = {
+    ...CATALOG,
+    models: CATALOG.models.map((entry) =>
+      entry.family === 'kokoro' ? { ...entry, files: entry.files.map((file) => ({ ...file, path: file.path.replace('voices/', 'voice_embedding/') })) } : entry,
+    ),
+  };
+  assert.deepEqual(trialModels(mixed, {}, MODELS, () => undefined).find((model) => model.family === 'kokoro')?.voices, []);
   // A file with the wrong size is not "present"; the orchestrator models are not candidates.
   const absent = trialModels(CATALOG, {}, MODELS, (path) => (path.endsWith('model.safetensors') ? 1 : allPresent(path)));
   assert.equal(absent.find((model) => model.family === 'parakeet')?.present, false);
   assert.equal(absent.find((model) => model.family === 'kokoro')?.present, true);
-  assert.ok(!absent.some((model) => model.id.startsWith('qwen')));
+  assert.ok(!absent.some((model) => model.id.startsWith('qwen3-4b') || model.id.startsWith('qwen3.')));
 });
 
 test('transcribeCall: audio between 0.3 and 30 s goes to every present stt model; anything else is refused', () => {
   const models = trialModels(CATALOG, {}, MODELS, allPresent);
   const call = transcribeCall({ pcm16: pcm(1) }, models);
-  assert.deepEqual(call.models.map(({ family }) => family), ['parakeet', 'whisper']);
+  assert.deepEqual(call.models.map(({ family }) => family), ['parakeet']);
   assert.equal(call.rate, 16_000);
   for (const body of [{}, { pcm16: pcm(0.1) }, { pcm16: pcm(31) }, { pcm16: 'not base64!' }, { pcm16: 'QUJD' }, { pcm16: pcm(1), models: [] }, { pcm16: 1 }]) {
     assert.throws(() => transcribeCall(body, models), { name: 'TrialError' }, JSON.stringify(body).slice(0, 40));
@@ -57,16 +69,17 @@ test('transcribeCall: audio between 0.3 and 30 s goes to every present stt model
   assert.throws(() => transcribeCall({ pcm16: pcm(1) }, trialModels(CATALOG, {}, MODELS, () => undefined)), /pull --trial/);
 });
 
-test('speakCall: one present tts candidate with a Kokoro voice; Chatterbox gets Kokoro as its reference', () => {
+test('speakCall: one present tts candidate with one of its own voices', () => {
   const models = trialModels(CATALOG, {}, MODELS, allPresent);
   assert.deepEqual(speakCall({ text: ' Ciao ', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara' }, models), {
     text: 'Ciao',
     model: { id: 'kokoro-82m-bf16-mlx', family: 'kokoro' },
     voice: 'if_sara',
   });
-  assert.deepEqual(speakCall({ text: 'Ciao', model: 'chatterbox-multilingual-v3-mlx', voice: 'im_nicola' }, models).reference, {
-    id: 'kokoro-82m-bf16-mlx',
-    family: 'kokoro',
+  assert.equal(speakCall({ text: 'Ciao', model: 'voxtral-4b-tts-bf16-mlx', voice: 'it_female' }, models).voice, 'it_female');
+  assert.deepEqual(speakCall({ text: 'Ciao', model: 'qwen3-tts-1.7b-customvoice-bf16-mlx', voice: 'serena' }, models).model, {
+    id: 'qwen3-tts-1.7b-customvoice-bf16-mlx',
+    family: 'qwen3-tts',
   });
   const bad = [
     { text: '', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara' },
@@ -76,11 +89,16 @@ test('speakCall: one present tts candidate with a Kokoro voice; Chatterbox gets 
     { text: 'Ciao', model: 'qwen3-4b-instruct-2507-4bit', voice: 'if_sara' },
     { text: 'Ciao', model: 'kokoro-82m-bf16-mlx', voice: 'af_heart' },
     { text: 'Ciao', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara', reference: 'x' },
+    // A voice of another model is refused.
+    { text: 'Ciao', model: 'kokoro-82m-bf16-mlx', voice: 'it_female' },
+    { text: 'Ciao', model: 'voxtral-4b-tts-bf16-mlx', voice: 'if_sara' },
+    { text: 'Ciao', model: 'voxtral-4b-tts-bf16-mlx', voice: 'fr_female' },
+    { text: 'Ciao', model: 'qwen3-tts-1.7b-customvoice-bf16-mlx', voice: 'uncle_fu' },
+    { text: 'Ciao', model: 'chatterbox-multilingual-v3-mlx', voice: 'if_sara' },
   ];
   for (const body of bad) assert.throws(() => speakCall(body, models), { name: 'TrialError' }, JSON.stringify(body).slice(0, 60));
-  // Chatterbox without Kokoro on disk has no voice to clone.
-  const noKokoro = models.map((model) => (model.family === 'kokoro' ? { ...model, present: false } : model));
-  assert.throws(() => speakCall({ text: 'Ciao', model: 'chatterbox-multilingual-v3-mlx', voice: 'if_sara' }, noKokoro), { name: 'TrialError' });
+  const notOnDisk = models.map((model) => (model.family === 'voxtral-tts' ? { ...model, present: false } : model));
+  assert.throws(() => speakCall({ text: 'Ciao', model: 'voxtral-4b-tts-bf16-mlx', voice: 'it_female' }, notOnDisk), /pull --trial/);
 });
 
 test('voiceEnv: built from nothing; no secret of the core, Hugging Face offline', () => {
@@ -211,19 +229,18 @@ test('trial API: candidates, transcription by every present model, speech as WAV
   const written = await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(2) });
   assert.equal(written.status, 200);
   const results = (JSON.parse(written.body.toString('utf8')) as { results: { family: string; text: string }[] }).results;
-  assert.deepEqual(results.map(({ family, text }) => [family, text]), [['parakeet', 'ciao'], ['whisper', 'ciao']]);
+  assert.deepEqual(results.map(({ family, text }) => [family, text]), [['parakeet', 'ciao']]);
 
-  const spoken = await call('POST', '/api/voice/trial/speak', { text: 'Ciao', model: 'chatterbox-multilingual-v3-mlx', voice: 'if_sara' });
+  const spoken = await call('POST', '/api/voice/trial/speak', { text: 'Ciao', model: 'voxtral-4b-tts-bf16-mlx', voice: 'it_female' });
   assert.equal(spoken.status, 200);
   assert.equal(spoken.type, 'audio/wav');
   assert.equal(spoken.cache, 'no-store');
   assert.equal(spoken.body.subarray(0, 4).toString(), 'RIFF');
-  // What the core sent the voice: the model and Kokoro as the reference, chosen by the core.
+  // What the core sent the voice: the model with its family, chosen by the core, and the voice.
   assert.deepEqual(JSON.parse(spoken.body.subarray(4).toString()), {
     text: 'Ciao',
-    model: { id: 'chatterbox-multilingual-v3-mlx', family: 'chatterbox' },
-    voice: 'if_sara',
-    reference: { id: 'kokoro-82m-bf16-mlx', family: 'kokoro' },
+    model: { id: 'voxtral-4b-tts-bf16-mlx', family: 'voxtral-tts' },
+    voice: 'it_female',
   });
 });
 

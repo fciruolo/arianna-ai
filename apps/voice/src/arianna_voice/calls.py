@@ -82,9 +82,9 @@ class MlxSTT(SegmentedSTTService):
 
 
 class MlxTTS(TTSService):
-    """The model of the tts role; Chatterbox clones the Kokoro voice."""
+    """The model of the tts role, with its voice."""
 
-    def __init__(self, models: Models, ref: ModelRef, voice: str, reference: ModelRef | None, **kwargs: Any) -> None:
+    def __init__(self, models: Models, ref: ModelRef, voice: str, **kwargs: Any) -> None:
         super().__init__(
             push_start_frame=True,
             push_stop_frames=True,
@@ -95,14 +95,13 @@ class MlxTTS(TTSService):
         self._models = models
         self._ref = ref
         self._voice = voice
-        self._reference = reference
 
     def can_generate_metrics(self) -> bool:
         return False
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         try:
-            pcm16, rate, _ = await self._models.run(self._models.speak_pcm, self._ref, text, self._voice, self._reference)
+            pcm16, rate, _ = await self._models.run(self._models.speak_pcm, self._ref, text, self._voice)
         except ModelError as error:
             yield ErrorFrame(error=f"tts {error.code}")
             return
@@ -181,7 +180,7 @@ class Call:
         """Answers the offer; the pipeline runs in the background until the end."""
         request = self.request
         # Loaded before the answer: a first sentence that waits for a model times out in Pipecat.
-        for ref in (request.stt, request.tts, *([request.reference] if request.reference is not None else [])):
+        for ref in (request.stt, request.tts):
             await self._models.run(self._models.warm, ref)
         if self._ended:
             # The core gave up waiting and closed the call meanwhile.
@@ -203,7 +202,7 @@ class Call:
         # trust_env=False: the proxy of the environment is closed on purpose, the core is on loopback.
         self._session = aiohttp.ClientSession(trust_env=False)
         stt = MlxSTT(self._models, request.stt)
-        tts = MlxTTS(self._models, request.tts, request.voice, request.reference)
+        tts = MlxTTS(self._models, request.tts, request.voice)
         brain = CoreBrain(request, self._session)
         context = LLMContext()
         user, assistant = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))

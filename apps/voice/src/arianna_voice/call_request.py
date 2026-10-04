@@ -35,8 +35,6 @@ class CallRequest:
     stt: ModelRef
     tts: ModelRef
     voice: str
-    # Chatterbox: the Kokoro model whose voice it clones.
-    reference: ModelRef | None
     call_seconds: int
     warn_seconds: int
     texts: CallTexts
@@ -57,8 +55,8 @@ def _ref(value: Any, families: tuple[str, ...], where: str) -> ModelRef:
 
 def parse_call(body: Any) -> CallRequest:
     fields = {"callId", "token", "coreUrl", "sdp", "type", "stt", "tts", "voice", "limits", "texts"}
-    if not isinstance(body, dict) or not fields <= set(body) <= fields | {"reference"}:
-        raise RequestError("fields: " + ", ".join(sorted(fields)) + " and, for Chatterbox, reference")
+    if not isinstance(body, dict) or set(body) != fields:
+        raise RequestError("fields: " + ", ".join(sorted(fields)))
     call_id = body["callId"]
     if not isinstance(call_id, str) or not CALL_ID.match(call_id):
         raise RequestError("callId: a uuid")
@@ -75,7 +73,7 @@ def parse_call(body: Any) -> CallRequest:
         raise RequestError("sdp: a WebRTC offer")
     voice = body["voice"]
     if not isinstance(voice, str) or not VOICE_ID.match(voice):
-        raise RequestError("voice: a Kokoro voice id")
+        raise RequestError("voice: a voice of the tts model")
     limits = body["limits"]
     if not isinstance(limits, dict) or set(limits) != {"callSeconds", "warnSeconds"}:
         raise RequestError("limits: callSeconds and warnSeconds")
@@ -85,14 +83,6 @@ def parse_call(body: Any) -> CallRequest:
     texts = body["texts"]
     if not isinstance(texts, dict) or set(texts) != {"greeting", "warning", "goodbye"}:
         raise RequestError("texts: greeting, warning and goodbye")
-    tts = _ref(body["tts"], TTS_FAMILIES, "tts")
-    reference = None
-    if tts.family == "chatterbox":
-        if "reference" not in body:
-            raise RequestError("reference: Chatterbox needs the Kokoro model whose voice it clones")
-        reference = _ref(body["reference"], ("kokoro",), "reference")
-    elif "reference" in body:
-        raise RequestError("reference: only for Chatterbox")
     return CallRequest(
         call_id=call_id,
         token=token,
@@ -100,9 +90,8 @@ def parse_call(body: Any) -> CallRequest:
         sdp=sdp,
         type="offer",
         stt=_ref(body["stt"], STT_FAMILIES, "stt"),
-        tts=tts,
+        tts=_ref(body["tts"], TTS_FAMILIES, "tts"),
         voice=voice,
-        reference=reference,
         call_seconds=call_seconds,
         warn_seconds=warn_seconds,
         texts=CallTexts(*(_text(texts[key], f"texts.{key}") for key in ("greeting", "warning", "goodbye"))),

@@ -5,6 +5,7 @@ import { ApiError, loadVoiceTrial, speakTrial, transcribeTrial, type TrialTransc
 import { concat, downsample, MAX_SECONDS, MIN_SECONDS, peak, STT_RATE, toBase64, toPcm16 } from '../lib/audio.ts';
 import {
   blocker,
+  FAMILY_NOTE,
   FAMILY_TEXT,
   missingBytes,
   rolesSnippet,
@@ -13,6 +14,7 @@ import {
   TRIAL_PHRASE,
   TRIAL_REPLY,
   VOICE_TEXT,
+  voiceFor,
 } from '../lib/voice-trial.ts';
 import { enablePush, pushState, type PushState } from '../lib/push.ts';
 import Icon from './Icon.vue';
@@ -63,14 +65,11 @@ const stt = computed(() => trial.value?.models.filter((model) => model.kind === 
 const tts = computed(() => trial.value?.models.filter((model) => model.kind === 'tts') ?? []);
 const notReady = computed(() => (trial.value === null ? undefined : blocker(trial.value.state)));
 const missing = computed(() => missingBytes(trial.value?.models ?? []));
-const voices = computed(() => tts.value.find((model) => model.family === 'kokoro' && model.present)?.voices ?? []);
-const voice = ref<string>('');
-// The voice of [voice] when it is on disk, else the first one there.
-const chosenVoice = computed(() => {
-  if (voices.value.includes(voice.value)) return voice.value;
-  const configured = trial.value?.voice;
-  return configured !== null && configured !== undefined && voices.value.includes(configured) ? configured : (voices.value[0] ?? '');
-});
+// Each model speaks with its own voices (D-067): the one picked here, else the one of [voice], else its first.
+const picked = ref<Record<string, string>>({});
+function voiceOf(model: { id: string; voices: string[] }): string | undefined {
+  return voiceFor(model.voices, picked.value[model.id], trial.value?.voice);
+}
 
 // Recording.
 type RecordState = 'idle' | 'opening' | 'recording' | 'writing';
@@ -158,11 +157,12 @@ const speaking = ref<string | null>(null);
 const spoken = ref<Record<string, { url: string; seconds: number | undefined }>>({});
 const speakError = ref<string | null>(null);
 
-async function speak(model: string): Promise<void> {
+async function speak(model: string, voice: string | undefined): Promise<void> {
+  if (voice === undefined) return;
   speakError.value = null;
   speaking.value = model;
   try {
-    const { audio, seconds } = await speakTrial(reply.value, model, chosenVoice.value);
+    const { audio, seconds } = await speakTrial(reply.value, model, voice);
     const previous = spoken.value[model];
     if (previous !== undefined) URL.revokeObjectURL(previous.url);
     spoken.value = { ...spoken.value, [model]: { url: URL.createObjectURL(audio), seconds } };
@@ -177,7 +177,10 @@ async function speak(model: string): Promise<void> {
 // The choice.
 const chosenStt = ref<string | undefined>();
 const chosenTts = ref<string | undefined>();
-const snippet = computed(() => rolesSnippet(chosenStt.value, chosenTts.value));
+const snippet = computed(() => {
+  const model = tts.value.find((candidate) => candidate.id === chosenTts.value);
+  return rolesSnippet(chosenStt.value, chosenTts.value, model === undefined ? undefined : voiceOf(model));
+});
 
 onBeforeUnmount(() => {
   window.clearInterval(poll);
@@ -255,13 +258,7 @@ onBeforeUnmount(() => {
             La risposta da ascoltare (puoi cambiarla)
             <textarea v-model="reply" rows="3" maxlength="400" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14.5px]" />
           </label>
-          <label v-if="voices.length > 0" class="flex items-center gap-2 text-sm">
-            Voce
-            <select :value="chosenVoice" class="rounded-md border border-line bg-surface-2 px-2 py-1" @change="voice = ($event.target as HTMLSelectElement).value">
-              <option v-for="name in voices" :key="name" :value="name">{{ VOICE_TEXT[name] ?? name }}</option>
-            </select>
-          </label>
-          <p class="text-xs text-muted">Chatterbox non ha una voce sua: copia la voce scelta di Kokoro da una frase di riferimento.</p>
+          <p class="text-xs text-muted">Ogni modello ha le sue voci. «Generata in» dice quanto aspetteresti in chiamata prima che Arianna parli: la prima volta il modello si carica e ci vuole di più.</p>
           <p v-if="speakError !== null" role="alert" class="text-sm text-danger">{{ speakError }}</p>
           <ul class="flex flex-col gap-2">
             <li v-for="model in tts" :key="model.id" class="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2">
@@ -272,10 +269,20 @@ onBeforeUnmount(() => {
               <span v-if="model.assigned" class="font-mono text-[10.5px] text-accent">IN USO</span>
               <span v-if="!model.present" class="font-mono text-[10.5px] text-muted">NON SCARICATO · {{ sizeText(model.sizeBytes) }}</span>
               <span class="flex-1" />
+              <select
+                v-if="model.voices.length > 0"
+                :value="voiceOf(model)"
+                :aria-label="`Voce di ${FAMILY_TEXT[model.family] ?? model.family}`"
+                class="rounded-md border border-line bg-surface-2 px-2 py-1 text-sm"
+                @change="picked = { ...picked, [model.id]: ($event.target as HTMLSelectElement).value }"
+              >
+                <option v-for="name in model.voices" :key="name" :value="name">{{ VOICE_TEXT[name] ?? name }}</option>
+              </select>
               <span v-if="spoken[model.id]?.seconds !== undefined" class="font-mono text-[11px] text-muted">generata in {{ secondsText(spoken[model.id]?.seconds ?? 0) }}</span>
-              <button type="button" class="btn" :disabled="!model.present || speaking !== null || voices.length === 0 || reply.trim() === ''" @click="speak(model.id)">
+              <button type="button" class="btn" :disabled="!model.present || speaking !== null || model.voices.length === 0 || reply.trim() === ''" @click="speak(model.id, voiceOf(model))">
                 <Icon name="play" :size="16" />{{ speaking === model.id ? 'Genero…' : 'Ascolta' }}
               </button>
+              <p v-if="FAMILY_NOTE[model.family] !== undefined" class="w-full text-xs text-muted">{{ FAMILY_NOTE[model.family] }}</p>
               <audio v-if="spoken[model.id] !== undefined" :src="spoken[model.id]?.url" controls class="h-8 w-full" />
             </li>
           </ul>
@@ -294,7 +301,7 @@ onBeforeUnmount(() => {
 
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
           <h2 class="hud-title">3 · La scelta</h2>
-          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[12.5px]">config/arianna.toml</code> (si applicano senza riavvio). Gli altri candidati puoi cancellarli da data/models.</p>
+          <p class="text-sm">Scegli un modello per parte con i pallini, poi scrivi queste righe in <code class="font-mono text-[12.5px]">config/arianna.toml</code>: i ruoli si applicano senza riavvio, la voce dopo il riavvio del nucleo. Gli altri candidati puoi cancellarli da data/models.</p>
           <pre class="overflow-x-auto rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[12.5px]">{{ snippet }}</pre>
         </section>
       </template>

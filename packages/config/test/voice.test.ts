@@ -54,12 +54,19 @@ subject = "mailto:me@example.org"`);
   });
 });
 
+test('voice: a voice of any tts family (D-067)', () => {
+  for (const name of ['if_sara', 'it_female', 'serena']) assert.equal(voice(`[voice]\nvoice = "${name}"`)?.voice, name);
+});
+
 test('voice: invalid values and unknown keys are rejected', () => {
   const bad = [
     '[voice]\nport = 80',
     '[voice]\nport = 7420',
     '[voice]\nvoice = "../x"',
     '[voice]\nvoice = "Sara"',
+    '[voice]\nvoice = "x"',
+    '[voice]\nvoice = "1sara"',
+    '[voice]\nvoice = "it-female"',
     '[voice]\nmodel = "x"',
     '[voice.limits]\ncall_minutes = 0',
     '[voice.limits]\ncall_minutes = 1\nwarn_seconds = 60',
