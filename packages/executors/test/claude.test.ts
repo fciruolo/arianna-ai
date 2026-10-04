@@ -327,6 +327,15 @@ describe('claude executor', () => {
     assert.equal(await kind(executor().start({ ...base, brief: brief('scenario: ok'), workspace: { decision: prepared.decision, path } }).result), 'workspace');
     // Nothing was launched in the workspace.
     assert.throws(() => readFileSync(join(path, '.fake-claude.json')));
+    // Read at each launch (D-071): turned off in the file, the next launch is refused.
+    let live = ['claude'];
+    const following = executor({ enabled: () => live });
+    const other = { ...base, workspace: (await workspace()).prepared };
+    await following.start({ ...other, brief: brief('scenario: ok') }).result;
+    live = [];
+    assert.equal(await kind(following.start({ ...other, brief: brief('scenario: ok') }).result), 'not-enabled');
+    live = ['claude'];
+    assert.equal((await following.start({ ...other, brief: brief('scenario: ok') }).result).text, 'ok', 'turned on again');
     // The project folder itself, opened by openRepository (D-056), is accepted like a prepared copy.
     const opened = await openRepository({ home: HOME, project: { name: 'site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } });
     assert.ok(opened.path !== undefined);

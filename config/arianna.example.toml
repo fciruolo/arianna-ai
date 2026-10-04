@@ -38,7 +38,8 @@ user = "arianna"
 # the first is the main one, the others are fallbacks. `command` is optional:
 # with it the core starts the server, restarts it when it fails and stops it
 # with itself (D-071), and adopts one already running; without it, it only
-# monitors. The log is data/<id>.log.
+# monitors. The log is data/<id>.log. A change of `url` or `command`
+# restarts that server without restarting the core.
 # The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are
 # relative to ARIANNA_HOME. Without `models` the names come from [roles]: the
 # catalog id is the folder in data/models, the name oMLX serves. A server
@@ -54,7 +55,9 @@ user = "arianna"
 
 # Cloud executors (tasks 1.5, 1.6). `executors` lists the ones the user
 # enabled ("claude", "codex"); their login stays manual. A privacy setting:
-# only the user edits it, never an agent, and a change needs a restart.
+# only the user edits it, never an agent. It applies without a restart (a
+# delegation already started finishes); an invalid file closes it until it
+# is valid again.
 [cloud]
 executors = []
 
@@ -98,6 +101,7 @@ codex = true
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).
+# Like [paths] and [database], it applies at the next restart.
 [server]
 host = "127.0.0.1"
 port = 7420
@@ -106,7 +110,8 @@ port = 7420
 # L1; anything above arrives as a notice pointing to the web chat. Off while
 # this section is absent. The token stays in the vault (pnpm vault:edit, key
 # telegram-bot-token); `chats` lists the ids of the private chats the bot
-# talks to. Changing it is a privacy setting: only the user edits it.
+# talks to. Changing it is a privacy setting: only the user edits it. The
+# bot opens or closes without a restart; an invalid file closes it.
 #
 # [telegram]
 # token = "vault://telegram-bot-token"

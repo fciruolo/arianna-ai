@@ -1,12 +1,16 @@
-// Reloads arianna.toml and the catalog while the core runs (task 1.18): a new
-// model for a role applies without a restart. Only the roles, the model
-// names they give the local servers, the characters (cosmetic), the cloud
-// models (D-071: which model of an enabled executor runs) and the projects (D-058: the user
-// approves one with the wizard and uses it right away; a project taken off
-// the list is closed at the next delegated step) change live; everything else
-// waits for a restart, privacy settings first, so that an edited file never turns on a
-// cloud executor or a channel by itself, nor changes where L2 requests go
-// (`url`) or what the watchdog runs (`command`).
+// Reloads arianna.toml and the catalog while the core runs (task 1.18, D-071):
+// a change applies without a restart. The roles and the model names they give
+// the local servers, the local servers themselves (the core restarts the one
+// whose `url` or `command` changed), the cloud executors and their models,
+// the projects, Telegram and the characters change live; the core reads
+// `current()` at each use. Only `paths`, `database` and `server` wait for a
+// restart, and `[voice]` until the voice service follows it too.
+//
+// The cloud executors, the projects and Telegram are privacy settings: the
+// user turns them on by editing the file (or confirming on the settings
+// page), never an agent. A file that cannot be read closes them until it is
+// valid again, so that an exit taken off by hand next to a typo is not left
+// open.
 import { unwatchFile, watchFile } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -14,10 +18,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { CATALOG_FILE } from './catalog.ts';
 import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 
-const RESTART_SECTIONS = ['paths', 'database', 'server', 'telegram', 'voice'] as const;
+const RESTART_SECTIONS = ['paths', 'database', 'server', 'voice'] as const;
 
 export interface ConfigChange {
-  /** Applied: `current()` returns the new values (`roles`, `local.models`, `cloud.models`, `projects`, `characters`). */
+  /**
+   * Applied: `current()` returns the new values (`roles`, `local.models`,
+   * `local.endpoints`, `cloud.executors`, `cloud.models`, `projects`,
+   * `telegram`, `characters`).
+   */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
   restart: string[];
@@ -33,29 +41,23 @@ export interface WatchOptions {
   /** Its `home` is the folder watched and reloaded. */
   initial: AriannaConfig;
   onChange: (change: ConfigChange) => void;
-  /** An invalid file keeps the previous configuration, except the projects, which are closed until it is valid. */
+  /**
+   * An invalid file keeps the previous configuration, except the exits
+   * (projects, cloud executors, Telegram), which are closed until it is valid.
+   */
   onError: (error: unknown) => void;
   /** How often the files are checked; 1 s by default. */
   intervalMs?: number;
 }
 
-/** The local servers without their model names: what needs a restart. */
+/** The local servers without their model names: a change restarts them. */
 function servers(config: AriannaConfig): unknown {
   return config.local.endpoints.map(({ id, url, command }) => ({ id, url, command }));
 }
 
-/** `[cloud.models]`: applied live, unlike the executors. */
+/** `[cloud.models]`. */
 function cloudModels(config: AriannaConfig): unknown {
   return { models: config.cloud.models, defaultModel: config.cloud.defaultModel };
-}
-
-/** `current` with the cloud models of `next`, its executors kept. */
-function withCloudModels(current: AriannaConfig, next: AriannaConfig): AriannaConfig['cloud'] {
-  return {
-    executors: current.cloud.executors,
-    models: next.cloud.models,
-    ...(next.cloud.defaultModel === undefined ? {} : { defaultModel: next.cloud.defaultModel }),
-  };
 }
 
 /** Which sections differ between two configurations. */
@@ -66,15 +68,14 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
     applied: [
       ...(changed('roles') ? ['roles'] : []),
       ...(sameServers && changed('local') ? ['local.models'] : []),
+      ...(sameServers ? [] : ['local.endpoints']),
+      ...(isDeepStrictEqual(before.cloud.executors, after.cloud.executors) ? [] : ['cloud.executors']),
       ...(isDeepStrictEqual(cloudModels(before), cloudModels(after)) ? [] : ['cloud.models']),
       ...(changed('projects') ? ['projects'] : []),
+      ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('characters') ? ['characters'] : []),
     ],
-    restart: [
-      ...(sameServers ? [] : ['local.endpoints']),
-      ...(isDeepStrictEqual(before.cloud.executors, after.cloud.executors) ? [] : ['cloud']),
-      ...RESTART_SECTIONS.filter(changed),
-    ],
+    restart: RESTART_SECTIONS.filter(changed),
   };
 }
 
@@ -82,24 +83,37 @@ function empty(change: ConfigChange): boolean {
   return change.applied.length + change.restart.length === 0;
 }
 
+/** `config` with every exit closed: no project, no cloud executor, no Telegram. */
+function closeExits(config: AriannaConfig): AriannaConfig {
+  const closed: AriannaConfig = { ...config, projects: [], cloud: { ...config.cloud, executors: [] } };
+  delete closed.telegram;
+  return closed;
+}
+
+/** `next`, except what waits for a restart, which stays as in `current`. */
+function applicable(current: AriannaConfig, next: AriannaConfig): AriannaConfig {
+  const applied: AriannaConfig = { ...next, home: current.home, paths: current.paths, database: current.database, server: current.server };
+  delete applied.voice;
+  return current.voice === undefined ? applied : { ...applied, voice: current.voice };
+}
+
 export function watchConfig(options: WatchOptions): ConfigWatcher {
   let current = options.initial;
   const env = { ...process.env, ARIANNA_HOME: current.home };
   // The last valid file read: what a new read is compared with.
   let read = options.initial;
-  // The projects are a privacy setting applied live (D-058): a file that
-  // cannot be read closes them all, so that a project taken off by hand next
-  // to a typo is not left open; they come back when the file is valid again.
   let closed = false;
   const reload = (): void => {
     let next: AriannaConfig;
     try {
       next = loadConfig(env);
     } catch (error) {
-      if (!closed && current.projects.length > 0) {
+      if (!closed) {
         closed = true;
-        current = { ...current, projects: [] };
-        options.onChange({ applied: ['projects'], restart: [] });
+        const before = current;
+        current = closeExits(current);
+        const { applied } = diffConfig(before, current);
+        if (applied.length > 0) options.onChange({ applied, restart: [] });
       }
       options.onError(error);
       return;
@@ -110,15 +124,7 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
     if (empty(diffConfig(read, next)) && !reopened) return;
     read = next;
     const before = current;
-    const sameServers = isDeepStrictEqual(servers(current), servers(next));
-    current = {
-      ...current,
-      roles: next.roles,
-      cloud: withCloudModels(current, next),
-      projects: next.projects,
-      characters: next.characters,
-      ...(sameServers ? { local: next.local } : {}),
-    };
+    current = applicable(current, next);
     const change = { applied: diffConfig(before, current).applied, restart: diffConfig(current, next).restart };
     // A file put back as it was changes nothing.
     if (!empty(change)) options.onChange(change);

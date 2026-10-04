@@ -8,6 +8,7 @@ import {
   CATALOG_FILE,
   CONFIG_FILE,
   DEFAULT_SETTINGS,
+  DEFAULT_VOICE,
   diffConfig,
   loadConfig,
   renderSettings,
@@ -66,7 +67,7 @@ function next(watcher: { events: (ConfigChange | Error)[] }): Promise<ConfigChan
   });
 }
 
-test('a new model for a role applies live; privacy sections wait for a restart; an invalid file changes nothing', async () => {
+test('every section but paths, database, server and voice applies live; an invalid file closes the exits only (D-071)', async () => {
   const seen = { events: [] as (ConfigChange | Error)[] };
   const watcher = watchConfig({
     initial: loadConfig(ENV),
@@ -74,58 +75,76 @@ test('a new model for a role applies live; privacy sections wait for a restart; 
     onChange: (change) => seen.events.push(change),
     onError: (error) => seen.events.push(error instanceof Error ? error : new Error(String(error))),
   });
+  const SECOND = { ...BASE, roles: { orchestrator: 'second-mlx' } };
+  const DEMO = [{ name: 'demo', path: 'repos/demo', label: 'L1' as const }];
+  const TELEGRAM = { token: 'vault://telegram-bot-token', chats: [123] };
   try {
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' } });
+    write(SECOND);
     assert.deepEqual(await next(seen), { applied: ['roles', 'local.models'], restart: [] });
     assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
     assert.deepEqual(watcher.current().local.endpoints[0]?.models, { 'local-large': 'second-mlx' });
 
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
-    assert.deepEqual(await next(seen), { applied: [], restart: ['cloud'] });
-    assert.deepEqual(watcher.current().cloud.executors, []);
+    // The cloud executors apply at once, like the projects and Telegram.
+    write({ ...SECOND, cloud: { executors: ['claude'] } });
+    assert.deepEqual(await next(seen), { applied: ['cloud.executors'], restart: [] });
+    assert.deepEqual(watcher.current().cloud.executors, ['claude']);
 
-    // The cloud models apply at once (D-071); the executors still wait for a restart.
+    // The cloud models (D-071).
     const models = { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true, name: 'claude-fable-5-1' }, codex: { enabled: true } };
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'], models, defaultModel: 'sonnet' } });
-    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: ['cloud'] });
-    assert.deepEqual(watcher.current().cloud, { executors: [], models, defaultModel: 'sonnet' });
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
-    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: ['cloud'] });
+    write({ ...SECOND, cloud: { executors: ['claude'], models, defaultModel: 'sonnet' } });
+    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: [] });
+    assert.deepEqual(watcher.current().cloud, { executors: ['claude'], models, defaultModel: 'sonnet' });
+    write({ ...SECOND, cloud: { executors: ['claude'] } });
+    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: [] });
     assert.equal(watcher.current().cloud.defaultModel, undefined);
     assert.equal(watcher.current().cloud.models.opus.enabled, true);
 
-    // An approved project applies at once (D-058); taking it off too.
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] }, projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }] });
-    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
+    // An approved project applies at once (D-058), Telegram too.
+    write({ ...SECOND, cloud: { executors: ['claude'] }, projects: DEMO, telegram: TELEGRAM });
+    assert.deepEqual(await next(seen), { applied: ['projects', 'telegram'], restart: [] });
     assert.deepEqual(watcher.current().projects.map((project) => project.name), ['demo']);
+    assert.deepEqual(watcher.current().telegram, TELEGRAM);
+
+    // An unreadable file closes every exit until it is valid again; the rest stays.
+    write('[paths]\ndata = "/elsewhere"\n');
+    assert.deepEqual(await next(seen), { applied: ['cloud.executors', 'projects', 'telegram'], restart: [] });
+    assert.ok((await next(seen)) instanceof Error);
+    assert.deepEqual(watcher.current().projects, []);
     assert.deepEqual(watcher.current().cloud.executors, []);
-    // An unreadable file closes the projects until it is valid again; the rest stays.
-    write('[paths]\ndata = "/elsewhere"\n');
-    assert.deepEqual(await next(seen), { applied: ['projects'], restart: [] });
-    assert.ok((await next(seen)) instanceof Error);
-    assert.deepEqual(watcher.current().projects, []);
+    assert.equal(watcher.current().telegram, undefined);
     assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] }, projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }] });
-    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
-    assert.deepEqual(watcher.current().projects.map((project) => project.name), ['demo']);
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
-    assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });
+    write({ ...SECOND, cloud: { executors: ['claude'] }, projects: DEMO, telegram: TELEGRAM });
+    assert.deepEqual(await next(seen), { applied: ['cloud.executors', 'projects', 'telegram'], restart: [] });
+    assert.deepEqual(watcher.current().cloud.executors, ['claude']);
+    write(SECOND);
+    assert.deepEqual(await next(seen), { applied: ['cloud.executors', 'projects', 'telegram'], restart: [] });
     assert.deepEqual(watcher.current().projects, []);
+    assert.deepEqual(watcher.current().cloud.executors, []);
+    assert.equal(watcher.current().telegram, undefined);
 
-    // Put back as it was: nothing to report, the next event is the one below.
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' } });
-    // Where L2 requests go and what the watchdog runs wait for a restart.
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }] });
-    assert.deepEqual(await next(seen), { applied: [], restart: ['local.endpoints'] });
-    assert.equal(watcher.current().local.endpoints[0]?.url, 'http://127.0.0.1:7001/v1');
-    assert.equal(watcher.current().local.endpoints[0]?.command, undefined);
+    // Where L2 requests go and what the watchdog runs: the core restarts the server.
+    write({ ...SECOND, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }] });
+    assert.deepEqual(await next(seen), { applied: ['local.endpoints'], restart: [] });
+    assert.equal(watcher.current().local.endpoints[0]?.url, 'http://127.0.0.1:9999/v1');
+    assert.deepEqual(watcher.current().local.endpoints[0]?.command, ['other']);
 
+    // The server address waits for a restart.
+    write({ ...SECOND, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }], server: { host: '127.0.0.1', port: 7999 } });
+    assert.deepEqual(await next(seen), { applied: [], restart: ['server'] });
+    assert.equal(watcher.current().server.port, 7420);
+
+    // [voice] waits for a restart: the watcher keeps the old value.
+    write({ ...SECOND, voice: structuredClone(DEFAULT_VOICE) });
+    assert.deepEqual(await next(seen), { applied: ['local.endpoints'], restart: ['voice'] });
+    assert.equal(watcher.current().voice, undefined);
+
+    // With no exit open, an invalid file only reports the error.
     write('[paths]\ndata = "/elsewhere"\n');
     assert.ok((await next(seen)) instanceof Error);
-    assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
 
     // A catalog that drops the model a role uses is invalid too: the old configuration stays.
-    write({ ...BASE, roles: { orchestrator: 'second-mlx' } });
+    // Valid again, as the core already runs it: nothing to report.
+    write(SECOND);
     writeFileSync(join(HOME, CATALOG_FILE), `version: 1\nmodels:\n${entry('first-mlx')}`);
     assert.ok((await next(seen)) instanceof Error);
     assert.deepEqual(watcher.current().roles, { orchestrator: 'second-mlx' });
@@ -140,6 +159,8 @@ test('diffConfig names the changed sections only', () => {
   const config = loadConfig(ENV);
   assert.deepEqual(diffConfig(config, structuredClone(config)), { applied: [], restart: [] });
   assert.deepEqual(diffConfig(config, { ...config, server: { host: '::1', port: 1 } }), { applied: [], restart: ['server'] });
-  assert.deepEqual(diffConfig(config, { ...config, telegram: { token: 'vault://t', chats: [1] } }), { applied: [], restart: ['telegram'] });
+  assert.deepEqual(diffConfig(config, { ...config, telegram: { token: 'vault://t', chats: [1] } }), { applied: ['telegram'], restart: [] });
+  assert.deepEqual(diffConfig(config, { ...config, cloud: { ...config.cloud, executors: ['codex'] } }), { applied: ['cloud.executors'], restart: [] });
+  assert.deepEqual(diffConfig(config, { ...config, voice: structuredClone(DEFAULT_VOICE) }), { applied: [], restart: ['voice'] });
   assert.deepEqual(diffConfig(config, { ...config, characters: { coder: 'p/robot' } }), { applied: ['characters'], restart: [] });
 });

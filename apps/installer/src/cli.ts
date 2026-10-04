@@ -200,7 +200,7 @@ async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean
       return false;
     }
     writeSettings(home, catalog, settings);
-    console.log('Scritto config/arianna.toml. Un core avviato applica subito modelli e progetti; il resto al riavvio.');
+    console.log('Scritto config/arianna.toml. Un core avviato applica tutto subito, tranne percorsi, database, server e voce, che valgono al riavvio.');
     const userHome = userHomeOf();
     for (const line of syncProjectLinks(home, parseProjects(current?.projects ?? [], home, userHome), parseProjects(settings.projects, home, userHome))) {
       console.log(line);

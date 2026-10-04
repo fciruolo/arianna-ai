@@ -134,8 +134,12 @@ export interface ClaudeExecutor {
 }
 
 export interface ClaudeExecutorOptions {
-  /** `[cloud] executors` of arianna.toml: nothing is launched unless it names `claude`. */
-  enabled: readonly string[];
+  /**
+   * `[cloud] executors` of arianna.toml: nothing is launched unless it names
+   * `claude`. A function is read at each launch, so that turning claude off
+   * in the file stops the next one (D-071).
+   */
+  enabled: readonly string[] | (() => readonly string[]);
   /** Tests only: a fake binary. The core always runs `claude` from PATH. */
   command?: { file: string; args: readonly string[] };
   /** Default `process.env`; only a few variables pass (see `claudeEnv`). */
@@ -219,11 +223,13 @@ interface Checked {
 }
 
 export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExecutor {
-  const enabled = [...options.enabled];
+  const given = options.enabled;
+  const fixed = typeof given === 'function' ? [] : [...given];
+  const enabled = typeof given === 'function' ? given : (): readonly string[] => fixed;
   const folders = sandboxFolders(options);
 
   async function check(launch: ClaudeLaunch): Promise<Checked> {
-    if (!enabled.includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
+    if (!enabled().includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
     const modelName = options.modelName?.(launch.model);
     const profile = (workspace: string) => ({
       model: launch.model,

@@ -4,7 +4,16 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
-import { CLOUD_MODELS, cloudModelName, enabledCloudModels, loadCatalog, loadConfig, loadLabelRules, voicePaths, watchConfig } from '@arianna/config';
+import {
+  CLOUD_MODELS,
+  cloudModelName,
+  enabledCloudModels,
+  loadCatalog,
+  loadConfig,
+  loadLabelRules,
+  voicePaths,
+  watchConfig,
+} from '@arianna/config';
 import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
@@ -22,7 +31,8 @@ import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
-import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
+import { startTelegram } from './telegram/channel.ts';
+import { createTelegramSwitch } from './telegram/switch.ts';
 import { createCalls, type Calls } from './voice/calls.ts';
 import { createPusher, PUSH_TEXT, vapidKey, type Pusher } from './voice/push.ts';
 import { createRinger, type Ringer } from './voice/ringer.ts';
@@ -73,13 +83,43 @@ if (status.pending.length + status.edited.length + status.missing.length > 0) {
   process.exit(1);
 }
 
-// Task 1.18: a model changed for a role applies without a restart: the
-// orchestrator reads settings.current() at each model call. Every other
-// section waits for a restart.
+// Set once the core starts stopping: nothing new is opened after it.
+let stopping = false;
+
+// Declared before the watcher, which may report a change of [telegram] while
+// the core still starts: the switch ignores changes until `begin`.
+const telegram = createTelegramSwitch({
+  start: async (next) => {
+    const token = await createVault({ data: config.paths.data }).resolve(next.token);
+    return startTelegram({ sql, api: createBotApi({ token }), chats: next.chats, live, onError: report });
+  },
+  // An exit turned on or off: in the event log, without the chat ids.
+  onChange: (next) => {
+    appendEvent(sql, { kind: 'settings.telegram', label: 'L0', payload: { on: next !== undefined, chats: next?.chats.length ?? 0 } }).catch(report);
+  },
+  onState: (on, next) => {
+    if (on) console.log(`Telegram on: ${String(next?.chats.length ?? 0)} chat(s)`);
+    else console.error(next === undefined ? 'Telegram off' : 'Telegram off: see the error above; tried again at the next change of [telegram]');
+  },
+  onError: report,
+});
+
+// Task 1.18 and D-071: a change of arianna.toml applies without a restart:
+// the core reads settings.current() at each use, restarts a local server whose
+// `url` or `command` changed and opens or closes Telegram. Only paths,
+// database, server and [voice] wait for a restart.
 const settings = watchConfig({
   initial: config,
   onChange: ({ applied, restart }) => {
     if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
+    if (applied.includes('local.endpoints')) localServers.sync(settings.current().local.endpoints).catch(report);
+    if (applied.includes('telegram')) telegram.sync(settings.current().telegram);
+    // Turning a cloud executor on or off is a privacy setting: it goes in the event log, like the projects.
+    if (applied.includes('cloud.executors')) {
+      const { executors } = settings.current().cloud;
+      console.log(`Cloud executors: ${executors.length === 0 ? 'none' : executors.join(', ')}`);
+      appendEvent(sql, { kind: 'settings.executors', label: 'L0', payload: { executors } }).catch(report);
+    }
     // A change of the approved projects is a privacy setting: it goes in the event log (D-058).
     if (applied.includes('projects')) {
       const projects = settings.current().projects.map(({ name, path, label }) => ({ name, path, label }));
@@ -97,7 +137,7 @@ const settings = watchConfig({
     // A ConfigError names a key and a rule, never a value read elsewhere.
     if (error instanceof Error && error.name === 'ConfigError') console.error(error.message);
     else report(error);
-    console.error('arianna.toml: not reloaded, the previous configuration stays; no project is open until the file is valid');
+    console.error('arianna.toml: not reloaded, the previous configuration stays; no project, cloud executor or Telegram bot is open until the file is valid');
   },
 });
 
@@ -126,20 +166,23 @@ const localModel = () =>
 
 // Task 1.10: the orchestrator on the local model, with the development
 // knowledge base in kb/ (the real one, data/kb, comes after Phase 1A), and
-// the Coder on claude -p for delegated steps when the user enabled it
-// (`[cloud] executors`, a restart applies a change). The adapter refuses a
-// Node installation whose folders would open the user's files (D-050): then
-// the core runs without delegation and says so.
+// the Coder on claude -p for delegated steps when the user enabled it in
+// `[cloud] executors`, read at each launch: turning it on or off applies
+// without a restart (D-071). The adapter refuses a Node installation whose
+// folders would open the user's files (D-050): then the core runs without
+// delegation and says so.
 const rules = loadLabelRules();
 let claude: ClaudeExecutor | undefined;
-if (config.cloud.executors.includes('claude')) {
-  try {
-    // The exact name for `--model` is read at each launch: `[cloud.models]` applies without a restart (D-071).
-    claude = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home, modelName: (model) => settings.current().cloud.models[model].name });
-  } catch (error) {
-    report(error);
-    console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
-  }
+try {
+  // The exact name for `--model` is read at each launch too (`[cloud.models]`).
+  claude = createClaudeExecutor({
+    enabled: () => settings.current().cloud.executors,
+    home: config.home,
+    modelName: (model) => settings.current().cloud.models[model].name,
+  });
+} catch (error) {
+  report(error);
+  if (config.cloud.executors.includes('claude')) console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
 }
 const orchestrator = createOrchestrator({
   sql,
@@ -150,7 +193,7 @@ const orchestrator = createOrchestrator({
   rules,
   ...(claude === undefined ? {} : { claude }),
 });
-console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${claude === undefined ? ' (delegation off)' : ' (delegation on)'}`);
+console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${claude === undefined ? ' (delegation off: sandbox refused)' : ''}`);
 
 const worker = createWorker({
   sql,
@@ -264,29 +307,19 @@ if (calls !== undefined && voiceConfig !== undefined) {
   });
 }
 
-// Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml. Without
-// a token the core runs anyway: the web chat does not depend on it.
-let telegram: TelegramChannel | undefined;
-if (config.telegram !== undefined) {
-  try {
-    const token = await createVault({ data: config.paths.data }).resolve(config.telegram.token);
-    telegram = await startTelegram({ sql, api: createBotApi({ token }), chats: config.telegram.chats, live, onError: report });
-    console.log(`Telegram on: ${String(config.telegram.chats.length)} chat(s)`);
-  } catch (error) {
-    report(error);
-    console.error('Telegram off: see the error above');
-  }
-}
+// Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
+// or closed when the section changes (D-071). Without a token the core runs
+// anyway: the web chat does not depend on it.
+await telegram.begin(settings.current().telegram);
 
 const shown = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
 console.log(`Arianna core on http://${shown}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 
-let stopping = false;
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
   settings.close();
-  await telegram?.close();
+  await telegram.close();
   await server.close();
   ringer?.stop();
   await calls?.close();

@@ -42,7 +42,10 @@ export interface DelegateEnv {
   /** The current configuration: executors, projects, roles. */
   settings: () => AriannaConfig;
   rules: LabelRules;
-  /** Absent when `claude` is not enabled or cannot run on this machine. */
+  /**
+   * Absent only when `claude` cannot run on this machine (sandbox refused):
+   * whether it is enabled is `canDelegate`, read from `settings` at each use.
+   */
   claude?: ClaudeExecutor;
   /** What Claude reads first when it answers a system chat directly; DIRECT_PROMPT by default (tests pick a scenario). */
   directPrompt?: string;
