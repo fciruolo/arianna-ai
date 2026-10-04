@@ -198,7 +198,7 @@ export function labelCeiling(card: AgentCard, executor: ExecutorKind): Label {
 }
 
 /** A copy holding only the own enumerable properties, on a null prototype. */
-function ownTable(value: unknown, where: string): Table {
+export function ownTable(value: unknown, where: string): Table {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new AgentCardError(`${where}: expected a mapping`);
   }

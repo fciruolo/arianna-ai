@@ -30,6 +30,7 @@
     "test:voice": "node scripts/voice.ts test",
     "voice:vapid": "node scripts/voice.ts vapid",
     "kb:capture": "node scripts/kb-capture.ts",
+    "agency:import": "node scripts/agency-import.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",
     "hud:build": "pnpm --filter @arianna/hud build",

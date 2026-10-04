@@ -1,0 +1,10 @@
+# Commit of msitarzewski/agency-agents the catalog is pinned to (D-079).
+# The clone lives in data/catalogs/agency-agents/ (outside git) and is made by
+# the user; pnpm agency:import refuses a clone whose HEAD does not start with
+# this commit. Changing it is an update of the catalog: only after reviewing
+# the diff of the adopted agents (docs/PROPOSTE.md, D-079 e).
+repository = "https://github.com/msitarzewski/agency-agents"
+# TODO at the first clone: replace with the full sha from
+# `git -C data/catalogs/agency-agents rev-parse HEAD` (only the short one, of
+# 2026-10-04, was visible on the public page).
+commit = "8329468"

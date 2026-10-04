@@ -80,6 +80,8 @@ Prima parte di codice, dopo le risposte:
 - **Stato:** Proposta, da discutere
 - **Collegate:** D-034 (schede e trifecta), D-015 (taint e clearance), D-059 (codice pubblico in sola lettura), punto 12 di HANDOFF (caricamento differito e livelli di fiducia)
 
+> **Fatto il 2026-10-05 (prima parte, da confermare):** l'importatore a sola lettura di "Cosa si può costruire subito a basso rischio": `packages/agents/src/agency.ts`, `templates.ts`, `agency-catalog.ts`, `scripts/agency-import.ts` (`pnpm agency:import`), `config/agency.lock` (sha corto `8329468`, da completare al clone) e `packages/agents/test/agency.test.ts`. Nessuna scheda attivata, schema delle schede invariato (`prompt_trust` è la parte c), nessuna regola nuova in `labels.toml`. Il clone resta da fare all'utente (domanda 2); finché `config/agency.lock` ha lo sha corto l'importazione rifiuta e mostra lo sha completo della HEAD del clone da copiare nel lock. Le proposte non prendono il nome di una scheda attiva di `agents/` e non sovrascrivono una proposta esistente senza `--force`; ciò che viene dal catalogo è ripulito dai caratteri di controllo, invisibili e bidirezionali prima di essere stampato. Dettagli nella riga D-079 di `docs/DECISIONS.md`.
+
 ### Contesto
 
 L'utente vuole una sezione per [agency-agents](https://github.com/msitarzewski/agency-agents), raccolta pubblica di definizioni di agenti specializzati, e lascia a Claude il come. Letto il 2026-10-05 dalla pagina pubblica (WebFetch su GitHub e `raw.githubusercontent.com`):

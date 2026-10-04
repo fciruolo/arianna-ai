@@ -1,9 +1,8 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { parse as parseYaml } from 'yaml';
-
 import { AgentCardError, parseAgentCard, type AgentCard } from './card.ts';
+import { parseYamlText } from './yaml.ts';
 
 export const AGENTS_DIR = 'agents';
 
@@ -29,13 +28,7 @@ function readRegular(path: string, shown: string): string {
 export function loadAgent(dir: string, name: string): LoadedAgent {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new AgentCardError(`invalid agent name ${JSON.stringify(name)}`);
   const text = readRegular(join(dir, `${name}.yaml`), `agents/${name}.yaml`);
-  let raw: unknown;
-  try {
-    raw = parseYaml(text);
-  } catch (error) {
-    throw new AgentCardError(`agents/${name}.yaml: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const card = parseAgentCard(raw, name);
+  const card = parseAgentCard(parseYamlText(text, `agents/${name}.yaml`), name);
   const prompt = readRegular(join(dir, card.prompt), `agents/${name}.yaml: prompt ${card.prompt}`);
   if (prompt.trim() === '') throw new AgentCardError(`agents/${card.prompt} is empty`);
   return { card, prompt };

@@ -38,3 +38,41 @@ export {
   type TurnMessage,
 } from './protocol.ts';
 export { validate, type JsonSchema } from './schema.ts';
+export {
+  AGENCY_COPYRIGHT,
+  AGENCY_REPOSITORY,
+  AgencyError,
+  buildIndex,
+  headMatchesLock,
+  indexRecord,
+  MAX_AGENCY_FILE_BYTES,
+  MAX_FRONTMATTER_BYTES,
+  parseAgencyFile,
+  parseAgencyLock,
+  parseDivisions,
+  proposeCard,
+  sanitizeForTerminal,
+  slugFromPath,
+  verifyCloneHead,
+  type AgencyEntry,
+  type AgencyIndexRecord,
+  type AgencyOrigin,
+  type AgencyRejection,
+  type AgencyService,
+  type CardProposal,
+} from './agency.ts';
+export {
+  AGENCY_CLONE_DIR,
+  AGENCY_INDEX_FILE,
+  AGENCY_LOCK_FILE,
+  AGENCY_PROPOSED_DIR,
+  readAgencyLock,
+  readCloneHead,
+  type ProposalResult,
+  scanCatalog,
+  writeAgencyIndex,
+  writeProposals,
+  type AgencyIndexFile,
+  type AgencyScan,
+} from './agency-catalog.ts';
+export { CARD_TEMPLATES, templateFor, type CardTemplate } from './templates.ts';
