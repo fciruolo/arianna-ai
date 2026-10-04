@@ -2,9 +2,9 @@
 // a change applies without a restart. The roles and the model names they give
 // the local servers, the local servers themselves (the core restarts the one
 // whose `url` or `command` changed), the cloud executors and their models,
-// the projects, Telegram and the characters change live; the core reads
-// `current()` at each use. Only `paths`, `database` and `server` wait for a
-// restart, and `[voice]` until the voice service follows it too.
+// the projects, Telegram, `[voice]` (the core restarts apps/voice once no call
+// is in progress) and the characters change live; the core reads `current()`
+// at each use. Only `paths`, `database` and `server` wait for a restart.
 //
 // The cloud executors, the projects and Telegram are privacy settings: the
 // user turns them on by editing the file (or confirming on the settings
@@ -18,13 +18,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { CATALOG_FILE } from './catalog.ts';
 import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 
-const RESTART_SECTIONS = ['paths', 'database', 'server', 'voice'] as const;
+const RESTART_SECTIONS = ['paths', 'database', 'server'] as const;
 
 export interface ConfigChange {
   /**
    * Applied: `current()` returns the new values (`roles`, `local.models`,
    * `local.endpoints`, `cloud.executors`, `cloud.models`, `projects`,
-   * `telegram`, `characters`).
+   * `telegram`, `voice`, `characters`).
    */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
@@ -73,6 +73,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(isDeepStrictEqual(cloudModels(before), cloudModels(after)) ? [] : ['cloud.models']),
       ...(changed('projects') ? ['projects'] : []),
       ...(changed('telegram') ? ['telegram'] : []),
+      ...(changed('voice') ? ['voice'] : []),
       ...(changed('characters') ? ['characters'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),
@@ -92,9 +93,7 @@ function closeExits(config: AriannaConfig): AriannaConfig {
 
 /** `next`, except what waits for a restart, which stays as in `current`. */
 function applicable(current: AriannaConfig, next: AriannaConfig): AriannaConfig {
-  const applied: AriannaConfig = { ...next, home: current.home, paths: current.paths, database: current.database, server: current.server };
-  delete applied.voice;
-  return current.voice === undefined ? applied : { ...applied, voice: current.voice };
+  return { ...next, home: current.home, paths: current.paths, database: current.database, server: current.server };
 }
 
 export function watchConfig(options: WatchOptions): ConfigWatcher {

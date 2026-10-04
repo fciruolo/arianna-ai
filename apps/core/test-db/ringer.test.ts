@@ -61,14 +61,13 @@ before(async () => {
     sql: db().sql,
     rules: () => rules,
     voiceUp: () => voiceUp,
-    get notify() {
-      return push
+    notify: () =>
+      push
         ? () => {
             pushes += 1;
             return Promise.resolve();
           }
-        : undefined;
-    },
+        : undefined,
     clientsOnline: () => online,
     now: () => clock,
     intervalMs: 3_600_000,

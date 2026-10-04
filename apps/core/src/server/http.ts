@@ -69,12 +69,12 @@ export interface ApiServerOptions {
   agents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
-  /** apps/voice (D-066); absent when `[voice]` is not configured. */
+  /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
   voice?: VoiceApi;
-  /** Calls from the chat (D-066); absent with the voice off. */
+  /** Calls from the chat (D-066); refused while the voice is off. */
   calls?: Calls;
-  /** Web Push for the calls of Arianna (D-066); absent without [voice.push]. */
-  pusher?: Pusher;
+  /** Web Push for the calls of Arianna (D-066), read at each request: undefined without [voice.push]. */
+  pusher?: () => Pusher | undefined;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -85,8 +85,8 @@ export interface ApiServerOptions {
 export interface VoiceApi {
   service: Pick<VoiceService, 'state' | 'request'>;
   models: () => TrialModel[];
-  /** The voice of `[voice]`. */
-  voice: string;
+  /** The voice of `[voice]`, read at each request. */
+  voice: () => string;
   /** Where the voices copied from a sample live (D-069): data/voice/voices. */
   clones: string;
 }
@@ -191,7 +191,12 @@ interface RouteOptions {
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
-  pusher: Pusher | undefined;
+  pusher: () => Pusher | undefined;
+}
+
+/** The voice is configured: `[voice]` in arianna.toml (D-071: it turns on and off without a restart). */
+function voiceOn(voice: VoiceApi | undefined): voice is VoiceApi {
+  return voice !== undefined && voice.service.state !== 'off';
 }
 
 /** The token of the voice for one call: `Authorization: Bearer <token>`. */
@@ -202,10 +207,15 @@ function bearer(request: IncomingMessage): string | undefined {
 
 const END_REASONS_FROM_VOICE: readonly CallEndReason[] = ['hangup', 'time-limit', 'disconnected', 'voice-error'];
 
-function callRoutes(sql: Sql, calls: Calls | undefined, pusher: Pusher | undefined): Route[] {
+function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefined, pushers: () => Pusher | undefined): Route[] {
   const need = (): Calls => {
-    if (calls === undefined) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
+    if (calls === undefined || voice?.service.state === 'off') throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
     return calls;
+  };
+  const needPush = (): Pusher => {
+    const pusher = pushers();
+    if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+    return pusher;
   };
   return [
     // The call in progress, if any: a reloaded page finds it again.
@@ -254,16 +264,16 @@ function callRoutes(sql: Sql, calls: Calls | undefined, pusher: Pusher | undefin
       return { body: { call: await cancelCall(sql, idParam(params, 'id')) } };
     }),
     // Web Push: the public key for the page, and the browsers that asked for it.
-    route('GET', '/api/push/key', () => Promise.resolve({ body: { publicKey: pusher?.publicKey ?? null } })),
+    route('GET', '/api/push/key', () => Promise.resolve({ body: { publicKey: pushers()?.publicKey ?? null } })),
     route('POST', '/api/push/subscribe', async (request) => {
-      if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+      const pusher = needPush();
       const body = await readJson(request);
       onlyFields(body, ['subscription']);
       await pusher.subscribe(parseSubscription(body.subscription));
       return { status: 201, body: { ok: true } };
     }),
     route('POST', '/api/push/unsubscribe', async (request) => {
-      if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+      const pusher = needPush();
       const body = await readJson(request);
       onlyFields(body, ['endpoint']);
       if (typeof body.endpoint !== 'string') throw new HttpError(400, 'endpoint is required');
@@ -305,14 +315,14 @@ function voiceJson(answer: { status: number; body: Buffer }): unknown {
 
 function voiceRoutes(voice: VoiceApi | undefined): Route[] {
   const need = (): VoiceApi => {
-    if (voice === undefined) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
+    if (!voiceOn(voice)) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
     return voice;
   };
   return [
     // The trial page (D-066): service state, candidates on disk, voices.
     route('GET', '/api/voice/trial', () => {
-      const state: 'off' | VoiceState = voice === undefined ? 'off' : voice.service.state;
-      return Promise.resolve({ body: { state, voice: voice?.voice ?? null, models: voice?.models() ?? [] } });
+      const state: VoiceState = voice === undefined ? 'off' : voice.service.state;
+      return Promise.resolve({ body: { state, voice: voiceOn(voice) ? voice.voice() : null, models: voiceOn(voice) ? voice.models() : [] } });
     }),
     // Voices copied from a sample (D-069): L2 on disk, never in a log or an event.
     route('GET', '/api/voice/clones', () => Promise.resolve({ body: { clones: listClones(need().clones) } })),
@@ -351,7 +361,7 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
 function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
-    ...callRoutes(sql, calls, pusher),
+    ...callRoutes(sql, voice, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
@@ -636,7 +646,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     characters: options.characters,
     voice: options.voice,
     calls: options.calls,
-    pusher: options.pusher,
+    pusher: options.pusher ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);

@@ -19,8 +19,10 @@ export interface RingerOptions {
   rules: () => OutgoingRules;
   /** The voice can take a call now: otherwise nothing rings and the candidate waits. */
   voiceUp: () => boolean;
-  /** Web Push "Arianna ti chiama"; absent without [voice.push]. */
-  notify?: (() => Promise<void>) | undefined;
+  /** Keeps the voice in place from the check of `voiceUp` to the row of the call (the switch of the core, D-071). */
+  hold?: <T>(work: () => Promise<T>) => Promise<T>;
+  /** Web Push "Arianna ti chiama", read at each ring; undefined without [voice.push]. */
+  notify?: () => (() => Promise<void>) | undefined;
   /** How many pages hold the live feed now: with none, the push is the only way to ring. */
   clientsOnline: () => number;
   onError?: (error: unknown) => void;
@@ -98,6 +100,10 @@ export function createRinger(options: RingerOptions): Ringer {
 
   async function tick(): Promise<Call | undefined> {
     if (running) return undefined;
+    return options.hold === undefined ? ring() : options.hold(ring);
+  }
+
+  async function ring(): Promise<Call | undefined> {
     running = true;
     try {
       const rules = options.rules();
@@ -116,7 +122,8 @@ export function createRinger(options: RingerOptions): Ringer {
         SELECT count(*)::int AS count FROM calls WHERE rang_at >= ${startOfDay(real)}`;
       const allowed = mayCall(at, rules, count, reason);
       // With no page open and no push, nobody can hear it ring: Arianna writes at once.
-      const deaf = allowed.ok && options.clientsOnline() === 0 && options.notify === undefined;
+      const notify = options.notify?.();
+      const deaf = allowed.ok && options.clientsOnline() === 0 && notify === undefined;
       const verdict: { ok: true } | { ok: false; reason: 'quiet-hours' | 'daily-limit' | 'no-answer' } = deaf ? { ok: false, reason: 'no-answer' } : allowed;
       const task = candidate.kind === 'waiting' ? undefined : candidate.call.taskId === null ? undefined : await loadTask(sql, candidate.call.taskId);
       const failed = reason === 'task-done' && task?.status === 'failed';
@@ -160,7 +167,7 @@ export function createRinger(options: RingerOptions): Ringer {
         return call;
       }
       // No chat open: the push is the only way to ring.
-      if (options.clientsOnline() === 0 && options.notify !== undefined) await options.notify().catch((error: unknown) => options.onError?.(error));
+      if (options.clientsOnline() === 0 && notify !== undefined) await notify().catch((error: unknown) => options.onError?.(error));
       const callId = call.id;
       const timer = setTimeout(() => {
         timers.delete(timer);

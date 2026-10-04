@@ -14,8 +14,10 @@ import { removeLeftovers } from './clones.ts';
  * start; it exits when its standard input closes, so it dies with the core.
  * The environment is built from nothing: no database password, no age key of
  * sops, no proxy, and Hugging Face offline (the weights come from the catalog).
+ * `off` is never the state of a service: it is the switch of the core with no
+ * `[voice]` in arianna.toml (D-071).
  */
-export type VoiceState = 'not-installed' | WatchdogState;
+export type VoiceState = 'off' | 'not-installed' | WatchdogState;
 
 export interface VoiceServiceOptions {
   paths: VoicePaths;

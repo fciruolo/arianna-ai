@@ -2,11 +2,13 @@
 // Starts the core: migrations, task worker, live feed, API, WebSocket and web chat.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
 import {
   CLOUD_MODELS,
   cloudModelName,
+  DEFAULT_VOICE,
   enabledCloudModels,
   loadCatalog,
   loadConfig,
@@ -33,10 +35,11 @@ import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram } from './telegram/channel.ts';
 import { createTelegramSwitch } from './telegram/switch.ts';
-import { createCalls, type Calls } from './voice/calls.ts';
-import { createPusher, PUSH_TEXT, vapidKey, type Pusher } from './voice/push.ts';
-import { createRinger, type Ringer } from './voice/ringer.ts';
-import { createVoiceService, type VoiceService } from './voice/service.ts';
+import { createCalls, liveCall } from './voice/calls.ts';
+import { createPusher, PUSH_TEXT, vapidKey } from './voice/push.ts';
+import { createRinger } from './voice/ringer.ts';
+import { createVoiceService } from './voice/service.ts';
+import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
 import { fileSize, trialModels } from './voice/trial.ts';
 
@@ -104,16 +107,66 @@ const telegram = createTelegramSwitch({
   onError: report,
 });
 
+// apps/voice (D-066): on only with [voice] in arianna.toml, started in the
+// background so that the chat never waits for it. Turned on, off or moved to
+// another port without a restart, once no call is in progress (D-071); the
+// same for [voice.push]. Without the environment (pnpm voice:sync) the trial
+// page says what is missing.
+const voiceDirs = voicePaths(config.home, config.paths.data);
+let voiceShown = { on: config.voice !== undefined, port: config.voice?.port ?? null, push: config.voice?.push !== undefined };
+const voice = createVoiceSwitch({
+  createService: (port) => {
+    const service = createVoiceService({
+      paths: voiceDirs,
+      port,
+      logFile: join(voiceDirs.tmp, 'voice.log'),
+      onEvent: (event) => {
+        if (event.type === 'state' || event.type === 'gave-up' || event.type === 'spawn-error') console.log(`voice: ${event.type === 'state' ? event.state : event.type}`);
+      },
+    });
+    if (service.state === 'not-installed') console.error('voice off: data/voice/venv is missing (brew install uv, then pnpm voice:sync)');
+    return service;
+  },
+  // Web Push (D-066, choice 7): a notification without content when no chat is open.
+  createPusher: async (push) => {
+    const privateKey = await createVault({ data: config.paths.data }).resolve(push.privateKey);
+    return createPusher({
+      sql,
+      publicKey: push.publicKey,
+      key: vapidKey(push.publicKey, privateKey.reveal()),
+      subject: push.subject,
+      // The fixed text, the only thing that leaves, goes through the gateway on channel push.
+      gate: async () =>
+        (await passGateway(sql, [{ value: PUSH_TEXT, label: 'L0', source: 'call:push' }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
+      onError: report,
+    });
+  },
+  busy: async () => (await liveCall(sql)) !== undefined,
+  // On or off, port and push on or off: L0, never the voice (it may name a copied voice).
+  onChange: (next) => {
+    const shown = { on: next !== undefined, port: next?.port ?? null, push: next?.push !== undefined };
+    if (isDeepStrictEqual(shown, voiceShown)) return;
+    voiceShown = shown;
+    appendEvent(sql, { kind: 'settings.voice', label: 'L0', payload: shown }).catch(report);
+  },
+  onApplied: (next, push) => {
+    console.log(next === undefined ? 'voice off: no [voice] in arianna.toml' : `voice on port ${String(next.port)}, Web Push ${push ? 'on' : 'off'}`);
+    if (next?.push !== undefined && !push) console.error('Web Push off: see the error above; tried again at the next change of [voice.push]');
+  },
+  onError: report,
+});
+
 // Task 1.18 and D-071: a change of arianna.toml applies without a restart:
 // the core reads settings.current() at each use, restarts a local server whose
-// `url` or `command` changed and opens or closes Telegram. Only paths,
-// database, server and [voice] wait for a restart.
+// `url` or `command` changed, opens or closes Telegram and apps/voice. Only
+// paths, database and server wait for a restart.
 const settings = watchConfig({
   initial: config,
   onChange: ({ applied, restart }) => {
     if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
     if (applied.includes('local.endpoints')) localServers.sync(settings.current().local.endpoints).catch(report);
     if (applied.includes('telegram')) telegram.sync(settings.current().telegram);
+    if (applied.includes('voice')) voice.sync(settings.current().voice);
     // Turning a cloud executor on or off is a privacy setting: it goes in the event log, like the projects.
     if (applied.includes('cloud.executors')) {
       const { executors } = settings.current().cloud;
@@ -206,70 +259,32 @@ const worker = createWorker({
 });
 const live = await startLiveFeed(sql, { onError: report });
 
-// apps/voice (D-066): on only with [voice] in arianna.toml, started in the
-// background so that the chat never waits for it. Without the environment
-// (pnpm voice:sync) the trial page says what is missing.
-let voice: VoiceService | undefined;
-let calls: Calls | undefined;
-let pusher: Pusher | undefined;
-let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels>; clones: string } | undefined;
-const voiceConfig = config.voice;
-if (voiceConfig !== undefined) {
-  const voiceDirs = voicePaths(config.home, config.paths.data);
-  // Read at each request, like the roles: a new catalog entry needs no restart.
-  const candidates = () =>
-    trialModels(
-      loadCatalog(config.home),
-      settings.current().roles,
-      voiceDirs.models,
-      fileSize,
-      listClones(voiceDirs.clones).map(({ id }) => id),
-    );
-  voiceApi = { voice: voiceConfig.voice, models: candidates, clones: voiceDirs.clones };
-  voice = createVoiceService({
-    paths: voiceDirs,
-    port: voiceConfig.port,
-    logFile: join(voiceDirs.tmp, 'voice.log'),
-    onEvent: (event) => {
-      if (event.type === 'state' || event.type === 'gave-up' || event.type === 'spawn-error') console.log(`voice: ${event.type === 'state' ? event.state : event.type}`);
-    },
-  });
-  if (voice.state === 'not-installed') console.error('voice off: data/voice/venv is missing (brew install uv, then pnpm voice:sync)');
-  else voice.start().catch(report);
-  const host = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
-  calls = createCalls({
-    sql,
-    voice,
-    config: () => ({ roles: settings.current().roles, voice: voiceConfig, local: settings.current().local }),
-    candidates,
-    model: localModel,
-    coreUrl: `http://${host}:${String(config.server.port)}`,
-    onError: report,
-  });
-  const closed = await calls.closeLeftovers();
-  if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
-  // Web Push (D-066, choice 7): a notification without content when no chat is open.
-  const push = voiceConfig.push;
-  if (push !== undefined) {
-    try {
-      const privateKey = await createVault({ data: config.paths.data }).resolve(push.privateKey);
-      pusher = createPusher({
-        sql,
-        publicKey: push.publicKey,
-        key: vapidKey(push.publicKey, privateKey.reveal()),
-        subject: push.subject,
-        // The fixed text, the only thing that leaves, goes through the gateway on channel push.
-        gate: async () =>
-          (await passGateway(sql, [{ value: PUSH_TEXT, label: 'L0', source: 'call:push' }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
-        onError: report,
-      });
-      console.log('Web Push on');
-    } catch (error) {
-      report(error);
-      console.error('Web Push off: see the error above');
-    }
-  }
-}
+// The calls (D-066), on the voice in place: off, they are refused. Limits,
+// voice and outgoing rules are read at each call (D-071).
+const voiceSettings = () => settings.current().voice ?? DEFAULT_VOICE;
+// Read at each request, like the roles: a new catalog entry needs no restart.
+const candidates = () =>
+  trialModels(
+    loadCatalog(config.home),
+    settings.current().roles,
+    voiceDirs.models,
+    fileSize,
+    listClones(voiceDirs.clones).map(({ id }) => id),
+  );
+const host = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
+const calls = createCalls({
+  sql,
+  voice: voice.service,
+  config: () => ({ roles: settings.current().roles, voice: voiceSettings(), local: settings.current().local }),
+  candidates,
+  model: localModel,
+  coreUrl: `http://${host}:${String(config.server.port)}`,
+  onError: report,
+});
+const closed = await calls.closeLeftovers();
+if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
+// Before the API: with [voice] the routes never answer "voice off" at start.
+await voice.begin(settings.current().voice);
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
   sql,
@@ -285,35 +300,36 @@ const server = await startApiServer({
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
     choices: () => settings.current().characters,
   },
-  ...(voice === undefined || voiceApi === undefined ? {} : { voice: { service: voice, ...voiceApi } }),
-  ...(calls === undefined ? {} : { calls }),
-  ...(pusher === undefined ? {} : { pusher }),
+  voice: { service: voice.service, voice: () => voiceSettings().voice, models: candidates, clones: voiceDirs.clones },
+  calls,
+  pusher: () => voice.pusher(),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });
 await worker.start();
 
-// The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing].
-let ringer: Ringer | undefined;
-if (calls !== undefined && voiceConfig !== undefined) {
-  const push = pusher;
-  ringer = createRinger({
-    sql,
-    rules: () => voiceConfig.outgoing,
-    voiceUp: () => voice?.state === 'up',
-    ...(push === undefined ? {} : { notify: async () => { await push.notify(); } }),
-    clientsOnline: () => server.clients(),
-    onError: report,
-  });
-}
+// The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing];
+// with the voice off nothing rings.
+const ringer = createRinger({
+  sql,
+  rules: () => voiceSettings().outgoing,
+  voiceUp: () => voice.service.state === 'up',
+  hold: (work) => voice.service.hold(work),
+  // Read at each ring: [voice.push] changes without a restart.
+  notify: () => {
+    const pusher = voice.pusher();
+    return pusher === undefined ? undefined : async () => { await pusher.notify(); };
+  },
+  clientsOnline: () => server.clients(),
+  onError: report,
+});
 
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
 // anyway: the web chat does not depend on it.
 await telegram.begin(settings.current().telegram);
 
-const shown = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
-console.log(`Arianna core on http://${shown}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
+console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 
 async function shutdown(): Promise<void> {
   if (stopping) return;
@@ -321,9 +337,9 @@ async function shutdown(): Promise<void> {
   settings.close();
   await telegram.close();
   await server.close();
-  ringer?.stop();
-  await calls?.close();
-  await voice?.stop();
+  ringer.stop();
+  await calls.close();
+  await voice.close();
   await worker.stop();
   await localServers.stop();
   await live.close();

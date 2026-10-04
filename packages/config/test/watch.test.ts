@@ -67,7 +67,7 @@ function next(watcher: { events: (ConfigChange | Error)[] }): Promise<ConfigChan
   });
 }
 
-test('every section but paths, database, server and voice applies live; an invalid file closes the exits only (D-071)', async () => {
+test('every section but paths, database and server applies live; an invalid file closes the exits only (D-071)', async () => {
   const seen = { events: [] as (ConfigChange | Error)[] };
   const watcher = watchConfig({
     initial: loadConfig(ENV),
@@ -133,14 +133,23 @@ test('every section but paths, database, server and voice applies live; an inval
     assert.deepEqual(await next(seen), { applied: [], restart: ['server'] });
     assert.equal(watcher.current().server.port, 7420);
 
-    // [voice] waits for a restart: the watcher keeps the old value.
+    // [voice] applies live too (D-071): on, changed, off.
     write({ ...SECOND, voice: structuredClone(DEFAULT_VOICE) });
-    assert.deepEqual(await next(seen), { applied: ['local.endpoints'], restart: ['voice'] });
-    assert.equal(watcher.current().voice, undefined);
+    assert.deepEqual(await next(seen), { applied: ['local.endpoints', 'voice'], restart: [] });
+    assert.deepEqual(watcher.current().voice, DEFAULT_VOICE);
+    const moved = { ...structuredClone(DEFAULT_VOICE), port: 7499, limits: { ...DEFAULT_VOICE.limits, callMinutes: 5 } };
+    write({ ...SECOND, voice: moved });
+    assert.deepEqual(await next(seen), { applied: ['voice'], restart: [] });
+    assert.equal(watcher.current().voice?.port, 7499);
+    assert.equal(watcher.current().voice?.limits.callMinutes, 5);
 
-    // With no exit open, an invalid file only reports the error.
+    // With no exit open, an invalid file only reports the error; the voice is not an exit and stays.
     write('[paths]\ndata = "/elsewhere"\n');
     assert.ok((await next(seen)) instanceof Error);
+    assert.equal(watcher.current().voice?.port, 7499);
+    write(SECOND);
+    assert.deepEqual(await next(seen), { applied: ['voice'], restart: [] });
+    assert.equal(watcher.current().voice, undefined);
 
     // A catalog that drops the model a role uses is invalid too: the old configuration stays.
     // Valid again, as the core already runs it: nothing to report.
@@ -161,6 +170,6 @@ test('diffConfig names the changed sections only', () => {
   assert.deepEqual(diffConfig(config, { ...config, server: { host: '::1', port: 1 } }), { applied: [], restart: ['server'] });
   assert.deepEqual(diffConfig(config, { ...config, telegram: { token: 'vault://t', chats: [1] } }), { applied: ['telegram'], restart: [] });
   assert.deepEqual(diffConfig(config, { ...config, cloud: { ...config.cloud, executors: ['codex'] } }), { applied: ['cloud.executors'], restart: [] });
-  assert.deepEqual(diffConfig(config, { ...config, voice: structuredClone(DEFAULT_VOICE) }), { applied: [], restart: ['voice'] });
+  assert.deepEqual(diffConfig(config, { ...config, voice: structuredClone(DEFAULT_VOICE) }), { applied: ['voice'], restart: [] });
   assert.deepEqual(diffConfig(config, { ...config, characters: { coder: 'p/robot' } }), { applied: ['characters'], restart: [] });
 });

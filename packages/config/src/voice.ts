@@ -6,8 +6,9 @@ import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from 
  * Calls over the internet (D-066): `[voice]` of arianna.toml. Absent: the core
  * does not start apps/voice and the chat offers no call. The models come from
  * `[roles]` (`stt`, `tts`, and `voice` for the replies); this section holds the
- * service, the limits and the rules for the calls Arianna makes. A restart
- * applies a change.
+ * service, the limits and the rules for the calls Arianna makes. A change
+ * applies without a restart (D-071): the port and `push` once no call is in
+ * progress, the rest at the next call.
  */
 export interface VoiceConfig {
   /** Loopback port of apps/voice; only the core talks to it. */

@@ -12,6 +12,8 @@ import { DATA_DIR, loadCatalog, resolveHome, voicePaths, type ModelCatalog } fro
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
+import type { Calls } from '../src/voice/calls.ts';
+import type { Pusher } from '../src/voice/push.ts';
 import { createVoiceService, voiceEnv, type VoiceService } from '../src/voice/service.ts';
 import { speakCall, transcribeCall, trialModels, type TrialModel } from '../src/voice/trial.ts';
 
@@ -180,7 +182,7 @@ before(async () => {
     live: {} as LiveFeed,
     host: '127.0.0.1',
     port: 0,
-    voice: { service, voice: 'if_sara', models: () => models, clones: join(tmpRoot, 'voices') },
+    voice: { service, voice: () => 'if_sara', models: () => models, clones: join(tmpRoot, 'voices') },
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -294,6 +296,49 @@ test('without [voice] the trial says off and every action is refused', async () 
     assert.equal((await call('POST', '/api/voice/trial/speak', { text: 'Ciao', model: 'kokoro-82m-bf16-mlx', voice: 'if_sara' })).status, 503);
     origin = saved;
   } finally {
+    await off.close();
+  }
+});
+
+test('the switch of the core (D-071): voice off refuses the trial, clones and calls; push follows its getter', async () => {
+  let state: 'off' | 'up' = 'off';
+  let pusher: Pusher | undefined;
+  const switched = {
+    get state() {
+      return state;
+    },
+    request: service.request.bind(service),
+  };
+  const calls = { start: () => Promise.reject(new Error('not reached')) } as unknown as Calls;
+  const off = await startApiServer({
+    sql: {} as Sql,
+    live: {} as LiveFeed,
+    host: '127.0.0.1',
+    port: 0,
+    voice: { service: switched, voice: () => 'it_female', models: () => models, clones: join(tmpRoot, 'voices') },
+    calls,
+    pusher: () => pusher,
+  });
+  const saved = origin;
+  try {
+    origin = `http://127.0.0.1:${String(off.port)}`;
+    assert.deepEqual(JSON.parse((await call('GET', '/api/voice/trial')).body.toString('utf8')), { state: 'off', voice: null, models: [] });
+    assert.equal((await call('GET', '/api/voice/clones')).status, 503);
+    assert.equal((await call('POST', '/api/calls', { conversationId: randomUUID(), sdp: 'v=0', type: 'offer' })).status, 503);
+    assert.equal((await call('POST', '/api/calls/schedule', { conversationId: randomUUID(), at: new Date().toISOString() })).status, 503);
+    assert.deepEqual(JSON.parse((await call('GET', '/api/push/key')).body.toString('utf8')), { publicKey: null });
+    assert.equal((await call('POST', '/api/push/unsubscribe', { endpoint: 'https://example.com/x' })).status, 503);
+
+    // Turned on without a restart: the same server sees it.
+    state = 'up';
+    pusher = { publicKey: 'Bkey', subscribe: () => Promise.resolve(), unsubscribe: () => Promise.resolve(), notify: () => Promise.resolve(0) };
+    const trial = JSON.parse((await call('GET', '/api/voice/trial')).body.toString('utf8')) as { state: string; voice: string };
+    assert.deepEqual([trial.state, trial.voice], ['up', 'it_female']);
+    assert.equal((await call('GET', '/api/voice/clones')).status, 200);
+    assert.deepEqual(JSON.parse((await call('GET', '/api/push/key')).body.toString('utf8')), { publicKey: 'Bkey' });
+    assert.equal((await call('POST', '/api/push/unsubscribe', { endpoint: 'https://example.com/x' })).status, 200);
+  } finally {
+    origin = saved;
     await off.close();
   }
 });

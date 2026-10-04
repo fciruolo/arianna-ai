@@ -82,7 +82,8 @@ export async function liveCall(sql: Queryable): Promise<Call | undefined> {
 
 export interface CallsOptions {
   sql: Sql;
-  voice: Pick<VoiceService, 'state' | 'request'>;
+  /** `hold`, from the switch of the core, keeps the service in place from the check of its state to the row of a new call. */
+  voice: Pick<VoiceService, 'state' | 'request'> & { hold?: <T>(work: () => Promise<T>) => Promise<T> };
   /** Read at each call: roles, limits and local servers of the current configuration. */
   config: () => { roles: { voice?: string }; voice: VoiceConfig; local: { endpoints: readonly { models: Record<string, string> }[] } };
   candidates: () => TrialModel[];
@@ -153,6 +154,7 @@ export function createCalls(options: CallsOptions): Calls {
   const { sql } = options;
   const sessions = new Map<string, Session>();
   const pollMs = options.pollMs ?? 2000;
+  const hold = <T>(work: () => Promise<T>): Promise<T> => (options.voice.hold === undefined ? work() : options.voice.hold(work));
 
   async function finish(callId: string, status: CallStatus, reason: CallEndReason): Promise<Call> {
     const session = sessions.get(callId);
@@ -466,26 +468,27 @@ export function createCalls(options: CallsOptions): Calls {
       const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
       if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
       if (conversation.archivedAt !== null) throw new CallError('archived', 'the conversation is archived: restore it to call');
-      if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
-      const { roles, local, voice } = options.config();
-      const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
-      if (!ready.ready) throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
-
-      let call: Call;
-      try {
-        call = await sql.begin(async (tx) => {
-          const [row] = await tx.unsafe<Call[]>(
-            `INSERT INTO calls (conversation_id, direction, status) VALUES ($1, 'in', 'connecting') RETURNING ${CALL_COLUMNS}`,
-            [conversationId],
-          );
-          if (row === undefined) throw new Error('INSERT INTO calls returned no row');
-          await appendEvent(tx, { kind: 'call.started', label: 'L0', payload: { callId: row.id, conversationId, direction: 'in' } });
-          return row;
-        });
-      } catch (error) {
-        if ((error as { code?: unknown }).code === '23505') throw new CallError('busy', 'another call is in progress');
-        throw error;
-      }
+      // The check and the row together: the service is not replaced in between (D-071).
+      const call = await hold(async () => {
+        if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
+        const { roles, local, voice } = options.config();
+        const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
+        if (!ready.ready) throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
+        try {
+          return await sql.begin(async (tx) => {
+            const [row] = await tx.unsafe<Call[]>(
+              `INSERT INTO calls (conversation_id, direction, status) VALUES ($1, 'in', 'connecting') RETURNING ${CALL_COLUMNS}`,
+              [conversationId],
+            );
+            if (row === undefined) throw new Error('INSERT INTO calls returned no row');
+            await appendEvent(tx, { kind: 'call.started', label: 'L0', payload: { callId: row.id, conversationId, direction: 'in' } });
+            return row;
+          });
+        } catch (error) {
+          if ((error as { code?: unknown }).code === '23505') throw new CallError('busy', 'another call is in progress');
+          throw error;
+        }
+      });
 
       return connect(call, offer, CALL_TEXT.greeting);
     },
