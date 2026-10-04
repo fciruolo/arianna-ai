@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Message } from '../src/conversations.ts';
-import { callReadiness, delegationRequest, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { callReadiness, delegationRequest, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 
-const message = (role: Message['role'], body: string, label: Message['label'] = 'L1'): Message => ({
-  id: '1',
+const message = (role: Message['role'], body: string, label: Message['label'] = 'L1', id = '1'): Message => ({
+  id,
   conversationId: 'c',
   ts: new Date(0),
   role,
@@ -23,11 +23,47 @@ test('voicePrompt: the system prompt, then the latest user and assistant message
   const prompt = voicePrompt(history, 'L0');
   assert.equal(prompt.messages[0]?.content, VOICE_SYSTEM_PROMPT);
   assert.deepEqual(prompt.messages.slice(1).map(({ role }) => role), ['user', 'assistant']);
-  assert.ok((prompt.messages[2]?.content.length ?? 0) <= 1201);
+  assert.ok((prompt.messages[2]?.content.length ?? 0) <= HISTORY_CHARS + 1);
   assert.equal(prompt.label, 'L2');
   const long = Array.from({ length: 40 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', String(index), 'L0'));
   assert.equal(voicePrompt(long, 'L0').messages.length, HISTORY_MESSAGES + 1);
   assert.equal(voicePrompt([], 'L1').label, 'L1');
+});
+
+/** A conversation of `count` spoken messages, ids from 1. */
+const conversation = (count: number): Message[] =>
+  Array.from({ length: count }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', `m${String(index + 1)}`, 'L0', String(index + 1)));
+
+test('voicePrompt: the window stays anchored to its first message, so each prompt extends the previous one (D-072)', () => {
+  const first = voicePrompt(conversation(20), 'L0');
+  assert.equal(first.anchor, String(20 - HISTORY_MESSAGES + 1));
+  // Two turns later: the same start, two messages more, the earlier prompt as its prefix.
+  const later = voicePrompt(conversation(22), 'L0', first.anchor);
+  assert.equal(later.anchor, first.anchor);
+  assert.equal(later.messages.length, first.messages.length + 2);
+  assert.deepEqual(later.messages.slice(0, first.messages.length), first.messages);
+  // A system message in between is left out without moving the start.
+  const withSystem = [...conversation(22), message('system', 'errore', 'L0', '23')];
+  assert.deepEqual(voicePrompt(withSystem, 'L0', first.anchor).messages, later.messages);
+});
+
+test('voicePrompt: past the maximum, or when the anchor is gone, the window starts again from the latest messages', () => {
+  const anchor = String(20 - HISTORY_MESSAGES + 1);
+  const full = voicePrompt(conversation(20 - HISTORY_MESSAGES + HISTORY_MAX_MESSAGES), 'L0', anchor);
+  assert.equal(full.anchor, anchor);
+  assert.equal(full.messages.length, HISTORY_MAX_MESSAGES + 1);
+  const over = voicePrompt(conversation(20 - HISTORY_MESSAGES + HISTORY_MAX_MESSAGES + 1), 'L0', anchor);
+  assert.notEqual(over.anchor, anchor);
+  assert.equal(over.messages.length, HISTORY_MESSAGES + 1);
+  const gone = voicePrompt(conversation(20), 'L0', '999');
+  assert.equal(gone.anchor, String(20 - HISTORY_MESSAGES + 1));
+  // The label covers the whole window, not only the latest messages.
+  const labelled = conversation(12);
+  labelled[2] = message('user', 'privato', 'L2', '3');
+  assert.equal(voicePrompt(labelled, 'L0', '3').label, 'L2');
+  assert.equal(voicePrompt(labelled, 'L0').label, 'L0');
+  // An empty conversation keeps the anchor it had (none).
+  assert.equal(voicePrompt([], 'L0').anchor, undefined);
 });
 
 test('parseReply: a DELEGA line asks for a delegation; anything else is said, cleaned', () => {

@@ -4,7 +4,7 @@ import { VOICE_ALIAS, type VoiceConfig } from '@arianna/config';
 import type { LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForUserMessage, maxLabel, scanText, type Label } from '@arianna/policy';
 
-import { ChatError, checkMessageBody, isUuid, listMessages, loadConversation, loadMessage, postUserMessage, taskTitle, type Message } from '../conversations.ts';
+import { ChatError, checkMessageBody, isUuid, listMessages, loadConversation, loadMessage, postUserMessage, taskTitle, type Conversation, type Message } from '../conversations.ts';
 import type { Queryable, Sql } from '../db/client.ts';
 import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
@@ -13,7 +13,7 @@ import { loadTask } from '../tasks.ts';
 import { FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
-import { CALL_TEXT, callReadiness, cleanTranscript, delegationRequest, MAX_REPLY_TOKENS, opensDelegation, sentenceSplitter, speakable, summaryToSay, voicePrompt } from './turns.ts';
+import { CALL_TEXT, callReadiness, cleanTranscript, delegationRequest, HISTORY_FETCH, MAX_REPLY_TOKENS, opensDelegation, sentenceSplitter, speakable, summaryToSay, voicePrompt } from './turns.ts';
 
 /**
  * Calls from the web chat (D-066): the page sends its WebRTC offer here, the
@@ -128,6 +128,10 @@ interface Session {
   latest: number;
   /** Stops the model of the turn at work, when a newer one comes. */
   stop: AbortController | undefined;
+  /** The first message the voice reads (D-072): every turn starts from it, so the prompt only grows. */
+  anchor: string | undefined;
+  /** Stops the warm-up of the prompt when the first turn comes. */
+  warming: AbortController | undefined;
 }
 
 function tokenMatches(session: Session, token: string | undefined): boolean {
@@ -159,6 +163,9 @@ export function createCalls(options: CallsOptions): Calls {
   async function finish(callId: string, status: CallStatus, reason: CallEndReason): Promise<Call> {
     const session = sessions.get(callId);
     if (session !== undefined) clearTimeout(session.timer);
+    // Hanging up during the greeting or a reply frees the model at once.
+    session?.warming?.abort();
+    session?.stop?.abort();
     sessions.delete(callId);
     const call = await sql.begin(async (tx) => {
       const [row] = await tx.unsafe<Call[]>(
@@ -262,6 +269,51 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /**
+   * What the voice model reads: the anchored window (D-072), allowed by the
+   * gateway like the orchestrator does; undefined when the gateway blocks it.
+   */
+  async function readPrompt(call: Call, conversation: Conversation, session: Session) {
+    const prompt = voicePrompt(await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH }), conversation.effectiveLabel, session.anchor);
+    const effective = maxLabel(conversation.effectiveLabel, prompt.label);
+    const decision = await passGateway(
+      sql,
+      prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
+      createContext(conversation.clearance, effective),
+      { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
+    );
+    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) return undefined;
+    const allowed = prompt.messages.map((part, index) => ({ role: part.role, content: decision.texts[index] ?? '' }));
+    return { prompt, effective, allowed };
+  }
+
+  /**
+   * While the greeting is said, the model reads the window once (one token,
+   * thrown away): oMLX keeps its prefix, and the first turn reads only the
+   * new words (D-072). Best effort: the first turn stops it if still at work.
+   */
+  async function warm(callId: string, session: Session): Promise<void> {
+    const call = await loadCall(sql, callId);
+    if (call?.status !== 'active' || sessions.get(callId) !== session || session.latest > 0) return;
+    const conversation = await loadConversation(sql, call.conversationId);
+    if (conversation === undefined || conversation.archivedAt !== null) return;
+    const read = await readPrompt(call, conversation, session);
+    // A turn that came meanwhile has set its own anchor: the warm-up never moves it.
+    if (session.latest > 0 || sessions.get(callId) !== session) return;
+    session.anchor ??= read?.prompt.anchor;
+    if (read === undefined) return;
+    const stop = new AbortController();
+    session.warming = stop;
+    try {
+      await options.model().chat({ model: VOICE_ALIAS, messages: read.allowed, maxTokens: 1, temperature: 0, timeoutMs: 30_000, signal: stop.signal });
+    } catch (error) {
+      // Stopped by the first turn or the end of the call: expected, not an error.
+      if (!stop.signal.aborted) throw error;
+    } finally {
+      if (session.warming === stop) session.warming = undefined;
+    }
+  }
+
+  /**
    * One turn: store the words, ask the model through the gateway and say its
    * reply one sentence at a time as it is written (D-070), each through the
    * gateway towards the call; what was said goes into the history at the end.
@@ -279,20 +331,14 @@ export function createCalls(options: CallsOptions): Calls {
     }
     await storeUserTurn(call, words, conversation.clearance);
 
-    // The model reads the history only once the gateway allowed it, like the orchestrator does.
-    const prompt = voicePrompt(await listMessages(sql, call.conversationId, { limit: 40 }), conversation.effectiveLabel);
-    const effective = maxLabel(conversation.effectiveLabel, prompt.label);
-    const decision = await passGateway(
-      sql,
-      prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${callId}` })),
-      createContext(conversation.clearance, effective),
-      { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
-    );
-    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) {
+    session.warming?.abort();
+    const read = await readPrompt(call, conversation, session);
+    if (read !== undefined) session.anchor = read.prompt.anchor;
+    if (read === undefined) {
       emit(CALL_TEXT.cannotRead);
       return;
     }
-    const allowed = prompt.messages.map((part, index) => ({ role: part.role, content: decision.texts[index] ?? '' }));
+    const { prompt, effective, allowed } = read;
 
     const label = maxLabel(prompt.label, effective);
     const canSay = isAtMost(label, conversation.clearance);
@@ -419,7 +465,7 @@ export function createCalls(options: CallsOptions): Calls {
       throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
     }
     const token = randomBytes(32).toString('base64url');
-    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined };
+    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined, anchor: undefined, warming: undefined };
     sessions.set(call.id, session);
     try {
       const answer = await options.voice.request('POST', '/calls', {
@@ -449,6 +495,8 @@ export function createCalls(options: CallsOptions): Calls {
         `UPDATE calls SET status = 'active', answered_at = now() WHERE id = $1 AND status = 'connecting' RETURNING ${CALL_COLUMNS}`,
         [call.id],
       );
+      // Only a help: a failure goes to the log of the core, never to the call.
+      warm(call.id, session).catch((error: unknown) => options.onError?.(error));
       return { call: active ?? call, answer: { sdp: body.sdp, type: 'answer' } };
     } catch (error) {
       await finish(call.id, 'failed', 'voice-error').catch(() => undefined);

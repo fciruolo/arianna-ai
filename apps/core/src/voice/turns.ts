@@ -19,9 +19,22 @@ export const VOICE_SYSTEM_PROMPT = [
 ].join(' ');
 
 export const DELEGATION_PREFIX = 'DELEGA:';
-/** What the voice reads of the conversation: the latest messages, each cut. */
-export const HISTORY_MESSAGES = 16;
-export const HISTORY_CHARS = 1200;
+/**
+ * What the voice reads of the conversation (D-072): the latest messages when
+ * the call starts, each cut, then everything said or written after them. The
+ * window stays anchored to its first message, so every turn's prompt extends
+ * the previous one and oMLX reuses its prefix cache; past the maximum it
+ * starts again from the latest messages (one turn reads the whole prompt).
+ */
+export const HISTORY_MESSAGES = 8;
+export const HISTORY_MAX_MESSAGES = 40;
+export const HISTORY_CHARS = 400;
+/**
+ * What a call reads from the database to find its window: more than the
+ * maximum, system messages in between (with more than 40 of them during a
+ * call the anchor falls out of the page and the window starts again: harmless).
+ */
+export const HISTORY_FETCH = 80;
 export const MAX_REPLY_TOKENS = 200;
 /** A transcript longer than this is cut: nobody says more in one turn. */
 export const MAX_TURN_CHARS = 4000;
@@ -31,14 +44,24 @@ export interface VoicePrompt {
   messages: { role: 'system' | 'user' | 'assistant'; content: string; label: Label }[];
   /** The highest label among what the model reads: the reply inherits it. */
   label: Label;
+  /** The id of the first message read: the next turn starts from it too. */
+  anchor: string | undefined;
 }
 
-/** The system prompt, then the latest user and assistant messages; system messages are left out. */
-export function voicePrompt(history: readonly Message[], floor: Label): VoicePrompt {
-  const kept = history.filter((message) => message.role !== 'system').slice(-HISTORY_MESSAGES);
+/**
+ * The system prompt, then the user and assistant messages from `anchor` on
+ * (system messages are left out). Without an anchor, when it is no longer in
+ * `history`, or when the window grew past the maximum, it starts again from
+ * the latest messages.
+ */
+export function voicePrompt(history: readonly Message[], floor: Label, anchor?: string): VoicePrompt {
+  const spoken = history.filter((message) => message.role !== 'system');
+  const from = anchor === undefined ? -1 : spoken.findIndex((message) => message.id === anchor);
+  const kept = from !== -1 && spoken.length - from <= HISTORY_MAX_MESSAGES ? spoken.slice(from) : spoken.slice(-HISTORY_MESSAGES);
   const label = kept.reduce<Label>((highest, message) => maxLabel(highest, message.label), floor);
   return {
     label,
+    anchor: kept[0]?.id,
     messages: [
       { role: 'system', content: VOICE_SYSTEM_PROMPT, label: 'L0' },
       ...kept.map((message) => ({

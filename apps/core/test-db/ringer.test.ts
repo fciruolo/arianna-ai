@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { DEFAULT_VOICE, type OutgoingRules } from '@arianna/config';
-import type { LocalModel } from '@arianna/executors';
+import type { ChatRequest, LocalModel } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
 
 import { createConversation, listMessages, postUserMessage } from '../src/conversations.ts';
@@ -39,7 +39,13 @@ const voice = {
     return Promise.resolve({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(body)) });
   },
 };
-const model: LocalModel = { chat: () => Promise.resolve({ text: 'Va bene.', finishReason: 'stop', endpoint: 'f', model: 'f', durationMs: 1 }) };
+const asked: ChatRequest[] = [];
+const model: LocalModel = {
+  chat: (request) => {
+    asked.push(request);
+    return Promise.resolve({ text: 'Va bene.', finishReason: 'stop', endpoint: 'f', model: 'f', durationMs: 1 });
+  },
+};
 const READY: TrialModel[] = [
   { id: 'parakeet-tdt-0.6b-v3-mlx', family: 'parakeet', kind: 'stt', present: true, assigned: true, sizeBytes: 1, voices: [] },
   { id: 'kokoro-82m-bf16-mlx', family: 'kokoro', kind: 'tts', present: true, assigned: true, sizeBytes: 1, voices: ['if_sara'] },
@@ -221,6 +227,9 @@ test('a scheduled call rings at its time, even at night; it can be cancelled bef
   const { call: active } = await calls.answer(call.id, { sdp: SDP, type: 'offer' });
   assert.equal(active.status, 'active');
   assert.equal((voiceCalls.at(-1)?.json as { texts: { greeting: string } }).texts.greeting, OUTGOING_TEXT.scheduled.greeting);
+  // While the greeting is said the voice model reads the conversation once (D-072).
+  for (let tries = 0; tries < 100 && !asked.some((request) => request.maxTokens === 1); tries += 1) await wait(20);
+  assert.ok(asked.some((request) => request.maxTokens === 1));
   await calls.end(call.id, 'hangup');
   await assert.rejects(calls.answer(call.id, { sdp: SDP, type: 'offer' }), { code: 'ended' });
 

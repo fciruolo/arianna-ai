@@ -12,7 +12,7 @@ import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { createCalls, liveCall, listCalls, loadCall, type Calls } from '../src/voice/calls.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
-import { CALL_TEXT } from '../src/voice/turns.ts';
+import { CALL_TEXT, HISTORY_MESSAGES } from '../src/voice/turns.ts';
 import { createTestDatabase, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
@@ -145,6 +145,80 @@ test('the user calls from a conversation: the voice gets the offer, the models a
   await assert.rejects(calls.turn(call.id, tokenOf(call.id), 'ancora'), { code: 'unauthorized' });
   assert.equal((await listCalls(db().sql, conversation.id)).length, 1);
   assert.equal(await liveCall(db().sql), undefined);
+});
+
+/** The latest request to the model. */
+function lastAsked(): ChatRequest {
+  const request = asked.at(-1);
+  assert.ok(request !== undefined, 'the model was not asked');
+  return request;
+}
+
+test('the window is read while the greeting is said, then each turn extends the same prompt (D-072)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  for (let index = 0; index < 12; index += 1) {
+    await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${conversation.id}, ${index % 2 === 0 ? 'user' : 'assistant'}, 'web', 'L1', ${`scritto ${String(index)}`})`;
+  }
+  const allowedReads = async () =>
+    (await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM gateway_log WHERE target_kind = 'executor' AND target = 'local' AND decision = 'allow'`)[0]?.count ?? 0;
+  const readsBefore = await allowedReads();
+  const before = asked.length;
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  await until(() => asked.length > before);
+  const warm = lastAsked();
+  assert.equal(warm.maxTokens, 1);
+  assert.equal(warm.onText, undefined);
+  // The system prompt and the latest messages, through the gateway like a turn.
+  assert.equal(warm.messages.length, HISTORY_MESSAGES + 1);
+  assert.equal(warm.messages.at(-1)?.content, 'scritto 11');
+  assert.equal(await allowedReads(), readsBefore + 1);
+
+  await calls.turn(call.id, tokenOf(call.id), 'Primo turno');
+  const first = lastAsked();
+  assert.deepEqual(first.messages.slice(0, warm.messages.length), warm.messages);
+  for (const words of ['Secondo turno', 'Terzo turno', 'Quarto turno', 'Quinto turno']) await calls.turn(call.id, tokenOf(call.id), words);
+  // Ten messages more than the window at the start: none of the first ones dropped.
+  const fifth = lastAsked();
+  assert.equal(fifth.messages.length, HISTORY_MESSAGES + 1 + 10 - 1);
+  assert.deepEqual(fifth.messages.slice(0, warm.messages.length), warm.messages);
+  await calls.end(call.id, 'hangup');
+});
+
+test('the first turn stops a warm-up still at work', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  let open: () => void = () => undefined;
+  modelGate = new Promise((resolve) => {
+    open = resolve;
+  });
+  const before = asked.length;
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  await until(() => asked.length > before);
+  const warm = lastAsked();
+  assert.equal(warm.maxTokens, 1);
+  const turn = calls.turn(call.id, tokenOf(call.id), 'Ci sei?');
+  await until(() => warm.signal?.aborted === true);
+  assert.equal(warm.signal?.aborted, true);
+  open();
+  modelGate = undefined;
+  assert.deepEqual(await turn, { say: 'Ciao! Tutto bene.' });
+  await calls.end(call.id, 'hangup');
+});
+
+test('hanging up during the greeting stops the warm-up', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  let open: () => void = () => undefined;
+  modelGate = new Promise((resolve) => {
+    open = resolve;
+  });
+  const before = asked.length;
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  await until(() => asked.length > before);
+  const warm = lastAsked();
+  assert.equal(warm.maxTokens, 1);
+  await calls.end(call.id, 'hangup');
+  assert.equal(warm.signal?.aborted, true);
+  open();
+  modelGate = undefined;
 });
 
 test('a delegation becomes a task of Arianna in the same conversation; past the limit the call says so', async () => {
