@@ -34,7 +34,7 @@ class FakeModels:
 
     def speak(self, ref, text, voice):
         self.calls.append(("speak", ref.id, voice))
-        return Speech(encode_wav(b"\x00\x00" * 24, 24_000), 0.001, 24_000), 0.5
+        return Speech(encode_wav(b"\x00\x00" * 24, 24_000), 0.001, 24_000), 0.5, 0.25
 
     def close(self) -> None:
         pass
@@ -73,6 +73,7 @@ if AioHTTPTestCase is not None:
             self.assertEqual(response.content_type, "audio/wav")
             self.assertEqual((await response.read())[:4], b"RIFF")
             self.assertEqual(response.headers["X-Seconds-Spent"], "0.500")
+            self.assertEqual(response.headers["X-First-Audio"], "0.250")
 
         async def test_bad_requests(self) -> None:
             response = await self.client.post("/trial/speak", data="{}", headers={**self.auth(), "Content-Type": "text/plain"})

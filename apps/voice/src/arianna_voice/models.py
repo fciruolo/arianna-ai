@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -125,30 +127,47 @@ class Models:
             raise ModelError("inference") from error
         return str(getattr(result, "text", "")).strip(), time.monotonic() - started
 
-    def speak(self, ref: ModelRef, text: str, voice: str) -> tuple[Speech, float]:
-        """The speech as WAV and the seconds spent, loading excluded."""
-        pcm16, rate, spent = self.speak_pcm(ref, text, voice)
-        return Speech(encode_wav(pcm16, rate), len(pcm16) / 2 / rate, rate), spent
+    def speak(self, ref: ModelRef, text: str, voice: str) -> tuple[Speech, float, float]:
+        """The speech as WAV, the seconds spent and the seconds to the first audio
+        (what a call waits before Arianna speaks), loading excluded."""
+        self._load(ref)
+        pieces: list[bytes] = []
+        rate = 24_000
+        first: float | None = None
+        started = time.monotonic()
 
-    def speak_pcm(self, ref: ModelRef, text: str, voice: str) -> tuple[bytes, int, float]:
-        """16-bit mono samples, their rate and the seconds spent: what a call plays."""
+        def collect(pcm16: bytes, piece_rate: int) -> None:
+            nonlocal rate, first
+            if first is None:
+                first = time.monotonic() - started
+            pieces.append(pcm16)
+            rate = piece_rate
+
+        self.speak_stream(ref, text, voice, collect, threading.Event())
+        spent = time.monotonic() - started
+        pcm16 = b"".join(pieces)
+        return Speech(encode_wav(pcm16, rate), len(pcm16) / 2 / rate, rate), spent, spent if first is None else first
+
+    def speak_stream(self, ref: ModelRef, text: str, voice: str, emit: Callable[[bytes, int], None], stop: threading.Event) -> None:
+        """Says `text`, handing 16-bit mono samples and their rate to `emit` as the
+        model makes them (D-068); stops between two pieces once `stop` is set."""
         model = self._load(ref)
         # verbose=False everywhere: the libraries would print what they say to the log.
-        kwargs = speak_arguments(ref.family, voice, self._voice_file(ref, voice))
-        started = time.monotonic()
-        try:
-            pieces, rate = [], 24_000
-            for part in speak_parts(ref.family, text):
-                for result in model.generate(text=part, **kwargs, **part_limits(ref.family, part)):
-                    pieces.append(result.audio)
-                    rate = int(getattr(result, "sample_rate", rate))
-        except Exception as error:  # noqa: BLE001
-            raise ModelError("inference") from error
-        spent = time.monotonic() - started
+        kwargs = {**speak_arguments(ref.family, voice, self._voice_file(ref, voice)), **stream_arguments(ref.family)}
         import numpy as np
 
-        samples = np.concatenate([np.asarray(piece, dtype=np.float32).reshape(-1) for piece in pieces]) if pieces else np.zeros(0, np.float32)
-        return (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes(), rate, spent
+        try:
+            for part in speak_parts(ref.family, text):
+                if stop.is_set():
+                    return
+                for result in model.generate(text=part, **kwargs, **part_limits(ref.family, part)):
+                    if stop.is_set():
+                        return
+                    samples = np.asarray(result.audio, dtype=np.float32).reshape(-1)
+                    if samples.size:
+                        emit((np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes(), int(getattr(result, "sample_rate", 24_000)))
+        except Exception as error:  # noqa: BLE001
+            raise ModelError("inference") from error
 
     def _voice_file(self, ref: ModelRef, voice: str) -> str | None:
         """The file of the voice in the model folder; Qwen3-TTS speakers are not files."""
@@ -183,6 +202,19 @@ def speak_parts(family: str, text: str) -> list[str]:
 QWEN3_TOKENS_PER_SECOND = 12.5
 # Italian speech runs at about 15 characters a second; a sentence gets time for 5, plus 2 s.
 SLOWEST_CHARS_PER_SECOND = 5
+
+
+def stream_arguments(family: str) -> dict[str, Any]:
+    """Qwen3-TTS hands its audio over in pieces of 0.64 s (D-068): the first after
+    about 0.35 s, and faster than speech, so a call plays it without gaps. Kokoro
+    is quick enough sentence by sentence; Voxtral is slower than speech, and
+    pieces would leave holes. Pure, for the tests."""
+    if family == "qwen3-tts":
+        return {"stream": True, "streaming_interval": QWEN3_STREAM_SECONDS}
+    return {}
+
+
+QWEN3_STREAM_SECONDS = 0.64
 
 
 def part_limits(family: str, part: str) -> dict[str, Any]:

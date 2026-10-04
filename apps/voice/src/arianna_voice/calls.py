@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -100,14 +101,39 @@ class MlxTTS(TTSService):
         return False
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
+        # The audio goes out as the model makes it (D-068): the MLX thread hands
+        # pieces to this loop through a queue; an interruption stops the model.
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[bytes, int] | None] = asyncio.Queue()
+        stop = threading.Event()
+
+        def emit(pcm16: bytes, rate: int) -> None:
+            # With the loop already closed (shutdown) this raises, and speak_stream
+            # ends as an inference error that nobody reads.
+            loop.call_soon_threadsafe(queue.put_nowait, (pcm16, rate))
+
+        job = asyncio.ensure_future(self._models.run(self._models.speak_stream, self._ref, text, self._voice, emit, stop))
+        job.add_done_callback(lambda _: queue.put_nowait(None))
         try:
-            pcm16, rate, _ = await self._models.run(self._models.speak_pcm, self._ref, text, self._voice)
-        except ModelError as error:
-            yield ErrorFrame(error=f"tts {error.code}")
-            return
-        step = int(rate * CHUNK_SECONDS) * 2
-        for offset in range(0, len(pcm16), step):
-            yield TTSAudioRawFrame(audio=pcm16[offset : offset + step], sample_rate=rate, num_channels=1, context_id=context_id)
+            while (item := await queue.get()) is not None:
+                pcm16, rate = item
+                step = int(rate * CHUNK_SECONDS) * 2
+                for offset in range(0, len(pcm16), step):
+                    yield TTSAudioRawFrame(audio=pcm16[offset : offset + step], sample_rate=rate, num_channels=1, context_id=context_id)
+            # Cancelled by Models.close (shutdown): not this generator's cancellation,
+            # which Pipecat would take for its own and stop the service silently.
+            if job.cancelled():
+                yield ErrorFrame(error="tts cancelled")
+                return
+            error = job.exception()
+            if isinstance(error, ModelError):
+                yield ErrorFrame(error=f"tts {error.code}")
+            elif error is not None:
+                raise error
+        finally:
+            stop.set()
+            # Interrupted: the job ends at the next piece; its error, if any, is nobody's news.
+            job.add_done_callback(lambda done: done.cancelled() or done.exception())
 
 
 class CoreBrain(FrameProcessor):

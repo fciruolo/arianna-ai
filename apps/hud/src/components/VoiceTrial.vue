@@ -154,7 +154,7 @@ async function stopRecording(): Promise<void> {
 // Speaking.
 const reply = ref(TRIAL_REPLY);
 const speaking = ref<string | null>(null);
-const spoken = ref<Record<string, { url: string; seconds: number | undefined }>>({});
+const spoken = ref<Record<string, { url: string; seconds: number | undefined; first: number | undefined }>>({});
 const speakError = ref<string | null>(null);
 
 async function speak(model: string, voice: string | undefined): Promise<void> {
@@ -162,10 +162,10 @@ async function speak(model: string, voice: string | undefined): Promise<void> {
   speakError.value = null;
   speaking.value = model;
   try {
-    const { audio, seconds } = await speakTrial(reply.value, model, voice);
+    const { audio, seconds, first } = await speakTrial(reply.value, model, voice);
     const previous = spoken.value[model];
     if (previous !== undefined) URL.revokeObjectURL(previous.url);
-    spoken.value = { ...spoken.value, [model]: { url: URL.createObjectURL(audio), seconds } };
+    spoken.value = { ...spoken.value, [model]: { url: URL.createObjectURL(audio), seconds, first } };
     await new Audio(spoken.value[model]?.url).play().catch(() => undefined);
   } catch (error) {
     speakError.value = error instanceof ApiError ? `Sintesi non riuscita: ${error.message}` : 'Sintesi non riuscita.';
@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
             La risposta da ascoltare (puoi cambiarla)
             <textarea v-model="reply" rows="3" maxlength="400" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14.5px]" />
           </label>
-          <p class="text-xs text-muted">Ogni modello ha le sue voci. «Generata in» dice quanto aspetteresti in chiamata prima che Arianna parli: la prima volta il modello si carica e ci vuole di più.</p>
+          <p class="text-xs text-muted">Ogni modello ha le sue voci. «Primo suono» è quanto aspetteresti in chiamata prima che Arianna cominci a parlare; «tutta in» quanto ci mette a generare l’intera risposta. La prima volta il modello si carica e ci vuole di più.</p>
           <p v-if="speakError !== null" role="alert" class="text-sm text-danger">{{ speakError }}</p>
           <ul class="flex flex-col gap-2">
             <li v-for="model in tts" :key="model.id" class="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2">
@@ -278,7 +278,8 @@ onBeforeUnmount(() => {
               >
                 <option v-for="name in model.voices" :key="name" :value="name">{{ VOICE_TEXT[name] ?? name }}</option>
               </select>
-              <span v-if="spoken[model.id]?.seconds !== undefined" class="font-mono text-[11px] text-muted">generata in {{ secondsText(spoken[model.id]?.seconds ?? 0) }}</span>
+              <span v-if="spoken[model.id]?.first !== undefined" class="font-mono text-[11px] text-accent">primo suono {{ secondsText(spoken[model.id]?.first ?? 0) }}</span>
+              <span v-if="spoken[model.id]?.seconds !== undefined" class="font-mono text-[11px] text-muted">tutta in {{ secondsText(spoken[model.id]?.seconds ?? 0) }}</span>
               <button type="button" class="btn" :disabled="!model.present || speaking !== null || model.voices.length === 0 || reply.trim() === ''" @click="speak(model.id, voiceOf(model))">
                 <Icon name="play" :size="16" />{{ speaking === model.id ? 'Genero…' : 'Ascolta' }}
               </button>

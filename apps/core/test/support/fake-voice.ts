@@ -25,7 +25,7 @@ const server = createServer((request, response) => {
         response.writeHead(500, { 'content-type': 'application/json' }).end('{"error":"inference"}');
         return;
       }
-      response.writeHead(200, { 'content-type': 'audio/wav', 'x-seconds-spent': '0.25' }).end(Buffer.concat([Buffer.from('RIFF'), Buffer.from(JSON.stringify(body))]));
+      response.writeHead(200, { 'content-type': 'audio/wav', 'x-seconds-spent': '0.25', 'x-first-audio': '0.1' }).end(Buffer.concat([Buffer.from('RIFF'), Buffer.from(JSON.stringify(body))]));
     } else {
       response.writeHead(404).end();
     }

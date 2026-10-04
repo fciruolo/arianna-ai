@@ -175,7 +175,7 @@ export async function transcribeTrial(pcm16: string): Promise<TrialTranscript[]>
 }
 
 /** One candidate says `text`: the WAV and the seconds it took. */
-export async function speakTrial(text: string, model: string, voice: string): Promise<{ audio: Blob; seconds: number | undefined }> {
+export async function speakTrial(text: string, model: string, voice: string): Promise<{ audio: Blob; seconds: number | undefined; first: number | undefined }> {
   const response = await fetch('/api/voice/trial/speak', {
     method: 'POST',
     credentials: 'same-origin',
@@ -186,8 +186,12 @@ export async function speakTrial(text: string, model: string, voice: string): Pr
     const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
   }
-  const seconds = Number(response.headers.get('x-seconds-spent'));
-  return { audio: await response.blob(), seconds: Number.isFinite(seconds) && response.headers.has('x-seconds-spent') ? seconds : undefined };
+  const header = (name: string): number | undefined => {
+    const value = Number(response.headers.get(name));
+    return response.headers.has(name) && Number.isFinite(value) ? value : undefined;
+  };
+  // The seconds to the first audio are what a call waits before Arianna speaks (D-068).
+  return { audio: await response.blob(), seconds: header('x-seconds-spent'), first: header('x-first-audio') };
 }
 
 /** Ends a call from its id (one left open by a page that was reloaded). */

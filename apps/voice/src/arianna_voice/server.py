@@ -80,12 +80,9 @@ async def transcribe(request: web.Request) -> web.Response:
 async def speak(request: web.Request) -> web.Response:
     parsed = parse_speak(await read_json(request))
     models = request.app[MODELS_KEY]
-    speech, spent = await models.run(models.speak, parsed.model, parsed.text, parsed.voice)
-    return web.Response(
-        body=speech.wav,
-        content_type="audio/wav",
-        headers={"X-Seconds-Spent": f"{spent:.3f}", "X-Audio-Seconds": f"{speech.seconds:.3f}", "Cache-Control": "no-store"},
-    )
+    speech, spent, first = await models.run(models.speak, parsed.model, parsed.text, parsed.voice)
+    headers = {"X-Seconds-Spent": f"{spent:.3f}", "X-First-Audio": f"{first:.3f}", "X-Audio-Seconds": f"{speech.seconds:.3f}", "Cache-Control": "no-store"}
+    return web.Response(body=speech.wav, content_type="audio/wav", headers=headers)
 
 
 def calls_of(app: web.Application):

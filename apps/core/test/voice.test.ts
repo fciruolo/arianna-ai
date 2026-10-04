@@ -183,7 +183,7 @@ after(async () => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-function call(method: string, path: string, body?: unknown): Promise<{ status: number; type: string; cache: string | undefined; body: Buffer }> {
+function call(method: string, path: string, body?: unknown): Promise<{ status: number; type: string; cache: string | undefined; first?: string; body: Buffer }> {
   const payload = body === undefined ? undefined : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const request = httpRequest(
@@ -197,7 +197,8 @@ function call(method: string, path: string, body?: unknown): Promise<{ status: n
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
         response.on('end', () => {
-          resolve({ status: response.statusCode ?? 0, type: String(response.headers['content-type']), cache: response.headers['cache-control'], body: Buffer.concat(chunks) });
+          const first = response.headers['x-first-audio'];
+          resolve({ status: response.statusCode ?? 0, type: String(response.headers['content-type']), cache: response.headers['cache-control'], ...(typeof first === 'string' ? { first } : {}), body: Buffer.concat(chunks) });
         });
       },
     );
@@ -235,6 +236,8 @@ test('trial API: candidates, transcription by every present model, speech as WAV
   assert.equal(spoken.status, 200);
   assert.equal(spoken.type, 'audio/wav');
   assert.equal(spoken.cache, 'no-store');
+  // The seconds to the first audio come through, rewritten by the core (D-068).
+  assert.equal(spoken.first, '0.100');
   assert.equal(spoken.body.subarray(0, 4).toString(), 'RIFF');
   // What the core sent the voice: the model with its family, chosen by the core, and the voice.
   assert.deepEqual(JSON.parse(spoken.body.subarray(4).toString()), {

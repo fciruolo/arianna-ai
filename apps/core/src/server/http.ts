@@ -315,8 +315,13 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
       const answer = await service.request('POST', '/trial/speak', { json: call, timeoutMs: 300_000, maxBytes: 32 * 1024 * 1024 });
       if (answer.status !== 200) voiceJson(answer);
       if (answer.body.subarray(0, 4).toString('latin1') !== 'RIFF') throw new HttpError(502, 'voice: invalid answer');
-      const spent = Number(answer.headers['x-seconds-spent']);
-      return { raw: answer.body, type: 'audio/wav', noStore: true, ...(Number.isFinite(spent) ? { headers: { 'x-seconds-spent': spent.toFixed(3) } } : {}) };
+      // Seconds spent and to the first audio (D-068): numbers only, rewritten by the core.
+      const headers: Record<string, string> = {};
+      for (const name of ['x-seconds-spent', 'x-first-audio']) {
+        const value = Number(answer.headers[name]);
+        if (answer.headers[name] !== undefined && Number.isFinite(value)) headers[name] = value.toFixed(3);
+      }
+      return { raw: answer.body, type: 'audio/wav', noStore: true, ...(Object.keys(headers).length > 0 ? { headers } : {}) };
     }),
   ];
 }
