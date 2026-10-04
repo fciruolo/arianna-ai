@@ -17,7 +17,7 @@ import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
 import { conversationFromPath, documentTitle, isSettingsPath, isVoiceTrialPath, pathFor, SETTINGS_PATH, VOICE_TRIAL_PATH } from './lib/route.ts';
-import { poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
+import { conversationState, poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
@@ -191,6 +191,9 @@ function poseFor(id: string): Pose {
   const state = status.value?.agents.find((agent) => agent.id === id)?.state;
   return poseOf(state, id === 'arianna' ? activeLine.value : undefined);
 }
+
+/** Arianna in the header of the open conversation: its tasks only, not the whole core. */
+const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(tasks.value)), activeLine.value));
 
 /** Approvals of the open conversation's tasks are shown in the chat; the others in the panel. */
 const inChat = computed(() => approvals.value.filter((approval) => approval.taskId !== null && approval.taskId in tasks.value));
@@ -452,7 +455,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :models="models"
         :approvals="inChat"
         :decide="store.decide"
-        :arianna="{ choice: characters?.agents.arianna, pose: poseFor('arianna') }"
+        :arianna="{ choice: characters?.agents.arianna, pose: ariannaHere }"
         :status="status"
         :calls="calls"
         @send="store.send"

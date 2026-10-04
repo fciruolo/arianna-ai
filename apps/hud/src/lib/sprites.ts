@@ -1,4 +1,4 @@
-import type { Activity, AgentState } from './types.ts';
+import type { Activity, AgentState, Task } from './types.ts';
 
 /**
  * Which frames of a character sheet (D-060, the format of pixel-agents) a
@@ -102,6 +102,17 @@ export function poseOf(state: AgentState | undefined, activity: Activity | undef
     case undefined:
       return 'idle';
   }
+}
+
+/**
+ * What Arianna is doing for the open conversation, from its tasks only: the
+ * status of the core is about every conversation, so a task running or
+ * waiting elsewhere would show here too. A task at work wins over one waiting.
+ */
+export function conversationState(tasks: readonly Pick<Task, 'status'>[]): AgentState {
+  if (tasks.some((task) => task.status === 'running' || task.status === 'ready' || task.status === 'inbox')) return 'thinking';
+  if (tasks.some((task) => task.status === 'waiting_user')) return 'waiting';
+  return 'idle';
 }
 
 /** The frame to show at `elapsed` milliseconds into the pose; the first one with reduced motion. */

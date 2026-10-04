@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { frameAt, poseFrames, poseOf, type Pose } from '../src/lib/sprites.ts';
+import { conversationState, frameAt, poseFrames, poseOf, type Pose } from '../src/lib/sprites.ts';
 import type { Activity, ActivityKind } from '../src/lib/types.ts';
 
 const POSES: Pose[] = ['idle', 'thinking', 'working', 'reading', 'waiting', 'paused'];
@@ -47,4 +47,13 @@ test('poseOf: the line of activity wins over the status; without either the agen
   assert.equal(poseOf('waiting', undefined), 'waiting');
   assert.equal(poseOf('working', undefined), 'working');
   assert.equal(poseOf(undefined, undefined), 'idle');
+});
+
+test('conversationState: only the tasks of the open conversation count; at work wins over waiting', () => {
+  assert.equal(conversationState([]), 'idle');
+  assert.equal(conversationState([{ status: 'done' }, { status: 'failed' }, { status: 'to_verify' }]), 'idle');
+  assert.equal(conversationState([{ status: 'done' }, { status: 'waiting_user' }]), 'waiting');
+  for (const status of ['inbox', 'ready', 'running'] as const) {
+    assert.equal(conversationState([{ status: 'waiting_user' }, { status }]), 'thinking');
+  }
 });
