@@ -249,6 +249,122 @@ body {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
   }
+
+  /* A reply's Markdown (D-065, components/MarkdownText.vue) */
+  .md {
+    overflow-wrap: break-word;
+  }
+  .md > * + *,
+  .md li > * + *,
+  .md blockquote > * + * {
+    margin-top: 0.65em;
+  }
+  .md :is(h1, h2, h3, h4, h5, h6) {
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .md > :is(h1, h2, h3, h4, h5, h6):not(:first-child) {
+    margin-top: 1em;
+  }
+  .md h1 {
+    font-size: 1.3em;
+  }
+  .md h2 {
+    font-size: 1.18em;
+  }
+  .md h3 {
+    font-size: 1.06em;
+  }
+  .md strong {
+    font-weight: 600;
+  }
+  .md code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    padding: 0.08em 0.36em;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface-2);
+  }
+  .md pre {
+    position: relative;
+    overflow-x: auto;
+    padding: 10px 13px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface-2);
+    font: 12.5px/1.55 var(--font-mono);
+  }
+  .md pre[data-lang]::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 5px;
+    right: 9px;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .md pre code {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: inherit;
+    white-space: pre;
+  }
+  .md ul {
+    list-style: disc;
+    padding-left: 1.35em;
+  }
+  .md ol {
+    list-style: decimal;
+    padding-left: 1.6em;
+  }
+  .md ul ul {
+    list-style: circle;
+  }
+  .md li + li {
+    margin-top: 0.25em;
+  }
+  .md li::marker {
+    color: var(--muted);
+  }
+  .md blockquote {
+    padding-left: 0.85em;
+    border-left: 3px solid var(--line-strong);
+    color: var(--muted);
+  }
+  .md hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  .md a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .md .md-host {
+    margin-left: 0.35em;
+    color: var(--muted);
+    font: 0.78em var(--font-mono);
+  }
+  .md-table {
+    overflow-x: auto;
+  }
+  .md table {
+    border-collapse: collapse;
+    font-size: 0.92em;
+  }
+  .md :is(th, td) {
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+  .md th {
+    background: var(--surface-2);
+    font-weight: 600;
+  }
 }
 
 @keyframes hud-spin {

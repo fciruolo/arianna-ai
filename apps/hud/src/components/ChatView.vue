@@ -9,6 +9,7 @@ import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, StatusSnapshot, Task } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
+import MarkdownText from './MarkdownText.vue';
 import PixelAgent from './PixelAgent.vue';
 
 const props = defineProps<{
@@ -288,7 +289,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
             </header>
-            <div class="px-[15px] py-3 break-words whitespace-pre-wrap">{{ message.body }}</div>
+            <MarkdownText class="px-[15px] py-3" :source="message.body" />
           </article>
 
           <!-- Arianna (or a system note) -->
@@ -305,7 +306,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
               ><Icon name="telegram" :size="12" />Telegram</span>
             </div>
-            <div class="break-words whitespace-pre-wrap">{{ message.body }}</div>
+            <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
+            <MarkdownText v-else :source="message.body" />
           </div>
 
           <!-- What the task is doing, as a HUD card of steps -->
@@ -339,9 +341,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
           <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">Arianna</div>
-          <div class="break-words whitespace-pre-wrap">
-            {{ reply.text }}<span class="animate-hud-blink ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 bg-accent" aria-hidden="true" />
-          </div>
+          <MarkdownText :source="reply.text" cursor />
         </div>
       </div>
     </div>
