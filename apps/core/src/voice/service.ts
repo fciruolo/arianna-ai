@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { VoicePaths } from '@arianna/config';
 import { localRequestBytes, Watchdog, type HttpBytesResponse, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
+import { cleanChildEnv } from '../child-env.ts';
 import { removeLeftovers } from './clones.ts';
 
 /**
@@ -37,20 +38,14 @@ export interface VoiceService {
   request(method: 'GET' | 'POST' | 'DELETE', path: string, options?: { json?: unknown; timeoutMs?: number; maxBytes?: number }): Promise<HttpBytesResponse>;
 }
 
-/** Port 9 (discard) on loopback: nothing listens, every proxied request fails at once. */
-const DEAD_PROXY = 'http://127.0.0.1:9';
-
 /** The only variables of the core the service inherits. */
 const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG'] as const;
 
 export function voiceEnv(from: NodeJS.ProcessEnv, paths: VoicePaths, port: number, token: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const key of INHERITED) {
-    const value = from[key];
-    if (value !== undefined && value !== '') env[key] = value;
-  }
   return {
-    ...env,
+    // No network beyond loopback: a library that tries to download or report
+    // anything goes to a closed port and fails.
+    ...cleanChildEnv(from, INHERITED),
     PYTHONPATH: paths.src,
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
@@ -58,16 +53,6 @@ export function voiceEnv(from: NodeJS.ProcessEnv, paths: VoicePaths, port: numbe
     // Caches of the libraries inside data/, never in the user's cache folder.
     XDG_CACHE_HOME: join(paths.tmp, 'cache'),
     NUMBA_CACHE_DIR: join(paths.tmp, 'numba'),
-    // The service needs no network beyond loopback: a library that tries to
-    // download or report anything goes to a closed port and fails.
-    HTTP_PROXY: DEAD_PROXY,
-    HTTPS_PROXY: DEAD_PROXY,
-    http_proxy: DEAD_PROXY,
-    https_proxy: DEAD_PROXY,
-    NO_PROXY: '127.0.0.1,localhost',
-    no_proxy: '127.0.0.1,localhost',
-    HF_HUB_OFFLINE: '1',
-    HF_HUB_DISABLE_TELEMETRY: '1',
     HF_HOME: join(paths.tmp, 'hf'),
     ARIANNA_VOICE_PORT: String(port),
     ARIANNA_VOICE_TOKEN: token,

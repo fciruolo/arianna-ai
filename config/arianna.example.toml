@@ -36,7 +36,9 @@ user = "arianna"
 # Local inference (task 1.3): OpenAI-compatible servers on this machine only,
 # because requests carry L2 data in clear. Endpoints in order of preference:
 # the first is the main one, the others are fallbacks. `command` is optional:
-# with it the watchdog can restart the server; without it, it only monitors.
+# with it the core starts the server, restarts it when it fails and stops it
+# with itself (D-071), and adopts one already running; without it, it only
+# monitors. The log is data/<id>.log.
 # The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are
 # relative to ARIANNA_HOME. Without `models` the names come from [roles]: the
 # catalog id is the folder in data/models, the name oMLX serves. A server

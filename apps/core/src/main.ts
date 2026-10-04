@@ -16,6 +16,7 @@ import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
+import { createLocalServers, loggedEvent } from './local-servers.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { selectableModels } from './orchestrator/routing.ts';
@@ -94,6 +95,29 @@ const settings = watchConfig({
   },
 });
 
+// The local servers (D-071, choice 4): an endpoint with `command` is started
+// with the core, restarted when it fails and stopped with it; one already
+// answering is adopted. Started in the background: loading a large model can
+// take minutes, and the chat must not wait for it.
+const localServers = createLocalServers({
+  home: config.home,
+  dataDir: config.paths.data,
+  onEvent: (event) => {
+    if (!loggedEvent(event)) return;
+    // Codes only: `error` carries a system code or a class name, never data.
+    const detail = event.type === 'state' ? event.state : event.type === 'error' ? `error ${event.message}` : event.type;
+    console.log(`local ${event.endpoint}: ${detail}`);
+    appendEvent(sql, { kind: 'local.server', label: 'L0', payload: { ...event } }).catch(report);
+  },
+});
+localServers.sync(config.local.endpoints).catch(report);
+const localModel = () =>
+  createLocalModel({
+    endpoints: settings.current().local.endpoints,
+    isAvailable: (id) => localServers.isAvailable(id),
+    onFailure: (id) => { localServers.onFailure(id); },
+  });
+
 // Task 1.10: the orchestrator on the local model, with the development
 // knowledge base in kb/ (the real one, data/kb, comes after Phase 1A), and
 // the Coder on claude -p for delegated steps when the user enabled it
@@ -114,7 +138,7 @@ const orchestrator = createOrchestrator({
   sql,
   agents,
   kb: createKb({ home: config.home, rules }),
-  model: () => createLocalModel({ endpoints: settings.current().local.endpoints }),
+  model: localModel,
   settings: () => settings.current(),
   rules,
   ...(claude === undefined ? {} : { claude }),
@@ -168,7 +192,7 @@ if (voiceConfig !== undefined) {
     voice,
     config: () => ({ roles: settings.current().roles, voice: voiceConfig, local: settings.current().local }),
     candidates,
-    model: () => createLocalModel({ endpoints: settings.current().local.endpoints }),
+    model: localModel,
     coreUrl: `http://${host}:${String(config.server.port)}`,
     onError: report,
   });
@@ -260,6 +284,7 @@ async function shutdown(): Promise<void> {
   await calls?.close();
   await voice?.stop();
   await worker.stop();
+  await localServers.stop();
   await live.close();
   await sql.end({ timeout: 5 });
 }
