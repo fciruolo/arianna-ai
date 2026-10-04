@@ -44,6 +44,8 @@ from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.utils.time import time_now_iso8601
 from pipecat.workers.runner import WorkerRunner
 
@@ -56,6 +58,8 @@ TTS_RATE = 24_000
 # Speech goes out in pieces of this length, so an interruption cuts it quickly.
 CHUNK_SECONDS = 0.4
 TURN_TIMEOUT = aiohttp.ClientTimeout(total=45)
+# Seconds of silence that end the user's turn.
+TURN_SILENCE = 0.8
 
 
 class MlxSTT(SegmentedSTTService):
@@ -231,7 +235,13 @@ class Call:
         tts = MlxTTS(self._models, request.tts, request.voice)
         brain = CoreBrain(request, self._session)
         context = LLMContext()
-        user, assistant = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
+        # The turn ends after TURN_SILENCE s of silence: Pipecat's default model
+        # (Smart Turn) waited up to 5 s when unsure of an Italian sentence.
+        user_params = LLMUserAggregatorParams(
+            vad_analyzer=SileroVADAnalyzer(),
+            user_turn_strategies=UserTurnStrategies(stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=TURN_SILENCE)]),
+        )
+        user, assistant = LLMContextAggregatorPair(context, user_params=user_params)
         pipeline = Pipeline([transport.input(), stt, user, brain, tts, transport.output(), assistant])
         worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=False, enable_usage_metrics=False))
         self._worker = worker
