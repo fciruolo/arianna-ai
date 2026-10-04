@@ -87,7 +87,7 @@ test('defaults everywhere: the verified model for the orchestrator, oMLX added, 
     {
       id: 'omlx',
       url: 'http://127.0.0.1:7001/v1',
-      command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', '7001'],
+      command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', '7001', '--paged-ssd-cache-dir', 'data/omlx-cache', '--paged-ssd-cache-max-size', '10GB'],
     },
   ]);
   assert.deepEqual(settings.cloud.executors, []);

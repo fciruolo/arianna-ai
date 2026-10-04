@@ -97,6 +97,7 @@ In Synology Drive l'attività di sincronizzazione punta a `data/` della cartella
 | Codice, docs, `config/`, `agents/` | Sì (meglio via git) | Con Drive, escludi `node_modules` e build |
 | `data/kb/`, `data/archive/` | Sì | Contenuti L2: solo verso il tuo NAS, mai verso cloud di terzi senza cifratura |
 | `data/models/` | No | Si riscaricano dal catalogo; escludere per risparmiare spazio e banda |
+| `data/omlx-cache/` | No | Cache del prefisso di oMLX (D-075), fino a 10 GB: si rigenera e contiene stato derivato dai prompt, quindi L2; mai sincronizzarla |
 | `data/postgres/`, `data/qdrant/` | **Mai dal vivo** | Rischio di corruzione; si sincronizzano i dump in `backups/` |
 | `data/vault/` | Sì, cifrato | La chiave `age` resta fuori dalla cartella sincronizzata |
 | `.git` | Con cautela | Conflitti di sincronizzazione; preferire un remote git e non sincronizzare `.git` |

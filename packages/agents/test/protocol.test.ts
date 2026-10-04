@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
-import { answerText, chatMessages, offerable, readAnswer, TOOL_ARGS, toolResult } from '../src/protocol.ts';
+import { answerText, chatMessages, offerable, readAnswer, systemPrompt, TOOL_ARGS, toolResult } from '../src/protocol.ts';
 import { TOOLS, type ToolId } from '../src/tools.ts';
 
 describe('orchestrator protocol', () => {
@@ -37,6 +38,34 @@ describe('orchestrator protocol', () => {
       { role: 'user', content: 'Ciao' },
       { role: 'user', content: '<tool_result>\nno pages\n</tool_result>' },
     ]);
+  });
+
+  it("keeps Arianna's system prompt just past one cache block, with no changing part (D-075)", () => {
+    // oMLX caches a hybrid model's prefix in whole blocks of 2048 tokens: the
+    // system prompt must fill the first one, and every token past it is read
+    // again at each step. Measured with the Qwen3.8 tokenizer, about 3.84
+    // characters per token: 8183 characters without the thought rule are
+    // about 2142 tokens; 8000 are about 2080, the floor with some margin.
+    const agent = readFileSync(new URL('../../../agents/arianna.md', import.meta.url), 'utf8');
+    const tools: ToolId[] = ['kb.read', 'kb.search', 'kb.write', 'task.create', 'user.ask'];
+    const withThought = systemPrompt(agent, tools);
+    const withoutThought = systemPrompt(agent, tools, false);
+    assert.ok(withoutThought.length >= 8000, String(withoutThought.length));
+    assert.ok(systemPrompt(agent, [...tools, 'task.delegate']).length <= 9000);
+    // The fallback without thought (D-052) shares the cached block.
+    assert.ok(withThought.startsWith(withoutThought), 'the thought rule must come last');
+    assert.doesNotMatch(withThought, /\d{4}-\d{2}-\d{2}T|\d{1,2}:\d{2}/);
+  });
+
+  it('names in its examples only pages that kb/ does not have, so they never contradict it', () => {
+    const prompt = systemPrompt('', ['kb.search']);
+    const paths = [...prompt.matchAll(/kb\/[\w/.-]+\.md/g)].map((match) => match[0]);
+    assert.ok(paths.length > 5);
+    for (const path of paths) assert.equal(existsSync(new URL(`../../../${path}`, import.meta.url)), false, path);
+  });
+
+  it('shows the examples only to an agent that searches the knowledge base', () => {
+    assert.ok(systemPrompt('', ['user.ask']).length < 2000);
   });
 
   it('offers only tools with an argument schema, all from the registry', () => {

@@ -55,6 +55,8 @@ const EXECUTOR_LABELS: Record<CloudExecutor, { name: string; login: string }> = 
 
 /** Suggested port: 8000 may be taken by another container (docs/HANDOFF.md). */
 const OMLX_PORT = 7001;
+/** oMLX's prefix cache: in data/, at most 10 GB (D-075). */
+const OMLX_CACHE = ['--paged-ssd-cache-dir', 'data/omlx-cache', '--paged-ssd-cache-max-size', '10GB'];
 
 function gib(bytes: number): string {
   return `${(bytes / 2 ** 30).toFixed(1)} GiB`;
@@ -147,7 +149,8 @@ async function stepModels(io: Prompter, context: WizardContext, settings: Settin
         {
           id: 'omlx',
           url: `http://127.0.0.1:${String(OMLX_PORT)}/v1`,
-          command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', String(OMLX_PORT)],
+          // The prefix cache in data/, bounded (D-075): without the flag oMLX uses its own settings, outside ARIANNA_HOME.
+          command: ['omlx', 'serve', '--model-dir', 'data/models', '--host', '127.0.0.1', '--port', String(OMLX_PORT), ...OMLX_CACHE],
         },
       ];
     }
