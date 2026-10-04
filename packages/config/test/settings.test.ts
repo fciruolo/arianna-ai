@@ -43,7 +43,11 @@ const FULL: Settings = {
     { id: 'omlx', url: 'http://127.0.0.1:7001/v1', command: ['omlx', 'serve', '--model-dir', 'data/models'] },
     { id: 'spare', url: 'http://[::1]:1234/v1', models: { 'local-large': 'Qwen "large"' } },
   ],
-  cloud: { executors: ['claude', 'codex'] },
+  cloud: {
+    executors: ['claude', 'codex'],
+    models: { sonnet: { enabled: true }, opus: { enabled: true, name: 'claude-opus-5-5[1m]' }, fable: { enabled: false }, codex: { enabled: true } },
+    defaultModel: 'opus',
+  },
   projects: [
     { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
     { name: 'demo', path: 'repos/demo', label: 'L0' },
@@ -74,6 +78,14 @@ test('the rendered file is what loadConfig reads: roles become the names of the 
   assert.deepEqual(config.local.endpoints[0]?.models, { 'local-large': 'big-mlx', 'local-small': 'big-mlx' });
   assert.deepEqual(config.local.endpoints[1]?.models, { 'local-large': 'Qwen "large"' });
   assert.deepEqual(config.cloud.executors, ['claude', 'codex']);
+  assert.equal(config.cloud.models.opus.name, 'claude-opus-5-5[1m]');
+  assert.equal(config.cloud.defaultModel, 'opus');
+});
+
+test('[cloud.models] is written with every alias, and the default commented out when the router chooses', () => {
+  const text = renderSettings(DEFAULT_SETTINGS);
+  assert.match(text, /^\[cloud\.models\]\nsonnet = true\nopus = true\nfable = true\ncodex = true\n# default = "sonnet"$/m);
+  assert.match(renderSettings(FULL), /^opus = "claude-opus-5-5\[1m\]"\nfable = false\ncodex = true\ndefault = "opus"$/m);
 });
 
 test('reading validates: an invalid file is not turned into settings', () => {

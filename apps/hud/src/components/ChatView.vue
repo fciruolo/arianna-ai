@@ -71,8 +71,17 @@ const directModel = computed(() => {
   const model = props.conversation.model;
   return answersDirect.value && model !== null && selectable.value.some((entry) => entry.model === model) ? model : null;
 });
-/** The selector's value: in a system chat, what actually answers. */
-const selected = computed(() => (answersDirect.value ? (directModel.value ?? AUTO) : (props.conversation.model ?? AUTO)));
+/**
+ * The model chosen here and since turned off in [cloud.models] (D-071): the
+ * router (or Arianna, in a system chat) decides instead. Shown as such, so
+ * that choosing another entry, "automatico" included, clears it.
+ */
+const offModel = computed(() => {
+  const model = props.conversation.model;
+  return model !== null && !selectable.value.some((entry) => entry.model === model) ? model : null;
+});
+/** The selector's value: in a system chat, what actually answers, or the model turned off. */
+const selected = computed(() => (answersDirect.value ? (directModel.value ?? offModel.value ?? AUTO) : (props.conversation.model ?? AUTO)));
 /** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
 const answerModel = computed(() => (directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value)));
 
@@ -208,6 +217,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[10.5px]" :aria-label="selectorName" @change="onModel">
                   <option :value="AUTO">{{ autoText }}</option>
                   <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
+                  <option v-if="offModel !== null" :value="offModel" disabled>{{ MODEL_TEXT[offModel] ?? offModel }} (spento: {{ autoText }})</option>
                 </select>
               </label>
             </div>
@@ -224,6 +234,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <select :value="selected" class="field px-2 py-1 text-xs" :aria-label="selectorName" @change="onModel">
             <option :value="AUTO">{{ autoText }}</option>
             <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
+            <option v-if="offModel !== null" :value="offModel" disabled>{{ MODEL_TEXT[offModel] ?? offModel }} (spento: {{ autoText }})</option>
           </select>
         </label>
 

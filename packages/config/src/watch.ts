@@ -1,6 +1,7 @@
 // Reloads arianna.toml and the catalog while the core runs (task 1.18): a new
 // model for a role applies without a restart. Only the roles, the model
-// names they give the local servers, the characters (cosmetic) and the projects (D-058: the user
+// names they give the local servers, the characters (cosmetic), the cloud
+// models (D-071: which model of an enabled executor runs) and the projects (D-058: the user
 // approves one with the wizard and uses it right away; a project taken off
 // the list is closed at the next delegated step) change live; everything else
 // waits for a restart, privacy settings first, so that an edited file never turns on a
@@ -13,10 +14,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { CATALOG_FILE } from './catalog.ts';
 import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 
-const RESTART_SECTIONS = ['paths', 'database', 'server', 'cloud', 'telegram', 'voice'] as const;
+const RESTART_SECTIONS = ['paths', 'database', 'server', 'telegram', 'voice'] as const;
 
 export interface ConfigChange {
-  /** Applied: `current()` returns the new values (`roles`, `local.models`, `projects`, `characters`). */
+  /** Applied: `current()` returns the new values (`roles`, `local.models`, `cloud.models`, `projects`, `characters`). */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
   restart: string[];
@@ -43,6 +44,20 @@ function servers(config: AriannaConfig): unknown {
   return config.local.endpoints.map(({ id, url, command }) => ({ id, url, command }));
 }
 
+/** `[cloud.models]`: applied live, unlike the executors. */
+function cloudModels(config: AriannaConfig): unknown {
+  return { models: config.cloud.models, defaultModel: config.cloud.defaultModel };
+}
+
+/** `current` with the cloud models of `next`, its executors kept. */
+function withCloudModels(current: AriannaConfig, next: AriannaConfig): AriannaConfig['cloud'] {
+  return {
+    executors: current.cloud.executors,
+    models: next.cloud.models,
+    ...(next.cloud.defaultModel === undefined ? {} : { defaultModel: next.cloud.defaultModel }),
+  };
+}
+
 /** Which sections differ between two configurations. */
 export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigChange {
   const changed = (section: keyof AriannaConfig): boolean => !isDeepStrictEqual(before[section], after[section]);
@@ -51,10 +66,15 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
     applied: [
       ...(changed('roles') ? ['roles'] : []),
       ...(sameServers && changed('local') ? ['local.models'] : []),
+      ...(isDeepStrictEqual(cloudModels(before), cloudModels(after)) ? [] : ['cloud.models']),
       ...(changed('projects') ? ['projects'] : []),
       ...(changed('characters') ? ['characters'] : []),
     ],
-    restart: [...(sameServers ? [] : ['local.endpoints']), ...RESTART_SECTIONS.filter(changed)],
+    restart: [
+      ...(sameServers ? [] : ['local.endpoints']),
+      ...(isDeepStrictEqual(before.cloud.executors, after.cloud.executors) ? [] : ['cloud']),
+      ...RESTART_SECTIONS.filter(changed),
+    ],
   };
 }
 
@@ -91,7 +111,14 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
     read = next;
     const before = current;
     const sameServers = isDeepStrictEqual(servers(current), servers(next));
-    current = { ...current, roles: next.roles, projects: next.projects, characters: next.characters, ...(sameServers ? { local: next.local } : {}) };
+    current = {
+      ...current,
+      roles: next.roles,
+      cloud: withCloudModels(current, next),
+      projects: next.projects,
+      characters: next.characters,
+      ...(sameServers ? { local: next.local } : {}),
+    };
     const change = { applied: diffConfig(before, current).applied, restart: diffConfig(current, next).restart };
     // A file put back as it was changes nothing.
     if (!empty(change)) options.onChange(change);

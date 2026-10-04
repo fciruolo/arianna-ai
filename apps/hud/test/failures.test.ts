@@ -43,13 +43,13 @@ test('with Claude answering the system chat, it is offered even when the local m
   assert.equal(claude.steps.length, local.steps.length);
 });
 
-test('Claude answers a system chat only from a work conversation with Sonnet turned on, as the core opens it', () => {
+test('Claude answers a system chat only from a work conversation with Sonnet or Opus turned on, as the core opens it', () => {
   const sonnet = [{ executor: 'claude', model: 'sonnet' }];
   assert.equal(claudeAnswersSystemChat('work', sonnet), true);
   assert.equal(claudeAnswersSystemChat('private', sonnet), false);
   assert.equal(claudeAnswersSystemChat(undefined, sonnet), false);
   assert.equal(claudeAnswersSystemChat('work', []), false);
   assert.equal(claudeAnswersSystemChat('work', [{ executor: 'claude', model: 'fable' }]), false);
-  assert.equal(claudeAnswersSystemChat('work', [{ executor: 'claude', model: 'opus' }]), false);
+  assert.equal(claudeAnswersSystemChat('work', [{ executor: 'claude', model: 'opus' }]), true, 'Opus when Sonnet is off (D-071)');
   assert.equal(claudeAnswersSystemChat('work', [{ executor: 'codex', model: 'sonnet' }]), false);
 });

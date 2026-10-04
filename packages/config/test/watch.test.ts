@@ -84,6 +84,16 @@ test('a new model for a role applies live; privacy sections wait for a restart; 
     assert.deepEqual(await next(seen), { applied: [], restart: ['cloud'] });
     assert.deepEqual(watcher.current().cloud.executors, []);
 
+    // The cloud models apply at once (D-071); the executors still wait for a restart.
+    const models = { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true, name: 'claude-fable-5-1' }, codex: { enabled: true } };
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'], models, defaultModel: 'sonnet' } });
+    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: ['cloud'] });
+    assert.deepEqual(watcher.current().cloud, { executors: [], models, defaultModel: 'sonnet' });
+    write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] } });
+    assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: ['cloud'] });
+    assert.equal(watcher.current().cloud.defaultModel, undefined);
+    assert.equal(watcher.current().cloud.models.opus.enabled, true);
+
     // An approved project applies at once (D-058); taking it off too.
     write({ ...BASE, roles: { orchestrator: 'second-mlx' }, cloud: { executors: ['claude'] }, projects: [{ name: 'demo', path: 'repos/demo', label: 'L1' }] });
     assert.deepEqual(await next(seen), { applied: ['projects'], restart: ['cloud'] });

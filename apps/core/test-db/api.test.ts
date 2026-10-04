@@ -27,6 +27,9 @@ function db(): TestDatabase {
 let live: LiveFeed;
 let server: ApiServer;
 let origin: string;
+// What the configuration offers now (D-071): tests change it.
+let offered = ['sonnet', 'opus'];
+let defaultModel: string | undefined;
 // A built web chat, made up for the test, in data/ (never in git).
 const staticDir = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
 
@@ -43,7 +46,8 @@ before(async () => {
     port: 0,
     staticDir,
     projects: () => [{ name: 'fake-site', path: 'repos/fake-site', label: 'L1' }],
-    models: () => [{ executor: 'claude', model: 'sonnet' }, { executor: 'claude', model: 'opus' }],
+    models: () => offered.map((model) => ({ executor: 'claude', model })),
+    defaultModel: () => defaultModel,
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -160,6 +164,37 @@ test('a work conversation chooses a cloud model among those of the installation;
   assert.equal((await call('POST', `/api/conversations/${work}/model`, { body: { model: 'gpt-5' } })).status, 400);
   const priv = await newConversation('private');
   assert.equal((await call('POST', `/api/conversations/${priv}/model`, { body: { model: 'sonnet' } })).status, 400);
+});
+
+test('a new work conversation starts with the default model of [cloud.models] while it is offered (D-071)', async () => {
+  const modelOf = async (mode: 'work' | 'private') =>
+    field<{ model: string | null }>(await call('GET', `/api/conversations/${await newConversation(mode)}`), 'conversation').model;
+  try {
+    assert.equal(await modelOf('work'), null, 'no default: the router chooses');
+    defaultModel = 'opus';
+    assert.equal(await modelOf('work'), 'opus');
+    assert.equal(await modelOf('private'), null, 'a private conversation stays local');
+    offered = ['sonnet'];
+    assert.equal(await modelOf('work'), null, 'a default no longer offered is not given');
+  } finally {
+    offered = ['sonnet', 'opus'];
+    defaultModel = undefined;
+  }
+});
+
+test('the system chat of a failed work task is answered by Opus when Sonnet is off (D-071)', async () => {
+  const id = await newConversation('work');
+  const taskId = field<{ id: string }>(await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Domanda finta' } }), 'task').id;
+  await db().owner`UPDATE jobs SET status = 'failed' WHERE key = ${`task:${taskId}`}`;
+  await db().owner`UPDATE tasks SET status = 'failed' WHERE id = ${taskId}`;
+  await recordFailure(db().sql, taskId, { origin: 'local-model', code: 'local-model.unavailable', details: { endpoint: 'omlx', port: 7001 } });
+  offered = ['opus', 'fable'];
+  try {
+    const opened = await call('POST', `/api/tasks/${taskId}/system-chat`, { body: {} });
+    assert.equal(field<{ model: string | null }>(opened, 'conversation').model, 'opus');
+  } finally {
+    offered = ['sonnet', 'opus'];
+  }
 });
 
 test('a conversation is renamed, archived and restored through the API', async () => {

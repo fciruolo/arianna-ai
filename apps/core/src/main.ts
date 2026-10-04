@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
-import { loadCatalog, loadConfig, loadLabelRules, voicePaths, watchConfig } from '@arianna/config';
+import { CLOUD_MODELS, cloudModelName, enabledCloudModels, loadCatalog, loadConfig, loadLabelRules, voicePaths, watchConfig } from '@arianna/config';
 import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
@@ -19,7 +19,7 @@ import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent } from './local-servers.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
-import { selectableModels } from './orchestrator/routing.ts';
+import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
@@ -85,6 +85,12 @@ const settings = watchConfig({
       const projects = settings.current().projects.map(({ name, path, label }) => ({ name, path, label }));
       appendEvent(sql, { kind: 'settings.projects', label: 'L1', payload: { projects } }).catch(report);
     }
+    // The selector of the web chat reads the cloud models again (D-071): names only, nothing private.
+    if (applied.includes('cloud.models')) {
+      const { cloud } = settings.current();
+      const payload = { enabled: enabledCloudModels(cloud), names: Object.fromEntries(CLOUD_MODELS.map((model) => [model, cloudModelName(cloud, model)])), default: cloud.defaultModel ?? null };
+      appendEvent(sql, { kind: 'settings.cloud-models', label: 'L0', payload }).catch(report);
+    }
     if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
   },
   onError: (error) => {
@@ -128,7 +134,8 @@ const rules = loadLabelRules();
 let claude: ClaudeExecutor | undefined;
 if (config.cloud.executors.includes('claude')) {
   try {
-    claude = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home });
+    // The exact name for `--model` is read at each launch: `[cloud.models]` applies without a restart (D-071).
+    claude = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home, modelName: (model) => settings.current().cloud.models[model].name });
   } catch (error) {
     report(error);
     console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
@@ -229,6 +236,7 @@ const server = await startApiServer({
   projects: () => settings.current().projects,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
+  defaultModel: () => (claude === undefined ? undefined : defaultConversationModel(settings.current())),
   agents: () => [...agents.keys()],
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },

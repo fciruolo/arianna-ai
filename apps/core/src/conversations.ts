@@ -106,33 +106,39 @@ export function isUuid(value: string): boolean {
 }
 
 /**
+ * How a conversation opens. `model`: the cloud model of a work conversation
+ * (D-071, the user's default), already checked against the selectable ones.
+ */
+export interface NewConversation {
+  mode: ConversationMode;
+  project?: string;
+  projects?: readonly string[];
+  model?: string;
+}
+
+/**
  * Opens a conversation. A work conversation may name its project (D-058):
  * one of the projects the user approved (`projects`, their names; empty when
  * not given), since a work conversation exists to send its code to the cloud.
  * The name goes in `workspace`; conversations opened before D-058 hold a path
  * there (`repos/demo`), which reads as the project of that name.
  */
-export async function createConversation(
-  sql: Sql,
-  options: { mode: ConversationMode; project?: string; projects?: readonly string[] },
-): Promise<Conversation> {
+export async function createConversation(sql: Sql, options: NewConversation): Promise<Conversation> {
   return sql.begin((tx) => writeConversation(tx, options));
 }
 
 /** `createConversation` inside a transaction the caller holds. */
-export async function writeConversation(
-  tx: Queryable,
-  options: { mode: ConversationMode; project?: string; projects?: readonly string[] },
-): Promise<Conversation> {
+export async function writeConversation(tx: Queryable, options: NewConversation): Promise<Conversation> {
   // Callers may pass anything that came over the wire.
   if (!(['work', 'private'] as readonly string[]).includes(options.mode)) throw new ChatError('invalid', 'mode must be work or private');
   if (options.project !== undefined) {
     if (options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation has a project');
     if (!(options.projects ?? []).includes(options.project)) throw new ChatError('invalid', 'project is not among the approved projects');
   }
+  if (options.model !== undefined && options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null})
+    INSERT INTO conversations (mode, clearance, workspace, model)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode: options.mode } });

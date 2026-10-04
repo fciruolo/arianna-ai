@@ -6,8 +6,11 @@ import { test } from 'node:test';
 
 import {
   CATALOG_FILE,
+  cloudModelName,
   CONFIG_FILE,
   ConfigError,
+  defaultCloudModels,
+  enabledCloudModels,
   EXAMPLE_CONFIG_FILE,
   loadConfig,
   parseCatalog,
@@ -35,7 +38,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     server: { host: '127.0.0.1', port: 7420 },
     roles: {},
     local: { endpoints: [] },
-    cloud: { executors: [] },
+    cloud: { executors: [], models: defaultCloudModels() },
     projects: [],
     characters: {},
   });
@@ -141,7 +144,7 @@ test('cloud.allowlist from before D-058 is refused with the way out, unless empt
     () => parseConfig(`${VALID}\n[cloud]\nallowlist = ["repos/demo"]\n`, HOME),
     (error: unknown) => error instanceof ConfigError && /\[\[project\]\]/.test(error.message) && /arianna:init --reconfigure/.test(error.message),
   );
-  assert.deepEqual(parseConfig(`${VALID}\n[cloud]\nallowlist = []\n`, HOME).cloud, { executors: [] });
+  assert.deepEqual(parseConfig(`${VALID}\n[cloud]\nallowlist = []\n`, HOME).cloud, { executors: [], models: defaultCloudModels() });
 });
 
 test('telegram is off without its section, and takes a vault reference and private chat ids', () => {
@@ -366,6 +369,45 @@ test('an endpoint with neither models nor roles is rejected', () => {
     (error: unknown) => error instanceof ConfigError && /\[roles\]/.test(error.message),
   );
   assert.throws(() => parseConfig(`${VALID}${OMLX}models = {}\n`, HOME, CATALOG), ConfigError);
+});
+
+test('[cloud.models]: every alias on by default, off with false, on under an exact name with a string (D-071)', () => {
+  const cloud = (models: string) => parseConfig(`${VALID}\n[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\n${models}\n`, HOME).cloud;
+  assert.deepEqual(parseConfig(VALID, HOME).cloud.models, defaultCloudModels());
+  assert.equal(parseConfig(VALID, HOME).cloud.defaultModel, undefined, 'without a default the router chooses');
+  const given = cloud('sonnet = true\nopus = "claude-opus-5-5[1m]"\nfable = false\ndefault = "opus"');
+  assert.deepEqual(given.models, {
+    sonnet: { enabled: true },
+    opus: { enabled: true, name: 'claude-opus-5-5[1m]' },
+    fable: { enabled: false },
+    codex: { enabled: true },
+  });
+  assert.equal(given.defaultModel, 'opus');
+  assert.deepEqual(enabledCloudModels(given), ['sonnet', 'opus', 'codex']);
+  assert.equal(cloudModelName(given, 'opus'), 'claude-opus-5-5[1m]');
+  assert.equal(cloudModelName(given, 'sonnet'), 'sonnet', 'no name: the alias, the newest model for the binary');
+});
+
+test('[cloud.models] refuses unknown aliases, odd names and a default turned off', () => {
+  const rejects = (models: string, pattern: RegExp): void => {
+    assert.throws(
+      () => parseConfig(`${VALID}\n[cloud.models]\n${models}\n`, HOME),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+    );
+  };
+  rejects('haiku = true', /unknown key/);
+  rejects('opus = "-p"', /cloud\.models\.opus/);
+  rejects('opus = "claude opus"', /cloud\.models\.opus/);
+  rejects('opus = "claude;rm"', /cloud\.models\.opus/);
+  rejects('opus = ""', /cloud\.models\.opus/);
+  rejects(`opus = "${'a'.repeat(101)}"`, /cloud\.models\.opus/);
+  rejects('opus = 1', /cloud\.models\.opus/);
+  rejects('sonnet = "claude-fable-5-1"', /of the sonnet family/);
+  rejects('sonnet = "fable"', /of the sonnet family/);
+  rejects('opus = "opusx"', /of the opus family/);
+  rejects('default = "haiku"', /cloud\.models\.default/);
+  rejects('fable = false\ndefault = "fable"', /fable is turned off/);
+  rejects('default = true', /cloud\.models\.default/);
 });
 
 test('cloud.executors lists the enabled official binaries, once each', () => {

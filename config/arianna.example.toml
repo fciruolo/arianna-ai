@@ -58,6 +58,20 @@ user = "arianna"
 [cloud]
 executors = []
 
+# Cloud models (D-071): which model of an enabled executor runs. Per alias
+# true (on), false (off: never chosen by the router nor offered by the chat)
+# or the exact name to pass to --model (on), e.g. opus = "claude-opus-5-5";
+# true means the alias, the newest model for the binary. `default` is the
+# model of a new work conversation; without it the router chooses. Not a
+# privacy setting: it never turns an executor on. Codex applies with its
+# adapter (task 1.16). Applies without a restart.
+[cloud.models]
+sonnet = true
+opus = true
+fable = true
+codex = true
+# default = "sonnet"
+
 # Projects (D-058): the folders a cloud executor may work on, as the user
 # does with the CLI. `path` is ~/<folder> under your home (never the home
 # itself, hidden folders, Library or Arianna) or repos/<name> for a folder

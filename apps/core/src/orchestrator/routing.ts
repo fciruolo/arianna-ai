@@ -7,8 +7,9 @@ import type { Queryable } from '../db/client.ts';
 /**
  * What the router may choose from on this installation (task 1.10, D-055):
  * the local aliases a role serves, and the models of each cloud executor the
- * user enabled in `[cloud] executors` and that has an adapter. Codex waits
- * for its adapter (task 1.16): enabled or not, it is not a candidate yet.
+ * user enabled in `[cloud] executors` and that has an adapter, without the
+ * ones turned off in `[cloud.models]` (D-071). Codex waits for its adapter
+ * (task 1.16): enabled or not, it is not a candidate yet.
  */
 export function routerConfigOf(config: AriannaConfig): RouterConfig {
   const candidates: Candidate[] = [];
@@ -16,7 +17,9 @@ export function routerConfigOf(config: AriannaConfig): RouterConfig {
     if ((MODEL_ALIASES as readonly string[]).includes(alias)) candidates.push({ executor: 'local', model: alias as ModelAlias, locality: 'local' });
   }
   if (config.cloud.executors.includes('claude')) {
-    for (const model of CLAUDE_MODELS) candidates.push({ executor: 'claude', model, locality: 'cloud' });
+    for (const model of CLAUDE_MODELS) {
+      if (config.cloud.models[model].enabled) candidates.push({ executor: 'claude', model, locality: 'cloud' });
+    }
   }
   return createRouterConfig(candidates);
 }
@@ -26,6 +29,16 @@ export function selectableModels(config: AriannaConfig): { executor: string; mod
   return routerConfigOf(config)
     .candidates.filter((candidate) => candidate.locality === 'cloud')
     .map(({ executor, model }) => ({ executor, model }));
+}
+
+/**
+ * The model a new work conversation starts with (D-071): `default` of
+ * `[cloud.models]` while it is selectable here, otherwise none (the router
+ * chooses).
+ */
+export function defaultConversationModel(config: AriannaConfig): ModelAlias | undefined {
+  const chosen = config.cloud.defaultModel;
+  return chosen !== undefined && selectableModels(config).some((entry) => entry.model === chosen) ? chosen : undefined;
 }
 
 /** How long a quota refusal without a reset time keeps an executor blocked. */

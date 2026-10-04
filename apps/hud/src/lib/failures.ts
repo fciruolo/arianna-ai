@@ -131,11 +131,12 @@ export const DIRECT_MODELS: readonly string[] = ['sonnet', 'opus'];
 
 /**
  * Whether Claude answers the system chat opened from a conversation in this
- * mode: work only (L1), and Sonnet turned on, the model the core gives a new
- * system chat (route POST /api/tasks/:id/system-chat in apps/core/src/server/http.ts, D-064).
+ * mode: work only (L1), and Sonnet or Opus turned on, the models the core
+ * gives a new system chat (route POST /api/tasks/:id/system-chat in
+ * apps/core/src/server/http.ts, D-064 and D-071).
  */
 export function claudeAnswersSystemChat(mode: ConversationMode | undefined, models: readonly CloudModel[]): boolean {
-  return mode === 'work' && models.some((entry) => entry.executor === 'claude' && entry.model === 'sonnet');
+  return mode === 'work' && models.some((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model));
 }
 
 /**

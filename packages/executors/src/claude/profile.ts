@@ -13,9 +13,17 @@ import { isAbsolute, resolve, sep } from 'node:path';
 export const CLAUDE_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'] as const;
 export type ClaudeTool = (typeof CLAUDE_TOOLS)[number];
 
-/** Model aliases of the router (`sonnet`, `opus`, `fable`), passed to `--model` as they are. */
+/** Model aliases of the router (`sonnet`, `opus`, `fable`), passed to `--model` as they are unless the user named the model. */
 export const CLAUDE_MODELS = ['sonnet', 'opus', 'fable'] as const;
 export type ClaudeModel = (typeof CLAUDE_MODELS)[number];
+
+/**
+ * An exact model name the user gave in `[cloud.models]` (D-071), e.g.
+ * `claude-opus-5-5[1m]`: never starting with `-`, so that the binary never
+ * reads it as a flag, and of the family of its alias. Same rules as
+ * @arianna/config.
+ */
+export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
 
 /** What `--resume` takes: the session id the binary returned, never a credential. */
 export const SESSION_REF = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -35,6 +43,8 @@ export interface SandboxPaths {
 
 export interface ProfileOptions {
   model: ClaudeModel;
+  /** Passed to `--model` instead of the alias (`[cloud.models]`, D-071). */
+  modelName?: string;
   tools: readonly ClaudeTool[];
   resume?: string;
   sandbox: SandboxPaths;
@@ -109,13 +119,20 @@ export function claudeArgs(options: ProfileOptions): string[] {
   if (!(CLAUDE_MODELS as readonly string[]).includes(options.model)) {
     throw new TypeError(`claude: unknown model ${JSON.stringify(options.model)}`);
   }
+  if (options.modelName !== undefined && (typeof options.modelName !== 'string' || !MODEL_NAME.test(options.modelName))) {
+    throw new TypeError('claude: the model name is not a model name');
+  }
+  // The router and its budget approval see the alias: the name stays in its family (D-071).
+  if (options.modelName !== undefined && !new RegExp(`^(claude-)?${options.model}(?![A-Za-z0-9])`).test(options.modelName)) {
+    throw new TypeError(`claude: the model name is not of the ${options.model} family`);
+  }
   const args = [
     '-p',
     '--output-format',
     'stream-json',
     '--verbose',
     '--model',
-    options.model,
+    options.modelName ?? options.model,
     '--tools',
     tools.join(','),
   ];

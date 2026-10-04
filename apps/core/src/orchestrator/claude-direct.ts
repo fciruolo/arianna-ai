@@ -41,10 +41,17 @@ export const DIRECT_PROMPT = [
   '- Messages marked as coming from the system are not the user\'s.',
 ].join('\n');
 
-/** The Claude model that answers this conversation directly, or undefined when Arianna answers. */
-export function directModelOf(conversation: Pick<Conversation, 'origin' | 'mode' | 'model'> | undefined): DirectModel | undefined {
+/**
+ * The Claude model that answers this conversation directly, or undefined when
+ * Arianna answers: also when the user turned that model off in
+ * `[cloud.models]` (`enabled`, D-071).
+ */
+export function directModelOf(
+  conversation: Pick<Conversation, 'origin' | 'mode' | 'model'> | undefined,
+  enabled: readonly string[],
+): DirectModel | undefined {
   if (conversation?.origin !== 'system' || conversation.mode !== 'work') return undefined;
-  return DIRECT_MODELS.find((model) => model === conversation.model);
+  return DIRECT_MODELS.find((model) => model === conversation.model && enabled.includes(model));
 }
 
 /** Claude can answer now: enabled in the configuration and runnable on this machine. */

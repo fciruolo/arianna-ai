@@ -106,6 +106,12 @@ test('a trivial task runs on claude and is logged: run, session, usage, gateway 
     SELECT label::text, payload FROM events WHERE task_id = ${task.id} AND kind = 'executor.rate_limit'`;
   assert.equal(limit?.label, 'L0');
   assert.deepEqual(limit.payload, { executor: 'claude', status: 'allowed', window: 'five_hour', resetsAt: '2026-10-02T22:20:00.000Z', utilization: 0.25, overage: false });
+
+  // The model that ran, as the binary reported it, next to the alias the run keeps (D-071).
+  const [model] = await db().sql<{ label: string; payload: Record<string, unknown> }[]>`
+    SELECT label::text, payload FROM events WHERE task_id = ${task.id} AND kind = 'executor.model'`;
+  assert.equal(model?.label, 'L0');
+  assert.deepEqual(model.payload, { executor: 'claude', alias: 'sonnet', model: 'claude-sonnet-5-5' });
 });
 
 test('an L2 brief never launches claude: one blocked gateway row, the task waits for the user', async () => {
@@ -134,9 +140,9 @@ test('a quota refusal is an event with the time the subscription comes back', as
     SELECT kind, payload FROM events WHERE task_id = ${task.id} AND kind LIKE 'executor.%' ORDER BY id`;
   assert.deepEqual(
     kinds.map((event) => event.kind),
-    ['executor.rate_limit', 'executor.quota'],
+    ['executor.model', 'executor.rate_limit', 'executor.quota'],
   );
-  assert.deepEqual(kinds[1]?.payload, { executor: 'claude', resetsAt: '2026-10-02T22:20:00.000Z', overage: false });
+  assert.deepEqual(kinds[2]?.payload, { executor: 'claude', resetsAt: '2026-10-02T22:20:00.000Z', overage: false });
 });
 
 test('a failed run keeps its usage and logs only the kind of error', async () => {

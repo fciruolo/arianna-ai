@@ -13,6 +13,7 @@ import {
   archiveConversation,
   ChatError,
   createConversation,
+  DIRECT_MODELS,
   isUuid,
   listConversations,
   listMessages,
@@ -62,6 +63,8 @@ export interface ApiServerOptions {
   projects?: () => readonly ProjectInfo[];
   /** The cloud models a work conversation may choose (task 1.10), from the current configuration. */
   models?: () => readonly { executor: string; model: string }[];
+  /** The model a new work conversation starts with (`[cloud.models] default`, D-071); undefined lets the router choose. */
+  defaultModel?: () => string | undefined;
   /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
   agents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
@@ -183,6 +186,7 @@ const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejec
 interface RouteOptions {
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
+  defaultModel: () => string | undefined;
   agents: () => readonly string[];
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
@@ -344,7 +348,7 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, agents, characters, voice, calls, pusher }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
     ...callRoutes(sql, calls, pusher),
@@ -390,10 +394,14 @@ function routes(sql: Sql, { projects, models, agents, characters, voice, calls, 
       onlyFields(body, ['mode', 'project']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
       if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
+      // A work conversation starts with the user's default model, while this installation offers it:
+      // this check, against what the selector offers, is the one that counts.
+      const model = body.mode === 'work' ? defaultModel() : undefined;
       const conversation = await createConversation(sql, {
         mode: body.mode,
         ...(body.project === undefined ? {} : { project: body.project }),
         projects: projects().map((project) => project.name),
+        ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
       return { status: 201, body: { conversation } };
     }),
@@ -490,8 +498,9 @@ function routes(sql: Sql, { projects, models, agents, characters, voice, calls, 
     route('POST', '/api/tasks/:id/system-chat', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
-      // Claude answers by default only where Arianna could not (D-064): Sonnet, when this installation has it.
-      const direct = models().some((entry) => entry.executor === 'claude' && entry.model === 'sonnet') ? { directModel: 'sonnet' as const } : {};
+      // Claude answers by default only where Arianna could not (D-064): Sonnet, or Opus when Sonnet is off (D-071).
+      const directModel = DIRECT_MODELS.find((model) => models().some((entry) => entry.executor === 'claude' && entry.model === model));
+      const direct = directModel === undefined ? {} : { directModel };
       return { body: { conversation: await openFailureChat(sql, id, direct) } };
     }),
 
@@ -622,6 +631,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const table = routes(sql, {
     projects: options.projects ?? (() => []),
     models: options.models ?? (() => []),
+    defaultModel: options.defaultModel ?? (() => undefined),
     agents: options.agents ?? (() => []),
     characters: options.characters,
     voice: options.voice,

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { parseConfig } from '@arianna/config';
+import { CLOUD_MODEL_NAME, parseConfig } from '@arianna/config';
+import { MODEL_NAME } from '@arianna/executors';
 import { candidateKey } from '@arianna/router';
 
-import { routerConfigOf, selectableModels } from '../src/orchestrator/routing.ts';
+import { defaultConversationModel, routerConfigOf, selectableModels } from '../src/orchestrator/routing.ts';
 
 const BASE = `
 [paths]
@@ -53,4 +54,22 @@ test('the selectable models of a work conversation are the cloud candidates', ()
     selectableModels(parseConfig(`${BASE}[cloud]\nexecutors = ["claude"]\n`, HOME)).map((entry) => `${entry.executor}/${entry.model}`),
     ['claude/sonnet', 'claude/opus', 'claude/fable'],
   );
+});
+
+test('a cloud model turned off in [cloud.models] is not a candidate; one with an exact name stays under its alias (D-071)', () => {
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nopus = false\nfable = "claude-fable-5-1"\n'), ['claude/sonnet', 'claude/fable']);
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nsonnet = false\nopus = false\nfable = false\n'), []);
+  assert.deepEqual(keys('[cloud]\nexecutors = []\n\n[cloud.models]\nopus = true\n'), [], 'turning a model on never turns its executor on');
+});
+
+test('a new work conversation starts with the default model only while it is selectable', () => {
+  const config = (text: string) => parseConfig(`${BASE}${text}`, HOME);
+  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\ndefault = "opus"\n')), 'opus');
+  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude"]\n')), undefined, 'no default: the router chooses');
+  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = []\n\n[cloud.models]\ndefault = "opus"\n')), undefined, 'claude is off');
+  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[cloud.models]\ndefault = "codex"\n')), undefined, 'codex has no adapter yet');
+});
+
+test('the configuration and the Claude adapter check exact model names with the same rule', () => {
+  assert.equal(CLOUD_MODEL_NAME.source, MODEL_NAME.source);
 });

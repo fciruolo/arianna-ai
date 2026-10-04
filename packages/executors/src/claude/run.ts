@@ -151,6 +151,11 @@ export interface ClaudeExecutorOptions {
    * directory or a folder above them.
    */
   readable?: readonly string[];
+  /**
+   * The exact name passed to `--model` for an alias, read at each launch
+   * (`[cloud.models]`, D-071); undefined passes the alias.
+   */
+  modelName?: (model: ClaudeModel) => string | undefined;
   /** Evals only: every line of the stream, as it comes, so that the canary can search the whole transcript. */
   observe?: (line: string) => void;
 }
@@ -219,15 +224,17 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
 
   async function check(launch: ClaudeLaunch): Promise<Checked> {
     if (!enabled.includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
-    const options = (workspace: string) => ({
+    const modelName = options.modelName?.(launch.model);
+    const profile = (workspace: string) => ({
       model: launch.model,
+      ...(modelName === undefined ? {} : { modelName }),
       tools: launch.tools,
       sandbox: { workspace, ...folders },
       ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
     });
     const build = (workspace: string): string[] => {
       try {
-        return claudeArgs(options(workspace));
+        return claudeArgs(profile(workspace));
       } catch (cause) {
         throw new ClaudeError('invalid-options', 'claude: the profile refuses these options', { cause });
       }

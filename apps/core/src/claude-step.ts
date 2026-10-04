@@ -58,6 +58,9 @@ export type ClaudeStepResult =
   /** The run failed; its usage counts anyway. `error` says how, for the readable error (D-064). */
   | { kind: 'failed'; reason: string; usage: RunUsage; error: ClaudeError };
 
+/** A model name as the binary reports it; anything else is not written. */
+const REPORTED_MODEL = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
+
 const toUsage = (usage: ClaudeUsage | undefined): RunUsage =>
   usage === undefined ? { steps: 0 } : { steps: usage.turns, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, cost: 0 };
 
@@ -120,7 +123,16 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     brief: decision,
     signal: step.signal,
     onEvent: async (event: ClaudeEvent) => {
-      if (event.type === 'init') await step.setSessionRef(event.sessionRef);
+      if (event.type === 'init') {
+        await step.setSessionRef(event.sessionRef);
+        // The model that actually runs: an exact name of [cloud.models] changes live and runs keep the alias (D-071).
+        await appendEvent(sql, {
+          ...ids,
+          kind: 'executor.model',
+          label: 'L0',
+          payload: { executor: 'claude', alias: input.model, model: REPORTED_MODEL.test(event.model) ? event.model : null },
+        });
+      }
       if (event.type === 'text' || event.type === 'tool') await input.onEvent?.(event);
       if (event.type === 'rate-limit') {
         await appendEvent(sql, {

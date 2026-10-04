@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { AGENTS_DIR, loadAgents, type Answer, type LoadedAgent } from '@arianna/agents';
-import { loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
@@ -33,7 +33,15 @@ const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
 const OPTIONS = { allowedActions: () => [] as readonly string[], agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }) };
 const BASE = loadConfig();
 
-const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 });
+// `[cloud.models]` of the test that runs: the exact names reach `--model` (D-071).
+let cloudModels: CloudConfig['models'] = defaultCloudModels();
+const claude = createClaudeExecutor({
+  enabled: ['claude'],
+  command: { file: process.execPath, args: [FAKE] },
+  home: ROOT,
+  killGraceMs: 200,
+  modelName: (model) => cloudModels[model].name,
+});
 const loaded = loadAgents(join(ROOT, AGENTS_DIR));
 
 before(() => {
@@ -84,6 +92,8 @@ interface Setup {
   /** Approved projects as they are, for folders elsewhere. */
   extraProjects?: Project[];
   executors?: ('claude' | 'codex')[];
+  /** `[cloud.models]`; every alias on by default. */
+  models?: CloudConfig['models'];
   withClaude?: boolean;
 }
 
@@ -96,7 +106,7 @@ function orchestrator(setup: Setup): StepExecutor {
     ...BASE,
     home: HOME,
     paths: { data: join(HOME, 'data') },
-    cloud: { executors: setup.executors ?? ['claude'] },
+    cloud: { executors: setup.executors ?? ['claude'], models: setup.models ?? defaultCloudModels() },
     projects: [
       ...(setup.projects ?? ['site']).map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
       ...(setup.extraProjects ?? []),
@@ -244,6 +254,33 @@ test('the model chosen for the conversation is the one the step runs on', async 
   assert.equal(received().argv.includes('opus'), true);
   const [decision] = await db().sql<{ reason: string }[]>`SELECT reason FROM router_decisions WHERE task_id = ${task.id}`;
   assert.match(decision?.reason ?? '', /chosen by the user/);
+});
+
+test('a model turned off in [cloud.models] is never run: the router chooses instead of it (D-071)', async () => {
+  const { conversation, task } = await ask('work', 'Rinomina una variabile.', 'site');
+  await setConversationModel(db().sql, conversation.id, 'opus', ['sonnet', 'opus', 'fable']);
+  const models = { ...defaultCloudModels(), opus: { enabled: false } };
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), models })), ['continued', 'continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.model, 'sonnet');
+  assert.equal(received().argv.includes('opus'), false);
+  const [decision] = await db().sql<{ reason: string }[]>`SELECT reason FROM router_decisions WHERE task_id = ${task.id}`;
+  assert.match(decision?.reason ?? '', /preferred opus not installed/);
+});
+
+test('the exact name of [cloud.models] goes to --model; the run keeps the alias (D-071)', async () => {
+  const { conversation, task } = await ask('work', 'Rinomina una variabile.', 'site');
+  await setConversationModel(db().sql, conversation.id, 'opus', ['sonnet', 'opus', 'fable']);
+  cloudModels = { ...defaultCloudModels(), opus: { enabled: true, name: 'claude-opus-5-5' } };
+  try {
+    assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
+  } finally {
+    cloudModels = defaultCloudModels();
+  }
+  const { argv } = received();
+  assert.equal(argv[argv.indexOf('--model') + 1], 'claude-opus-5-5');
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.model, 'opus');
 });
 
 test('a private conversation: the brief leaves only after the user approves it from the chat', async () => {

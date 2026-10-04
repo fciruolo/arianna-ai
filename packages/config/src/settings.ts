@@ -1,10 +1,12 @@
 // The editable form of arianna.toml (task 1.18): what the wizard reads, changes
 // and writes back, comments included. `config/arianna.example.toml` is
 // `renderSettings(DEFAULT_SETTINGS)`, and a test keeps the two identical.
+import { isDeepStrictEqual } from 'node:util';
+
 import { parse as parseToml } from 'smol-toml';
 
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
-import type { CloudExecutor } from './cloud.ts';
+import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
 import { DATA_DIR, DEFAULT_SERVER, parseConfig } from './config.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
@@ -37,7 +39,12 @@ export interface Settings {
   server: { host: string; port: number };
   roles: Roles;
   endpoints: EndpointSettings[];
-  cloud: { executors: CloudExecutor[] };
+  cloud: {
+    executors: CloudExecutor[];
+    /** `[cloud.models]` (D-071); absent, every alias on under its own name. */
+    models?: Record<CloudModel, CloudModelSetting>;
+    defaultModel?: CloudModel;
+  };
   /** As written in the file: `path` keeps its form. */
   projects: ProjectSettings[];
   /** Agent → "<pack>/<character>" (D-060). */
@@ -90,7 +97,12 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
         ...(explicit ? { models: { ...endpoint.models } } : {}),
       };
     }),
-    cloud: { executors: [...config.cloud.executors] },
+    cloud: {
+      executors: [...config.cloud.executors],
+      // Absent means every alias on under its own name: kept absent, as written.
+      ...(isDeepStrictEqual(config.cloud.models, defaultCloudModels()) ? {} : { models: structuredClone(config.cloud.models) }),
+      ...(config.cloud.defaultModel === undefined ? {} : { defaultModel: config.cloud.defaultModel }),
+    },
     projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
     characters: { ...config.characters },
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
@@ -125,6 +137,16 @@ function endpointSection(endpoint: EndpointSettings): string[] {
     `url = ${str(endpoint.url)}`,
     ...(endpoint.command === undefined ? [] : [`command = ${list(endpoint.command)}`]),
     ...(endpoint.models === undefined ? [] : [`models = ${inlineTable(endpoint.models)}`]),
+  ];
+}
+
+function cloudModelsSection(cloud: Settings['cloud']): string[] {
+  const models = cloud.models ?? defaultCloudModels();
+  const value = ({ enabled, name }: CloudModelSetting): string => (!enabled ? 'false' : name === undefined ? 'true' : str(name));
+  return [
+    '[cloud.models]',
+    ...CLOUD_MODELS.map((model) => `${model} = ${value(models[model])}`),
+    cloud.defaultModel === undefined ? '# default = "sonnet"' : `default = ${str(cloud.defaultModel)}`,
   ];
 }
 
@@ -245,6 +267,15 @@ export function renderSettings(settings: Settings): string {
     '# only the user edits it, never an agent, and a change needs a restart.',
     '[cloud]',
     `executors = ${list(cloud.executors)}`,
+    '',
+    '# Cloud models (D-071): which model of an enabled executor runs. Per alias',
+    '# true (on), false (off: never chosen by the router nor offered by the chat)',
+    '# or the exact name to pass to --model (on), e.g. opus = "claude-opus-5-5";',
+    '# true means the alias, the newest model for the binary. `default` is the',
+    '# model of a new work conversation; without it the router chooses. Not a',
+    '# privacy setting: it never turns an executor on. Codex applies with its',
+    '# adapter (task 1.16). Applies without a restart.',
+    ...cloudModelsSection(cloud),
     '',
     '# Projects (D-058): the folders a cloud executor may work on, as the user',
     '# does with the CLI. `path` is ~/<folder> under your home (never the home',

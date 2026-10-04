@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
-import { loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, WORKTREES_DIR, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { ChatError, createConversation, postUserMessage, setConversationModel, type Conversation } from '../src/conversations.ts';
@@ -71,7 +71,7 @@ function orchestrator(setup: Setup): StepExecutor {
     agents,
     kb: createKb({ home: HOME, rules: RULES }),
     model: () => setup.model,
-    settings: () => ({ ...BASE, home: HOME, paths: { data: DATA }, cloud: { executors: setup.executors ?? ['claude'] }, projects: [] }),
+    settings: () => ({ ...BASE, home: HOME, paths: { data: DATA }, cloud: { executors: setup.executors ?? ['claude'], models: defaultCloudModels() }, projects: [] }),
     rules: RULES,
     claude,
     directPrompt: setup.prompt ?? 'scenario: ok',
@@ -312,7 +312,7 @@ function directEnv() {
   return {
     sql: db().sql,
     agents,
-    settings: () => ({ ...BASE, home: HOME, paths: { data: DATA }, cloud: { executors: ['claude' as const] }, projects: [] }),
+    settings: () => ({ ...BASE, home: HOME, paths: { data: DATA }, cloud: { executors: ['claude' as const], models: defaultCloudModels() }, projects: [] }),
     rules: RULES,
     claude,
     directPrompt: 'scenario: ok',

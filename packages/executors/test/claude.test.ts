@@ -129,6 +129,21 @@ describe('claude profile', () => {
     assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], resume: '--dangerously-skip-permissions', sandbox: SANDBOX }), /session id/);
   });
 
+  it('passes the exact model name of [cloud.models] to --model, never one that reads as a flag (D-071)', () => {
+    const model = (args: string[]) => args[args.indexOf('--model') + 1];
+    assert.equal(model(claudeArgs({ model: 'opus', tools: [], sandbox: SANDBOX })), 'opus');
+    assert.equal(model(claudeArgs({ model: 'opus', modelName: 'claude-opus-5-5[1m]', tools: [], sandbox: SANDBOX })), 'claude-opus-5-5[1m]');
+    for (const name of ['--dangerously-skip-permissions', '-p', '', 'claude opus', 'opus;rm', 'a'.repeat(101)]) {
+      assert.throws(() => claudeArgs({ model: 'opus', modelName: name, tools: [], sandbox: SANDBOX }), /model name/, name);
+    }
+    assert.throws(() => claudeArgs({ model: 'opus', modelName: 42 as never, tools: [], sandbox: SANDBOX }), /model name/);
+    // The router saw the alias: another family would skip Fable's budget approval.
+    for (const name of ['claude-fable-5-1', 'fable', 'sonnet', 'opusx']) {
+      assert.throws(() => claudeArgs({ model: 'opus', modelName: name, tools: [], sandbox: SANDBOX }), /not of the opus family/, name);
+    }
+    assert.equal(claudeArgs({ model: 'opus', modelName: 'opus[1m]', tools: [], sandbox: SANDBOX }).includes('opus[1m]'), true);
+  });
+
   it('passes on only PATH, HOME and the user, never secrets, proxies or Node options', () => {
     const env = claudeEnv({ PATH: 'fake-path', HOME: 'fake-home', USER: 'x', SOPS_AGE_KEY: 'k', HTTPS_PROXY: 'http://p', NODE_OPTIONS: '-r x', ANTHROPIC_API_KEY: 'k' });
     assert.deepEqual(Object.keys(env).sort(), ['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'HOME', 'LANG', 'PATH', 'USER']);
@@ -205,6 +220,18 @@ describe('claude executor', () => {
     assert.equal(got.prompt, 'scenario: ok\nfake task');
     assert.ok(!got.argv.some((arg) => arg.includes('fake task')), 'the prompt is not in argv');
     for (const key of ['SOPS_AGE_KEY', 'ANTHROPIC_API_KEY', 'NODE_OPTIONS']) assert.equal(got.env[key], undefined, key);
+  });
+
+  it('asks for the exact model name at each launch, and refuses a bad one before starting (D-071)', async () => {
+    let name: string | undefined = 'claude-sonnet-5-5';
+    const options = { modelName: (model: string) => (model === 'sonnet' ? name : undefined) };
+    const first = await start('ok', {}, options);
+    await first.run.result;
+    const argv = received(first.path).argv;
+    assert.equal(argv[argv.indexOf('--model') + 1], 'claude-sonnet-5-5');
+    name = '--dangerously-skip-permissions';
+    const refused = await start('ok', {}, options);
+    assert.equal((await failure(refused.run.result)).kind, 'invalid-options');
   });
 
   it('resumes a session in the same workspace', async () => {

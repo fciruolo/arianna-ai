@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
-import { loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
@@ -49,7 +49,7 @@ const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
 const CONFIG = loadConfig();
 /** An orchestrator without delegation: no cloud executor. */
 const orchestrator = (model: LocalModel) =>
-  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], allowlist: [] } }), rules: RULES });
+  createOrchestrator({ sql: db().sql, agents, kb, model: () => model, settings: () => ({ ...CONFIG, cloud: { executors: [], models: defaultCloudModels() } }), rules: RULES });
 
 type Scripted = (Answer & { thought?: string }) | LocalModelError | 'not-json';
 

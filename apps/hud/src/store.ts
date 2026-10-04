@@ -501,6 +501,10 @@ export function createChatStore() {
       case 'conversation.model':
         work.push(refreshConversations());
         break;
+      // [cloud.models] changed (D-071): the selector offers what the core offers now.
+      case 'settings.cloud-models':
+        work.push(refreshModels());
+        break;
       case 'conversation.created':
       case 'conversation.title':
       case 'conversation.archived':

@@ -18,6 +18,7 @@ export {
   claudeArgs,
   claudeEnv,
   claudeSettings,
+  MODEL_NAME,
   profileViolations,
   SESSION_REF,
   type ClaudeModel,

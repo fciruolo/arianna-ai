@@ -15,7 +15,18 @@ export {
   type ModelStatus,
 } from './catalog.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
-export { CLOUD_EXECUTORS, type CloudConfig, type CloudExecutor } from './cloud.ts';
+export {
+  CLOUD_EXECUTORS,
+  CLOUD_MODEL_NAME,
+  CLOUD_MODELS,
+  cloudModelName,
+  defaultCloudModels,
+  enabledCloudModels,
+  type CloudConfig,
+  type CloudExecutor,
+  type CloudModel,
+  type CloudModelSetting,
+} from './cloud.ts';
 export {
   CONFIG_FILE,
   DATA_DIR,

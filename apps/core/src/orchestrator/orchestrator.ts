@@ -11,7 +11,7 @@ import {
   type ToolId,
   type TurnMessage,
 } from '@arianna/agents';
-import type { AriannaConfig } from '@arianna/config';
+import { enabledCloudModels, type AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
@@ -228,7 +228,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
    */
   async function directFor(task: Task): Promise<{ model: DirectModel; label: Label } | undefined> {
     if (task.conversationId === null || !canAnswerDirectly(env)) return undefined;
-    const model = directModelOf(await loadConversation(sql, task.conversationId));
+    const model = directModelOf(await loadConversation(sql, task.conversationId), enabledCloudModels(env.settings().cloud));
     if (model === undefined) return undefined;
     const history = await historyOf(sql, task, [], []);
     const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
