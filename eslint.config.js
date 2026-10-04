@@ -28,7 +28,7 @@ export default defineConfig(
     files: ['apps/hud/public/**/*.js'],
     languageOptions: {
       sourceType: 'script',
-      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly', self: 'readonly', clients: 'readonly' },
+      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly', self: 'readonly', clients: 'readonly', URL: 'readonly' },
     },
   },
   {

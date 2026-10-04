@@ -152,7 +152,7 @@ function voiceSection(voice: VoiceConfig | undefined): string[] {
       `# waiting_minutes = ${String(outgoing.waitingMinutes)}`,
       '#',
       '# [voice.push]',
-      '# public_key = "<VAPID public key, base64url>"',
+      '# public_key = "<pnpm voice:vapid>"',
       `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`,
       '# subject = "mailto:you@example.org"',
     ];

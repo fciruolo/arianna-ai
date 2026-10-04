@@ -10,6 +10,7 @@ import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { loadTask } from '../tasks.ts';
+import { FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
 import { CALL_TEXT, callReadiness, cleanTranscript, MAX_REPLY_TOKENS, parseReply, summaryToSay, voicePrompt } from './turns.ts';
@@ -52,7 +53,7 @@ export class CallError extends Error {
   }
 }
 
-const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId", direction, reason, task_id::text AS "taskId", status,
+export const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId", direction, reason, task_id::text AS "taskId", status,
   scheduled_at AS "scheduledAt", created_at AS "createdAt", answered_at AS "answeredAt", ended_at AS "endedAt",
   end_reason AS "endReason", delegations`;
 
@@ -98,6 +99,10 @@ export interface Calls {
   start(conversationId: string, offer: { sdp: string; type: string }): Promise<{ call: Call; answer: { sdp: string; type: string } }>;
   /** A turn of the call: the voice sends what the user said, the core answers what to say ('' when superseded). */
   turn(callId: string, token: string | undefined, text: unknown): Promise<{ say: string }>;
+  /** The user answers a call of Arianna that is ringing: the WebRTC answer for the page. */
+  answer(callId: string, offer: { sdp: string; type: string }): Promise<{ call: Call; answer: { sdp: string; type: string } }>;
+  /** The user declines a call of Arianna: it is missed, and she writes instead. */
+  decline(callId: string): Promise<Call>;
   /** The page hangs up, or the voice reports the end. */
   end(callId: string, reason: CallEndReason, token?: string): Promise<Call>;
   /** At start: a call left open by a core that stopped is closed. */
@@ -121,6 +126,20 @@ function tokenMatches(session: Session, token: string | undefined): boolean {
   if (token === undefined) return false;
   const given = Buffer.from(token);
   return given.length === session.token.length && timingSafeEqual(given, session.token);
+}
+
+/** A written note of Arianna in the conversation: fixed L0 text, through the gateway to the web chat. */
+export async function writeNote(sql: Sql, conversationId: string, text: string, callId: string): Promise<void> {
+  const decision = await passGateway(sql, [{ value: text, label: 'L0', source: `call:${callId}` }], createContext('L0'), { kind: 'channel', id: 'web' });
+  const [allowed] = decision.decision === 'allow' ? decision.texts : [];
+  if (allowed === undefined) return;
+  await sql.begin(async (tx) => {
+    const [row] = await tx<{ id: string }[]>`
+      INSERT INTO messages (conversation_id, role, channel, label, body)
+      VALUES (${conversationId}, 'assistant', 'web', 'L0', ${allowed}) RETURNING id::text`;
+    if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+    await appendEvent(tx, { kind: 'message.created', label: 'L0', payload: { conversationId, messageId: row.id, role: 'assistant', callId } });
+  });
 }
 
 export function createCalls(options: CallsOptions): Calls {
@@ -280,18 +299,68 @@ export function createCalls(options: CallsOptions): Calls {
     return { say: stored ? parsed.text : CALL_TEXT.notHere };
   }
 
+  /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
+  async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
+    const { voice, roles, local } = options.config();
+    const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models));
+    if (!ready.ready) {
+      await finish(call.id, 'failed', 'voice-error').catch(() => undefined);
+      throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
+    }
+    const token = randomBytes(32).toString('base64url');
+    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0 };
+    sessions.set(call.id, session);
+    try {
+      const answer = await options.voice.request('POST', '/calls', {
+        timeoutMs: OPEN_TIMEOUT_MS,
+        json: {
+          callId: call.id,
+          token,
+          coreUrl: options.coreUrl,
+          sdp: offer.sdp,
+          type: offer.type,
+          stt: ready.stt,
+          tts: ready.tts,
+          ...(ready.reference === undefined ? {} : { reference: ready.reference }),
+          voice: voice.voice,
+          limits: { callSeconds: voice.limits.callMinutes * 60, warnSeconds: voice.limits.warnSeconds },
+          texts: { greeting, warning: CALL_TEXT.warning, goodbye: CALL_TEXT.goodbye },
+        },
+      });
+      const body = JSON.parse(answer.body.toString('utf8')) as { sdp?: unknown; type?: unknown };
+      if (answer.status !== 200 || typeof body.sdp !== 'string' || body.type !== 'answer') throw new CallError('voice-off', 'the voice refused the call');
+      // The voice counts the limit from the connection, which follows the answer:
+      // the core closes the call itself only after the voice had time to say goodbye.
+      session.timer = setTimeout(() => {
+        finish(call.id, 'ended', 'time-limit').catch((error: unknown) => options.onError?.(error));
+      }, voice.limits.callMinutes * 60_000 + LIMIT_GRACE_MS);
+      session.timer.unref();
+      const [active] = await sql.unsafe<Call[]>(
+        `UPDATE calls SET status = 'active', answered_at = now() WHERE id = $1 AND status = 'connecting' RETURNING ${CALL_COLUMNS}`,
+        [call.id],
+      );
+      return { call: active ?? call, answer: { sdp: body.sdp, type: 'answer' } };
+    } catch (error) {
+      await finish(call.id, 'failed', 'voice-error').catch(() => undefined);
+      throw error instanceof CallError ? error : new CallError('voice-off', 'the voice did not answer');
+    }
+  }
+
+  function checkOffer(offer: { sdp: string; type: string }): void {
+    if (typeof offer.sdp !== 'string' || offer.sdp === '' || offer.sdp.length > 64 * 1024 || offer.type !== 'offer') {
+      throw new CallError('invalid', 'expected a WebRTC offer');
+    }
+  }
+
   return {
     async start(conversationId, offer) {
-      if (typeof offer.sdp !== 'string' || offer.sdp === '' || offer.sdp.length > 64 * 1024 || offer.type !== 'offer') {
-        throw new CallError('invalid', 'expected a WebRTC offer');
-      }
+      checkOffer(offer);
       const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
       if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
       if (conversation.archivedAt !== null) throw new CallError('archived', 'the conversation is archived: restore it to call');
       if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
-      const { roles, voice, local } = options.config();
-      const served = local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models);
-      const ready = callReadiness(roles, options.candidates(), served);
+      const { roles, local } = options.config();
+      const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models));
       if (!ready.ready) throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
 
       let call: Call;
@@ -310,43 +379,7 @@ export function createCalls(options: CallsOptions): Calls {
         throw error;
       }
 
-      const token = randomBytes(32).toString('base64url');
-      const session: Session = { token: Buffer.from(token), conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0 };
-      sessions.set(call.id, session);
-      try {
-        const answer = await options.voice.request('POST', '/calls', {
-          timeoutMs: OPEN_TIMEOUT_MS,
-          json: {
-            callId: call.id,
-            token,
-            coreUrl: options.coreUrl,
-            sdp: offer.sdp,
-            type: offer.type,
-            stt: ready.stt,
-            tts: ready.tts,
-            ...(ready.reference === undefined ? {} : { reference: ready.reference }),
-            voice: voice.voice,
-            limits: { callSeconds: voice.limits.callMinutes * 60, warnSeconds: voice.limits.warnSeconds },
-            texts: { greeting: CALL_TEXT.greeting, warning: CALL_TEXT.warning, goodbye: CALL_TEXT.goodbye },
-          },
-        });
-        const body = JSON.parse(answer.body.toString('utf8')) as { sdp?: unknown; type?: unknown };
-        if (answer.status !== 200 || typeof body.sdp !== 'string' || body.type !== 'answer') throw new CallError('voice-off', 'the voice refused the call');
-        // The voice counts the limit from the connection, which follows the answer:
-        // the core closes the call itself only after the voice had time to say goodbye.
-        session.timer = setTimeout(() => {
-          finish(call.id, 'ended', 'time-limit').catch((error: unknown) => options.onError?.(error));
-        }, voice.limits.callMinutes * 60_000 + LIMIT_GRACE_MS);
-        session.timer.unref();
-        const [active] = await sql.unsafe<Call[]>(
-          `UPDATE calls SET status = 'active', answered_at = now() WHERE id = $1 AND status = 'connecting' RETURNING ${CALL_COLUMNS}`,
-          [call.id],
-        );
-        return { call: active ?? call, answer: { sdp: body.sdp, type: 'answer' } };
-      } catch (error) {
-        await finish(call.id, 'failed', 'voice-error').catch(() => undefined);
-        throw error instanceof CallError ? error : new CallError('voice-off', 'the voice did not answer');
-      }
+      return connect(call, offer, CALL_TEXT.greeting);
     },
 
     async turn(callId, token, text) {
@@ -364,6 +397,58 @@ export function createCalls(options: CallsOptions): Calls {
       const result = session.chain.then(() => runTurn(callId, session, turn, words));
       session.chain = result.catch(() => undefined);
       return result;
+    },
+
+    async answer(callId, offer) {
+      checkOffer(offer);
+      if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
+      const ringing = await loadCall(sql, callId);
+      if (ringing === undefined) throw new CallError('not-found', 'no such call');
+      const conversation = await loadConversation(sql, ringing.conversationId);
+      if (conversation === undefined || conversation.archivedAt !== null) {
+        await finish(callId, 'missed', 'cancelled').catch(() => undefined);
+        throw new CallError('archived', 'the conversation is archived');
+      }
+      const call = await sql.begin(async (tx) => {
+        const [row] = await tx.unsafe<Call[]>(`UPDATE calls SET status = 'connecting' WHERE id = $1 AND status = 'ringing' RETURNING ${CALL_COLUMNS}`, [callId]);
+        // The other pages stop ringing: someone answered.
+        if (row !== undefined) await appendEvent(tx, { kind: 'call.started', label: 'L0', payload: { callId, conversationId: row.conversationId, direction: 'out' } });
+        return row;
+      });
+      if (call === undefined) throw new CallError('ended', 'the call is not ringing any more');
+      const reason = call.reason ?? 'scheduled';
+      const task = call.taskId === null ? undefined : await loadTask(sql, call.taskId);
+      const failed = reason === 'task-done' && task?.status === 'failed';
+      let greeting: string = failed ? FAILED_TEXT.greeting : OUTGOING_TEXT[reason].greeting;
+      // A task the user asked to hear about: the start of its answer, through the gateway when said.
+      if (reason === 'task-done' && !failed && call.taskId !== null) {
+        const [row] = await sql<{ id: string }[]>`SELECT id::text FROM messages WHERE task_id = ${call.taskId} AND role = 'assistant' ORDER BY id DESC LIMIT 1`;
+        const message = row === undefined ? undefined : await loadMessage(sql, row.id);
+        if (message !== undefined) {
+          const label = maxLabel(message.label, conversation.effectiveLabel);
+          const decision = await passGateway(sql, [{ value: summaryToSay(message.body), label, source: `call:${call.id}` }], createContext(conversation.clearance, label), { kind: 'channel', id: 'voice' });
+          const [allowed] = decision.decision === 'allow' ? decision.texts : [];
+          if (allowed !== undefined) greeting = `${greeting} ${allowed}`;
+        }
+      }
+      return connect(call, offer, greeting.slice(0, 2000));
+    },
+
+    async decline(callId) {
+      // Only a call still ringing: not one another page answered, nor one the ring timer closed.
+      const missed = await sql.begin(async (tx) => {
+        const [row] = await tx.unsafe<Call[]>(
+          `UPDATE calls SET status = 'missed', end_reason = 'cancelled', ended_at = now() WHERE id = $1 AND status = 'ringing' RETURNING ${CALL_COLUMNS}`,
+          [callId],
+        );
+        if (row !== undefined) await appendEvent(tx, { kind: 'call.ended', label: 'L0', payload: { callId, conversationId: row.conversationId, status: 'missed', reason: 'cancelled' } });
+        return row;
+      });
+      if (missed === undefined) throw new CallError('ended', 'the call is not ringing any more');
+      const task = missed.taskId === null ? undefined : await loadTask(sql, missed.taskId);
+      const text = missed.reason === 'task-done' && task?.status === 'failed' ? FAILED_TEXT.missed : OUTGOING_TEXT[missed.reason ?? 'scheduled'].missed;
+      await writeNote(sql, missed.conversationId, text, callId);
+      return missed;
     },
 
     async end(callId, reason, token) {

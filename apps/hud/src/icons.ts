@@ -6,6 +6,7 @@ import {
   Briefcase,
   Check,
   ChevronRight,
+  Clock,
   Folder,
   LifeBuoy,
   Lock,
@@ -78,6 +79,7 @@ export const ICONS = {
   stop: Square,
   phone: Phone,
   'phone-off': PhoneOff,
+  clock: Clock,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

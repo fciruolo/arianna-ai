@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { callBlocker, callErrorText, clock, receiptAnchors, receiptText, type CallInfo } from '../src/lib/calls.ts';
+import { callBlocker, callErrorText, clock, inAnHour, localDateTime, receiptAnchors, receiptText, RING_TEXT, type CallInfo } from '../src/lib/calls.ts';
+import { keyBytes } from '../src/lib/push.ts';
 
 const call = (fields: Partial<CallInfo>): CallInfo => ({
   id: 'x',
@@ -49,4 +50,18 @@ test('callBlocker and callErrorText: the reasons in Italian', () => {
   assert.match(callBlocker('not-installed', false, false) ?? '', /provino/);
   assert.match(callErrorText('not-ready: assign and download: stt'), /Mancano dei modelli/);
   assert.equal(callErrorText('boom'), 'La chiamata non è partita.');
+});
+
+test('scheduling field: local date and time in, a Date out; the default is in an hour, on five minutes', () => {
+  assert.deepEqual(localDateTime('2026-10-05T18:30'), new Date(2026, 9, 5, 18, 30));
+  for (const bad of ['', '2026-10-05', '18:30', '2026-13-05T18:30x']) assert.equal(localDateTime(bad), undefined, bad);
+  assert.equal(inAnHour(new Date(2026, 9, 5, 10, 2)), '2026-10-05T11:05');
+  assert.equal(inAnHour(new Date(2026, 9, 5, 23, 58)), '2026-10-06T01:00');
+  assert.match(RING_TEXT.waiting, /aspetta/);
+});
+
+test('push: the VAPID key in base64url becomes the 65 bytes the browser wants', () => {
+  const point = Buffer.alloc(65, 7);
+  point[0] = 4;
+  assert.deepEqual([...keyBytes(point.toString('base64url'))], [...point]);
 });

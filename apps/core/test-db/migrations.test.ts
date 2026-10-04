@@ -22,6 +22,7 @@ test('migrations apply from zero and create every table', async () => {
       'jobs',
       'label_changes',
       'messages',
+      'push_subscriptions',
       'router_decisions',
       'runs',
       'schema_migrations',

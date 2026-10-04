@@ -43,7 +43,10 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return data as T;
 }
 
-export async function startCall(conversationId: string): Promise<CallSession> {
+/** Either the user calls from a conversation, or answers a call of Arianna that is ringing. */
+export type CallTarget = { conversationId: string } | { answer: string };
+
+export async function startCall(target: CallTarget): Promise<CallSession> {
   const microphone = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const pc = new RTCPeerConnection({ iceServers: [] });
   const remote = new MediaStream();
@@ -87,7 +90,10 @@ export async function startCall(conversationId: string): Promise<CallSession> {
     await gathered(pc);
     const local = pc.localDescription;
     if (local === null) throw new Error('no offer');
-    const { call, answer } = await post<{ call: CallInfo; answer: { sdp: string; type: 'answer' } }>('/api/calls', { conversationId, sdp: local.sdp, type: local.type });
+    const { call, answer } = await post<{ call: CallInfo; answer: { sdp: string; type: 'answer' } }>(
+      'answer' in target ? `/api/calls/${encodeURIComponent(target.answer)}/answer` : '/api/calls',
+      'answer' in target ? { sdp: local.sdp, type: local.type } : { conversationId: target.conversationId, sdp: local.sdp, type: local.type },
+    );
     await pc.setRemoteDescription(answer);
     const samples = new Uint8Array(256);
     return {

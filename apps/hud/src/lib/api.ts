@@ -204,3 +204,31 @@ export async function listConversationCalls(conversationId: string): Promise<Cal
 export async function loadLiveCall(): Promise<CallInfo | null> {
   return (await call<{ call: CallInfo | null }>('GET', '/api/calls/live')).call;
 }
+
+/** Declines a call of Arianna that is ringing: she writes instead (D-066). */
+export async function declineCall(callId: string): Promise<void> {
+  await call('POST', `/api/calls/${encodeURIComponent(callId)}/decline`, {});
+}
+
+/** "Chiamami alle…": a call of Arianna at that time, within a week. */
+export async function scheduleCall(conversationId: string, at: Date): Promise<CallInfo> {
+  return (await call<{ call: CallInfo }>('POST', '/api/calls/schedule', { conversationId, at: at.toISOString() })).call;
+}
+
+/** "Chiamami quando finisci": a call when the task is over. */
+export async function callWhenDone(taskId: string): Promise<CallInfo> {
+  return (await call<{ call: CallInfo }>('POST', `/api/tasks/${encodeURIComponent(taskId)}/call-when-done`, {})).call;
+}
+
+export async function cancelScheduledCall(callId: string): Promise<void> {
+  await call('POST', `/api/calls/${encodeURIComponent(callId)}/cancel`, {});
+}
+
+/** The VAPID public key of [voice.push], or null when push is off. */
+export async function loadPushKey(): Promise<string | null> {
+  return (await call<{ publicKey: string | null }>('GET', '/api/push/key')).publicKey;
+}
+
+export async function subscribePush(subscription: PushSubscriptionJSON): Promise<void> {
+  await call('POST', '/api/push/subscribe', { subscription });
+}

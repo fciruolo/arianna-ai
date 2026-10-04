@@ -55,6 +55,8 @@ export function createChatStore() {
   const callError = ref<string | null>(null);
   /** A call still open on the core that this page does not hold (it was reloaded): it can be closed. */
   const strayCall = ref<CallInfo | null>(null);
+  /** A call of Arianna ringing now (D-066): answer or decline. */
+  const incoming = ref<{ callId: string; conversationId: string; reason: 'waiting' | 'task-done' | 'scheduled' } | null>(null);
   let connection: LiveConnection | undefined;
 
   const current = computed(() =>
@@ -230,7 +232,7 @@ export function createChatStore() {
     callError.value = null;
     callStarting.value = true;
     try {
-      const session = await openCallSession(id);
+      const session = await openCallSession({ conversationId: id });
       session.onDrop(() => {
         void hangUp();
       });
@@ -246,7 +248,67 @@ export function createChatStore() {
 
   async function refreshStrayCall(): Promise<void> {
     const live = await api.loadLiveCall().catch(() => null);
+    if (live?.status === 'ringing' && live.direction === 'out') {
+      incoming.value = { callId: live.id, conversationId: live.conversationId, reason: live.reason ?? 'scheduled' };
+      strayCall.value = null;
+      return;
+    }
     strayCall.value = live !== null && live.id !== callSession.value?.call.id ? live : null;
+  }
+
+  async function answerIncoming(): Promise<void> {
+    const ringing = incoming.value;
+    if (ringing === null || callSession.value !== null) return;
+    incoming.value = null;
+    callError.value = null;
+    callStarting.value = true;
+    try {
+      const session = await openCallSession({ answer: ringing.callId });
+      session.onDrop(() => {
+        void hangUp();
+      });
+      callSession.value = session;
+      if (chat.value?.conversationId !== ringing.conversationId) await open(ringing.conversationId);
+      await refreshCalls();
+    } catch (cause) {
+      callError.value = cause instanceof api.ApiError ? callErrorText(cause.message) : 'Non sono riuscito a rispondere.';
+    } finally {
+      callStarting.value = false;
+    }
+  }
+
+  async function declineIncoming(): Promise<void> {
+    const ringing = incoming.value;
+    if (ringing === null) return;
+    incoming.value = null;
+    await api.declineCall(ringing.callId).catch(() => undefined);
+  }
+
+  async function scheduleCall(at: Date): Promise<boolean> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return false;
+    try {
+      await api.scheduleCall(id, at);
+      await refreshCalls();
+      return true;
+    } catch {
+      callError.value = 'Non sono riuscito a programmare la chiamata: scegli un’ora nei prossimi sette giorni.';
+      return false;
+    }
+  }
+
+  async function callWhenDone(taskId: string): Promise<void> {
+    try {
+      await api.callWhenDone(taskId);
+      await refreshCalls();
+    } catch {
+      callError.value = 'Non posso chiamarti per questo lavoro: forse è già finito.';
+    }
+  }
+
+  async function cancelScheduled(callId: string): Promise<void> {
+    await api.cancelScheduledCall(callId).catch(() => undefined);
+    await refreshCalls();
   }
 
   async function closeStrayCall(): Promise<void> {
@@ -460,8 +522,20 @@ export function createChatStore() {
         }
         break;
       }
+      case 'call.ringing': {
+        const callId = payloadString(event, 'callId');
+        const reason = payloadString(event, 'reason');
+        if (callId !== undefined && conversationId !== undefined && callSession.value === null) {
+          incoming.value = { callId, conversationId, reason: reason === 'waiting' || reason === 'task-done' ? reason : 'scheduled' };
+        }
+        if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshCalls());
+        break;
+      }
+      case 'call.scheduled':
       case 'call.started':
       case 'call.ended': {
+        // Ended, or answered from another page: this one stops ringing.
+        if ((event.kind === 'call.ended' || event.kind === 'call.started') && payloadString(event, 'callId') === incoming.value?.callId) incoming.value = null;
         if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshCalls());
         // Ended by the voice or the core (time limit, line down): the page lets go too.
         const callId = payloadString(event, 'callId');
@@ -544,7 +618,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

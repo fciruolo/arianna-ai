@@ -93,3 +93,27 @@ export function callErrorText(message: string): string {
     }[code] ?? 'La chiamata non è partita.'
   );
 }
+
+/** What the incoming call screen says about why Arianna calls. */
+export const RING_TEXT: Record<'waiting' | 'task-done' | 'scheduled', string> = {
+  waiting: 'Un lavoro aspetta una tua risposta',
+  'task-done': 'Ti chiama per il lavoro che le avevi chiesto',
+  scheduled: 'È l’ora della chiamata che avevi programmato',
+};
+
+/** The value of an <input type="datetime-local"> as a Date in local time; undefined when empty or invalid. */
+export function localDateTime(value: string): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (match === null) return undefined;
+  const [, year, month, day, hours, minutes] = match.map(Number);
+  const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/** The default of the scheduling field: in one hour, rounded to five minutes, in local time. */
+export function inAnHour(now: Date = new Date()): string {
+  const date = new Date(now.getTime() + 3_600_000);
+  date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5, 0, 0);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

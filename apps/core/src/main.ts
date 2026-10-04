@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
 import { loadCatalog, loadConfig, loadLabelRules, voicePaths, watchConfig } from '@arianna/config';
 import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
+import { createContext } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
 import { connect } from './db/client.ts';
@@ -13,6 +14,7 @@ import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
+import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
@@ -21,6 +23,8 @@ import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
 import { createCalls, type Calls } from './voice/calls.ts';
+import { createPusher, PUSH_TEXT, vapidKey, type Pusher } from './voice/push.ts';
+import { createRinger, type Ringer } from './voice/ringer.ts';
 import { createVoiceService, type VoiceService } from './voice/service.ts';
 import { trialModels } from './voice/trial.ts';
 
@@ -132,6 +136,7 @@ const live = await startLiveFeed(sql, { onError: report });
 // (pnpm voice:sync) the trial page says what is missing.
 let voice: VoiceService | undefined;
 let calls: Calls | undefined;
+let pusher: Pusher | undefined;
 let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels> } | undefined;
 const voiceConfig = config.voice;
 if (voiceConfig !== undefined) {
@@ -161,6 +166,27 @@ if (voiceConfig !== undefined) {
   });
   const closed = await calls.closeLeftovers();
   if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
+  // Web Push (D-066, choice 7): a notification without content when no chat is open.
+  const push = voiceConfig.push;
+  if (push !== undefined) {
+    try {
+      const privateKey = await createVault({ data: config.paths.data }).resolve(push.privateKey);
+      pusher = createPusher({
+        sql,
+        publicKey: push.publicKey,
+        key: vapidKey(push.publicKey, privateKey.reveal()),
+        subject: push.subject,
+        // The fixed text, the only thing that leaves, goes through the gateway on channel push.
+        gate: async () =>
+          (await passGateway(sql, [{ value: PUSH_TEXT, label: 'L0', source: 'call:push' }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
+        onError: report,
+      });
+      console.log('Web Push on');
+    } catch (error) {
+      report(error);
+      console.error('Web Push off: see the error above');
+    }
+  }
 }
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
@@ -178,10 +204,25 @@ const server = await startApiServer({
   },
   ...(voice === undefined || voiceApi === undefined ? {} : { voice: { service: voice, ...voiceApi } }),
   ...(calls === undefined ? {} : { calls }),
+  ...(pusher === undefined ? {} : { pusher }),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });
 await worker.start();
+
+// The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing].
+let ringer: Ringer | undefined;
+if (calls !== undefined && voiceConfig !== undefined) {
+  const push = pusher;
+  ringer = createRinger({
+    sql,
+    rules: () => voiceConfig.outgoing,
+    voiceUp: () => voice?.state === 'up',
+    ...(push === undefined ? {} : { notify: async () => { await push.notify(); } }),
+    clientsOnline: () => server.clients(),
+    onError: report,
+  });
+}
 
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml. Without
 // a token the core runs anyway: the web chat does not depend on it.
@@ -207,6 +248,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   await telegram?.close();
   await server.close();
+  ringer?.stop();
   await calls?.close();
   await voice?.stop();
   await worker.stop();

@@ -38,7 +38,16 @@ const emit = defineEmits<{
   retry: [taskId: string];
   attachQuestion: [];
   open: [conversationId: string];
+  /** "Chiamami quando finisci" on a task at work (D-066). */
+  callWhenDone: [taskId: string];
+  cancelCall: [callId: string];
 }>();
+
+/** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
+function canCallWhenDone(task: Task | undefined): boolean {
+  if (task === undefined || !['ready', 'running', 'waiting_user', 'inbox'].includes(task.status)) return false;
+  return !props.calls.some((call) => call.taskId === task.id && call.reason === 'task-done' && call.status === 'scheduled');
+}
 
 /** The selector of the cloud model for delegated steps: work conversations only (D-055). */
 const AUTO = '';
@@ -265,6 +274,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
           <Icon name="phone" :size="12" />{{ receiptText(call) }}
+          <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
         </p>
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
@@ -288,6 +298,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                   @click="emit('explain', taskOf(message)!)"
                 >!</button>
                 <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
+                <button
+                  v-if="canCallWhenDone(taskOf(message))"
+                  type="button"
+                  class="inline-flex items-center gap-1 text-info hover:underline"
+                  title="Arianna ti chiama quando questo lavoro è finito"
+                  @click="emit('callWhenDone', taskOf(message)!.id)"
+                ><Icon name="phone" :size="12" />chiamami quando finisci</button>
               </template>
             </div>
           </div>
@@ -348,6 +365,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <ApprovalCard v-for="approval in approvalsOf(message)" :key="approval.id" :approval="approval" :decide="decide" />
           <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
             <Icon name="phone" :size="12" />{{ receiptText(call) }}
+            <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
 

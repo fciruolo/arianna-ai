@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
+import IncomingCall from './components/IncomingCall.vue';
 import ConversationList from './components/ConversationList.vue';
 import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
@@ -10,7 +11,7 @@ import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
-import { callBlocker } from './lib/calls.ts';
+import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
@@ -22,7 +23,20 @@ import { createChatStore } from './store.ts';
 
 const store = createChatStore();
 const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
-const { calls, voiceState, callSession, callStarting, callError, strayCall } = store;
+const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
+
+// "Chiamami alle…" (D-066): a small form under the clock button.
+const showSchedule = ref(false);
+const scheduleAt = ref('');
+function openSchedule(): void {
+  scheduleAt.value = inAnHour();
+  showSchedule.value = !showSchedule.value;
+}
+async function confirmSchedule(): Promise<void> {
+  const at = localDateTime(scheduleAt.value);
+  if (at === undefined) return;
+  if (await store.scheduleCall(at)) showSchedule.value = false;
+}
 
 // Calls (D-066): the phone in the top bar calls Arianna from the open conversation.
 const callBlocked = computed(() =>
@@ -326,6 +340,30 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <Icon name="phone" />
         </button>
+        <div v-if="current !== undefined && page === 'chat'" class="relative">
+          <button
+            type="button"
+            class="grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink disabled:opacity-60"
+            :disabled="voiceState === 'off' || current.archivedAt !== null"
+            aria-label="Fatti chiamare da Arianna più tardi"
+            title="Fatti chiamare da Arianna più tardi"
+            :aria-expanded="showSchedule"
+            @click="openSchedule"
+          >
+            <Icon name="clock" />
+          </button>
+          <form v-if="showSchedule" class="hud-card absolute top-11 right-0 z-40 flex w-64 flex-col gap-2 bg-surface p-3 text-sm" @submit.prevent="confirmSchedule">
+            <label class="flex flex-col gap-1">
+              Arianna ti chiama alle
+              <input v-model="scheduleAt" type="datetime-local" required class="rounded-md border border-line bg-surface-2 px-2 py-1" />
+            </label>
+            <p class="text-xs text-muted">Anche nelle fasce di silenzio; conta nel massimo di chiamate al giorno.</p>
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn px-2.5 py-1 text-xs" @click="showSchedule = false">Annulla</button>
+              <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs">Programma</button>
+            </div>
+          </form>
+        </div>
         <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <button
           type="button"
@@ -384,6 +422,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :status="status"
         :calls="calls"
         @send="store.send"
+        @call-when-done="store.callWhenDone"
+        @cancel-call="store.cancelScheduled"
         @choose-model="store.chooseModel"
         @restore="store.archive(current.id, false)"
         @explain="store.explain"
@@ -420,6 +460,14 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     />
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
 
+    <IncomingCall
+      v-if="incoming !== null && callSession === null"
+      :reason="incoming.reason"
+      :title="conversations.find((item) => item.id === incoming?.conversationId)?.title ?? 'Conversazione'"
+      :choice="characters?.agents.arianna"
+      @answer="store.answerIncoming"
+      @decline="store.declineIncoming"
+    />
     <CallView
       v-if="callSession !== null"
       :session="callSession"

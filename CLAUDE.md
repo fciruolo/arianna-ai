@@ -52,6 +52,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm voice:sync` | Costruisce l'ambiente Python di `apps/voice` in `data/voice/venv` esattamente da `apps/voice/uv.lock` (D-066); serve `uv` (`brew install uv`). Va rifatto dopo un aggiornamento del lockfile o uno spostamento di `ARIANNA_HOME` |
 | `pnpm voice:lock` | Aggiorna `apps/voice/uv.lock` dopo un cambio di `apps/voice/pyproject.toml` (rete; `exclude-newer` tiene fuori le versioni più giovani di un giorno) |
 | `pnpm test:voice` | Test Python di `apps/voice` nell'ambiente di `data/voice/venv`; fuori da `pnpm check`. Senza ambiente: `PYTHONPATH=apps/voice/src PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s apps/voice/tests` fa girare le parti che non chiedono librerie |
+| `pnpm voice:vapid` | Stampa una coppia di chiavi VAPID per le notifiche delle chiamate (D-066): la pubblica va in `[voice.push]` di `arianna.toml`, la privata nel vault con `pnpm vault:edit` (chiave `vapid-private-key`) |
 | `pnpm start` | Avvia il core come `arianna_app`: migrazioni (solo con le password di sviluppo; con quelle vere prima `pnpm db:migrate`), worker dei task, API, WebSocket e chat web su `[server]` di `arianna.toml` (loopback) |
 | `pnpm hud:build` | Compila la chat web in `apps/hud/dist`, servita dal core |
 | `pnpm hud:dev` | Chat web in sviluppo con Vite su `127.0.0.1:5173`, che inoltra `/api` al core avviato con `pnpm start` |

@@ -59,6 +59,8 @@ Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag 
 
 **La voce (D-066).** `apps/voice` è una destinazione locale: riceve audio e testo della conversazione (fino a L2 in una conversazione privata) solo dal core, su 127.0.0.1, con un gettone generato a ogni avvio. Le richieste del provino non passano da `passGateway`: l'audio arriva dal browser dell'utente sullo stesso Mac e torna lì, e nulla si salva. Il processo non ha una sandbox di rete: lo trattiene un proxy chiuso (`http://127.0.0.1:9`) impostato nell'ambiente, più `HF_HUB_OFFLINE`; una libreria che aprisse connessioni ignorando le variabili di proxy non sarebbe fermata, quindi una sandbox senza rete (`sandbox-exec`) resta da fare prima dei dati veri.
 
+**Le notifiche delle chiamate (D-066).** Verso il servizio push del browser (Apple, Google, Mozilla, Microsoft) esce una richiesta senza corpo, solo dopo che il gateway ha ammesso il testo fisso L0 "Arianna ti chiama" sul canale `push`. Fuori dal testo controllato dal gateway escono comunque, perché lo standard Web Push lo richiede: l'intestazione VAPID con il `subject` di `[voice.push]` (un indirizzo `mailto:` o `https:` dell'utente), l'indirizzo IP del Mac e l'ora della chiamata. Nessun contenuto della conversazione.
+
 "Locale" non è una proprietà del binario ma di dove avviene l'inferenza: un esecutore è locale solo se il suo endpoint è fra i `[[local.endpoints]]` di `arianna.toml`, che per ora ammettono solo indirizzi di loopback (D-033). Codex con un provider locale conta come locale solo dopo aver verificato che non invii telemetria o contenuti altrove (`OPEN-QUESTIONS.md`); fino ad allora il codice L2 si lavora con il modello locale.
 
 ## Da dove vengono le etichette

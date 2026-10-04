@@ -30,6 +30,8 @@ import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
+import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
+import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
@@ -67,6 +69,8 @@ export interface ApiServerOptions {
   voice?: VoiceApi;
   /** Calls from the chat (D-066); absent with the voice off. */
   calls?: Calls;
+  /** Web Push for the calls of Arianna (D-066); absent without [voice.push]. */
+  pusher?: Pusher;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -84,6 +88,8 @@ export interface VoiceApi {
 export interface ApiServer {
   /** The bound port, useful with port 0 in tests. */
   readonly port: number;
+  /** Pages holding the live feed now: with none, a call of Arianna rings by Web Push (D-066). */
+  clients(): number;
   close(): Promise<void>;
 }
 
@@ -174,6 +180,7 @@ interface RouteOptions {
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
+  pusher: Pusher | undefined;
 }
 
 /** The token of the voice for one call: `Authorization: Bearer <token>`. */
@@ -184,7 +191,7 @@ function bearer(request: IncomingMessage): string | undefined {
 
 const END_REASONS_FROM_VOICE: readonly CallEndReason[] = ['hangup', 'time-limit', 'disconnected', 'voice-error'];
 
-function callRoutes(sql: Sql, calls: Calls | undefined): Route[] {
+function callRoutes(sql: Sql, calls: Calls | undefined, pusher: Pusher | undefined): Route[] {
   const need = (): Calls => {
     if (calls === undefined) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
     return calls;
@@ -204,6 +211,53 @@ function callRoutes(sql: Sql, calls: Calls | undefined): Route[] {
     route('POST', '/api/calls/:id/end', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return { body: { call: await need().end(idParam(params, 'id'), 'hangup') } };
+    }),
+    // A call of Arianna that is ringing: answered with the page's offer, or declined.
+    route('POST', '/api/calls/:id/answer', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['sdp', 'type']);
+      const { sdp, type } = body;
+      if (typeof sdp !== 'string' || typeof type !== 'string') throw new HttpError(400, 'sdp and type are required');
+      return { body: await need().answer(idParam(params, 'id'), { sdp, type }) };
+    }),
+    route('POST', '/api/calls/:id/decline', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: { call: await need().decline(idParam(params, 'id')) } };
+    }),
+    // "Chiamami alle 18" and "chiamami quando finisci" (D-066, choice 8).
+    route('POST', '/api/calls/schedule', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId', 'at']);
+      need();
+      const { conversationId, at } = body;
+      if (typeof conversationId !== 'string' || !isUuid(conversationId) || typeof at !== 'string') throw new HttpError(400, 'conversationId and at (ISO time) are required');
+      return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at)) } };
+    }),
+    route('POST', '/api/tasks/:id/call-when-done', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      need();
+      return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id')) } };
+    }),
+    route('POST', '/api/calls/:id/cancel', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: { call: await cancelCall(sql, idParam(params, 'id')) } };
+    }),
+    // Web Push: the public key for the page, and the browsers that asked for it.
+    route('GET', '/api/push/key', () => Promise.resolve({ body: { publicKey: pusher?.publicKey ?? null } })),
+    route('POST', '/api/push/subscribe', async (request) => {
+      if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+      const body = await readJson(request);
+      onlyFields(body, ['subscription']);
+      await pusher.subscribe(parseSubscription(body.subscription));
+      return { status: 201, body: { ok: true } };
+    }),
+    route('POST', '/api/push/unsubscribe', async (request) => {
+      if (pusher === undefined) throw new HttpError(503, 'push off: add [voice.push] to arianna.toml');
+      const body = await readJson(request);
+      onlyFields(body, ['endpoint']);
+      if (typeof body.endpoint !== 'string') throw new HttpError(400, 'endpoint is required');
+      await pusher.unsubscribe(body.endpoint);
+      return { body: { ok: true } };
     }),
     // From apps/voice, with the token of the call.
     route('POST', '/api/calls/:id/turn', async (request, _url, params) => {
@@ -267,10 +321,10 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, agents, characters, voice, calls }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, agents, characters, voice, calls, pusher }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
-    ...callRoutes(sql, calls),
+    ...callRoutes(sql, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
@@ -508,7 +562,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
-  if (error instanceof TrialError) return { status: 400, message: error.message };
+  if (error instanceof TrialError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
   if (error instanceof CallError) {
     const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
     return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };
@@ -526,6 +580,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     characters: options.characters,
     voice: options.voice,
     calls: options.calls,
+    pusher: options.pusher,
   });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
@@ -665,6 +720,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
 
   return {
     port,
+    clients: () => sockets.size,
     async close() {
       for (const ws of sockets) ws.terminate();
       wss.close();

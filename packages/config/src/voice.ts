@@ -130,7 +130,7 @@ function parsePush(value: unknown): PushConfig | undefined {
   const publicKey = asString(table.public_key, 'voice.push.public_key');
   // 65 bytes in base64url without padding are 87 characters, starting with 0x04 ("B").
   if (!BASE64URL.test(publicKey) || publicKey.length !== 87 || !publicKey.startsWith('B')) {
-    throw new ConfigError('voice.push.public_key: the uncompressed P-256 public key, base64url (made by a command that comes with the calls of Arianna)');
+    throw new ConfigError('voice.push.public_key: the uncompressed P-256 public key, base64url (pnpm voice:vapid)');
   }
   const subject = asString(table.subject, 'voice.push.subject');
   if (!/^mailto:[^\s@]+@[^\s@]+$/.test(subject) && !/^https:\/\/\S+$/.test(subject)) {

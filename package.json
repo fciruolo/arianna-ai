@@ -28,6 +28,7 @@
     "voice:sync": "node scripts/voice.ts sync",
     "voice:lock": "node scripts/voice.ts lock",
     "test:voice": "node scripts/voice.ts test",
+    "voice:vapid": "node scripts/voice.ts vapid",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",
     "hud:build": "pnpm --filter @arianna/hud build",

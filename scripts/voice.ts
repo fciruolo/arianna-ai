@@ -3,16 +3,19 @@
 //   sync  builds data/voice/venv from uv.lock exactly (pnpm voice:sync)
 //   lock  updates uv.lock after a change of pyproject.toml (pnpm voice:lock)
 //   test  runs the Python tests in that environment (pnpm test:voice)
+//   vapid prints a new key pair for Web Push (pnpm voice:vapid)
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_FILE, DATA_DIR, loadConfig, resolveHome, uvEnvironment, voicePaths } from '@arianna/config';
+import { CONFIG_FILE, DATA_DIR, loadConfig, resolveHome, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths } from '@arianna/config';
+
+import { generateVapidKeys } from '../apps/core/src/voice/push.ts';
 
 const command = process.argv[2];
 const extra = process.argv.slice(3);
-if (!['sync', 'lock', 'test'].includes(command ?? '') || extra.length > 0) {
-  console.error('usage: node scripts/voice.ts sync | lock | test');
+if (!['sync', 'lock', 'test', 'vapid'].includes(command ?? '') || extra.length > 0) {
+  console.error('usage: node scripts/voice.ts sync | lock | test | vapid');
   process.exit(2);
 }
 
@@ -33,6 +36,23 @@ function run(file: string, args: string[], env: Record<string, string> = {}): nu
     return 1;
   }
   return result.status ?? 1;
+}
+
+if (command === 'vapid') {
+  // The private half goes to the vault, never into a file of the repository.
+  const keys = generateVapidKeys();
+  console.log('Web Push (D-066): add to config/arianna.toml');
+  console.log('');
+  console.log('[voice.push]');
+  console.log(`public_key = "${keys.publicKey}"`);
+  console.log(`private_key = "${VAPID_PRIVATE_KEY_REF}"`);
+  console.log('subject = "mailto:<your address>"');
+  console.log('');
+  console.log('then put this value in the vault with pnpm vault:edit, key vapid-private-key:');
+  console.log(keys.privateKey);
+  console.log('');
+  console.log('Restart the core, open the voice page of the chat and turn the notifications on.');
+  process.exit(0);
 }
 
 if (command === 'sync') {

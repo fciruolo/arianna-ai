@@ -14,6 +14,7 @@ import {
   TRIAL_REPLY,
   VOICE_TEXT,
 } from '../lib/voice-trial.ts';
+import { enablePush, pushState, type PushState } from '../lib/push.ts';
 import Icon from './Icon.vue';
 
 /**
@@ -34,8 +35,24 @@ async function refresh(): Promise<void> {
   }
 }
 
+// Notifications of the calls of Arianna (Web Push, D-066).
+const push = ref<{ state: PushState; key: string | null }>({ state: 'off', key: null });
+const pushError = ref<string | null>(null);
+async function turnOnPush(): Promise<void> {
+  pushError.value = null;
+  if (push.value.key === null) return;
+  try {
+    push.value = { ...push.value, state: await enablePush(push.value.key) };
+  } catch {
+    pushError.value = 'Il browser non ha completato l’iscrizione alle notifiche.';
+  }
+}
+
 onMounted(() => {
   void refresh();
+  void pushState().then((value) => {
+    push.value = value;
+  });
   // Until the service is up, its state changes by itself.
   poll = window.setInterval(() => {
     if (trial.value?.state !== 'up') void refresh();
@@ -262,6 +279,17 @@ onBeforeUnmount(() => {
               <audio v-if="spoken[model.id] !== undefined" :src="spoken[model.id]?.url" controls class="h-8 w-full" />
             </li>
           </ul>
+        </section>
+
+        <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
+          <h2 class="hud-title">Notifiche delle chiamate</h2>
+          <p class="text-sm">Quando Arianna ti chiama e la chat è chiusa, il browser mostra «Arianna ti chiama». La notifica passa da Apple, Google o Mozilla ma non porta nessun contenuto.</p>
+          <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: crea le chiavi con <code class="font-mono text-[12.5px]">pnpm voice:vapid</code> e segui le istruzioni.</p>
+          <p v-else-if="push.state === 'unsupported'" class="text-sm text-muted">Questo browser non supporta le notifiche push.</p>
+          <p v-else-if="push.state === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito nelle impostazioni del browser.</p>
+          <p v-else-if="push.state === 'on'" class="text-sm text-ok">Attive in questo browser.</p>
+          <button v-else type="button" class="btn self-start" @click="turnOnPush"><Icon name="phone" :size="16" />Attiva le notifiche</button>
+          <p v-if="pushError !== null" role="alert" class="text-sm text-danger">{{ pushError }}</p>
         </section>
 
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
