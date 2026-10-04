@@ -17,6 +17,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 - **Mai token OAuth.** Non estrarre, copiare o salvare credenziali degli abbonamenti. Si usano solo i binari ufficiali `claude` e `codex`, non modificati.
 - **Nessuna nuova dipendenza** senza una voce in `docs/DECISIONS.md`.
 - **Test obbligatori** per `packages/policy` e `packages/router`: ogni regola ha almeno un caso positivo e uno negativo. Un cambio a queste cartelle o a `packages/executors` non si chiude se gli eval falliscono.
+- **Mai artefatti pubblicati** (claude.ai o simili): anteprime e mockup solo come file in `docs/mockups/`, aperti dall'utente in locale (richiesta dell'utente, 2026-10-04).
 - **Azioni esterne o irreversibili** (email, pagamenti, cancellazioni, chiamate) passano da approvazione; non aggirarle.
 
 ## Stack e convenzioni
