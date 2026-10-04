@@ -33,6 +33,7 @@ const REASONS: Record<string, string> = {
   'the answer is above what the conversation may hold': 'la risposta supera il livello di questa conversazione',
   'the task has no request to work on': 'il task non ha una richiesta su cui lavorare',
   'the local model asked for a tool it does not have': 'il modello locale ha chiesto uno strumento che non ha',
+  'the local model keeps repeating the same call': 'il modello locale ripete la stessa chiamata',
   'approval needed: budget': 'serve la tua approvazione per il budget del modello',
   'approval needed: workspace': 'la cartella del progetto ha modifiche non committate: serve il tuo via libera',
 };
@@ -127,6 +128,7 @@ const TOOL_ERRORS: [RegExp, (path: string) => string][] = [
   [/^no project for the Coder/, () => 'nessun progetto per il Coder: apri una conversazione di lavoro con un progetto approvato'],
   [/^the project (\S+) is no longer among the projects the user approved/, (name) => `il progetto ${name} non è più fra quelli approvati`],
   [/^the gateway refused the brief/, () => 'il gateway ha fermato il brief'],
+  [/^the same call as step (\d+)/, (step) => `la stessa chiamata del passo ${step}, non rifatta`],
   [/^no executor can take this step now/, () => 'nessun esecutore può prendere questo passo adesso'],
   [/^the Coder runs delegated steps on Claude Code only/, () => 'il Coder lavora solo su Claude Code, che non è disponibile per questo passo'],
   [/^the repository (\S+) cannot go to the cloud/, (repo) => `il repository ${repo} non può andare nel cloud`],

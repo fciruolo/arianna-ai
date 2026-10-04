@@ -64,6 +64,7 @@ test('activity lines are written in Italian; an unknown tool error is never show
   assert.equal(line('read', 'kb/private/casa/caldaia.md'), 'Leggo kb/private/casa/caldaia.md');
   assert.equal(line('thinking'), 'Sto ragionando (passo 3)…');
   assert.equal(line('error', '"kb/ciao.html" is not a page path: pages look like kb/folder/name.md'), 'Errore: kb/ciao.html non è un percorso di pagina valido (kb/cartella/nome.md), provo un’altra strada');
+  assert.equal(line('error', 'the same call as step 2, not run again'), 'Errore: la stessa chiamata del passo 2, non rifatta, provo un’altra strada');
   assert.equal(line('error', 'something the page does not know'), 'Errore: uno strumento ha restituito un errore, provo un’altra strada');
 });
 
@@ -87,6 +88,7 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
 
 test('the orchestrator reasons are translated', () => {
   assert.equal(reasonText('the local model did not give a valid answer'), 'il modello locale non ha dato una risposta valida');
+  assert.equal(reasonText('the local model keeps repeating the same call'), 'il modello locale ripete la stessa chiamata');
   assert.equal(reasonText('the gateway blocked the answer'), 'il gateway ha fermato la risposta');
 });
 

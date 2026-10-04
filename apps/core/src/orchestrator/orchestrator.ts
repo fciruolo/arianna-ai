@@ -352,7 +352,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // This step already completed before a crash or a lost lock: give the
       // same outcome again, without calling the model.
       const done = turns.find((turn) => turn.step === step);
-      if (done !== undefined) return replay(task, done, delegations);
+      if (done !== undefined) return replay(task, done, delegations, turns);
 
       const history = await historyOf(sql, task, turns, delegations);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
@@ -419,6 +419,16 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage);
       if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       const tool = answer.tool;
+      // The same call again is not run (D-076): the model reads where its
+      // result already is; every third one the task waits for the user, and
+      // after the user resumes it the count starts again.
+      const earlier = earlierCall(turns, tool, answer.arguments);
+      if (earlier !== undefined) {
+        const waits = (stoppedRepeats(turns).length + 1) % MAX_REPEATS === 0;
+        await recordTurn(sql, { ...turn, label, result: repeatedResult(tool, earlier, waits) });
+        await show(task, step, 'error', `the same call as step ${String(earlier)}, not run again`);
+        return waits ? { kind: 'wait-user', reason: REPEATING, usage } : { kind: 'continue', usage };
+      }
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
@@ -447,6 +457,56 @@ function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
 }
 
 const INVALID_ANSWER = 'the local model did not give a valid answer';
+const REPEATING = 'the local model keeps repeating the same call';
+/** Every this many repeated calls stopped in a task, it waits for the user (D-076). */
+const MAX_REPEATS = 3;
+
+function repeatedResult(tool: ToolId, step: number, waits: boolean): string {
+  const next = waits ? 'The task now waits for the user.' : 'Take a different step, or reply with what you have.';
+  return `error: ${tool}: the same call as step ${String(step)}, not run again: its result is above. ${next}`;
+}
+
+/**
+ * The step of an earlier call of this task to `tool` with the same arguments,
+ * in any key order (a default written out, like `limit`, makes another call:
+ * a step more, never a call lost). A page written in the task can change what
+ * a search or a read returns: those look only after the last write.
+ */
+export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<string, unknown>): number | undefined {
+  const key = canonical(args);
+  const lastWrite = tool === 'kb.read' || tool === 'kb.search' ? turns.findLastIndex(wrotePage) : -1;
+  return turns
+    .slice(lastWrite + 1)
+    .find((past) => past.answer.action === 'call' && past.answer.tool === tool && canonical(past.answer.arguments) === key)?.step;
+}
+
+function wrotePage(turn: Turn): boolean {
+  return turn.answer.action === 'call' && turn.answer.tool === 'kb.write' && turn.result?.startsWith('written ') === true;
+}
+
+/**
+ * The repeated calls the core stopped in a task, in order, read from the
+ * turns rather than from the text of their results; every MAX_REPEATS-th one
+ * made the task wait.
+ */
+export function stoppedRepeats(turns: readonly Turn[]): { step: number; waits: boolean }[] {
+  const stopped: { step: number; waits: boolean }[] = [];
+  turns.forEach((past, index) => {
+    if (past.answer.action !== 'call' || !isLocalTool(past.answer.tool)) return;
+    if (earlierCall(turns.slice(0, index), past.answer.tool, past.answer.arguments) === undefined) return;
+    stopped.push({ step: past.step, waits: (stopped.length + 1) % MAX_REPEATS === 0 });
+  });
+  return stopped;
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([name, item]) => `${JSON.stringify(name)}:${canonical(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 const UNDELIVERED = 'error: the answer was not delivered';
 const NO_CONVERSATION = 'answer for the user, kept here: the task has no conversation';
 
@@ -455,8 +515,11 @@ function undelivered(reason: string): string {
 }
 
 /** The outcome a completed step had, from its turn. */
-function replay(task: Task, turn: Turn, delegations: readonly Delegation[]): StepOutcome {
+function replay(task: Task, turn: Turn, delegations: readonly Delegation[], turns: readonly Turn[]): StepOutcome {
   if (turn.messageId !== null) return { kind: 'answered', messageId: turn.messageId, usage: { steps: 0 } };
+  if (stoppedRepeats(turns).some((stopped) => stopped.step === turn.step && stopped.waits)) {
+    return { kind: 'wait-user', reason: REPEATING, usage: { steps: 0 } };
+  }
   if (turn.result?.startsWith(UNDELIVERED) === true) {
     return { kind: 'wait-user', reason: undelivered(turn.result.includes('(blocked)') ? 'blocked' : 'above-clearance'), usage: { steps: 0 } };
   }

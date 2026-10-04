@@ -9,7 +9,7 @@ import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@a
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
-import { processStepJob, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
+import { processStepJob, resumeTask, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
@@ -222,6 +222,45 @@ test('an answer that is not JSON is asked again without the thought', async () =
   assert.match(JSON.stringify(model.requests[0]?.schema?.schema), /"thought"/);
   assert.doesNotMatch(JSON.stringify(model.requests[1]?.schema?.schema), /"thought"/);
   assert.equal((await loadTurns(db().sql, task.id))[0]?.thought, null);
+});
+
+test('the same call again is not run: the model reads an error and takes another step (D-076)', async () => {
+  const { task } = await ask('private', "Cosa dice il contratto d'affitto sulla caparra?");
+  const model = scripted([
+    { action: 'call', tool: 'kb.search', arguments: { query: 'caparra affitto', limit: 3 } },
+    { action: 'call', tool: 'kb.search', arguments: { limit: 3, query: 'caparra affitto' } },
+    { action: 'call', tool: 'kb.read', arguments: { path: 'kb/private/affitto.md' } },
+    { action: 'reply', text: 'La caparra è di tre mensilità.' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'continued', 'answered']);
+  const turns = await loadTurns(db().sql, task.id);
+  assert.match(turns[1]?.result ?? '', /^error: kb\.search: the same call as step 1, not run again/);
+  // The model read the error as a tool result at the next step.
+  assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', /<tool_result>\nerror: kb\.search: the same call as step 1/);
+});
+
+test('at the third repeated call the task waits for the user; resumed, it goes on (D-076)', async () => {
+  const { task } = await ask('private', 'Quanto è la caparra?');
+  const search = { action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } } as const;
+  assert.deepEqual(await drain(task.id, scripted([search, search, search, search])), ['continued', 'continued', 'continued', 'waiting-user']);
+  const waiting = await loadTask(db().sql, task.id);
+  assert.deepEqual([waiting?.status, waiting?.waitingReason], ['waiting_user', 'the local model keeps repeating the same call']);
+  const turns = await loadTurns(db().sql, task.id);
+  assert.equal(turns.length, 4);
+  // The model reads that the task waits: after the user resumes it, the count starts again.
+  assert.match(turns[3]?.result ?? '', /The task now waits for the user\.$/);
+  await resumeTask(db().sql, task.id);
+  const resumed = scripted([search, { action: 'reply', text: 'Non trovo la caparra.' }]);
+  assert.deepEqual(await drain(task.id, resumed), ['continued', 'answered']);
+  assert.match(resumed.requests[1]?.messages.at(-1)?.content ?? '', /not run again: its result is above\. Take a different step/);
+});
+
+test('the same card asked twice is created once (D-076)', async () => {
+  const { task } = await ask('private', 'Ricordami di rinnovare il passaporto');
+  const card = { action: 'call', tool: 'task.create', arguments: { title: 'Rinnovare il passaporto' } } as const;
+  assert.deepEqual(await drain(task.id, scripted([card, card, { action: 'reply', text: 'Fatto.' }])), ['continued', 'continued', 'answered']);
+  const children = await db().sql`SELECT id FROM tasks WHERE parent_id = ${task.id}`;
+  assert.equal(children.length, 1);
 });
 
 test('two invalid answers leave the task waiting for the user', async () => {
