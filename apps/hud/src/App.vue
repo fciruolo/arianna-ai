@@ -9,6 +9,7 @@ import PixelAgent from './components/PixelAgent.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
+import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
 import { poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
@@ -17,11 +18,14 @@ import { createChatStore } from './store.ts';
 const store = createChatStore();
 const { conversations, archived, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
 
+// Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser.
 const showSidebar = ref(false);
 const showPanel = ref(false);
+const storage = typeof window === 'undefined' ? undefined : window.localStorage;
+const layout = ref(loadLayout(storage));
+watch(layout, (value) => saveLayout(storage, value), { deep: true });
 
 // Theme: the user's choice in this browser, or the system's.
-const storage = typeof window === 'undefined' ? undefined : window.localStorage;
 const theme = ref<Theme>(loadTheme(storage));
 watch(
   theme,
@@ -101,7 +105,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 </script>
 
 <template>
-  <div class="grid h-full grid-cols-1 md:grid-cols-[56px_248px_minmax(0,1fr)] xl:grid-cols-[56px_248px_minmax(0,1fr)_300px]">
+  <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
     <!-- Icon rail -->
     <nav class="hidden flex-col items-center gap-1.5 border-r border-line bg-surface py-3.5 md:flex" aria-label="Sezioni">
       <div class="mb-2.5 grid size-9 place-items-center" aria-hidden="true">
@@ -117,15 +121,6 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <div class="flex-1" />
       <button
         type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border border-transparent text-muted hover:bg-surface-2 hover:text-ink xl:hidden"
-        :aria-label="showPanel ? 'Chiudi il pannello di stato' : 'Apri il pannello di stato'"
-        :title="showPanel ? 'Chiudi il pannello' : 'Pannello di stato'"
-        @click="showPanel = !showPanel"
-      >
-        <Icon name="panel" />
-      </button>
-      <button
-        type="button"
         class="grid size-[38px] place-items-center rounded-[9px] border border-transparent text-muted hover:bg-surface-2 hover:text-ink"
         :aria-label="`${THEME_TEXT[theme]}: cambia tema`"
         :title="THEME_TEXT[theme]"
@@ -138,7 +133,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <!-- Sidebar: brand, new conversation, agents, conversations -->
     <aside
       class="fixed inset-y-0 left-0 z-30 flex w-[min(290px,86vw)] flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3.5 py-4 transition-transform md:static md:z-auto md:w-auto md:translate-x-0"
-      :class="showSidebar ? 'translate-x-0' : '-translate-x-full'"
+      :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
       aria-label="Conversazioni e agenti"
     >
       <div class="flex items-baseline gap-2 px-1.5">
@@ -205,6 +200,16 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <Icon name="menu" />
         </button>
+        <button
+          type="button"
+          class="hidden size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink md:grid"
+          :aria-label="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
+          :title="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
+          :aria-expanded="!layout.sidebar"
+          @click="layout.sidebar = !layout.sidebar"
+        >
+          <Icon :name="layout.sidebar ? 'sidebar-expand' : 'sidebar-collapse'" />
+        </button>
         <p class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
           <template v-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
@@ -225,6 +230,20 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <Icon name="panel" />
           <span
             v-if="elsewhere.length > 0"
+            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+          >{{ elsewhere.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="relative hidden size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink xl:grid"
+          :aria-label="layout.panel ? 'Mostra il pannello di stato' : 'Nascondi il pannello di stato'"
+          :title="layout.panel ? 'Mostra il pannello di stato' : 'Nascondi il pannello di stato'"
+          :aria-expanded="!layout.panel"
+          @click="layout.panel = !layout.panel"
+        >
+          <Icon :name="layout.panel ? 'panel-expand' : 'panel-collapse'" />
+          <span
+            v-if="layout.panel && elsewhere.length > 0"
             class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
@@ -265,7 +284,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <!-- Status panel: on the right on wide screens, a drawer otherwise -->
     <StatusPanel
       class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform xl:static xl:z-auto xl:w-auto xl:translate-x-0"
-      :class="showPanel ? 'translate-x-0' : 'translate-x-full'"
+      :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { 'xl:hidden': layout.panel }]"
       :status="status"
       :characters="characters"
       :agent-ids="agentIds"
