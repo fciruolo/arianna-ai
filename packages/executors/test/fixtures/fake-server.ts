@@ -13,6 +13,7 @@
 // A request with "stream": true gets server-sent events, one per word.
 // anything else   "hello", or {"ok":true} when a schema was asked.
 // POST /__hang makes every later request hang; GET /__last returns the last chat body.
+// POST /v1/models/<name>/unload: 200 the first time for fake-large, then 400 (not loaded) until a chat loads it again; 404 for others.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -21,11 +22,15 @@ export interface FakeServer {
   port: number;
   /** Chat requests received, in order. */
   requests: unknown[];
+  /** Names asked to unload, in order. */
+  unloads: string[];
   close(): Promise<void>;
 }
 
 export async function startFakeServer(port = 0): Promise<FakeServer> {
   const requests: unknown[] = [];
+  const unloads: string[] = [];
+  let loaded = true;
   let hanging = false;
 
   const server = createServer((req, res) => {
@@ -48,7 +53,20 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
       sendJson(res, 200, { object: 'list', data: [{ id: 'fake-large', object: 'model' }] });
       return;
     }
+    const unload = req.method === 'POST' ? /^\/v1\/models\/([^/]+)\/unload$/.exec(req.url ?? '') : null;
+    if (unload !== null) {
+      const name = decodeURIComponent(unload[1] ?? '');
+      unloads.push(name);
+      if (name !== 'fake-large') sendJson(res, 404, { detail: 'Model not found' });
+      else if (!loaded) sendJson(res, 400, { detail: 'Model not loaded' });
+      else {
+        loaded = false;
+        sendJson(res, 200, { status: 'ok', model_id: name });
+      }
+      return;
+    }
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      loaded = true;
       const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[]; response_format?: unknown; stream?: boolean };
       requests.push(parsed);
       const last = parsed.messages?.at(-1)?.content ?? '';
@@ -64,6 +82,7 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
     url: `http://127.0.0.1:${String(actual)}/v1`,
     port: actual,
     requests,
+    unloads,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

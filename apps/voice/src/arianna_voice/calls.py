@@ -329,6 +329,9 @@ class Calls:
     def get(self, call_id: str) -> Call | None:
         return self._calls.get(call_id)
 
+    def count(self) -> int:
+        return len(self._calls)
+
     async def close(self, call_id: str) -> bool:
         call = self._calls.pop(call_id, None)
         if call is None:

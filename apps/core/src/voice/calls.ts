@@ -184,7 +184,27 @@ export function createCalls(options: CallsOptions): Calls {
     }
     // The voice may already be gone: closing it is best effort.
     options.voice.request('DELETE', `/calls/${callId}`, { timeoutMs: 5000 }).catch(() => undefined);
+    // D-074: outside a call the model of the calls only takes memory the orchestrator needs;
+    // the next call loads it again while Arianna greets (D-072).
+    if (session !== undefined && sessions.size === 0) void unloadVoiceModel();
     return call;
+  }
+
+  /** The unload in flight: the next call waits for it before asking the model, so the two never cross on oMLX. */
+  let unloading: Promise<void> | undefined;
+  function unloadVoiceModel(): Promise<void> {
+    const work = (async () => {
+      try {
+        await options.model().unload?.(VOICE_ALIAS);
+      } catch (error) {
+        options.onError?.(error);
+      }
+    })();
+    unloading = work;
+    void work.finally(() => {
+      if (unloading === work) unloading = undefined;
+    });
+    return work;
   }
 
   /** Something to say outside a turn (the end of a delegation): through the gateway towards the call, like a reply. */
@@ -304,6 +324,7 @@ export function createCalls(options: CallsOptions): Calls {
     const stop = new AbortController();
     session.warming = stop;
     try {
+      await unloading;
       await options.model().chat({ model: VOICE_ALIAS, messages: read.allowed, maxTokens: 1, temperature: 0, timeoutMs: 30_000, signal: stop.signal });
     } catch (error) {
       // Stopped by the first turn or the end of the call: expected, not an error.
@@ -382,6 +403,7 @@ export function createCalls(options: CallsOptions): Calls {
     let failed = false;
     let streamed = false as boolean;
     try {
+      await unloading;
       const result = await options.model().chat({
         model: VOICE_ALIAS,
         messages: allowed,

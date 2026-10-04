@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import unittest
 
@@ -22,6 +23,19 @@ KOKORO = {"id": "kokoro-82m-bf16-mlx", "family": "kokoro"}
 class FakeModels:
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self.held = 0
+        self.idle = 0.0
+
+    def loaded(self) -> int:
+        return self.held
+
+    def idle_seconds(self) -> float:
+        return self.idle
+
+    def unload_all(self) -> int:
+        count, self.held = self.held, 0
+        self.calls.append(("unload_all",))
+        return count
 
     async def run(self, function, *args):
         return function(*args)
@@ -41,7 +55,17 @@ class FakeModels:
 
 
 if AioHTTPTestCase is not None:
-    from arianna_voice.server import authorized, create_app
+    from arianna_voice.server import CALLS_KEY, IDLE_SECONDS, authorized, create_app, release_idle, should_unload
+
+    class FakeCalls:
+        def __init__(self, count: int) -> None:
+            self._count = count
+
+        def count(self) -> int:
+            return self._count
+
+        async def close_all(self) -> None:
+            self._count = 0
 
     class ServerTest(AioHTTPTestCase):
         async def get_application(self):
@@ -74,6 +98,43 @@ if AioHTTPTestCase is not None:
             self.assertEqual((await response.read())[:4], b"RIFF")
             self.assertEqual(response.headers["X-Seconds-Spent"], "0.500")
             self.assertEqual(response.headers["X-First-Audio"], "0.250")
+
+        async def test_idle_models_are_unloaded_only_outside_a_call(self) -> None:
+            # D-074: loaded, unused for a minute, no call → dropped; any of the three missing → kept.
+            self.assertTrue(should_unload(2, 0, IDLE_SECONDS))
+            self.assertFalse(should_unload(0, 0, IDLE_SECONDS * 10))
+            self.assertFalse(should_unload(2, 1, IDLE_SECONDS * 10))
+            self.assertFalse(should_unload(2, 0, IDLE_SECONDS - 1))
+
+            self.models.held, self.models.idle = 2, IDLE_SECONDS - 1
+            self.assertEqual(await release_idle(self.app), 0)
+            self.models.idle = IDLE_SECONDS + 1
+            self.app[CALLS_KEY]["calls"] = FakeCalls(1)
+            self.assertEqual(await release_idle(self.app), 0)
+            self.assertEqual(self.models.held, 2)
+            self.app[CALLS_KEY]["calls"] = FakeCalls(0)
+            self.assertEqual(await release_idle(self.app), 2)
+            self.assertEqual(self.models.held, 0)
+            self.assertEqual(await release_idle(self.app), 0)
+            self.assertEqual(self.models.calls.count(("unload_all",)), 1)
+
+        async def test_the_sweeper_unloads_by_itself(self) -> None:
+            # The loop of the running app, with a short period (D-074).
+            from aiohttp.test_utils import TestClient, TestServer
+
+            models = FakeModels()
+            models.held, models.idle = 1, IDLE_SECONDS + 1
+            client = TestClient(TestServer(create_app(models, TOKEN, sweep_seconds=0.01)))  # type: ignore[arg-type]
+            await client.start_server()
+            try:
+                for _ in range(100):
+                    if models.held == 0:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(models.held, 0)
+                self.assertIn(("unload_all",), models.calls)
+            finally:
+                await client.close()
 
         async def test_bad_requests(self) -> None:
             response = await self.client.post("/trial/speak", data="{}", headers={**self.auth(), "Content-Type": "text/plain"})

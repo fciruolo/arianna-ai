@@ -311,3 +311,42 @@ describe('streaming (D-070)', () => {
     });
   });
 });
+
+describe('unloading a model (D-074)', () => {
+  let server: FakeServer;
+  before(async () => {
+    server = await startFakeServer();
+  });
+  after(() => server.close());
+
+  it('asks the server of the alias, by model name; a model not loaded, an unknown alias and a server down are not errors', async () => {
+    const model = createLocalModel({
+      endpoints: [endpoint('fake', server.url), endpoint('down', `http://127.0.0.1:${String(await closedPort())}/v1`, { 'local-voice': 'down-voice' })],
+    });
+    assert.equal(await model.unload?.('local-large'), true);
+    assert.deepEqual(server.unloads, ['fake-large']);
+    // Already unloaded: oMLX answers 400.
+    assert.equal(await model.unload?.('local-large'), false);
+    // A chat loads it again.
+    await model.chat({ model: 'local-large', messages: USER('hi') });
+    assert.equal(await model.unload?.('local-large'), true);
+    assert.equal(await model.unload?.('local-voice'), false);
+    assert.equal(await model.unload?.('nobody-serves-this'), false);
+    assert.deepEqual(server.unloads, ['fake-large', 'fake-large', 'fake-large']);
+  });
+
+  it('skips a model another alias of the same server uses, and a server reported down', async () => {
+    const asked = server.unloads.length;
+    const shared = createLocalModel({ endpoints: [endpoint('fake', server.url, { 'local-voice': 'fake-large', 'local-small': 'fake-large' })] });
+    assert.equal(await shared.unload?.('local-voice'), false);
+    const down = createLocalModel({ endpoints: [endpoint('fake', server.url)], isAvailable: () => false });
+    assert.equal(await down.unload?.('local-large'), false);
+    assert.equal(server.unloads.length, asked);
+  });
+
+  it('a name the server does not know (404) unloads nothing', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('fake', server.url, { 'local-voice': 'other' })] });
+    assert.equal(await model.unload?.('local-voice'), false);
+    assert.equal(server.unloads.at(-1), 'other');
+  });
+});

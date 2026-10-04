@@ -51,7 +51,19 @@ let stopped = false;
 /** Streamed: fails after this many words. */
 let failAfter: number | undefined;
 const asked: ChatRequest[] = [];
+/** Aliases the core asked to unload (D-074). */
+const unloaded: string[] = [];
+let unloadFails = false;
+/** Held open until released: the next call must wait for it. */
+let unloadGate: Promise<void> | undefined;
+const errors: unknown[] = [];
 const model: LocalModel = {
+  async unload(alias) {
+    unloaded.push(alias);
+    if (unloadGate !== undefined) await unloadGate;
+    if (unloadFails) throw new Error('unload down');
+    return true;
+  },
   async chat(request) {
     asked.push(request);
     if (modelGate !== undefined) await modelGate;
@@ -86,6 +98,7 @@ before(async () => {
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
     pollMs: 20,
+    onError: (error) => errors.push(error),
   });
 });
 
@@ -469,3 +482,46 @@ test('a model that falls after some sentences keeps them and does not say it is 
   nextReply = 'Ciao! Tutto bene.';
 });
 
+
+test('the end of the last call unloads the model of the calls (D-074)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const before = unloaded.length;
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  assert.equal(unloaded.length, before);
+  await calls.end(call.id, 'hangup');
+  await until(() => unloaded.length > before);
+  assert.deepEqual(unloaded.slice(before), ['local-voice']);
+  // Ending it again finds no session: nothing more to unload.
+  await calls.end(call.id, 'hangup');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(unloaded.length, before + 1);
+});
+
+test('an unload that fails does not stop the end of the call; a call that starts meanwhile waits for it (D-074)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  unloadFails = true;
+  const first = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  const ended = await calls.end(first.call.id, 'hangup');
+  assert.equal(ended.status, 'ended');
+  await until(() => errors.some((error) => error instanceof Error && error.message === 'unload down'));
+  unloadFails = false;
+
+  // An unload still in flight: the turn of the next call asks the model only after it.
+  let release = (): void => undefined;
+  unloadGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const second = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  const before = unloaded.length;
+  await calls.end(second.call.id, 'hangup');
+  await until(() => unloaded.length > before);
+  const third = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  const asking = asked.length;
+  const turn = calls.turn(third.call.id, tokenOf(third.call.id), 'Ci sei?');
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(asked.length, asking, 'the model waits for the unload');
+  release();
+  unloadGate = undefined;
+  assert.deepEqual(await turn, { say: nextReply });
+  await calls.end(third.call.id, 'hangup');
+});

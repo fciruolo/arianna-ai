@@ -5,6 +5,8 @@ than the one that asked for it."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hmac
 import json
 import logging
@@ -24,6 +26,16 @@ MODELS_KEY = web.AppKey("models", Models)
 TOKEN_KEY = web.AppKey("token", str)
 # The open calls; Pipecat is imported with the first one (calls.py).
 CALLS_KEY = web.AppKey("calls", dict)
+SWEEP_KEY = web.AppKey("sweep", float)
+
+# Outside a call the speech models go after a minute without use (D-074): a
+# trial of voices keeps them, a call loads them again before it answers.
+IDLE_SECONDS = 60.0
+SWEEP_SECONDS = 15.0
+
+
+def should_unload(loaded: int, open_calls: int, idle: float, limit: float = IDLE_SECONDS) -> bool:
+    return loaded > 0 and open_calls == 0 and idle >= limit
 
 
 def authorized(header: str | None, token: str) -> bool:
@@ -120,18 +132,53 @@ async def close_call(request: web.Request) -> web.Response:
     return web.json_response({"ok": closed}, status=200 if closed else 404)
 
 
+def open_calls(app: web.Application) -> int:
+    holder = app[CALLS_KEY]
+    return holder["calls"].count() if "calls" in holder else 0
+
+
+async def release_idle(app: web.Application) -> int:
+    """Drops the speech models when no call is open and they sat unused long enough."""
+    models = app[MODELS_KEY]
+    if not should_unload(models.loaded(), open_calls(app), models.idle_seconds()):
+        return 0
+    # On the worker thread, after whatever is queued: a call that opens meanwhile loads them again.
+    count = await models.run(models.unload_all)
+    if count > 0:
+        log.info("speech models unloaded: %d", count)
+    return count
+
+
+async def sweeper(app: web.Application):
+    async def loop() -> None:
+        while True:
+            await asyncio.sleep(app[SWEEP_KEY])
+            try:
+                await release_idle(app)
+            except Exception as error:  # noqa: BLE001 - logged by class only
+                log.error("unload failed: %s", type(error).__name__)
+
+    task = asyncio.create_task(loop())
+    yield
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
 async def close_all(app: web.Application) -> None:
     if "calls" in app[CALLS_KEY]:
         await app[CALLS_KEY]["calls"].close_all()
 
 
-def create_app(models: Models, token: str) -> web.Application:
+def create_app(models: Models, token: str, sweep_seconds: float = SWEEP_SECONDS) -> web.Application:
     if len(token) < 32:
         raise ValueError("token too short")
     app = web.Application(middlewares=[guard], client_max_size=MAX_BODY_BYTES)
     app[MODELS_KEY] = models
     app[TOKEN_KEY] = token
     app[CALLS_KEY] = {}
+    app[SWEEP_KEY] = sweep_seconds
+    app.cleanup_ctx.append(sweeper)
     app.on_shutdown.append(close_all)
     app.router.add_get("/health", health)
     app.router.add_post("/trial/transcribe", transcribe)

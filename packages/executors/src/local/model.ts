@@ -13,6 +13,13 @@ import { HttpBodyTooLarge, localRequest, localRequestStream } from './http.ts';
  */
 export interface LocalModel {
   chat(request: ChatRequest): Promise<ChatResult>;
+  /**
+   * Asks every server that serves `alias` to drop it from memory (D-074: the
+   * model of the calls outside a call); the next request loads it again.
+   * Skips servers reported down and a model another alias of the same
+   * server also uses. Best effort, never throws: true when a server unloaded it.
+   */
+  unload?(alias: string): Promise<boolean>;
 }
 
 export interface ChatMessage {
@@ -91,6 +98,9 @@ export class LocalModelError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
+
+/** Unloading waits for the memory to settle on the server: seconds, not minutes. */
+const UNLOAD_TIMEOUT_MS = 30_000;
 
 /** One call to one endpoint. */
 async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<ChatResult> {
@@ -320,6 +330,29 @@ export function createLocalModel(options: LocalModelOptions): LocalModel {
         attempts,
         ...(last?.status === undefined ? {} : { status: last.status }),
       });
+    },
+
+    async unload(alias) {
+      let unloaded = false;
+      const available = options.isAvailable ?? (() => true);
+      for (const endpoint of endpoints) {
+        const name = endpoint.models[alias];
+        if (name === undefined || !available(endpoint.id)) continue;
+        // Another role on the same model (voice and extractor may share one): it stays.
+        if (Object.entries(endpoint.models).some(([other, model]) => other !== alias && model === name)) continue;
+        try {
+          // oMLX: 200 once unloaded, 400 when it was not loaded, 404 for a name it does not know
+          // (a name with "/" too: FastAPI decodes %2F before routing; catalog ids have none).
+          const response = await localRequest(`${endpoint.url}/models/${encodeURIComponent(name)}/unload`, {
+            method: 'POST',
+            signal: AbortSignal.timeout(UNLOAD_TIMEOUT_MS),
+          });
+          if (response.status === 200) unloaded = true;
+        } catch {
+          // A server that is down holds nothing.
+        }
+      }
+      return unloaded;
     },
   };
 }

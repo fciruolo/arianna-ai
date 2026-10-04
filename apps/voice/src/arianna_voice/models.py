@@ -1,4 +1,6 @@
-"""The speech models (D-066), loaded from data/models/<id> on first use.
+"""The speech models (D-066), loaded from data/models/<id> on first use and
+dropped again when idle outside a call (D-074): they hold GBs the local model
+needs the rest of the time.
 
 mlx-audio is imported only here and only when a model is first needed: the
 service starts in a second and the tests run without it. Loading and inference
@@ -9,6 +11,7 @@ across threads; callers await `run`.
 from __future__ import annotations
 
 import asyncio
+import gc
 import re
 import threading
 import time
@@ -73,6 +76,7 @@ class Models:
         # Voices copied from a sample (D-069): <id>/reference.wav and reference.txt, L2.
         self._clones = clones_dir
         self._loaded: dict[str, Any] = {}
+        self._last_used = time.monotonic()
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
 
     def path_of(self, ref: ModelRef) -> Path:
@@ -83,7 +87,19 @@ class Models:
         return path
 
     async def run(self, function, *args):
-        return await asyncio.get_running_loop().run_in_executor(self._worker, function, *args)
+        self._last_used = time.monotonic()
+        try:
+            return await asyncio.get_running_loop().run_in_executor(self._worker, function, *args)
+        finally:
+            self._last_used = time.monotonic()
+
+    def loaded(self) -> int:
+        return len(self._loaded)
+
+    def idle_seconds(self) -> float:
+        """Since the last work began or ended. A job longer than the idle limit looks idle while
+        it runs: harmless, the unload queues behind it on the single worker."""
+        return time.monotonic() - self._last_used
 
     def close(self) -> None:
         self._worker.shutdown(wait=False, cancel_futures=True)
@@ -109,6 +125,22 @@ class Models:
             raise ModelError("load") from error
         self._loaded[ref.id] = model
         return model
+
+    def unload_all(self) -> int:
+        """Drops every model and gives the memory back to the system; the next use loads again."""
+        count = len(self._loaded)
+        if count == 0:
+            return 0
+        self._loaded.clear()
+        gc.collect()
+        try:
+            import mlx.core as mx
+
+            clear = getattr(mx, "clear_cache", None) or mx.metal.clear_cache
+            clear()
+        except Exception:  # noqa: BLE001 - without MLX (tests) there is nothing to clear
+            pass
+        return count
 
     def warm(self, ref: ModelRef) -> None:
         """Loads a model now, so the first words of a call do not wait for it."""
