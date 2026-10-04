@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
   ApiError,
@@ -176,6 +176,17 @@ function others(section: Section): Section[] {
   return SECTIONS.filter((item) => item !== section);
 }
 
+// The card saved last says "Salvato" for a few seconds: without it a save looked like nothing happened.
+const saved = ref<Section | null>(null);
+let savedTimer: number | undefined;
+function markSaved(section: Section): void {
+  saved.value = section;
+  window.clearTimeout(savedTimer);
+  savedTimer = window.setTimeout(() => {
+    saved.value = null;
+  }, 4000);
+}
+
 async function save(section: OrdinarySection): Promise<void> {
   const current = forms.value;
   const fingerprint = view.value?.fingerprint;
@@ -191,6 +202,7 @@ async function save(section: OrdinarySection): Promise<void> {
   notice.value = null;
   try {
     apply(await saveSettings(fingerprint, values), others(section));
+    markSaved(section);
     emit('changed', [section]);
   } catch (error) {
     fail(section, error);
@@ -232,6 +244,7 @@ async function confirm(): Promise<void> {
   try {
     apply(await confirmPrivacy(open.value.id), others(open.section));
     proposal.value = null;
+    markSaved(open.section);
     emit('changed', [open.section]);
     // The local servers restart with the new url or command: their state follows.
     if (open.section === 'endpoints') void poll();
@@ -302,7 +315,10 @@ onMounted(() => {
     .catch(() => undefined);
   timer = window.setInterval(() => void poll(), 5000);
 });
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => {
+  window.clearInterval(timer);
+  window.clearTimeout(savedTimer);
+});
 
 const catalog = computed(() => view.value?.catalog ?? []);
 /** A model turned off cannot stay the default one. */
@@ -367,6 +383,7 @@ async function restart(id: string): Promise<void> {
   try {
     await restartLocal(id);
     await poll();
+    if (logs.value[id] !== undefined) void readLog(id);
   } catch (error) {
     restartError.value[id] = error instanceof Error ? error.message : 'errore';
   } finally {
@@ -379,6 +396,10 @@ async function readLog(id: string): Promise<void> {
   } catch (error) {
     logs.value[id] = `(non leggibile: ${error instanceof Error ? error.message : 'errore'})`;
   }
+  // The newest lines are the ones that matter (a restart, an error): open at the end.
+  await nextTick();
+  const box = document.getElementById(`log-${id}`);
+  if (box !== null) box.scrollTop = box.scrollHeight;
 }
 function toggleLog(id: string, event: Event): void {
   if ((event.target as HTMLDetailsElement).open) void readLog(id);
@@ -499,7 +520,7 @@ function go(id: string): void {
 
           <template v-if="forms !== null">
             <!-- Models by role -->
-            <SettingsCard id="roles" title="Modelli locali per ruolo" kind="now" :changed="changed('roles')" :busy="busy === 'roles'" :error="errors.roles" @cancel="reset('roles')" @save="save('roles')">
+            <SettingsCard id="roles" title="Modelli locali per ruolo" kind="now" :changed="changed('roles')" :saved="saved === 'roles'" :busy="busy === 'roles'" :error="errors.roles" @cancel="reset('roles')" @save="save('roles')">
               <div class="flex flex-col">
                 <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1.5 border-t border-line py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[140px_minmax(0,1fr)] md:grid-cols-[140px_minmax(0,1fr)_auto] md:gap-3">
                   <label :for="`role-${role}`" class="font-medium">
@@ -530,7 +551,7 @@ function go(id: string): void {
             </SettingsCard>
 
             <!-- Cloud models -->
-            <SettingsCard id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">
+            <SettingsCard id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :saved="saved === 'cloudModels'" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">
               <div class="overflow-x-auto">
                 <table class="w-full border-collapse text-[13px]">
                   <thead>
@@ -572,7 +593,7 @@ function go(id: string): void {
             </SettingsCard>
 
             <!-- Voice -->
-            <SettingsCard id="voice" title="Voce e chiamate" kind="now" :changed="changed('voice')" :invalid="voiceProblem(forms.voice)" :busy="busy === 'voice'" :error="errors.voice" @cancel="reset('voice')" @save="save('voice')">
+            <SettingsCard id="voice" title="Voce e chiamate" kind="now" :changed="changed('voice')" :saved="saved === 'voice'" :invalid="voiceProblem(forms.voice)" :busy="busy === 'voice'" :error="errors.voice" @cancel="reset('voice')" @save="save('voice')">
               <template #header>
                 <label class="flex items-center gap-2 text-xs text-muted">
                   {{ forms.voice.enabled ? 'accese' : 'spente' }}
@@ -630,7 +651,7 @@ function go(id: string): void {
             </SettingsCard>
 
             <!-- Characters -->
-            <SettingsCard id="characters" title="Personaggi" kind="now" :changed="changed('characters')" :busy="busy === 'characters'" :error="errors.characters" @cancel="reset('characters')" @save="save('characters')">
+            <SettingsCard id="characters" title="Personaggi" kind="now" :changed="changed('characters')" :saved="saved === 'characters'" :busy="busy === 'characters'" :error="errors.characters" @cancel="reset('characters')" @save="save('characters')">
               <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <div v-for="agent in agentIds" :key="agent" class="flex items-center gap-3 rounded-[10px] border border-line bg-surface-2 p-2.5">
                   <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" />
@@ -655,7 +676,7 @@ function go(id: string): void {
             </p>
 
             <!-- Cloud executors -->
-            <SettingsCard id="executors" title="Esecutori cloud" kind="privacy" :changed="changed('executors')" :busy="busy === 'executors'" :error="errors.executors" @cancel="reset('executors')" @save="prepare('executors')">
+            <SettingsCard id="executors" title="Esecutori cloud" kind="privacy" :changed="changed('executors')" :saved="saved === 'executors'" :busy="busy === 'executors'" :error="errors.executors" @cancel="reset('executors')" @save="prepare('executors')">
               <div class="flex flex-wrap gap-5">
                 <label v-for="executor in CLOUD_EXECUTORS" :key="executor" class="flex items-center gap-2">
                   <input v-model="forms.executors" type="checkbox" :value="executor" />{{ EXECUTOR_TEXT[executor] ?? executor }}
@@ -665,7 +686,7 @@ function go(id: string): void {
             </SettingsCard>
 
             <!-- Telegram -->
-            <SettingsCard id="telegram" title="Telegram" kind="privacy" :changed="changed('telegram')" :busy="busy === 'telegram'" :error="errors.telegram" @cancel="reset('telegram')" @save="prepare('telegram')">
+            <SettingsCard id="telegram" title="Telegram" kind="privacy" :changed="changed('telegram')" :saved="saved === 'telegram'" :busy="busy === 'telegram'" :error="errors.telegram" @cancel="reset('telegram')" @save="prepare('telegram')">
               <template #header>
                 <label class="flex items-center gap-2 text-xs text-muted">
                   {{ forms.telegram.enabled ? 'acceso' : 'spento' }}
@@ -689,7 +710,7 @@ function go(id: string): void {
             </SettingsCard>
 
             <!-- Projects -->
-            <SettingsCard id="projects" title="Progetti" kind="privacy" :changed="changed('projects')" :busy="busy === 'projects'" :error="errors.projects" @cancel="reset('projects')" @save="prepare('projects')">
+            <SettingsCard id="projects" title="Progetti" kind="privacy" :changed="changed('projects')" :saved="saved === 'projects'" :busy="busy === 'projects'" :error="errors.projects" @cancel="reset('projects')" @save="prepare('projects')">
               <ul class="flex flex-col gap-2">
                 <li v-for="(project, index) in forms.projects" :key="project.name" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2">
                   <Icon name="project" :size="16" class="text-muted" />
@@ -723,7 +744,7 @@ function go(id: string): void {
             id="servers"
             title="Server locali"
             :kind="forms !== null ? 'privacy' : 'read'"
-            :changed="changed('endpoints')"
+            :changed="changed('endpoints')" :saved="saved === 'endpoints'"
             :busy="busy === 'endpoints'"
             :error="errors.endpoints"
             @cancel="reset('endpoints')"
@@ -755,7 +776,7 @@ function go(id: string): void {
                   Ultime righe del log (<code class="font-mono">data/{{ server.id }}.log</code>) · può contenere testi privati: resta in questa pagina
                 </summary>
                 <div class="mt-2 flex flex-col gap-1.5">
-                  <pre class="max-h-[240px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap text-muted">{{ logs[server.id] ?? 'Leggo…' }}</pre>
+                  <pre :id="`log-${server.id}`" class="max-h-[240px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap text-muted">{{ logs[server.id] ?? 'Leggo…' }}</pre>
                   <button type="button" class="btn self-start px-2.5 py-1 text-xs" @click="readLog(server.id)"><Icon name="retry" :size="14" />Rileggi</button>
                 </div>
               </details>

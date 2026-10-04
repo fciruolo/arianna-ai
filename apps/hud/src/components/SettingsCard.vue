@@ -10,6 +10,8 @@ defineProps<{
   kind: 'now' | 'privacy' | 'read';
   changed?: boolean;
   busy?: boolean;
+  /** Saved a moment ago: the footer says so until the card changes again. */
+  saved?: boolean;
   error?: string | null | undefined;
   /** Why the card cannot be saved as it is. */
   invalid?: string | undefined;
@@ -32,8 +34,8 @@ const TAG_CLASS = { now: 'text-ok', privacy: 'text-warn', read: 'text-muted' } a
       <slot />
     </fieldset>
     <footer v-if="kind !== 'read'" class="flex flex-wrap items-center gap-2.5 rounded-b-[14px] border-t border-line bg-surface-2 px-4 py-2.5">
-      <p class="min-w-0 flex-1 text-xs" :class="error || (changed && invalid) ? 'text-danger' : changed ? 'text-warn' : 'text-muted'" :role="error ? 'alert' : undefined">
-        {{ error ?? (busy ? 'Un momento…' : changed && invalid ? invalid : changed ? (kind === 'privacy' ? 'Modifica da confermare' : 'Modifiche non salvate') : 'Nessuna modifica') }}
+      <p class="min-w-0 flex-1 text-xs" :class="error || (changed && invalid) ? 'text-danger' : changed ? 'text-warn' : saved ? 'text-ok' : 'text-muted'" :role="error ? 'alert' : undefined">
+        {{ error ?? (busy ? 'Un momento…' : changed && invalid ? invalid : changed ? (kind === 'privacy' ? 'Modifica da confermare' : 'Modifiche non salvate') : saved ? (kind === 'privacy' ? 'Confermato e salvato' : 'Salvato') : 'Nessuna modifica') }}
       </p>
       <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="!changed || busy" @click="emit('cancel')">Annulla</button>
       <button
