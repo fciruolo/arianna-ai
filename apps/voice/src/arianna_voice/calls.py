@@ -55,15 +55,18 @@ TTS_RATE = 24_000
 # Speech goes out in pieces of this length, so an interruption cuts it quickly.
 CHUNK_SECONDS = 0.4
 TURN_TIMEOUT = aiohttp.ClientTimeout(total=45)
-# Seconds of silence that end the user's turn.
-TURN_SILENCE = 0.8
+# Seconds of silence, after the 0.2 s of Silero, that end the user's turn (D-073).
+TURN_SILENCE = 0.6
+# How long the turn may wait for a transcript after the user stops: a safety
+# net only, since each transcript is final (one segment per turn).
+STT_P99_SECONDS = 1.0
 
 
 class MlxSTT(SegmentedSTTService):
     """One segment per user turn, written by the model of the stt role."""
 
     def __init__(self, models: Models, ref: ModelRef, **kwargs: Any) -> None:
-        super().__init__(sample_rate=STT_RATE, settings=STTSettings(model=ref.id, language=Language.IT), **kwargs)
+        super().__init__(sample_rate=STT_RATE, ttfs_p99_latency=STT_P99_SECONDS, settings=STTSettings(model=ref.id, language=Language.IT), **kwargs)
         self._models = models
         self._ref = ref
 
@@ -80,7 +83,8 @@ class MlxSTT(SegmentedSTTService):
             yield ErrorFrame(error=f"stt {error.code}")
             return
         if text:
-            yield TranscriptionFrame(text, self._user_id, time_now_iso8601(), Language.IT)
+            # Final: the whole segment is written at once, so the turn need not wait for more (D-073).
+            yield TranscriptionFrame(text, self._user_id, time_now_iso8601(), Language.IT, finalized=True)
 
 
 class MlxTTS(TTSService):
