@@ -116,7 +116,11 @@ class HttpError extends Error {
 type Params = Record<string, string>;
 /** A JSON body, or `raw` bytes with their type (the character sheets). */
 /** `raw` bytes are cached by the browser unless `noStore` (the voice trial's WAV, D-066). */
-type Result = { status?: number; body: unknown } | { raw: Buffer; type: string; headers?: Record<string, string>; noStore?: boolean };
+/** `lines` are sent as newline-delimited JSON while they come (a turn of a call, D-070). */
+type Result =
+  | { status?: number; body: unknown }
+  | { raw: Buffer; type: string; headers?: Record<string, string>; noStore?: boolean }
+  | { lines: AsyncIterableIterator<unknown> };
 type Handler = (request: IncomingMessage, url: URL, params: Params) => Promise<Result>;
 
 interface Route {
@@ -266,7 +270,7 @@ function callRoutes(sql: Sql, calls: Calls | undefined, pusher: Pusher | undefin
     route('POST', '/api/calls/:id/turn', async (request, _url, params) => {
       const body = await readJson(request);
       onlyFields(body, ['text']);
-      return { body: await need().turn(idParam(params, 'id'), bearer(request), body.text) };
+      return { lines: need().turnStream(idParam(params, 'id'), bearer(request), body.text) };
     }),
     route('POST', '/api/calls/:id/ended', async (request, _url, params) => {
       const body = await readJson(request);
@@ -563,6 +567,29 @@ async function staticFile(dir: string, pathname: string): Promise<{ body: Buffer
   return undefined;
 }
 
+/**
+ * The first line is awaited before the headers, so a refused request still
+ * gets its error status; then each line goes out as it comes. A client that
+ * goes away stops the producer (the iterator's `return`).
+ */
+async function sendLines(response: ServerResponse, lines: AsyncIterableIterator<unknown>, headers: Record<string, string>): Promise<void> {
+  const gone = () => {
+    if (!response.writableFinished) void lines.return?.();
+  };
+  response.on('close', gone);
+  try {
+    let item = await lines.next();
+    response.writeHead(200, { ...headers, 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });
+    while (item.done !== true) {
+      response.write(`${JSON.stringify(item.value)}\n`);
+      item = await lines.next();
+    }
+    response.end();
+  } finally {
+    response.off('close', gone);
+  }
+}
+
 function sendJson(response: ServerResponse, status: number, body: unknown, headers: Record<string, string>): void {
   const text = JSON.stringify(body);
   response.writeHead(status, {
@@ -627,7 +654,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
           params[key] = found.match?.[index + 1] ?? '';
         });
         const result = await found.candidate.handler(request, url, params);
-        if ('raw' in result) {
+        if ('lines' in result) {
+          await sendLines(response, result.lines, headers);
+        } else if ('raw' in result) {
           response.writeHead(200, { ...headers, ...result.headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': result.noStore === true ? 'no-store' : 'no-cache' });
           response.end(result.raw);
         } else {

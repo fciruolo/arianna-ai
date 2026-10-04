@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Message } from '../src/conversations.ts';
-import { callReadiness, HISTORY_MESSAGES, parseReply, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { callReadiness, delegationRequest, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 
 const message = (role: Message['role'], body: string, label: Message['label'] = 'L1'): Message => ({
@@ -85,3 +85,47 @@ test('callReadiness: the three roles, with stt and tts on disk, and a voice of t
   // A tts model without voices cannot speak.
   assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...kokoro, voices: [] }]), { ready: false, missing: ['tts'] });
 });
+
+/** The pieces a splitter gives for text arriving in these chunks. */
+function split(...chunks: string[]): string[] {
+  const splitter = sentenceSplitter();
+  return [...chunks.flatMap((chunk) => splitter.push(chunk)), ...splitter.end()];
+}
+
+test('the splitter cuts sentences as they are written (D-070)', () => {
+  assert.deepEqual(split('Ciao', ', sono Ari', 'anna. Dim', 'mi pure! Va bene?', ' Sì'), ['Ciao, sono Arianna.', 'Dimmi pure!', 'Va bene?', 'Sì']);
+  const splitter = sentenceSplitter();
+  // A full stop waits for the space that follows: "3.5" is not two sentences.
+  assert.deepEqual(splitter.push('Costa 3.'), []);
+  assert.deepEqual(splitter.push('5 euro. Poi'), ['Costa 3.5 euro.']);
+  assert.deepEqual(splitter.end(), ['Poi']);
+});
+
+test('the splitter cuts at line breaks and at ellipses', () => {
+  assert.deepEqual(split('Prima riga\nSeconda… ', 'terza'), ['Prima riga', 'Seconda…', 'terza']);
+  assert.deepEqual(split('\n\n', '  '), []);
+});
+
+test('the splitter holds open think blocks and code fences', () => {
+  assert.deepEqual(split('<think>Penso. Ancora. ', 'Fine.</think> Eccomi. Ciao'), ['<think>Penso. Ancora. Fine.</think> Eccomi.', 'Ciao']);
+  assert.deepEqual(split('Ecco. ```js\nuno. due\n', '``` Fatto. Sì'), ['Ecco.', '```js\nuno. due\n``` Fatto.', 'Sì']);
+});
+
+test('a delegation is seen at the start of a piece only', () => {
+  assert.equal(opensDelegation('DELEGA: cerca le fatture.'), true);
+  assert.equal(opensDelegation('  delega: cerca'), true);
+  assert.equal(opensDelegation('Ti DELEGA: no'), false);
+  assert.equal(opensDelegation('Va bene.'), false);
+});
+
+test('an open think block or code fence at the end is never said', () => {
+  assert.deepEqual(split('Ecco. <think>penso ancora'), ['Ecco.']);
+  assert.deepEqual(split('Ecco: ```js\nuno'), ['Ecco:']);
+});
+
+test('a delegation is seen once the piece is cleaned as it would be said', () => {
+  assert.equal(opensDelegation('**DELEGA:** cerca'), true);
+  assert.equal(opensDelegation('<think>no</think> DELEGA: cerca'), true);
+  assert.equal(delegationRequest(['**DELEGA:** cerca le fatture.', 'Di ottobre.']), 'cerca le fatture. Di ottobre.');
+});
+

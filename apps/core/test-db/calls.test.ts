@@ -45,12 +45,28 @@ const voice = {
 let nextReply = 'Ciao! Tutto bene.';
 let modelDown = false;
 let modelGate: Promise<void> | undefined;
+/** Streamed word by word to `onText` (D-070), with a pause between words; `stopped` when the signal ended it. */
+let streaming = false;
+let stopped = false;
+/** Streamed: fails after this many words. */
+let failAfter: number | undefined;
 const asked: ChatRequest[] = [];
 const model: LocalModel = {
   async chat(request) {
     asked.push(request);
     if (modelGate !== undefined) await modelGate;
     if (modelDown) throw new Error('down');
+    if (streaming && request.onText !== undefined) {
+      for (const piece of nextReply.match(/\S+\s*/g) ?? []) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        if (request.signal?.aborted === true) {
+          stopped = true;
+          throw new Error('cancelled');
+        }
+        request.onText(piece);
+        if (failAfter !== undefined && --failAfter <= 0) throw new Error('down');
+      }
+    }
     return { text: nextReply, finishReason: 'stop', endpoint: 'fake', model: 'fake', durationMs: 1 };
   },
 };
@@ -258,6 +274,21 @@ test('the routes of the voice want the token of the call; the others JSON from t
     assert.equal(await send(`/api/calls/${call.id}/turn`, '{"text":"ciao"}', { ...json, authorization: bearer, host: 'evil.example:80' }), 403);
     assert.equal(await send(`/api/calls/${call.id}/ended`, '{"reason":"core-restart"}', { ...json, authorization: bearer }), 400);
     assert.equal(await send(`/api/calls/${call.id}/turn`, '{"text":"ciao"}', { ...json, authorization: bearer }), 200);
+    // The answer is one JSON line per sentence (D-070).
+    const lines = await new Promise<{ type: string | undefined; body: string }>((resolve, reject) => {
+      const body = '{"text":"ancora ciao"}';
+      const req = httpRequest(`${origin}/api/calls/${call.id}/turn`, { method: 'POST', agent: false, headers: { ...json, authorization: bearer, 'content-length': String(body.length) } }, (res) => {
+        let text = '';
+        res.on('data', (chunk: Buffer) => (text += chunk.toString('utf8')));
+        res.on('end', () => {
+          resolve({ type: res.headers['content-type'], body: text });
+        });
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+    assert.equal(lines.type, 'application/x-ndjson; charset=utf-8');
+    assert.deepEqual(lines.body.trimEnd().split('\n').map((line) => JSON.parse(line) as unknown), [{ say: 'Ciao!' }, { say: 'Tutto bene.' }]);
     assert.equal(await send('/api/calls', JSON.stringify({ conversationId: conversation.id, sdp: SDP, type: 'offer' }), { ...json, origin: 'http://evil.example' }), 403);
     assert.equal(await send(`/api/calls/${call.id}/ended`, '{"reason":"disconnected"}', { ...json, authorization: bearer }), 200);
   } finally {
@@ -265,3 +296,102 @@ test('the routes of the voice want the token of the call; the others JSON from t
     await live.close();
   }
 });
+
+test('a streamed reply is said one sentence at a time, each through the gateway, and stored whole (D-070)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  streaming = true;
+  nextReply = 'Ciao! Tutto bene. Tu come stai?';
+  const before = (await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM gateway_log WHERE target_kind = 'channel' AND target = 'voice'`)[0]?.n ?? 0;
+  const said: string[] = [];
+  for await (const { say } of calls.turnStream(call.id, tokenOf(call.id), 'Come va?')) said.push(say);
+  assert.deepEqual(said, ['Ciao!', 'Tutto bene.', 'Tu come stai?']);
+  const after = (await db().sql<{ n: number }[]>`SELECT count(*)::int AS n FROM gateway_log WHERE target_kind = 'channel' AND target = 'voice'`)[0]?.n ?? 0;
+  assert.equal(after - before, 3);
+  const bodies = (await listMessages(db().sql, conversation.id, { limit: 10 })).map(({ role, body }) => `${role}:${body}`);
+  assert.deepEqual(bodies, ['user:Come va?', 'assistant:Ciao! Tutto bene. Tu come stai?']);
+
+  // A delegation after a sentence: the sentence is said, the DELEGA line never is.
+  nextReply = 'Va bene, ci penso io.\nDELEGA: cerca le fatture di ottobre';
+  const second: string[] = [];
+  for await (const { say } of calls.turnStream(call.id, tokenOf(call.id), 'Cerchi le fatture?')) second.push(say);
+  assert.deepEqual(second, ['Va bene, ci penso io.', CALL_TEXT.delegated]);
+  const after2 = (await listMessages(db().sql, conversation.id, { limit: 10 })).map(({ role, body }) => `${role}:${body}`);
+  assert.ok(after2.includes('assistant:Va bene, ci penso io.'));
+  assert.ok(after2.includes('user:cerca le fatture di ottobre'));
+  assert.ok(!after2.some((body) => body.includes('DELEGA')));
+  await calls.end(call.id, 'hangup');
+  streaming = false;
+  nextReply = 'Ciao! Tutto bene.';
+});
+
+test('a turn whose reader goes away stops the model and keeps what was said', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  streaming = true;
+  stopped = false;
+  nextReply = `Prima frase. ${Array.from({ length: 60 }, (_, index) => `parola${String(index)}`).join(' ')}.`;
+  const lines = calls.turnStream(call.id, tokenOf(call.id), 'Raccontami');
+  const first = await lines.next();
+  assert.deepEqual(first, { done: false, value: { say: 'Prima frase.' } });
+  await lines.return?.();
+  await until(() => stopped);
+  // The next turn waits for this one: once it ran, the history is written.
+  nextReply = 'Ok.';
+  streaming = false;
+  assert.deepEqual(await calls.turn(call.id, tokenOf(call.id), 'Basta così'), { say: 'Ok.' });
+  const bodies = (await listMessages(db().sql, conversation.id, { limit: 10 })).map(({ role, body }) => `${role}:${body}`);
+  assert.deepEqual(bodies, ['user:Raccontami', 'assistant:Prima frase.', 'user:Basta così', 'assistant:Ok.']);
+  await calls.end(call.id, 'hangup');
+  nextReply = 'Ciao! Tutto bene.';
+});
+
+test('newer words stop the model of the turn at work', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  streaming = true;
+  stopped = false;
+  nextReply = Array.from({ length: 80 }, (_, index) => `parola${String(index)}`).join(' ');
+  const first = calls.turn(call.id, tokenOf(call.id), 'Parlami a lungo');
+  await until(() => asked.at(-1)?.messages.at(-1)?.content === 'Parlami a lungo');
+  nextReply = 'Certo.';
+  const second = calls.turn(call.id, tokenOf(call.id), 'Anzi no');
+  assert.deepEqual(await first, { say: '' });
+  assert.ok(stopped);
+  assert.deepEqual(await second, { say: 'Certo.' });
+  await calls.end(call.id, 'hangup');
+  streaming = false;
+  nextReply = 'Ciao! Tutto bene.';
+});
+
+test('a delegation written in markdown or after a sentence on the same line is never said and still starts', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  streaming = true;
+  nextReply = 'Ok. **DELEGA:** cerca le fatture di novembre';
+  const said: string[] = [];
+  for await (const { say } of calls.turnStream(call.id, tokenOf(call.id), 'Cerchi le fatture?')) said.push(say);
+  assert.deepEqual(said, ['Ok.', CALL_TEXT.delegated]);
+  const bodies = (await listMessages(db().sql, conversation.id, { limit: 10 })).map(({ role, body }) => `${role}:${body}`);
+  assert.ok(bodies.includes('user:cerca le fatture di novembre'));
+  assert.ok(!bodies.some((body) => body.includes('DELEGA')));
+  await calls.end(call.id, 'hangup');
+  streaming = false;
+  nextReply = 'Ciao! Tutto bene.';
+});
+
+test('a model that falls after some sentences keeps them and does not say it is down', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { call } = await calls.start(conversation.id, { sdp: SDP, type: 'offer' });
+  streaming = true;
+  failAfter = 3;
+  nextReply = 'Prima frase. Seconda frase lunga lunga.';
+  assert.deepEqual(await calls.turn(call.id, tokenOf(call.id), 'Dimmi'), { say: 'Prima frase.' });
+  failAfter = undefined;
+  const bodies = (await listMessages(db().sql, conversation.id, { limit: 10 })).map(({ role, body }) => `${role}:${body}`);
+  assert.deepEqual(bodies, ['user:Dimmi', 'assistant:Prima frase.']);
+  await calls.end(call.id, 'hangup');
+  streaming = false;
+  nextReply = 'Ciao! Tutto bene.';
+});
+

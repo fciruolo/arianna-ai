@@ -142,3 +142,70 @@ export const CALL_TEXT = {
   warning: 'Manca un minuto alla fine della chiamata.',
   goodbye: 'Il tempo della chiamata è finito. Ci sentiamo in chat, ciao!',
 } as const;
+
+/**
+ * Cuts the model's text into sentences while it is written (D-070): a piece
+ * ends at `.`, `!`, `?` or `…` followed by a space, or at a line break. Never
+ * inside an open `<think>` block or code fence: those are held until closed,
+ * so `speakable` can remove them whole.
+ */
+export function sentenceSplitter(): { push(text: string): string[]; end(): string[] } {
+  let buffer = '';
+  /** Where a cut is not allowed: inside think blocks and code fences, closed or not. */
+  const held = (): [number, number][] => {
+    const ranges: [number, number][] = [];
+    for (const [open, close] of [
+      ['<think>', '</think>'],
+      ['```', '```'],
+    ] as const) {
+      let from = 0;
+      for (;;) {
+        const start = buffer.indexOf(open, from);
+        if (start === -1) break;
+        const stop = buffer.indexOf(close, start + open.length);
+        const end = stop === -1 ? Infinity : stop + close.length;
+        ranges.push([start, end]);
+        if (stop === -1) break;
+        from = end;
+      }
+    }
+    return ranges;
+  };
+  const nextCut = (): number | undefined => {
+    const ranges = held();
+    for (const match of buffer.matchAll(/[.!?…]+(?=\s)|\n/g)) {
+      const cut = match.index + match[0].length;
+      if (!ranges.some(([start, end]) => match.index >= start && match.index < end)) return cut;
+    }
+    return undefined;
+  };
+  return {
+    push(text) {
+      buffer += text;
+      const pieces: string[] = [];
+      for (let cut = nextCut(); cut !== undefined; cut = nextCut()) {
+        const piece = buffer.slice(0, cut).trim();
+        buffer = buffer.slice(cut);
+        if (piece !== '') pieces.push(piece);
+      }
+      return pieces;
+    },
+    end() {
+      // An open think block or code fence (the model hit its token limit) is never said.
+      const open = held().find(([, end]) => end === Infinity);
+      const rest = (open === undefined ? buffer : buffer.slice(0, open[0])).trim();
+      buffer = '';
+      return rest === '' ? [] : [rest];
+    },
+  };
+}
+
+/** A piece that opens a delegation, once cleaned as it would be said: nothing of it, nor after it, is said. */
+export function opensDelegation(piece: string): boolean {
+  return speakable(piece).toUpperCase().startsWith(DELEGATION_PREFIX);
+}
+
+/** The request of a delegation, from the piece that opened it and those after it. */
+export function delegationRequest(pieces: readonly string[]): string {
+  return speakable(pieces.join(' ')).slice(DELEGATION_PREFIX.length).trim();
+}

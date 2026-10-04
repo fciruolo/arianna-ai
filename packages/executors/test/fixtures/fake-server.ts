@@ -6,6 +6,11 @@
 //   "!empty"       JSON without choices
 //   "!notjson"     content that is not JSON, even when a schema was asked
 //   "!redirect:<url>"  302 to <url>
+//   "!say:<text>"  <text> as the content
+//   "!cut:<text>"  streamed: <text>, then the connection closes without [DONE]
+//   "!short:<text>" streamed: <text>, then the answer ends without [DONE] nor finish_reason
+//   "!badevent"    streamed: an event that is not JSON
+// A request with "stream": true gets server-sent events, one per word.
 // anything else   "hello", or {"ok":true} when a schema was asked.
 // POST /__hang makes every later request hang; GET /__last returns the last chat body.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -44,10 +49,10 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
       return;
     }
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
-      const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[]; response_format?: unknown };
+      const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[]; response_format?: unknown; stream?: boolean };
       requests.push(parsed);
       const last = parsed.messages?.at(-1)?.content ?? '';
-      await answer(res, last, parsed.response_format !== undefined);
+      await answer(res, last, parsed.response_format !== undefined, parsed.stream === true);
       return;
     }
     sendJson(res, 404, { error: 'not found' });
@@ -69,7 +74,7 @@ export async function startFakeServer(port = 0): Promise<FakeServer> {
   };
 }
 
-async function answer(res: ServerResponse, last: string, wantsJson: boolean): Promise<void> {
+async function answer(res: ServerResponse, last: string, wantsJson: boolean, stream: boolean): Promise<void> {
   const match = /^!(\w+)(?::(.*))?$/s.exec(last);
   const command = match?.[1] ?? '';
   const argument = match?.[2] ?? '';
@@ -90,7 +95,30 @@ async function answer(res: ServerResponse, last: string, wantsJson: boolean): Pr
       res.writeHead(302, { location: argument }).end();
       return;
   }
-  const content = command === 'notjson' ? 'not json' : wantsJson ? '{"ok":true}' : 'hello';
+  const content = command === 'notjson' ? 'not json' : command === 'say' || command === 'cut' || command === 'short' ? argument : wantsJson ? '{"ok":true}' : 'hello';
+  if (stream && command === 'badevent') {
+    res.writeHead(200, { 'content-type': 'text/event-stream' }).end('data: {not json\n\n');
+    return;
+  }
+  if (stream) {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const event = (value: unknown) => res.write(`data: ${JSON.stringify(value)}\n\n`);
+    for (const piece of content.match(/\S+\s*/g) ?? []) {
+      event({ choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    if (command === 'cut') {
+      res.destroy();
+      return;
+    }
+    if (command === 'short') {
+      res.end();
+      return;
+    }
+    event({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 7, completion_tokens: 1, total_tokens: 8 } });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
   sendJson(res, 200, {
     id: 'chatcmpl-fake',
     object: 'chat.completion',

@@ -25,9 +25,6 @@ from pipecat.frames.frames import (
     Frame,
     InterruptionFrame,
     LLMContextFrame,
-    LLMFullResponseEndFrame,
-    LLMFullResponseStartFrame,
-    LLMTextFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
     TTSSpeakFrame,
@@ -49,7 +46,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.utils.time import time_now_iso8601
 from pipecat.workers.runner import WorkerRunner
 
-from .call_request import CallRequest, last_user_words, schedule
+from .call_request import CallRequest, last_user_words, schedule, sentence_of
 from .models import ModelError, ModelRef, Models
 from .wav import STT_RATE
 
@@ -167,25 +164,27 @@ class CoreBrain(FrameProcessor):
         await self.push_frame(frame, direction)
 
     async def _answer(self, words: str) -> None:
+        # The core answers one line per sentence while the model writes (D-070):
+        # each goes to the speech model as it comes. Cancelling this task (the user
+        # spoke again) closes the request, and the core stops the model.
         url = f"{self._request.core_url}/api/calls/{self._request.call_id}/turn"
         headers = {"Authorization": f"Bearer {self._request.token}", "Content-Type": "application/json"}
+        answered = False
         try:
             async with self._session.post(url, json={"text": words}, headers=headers, timeout=TURN_TIMEOUT) as response:
-                body = await response.json(content_type=None)
-                say = body.get("say") if response.status == 200 and isinstance(body, dict) else None
+                if response.status == 200:
+                    answered = True
+                    async for line in response.content:
+                        say = sentence_of(line)
+                        if say:
+                            await self.push_frame(TTSSpeakFrame(say))
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - logged by class only
             log.warning("turn failed: %s", type(error).__name__)
-            say = None
-        if say == "":
-            # The core dropped this turn: newer words are already on their way.
-            return
-        if not isinstance(say, str):
-            say = "Scusa, ho perso il filo. Puoi ripetere?"
-        await self.push_frame(LLMFullResponseStartFrame())
-        await self.push_frame(LLMTextFrame(say))
-        await self.push_frame(LLMFullResponseEndFrame())
+        # No answer (an error, or the core refused): ask to repeat. A superseded turn is a 200 without lines.
+        if not answered:
+            await self.push_frame(TTSSpeakFrame("Scusa, ho perso il filo. Puoi ripetere?"))
 
 
 def context_messages(context: Any) -> list[Any]:

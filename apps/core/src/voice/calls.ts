@@ -13,7 +13,7 @@ import { loadTask } from '../tasks.ts';
 import { FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
-import { CALL_TEXT, callReadiness, cleanTranscript, MAX_REPLY_TOKENS, parseReply, summaryToSay, voicePrompt } from './turns.ts';
+import { CALL_TEXT, callReadiness, cleanTranscript, delegationRequest, MAX_REPLY_TOKENS, opensDelegation, sentenceSplitter, speakable, summaryToSay, voicePrompt } from './turns.ts';
 
 /**
  * Calls from the web chat (D-066): the page sends its WebRTC offer here, the
@@ -99,6 +99,11 @@ export interface Calls {
   start(conversationId: string, offer: { sdp: string; type: string }): Promise<{ call: Call; answer: { sdp: string; type: string } }>;
   /** A turn of the call: the voice sends what the user said, the core answers what to say ('' when superseded). */
   turn(callId: string, token: string | undefined, text: unknown): Promise<{ say: string }>;
+  /**
+   * The same turn, one sentence at a time while the model writes (D-070).
+   * Returning the iterator early (the voice hung up the request) stops the model.
+   */
+  turnStream(callId: string, token: string | undefined, text: unknown): AsyncIterableIterator<{ say: string }>;
   /** The user answers a call of Arianna that is ringing: the WebRTC answer for the page. */
   answer(callId: string, offer: { sdp: string; type: string }): Promise<{ call: Call; answer: { sdp: string; type: string } }>;
   /** The user declines a call of Arianna: it is missed, and she writes instead. */
@@ -120,6 +125,8 @@ interface Session {
   chain: Promise<unknown>;
   /** The number of the latest turn: an older one still at work is superseded. */
   latest: number;
+  /** Stops the model of the turn at work, when a newer one comes. */
+  stop: AbortController | undefined;
 }
 
 function tokenMatches(session: Session, token: string | undefined): boolean {
@@ -223,14 +230,25 @@ export function createCalls(options: CallsOptions): Calls {
     });
   }
 
+  /** Text towards the call (local) goes through the gateway first: what it allows, or undefined. */
+  async function allowSpoken(call: Call, text: string, label: Label, clearance: Label, effective: Label): Promise<string | undefined> {
+    const stored = maxLabel(label, effective);
+    if (!isAtMost(stored, clearance)) return undefined;
+    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${call.id}` }], createContext(clearance, effective), { kind: 'channel', id: 'voice' });
+    if (decision.decision === 'block') return undefined;
+    return decision.texts[0];
+  }
+
   /** The reply goes through the gateway towards the call (local), then into the history. */
   async function storeReply(call: Call, text: string, label: Label, clearance: Label, effective: Label): Promise<boolean> {
-    const stored = maxLabel(label, effective);
-    if (!isAtMost(stored, clearance)) return false;
-    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${call.id}` }], createContext(clearance, effective), { kind: 'channel', id: 'voice' });
-    if (decision.decision === 'block') return false;
-    const [allowed] = decision.texts;
+    const allowed = await allowSpoken(call, text, label, clearance, effective);
     if (allowed === undefined) return false;
+    await insertReply(call, allowed, maxLabel(label, effective));
+    return true;
+  }
+
+  /** What was said in the call, already through the gateway, into the history. */
+  async function insertReply(call: Call, allowed: string, stored: Label): Promise<void> {
     await sql.begin(async (tx) => {
       const [row] = await tx<{ id: string }[]>`
         INSERT INTO messages (conversation_id, role, channel, label, body)
@@ -239,18 +257,24 @@ export function createCalls(options: CallsOptions): Calls {
       if (row === undefined) throw new Error('INSERT INTO messages returned no row');
       await appendEvent(tx, { kind: 'message.created', label: 'L0', payload: { conversationId: call.conversationId, messageId: row.id, role: 'assistant', callId: call.id } });
     });
-    return true;
   }
 
-  /** One turn: store the words, ask the model through the gateway, store and return the reply. */
-  async function runTurn(callId: string, session: Session, turn: number, words: string): Promise<{ say: string }> {
+  /**
+   * One turn: store the words, ask the model through the gateway and say its
+   * reply one sentence at a time as it is written (D-070), each through the
+   * gateway towards the call; what was said goes into the history at the end.
+   */
+  async function runTurn(callId: string, session: Session, turn: number, words: string, emit: (say: string) => void, signal: AbortSignal): Promise<void> {
     const call = await loadCall(sql, callId);
     if (call?.status !== 'active') throw new CallError('ended', 'the call is over');
     const conversation = await loadConversation(sql, call.conversationId);
     if (conversation === undefined || conversation.archivedAt !== null) throw new CallError('ended', 'the conversation is gone');
 
     // A work conversation may go to the cloud later: no private data in it (as writeUserMessage).
-    if (conversation.mode === 'work' && scanText(words).length > 0) return { say: CALL_TEXT.privateInWork };
+    if (conversation.mode === 'work' && scanText(words).length > 0) {
+      emit(CALL_TEXT.privateInWork);
+      return;
+    }
     await storeUserTurn(call, words, conversation.clearance);
 
     // The model reads the history only once the gateway allowed it, like the orchestrator does.
@@ -262,41 +286,126 @@ export function createCalls(options: CallsOptions): Calls {
       createContext(conversation.clearance, effective),
       { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
     );
-    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) return { say: CALL_TEXT.cannotRead };
+    if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) {
+      emit(CALL_TEXT.cannotRead);
+      return;
+    }
     const allowed = prompt.messages.map((part, index) => ({ role: part.role, content: decision.texts[index] ?? '' }));
 
-    let reply: string;
-    try {
-      const result = await options.model().chat({ model: VOICE_ALIAS, messages: allowed, maxTokens: MAX_REPLY_TOKENS, temperature: 0.4, timeoutMs: 30_000 });
-      reply = result.text;
-    } catch (error) {
-      options.onError?.(error);
-      return { say: CALL_TEXT.modelDown };
-    }
-    // The user spoke again meanwhile: this reply would answer the past, it is dropped.
-    if (session.latest !== turn) return { say: '' };
+    const label = maxLabel(prompt.label, effective);
+    const canSay = isAtMost(label, conversation.clearance);
+    const superseded = () => session.latest !== turn || signal.aborted;
+    const stop = new AbortController();
+    const spoken: string[] = [];
+    /** The piece that opened a delegation and the ones after it. */
+    const delegation: string[] = [];
+    // speaking: piece by piece; delegating: a DELEGA line came, nothing more is said; blocked: the gateway stopped a piece.
+    const flow: { state: 'speaking' | 'delegating' | 'blocked' } = { state: 'speaking' };
+    // Read through a function: the state changes across awaits and callbacks.
+    const state = () => flow.state;
+    let saying: Promise<void> = Promise.resolve();
+    const splitter = sentenceSplitter();
 
-    const parsed = parseReply(reply);
-    if (parsed.kind === 'delegate') {
+    const sayPiece = async (piece: string): Promise<void> => {
+      if (state() !== 'speaking' || superseded()) return;
+      const text = speakable(piece);
+      if (text === '') return;
+      const passed = await allowSpoken(call, text, prompt.label, conversation.clearance, effective);
+      if (state() !== 'speaking' || superseded()) return;
+      if (passed === undefined) {
+        flow.state = 'blocked';
+        stop.abort();
+        emit(CALL_TEXT.notHere);
+        return;
+      }
+      spoken.push(passed);
+      emit(passed);
+    };
+    const take = (pieces: string[]): void => {
+      for (const piece of pieces) {
+        if (flow.state === 'speaking' && opensDelegation(piece)) flow.state = 'delegating';
+        if (flow.state === 'delegating') delegation.push(piece);
+        // Over the clearance nothing is said piece by piece: the end of the turn tells.
+        if (flow.state === 'speaking' && canSay) saying = saying.then(() => sayPiece(piece));
+      }
+    };
+
+    let reply: string | undefined;
+    let failed = false;
+    let streamed = false as boolean;
+    try {
+      const result = await options.model().chat({
+        model: VOICE_ALIAS,
+        messages: allowed,
+        maxTokens: MAX_REPLY_TOKENS,
+        temperature: 0.4,
+        timeoutMs: 30_000,
+        signal: AbortSignal.any([signal, stop.signal]),
+        onText: (piece) => {
+          streamed = true;
+          if (superseded()) {
+            stop.abort();
+            return;
+          }
+          take(splitter.push(piece));
+        },
+      });
+      reply = result.text;
+      // A model that does not stream gives it all at the end.
+      if (!streamed) take(splitter.push(reply));
+      take(splitter.end());
+    } catch (error) {
+      failed = true;
+      if (!superseded() && state() !== 'blocked') options.onError?.(error);
+    }
+    await saying.catch((error: unknown) => options.onError?.(error));
+
+    const keep = async (): Promise<void> => {
+      if (spoken.length > 0) await insertReply(call, spoken.join(' '), label);
+    };
+    // The user spoke again, or the voice hung up the request: what was said stays in the history.
+    if (superseded() || state() === 'blocked' || failed || reply === undefined) {
+      await keep();
+      if (failed && !superseded() && state() !== 'blocked' && spoken.length === 0) emit(CALL_TEXT.modelDown);
+      return;
+    }
+
+    // Decided on the pieces as they would be said, so a DELEGA line is never spoken (D-070).
+    const request = state() === 'delegating' ? delegationRequest(delegation) : '';
+    if (request !== '') {
+      await keep();
       const { voice } = options.config();
-      if (session.delegations >= voice.limits.delegations) return { say: CALL_TEXT.tooMany };
+      if (session.delegations >= voice.limits.delegations) {
+        emit(CALL_TEXT.tooMany);
+        return;
+      }
       let taskId: string;
       try {
         // Arianna's task in the same conversation, as if the user had written it.
-        taskId = (await postUserMessage(sql, call.conversationId, parsed.request, { channel: 'voice' })).task.id;
+        taskId = (await postUserMessage(sql, call.conversationId, request, { channel: 'voice' })).task.id;
       } catch (error) {
-        if (error instanceof ChatError) return { say: error.code === 'scanner' ? CALL_TEXT.privateInWork : CALL_TEXT.cannotDelegate };
+        if (error instanceof ChatError) {
+          emit(error.code === 'scanner' ? CALL_TEXT.privateInWork : CALL_TEXT.cannotDelegate);
+          return;
+        }
         throw error;
       }
       session.delegations += 1;
       await sql`UPDATE calls SET delegations = delegations + 1 WHERE id = ${callId}`;
       follow(callId, taskId, voice.limits.delegationSeconds).catch((error: unknown) => options.onError?.(error));
       await storeReply(call, CALL_TEXT.delegated, 'L0', conversation.clearance, effective);
-      return { say: CALL_TEXT.delegated };
+      emit(CALL_TEXT.delegated);
+      return;
     }
-    if (parsed.text === '') return { say: CALL_TEXT.notUnderstood };
-    const stored = await storeReply(call, parsed.text, prompt.label, conversation.clearance, effective);
-    return { say: stored ? parsed.text : CALL_TEXT.notHere };
+    if (!canSay) {
+      emit(CALL_TEXT.notHere);
+      return;
+    }
+    if (spoken.length === 0) {
+      emit(CALL_TEXT.notUnderstood);
+      return;
+    }
+    await keep();
   }
 
   /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
@@ -308,7 +417,7 @@ export function createCalls(options: CallsOptions): Calls {
       throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
     }
     const token = randomBytes(32).toString('base64url');
-    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0 };
+    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined };
     sessions.set(call.id, session);
     try {
       const answer = await options.voice.request('POST', '/calls', {
@@ -382,20 +491,44 @@ export function createCalls(options: CallsOptions): Calls {
     },
 
     async turn(callId, token, text) {
+      const said: string[] = [];
+      // Through the method: tests and the HTTP route see the same turn.
+      for await (const { say } of this.turnStream(callId, token, text)) said.push(say);
+      return { say: said.join(' ') };
+    },
+
+    turnStream(callId, token, text) {
       const session = sessions.get(callId);
-      if (session === undefined || !tokenMatches(session, token)) throw new CallError('unauthorized', 'unknown call or token');
-      if (typeof text !== 'string') throw new CallError('invalid', 'text: the words of the user');
+      if (session === undefined || !tokenMatches(session, token)) return failing(new CallError('unauthorized', 'unknown call or token'));
+      if (typeof text !== 'string') return failing(new CallError('invalid', 'text: the words of the user'));
       const words = cleanTranscript(text);
       try {
         checkMessageBody(words);
       } catch {
-        throw new CallError('invalid', 'text: the words of the user');
+        return failing(new CallError('invalid', 'text: the words of the user'));
       }
       session.latest += 1;
       const turn = session.latest;
-      const result = session.chain.then(() => runTurn(callId, session, turn, words));
+      // The turn at work answers the past: its model stops now.
+      session.stop?.abort();
+      const stop = new AbortController();
+      session.stop = stop;
+      const lines = linePipe<{ say: string }>(() => {
+        stop.abort();
+      });
+      const result = session.chain.then(() => runTurn(callId, session, turn, words, (say) => {
+        lines.push({ say });
+      }, stop.signal));
+      result.then(
+        () => {
+          lines.close();
+        },
+        (error: unknown) => {
+          lines.close(error);
+        },
+      );
       session.chain = result.catch(() => undefined);
-      return result;
+      return lines.iterator;
     },
 
     async answer(callId, offer) {
@@ -476,4 +609,67 @@ export function createCalls(options: CallsOptions): Calls {
       for (const callId of [...sessions.keys()]) await finish(callId, 'ended', 'core-restart').catch((error: unknown) => options.onError?.(error));
     },
   };
+}
+
+/**
+ * Items pushed by a producer, read as an async iterator. `return` (the reader
+ * gave up) calls `onReturn` at once, even while a `next` waits.
+ */
+function linePipe<T>(onReturn: () => void): { push(item: T): void; close(error?: unknown): void; iterator: AsyncIterableIterator<T> } {
+  const items: T[] = [];
+  let closed = false;
+  let failure: { error: unknown } | undefined;
+  let wake: (() => void) | undefined;
+  const iterator: AsyncIterableIterator<T> = {
+    async next() {
+      for (;;) {
+        const item = items.shift();
+        if (item !== undefined) return { done: false, value: item };
+        if (failure !== undefined) {
+          const { error } = failure;
+          failure = undefined;
+          throw error;
+        }
+        if (closed) return { done: true, value: undefined };
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        wake = undefined;
+      }
+    },
+    return() {
+      closed = true;
+      items.length = 0;
+      onReturn();
+      wake?.();
+      return Promise.resolve({ done: true, value: undefined });
+    },
+    [Symbol.asyncIterator]() {
+      return iterator;
+    },
+  };
+  return {
+    push(item) {
+      if (closed) return;
+      items.push(item);
+      wake?.();
+    },
+    close(error) {
+      if (closed) return;
+      closed = true;
+      if (error !== undefined) failure = { error };
+      wake?.();
+    },
+    iterator,
+  };
+}
+
+/** An iterator that fails at the first read: the error of a refused turn. */
+function failing<T>(error: unknown): AsyncIterableIterator<T> {
+  const iterator: AsyncIterableIterator<T> = {
+    next: () => Promise.reject(error instanceof Error ? error : new Error(String(error))),
+    return: () => Promise.resolve({ done: true, value: undefined }),
+    [Symbol.asyncIterator]: () => iterator,
+  };
+  return iterator;
 }

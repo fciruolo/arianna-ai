@@ -221,3 +221,93 @@ describe('fallback', () => {
     assert.equal(result.model, 'small');
   });
 });
+
+describe('streaming (D-070)', () => {
+  let primary: FakeServer;
+  let secondary: FakeServer;
+
+  before(async () => {
+    primary = await startFakeServer();
+    secondary = await startFakeServer();
+  });
+  after(async () => {
+    await primary.close();
+    await secondary.close();
+  });
+
+  it('hands the text over piece by piece and still returns all of it', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    const pieces: string[] = [];
+    const result = await model.chat({ model: 'local-large', messages: USER('!say:Ciao, sono Arianna. Dimmi pure.'), onText: (piece) => pieces.push(piece) });
+    assert.deepEqual(pieces, ['Ciao, ', 'sono ', 'Arianna. ', 'Dimmi ', 'pure.']);
+    assert.equal(result.text, 'Ciao, sono Arianna. Dimmi pure.');
+    assert.equal(result.finishReason, 'stop');
+    assert.deepEqual(result.usage, { promptTokens: 7, completionTokens: 1 });
+    assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, true);
+  });
+
+  it('does not stream without a reader, nor with a schema', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    await model.chat({ model: 'local-large', messages: USER('hi') });
+    assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, false);
+    const pieces: string[] = [];
+    const result = await model.chat({ model: 'local-large', messages: USER('check'), schema: { name: 'x', schema: {} }, onText: (piece) => pieces.push(piece) });
+    assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, false);
+    assert.deepEqual(result.value, { ok: true });
+    assert.deepEqual(pieces, []);
+  });
+
+  it('stops when the caller cancels in the middle', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    const controller = new AbortController();
+    const pieces: string[] = [];
+    const words = Array.from({ length: 200 }, (_, index) => `parola${String(index)}`).join(' ');
+    await rejectsWith(
+      model.chat({
+        model: 'local-large',
+        messages: USER(`!say:${words}`),
+        signal: controller.signal,
+        onText: (piece) => {
+          pieces.push(piece);
+          if (pieces.length === 3) controller.abort();
+        },
+      }),
+      'cancelled',
+    );
+    assert.ok(pieces.length < 10, String(pieces.length));
+  });
+
+  it('reports HTTP errors of a streamed request', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    await rejectsWith(model.chat({ model: 'local-large', messages: USER('!status:400'), onText: () => undefined }), 'http', (error) => {
+      assert.equal(error.status, 400);
+    });
+  });
+
+  it('does not move to the next server once part of the answer came', async () => {
+    const before = secondary.requests.length;
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url), endpoint('two', secondary.url)] });
+    const pieces: string[] = [];
+    await assert.rejects(model.chat({ model: 'local-large', messages: USER('!cut:Ciao a te'), onText: (piece) => pieces.push(piece) }), LocalModelError);
+    assert.equal(pieces.join(''), 'Ciao a te');
+    assert.equal(secondary.requests.length, before);
+  });
+
+  it('moves to the next server when the first fails before any text', async () => {
+    const model = createLocalModel({
+      endpoints: [endpoint('one', `http://127.0.0.1:${String(await closedPort())}/v1`), endpoint('two', secondary.url)],
+    });
+    const pieces: string[] = [];
+    const result = await model.chat({ model: 'local-large', messages: USER('!say:Eccomi.'), onText: (piece) => pieces.push(piece) });
+    assert.equal(result.endpoint, 'two');
+    assert.deepEqual(pieces, ['Eccomi.']);
+  });
+
+  it('refuses an event that is not JSON, and a stream that ends without its end', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
+    await rejectsWith(model.chat({ model: 'local-large', messages: USER('!badevent'), onText: () => undefined }), 'bad-response');
+    await rejectsWith(model.chat({ model: 'local-large', messages: USER('!short:Ciao a'), onText: () => undefined }), 'bad-response', (error) => {
+      assert.match(error.message, /ended early/);
+    });
+  });
+});

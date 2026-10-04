@@ -4,6 +4,7 @@ token; the call token inside is the one the voice shows the core back."""
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -129,3 +130,13 @@ def last_user_words(messages: list[Any]) -> str:
         elif isinstance(content, list):
             words.append(" ".join(part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"))
     return " ".join(part.strip() for part in reversed(words) if part.strip())
+
+
+def sentence_of(line: bytes) -> str | None:
+    """A line of the core's answer: {"say": "..."}; anything else is skipped."""
+    try:
+        item = json.loads(line)
+    except ValueError:
+        return None
+    say = item.get("say") if isinstance(item, dict) else None
+    return say if isinstance(say, str) and say.strip() else None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from arianna_voice.call_request import last_user_words, parse_call, parse_say, schedule
+from arianna_voice.call_request import last_user_words, parse_call, parse_say, schedule, sentence_of
 from arianna_voice.trial import RequestError
 
 KOKORO = {"id": "kokoro-82m-bf16-mlx", "family": "kokoro"}
@@ -87,6 +87,18 @@ class TimingTest(unittest.TestCase):
         self.assertEqual(last_user_words(messages), "ciao come stai")
         self.assertEqual(last_user_words([{"role": "assistant", "content": "x"}]), "")
         self.assertEqual(last_user_words(["junk", {"role": "system", "content": "s"}, {"role": "user", "content": " sì "}]), "sì")
+
+
+
+class SentenceOfTest(unittest.TestCase):
+    """The core answers a turn one line per sentence (D-070)."""
+
+    def test_a_sentence(self) -> None:
+        self.assertEqual(sentence_of(b'{"say": "Ciao, sono Arianna."}\n'), "Ciao, sono Arianna.")
+
+    def test_skips_what_is_not_a_sentence(self) -> None:
+        for line in (b"\n", b"not json\n", b'["say"]\n', b'{"say": 3}\n', b'{"say": "  "}\n', b'{"other": "x"}\n'):
+            self.assertIsNone(sentence_of(line), line)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import { localEndpoint, LocalEndpointError, type LocalEndpoint } from './endpoint.ts';
-import { HttpBodyTooLarge, localRequest } from './http.ts';
+import { StringDecoder } from 'node:string_decoder';
+
+import { HttpBodyTooLarge, localRequest, localRequestStream } from './http.ts';
 
 /**
  * The local model as the rest of Arianna sees it. The implementation talks to
@@ -29,6 +31,13 @@ export interface ChatRequest {
   /** Per endpoint attempt. Default 300 s: a large model on this hardware is slow. */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * The text as the model writes it (D-070): the request is streamed and each
+   * new piece comes here; the result still carries the whole text. Not with a
+   * schema. Once a piece has come, a failing server is not replaced by the
+   * next one: the caller already has part of an answer.
+   */
+  onText?: (piece: string) => void;
 }
 
 export interface ChatResult {
@@ -95,7 +104,7 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
   const body: Record<string, unknown> = {
     model,
     messages: request.messages.map(({ role, content }) => ({ role, content })),
-    stream: false,
+    stream: request.onText !== undefined && request.schema === undefined,
   };
   if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
   if (request.temperature !== undefined) body.temperature = request.temperature;
@@ -107,6 +116,16 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
   }
 
   const started = performance.now();
+  if (body.stream === true && request.onText !== undefined) {
+    const onText = request.onText;
+    let result: Pick<ChatResult, 'text' | 'finishReason' | 'usage'>;
+    try {
+      result = await streamCompletion(endpoint, body, signal, onText);
+    } catch (error) {
+      throw toModelError(error, endpoint.id, request.signal, timeout);
+    }
+    return { ...result, endpoint: endpoint.id, model, durationMs: Math.round(performance.now() - started) };
+  }
   let raw: unknown;
   try {
     const response = await localRequest(`${endpoint.url}/chat/completions`, {
@@ -128,6 +147,66 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
 
   const result = parseCompletion(raw, endpoint.id, request.schema !== undefined);
   return { ...result, endpoint: endpoint.id, model, durationMs: Math.round(performance.now() - started) };
+}
+
+/** A streamed completion: server-sent events, one `data:` line per piece, then `[DONE]`. */
+async function streamCompletion(
+  endpoint: LocalEndpoint,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+  onText: (piece: string) => void,
+): Promise<Pick<ChatResult, 'text' | 'finishReason' | 'usage'>> {
+  const bad = (what: string) => new LocalModelError('bad-response', `${endpoint.id}: ${what}`, { endpoint: endpoint.id });
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  let text = '';
+  // Changed by the reader below, as the events come.
+  let finishReason = 'unknown' as string;
+  let usage: ChatResult['usage'];
+  let done = false as boolean;
+
+  const line = (raw: string): void => {
+    const trimmed = raw.trim();
+    if (done || !trimmed.startsWith('data:')) return;
+    const data = trimmed.slice('data:'.length).trim();
+    if (data === '[DONE]') {
+      done = true;
+      return;
+    }
+    let event: unknown;
+    try {
+      event = JSON.parse(data) as unknown;
+    } catch {
+      throw bad('sent an event that is not JSON');
+    }
+    if (!isRecord(event)) throw bad('sent an event that is not an object');
+    const choice = Array.isArray(event.choices) ? (event.choices[0] as unknown) : undefined;
+    if (isRecord(choice)) {
+      const delta = isRecord(choice.delta) ? choice.delta.content : undefined;
+      if (typeof delta === 'string' && delta !== '') {
+        text += delta;
+        onText(delta);
+      }
+      if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
+    }
+    const counts = event.usage;
+    if (isRecord(counts) && typeof counts.prompt_tokens === 'number' && typeof counts.completion_tokens === 'number') {
+      usage = { promptTokens: counts.prompt_tokens, completionTokens: counts.completion_tokens };
+    }
+  };
+
+  const response = await localRequestStream(`${endpoint.url}/chat/completions`, { body: JSON.stringify(body), signal }, (chunk) => {
+    pending += decoder.write(chunk);
+    const lines = pending.split('\n');
+    pending = lines.pop() ?? '';
+    for (const item of lines) line(item);
+  });
+  if (response.status < 200 || response.status > 299) {
+    throw new LocalModelError('http', `${endpoint.id} answered ${String(response.status)}`, { endpoint: endpoint.id, status: response.status });
+  }
+  line(pending + decoder.end());
+  if (!done && finishReason === 'unknown') throw bad('the stream ended early');
+  return usage === undefined ? { text, finishReason } : { text, finishReason, usage };
 }
 
 function toModelError(
@@ -212,14 +291,27 @@ export function createLocalModel(options: LocalModelOptions): LocalModel {
       const available = options.isAvailable ?? (() => true);
       const ordered = [...serving.filter((e) => available(e.id)), ...serving.filter((e) => !available(e.id))];
 
+      // Once part of a streamed answer went out, another server would say it twice.
+      let started = false as boolean;
+      const onText = request.onText;
+      const tracked: ChatRequest =
+        onText === undefined
+          ? request
+          : {
+              ...request,
+              onText: (piece) => {
+                started = true;
+                onText(piece);
+              },
+            };
       const attempts: LocalModelError[] = [];
       for (const endpoint of ordered) {
         try {
-          return await chatOnce(endpoint, request);
+          return await chatOnce(endpoint, tracked);
         } catch (error) {
           if (!(error instanceof LocalModelError)) throw error;
           if (error.kind === 'unavailable' || error.kind === 'timeout') options.onFailure?.(endpoint.id, error);
-          if (!error.retryable) throw error;
+          if (!error.retryable || started) throw error;
           attempts.push(error);
         }
       }
