@@ -155,6 +155,8 @@ export interface VoicePaths {
   tmp: string;
   /** Model weights, shared with the catalog: data/models/<id>. */
   models: string;
+  /** Voices copied from a sample (D-069): data/voice/voices/<id>, L2, never in git. */
+  clones: string;
 }
 
 export function voicePaths(home: string, data: string): VoicePaths {
@@ -169,6 +171,7 @@ export function voicePaths(home: string, data: string): VoicePaths {
     uvCache: join(root, 'cache'),
     tmp: join(root, 'tmp'),
     models: join(data, 'models'),
+    clones: join(root, 'voices'),
   };
 }
 

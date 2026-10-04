@@ -26,7 +26,9 @@ MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 # A voice of any family: Kokoro "if_sara", Voxtral "it_female", Qwen3-TTS "serena" (D-067).
 VOICE_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 STT_FAMILIES = ("parakeet", "whisper")
-TTS_FAMILIES = ("kokoro", "qwen3-tts", "voxtral-tts")
+TTS_FAMILIES = ("kokoro", "qwen3-tts", "qwen3-tts-base", "voxtral-tts")
+# Both Qwen3-TTS families: numbers in words, a sentence each, in pieces, with a ceiling.
+QWEN3_FAMILIES = ("qwen3-tts", "qwen3-tts-base")
 LANGUAGE = "it"
 SENTENCE_END = re.compile(r"([.!?;:])\s+")
 # Kokoro's language code for Italian.
@@ -66,8 +68,10 @@ class Speech:
 
 
 class Models:
-    def __init__(self, models_dir: Path) -> None:
+    def __init__(self, models_dir: Path, clones_dir: Path | None = None) -> None:
         self._dir = models_dir
+        # Voices copied from a sample (D-069): <id>/reference.wav and reference.txt, L2.
+        self._clones = clones_dir
         self._loaded: dict[str, Any] = {}
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
 
@@ -153,7 +157,9 @@ class Models:
         model makes them (D-068); stops between two pieces once `stop` is set."""
         model = self._load(ref)
         # verbose=False everywhere: the libraries would print what they say to the log.
-        kwargs = {**speak_arguments(ref.family, voice, self._voice_file(ref, voice)), **stream_arguments(ref.family)}
+        voice_file = self._voice_file(ref, voice)
+        reference_text = self._reference_text(voice) if ref.family == "qwen3-tts-base" else None
+        kwargs = {**speak_arguments(ref.family, voice, voice_file, reference_text), **stream_arguments(ref.family)}
         import numpy as np
 
         try:
@@ -170,9 +176,12 @@ class Models:
             raise ModelError("inference") from error
 
     def _voice_file(self, ref: ModelRef, voice: str) -> str | None:
-        """The file of the voice in the model folder; Qwen3-TTS speakers are not files."""
+        """The file of the voice: in the model folder, or the sample of a copied
+        voice (D-069); Qwen3-TTS speakers are not files."""
         if not VOICE_ID.match(voice):
             raise ModelError("family")
+        if ref.family == "qwen3-tts-base":
+            return str(self._clone_file(voice, "reference.wav"))
         folder = VOICE_FOLDERS.get(ref.family)
         if folder is None:
             return None
@@ -180,6 +189,23 @@ class Models:
         if not path.is_file():
             raise ModelError("missing")
         return str(path)
+
+
+    def _clone_file(self, voice: str, name: str) -> Path:
+        if self._clones is None or not VOICE_ID.match(voice):
+            raise ModelError("missing")
+        folder = self._clones / voice
+        path = folder / name
+        # Neither the folder nor the file may be a link out of the voices folder.
+        if folder.is_symlink() or path.is_symlink() or not path.is_file() or path.resolve().parent.parent != self._clones.resolve():
+            raise ModelError("missing")
+        return path
+
+    def _reference_text(self, voice: str) -> str:
+        text = self._clone_file(voice, "reference.txt").read_text(encoding="utf-8").strip()
+        if not text:
+            raise ModelError("missing")
+        return text
 
 
 # Where each family keeps one file per voice (D-067).
@@ -191,7 +217,7 @@ def speak_parts(family: str, text: str) -> list[str]:
     if family == "kokoro":
         # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
         return [SENTENCE_END.sub("\\1\n", text)]
-    if family == "qwen3-tts":
+    if family in QWEN3_FAMILIES:
         # CustomVoice generates the whole text at once and drifts on long ones: a sentence
         # each. Digits it reads in English or Chinese, then goes on in that language: words.
         return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", numbers_in_words(text)).split("\n")) if part]
@@ -209,7 +235,7 @@ def stream_arguments(family: str) -> dict[str, Any]:
     about 0.35 s, and faster than speech, so a call plays it without gaps. Kokoro
     is quick enough sentence by sentence; Voxtral is slower than speech, and
     pieces would leave holes. Pure, for the tests."""
-    if family == "qwen3-tts":
+    if family in QWEN3_FAMILIES:
         return {"stream": True, "streaming_interval": QWEN3_STREAM_SECONDS}
     return {}
 
@@ -220,12 +246,12 @@ QWEN3_STREAM_SECONDS = 0.64
 def part_limits(family: str, part: str) -> dict[str, Any]:
     """A ceiling on the audio of one sentence: a model that does not stop is cut,
     instead of speaking for minutes in another language. Pure, for the tests."""
-    if family != "qwen3-tts":
+    if family not in QWEN3_FAMILIES:
         return {}
     return {"max_tokens": int(QWEN3_TOKENS_PER_SECOND * (len(part) / SLOWEST_CHARS_PER_SECOND + 2))}
 
 
-def speak_arguments(family: str, voice: str, voice_file: str | None) -> dict[str, Any]:
+def speak_arguments(family: str, voice: str, voice_file: str | None, reference_text: str | None = None) -> dict[str, Any]:
     """What `generate` of each family wants besides the text; pure, for the tests."""
     if family == "kokoro":
         return {"voice": voice_file, "lang_code": KOKORO_ITALIAN, "verbose": False}
@@ -235,6 +261,11 @@ def speak_arguments(family: str, voice: str, voice_file: str | None) -> dict[str
         return {"voice": voice, "verbose": False}
     if family == "qwen3-tts":
         return {"voice": voice, "lang_code": QWEN3_ITALIAN, "verbose": False}
+    if family == "qwen3-tts-base":
+        # The Base model copies the voice of the sample, told what the sample says.
+        if voice_file is None or not reference_text:
+            raise ModelError("missing")
+        return {"ref_audio": voice_file, "ref_text": reference_text, "lang_code": QWEN3_ITALIAN, "verbose": False}
     raise ModelError("family")
 
 

@@ -33,6 +33,7 @@ import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '
 import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
 import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
+import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveClone } from '../voice/clones.ts';
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
@@ -81,8 +82,10 @@ export interface ApiServerOptions {
 export interface VoiceApi {
   service: Pick<VoiceService, 'state' | 'request'>;
   models: () => TrialModel[];
-  /** The Kokoro voice of `[voice]`. */
+  /** The voice of `[voice]`. */
   voice: string;
+  /** Where the voices copied from a sample live (D-069): data/voice/voices. */
+  clones: string;
 }
 
 export interface ApiServer {
@@ -302,6 +305,17 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
     route('GET', '/api/voice/trial', () => {
       const state: 'off' | VoiceState = voice === undefined ? 'off' : voice.service.state;
       return Promise.resolve({ body: { state, voice: voice?.voice ?? null, models: voice?.models() ?? [] } });
+    }),
+    // Voices copied from a sample (D-069): L2 on disk, never in a log or an event.
+    route('GET', '/api/voice/clones', () => Promise.resolve({ body: { clones: listClones(need().clones) } })),
+    route('POST', '/api/voice/clones', async (request) => {
+      const { clones } = need();
+      return { status: 201, body: { clone: saveClone(clones, parseClone(await readJson(request, MAX_CLONE_BODY))) } };
+    }),
+    route('DELETE', '/api/voice/clones/:id', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      if (!deleteClone(need().clones, params.id ?? '')) throw new HttpError(404, 'not found');
+      return { body: { ok: true } };
     }),
     route('POST', '/api/voice/trial/transcribe', async (request) => {
       const { service, models } = need();
@@ -567,7 +581,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
-  if (error instanceof TrialError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
+  if (error instanceof TrialError || error instanceof CloneError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
   if (error instanceof CallError) {
     const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
     return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };

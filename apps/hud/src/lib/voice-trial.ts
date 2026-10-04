@@ -16,6 +16,7 @@ export const FAMILY_TEXT: Record<string, string> = {
   whisper: 'Whisper large-v3-turbo',
   kokoro: 'Kokoro',
   'qwen3-tts': 'Qwen3-TTS 1.7B',
+  'qwen3-tts-base': 'Qwen3-TTS Base (voci copiate)',
   'voxtral-tts': 'Voxtral 4B',
 };
 
@@ -23,6 +24,7 @@ export const FAMILY_TEXT: Record<string, string> = {
 export const FAMILY_NOTE: Record<string, string> = {
   kokoro: 'Piccolo e veloce; solo due voci italiane, con accento inglese.',
   'qwen3-tts': 'Licenza libera; voci nate cinesi e inglesi a cui si chiede l’italiano.',
+  'qwen3-tts-base': 'Parla con le voci copiate da un campione: le aggiungi nella sezione «Voci copiate».',
   'voxtral-tts': 'Voci italiane native; licenza CC BY-NC 4.0 (solo uso non commerciale, con attribuzione); più lento e più memoria.',
 };
 
@@ -42,6 +44,24 @@ export function voiceFor(voices: readonly string[], picked: string | undefined, 
   if (picked !== undefined && voices.includes(picked)) return picked;
   if (configured !== null && configured !== undefined && voices.includes(configured)) return configured;
   return voices[0];
+}
+
+/**
+ * What the person reads for a copied voice (D-069): about 12 s, made up, with
+ * the sounds of Italian. Its text is the transcript of the sample.
+ */
+export const CLONE_PHRASE =
+  'Ciao, questa è la mia voce. Oggi il cielo è sereno e in giardino le rose sono sbocciate: più tardi preparo un caffè, leggo qualche pagina e poi esco a fare due passi.';
+export const CLONE_MIN_SECONDS = 5;
+export const CLONE_MAX_SECONDS = 30;
+
+/** Why a sample cannot be used, in Italian, or undefined when it can. */
+export function sampleProblem(seconds: number, loudest: number): string | undefined {
+  if (seconds < CLONE_MIN_SECONDS) return `Il campione è troppo corto: servono almeno ${String(CLONE_MIN_SECONDS)} secondi.`;
+  // Cutting would leave a text that says more than the audio: the copy drifts.
+  if (seconds > CLONE_MAX_SECONDS) return `Il file dura più di ${String(CLONE_MAX_SECONDS)} secondi: taglialo e scrivi solo ciò che dice il pezzo tenuto.`;
+  if (loudest < 0.01) return 'Nel campione non si sente quasi niente: controlla il microfono o il file.';
+  return undefined;
 }
 
 /** What blocks the page, in Italian, or undefined when the service is ready. */

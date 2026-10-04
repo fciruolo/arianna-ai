@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import type { VoicePaths } from '@arianna/config';
 import { localRequestBytes, Watchdog, type HttpBytesResponse, type WatchdogEvent, type WatchdogState } from '@arianna/executors';
 
+import { removeLeftovers } from './clones.ts';
+
 /**
  * apps/voice, started and watched by the core (D-066). The service listens on
  * 127.0.0.1 and answers only requests with the token generated here at each
@@ -71,6 +73,7 @@ export function voiceEnv(from: NodeJS.ProcessEnv, paths: VoicePaths, port: numbe
     ARIANNA_VOICE_TOKEN: token,
     ARIANNA_MODELS_DIR: paths.models,
     ARIANNA_VOICE_TMP: paths.tmp,
+    ARIANNA_VOICE_CLONES: paths.clones,
   };
 }
 
@@ -101,6 +104,8 @@ export function createVoiceService(options: VoiceServiceOptions): VoiceService {
     async start() {
       if (!installed || watchdog !== undefined) return;
       mkdirSync(paths.tmp, { recursive: true, mode: 0o700 });
+      mkdirSync(paths.clones, { recursive: true, mode: 0o700 });
+      removeLeftovers(paths.clones);
       watchdog = new Watchdog({
         id: 'voice',
         url,

@@ -77,6 +77,11 @@ test('callReadiness: the three roles, with stt and tts on disk, and a voice of t
   });
   const fallback = callReadiness({ voice: 'q' }, [parakeet, qwen], true, 'if_sara');
   assert.equal(fallback.ready && fallback.voice, 'serena');
+  // A copied voice that is gone is never replaced by another person's (D-069).
+  const base = model('b', 'qwen3-tts-base', 'tts', true, true, ['anna', 'moglie']);
+  assert.equal(callReadiness({ voice: 'q' }, [parakeet, base], true, 'moglie').ready, true);
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, base], true, 'cancellata'), { ready: false, missing: ['tts'] });
+  assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, base]), { ready: false, missing: ['tts'] });
   // A tts model without voices cannot speak.
   assert.deepEqual(callReadiness({ voice: 'q' }, [parakeet, { ...kokoro, voices: [] }]), { ready: false, missing: ['tts'] });
 });

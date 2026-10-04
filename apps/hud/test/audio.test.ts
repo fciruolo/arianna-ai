@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { concat, downsample, peak, toBase64, toPcm16 } from '../src/lib/audio.ts';
-import { blocker, missingBytes, rolesSnippet, secondsText, sizeText, voiceFor } from '../src/lib/voice-trial.ts';
+import { blocker, missingBytes, rolesSnippet, sampleProblem, secondsText, sizeText, voiceFor } from '../src/lib/voice-trial.ts';
 import { isVoiceTrialPath, conversationFromPath, VOICE_TRIAL_PATH } from '../src/lib/route.ts';
 
 test('downsample: 48 kHz to 16 kHz averages each group of three; same rate copies; upsampling is refused', () => {
@@ -51,4 +51,12 @@ test('the voice trial has its own address, which opens no conversation', () => {
   assert.ok(isVoiceTrialPath(`${VOICE_TRIAL_PATH}/`));
   for (const path of ['/', '/voce', '/voce/provino/x', '/c/voce']) assert.ok(!isVoiceTrialPath(path), path);
   assert.equal(conversationFromPath(VOICE_TRIAL_PATH), undefined);
+});
+
+test('sampleProblem: a copied voice needs 5 s of audible sample (D-069)', () => {
+  assert.equal(sampleProblem(8, 0.5), undefined);
+  assert.match(sampleProblem(4.9, 0.5) ?? '', /troppo corto/);
+  assert.match(sampleProblem(8, 0.001) ?? '', /non si sente/);
+  assert.match(sampleProblem(31, 0.5) ?? '', /più di 30 secondi/);
+  assert.equal(sampleProblem(30, 0.5), undefined);
 });

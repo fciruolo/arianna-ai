@@ -217,6 +217,7 @@ test('selectedModels: the models of the roles, and with trial every stt and tts 
     'parakeet-tdt-0.6b-v3-mlx',
     'kokoro-82m-bf16-mlx',
     'qwen3-tts-1.7b-customvoice-bf16-mlx',
+    'qwen3-tts-1.7b-base-bf16-mlx',
     'voxtral-4b-tts-bf16-mlx',
   ]);
   assert.deepEqual(ids({}, false), []);

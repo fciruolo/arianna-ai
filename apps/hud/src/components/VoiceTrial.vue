@@ -18,6 +18,7 @@ import {
 } from '../lib/voice-trial.ts';
 import { enablePush, pushState, type PushState } from '../lib/push.ts';
 import Icon from './Icon.vue';
+import VoiceClones from './VoiceClones.vue';
 
 /**
  * The voice trial page (D-066): the user reads a phrase, the speech-to-text
@@ -288,6 +289,8 @@ onBeforeUnmount(() => {
             </li>
           </ul>
         </section>
+
+        <VoiceClones :base="tts.find((model) => model.family === 'qwen3-tts-base')" :reply="reply" @changed="refresh" />
 
         <section class="hud-card flex flex-col gap-2 bg-surface px-4 py-4">
           <h2 class="hud-title">Notifiche delle chiamate</h2>

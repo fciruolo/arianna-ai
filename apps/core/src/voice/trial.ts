@@ -10,7 +10,7 @@ import type { ModelCatalog, Roles } from '@arianna/config';
  * a model id and one of its voices; the core picks the models.
  */
 export const STT_FAMILIES = ['parakeet', 'whisper'] as const;
-export const TTS_FAMILIES = ['kokoro', 'qwen3-tts', 'voxtral-tts'] as const;
+export const TTS_FAMILIES = ['kokoro', 'qwen3-tts', 'qwen3-tts-base', 'voxtral-tts'] as const;
 export type TrialKind = 'stt' | 'tts';
 
 export interface TrialModel {
@@ -47,15 +47,17 @@ const VOICE_FILE = /^([a-z_]+)\/([a-z][a-z0-9_]{1,40})\.safetensors$/;
  */
 export const QWEN3_SPEAKERS = ['serena', 'vivian', 'ryan', 'aiden'] as const;
 
-function voicesOf(family: string, paths: readonly string[]): string[] {
+function voicesOf(family: string, paths: readonly string[], clones: readonly string[]): string[] {
   if (family === 'qwen3-tts') return [...QWEN3_SPEAKERS];
+  // Qwen3-TTS Base speaks with the voices copied from a sample (D-069).
+  if (family === 'qwen3-tts-base') return [...clones];
   return paths.flatMap((path) => {
     const match = VOICE_FILE.exec(path);
     return match !== null && match[1] === VOICE_FOLDERS[family] && match[2] !== undefined ? [match[2]] : [];
   });
 }
 
-export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: string, size: FileSize = fileSize): TrialModel[] {
+export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: string, size: FileSize = fileSize, clones: readonly string[] = []): TrialModel[] {
   const out: TrialModel[] = [];
   for (const entry of catalog.models) {
     const kind = entry.roles.includes('stt') ? 'stt' : entry.roles.includes('tts') ? 'tts' : undefined;
@@ -70,7 +72,7 @@ export function trialModels(catalog: ModelCatalog, roles: Roles, modelsDir: stri
       present: entry.files.every((file) => size(join(modelsDir, entry.id, file.path)) === file.sizeBytes),
       assigned: roles[kind] === entry.id,
       sizeBytes: entry.files.reduce((sum, file) => sum + file.sizeBytes, 0),
-      voices: kind === 'tts' ? voicesOf(entry.family, entry.files.map((file) => file.path)) : [],
+      voices: kind === 'tts' ? voicesOf(entry.family, entry.files.map((file) => file.path), clones) : [],
     });
   }
   return out;

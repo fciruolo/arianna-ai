@@ -121,6 +121,37 @@ class SpeakRequestTest(unittest.TestCase):
                 self.assertEqual(caught.exception.code, code)
             models.close()
 
+    def test_copied_voice(self) -> None:
+        # D-069: Qwen3-TTS Base reads the sample and its text from the voices folder.
+        self.assertEqual(
+            speak_arguments("qwen3-tts-base", "moglie", "/v/moglie/reference.wav", "Ciao."),
+            {"ref_audio": "/v/moglie/reference.wav", "ref_text": "Ciao.", "lang_code": "italian", "verbose": False},
+        )
+        with self.assertRaises(ModelError):
+            speak_arguments("qwen3-tts-base", "moglie", "/v/moglie/reference.wav", None)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clones = root / "voices"
+            (clones / "moglie").mkdir(parents=True)
+            (clones / "moglie" / "reference.wav").write_bytes(b"RIFF")
+            (clones / "moglie" / "reference.txt").write_text("Ciao, sono io.\n", encoding="utf-8")
+            (root / "fuori").mkdir()
+            (root / "fuori" / "reference.wav").write_bytes(b"RIFF")
+            (clones / "collegata").symlink_to(root / "fuori")
+            (root / "base-x").mkdir()
+            models = Models(root, clones)
+            base = ModelRef("base-x", "qwen3-tts-base")
+            self.assertTrue(models._voice_file(base, "moglie").endswith("voices/moglie/reference.wav"))
+            self.assertEqual(models._reference_text("moglie"), "Ciao, sono io.")
+            for voice in ("collegata", "assente"):
+                with self.subTest(voice=voice), self.assertRaises(ModelError) as caught:
+                    models._voice_file(base, voice)
+                self.assertEqual(caught.exception.code, "missing")
+            # Without a voices folder there are no copied voices.
+            with self.assertRaises(ModelError):
+                Models(root)._voice_file(base, "moglie")
+            models.close()
+
     def test_model_ref(self) -> None:
         with self.assertRaises(ModelError):
             ModelRef.parse({"id": "x", "family": "kokoro", "path": "/"}, ("kokoro",))

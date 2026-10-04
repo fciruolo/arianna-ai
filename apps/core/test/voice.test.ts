@@ -35,6 +35,7 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
       ['parakeet-tdt-0.6b-v3-mlx', 'stt', true, true],
       ['kokoro-82m-bf16-mlx', 'tts', true, false],
       ['qwen3-tts-1.7b-customvoice-bf16-mlx', 'tts', true, false],
+      ['qwen3-tts-1.7b-base-bf16-mlx', 'tts', true, false],
       ['voxtral-4b-tts-bf16-mlx', 'tts', true, false],
     ],
   );
@@ -43,6 +44,11 @@ test('trialModels: the stt and tts candidates of the catalog, on disk or not, an
   assert.deepEqual(models.find((model) => model.family === 'voxtral-tts')?.voices, ['it_female', 'it_male']);
   assert.deepEqual(models.find((model) => model.family === 'qwen3-tts')?.voices, ['serena', 'vivian', 'ryan', 'aiden']);
   assert.deepEqual(models.find((model) => model.family === 'parakeet')?.voices, []);
+  // Qwen3-TTS Base speaks with the voices copied from a sample (D-069), none yet.
+  assert.deepEqual(models.find((model) => model.family === 'qwen3-tts-base')?.voices, []);
+  const withClones = trialModels(CATALOG, {}, MODELS, allPresent, ['moglie', 'jarvis']);
+  assert.deepEqual(withClones.find((model) => model.family === 'qwen3-tts-base')?.voices, ['moglie', 'jarvis']);
+  assert.deepEqual(withClones.find((model) => model.family === 'qwen3-tts')?.voices, ['serena', 'vivian', 'ryan', 'aiden']);
   // A voice file in the folder of another family is not a voice of the model.
   const mixed = {
     ...CATALOG,
@@ -111,6 +117,7 @@ test('voiceEnv: built from nothing; no secret of the core, Hugging Face offline'
   );
   assert.deepEqual(Object.keys(env).sort(), [
     'ARIANNA_MODELS_DIR',
+    'ARIANNA_VOICE_CLONES',
     'ARIANNA_VOICE_PORT',
     'ARIANNA_VOICE_TMP',
     'ARIANNA_VOICE_TOKEN',
@@ -137,6 +144,7 @@ test('voiceEnv: built from nothing; no secret of the core, Hugging Face offline'
   assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:9');
   for (const key of ['XDG_CACHE_HOME', 'NUMBA_CACHE_DIR', 'HF_HOME', 'TMPDIR']) assert.ok(env[key]?.startsWith(join(HOME, DATA_DIR)), key);
   assert.ok(env.ARIANNA_VOICE_TMP?.startsWith(join(HOME, DATA_DIR)));
+  assert.equal(env.ARIANNA_VOICE_CLONES, join(HOME, DATA_DIR, 'voice', 'voices'));
 });
 
 async function freePort(): Promise<number> {
@@ -172,7 +180,7 @@ before(async () => {
     live: {} as LiveFeed,
     host: '127.0.0.1',
     port: 0,
-    voice: { service, voice: 'if_sara', models: () => models },
+    voice: { service, voice: 'if_sara', models: () => models, clones: join(tmpRoot, 'voices') },
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -225,7 +233,7 @@ test('trial API: candidates, transcription by every present model, speech as WAV
   const trial = JSON.parse(listed.body.toString('utf8')) as { state: string; voice: string; models: TrialModel[] };
   assert.equal(trial.state, 'up');
   assert.equal(trial.voice, 'if_sara');
-  assert.equal(trial.models.length, 4);
+  assert.equal(trial.models.length, 5);
 
   const written = await call('POST', '/api/voice/trial/transcribe', { pcm16: pcm(2) });
   assert.equal(written.status, 200);
@@ -245,6 +253,19 @@ test('trial API: candidates, transcription by every present model, speech as WAV
     model: { id: 'voxtral-4b-tts-bf16-mlx', family: 'voxtral-tts' },
     voice: 'it_female',
   });
+});
+
+test('clones API: save with consent, list, delete (D-069)', async () => {
+  const sample = Buffer.alloc(6 * 16_000 * 2).toString('base64');
+  assert.equal((await call('POST', '/api/voice/clones', { name: 'Prova', text: 'Ciao.', pcm16: sample, consent: false })).status, 400);
+  const saved = await call('POST', '/api/voice/clones', { name: 'Prova', text: 'Ciao.', pcm16: sample, consent: true });
+  assert.equal(saved.status, 201);
+  assert.equal((JSON.parse(saved.body.toString('utf8')) as { clone: { id: string } }).clone.id, 'prova');
+  const listed = JSON.parse((await call('GET', '/api/voice/clones')).body.toString('utf8')) as { clones: { id: string; name: string }[] };
+  assert.deepEqual(listed.clones.map(({ id, name }) => [id, name]), [['prova', 'Prova']]);
+  assert.equal((await call('DELETE', '/api/voice/clones/prova', {})).status, 200);
+  assert.equal((await call('DELETE', '/api/voice/clones/prova', {})).status, 404);
+  assert.equal((await call('DELETE', '/api/voice/clones/Bad', {})).status, 400);
 });
 
 test('trial API: bad requests, errors of the voice and missing models are reported with a code', async () => {

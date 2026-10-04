@@ -113,7 +113,9 @@ export type CallReadiness =
 export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string): CallReadiness {
   const stt = models.find((model) => model.kind === 'stt' && model.assigned && model.present);
   const tts = models.find((model) => model.kind === 'tts' && model.assigned && model.present);
-  const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : tts.voices[0];
+  // A copied voice is a person's (D-069): never someone else's in its place.
+  const fallback = tts?.family === 'qwen3-tts-base' ? undefined : tts?.voices[0];
+  const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : fallback;
   const missing = [
     ...(roles.voice === undefined || !voiceServed ? ['voice' as const] : []),
     ...(stt === undefined ? ['stt' as const] : []),

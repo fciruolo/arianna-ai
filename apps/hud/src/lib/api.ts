@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
@@ -192,6 +192,27 @@ export async function speakTrial(text: string, model: string, voice: string): Pr
   };
   // The seconds to the first audio are what a call waits before Arianna speaks (D-068).
   return { audio: await response.blob(), seconds: header('x-seconds-spent'), first: header('x-first-audio') };
+}
+
+/** A voice copied from a sample (D-069): the sample stays on this computer, L2. */
+export interface CopiedVoice {
+  id: string;
+  name: string;
+  createdAt: string;
+  seconds: number;
+}
+
+export async function listCopiedVoices(): Promise<CopiedVoice[]> {
+  return (await call<{ clones: CopiedVoice[] }>('GET', '/api/voice/clones')).clones;
+}
+
+/** Saves a voice: 5-30 s of 16 kHz samples (base64), what they say, and the consent of the person. */
+export async function saveCopiedVoice(name: string, text: string, pcm16: string): Promise<CopiedVoice> {
+  return (await call<{ clone: CopiedVoice }>('POST', '/api/voice/clones', { name, text, pcm16, consent: true })).clone;
+}
+
+export async function deleteCopiedVoice(id: string): Promise<void> {
+  await call('DELETE', `/api/voice/clones/${encodeURIComponent(id)}`, {});
 }
 
 /** Ends a call from its id (one left open by a page that was reloaded). */

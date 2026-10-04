@@ -26,7 +26,8 @@ import { createCalls, type Calls } from './voice/calls.ts';
 import { createPusher, PUSH_TEXT, vapidKey, type Pusher } from './voice/push.ts';
 import { createRinger, type Ringer } from './voice/ringer.ts';
 import { createVoiceService, type VoiceService } from './voice/service.ts';
-import { trialModels } from './voice/trial.ts';
+import { listClones } from './voice/clones.ts';
+import { fileSize, trialModels } from './voice/trial.ts';
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -137,13 +138,20 @@ const live = await startLiveFeed(sql, { onError: report });
 let voice: VoiceService | undefined;
 let calls: Calls | undefined;
 let pusher: Pusher | undefined;
-let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels> } | undefined;
+let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels>; clones: string } | undefined;
 const voiceConfig = config.voice;
 if (voiceConfig !== undefined) {
   const voiceDirs = voicePaths(config.home, config.paths.data);
   // Read at each request, like the roles: a new catalog entry needs no restart.
-  const candidates = () => trialModels(loadCatalog(config.home), settings.current().roles, voiceDirs.models);
-  voiceApi = { voice: voiceConfig.voice, models: candidates };
+  const candidates = () =>
+    trialModels(
+      loadCatalog(config.home),
+      settings.current().roles,
+      voiceDirs.models,
+      fileSize,
+      listClones(voiceDirs.clones).map(({ id }) => id),
+    );
+  voiceApi = { voice: voiceConfig.voice, models: candidates, clones: voiceDirs.clones };
   voice = createVoiceService({
     paths: voiceDirs,
     port: voiceConfig.port,
