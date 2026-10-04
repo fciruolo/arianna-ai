@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Folder,
+  Info,
   LifeBuoy,
   Lock,
   Menu,
@@ -31,6 +32,8 @@ import {
   RotateCcw,
   Route,
   Send,
+  Server,
+  Settings,
   ShieldCheck,
   Sun,
   Trash2,
@@ -80,6 +83,9 @@ export const ICONS = {
   phone: Phone,
   'phone-off': PhoneOff,
   clock: Clock,
+  settings: Settings,
+  info: Info,
+  server: Server,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

@@ -97,6 +97,7 @@ describe('read', () => {
     const shown = JSON.stringify(view.values);
     for (const hidden of ['vault://', 'database', '54329', '7420']) assert.ok(!shown.includes(hidden), hidden);
     assert.deepEqual(view.restartOnly, ['paths', 'database', 'server']);
+    assert.deepEqual(view.voiceDefaults, { ...DEFAULT_VOICE, push: null });
     assert.deepEqual(view.restartPending, []);
     assert.match(view.labels ?? '', /kb\/private/);
     const orchestrator = view.catalog.find((model) => model.id === 'qwen3.8-27b-4bit');

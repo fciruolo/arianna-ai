@@ -7,6 +7,7 @@ import {
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
   CONFIG_FILE,
+  DEFAULT_VOICE,
   diffConfig,
   LABELS_FILE,
   loadCatalog,
@@ -115,6 +116,8 @@ export interface SettingsView {
   catalog: CatalogModel[];
   /** config/labels.toml as written, for reading only. */
   labels: string | null;
+  /** What `[voice]` holds when the page turns it on. */
+  voiceDefaults: NonNullable<SettingsValues['voice']>;
 }
 
 /** What a privacy change would change, section by section. */
@@ -532,6 +535,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       ordinary: ORDINARY_SECTIONS,
       privacy: PRIVACY_SECTIONS,
       restartOnly: RESTART_SECTIONS,
+      voiceDefaults: { ...structuredClone(DEFAULT_VOICE), push: null },
     };
     let labels: string | null;
     try {

@@ -19,6 +19,13 @@ export function isVoiceTrialPath(pathname: string): boolean {
   return pathname === VOICE_TRIAL_PATH || pathname === `${VOICE_TRIAL_PATH}/`;
 }
 
+/** The settings page (D-071). */
+export const SETTINGS_PATH = '/impostazioni';
+
+export function isSettingsPath(pathname: string): boolean {
+  return pathname === SETTINGS_PATH || pathname === `${SETTINGS_PATH}/`;
+}
+
 /** The path of a conversation, or the root when none is open. */
 export function pathFor(conversationId: string | null): string {
   return conversationId === null ? '/' : `/c/${conversationId}`;

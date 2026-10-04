@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -256,4 +257,34 @@ export async function loadPushKey(): Promise<string | null> {
 
 export async function subscribePush(subscription: PushSubscriptionJSON): Promise<void> {
   await call('POST', '/api/push/subscribe', { subscription });
+}
+
+/** The settings page (D-071): values, catalog, fingerprint, local servers. */
+export async function loadSettings(): Promise<SettingsView> {
+  return call<SettingsView>('GET', '/api/settings');
+}
+
+/** Models, cloud models, characters, [voice]: written at once over the file the page read. */
+export async function saveSettings(fingerprint: string, values: Partial<Pick<SettingsValues, OrdinarySection>>): Promise<SettingsView> {
+  return call<SettingsView>('POST', '/api/settings', { fingerprint, values });
+}
+
+/** Cloud executors, Telegram, projects, local servers: what would change and leave, nothing written yet. */
+export async function preparePrivacy(fingerprint: string, values: Partial<Pick<SettingsValues, PrivacySection>>): Promise<PrivacyProposal> {
+  return call<PrivacyProposal>('POST', '/api/settings/privacy/prepare', { fingerprint, values });
+}
+
+/** Writes exactly the change prepared with this id. */
+export async function confirmPrivacy(id: string): Promise<SettingsView> {
+  return call<SettingsView>('POST', '/api/settings/privacy/confirm', { id });
+}
+
+/** "Riavvia oMLX": answered before the model has loaded. */
+export async function restartLocal(id: string): Promise<void> {
+  await call('POST', `/api/local/${encodeURIComponent(id)}/restart`, {});
+}
+
+/** The end of the server's log: may hold private texts, shown only here. */
+export async function loadLocalLog(id: string): Promise<string> {
+  return (await call<{ log: string }>('GET', `/api/local/${encodeURIComponent(id)}/log`)).log;
 }

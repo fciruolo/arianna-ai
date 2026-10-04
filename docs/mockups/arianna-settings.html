@@ -1,0 +1,603 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arianna Impostazioni</title>
+<!-- Mockup of the settings page (D-071 part 5) inside the HUD of docs/mockups/arianna-hud.html. Fake data only. The floating box at the bottom right switches between the variants to choose. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #7f9b98; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c133;
+  --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0;
+  --l0: #7cc796; --l1: #4fd1c1; --l2: #f2b34b; --l3: #e2614b; --grid: #4fd1c10a;
+  --font-hud: "Chakra Petch", "Arial Narrow", sans-serif; --font-body: "Figtree", -apple-system, sans-serif; --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 9px; --r-md: 14px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+    --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+  --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+  --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.55 var(--font-body);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 28px 28px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+.app { display: grid; grid-template-columns: 56px minmax(0, 1fr); height: 100%; }
+.rail { border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-block: 14px; background: var(--surface); }
+.rail .logo { font: 600 24px/1 var(--font-hud); color: var(--accent); width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 10px; }
+.rail button { width: 38px; height: 38px; border-radius: var(--r-sm); border: 1px solid transparent; background: none; display: grid; place-items: center; color: var(--muted); }
+.rail button:hover { background: var(--surface-2); color: var(--ink); }
+.rail button.on { color: var(--accent); border-color: var(--line-strong); background: var(--surface-2); }
+.rail .spacer { flex: 1; }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.top { height: 60px; flex: none; display: flex; align-items: center; gap: 14px; padding-inline: 22px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 85%, transparent); }
+.crumb { font-size: 12.5px; color: var(--muted); flex: 1; }
+.crumb b { color: var(--ink); font-weight: 500; }
+.clock { font: 500 11px/1 var(--font-mono); color: var(--muted); letter-spacing: .08em; }
+
+.body { flex: 1; min-height: 0; display: flex; }
+.index { width: 210px; flex: none; border-right: 1px solid var(--line); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.index a { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13px; border: 1px solid transparent; }
+.index a:hover { background: var(--surface-2); color: var(--ink); }
+.index a.on { background: var(--surface-2); color: var(--ink); border-color: var(--line-strong); }
+.index .grp { font: 600 10px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 14px 10px 6px; }
+.index .grp:first-child { margin-top: 0; }
+.index .shield { color: var(--warn); }
+.tabs { display: none; gap: 4px; padding: 10px 22px 0; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
+.tabs button { background: none; border: 1px solid transparent; border-bottom: 0; padding: 9px 14px; border-radius: 9px 9px 0 0; color: var(--muted); white-space: nowrap; font-size: 13px; }
+.tabs button.on { background: var(--surface); border-color: var(--line); color: var(--ink); margin-bottom: -1px; }
+.scroll { flex: 1; overflow-y: auto; min-width: 0; }
+.col { max-width: 860px; margin-inline: auto; padding: 22px 22px 120px; display: flex; flex-direction: column; gap: 20px; }
+
+h1 { margin: 0; font: 600 20px/1.1 var(--font-hud); letter-spacing: .05em; }
+.lead { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-size: 13px; border: 1px solid; }
+.notice.info { border-color: color-mix(in srgb, var(--info) 45%, transparent); background: color-mix(in srgb, var(--info) 9%, transparent); }
+.notice.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.notice.danger { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.notice .grow { flex: 1; }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.hud { position: relative; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); }
+.hud::before, .hud::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--accent); pointer-events: none; }
+.hud::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: var(--r-md); }
+.hud::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: var(--r-md); }
+.hud.priv::before, .hud.priv::after { border-color: var(--warn); }
+.hud-h { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.hud-h h2 { margin: 0; font: 600 12px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; flex: 1; }
+.hud-h .tag { font: 500 10px/1 var(--font-mono); letter-spacing: .06em; padding: 4px 6px; border-radius: 5px; border: 1px solid currentColor; }
+.tag.now { color: var(--ok); } .tag.priv { color: var(--warn); } .tag.ro { color: var(--muted); }
+.hud-b { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.hud-f { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 var(--r-md) var(--r-md); }
+.hud-f .note { flex: 1; font-size: 12px; color: var(--muted); }
+.hud-f.dirty .note { color: var(--warn); }
+
+.btn { padding: 7px 13px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.warn { background: var(--warn); color: #2a1c02; border-color: var(--warn); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+
+.field { border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 8px; padding: 6px 9px; min-width: 0; }
+select.field { padding-right: 26px; }
+.row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: center; }
+.row > label { font-size: 13px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.grid2 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+
+/* Roles */
+.roles { display: flex; flex-direction: column; }
+.role { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.role:first-child { border-top: 0; padding-top: 0; }
+.role .name { font-weight: 500; }
+.role .name small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.role .facts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chip { font: 500 10.5px/1 var(--font-mono); padding: 4px 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.chip.miss { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.chip.exp { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* Cloud models */
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font: 600 10px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 0 8px 8px; }
+td { padding: 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+td:first-child, th:first-child { padding-left: 0; }
+.switch { position: relative; width: 34px; height: 20px; border-radius: 99px; background: var(--line-strong); border: 0; padding: 0; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: left .15s; }
+.switch.on { background: var(--accent); }
+.switch.on::after { left: 17px; background: var(--accent-ink); }
+.off { color: var(--muted); }
+
+/* Characters */
+.chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.char { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.char .px { width: 32px; height: 40px; border-radius: 4px; background:
+  linear-gradient(var(--accent) 0 0) 10px 4px / 12px 10px no-repeat,
+  linear-gradient(var(--ink) 0 0) 8px 16px / 16px 14px no-repeat,
+  linear-gradient(var(--line-strong) 0 0) 10px 30px / 12px 8px no-repeat; image-rendering: pixelated; }
+.char .who { font-weight: 500; font-size: 13px; }
+.char select { width: 100%; margin-top: 4px; font-size: 12px; padding: 4px 6px; }
+
+/* Lists of privacy sections */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.item .t { font-weight: 500; }
+.item .s { font-size: 12px; color: var(--muted); word-break: break-all; }
+.lab { font: 500 10px/1 var(--font-mono); padding: 3px 5px; border-radius: 4px; border: 1px solid currentColor; }
+.lab.l0 { color: var(--l0); } .lab.l1 { color: var(--l1); }
+.checks { display: flex; gap: 18px; flex-wrap: wrap; }
+.checks label { display: flex; align-items: center; gap: 8px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface-2); font: 500 12px/1 var(--font-mono); }
+.pill button { border: 0; background: none; color: var(--muted); padding: 0 2px; }
+
+/* Local servers */
+.server { display: flex; flex-direction: column; gap: 10px; }
+.server .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.state { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.cmd { font: 400 11.5px/1.6 var(--font-mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; word-break: break-all; }
+details > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+pre.log { margin: 8px 0 0; max-height: 220px; overflow: auto; font: 400 11px/1.55 var(--font-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--muted); }
+pre.labels { margin: 0; max-height: 260px; overflow: auto; font: 400 11.5px/1.6 var(--font-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+
+/* Global save bar (variant) */
+.savebar { position: sticky; bottom: 0; display: none; align-items: center; gap: 10px; margin: 0 -22px; padding: 12px 22px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-top: 1px solid var(--warn); backdrop-filter: blur(6px); }
+.savebar .note { flex: 1; color: var(--warn); font-size: 13px; }
+
+/* Confirmation card */
+.confirm { display: flex; flex-direction: column; }
+.confirm .hud-h h2 { color: var(--warn); }
+.diff { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.diff .add { color: var(--ok); } .diff .rem { color: var(--danger); } .diff .chg { color: var(--warn); }
+.diff .k { font: 500 11px/1 var(--font-mono); width: 14px; display: inline-block; }
+.exits { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 8%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); font-size: 13px; }
+.exits h3 { margin: 0 0 2px; font: 600 10.5px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--warn); }
+.timer { font: 500 11px/1 var(--font-mono); color: var(--muted); }
+.modal-bg { position: fixed; inset: 0; background: #0009; display: none; place-items: center; z-index: 50; padding: 16px; }
+.modal-bg .hud { width: min(560px, 100%); max-height: 90vh; overflow: auto; }
+.inline-confirm { display: none; }
+
+/* Variant switcher (mockup only) */
+.variants { position: fixed; right: 14px; bottom: 14px; z-index: 60; width: 270px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; font-size: 12px; box-shadow: 0 10px 30px #0008; }
+.variants b { font: 600 10px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 8px; }
+.variants fieldset { border: 0; margin: 0 0 8px; padding: 0; }
+.variants legend { color: var(--muted); margin-bottom: 4px; padding: 0; }
+.variants label { display: flex; gap: 6px; align-items: center; }
+.variants .x { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: var(--muted); }
+
+/* Variants */
+body.v-tabs .index { display: none; }
+body.v-tabs .tabs { display: flex; }
+body.v-tabs .sec { display: none; }
+body.v-tabs .sec.shown { display: flex; }
+body.v-bar .hud-f.ord { display: none; }
+body.v-bar .savebar.dirty { display: flex; }
+body.v-inline .inline-confirm { display: flex; }
+body.v-modal.open-modal .modal-bg { display: grid; }
+.sec { display: flex; flex-direction: column; gap: 20px; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .rail, .index { display: none; }
+  .tabs { display: flex; }
+  .row, .role { grid-template-columns: 1fr; gap: 6px; }
+  .role .facts { justify-content: flex-start; }
+  .col { padding-inline: 16px; }
+  .variants { width: calc(100% - 28px); }
+}
+</style>
+
+<body class="v-index v-section v-modal">
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="cloud" viewBox="0 0 24 24"><path d="M17.5 19H8a6 6 0 1 1 5.7-8h1.8a4.5 4.5 0 1 1 0 9z"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="tag" viewBox="0 0 24 24"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><path d="M7.5 7.5h.01"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></symbol>
+  <symbol id="alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="send" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></symbol>
+  <symbol id="folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+</svg>
+
+<div class="app">
+  <nav class="rail" aria-label="Sezioni">
+    <span class="logo">A</span>
+    <button type="button" title="Chat"><svg class="i"><use href="#chat"/></svg></button>
+    <button type="button" title="Provino della voce"><svg class="i"><use href="#mic"/></svg></button>
+    <button type="button" class="on" title="Impostazioni"><svg class="i"><use href="#gear"/></svg></button>
+    <div class="spacer"></div>
+  </nav>
+
+  <main class="main">
+    <header class="top">
+      <p class="crumb">Arianna / <b>Impostazioni</b></p>
+      <span class="clock">DOM 04 OTT · 23:41</span>
+    </header>
+
+    <nav class="tabs" aria-label="Sezioni delle impostazioni">
+      <button type="button" class="on" data-tab="models">Modelli</button>
+      <button type="button" data-tab="voice">Voce e personaggi</button>
+      <button type="button" data-tab="privacy">Uscite</button>
+      <button type="button" data-tab="servers">Server locali</button>
+      <button type="button" data-tab="labels">Etichette</button>
+    </nav>
+
+    <div class="body">
+      <nav class="index" aria-label="Indice">
+        <span class="grp">Valgono subito</span>
+        <a href="#roles" class="on"><svg class="i"><use href="#cpu"/></svg>Modelli locali</a>
+        <a href="#cloud-models"><svg class="i"><use href="#cloud"/></svg>Modelli cloud</a>
+        <a href="#voice"><svg class="i"><use href="#mic"/></svg>Voce</a>
+        <a href="#characters"><svg class="i"><use href="#user"/></svg>Personaggi</a>
+        <span class="grp">Uscite · con conferma</span>
+        <a href="#executors"><svg class="i shield"><use href="#shield"/></svg>Esecutori cloud</a>
+        <a href="#telegram"><svg class="i shield"><use href="#send"/></svg>Telegram</a>
+        <a href="#projects"><svg class="i shield"><use href="#folder"/></svg>Progetti</a>
+        <a href="#servers"><svg class="i shield"><use href="#server"/></svg>Server locali</a>
+        <span class="grp">Solo lettura</span>
+        <a href="#labels"><svg class="i"><use href="#tag"/></svg>Etichette</a>
+      </nav>
+
+      <div class="scroll">
+        <div class="col">
+          <div>
+            <h1>Impostazioni</h1>
+            <p class="lead">Ogni modifica vale subito, senza riavviare Arianna. Le uscite verso il cloud e Telegram chiedono una conferma.</p>
+          </div>
+
+          <div class="notice info">
+            <svg class="i"><use href="#info"/></svg>
+            <span class="grow">Salvare da qui riscrive <span class="mono">config/arianna.toml</span>: i commenti scritti a mano nel file si perdono (come con <span class="mono">pnpm arianna:init --reconfigure</span>).</span>
+          </div>
+          <div class="notice warn">
+            <svg class="i"><use href="#alert"/></svg>
+            <span class="grow">In attesa di riavvio del nucleo: <span class="mono">database</span>, <span class="mono">server</span>. Sono cambiati nel file e valgono al prossimo <span class="mono">pnpm start</span>.</span>
+          </div>
+          <div class="notice danger" id="conflict" hidden>
+            <svg class="i"><use href="#alert"/></svg>
+            <span class="grow">Il file è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.</span>
+          </div>
+
+          <!-- ============ Models ============ -->
+          <div class="sec shown" data-sec="models">
+            <section class="hud" id="roles">
+              <div class="hud-h"><h2>Modelli locali per ruolo</h2><span class="tag now">SUBITO</span></div>
+              <div class="hud-b">
+                <div class="roles">
+                  <div class="role">
+                    <div class="name">Orchestratore<small>Arianna che ragiona</small></div>
+                    <select class="field mark-dirty" data-sec-name="roles">
+                      <option selected>qwen3.8-27b-4bit</option><option>qwen3.8-27b-uncensored-mlx</option><option>qwen3.5-9b-mlx-4bit</option><option>— nessuno —</option>
+                    </select>
+                    <div class="facts"><span class="chip">≥ 18 GiB</span><span class="chip exp">sperimentale</span><span class="chip ok">file presenti</span></div>
+                  </div>
+                  <div class="role">
+                    <div class="name">Estrattore<small>schede e fatti dai documenti</small></div>
+                    <select class="field mark-dirty"><option selected>qwen3-4b-instruct-2507-4bit</option><option>— nessuno —</option></select>
+                    <div class="facts"><span class="chip">≥ 3 GiB</span><span class="chip exp">sperimentale</span><span class="chip ok">file presenti</span></div>
+                  </div>
+                  <div class="role">
+                    <div class="name">Embedder<small>ricerca nell'archivio</small></div>
+                    <select class="field mark-dirty"><option selected>— nessuno —</option></select>
+                    <div class="facts"><span class="chip">nessun modello del catalogo per questo ruolo</span></div>
+                  </div>
+                  <div class="role">
+                    <div class="name">Voce<small>risponde in chiamata</small></div>
+                    <select class="field mark-dirty"><option selected>qwen3-4b-instruct-2507-4bit</option><option>— nessuno —</option></select>
+                    <div class="facts"><span class="chip">≥ 3 GiB</span><span class="chip exp">sperimentale</span><span class="chip ok">file presenti</span></div>
+                  </div>
+                  <div class="role">
+                    <div class="name">Trascrizione<small>stt</small></div>
+                    <select class="field mark-dirty"><option selected>parakeet-tdt-0.6b-v3-mlx</option><option>— nessuno —</option></select>
+                    <div class="facts"><span class="chip">≥ 3 GiB</span><span class="chip exp">sperimentale</span><span class="chip ok">file presenti</span></div>
+                  </div>
+                  <div class="role">
+                    <div class="name">Sintesi<small>tts</small></div>
+                    <select class="field mark-dirty"><option selected>qwen3-tts-1.7b-customvoice-bf16-mlx</option><option>kokoro-82m-bf16-mlx</option><option>qwen3-tts-1.7b-base-bf16-mlx</option><option>voxtral-4b-tts-bf16-mlx</option></select>
+                    <div class="facts"><span class="chip">≥ 6 GiB</span><span class="chip exp">sperimentale</span><span class="chip ok">file presenti</span></div>
+                  </div>
+                </div>
+                <p class="hint">Un modello senza file in <span class="mono">data/models</span> si può scegliere, ma va scaricato con <span class="mono">pnpm arianna:models pull</span>. Esempio: <span class="chip miss">file mancanti</span></p>
+              </div>
+              <div class="hud-f ord"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn primary" disabled>Salva</button></div>
+            </section>
+
+            <section class="hud" id="cloud-models">
+              <div class="hud-h"><h2>Modelli cloud</h2><span class="tag now">SUBITO</span></div>
+              <div class="hud-b">
+                <table>
+                  <thead><tr><th>Acceso</th><th>Alias</th><th>Nome esatto (facoltativo)</th><th>Predefinito</th></tr></thead>
+                  <tbody>
+                    <tr><td><button class="switch on mark-dirty" aria-pressed="true"></button></td><td>sonnet</td><td><input class="field mark-dirty" placeholder="il più recente" style="width:100%"></td><td><input type="radio" name="def" checked class="mark-dirty"></td></tr>
+                    <tr><td><button class="switch on mark-dirty" aria-pressed="true"></button></td><td>opus</td><td><input class="field mark-dirty" value="claude-opus-5-5" style="width:100%"></td><td><input type="radio" name="def" class="mark-dirty"></td></tr>
+                    <tr class="off"><td><button class="switch mark-dirty" aria-pressed="false"></button></td><td>fable</td><td><input class="field" placeholder="il più recente" disabled style="width:100%"></td><td><input type="radio" name="def" disabled></td></tr>
+                    <tr><td><button class="switch on mark-dirty" aria-pressed="true"></button></td><td>codex</td><td><input class="field mark-dirty" placeholder="il più recente" style="width:100%"></td><td><input type="radio" name="def" class="mark-dirty"></td></tr>
+                  </tbody>
+                </table>
+                <p class="hint">Un alias spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia dell'alias (es. <span class="mono">opus[1m]</span>). Per Codex la scelta vale con il suo adattatore.</p>
+              </div>
+              <div class="hud-f ord"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn primary" disabled>Salva</button></div>
+            </section>
+          </div>
+
+          <!-- ============ Voice and characters ============ -->
+          <div class="sec" data-sec="voice">
+            <section class="hud" id="voice">
+              <div class="hud-h"><h2>Voce e chiamate</h2><span class="tag now">SUBITO</span><button class="switch on mark-dirty" aria-pressed="true" title="Chiamate accese"></button></div>
+              <div class="hud-b">
+                <div class="row"><label>Parlante</label>
+                  <select class="field mark-dirty"><option selected>serena</option><option>vivian</option><option>uncle_fu</option><option>Voce di prova (copiata)</option></select></div>
+                <div class="row"><label>Porta del servizio</label><input class="field mark-dirty" value="7421" style="width:110px"></div>
+                <p class="hint">Cambiare porta o spegnere le chiamate riavvia solo il servizio della voce, appena non c'è una chiamata in corso.</p>
+                <div class="grp-t" style="font:600 10px/1 var(--font-hud);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px">Limiti di una chiamata</div>
+                <div class="grid2">
+                  <label>Durata massima (min)<input class="field mark-dirty" value="30"></label>
+                  <label>Avviso prima della fine (s)<input class="field mark-dirty" value="60"></label>
+                  <label>Deleghe per chiamata<input class="field mark-dirty" value="3"></label>
+                  <label>Attesa di una delega (s)<input class="field mark-dirty" value="90"></label>
+                </div>
+                <div style="font:600 10px/1 var(--font-hud);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px">Quando ti chiama Arianna</div>
+                <div class="grid2">
+                  <label>Massimo al giorno<input class="field mark-dirty" value="3"></label>
+                  <label>Silenzio dalle<input class="field mark-dirty" type="time" value="21:00"></label>
+                  <label>Silenzio alle<input class="field mark-dirty" type="time" value="08:30"></label>
+                  <label>Squilla per (s)<input class="field mark-dirty" value="30"></label>
+                  <label>Richiama dopo (min)<input class="field mark-dirty" value="20"></label>
+                  <label style="flex-direction:row;align-items:center;gap:8px;margin-top:18px"><input type="checkbox" checked class="mark-dirty">Silenzio nel fine settimana</label>
+                </div>
+                <div style="font:600 10px/1 var(--font-hud);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px">Notifiche push</div>
+                <div class="grid2">
+                  <label>Chiave pubblica VAPID<input class="field mark-dirty" placeholder="spente"></label>
+                  <label>Contatto (mailto:)<input class="field mark-dirty" placeholder="mailto:tu@example.org"></label>
+                </div>
+                <p class="hint">La chiave privata sta nel vault (<span class="mono">pnpm vault:edit</span>) e non compare qui.</p>
+              </div>
+              <div class="hud-f ord"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn primary" disabled>Salva</button></div>
+            </section>
+
+            <section class="hud" id="characters">
+              <div class="hud-h"><h2>Personaggi</h2><span class="tag now">SUBITO</span></div>
+              <div class="hud-b">
+                <div class="chars">
+                  <div class="char"><span class="px"></span><div style="flex:1;min-width:0"><div class="who">Arianna</div><select class="field mark-dirty"><option selected>originali / arianna</option><option>originali / volpe</option></select></div></div>
+                  <div class="char"><span class="px"></span><div style="flex:1;min-width:0"><div class="who">Coder</div><select class="field mark-dirty"><option selected>originali / coder</option><option>originali / gufo</option></select></div></div>
+                </div>
+                <p class="hint">Un pacchetto nuovo si copia in <span class="mono">data/characters</span>, fuori da git.</p>
+              </div>
+              <div class="hud-f ord"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn primary" disabled>Salva</button></div>
+            </section>
+          </div>
+
+          <!-- ============ Privacy ============ -->
+          <div class="sec" data-sec="privacy">
+            <div class="notice warn">
+              <svg class="i"><use href="#shield"/></svg>
+              <span class="grow">Queste sezioni decidono cosa può uscire da questo computer. Una modifica si applica solo dopo che hai visto e confermato la scheda con le uscite.</span>
+            </div>
+
+            <section class="hud priv" id="executors">
+              <div class="hud-h"><h2>Esecutori cloud</h2><span class="tag priv">CON CONFERMA</span></div>
+              <div class="hud-b">
+                <div class="checks">
+                  <label><input type="checkbox" checked class="mark-priv">Claude Code</label>
+                  <label><input type="checkbox" checked class="mark-priv">Codex</label>
+                </div>
+                <p class="hint">Un esecutore acceso può ricevere testi L0-L1 passati dal gateway e lavorare nei progetti qui sotto.</p>
+              </div>
+              <div class="hud-f"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn warn prep" disabled>Rivedi le uscite…</button></div>
+            </section>
+
+            <section class="hud priv" id="telegram">
+              <div class="hud-h"><h2>Telegram</h2><span class="tag priv">CON CONFERMA</span><button class="switch on mark-priv" aria-pressed="true" title="Bot acceso"></button></div>
+              <div class="hud-b">
+                <div class="row"><label>Chat ammesse</label>
+                  <div class="pills"><span class="pill">123456789<button title="Togli">×</button></span><input class="field" placeholder="id della chat" style="width:150px"><button class="btn small mark-priv"><svg class="i" style="width:14px;height:14px"><use href="#plus"/></svg>Aggiungi</button></div></div>
+                <p class="hint">Al massimo L1 (D-044). Il token del bot sta nel vault e non compare qui.</p>
+              </div>
+              <div class="hud-f"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn warn prep" disabled>Rivedi le uscite…</button></div>
+            </section>
+
+            <section class="hud priv" id="projects">
+              <div class="hud-h"><h2>Progetti</h2><span class="tag priv">CON CONFERMA</span></div>
+              <div class="hud-b">
+                <div class="list">
+                  <div class="item"><div><div class="t">demo <span class="lab l1">L1</span></div><div class="s">repos/demo</div></div><button class="btn small mark-priv"><svg class="i" style="width:14px;height:14px"><use href="#trash"/></svg>Togli</button></div>
+                  <div class="item" style="grid-template-columns: 1fr 1.6fr 80px auto"><input class="field" placeholder="nome"><input class="field" placeholder="~/Progetti/sito o repos/sito"><select class="field"><option>L0</option><option selected>L1</option></select><button class="btn small mark-priv"><svg class="i" style="width:14px;height:14px"><use href="#plus"/></svg>Aggiungi</button></div>
+                </div>
+                <p class="hint">Un esecutore cloud vede i file del progetto: l'etichetta dice quanto sono riservati (solo L0 o L1).</p>
+              </div>
+              <div class="hud-f"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn warn prep" disabled>Rivedi le uscite…</button></div>
+            </section>
+          </div>
+
+          <!-- ============ Local servers ============ -->
+          <div class="sec" data-sec="servers">
+            <section class="hud priv" id="servers">
+              <div class="hud-h"><h2>Server locali</h2><span class="tag priv">CON CONFERMA</span></div>
+              <div class="hud-b">
+                <div class="server">
+                  <div class="head">
+                    <b>omlx</b>
+                    <span class="state"><span class="dot"></span>acceso</span>
+                    <span class="chip">avviato dal nucleo</span>
+                    <span style="flex:1"></span>
+                    <button class="btn small"><svg class="i" style="width:14px;height:14px"><use href="#refresh"/></svg>Riavvia oMLX</button>
+                  </div>
+                  <div class="row"><label>Indirizzo</label><input class="field mark-priv" value="http://127.0.0.1:7001/v1"></div>
+                  <div class="row"><label>Comando</label><input class="field mono mark-priv" value="omlx serve --model-dir data/models --host 127.0.0.1 --port 7001 --memory-guard-gb 16 --hot-cache-max-size 0"></div>
+                  <p class="hint">Il comando non deve contenere segreti: è mostrato qui. Un server senza comando il nucleo lo osserva soltanto; uno già acceso prima del nucleo si riavvia dove è stato avviato.</p>
+                  <details open>
+                    <summary>Ultime righe del log (<span class="mono">data/omlx.log</span>) · può contenere testi privati, resta in questa pagina</summary>
+                    <pre class="log">2026-10-04 23:12:02 INFO  loading qwen3-4b-instruct-2507-4bit
+2026-10-04 23:12:05 INFO  model ready in 2.9 s
+2026-10-04 23:12:05 INFO  POST /v1/chat/completions 200 1.41 s
+2026-10-04 23:30:18 INFO  POST /v1/chat/completions 200 0.92 s
+2026-10-04 23:40:51 INFO  memory guard: 41.2 GiB free</pre>
+                  </details>
+                </div>
+              </div>
+              <div class="hud-f"><span class="note">Nessuna modifica</span><button class="btn" disabled>Annulla</button><button class="btn warn prep" disabled>Rivedi le uscite…</button></div>
+            </section>
+          </div>
+
+          <!-- inline confirmation (variant) -->
+          <section class="hud priv confirm inline-confirm" id="inline-card">
+            <div class="hud-h"><h2>Conferma le uscite</h2><span class="timer">scade fra 4:52</span></div>
+            <div class="hud-b" data-card></div>
+            <div class="hud-f"><span class="note">Si applica solo con Conferma.</span><button class="btn cancel">Annulla</button><button class="btn warn">Conferma</button></div>
+          </section>
+
+          <!-- ============ Labels ============ -->
+          <div class="sec" data-sec="labels">
+            <section class="hud" id="labels">
+              <div class="hud-h"><h2>Regole di etichetta</h2><span class="tag ro">SOLO LETTURA</span></div>
+              <div class="hud-b">
+                <p class="hint">Le regole e il gateway si cambiano solo nel file <span class="mono">config/labels.toml</span>, a mano.</p>
+<pre class="labels"># Default: anything without a rule is L2 (default-deny).
+[[rule]]
+match = "kb/pubblico/**"
+label = "L0"
+
+[[rule]]
+match = "kb/lavoro/**"
+label = "L1"
+
+[[rule]]
+match = "kb/salute/**"
+label = "L3"</pre>
+              </div>
+            </section>
+          </div>
+
+          <div class="savebar" id="savebar"><span class="note">Modifiche non salvate in: Modelli locali</span><button class="btn">Annulla</button><button class="btn primary">Salva tutto</button></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-bg" id="modal">
+  <section class="hud priv confirm" role="dialog" aria-modal="true" aria-label="Conferma le uscite">
+    <div class="hud-h"><h2>Conferma le uscite</h2><span class="timer">scade fra 4:52</span></div>
+    <div class="hud-b" data-card></div>
+    <div class="hud-f"><span class="note">Si applica solo con Conferma.</span><button class="btn cancel">Annulla</button><button class="btn warn">Conferma</button></div>
+  </section>
+</div>
+
+<template id="card">
+  <div class="diff">
+    <b style="font-size:13px">Cosa cambia</b>
+    <div class="add"><span class="k">+</span>Progetto <b>sito</b> <span class="lab l1">L1</span> · <span class="mono">~/Progetti/sito</span></div>
+    <div class="rem"><span class="k">−</span>Esecutore <b>Codex</b></div>
+  </div>
+  <div class="exits">
+    <h3>Dopo la modifica potrà uscire</h3>
+    <div><b>Claude Code</b> potrà ricevere testi L0-L1 e lavorare in: demo (L1), sito (L1).</div>
+    <div><b>Telegram</b>: 1 chat, al massimo L1.</div>
+    <div><b>omlx</b> (<span class="mono">127.0.0.1:7001</span>) vede i dati L2 in chiaro; il nucleo esegue il suo comando.</div>
+  </div>
+</template>
+
+<aside class="variants" id="variants">
+  <button class="x" title="Nascondi" onclick="this.parentElement.hidden=true">×</button>
+  <b>Varianti da scegliere</b>
+  <fieldset><legend>1 · Disposizione</legend>
+    <label><input type="radio" name="layout" value="v-index" checked>Pagina unica con indice a sinistra</label>
+    <label><input type="radio" name="layout" value="v-tabs">Schede in alto</label>
+  </fieldset>
+  <fieldset><legend>2 · Salvataggio (sezioni "subito")</legend>
+    <label><input type="radio" name="save" value="v-section" checked>Salva in fondo a ogni riquadro</label>
+    <label><input type="radio" name="save" value="v-bar">Una barra "Salva tutto" in basso</label>
+  </fieldset>
+  <fieldset><legend>3 · Scheda di conferma</legend>
+    <label><input type="radio" name="confirm" value="v-modal" checked>Finestra sopra la pagina</label>
+    <label><input type="radio" name="confirm" value="v-inline">Riquadro in fondo alla pagina</label>
+  </fieldset>
+  <p style="margin:0;color:var(--muted)">Prova: cambia un valore (si attiva "Salva"), spunta un esecutore e premi "Rivedi le uscite…", o premi <a href="#" id="show-conflict" style="color:var(--accent)">simula un 409</a>.</p>
+</aside>
+
+<script>
+const body = document.body;
+const card = document.getElementById('card').content;
+document.querySelectorAll('[data-card]').forEach((el) => el.append(card.cloneNode(true)));
+
+for (const group of ['layout', 'save', 'confirm']) {
+  document.querySelectorAll(`input[name=${group}]`).forEach((input) => input.addEventListener('change', () => {
+    document.querySelectorAll(`input[name=${group}]`).forEach((other) => body.classList.remove(other.value));
+    body.classList.add(input.value);
+    body.classList.remove('open-modal');
+  }));
+}
+
+// Tabs
+document.querySelectorAll('.tabs button').forEach((tab) => tab.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((other) => other.classList.toggle('on', other === tab));
+  document.querySelectorAll('.sec').forEach((sec) => sec.classList.toggle('shown', sec.dataset.sec === tab.dataset.tab));
+}));
+// Index
+document.querySelectorAll('.index a').forEach((link) => link.addEventListener('click', () => {
+  document.querySelectorAll('.index a').forEach((other) => other.classList.toggle('on', other === link));
+}));
+
+// Switches
+document.querySelectorAll('.switch').forEach((sw) => sw.addEventListener('click', () => {
+  sw.classList.toggle('on');
+  sw.setAttribute('aria-pressed', String(sw.classList.contains('on')));
+}));
+
+function dirty(el, privacy) {
+  const section = el.closest('section');
+  const foot = section.querySelector('.hud-f');
+  foot.classList.add('dirty');
+  foot.querySelector('.note').textContent = privacy ? 'Modifica da confermare' : 'Modifiche non salvate';
+  foot.querySelectorAll('button').forEach((button) => (button.disabled = false));
+  if (!privacy) {
+    const bar = document.getElementById('savebar');
+    bar.classList.add('dirty');
+    bar.querySelector('.note').textContent = `Modifiche non salvate in: ${section.querySelector('h2').textContent}`;
+  }
+}
+document.querySelectorAll('.mark-dirty').forEach((el) => ['change', 'input', 'click'].forEach((type) => el.addEventListener(type, () => dirty(el, false))));
+document.querySelectorAll('.mark-priv').forEach((el) => ['change', 'input', 'click'].forEach((type) => el.addEventListener(type, () => dirty(el, true))));
+
+document.querySelectorAll('.prep').forEach((button) => button.addEventListener('click', () => {
+  if (body.classList.contains('v-modal')) body.classList.add('open-modal');
+  else document.getElementById('inline-card').scrollIntoView({ behavior: 'smooth' });
+}));
+document.querySelectorAll('.confirm .cancel, .confirm .warn').forEach((button) => button.addEventListener('click', () => body.classList.remove('open-modal')));
+document.getElementById('show-conflict').addEventListener('click', (event) => {
+  event.preventDefault();
+  const note = document.getElementById('conflict');
+  note.hidden = false;
+  note.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>
+</body>

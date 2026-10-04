@@ -9,13 +9,14 @@ import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
 import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
+import SettingsPage from './components/SettingsPage.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
-import { conversationFromPath, documentTitle, isVoiceTrialPath, pathFor, VOICE_TRIAL_PATH } from './lib/route.ts';
+import { conversationFromPath, documentTitle, isSettingsPath, isVoiceTrialPath, pathFor, SETTINGS_PATH, VOICE_TRIAL_PATH } from './lib/route.ts';
 import { poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
@@ -75,21 +76,40 @@ const clockText = computed(() => {
   return `${DAYS[date.getDay()] ?? ''} ${pad(date.getDate())} ${MONTHS[date.getMonth()] ?? ''} · ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
-// The voice trial page (D-066) has an address of its own and replaces the chat.
-const page = ref<'chat' | 'voice-trial'>('chat');
+// The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
+const page = ref<'chat' | 'voice-trial' | 'settings'>('chat');
+
+function openPage(name: 'voice-trial' | 'settings', path: string, title: string): void {
+  showSidebar.value = false;
+  page.value = name;
+  if (chat.value !== null) store.close();
+  if (window.location.pathname !== path) window.history.pushState(null, '', path);
+  document.title = documentTitle(title);
+}
 
 function openVoiceTrial(): void {
-  showSidebar.value = false;
-  page.value = 'voice-trial';
-  if (chat.value !== null) store.close();
-  if (window.location.pathname !== VOICE_TRIAL_PATH) window.history.pushState(null, '', VOICE_TRIAL_PATH);
-  document.title = documentTitle('Provino della voce');
+  openPage('voice-trial', VOICE_TRIAL_PATH, 'Provino della voce');
+}
+
+function openSettings(): void {
+  openPage('settings', SETTINGS_PATH, 'Impostazioni');
+}
+
+/** A save of the settings page: the chat shows the new characters and projects (models follow the live feed). */
+function settingsChanged(sections: string[]): void {
+  if (sections.includes('characters')) void store.refreshCharacters();
+  if (sections.includes('projects')) void store.refreshProjects();
+  if (sections.includes('voice')) void store.refreshVoice();
 }
 
 // The address follows the open conversation (/c/<id>), so a reload comes back to it.
 function followAddress(): void {
   if (isVoiceTrialPath(window.location.pathname)) {
     openVoiceTrial();
+    return;
+  }
+  if (isSettingsPath(window.location.pathname)) {
+    openSettings();
     return;
   }
   page.value = 'chat';
@@ -105,7 +125,7 @@ watch(
   () => chat.value?.conversationId ?? null,
   (id) => {
     if (id !== null) page.value = 'chat';
-    else if (page.value === 'voice-trial') return;
+    else if (page.value !== 'chat') return;
     const path = pathFor(id);
     if (window.location.pathname === path) return;
     if (id === null) window.history.replaceState(null, '', path);
@@ -223,6 +243,17 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       >
         <Icon name="mic" />
       </button>
+      <button
+        type="button"
+        class="grid size-[38px] place-items-center rounded-[9px] border"
+        :class="page === 'settings' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
+        aria-label="Impostazioni"
+        title="Impostazioni"
+        :aria-current="page === 'settings' ? 'page' : undefined"
+        @click="openSettings"
+      >
+        <Icon name="settings" />
+      </button>
       <div class="flex-1" />
       <button
         type="button"
@@ -256,6 +287,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <NewConversation :projects="projects" @create="createConversation" @refresh="store.refreshProjects" />
       <!-- On narrow screens the icon rail is hidden: the voice trial is reached from here. -->
       <button type="button" class="btn md:hidden" @click="openVoiceTrial"><Icon name="mic" :size="16" />Provino della voce</button>
+      <button type="button" class="btn md:hidden" @click="openSettings"><Icon name="settings" :size="16" />Impostazioni</button>
 
       <section>
         <h2 class="hud-title mx-1.5 mb-1.5">Agenti</h2>
@@ -324,6 +356,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
           <template v-else-if="page === 'voice-trial'">Voce / <b class="font-medium text-ink">Provino</b></template>
+          <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
           <template v-else>Arianna</template>
         </p>
         <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
@@ -408,6 +441,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
+      <SettingsPage v-else-if="page === 'settings'" @changed="settingsChanged" />
       <ChatView
         v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"

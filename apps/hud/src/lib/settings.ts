@@ -1,0 +1,426 @@
+/**
+ * The settings page (D-071): the shapes of `/api/settings` and the pure parts
+ * of the page, from the values of the core to the forms and back, and the
+ * Italian texts of the confirmation card. Ordinary sections are saved one
+ * card at a time; privacy ones are prepared, shown, then confirmed.
+ */
+import { EXECUTOR_TEXT } from './labels.ts';
+
+export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
+export type ModelRole = (typeof MODEL_ROLES)[number];
+export const CLOUD_MODELS = ['sonnet', 'opus', 'fable', 'codex'] as const;
+export type CloudModelAlias = (typeof CLOUD_MODELS)[number];
+export const CLOUD_EXECUTORS = ['claude', 'codex'] as const;
+
+export interface VoiceValues {
+  port: number;
+  voice: string;
+  limits: { callMinutes: number; warnSeconds: number; delegations: number; delegationSeconds: number };
+  outgoing: { maxPerDay: number; quietFrom: string; quietTo: string; quietWeekend: boolean; ringSeconds: number; waitingMinutes: number };
+  push: { publicKey: string; subject: string } | null;
+}
+
+export interface ProjectValues {
+  name: string;
+  path: string;
+  label: 'L0' | 'L1';
+}
+
+export interface EndpointValues {
+  id: string;
+  url: string;
+  command?: string[];
+  models?: Record<string, string>;
+}
+
+export interface SettingsValues {
+  roles: Partial<Record<ModelRole, string>>;
+  cloudModels: { models: Record<CloudModelAlias, boolean | string>; default: CloudModelAlias | null };
+  characters: Record<string, string>;
+  voice: VoiceValues | null;
+  executors: string[];
+  telegram: { chats: number[] } | null;
+  projects: ProjectValues[];
+  endpoints: EndpointValues[];
+}
+
+export interface CatalogModel {
+  id: string;
+  family: string;
+  runtime: string;
+  ramMinGib: number;
+  roles: ModelRole[];
+  status: string;
+  present: boolean;
+}
+
+export type WatchdogState = 'idle' | 'starting' | 'up' | 'down' | 'restarting' | 'failed' | 'stopped';
+
+export interface LocalServerStatus {
+  id: string;
+  url: string;
+  managed: boolean;
+  adopted: boolean;
+  state: WatchdogState;
+}
+
+export interface SettingsView {
+  fingerprint: string | null;
+  values: SettingsValues | null;
+  error: string | null;
+  restartPending: string[];
+  catalog: CatalogModel[];
+  labels: string | null;
+  voiceDefaults: VoiceValues;
+  /** Only from GET: a write answers without it. */
+  local?: LocalServerStatus[];
+}
+
+export interface PrivacyChanges {
+  executors?: { before: string[]; after: string[] };
+  telegram?: { before: { chats: number[] } | null; after: { chats: number[] } | null };
+  projects?: { added: ProjectValues[]; removed: ProjectValues[]; changed: { name: string; before: ProjectValues; after: ProjectValues }[] };
+  endpoints?: { added: EndpointValues[]; removed: EndpointValues[]; changed: { id: string; before: EndpointValues; after: EndpointValues }[] };
+}
+
+export interface PrivacyExits {
+  executors: string[];
+  projects: { name: string; label: string }[];
+  telegram: { chats: number } | null;
+  endpoints: { id: string; url: string; command: string[] | null }[];
+}
+
+export interface PrivacyProposal {
+  id: string;
+  expiresAt: string;
+  sections: string[];
+  changes: PrivacyChanges;
+  exits: PrivacyExits;
+}
+
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice';
+export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints';
+export type Section = OrdinarySection | PrivacySection;
+
+export const ROLE_TEXT: Record<ModelRole, { title: string; hint: string }> = {
+  orchestrator: { title: 'Orchestratore', hint: 'Arianna che ragiona' },
+  extractor: { title: 'Estrattore', hint: 'schede e fatti dai documenti' },
+  embedder: { title: 'Embedder', hint: 'ricerca nell’archivio' },
+  voice: { title: 'Voce', hint: 'risponde in chiamata' },
+  stt: { title: 'Trascrizione', hint: 'stt' },
+  tts: { title: 'Sintesi', hint: 'tts' },
+};
+
+export const STATE_TEXT: Record<WatchdogState, string> = {
+  idle: 'fermo',
+  starting: 'in avvio',
+  up: 'acceso',
+  down: 'non risponde',
+  restarting: 'in riavvio',
+  failed: 'guasto',
+  stopped: 'spento',
+};
+
+export const SECTION_TEXT: Record<string, string> = {
+  roles: 'Modelli locali',
+  cloudModels: 'Modelli cloud',
+  characters: 'Personaggi',
+  voice: 'Voce',
+  executors: 'Esecutori cloud',
+  telegram: 'Telegram',
+  projects: 'Progetti',
+  endpoints: 'Server locali',
+  paths: 'percorsi',
+  database: 'database',
+  server: 'server',
+};
+
+/** The catalog entries a role may use, those on disk first. */
+export function roleOptions(catalog: readonly CatalogModel[], role: ModelRole): CatalogModel[] {
+  return catalog.filter((model) => model.roles.includes(role)).sort((a, b) => Number(b.present) - Number(a.present));
+}
+
+/** A deep copy of plain JSON values; unlike structuredClone it also takes Vue's reactive proxies. */
+export function copy<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Plain JSON values compared regardless of key order: a card is changed when this is false. */
+export function sameValue(a: unknown, b: unknown): boolean {
+  return stable(a) === stable(b);
+}
+
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined);
+    return `{${entries
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`)
+      .join(',')}}`;
+  }
+  return value === undefined ? 'undefined' : JSON.stringify(value);
+}
+
+// --- Forms: what the page edits, and the body each card sends.
+
+export interface CloudModelRow {
+  alias: CloudModelAlias;
+  enabled: boolean;
+  /** Empty: the alias, the newest model the binary knows. */
+  name: string;
+}
+
+export interface CloudModelsForm {
+  rows: CloudModelRow[];
+  default: CloudModelAlias | null;
+}
+
+export function cloudModelsForm(values: SettingsValues['cloudModels']): CloudModelsForm {
+  return {
+    rows: CLOUD_MODELS.map((alias) => {
+      const value = values.models[alias];
+      return { alias, enabled: value !== false, name: typeof value === 'string' ? value : '' };
+    }),
+    default: values.default,
+  };
+}
+
+export function cloudModelsBody(form: CloudModelsForm): SettingsValues['cloudModels'] {
+  const models = Object.fromEntries(form.rows.map((row) => [row.alias, !row.enabled ? false : row.name.trim() === '' ? true : row.name.trim()])) as Record<
+    CloudModelAlias,
+    boolean | string
+  >;
+  return { models, default: form.default };
+}
+
+/** Roles with no model are left out of `[roles]`. */
+export function rolesBody(form: Partial<Record<ModelRole, string | undefined>>): Partial<Record<ModelRole, string>> {
+  return Object.fromEntries(Object.entries(form).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''));
+}
+
+/** The characters: an empty choice is the default one, left out of `[characters]`. */
+export function charactersBody(form: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(form).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''));
+}
+
+export interface VoiceForm {
+  enabled: boolean;
+  values: VoiceValues;
+  /** Push on: key and contact filled in. */
+  push: boolean;
+  publicKey: string;
+  subject: string;
+}
+
+export function voiceForm(voice: VoiceValues | null, defaults: VoiceValues): VoiceForm {
+  const values = copy(voice ?? defaults);
+  return { enabled: voice !== null, values: { ...values, push: null }, push: values.push !== null, publicKey: values.push?.publicKey ?? '', subject: values.push?.subject ?? '' };
+}
+
+export function voiceBody(form: VoiceForm): VoiceValues | null {
+  if (!form.enabled) return null;
+  return { ...copy(form.values), push: form.push ? { publicKey: form.publicKey.trim(), subject: form.subject.trim() } : null };
+}
+
+export interface TelegramForm {
+  enabled: boolean;
+  chats: number[];
+}
+
+export function telegramForm(telegram: SettingsValues['telegram']): TelegramForm {
+  return { enabled: telegram !== null, chats: [...(telegram?.chats ?? [])] };
+}
+
+export function telegramBody(form: TelegramForm): SettingsValues['telegram'] {
+  return form.enabled ? { chats: [...form.chats] } : null;
+}
+
+/** A Telegram chat id as typed: an integer, negative for groups; undefined otherwise. */
+export function chatId(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (!/^-?\d{1,19}$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+export interface EndpointForm {
+  id: string;
+  url: string;
+  /** One argument per line: no quoting to get wrong. */
+  command: string;
+  /** Kept as in the file: the page does not edit it. */
+  models?: Record<string, string>;
+}
+
+export function endpointsForm(endpoints: readonly EndpointValues[]): EndpointForm[] {
+  return endpoints.map((endpoint) => ({
+    id: endpoint.id,
+    url: endpoint.url,
+    command: (endpoint.command ?? []).join('\n'),
+    ...(endpoint.models === undefined ? {} : { models: { ...endpoint.models } }),
+  }));
+}
+
+export function endpointsBody(form: readonly EndpointForm[], before: readonly EndpointValues[] = []): EndpointValues[] {
+  return form.map((endpoint) => {
+    // The text of a command not touched: the arguments of the file, even empty or with spaces around.
+    const saved = before.find((item) => item.command !== undefined && item.command.join('\n') === endpoint.command)?.command;
+    const command = saved !== undefined ? [...saved] : endpoint.command
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+    return {
+      id: endpoint.id.trim(),
+      url: endpoint.url.trim(),
+      ...(command.length === 0 ? {} : { command }),
+      ...(endpoint.models === undefined ? {} : { models: { ...endpoint.models } }),
+    };
+  });
+}
+
+/** The executors in their usual order, whatever order they were ticked in. */
+export function executorsBody(chosen: readonly string[]): string[] {
+  return CLOUD_EXECUTORS.filter((executor) => chosen.includes(executor));
+}
+
+// --- The confirmation card.
+
+export interface ChangeLine {
+  kind: 'add' | 'remove' | 'change';
+  text: string;
+}
+
+function projectText(project: ProjectValues): string {
+  return `${project.name} (${project.label}, ${project.path})`;
+}
+
+/** A command as the core runs it: an argument that is empty or holds spaces or quotes is quoted, so ["sh -c x"] never reads as ["sh", "-c", "x"]. */
+export function commandText(command: readonly string[]): string {
+  return command.map((arg) => (arg === '' || /[\s"'\\]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ');
+}
+
+function modelsText(models: Record<string, string> | undefined): string {
+  return models === undefined ? 'dai ruoli' : Object.entries(models).map(([role, name]) => `${role} = ${name}`).join(', ');
+}
+
+function endpointText(endpoint: EndpointValues): string {
+  return `${endpoint.id} (${endpoint.url}${endpoint.command === undefined ? ', solo osservato' : `, comando: ${commandText(endpoint.command)}`})`;
+}
+
+function endpointChange(before: EndpointValues, after: EndpointValues): string {
+  const parts: string[] = [];
+  if (before.url !== after.url) parts.push(`indirizzo ${before.url} → ${after.url}`);
+  if (!sameValue(before.command ?? null, after.command ?? null)) {
+    parts.push(after.command === undefined ? 'senza comando: il nucleo lo osserva soltanto' : `comando: ${commandText(after.command)}`);
+  }
+  if (!sameValue(before.models ?? null, after.models ?? null)) parts.push(`nomi dei modelli: ${modelsText(after.models)}`);
+  return `Server ${after.id}: ${parts.join('; ')}`;
+}
+
+/** What changes, one line each, in the order of the sections. */
+export function changeLines(changes: PrivacyChanges): ChangeLine[] {
+  const lines: ChangeLine[] = [];
+  if (changes.executors !== undefined) {
+    const { before, after } = changes.executors;
+    for (const executor of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `Esecutore ${EXECUTOR_TEXT[executor] ?? executor} acceso` });
+    for (const executor of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `Esecutore ${EXECUTOR_TEXT[executor] ?? executor} spento` });
+  }
+  if (changes.telegram !== undefined) {
+    const { before, after } = changes.telegram;
+    if (before === null && after !== null) lines.push({ kind: 'add', text: `Telegram acceso (${chatsText(after.chats.length)})` });
+    else if (before !== null && after === null) lines.push({ kind: 'remove', text: 'Telegram spento' });
+    else if (before !== null && after !== null) {
+      for (const chat of after.chats.filter((item) => !before.chats.includes(item))) lines.push({ kind: 'add', text: `Chat di Telegram ${String(chat)}` });
+      for (const chat of before.chats.filter((item) => !after.chats.includes(item))) lines.push({ kind: 'remove', text: `Chat di Telegram ${String(chat)}` });
+    }
+  }
+  if (changes.projects !== undefined) {
+    for (const project of changes.projects.added) lines.push({ kind: 'add', text: `Progetto ${projectText(project)}` });
+    for (const project of changes.projects.removed) lines.push({ kind: 'remove', text: `Progetto ${projectText(project)}` });
+    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${after.label}, ${after.path}` });
+  }
+  if (changes.endpoints !== undefined) {
+    for (const endpoint of changes.endpoints.added) lines.push({ kind: 'add', text: `Server ${endpointText(endpoint)}` });
+    for (const endpoint of changes.endpoints.removed) lines.push({ kind: 'remove', text: `Server ${endpointText(endpoint)}` });
+    for (const { before, after } of changes.endpoints.changed) lines.push({ kind: 'change', text: endpointChange(before, after) });
+  }
+  if (lines.length === 0) lines.push({ kind: 'change', text: 'Cambia solo l’ordine o la forma nel file: le uscite restano le stesse.' });
+  return lines;
+}
+
+function chatsText(count: number): string {
+  return count === 1 ? '1 chat' : `${String(count)} chat`;
+}
+
+/** After the change, who may receive what: every exit, not only the changed ones. */
+export function exitLines(exits: PrivacyExits): string[] {
+  const lines: string[] = [];
+  const projects = exits.projects.map((project) => `${project.name} (${project.label})`).join(', ');
+  for (const executor of exits.executors) {
+    const name = EXECUTOR_TEXT[executor] ?? executor;
+    lines.push(projects === '' ? `${name} potrà ricevere testi L0-L1 dal gateway; nessun progetto.` : `${name} potrà ricevere testi L0-L1 dal gateway e lavorare in: ${projects}.`);
+  }
+  if (exits.executors.length === 0) lines.push('Nessun esecutore cloud: niente esce verso Claude Code o Codex.');
+  lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo L1.`);
+  for (const endpoint of exits.endpoints) {
+    lines.push(
+      endpoint.command === null
+        ? `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro.`
+        : `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
+    );
+  }
+  return lines;
+}
+
+/** "4:52" until the confirmation expires; "0:00" once it has. */
+export function countdown(expiresAt: string, now: number): string {
+  const left = Math.max(0, Math.ceil((Date.parse(expiresAt) - now) / 1000));
+  return `${String(Math.floor(left / 60))}:${String(left % 60).padStart(2, '0')}`;
+}
+
+/** What the page says about a refused write: the status picks the case, the core's message the detail. */
+export function writeError(status: number, message: string): { text: string; reload: boolean } {
+  if (status === 409) {
+    if (/changed since the page read it/.test(message)) return { text: 'Il file arianna.toml è cambiato mentre la pagina era aperta: ho ricaricato i valori. Rifai la modifica.', reload: true };
+    return { text: `Le impostazioni non si leggono: ${message}`, reload: true };
+  }
+  if (status === 404 || status === 410) return { text: 'La conferma è scaduta o è già stata usata: rivedi di nuovo le uscite.', reload: false };
+  if (status === 400) return { text: `Il nucleo ha rifiutato la modifica: ${message}`, reload: false };
+  return { text: `Non riuscito: ${message}`, reload: false };
+}
+
+/** A card is changed when what it would send differs; executors and chats are sets, their order is not a change. */
+export function sectionChanged(section: Section, form: unknown, base: unknown): boolean {
+  if (section === 'executors') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
+  if (section === 'telegram') {
+    const sorted = (value: TelegramForm): TelegramForm => ({ enabled: value.enabled, chats: [...value.chats].sort((a, b) => a - b) });
+    return !sameValue(sorted(form as TelegramForm), sorted(base as TelegramForm));
+  }
+  return !sameValue(form, base);
+}
+
+/**
+ * What a poll does with the settings it read. `generation` counts the writes
+ * and applies of the page: an answer to a read started before one of them is
+ * older than what the page shows, and is dropped.
+ */
+export function pollAction(state: { started: number; generation: number; fingerprint: string | null; seen: string | null; open: boolean; busy: boolean; dirty: boolean }): 'ignore' | 'stale' | 'apply' {
+  if (state.started !== state.generation || state.open || state.busy || state.fingerprint === state.seen) return 'ignore';
+  return state.dirty ? 'stale' : 'apply';
+}
+
+/** The sections kept as edited when a new view arrives: those asked for that are changed. */
+export function keptSections(keep: readonly Section[], changed: (section: Section) => boolean): Section[] {
+  return keep.filter(changed);
+}
+
+/** Why the voice card cannot be saved: a number left empty or not whole. */
+export function voiceProblem(form: VoiceForm): string | undefined {
+  if (!form.enabled) return undefined;
+  const { port, limits, outgoing } = form.values;
+  const numbers = [port, limits.callMinutes, limits.warnSeconds, limits.delegations, limits.delegationSeconds, outgoing.maxPerDay, outgoing.ringSeconds, outgoing.waitingMinutes];
+  if (numbers.some((value) => typeof value !== 'number' || !Number.isInteger(value))) return 'Un numero è vuoto o non intero.';
+  if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche push servono chiave pubblica e contatto.';
+  return undefined;
+}
