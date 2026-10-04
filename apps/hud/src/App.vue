@@ -139,13 +139,17 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
   <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
     <!-- Icon rail -->
     <nav class="hidden flex-col items-center gap-1.5 border-r border-line bg-surface py-3.5 md:flex" aria-label="Sezioni">
-      <div class="mb-2.5 grid size-9 place-items-center" aria-hidden="true">
-        <svg viewBox="0 0 34 34" width="30" height="30">
-          <circle cx="17" cy="17" r="14" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3" />
-          <path d="M8 22c5-10 13 2 18-9" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" />
-          <circle cx="17" cy="17" r="3" fill="var(--accent)" />
-        </svg>
-      </div>
+      <!-- The logo: the A of the name, as in the sidebar; it also folds the sidebar away. -->
+      <button
+        type="button"
+        class="mb-2.5 grid size-9 place-items-center rounded-[9px] font-hud text-[24px] leading-none font-semibold text-accent hover:bg-surface-2"
+        :aria-label="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
+        :title="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
+        :aria-expanded="!layout.sidebar"
+        @click="layout.sidebar = !layout.sidebar"
+      >
+        A
+      </button>
       <button type="button" class="grid size-[38px] place-items-center rounded-[9px] border border-line-strong bg-surface-2 text-accent" aria-label="Chat" aria-current="page">
         <Icon name="chat" />
       </button>
