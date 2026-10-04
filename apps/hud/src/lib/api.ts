@@ -1,4 +1,4 @@
-import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task } from './types.ts';
+import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -29,6 +29,31 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 /** The list, or the archived conversations (up to 200, the most the core gives in one page). */
 export async function listConversations(archived = false): Promise<Conversation[]> {
   return (await call<{ conversations: Conversation[] }>('GET', archived ? '/api/conversations?archived=1&limit=200' : '/api/conversations')).conversations;
+}
+
+/** The system chats (D-064), not archived. */
+export async function listSystemChats(): Promise<Conversation[]> {
+  return (await call<{ conversations: Conversation[] }>('GET', '/api/conversations?origin=system')).conversations;
+}
+
+/** Why a task failed; null when nothing was recorded. */
+export async function loadTaskFailure(taskId: string): Promise<TaskFailure | null> {
+  return (await call<{ error: TaskFailure | null }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/error`)).error;
+}
+
+/** Retries a failed task from the step that failed. */
+export async function retryTask(taskId: string): Promise<Task> {
+  return (await call<{ task: Task }>('POST', `/api/tasks/${encodeURIComponent(taskId)}/retry`, {})).task;
+}
+
+/** Opens the system chat of a failed task, or the one already open. */
+export async function openSystemChat(taskId: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/tasks/${encodeURIComponent(taskId)}/system-chat`, {})).conversation;
+}
+
+/** Attaches the question of the failed task to its system chat. */
+export async function attachQuestion(conversationId: string): Promise<Message> {
+  return (await call<{ message: Message }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/question`, {})).message;
 }
 
 /** Deletes the texts of an archived conversation for good (D-057). */

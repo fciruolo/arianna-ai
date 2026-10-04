@@ -22,7 +22,16 @@ const props = defineProps<{
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
 }>();
-const emit = defineEmits<{ send: [body: string]; chooseModel: [model: string | null]; restore: [] }>();
+const emit = defineEmits<{
+  send: [body: string];
+  chooseModel: [model: string | null];
+  restore: [];
+  /** Open the error window of a failed task (D-064). */
+  explain: [task: Task];
+  retry: [taskId: string];
+  attachQuestion: [];
+  open: [conversationId: string];
+}>();
 
 /** The selector of the cloud model for delegated steps: work conversations only (D-055). */
 const AUTO = '';
@@ -182,6 +191,41 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           </select>
         </label>
 
+        <!-- A system chat (D-064): what it is about and what the user can do -->
+        <section v-if="conversation.origin === 'system'" class="hud-card" aria-label="Chat di sistema">
+          <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[13px]">
+            <p class="flex items-center gap-2 font-medium"><Icon name="system" :size="16" />Chat di sistema</p>
+            <p class="text-muted">
+              L’ha aperta il sistema per un task fallito. Arianna vede solo l’errore; la domanda del task la vede solo se la alleghi tu.
+              Solo tu puoi riprovare il task.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-if="!conversation.questionAttached && conversation.archivedAt === null"
+                type="button"
+                class="btn px-2.5 py-1 text-xs"
+                @click="emit('attachQuestion')"
+              >
+                <Icon name="attach" :size="14" />Allega la domanda
+              </button>
+              <span v-else-if="conversation.questionAttached" class="self-center text-xs text-muted">Domanda allegata.</span>
+              <button
+                v-if="conversation.sourceTaskId !== null && conversation.sourceTaskStatus === 'failed'"
+                type="button" class="btn px-2.5 py-1 text-xs" @click="emit('retry', conversation.sourceTaskId)">
+                <Icon name="retry" :size="14" />Riprova il task
+              </button>
+              <button
+                v-if="conversation.sourceConversationId !== null"
+                type="button"
+                class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink"
+                @click="emit('open', conversation.sourceConversationId)"
+              >
+                Vai alla conversazione del task
+              </button>
+            </div>
+          </div>
+        </section>
+
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
         <template v-for="message in chat.messages" :key="message.id">
@@ -195,6 +239,14 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <template v-if="taskOf(message) !== undefined">
                 <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
+                <button
+                  v-if="taskOf(message)!.status === 'failed'"
+                  type="button"
+                  class="grid size-4 place-items-center rounded-full bg-danger/15 font-bold text-danger hover:bg-danger/30"
+                  aria-label="Perché è fallito"
+                  title="Perché è fallito"
+                  @click="emit('explain', taskOf(message)!)"
+                >!</button>
                 <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
               </template>
             </div>
@@ -270,7 +322,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     </div>
     <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
       <form
-        class="mx-auto flex max-w-[780px] items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4 shadow-[0_0_0_4px_var(--glow)]"
+        class="mx-auto flex max-w-[780px] items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
         @submit.prevent="submit"
       >
         <label for="composer" class="sr-only">Messaggio</label>

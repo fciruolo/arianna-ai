@@ -28,6 +28,17 @@ function report(error: unknown): void {
   console.error(`core error: ${name}${code === '' ? '' : ` (${code})`}`);
 }
 
+/** The port of a local endpoint URL, shown in the readable error of a failed task (D-064). */
+function endpointPort(url: string | undefined): number | undefined {
+  if (url === undefined) return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.port === '' ? (parsed.protocol === 'https:' ? 443 : 80) : Number(parsed.port);
+  } catch {
+    return undefined;
+  }
+}
+
 const config = loadConfig();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
 const app = await resolveLogin(config, 'app');
@@ -108,6 +119,7 @@ const worker = createWorker({
   allowedActions: (task) => agents.get(task.assignee)?.card.approvals ?? [],
   // No card, no caps: the engine then runs no step and the task waits for the user.
   agentLimits: (task) => agents.get(task.assignee)?.card.limits ?? {},
+  endpointPort: (id) => endpointPort(settings.current().local.endpoints.find((endpoint) => endpoint.id === id)?.url),
   onError: report,
 });
 const live = await startLiveFeed(sql, { onError: report });

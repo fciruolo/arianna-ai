@@ -16,6 +16,16 @@ export interface Conversation {
   archivedAt: string | null;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
+  /** 'system' for a system chat, opened by the system (D-064). */
+  origin: 'user' | 'system';
+  systemReason: 'failure' | null;
+  /** The failed task a system chat is about, and its conversation. */
+  sourceTaskId: string | null;
+  sourceConversationId: string | null;
+  /** The question of the failed task is attached to the system chat. */
+  questionAttached: boolean;
+  /** The status of the source task now: "Riprova" only while it is failed. */
+  sourceTaskStatus: TaskStatus | null;
   createdAt: string;
   lastMessageAt: string | null;
 }
@@ -56,6 +66,17 @@ export interface Task {
   effectiveLabel: Label;
   waitingReason: string | null;
   waitingApprovalId: string | null;
+}
+
+/** Why a task failed (D-064): no text, the page explains the code (lib/failures.ts). */
+export interface TaskFailure {
+  id: string;
+  taskId: string;
+  ts: string;
+  origin: 'local-model' | 'claude' | 'tool' | 'engine';
+  code: string;
+  details: Record<string, string | number | boolean>;
+  label: Label;
 }
 
 export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';

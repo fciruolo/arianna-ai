@@ -11,6 +11,7 @@ import { resolveHome } from '@arianna/config';
 
 import { applyDeclassify } from '../src/gateway.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepContext, type StepExecutor, type StepOutcome } from '../src/engine.ts';
+import { recordFailure } from '../src/failures.ts';
 import { createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
 import { openReply } from '../src/reply.ts';
@@ -479,4 +480,42 @@ test('decided approvals come newest first, with the channel they were decided fr
       [ids[0], 'web'],
     ],
   );
+});
+
+test('a failed task: its error, the system chat with the question on request, and retry', async () => {
+  const id = await newConversation('private');
+  const sent = await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Domanda finta' } });
+  const taskId = field<{ id: string }>(sent, 'task').id;
+  assert.deepEqual(field(await call('GET', `/api/tasks/${taskId}/error`), 'error'), null);
+  assert.equal((await call('POST', `/api/tasks/${taskId}/system-chat`, { body: {} })).status, 400, 'no error, no system chat');
+  assert.equal((await call('POST', `/api/tasks/${taskId}/retry`, { body: {} })).status, 409, 'only a failed task');
+
+  await db().owner`UPDATE jobs SET status = 'failed' WHERE key = ${`task:${taskId}`}`;
+  await db().owner`UPDATE tasks SET status = 'failed' WHERE id = ${taskId}`;
+  await recordFailure(db().sql, taskId, { origin: 'local-model', code: 'local-model.unavailable', details: { endpoint: 'omlx', port: 7001 } });
+  const error = field<{ code: string; origin: string; details: Record<string, unknown>; label: string }>(await call('GET', `/api/tasks/${taskId}/error`), 'error');
+  assert.deepEqual([error.origin, error.code, error.details, error.label], ['local-model', 'local-model.unavailable', { endpoint: 'omlx', port: 7001 }, 'L2']);
+
+  const opened = await call('POST', `/api/tasks/${taskId}/system-chat`, { body: {} });
+  assert.equal(opened.status, 200);
+  const chat = field<{ id: string; origin: string; sourceTaskId: string; sourceConversationId: string }>(opened, 'conversation');
+  assert.deepEqual([chat.origin, chat.sourceTaskId, chat.sourceConversationId], ['system', taskId, id]);
+  const listed = field<{ id: string }[]>(await call('GET', '/api/conversations?origin=system'), 'conversations');
+  assert.ok(listed.some((item) => item.id === chat.id));
+  assert.ok(!field<{ id: string }[]>(await call('GET', '/api/conversations'), 'conversations').some((item) => item.id === chat.id));
+  assert.equal((await call('GET', '/api/conversations?origin=other')).status, 400);
+  assert.equal((await call('GET', '/api/conversations?origin=system&archived=1')).status, 400);
+  assert.equal(field<boolean>(await call('GET', `/api/tasks/${taskId}/error`), 'current'), true);
+
+  assert.equal((await call('POST', `/api/conversations/${chat.id}/question`, { body: {} })).status, 201);
+  assert.equal((await call('POST', `/api/conversations/${chat.id}/question`, { body: {} })).status, 400, 'once');
+  assert.equal((await call('POST', `/api/conversations/${id}/question`, { body: {} })).status, 400, 'system chats only');
+  assert.equal((await call('POST', `/api/conversations/${chat.id}/question`, { body: { text: 'x' } })).status, 400, 'no fields');
+
+  const retried = await call('POST', `/api/tasks/${taskId}/retry`, { body: {} });
+  assert.equal(retried.status, 200);
+  assert.equal(field<{ status: string }>(retried, 'task').status, 'ready');
+  assert.equal(field<boolean>(await call('GET', `/api/tasks/${taskId}/error`), 'current'), false, 'the error is history once retried');
+  assert.equal((await call('POST', '/api/tasks/00000000-0000-4000-8000-000000000000/retry', { body: {} })).status, 404);
+  assert.equal((await call('GET', '/api/tasks/00000000-0000-4000-8000-000000000000/error')).status, 404);
 });

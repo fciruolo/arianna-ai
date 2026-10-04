@@ -9,6 +9,8 @@ import Icon from './Icon.vue';
 const props = defineProps<{
   conversations: Conversation[];
   archived: Conversation[];
+  /** System chats (D-064): their own section, under the conversations and above the archive. */
+  system: Conversation[];
   selected: string | null;
   rename: (id: string, title: string) => Promise<boolean>;
 }>();
@@ -148,6 +150,36 @@ function confirmArchive(id: string): void {
       </ul>
     </section>
 
+    <section v-if="system.length > 0" aria-label="Chat di sistema">
+      <h2 class="hud-title mx-1.5 mb-1.5">Chat di sistema</h2>
+      <ul class="flex flex-col gap-0.5">
+        <li v-for="conversation in system" :key="conversation.id" class="group relative">
+          <button
+            type="button"
+            class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-9 text-left md:pr-2 md:group-focus-within:pr-9 md:group-hover:pr-9"
+            :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
+            :aria-current="conversation.id === selected ? 'true' : undefined"
+            @click="emit('open', conversation.id)"
+          >
+            <span class="shrink-0 text-warn" title="Chat di sistema"><Icon name="system" :size="14" /></span>
+            <span class="min-w-0 flex-1 truncate">{{ titleOf(conversation) }}</span>
+            <span class="lab" :class="labelClass[conversation.clearance]" :title="`${MODE_TEXT[conversation.mode]}: fino a ${LABEL_TEXT[conversation.clearance]}`">
+              {{ conversation.clearance }}
+            </span>
+          </button>
+          <button
+            type="button"
+            class="absolute top-1.5 right-1.5 rounded-md bg-surface-2 p-1 text-muted transition hover:text-ink md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+            :aria-label="`Archivia ${titleOf(conversation)}`"
+            title="Archivia: la ritrovi in Archiviate"
+            @click="emit('archive', conversation.id, true)"
+          >
+            <Icon name="archive" :size="15" />
+          </button>
+        </li>
+      </ul>
+    </section>
+
     <section v-if="archived.length > 0">
       <button
         type="button"
@@ -169,7 +201,8 @@ function confirmArchive(id: string): void {
           >
             <p class="font-medium">Eliminare per sempre “{{ titleOf(conversation) }}”?</p>
             <p class="text-xs leading-snug text-muted">
-              Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede; i task ancora aperti si chiudono. Resta il
+              Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede e le chat di sistema sui suoi task; i task
+              ancora aperti si chiudono. Resta il
               registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche le carte e le pagine della base di
               conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e le sessioni di Claude Code dei lavori delegati. Non si
               può annullare.

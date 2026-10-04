@@ -138,6 +138,10 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* The composer shows its caret: no ring around it while the user writes (user's request, 2026-10-04). */
+#composer:focus-visible {
+  outline: none;
+}
 
 @layer components {
   /* Section titles of the HUD: small caps, wide tracking. */

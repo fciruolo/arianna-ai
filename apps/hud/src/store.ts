@@ -6,7 +6,7 @@ import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, ProjectInfo, StatusSnapshot, Task } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -16,6 +16,10 @@ export function createChatStore() {
   const conversations = ref<Conversation[]>([]);
   /** Archived conversations, shown in their own section (D-057). */
   const archived = ref<Conversation[]>([]);
+  /** System chats, opened by the system (D-064): their own section, between the two. */
+  const systemChats = ref<Conversation[]>([]);
+  /** The failed task whose error window is open, with its error once read. */
+  const failure = ref<{ task: Task; error: TaskFailure | null; loading: boolean } | null>(null);
   /** The open conversation when it is in neither list (an archived one beyond the first page). */
   const detached = ref<Conversation | undefined>(undefined);
   const chat = shallowRef<ChatState | null>(null);
@@ -42,7 +46,7 @@ export function createChatStore() {
   let connection: LiveConnection | undefined;
 
   const current = computed(() =>
-    [...conversations.value, ...archived.value, ...(detached.value === undefined ? [] : [detached.value])].find(
+    [...conversations.value, ...systemChats.value, ...archived.value, ...(detached.value === undefined ? [] : [detached.value])].find(
       (conversation) => conversation.id === chat.value?.conversationId,
     ),
   );
@@ -52,14 +56,17 @@ export function createChatStore() {
   }
 
   async function refreshConversations(): Promise<void> {
-    conversations.value = await api.listConversations();
+    const [listed, system] = await Promise.all([api.listConversations(), api.listSystemChats()]);
+    conversations.value = listed;
+    systemChats.value = system;
     await keepCurrent();
   }
 
-  /** Both lists: after an archive or a restore, and at the start. */
+  /** Every list: after an archive or a restore, and at the start. */
   async function refreshAllConversations(): Promise<void> {
-    const [listed, archivedList] = await Promise.all([api.listConversations(), api.listConversations(true)]);
+    const [listed, system, archivedList] = await Promise.all([api.listConversations(), api.listSystemChats(), api.listConversations(true)]);
     conversations.value = listed;
+    systemChats.value = system;
     archived.value = archivedList;
     await keepCurrent();
   }
@@ -68,7 +75,7 @@ export function createChatStore() {
   async function keepCurrent(): Promise<void> {
     const id = chat.value?.conversationId;
     const listed = (conversation: Conversation): boolean => conversation.id === id;
-    if (id === undefined || conversations.value.some(listed) || archived.value.some(listed)) {
+    if (id === undefined || conversations.value.some(listed) || systemChats.value.some(listed) || archived.value.some(listed)) {
       detached.value = undefined;
       return;
     }
@@ -82,6 +89,7 @@ export function createChatStore() {
     try {
       const updated = await api.renameConversation(id, title);
       conversations.value = conversations.value.map((item) => (item.id === updated.id ? updated : item));
+      systemChats.value = systemChats.value.map((item) => (item.id === updated.id ? updated : item));
       archived.value = archived.value.map((item) => (item.id === updated.id ? updated : item));
       if (detached.value?.id === updated.id) detached.value = updated;
       return true;
@@ -225,6 +233,71 @@ export function createChatStore() {
     }
   }
 
+  /**
+   * Opens the error window of a failed task (D-064) and reads why it failed.
+   * `openFailure()` reads the window again after the await: the user may have
+   * closed it meanwhile, which the type narrowed by the assignment above hides.
+   */
+  async function explain(task: Task): Promise<void> {
+    error.value = null;
+    failure.value = { task, error: null, loading: true };
+    try {
+      const read = await api.loadTaskFailure(task.id);
+      // The user may have closed the window, or opened another one, meanwhile.
+      if (openFailure()?.task.id === task.id) failure.value = { task, error: read, loading: false };
+    } catch (cause) {
+      failure.value = null;
+      fail(cause);
+    }
+  }
+
+  function openFailure(): typeof failure.value {
+    return failure.value;
+  }
+
+  function closeFailure(): void {
+    failure.value = null;
+  }
+
+  /** The user retries a failed task: it goes back in the queue from the failed step. */
+  async function retry(taskId: string): Promise<void> {
+    error.value = null;
+    try {
+      const task = await api.retryTask(taskId);
+      if (taskId in tasks.value) tasks.value = { ...tasks.value, [taskId]: task };
+      failure.value = null;
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
+  /** Opens (or resumes) the system chat of a failed task and shows it. */
+  async function openSystemChat(taskId: string): Promise<void> {
+    error.value = null;
+    try {
+      const conversation = await api.openSystemChat(taskId);
+      failure.value = null;
+      await refreshAllConversations();
+      await open(conversation.id);
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
+  /** Attaches the question of the failed task to the open system chat, at the user's request. */
+  async function attachQuestion(): Promise<void> {
+    const state = chat.value;
+    if (state === null) return;
+    error.value = null;
+    try {
+      const message = await api.attachQuestion(state.conversationId);
+      if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
+      await refreshConversations();
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
   async function decide(approval: Approval, state: 'approved' | 'rejected'): Promise<void> {
     error.value = null;
     try {
@@ -288,10 +361,10 @@ export function createChatStore() {
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
     switch (event.kind) {
-      case 'conversation.created':
       case 'conversation.model':
         work.push(refreshConversations());
         break;
+      case 'conversation.created':
       case 'conversation.title':
       case 'conversation.archived':
         work.push(refreshAllConversations());
@@ -319,6 +392,8 @@ export function createChatStore() {
         break;
       default:
         if (event.kind.startsWith('task.') && known && event.taskId !== null) work.push(refreshTask(event.taskId));
+        // The source task of the open system chat: its "Riprova" follows the task's status.
+        if (event.kind.startsWith('task.') && event.taskId !== null && event.taskId === current.value?.sourceTaskId) work.push(refreshConversations());
     }
     void Promise.all(work).catch(fail);
   }
@@ -374,7 +449,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

@@ -81,6 +81,9 @@ export function orchestratorTools(agent: LoadedAgent, delegation = false): ToolI
   return offerable(agent.card.tools).filter((tool) => isLocalTool(tool) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE));
 }
 
+/** How a message of the system starts when the model reads it. */
+export const SYSTEM_MESSAGE_MARK = '[Messaggio del sistema, non dell’utente]';
+
 function clip(text: string): string {
   return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n[cut at ${String(MAX_TEXT)} characters]` : text;
 }
@@ -110,15 +113,19 @@ async function historyOf(sql: Sql, task: Task, turns: readonly Turn[], delegatio
   } else {
     // Up to the message that started this task: later ones belong to other tasks.
     // Reports of delegated steps are read from their delegation, not as messages.
-    const rows = await sql<{ id: string; role: 'user' | 'assistant'; body: string; label: Label }[]>`
+    // Messages of the system (a system chat, D-064) reach the model as the
+    // user's, marked: chat templates take one system prompt, at the start.
+    const rows = await sql<{ id: string; role: 'user' | 'assistant' | 'system'; body: string; label: Label }[]>`
       SELECT * FROM (
         SELECT id::text, role, body, label FROM messages
-        WHERE conversation_id = ${task.conversationId} AND role IN ('user', 'assistant') AND agent IS NULL
+        WHERE conversation_id = ${task.conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
           AND id <= (SELECT max(id) FROM messages WHERE task_id = ${task.id} AND role = 'user')
         ORDER BY messages.id DESC LIMIT ${HISTORY_MESSAGES}
       ) recent ORDER BY recent.id::bigint`;
     for (const row of rows) {
-      history.push({ value: { role: row.role, content: clip(row.body) }, label: row.label, source: `message:${row.id}` });
+      const value: TurnMessage =
+        row.role === 'system' ? { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${clip(row.body)}` } : { role: row.role, content: clip(row.body) };
+      history.push({ value, label: row.label, source: `message:${row.id}` });
     }
   }
   for (const turn of turns) {

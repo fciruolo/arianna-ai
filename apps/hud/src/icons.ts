@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Folder,
+  LifeBuoy,
   Lock,
   Menu,
   MessageCircle,
@@ -17,8 +18,10 @@ import {
   PanelRight,
   PanelRightClose,
   PanelRightOpen,
+  Paperclip,
   Pencil,
   Plus,
+  RotateCcw,
   Route,
   Send,
   ShieldCheck,
@@ -60,6 +63,9 @@ export const ICONS = {
   telegram: Send,
   router: Route,
   gateway: ShieldCheck,
+  system: LifeBuoy,
+  retry: RotateCcw,
+  attach: Paperclip,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

@@ -6,6 +6,7 @@ import { isAtMost, isLabel, type Label } from '@arianna/policy';
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type StoredApproval } from './approvals.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { describeFailure, recordFailure, type Failure } from './failures.ts';
 import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue } from './jobs.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
 import {
@@ -421,7 +422,9 @@ export async function processStepJob(
         await moveTask(tx, task.id, 'waiting_user', { reason: outcome.reason, cause: 'executor' });
         return 'waiting-user';
       case 'failed':
+        // The reason may quote the task: only the executor's name is kept.
         await moveTask(tx, task.id, 'failed', { cause: 'executor' });
+        await recordFailure(tx, task.id, { origin: 'engine', code: 'engine.step-failed', details: { executor: spec.executor } });
         return 'failed';
     }
   });
@@ -495,6 +498,28 @@ export async function resumeTask(sql: Sql, taskId: string, limits?: NonNullable<
   });
 }
 
+/**
+ * The user retries a failed task (D-064): the same task, from the step that
+ * failed (a failed run does not advance the step), with fresh job attempts.
+ * No approval: it does nothing the task was not already doing. Refused for a
+ * task of an archived or deleted conversation.
+ */
+export async function retryTask(sql: Sql, taskId: string): Promise<Task> {
+  return sql.begin(async (tx) => {
+    const [row] = await tx<{ status: string; archived: boolean | null }[]>`
+      SELECT t.status, c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL AS archived
+      FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+      WHERE t.id = ${taskId} FOR UPDATE OF t`;
+    if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
+    if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
+    if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
+    const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
+    await mustSchedule(tx, taskId);
+    await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
+    return task;
+  });
+}
+
 export interface WorkerOptions extends EngineOptions {
   sql: Sql;
   executor: StepExecutor;
@@ -508,6 +533,8 @@ export interface WorkerOptions extends EngineOptions {
   retryAfterMs?: number;
   /** How long `stop()` waits for the current step before giving up on it. Default 10 s. */
   stopGraceMs?: number;
+  /** The port of a local endpoint id, for the readable error of a failed task (D-064). */
+  endpointPort?: (endpoint: string) => number | undefined;
   onError?: (error: unknown) => void;
 }
 
@@ -555,7 +582,13 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
       // The job and the task change together: a crash between the two would leave the task hanging.
       await sql.begin(async (tx) => {
         const result = await failJob(tx, job.id, worker, errorCode(error), options.retryAfterMs ?? 5_000);
-        if (result === 'failed' && taskId !== undefined) await failTask(tx, taskId);
+        if (result === 'failed' && taskId !== undefined) {
+          const failure = describeFailure(error, {
+            attempts: job.attempts,
+            ...(options.endpointPort === undefined ? {} : { endpointPort: options.endpointPort }),
+          });
+          await failTask(tx, taskId, failure);
+        }
       });
     } finally {
       clearInterval(beat);
@@ -567,7 +600,9 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
     lastSweep = Date.now();
     await sql.begin(async (tx) => {
       for (const job of await requeueStaleJobs(tx, lockTimeoutMs)) {
-        if (job.status === 'failed' && typeof job.payload.taskId === 'string') await failTask(tx, job.payload.taskId);
+        if (job.status === 'failed' && typeof job.payload.taskId === 'string') {
+          await failTask(tx, job.payload.taskId, { origin: 'engine', code: 'engine.lock-expired', details: {} });
+        }
       }
     });
   }
@@ -603,12 +638,13 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
   };
 }
 
-/** A step that kept failing: the task fails, its open runs are closed. */
-async function failTask(tx: Queryable, taskId: string): Promise<void> {
+/** A step that kept failing: the task fails with the reason the user reads, its open runs are closed. */
+async function failTask(tx: Queryable, taskId: string, failure: Failure): Promise<void> {
   await interruptRunning(tx, taskId);
   const task = await loadTask(tx, taskId);
   if (task !== undefined && (task.status === 'running' || task.status === 'ready')) {
     await moveTask(tx, taskId, 'failed', { cause: 'error' });
+    await recordFailure(tx, taskId, failure);
   }
 }
 

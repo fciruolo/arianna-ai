@@ -23,9 +23,11 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
-import { recordDecision } from '../engine.ts';
+import { recordDecision, retryTask } from '../engine.ts';
+import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import { loadStatus } from '../status.ts';
+import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
@@ -183,11 +185,16 @@ function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions
       Promise.resolve({ body: { projects: projects().map(({ name, path, label }) => ({ name, path, label })) } }),
     ),
 
-    // The list, or with ?archived=1 the archived conversations (D-057).
+    // The list, with ?origin=system the system chats (D-064), with ?archived=1 the archived conversations (D-057).
     route('GET', '/api/conversations', async (_request, url) => {
       const archived = url.searchParams.get('archived');
       if (archived !== null && archived !== '0' && archived !== '1') throw new HttpError(400, 'archived must be 0 or 1');
-      return { body: { conversations: await listConversations(sql, limitParam(url), { archived: archived === '1' }) } };
+      const asked = url.searchParams.get('origin');
+      const origin = asked === null ? null : (['user', 'system'] as const).find((item) => item === asked);
+      if (origin === undefined) throw new HttpError(400, 'origin must be user or system');
+      if (origin !== null && archived === '1') throw new HttpError(400, 'the archive is not split by origin');
+      const options = { archived: archived === '1', ...(origin === null ? {} : { origin }) };
+      return { body: { conversations: await listConversations(sql, limitParam(url), options) } };
     }),
 
     route('POST', '/api/conversations', async (request) => {
@@ -243,6 +250,13 @@ function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions
       return { body: { purged: id } };
     }),
 
+    // Attaches the question of the failed task to its system chat: only when the user asks (D-064).
+    route('POST', '/api/conversations/:id/question', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { status: 201, body: { message: await attachQuestion(sql, id) } };
+    }),
+
     route('GET', '/api/conversations/:id/messages', async (_request, url, params) => {
       const id = idParam(params, 'id');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
@@ -265,6 +279,30 @@ function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions
       const task = await loadTask(sql, idParam(params, 'id'));
       if (task === undefined) throw new HttpError(404, 'not found');
       return { body: { task } };
+    }),
+
+    // Why the task failed (D-064): origin, code and scalar details; null when nothing was recorded.
+    // `current` is false once the task is no longer failed (retried): the error is history then.
+    route('GET', '/api/tasks/:id/error', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const task = await loadTask(sql, id);
+      if (task === undefined) throw new HttpError(404, 'not found');
+      return { body: { error: (await loadFailure(sql, id)) ?? null, current: task.status === 'failed' } };
+    }),
+
+    // The user retries a failed task from the step that failed (D-064).
+    route('POST', '/api/tasks/:id/retry', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if ((await loadTask(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      return { body: { task: await retryTask(sql, id) } };
+    }),
+
+    // Opens the system chat of a failed task, or the one already open (D-064).
+    route('POST', '/api/tasks/:id/system-chat', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { conversation: await openFailureChat(sql, id) } };
     }),
 
     route('GET', '/api/approvals', async (_request, url) => {

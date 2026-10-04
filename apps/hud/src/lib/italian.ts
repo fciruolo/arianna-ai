@@ -80,6 +80,14 @@ const ERRORS: Record<string, string> = {
   'a task of the conversation is still at work: wait for it to finish':
     'Un task di questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala.',
   'the conversation is in use: try again in a moment': 'La conversazione è in uso in questo momento: riprova fra poco.',
+  'the task has no recorded error': 'Per questo task non è stato salvato un errore: la chat di sistema non ha niente da spiegare.',
+  'the conversation of the task was deleted': 'La conversazione di questo task è stata eliminata.',
+  'the question is already attached': 'La domanda è già allegata.',
+  'the task is not failed': 'Il task non è fallito (forse è già stato riprovato): non c’è un errore da spiegare.',
+  'a system chat about this conversation is still at work: wait for it to finish':
+    'Una chat di sistema su questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala (sparisce insieme).',
+  'only a system chat takes the question of a task': 'Solo una chat di sistema può allegare la domanda di un task.',
+  'the task has no question to attach': 'Questo task non ha una domanda da allegare.',
 };
 
 /** An error of the API (or of the network) as the user reads it. */

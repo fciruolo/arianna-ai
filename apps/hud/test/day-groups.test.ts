@@ -15,6 +15,12 @@ function conversation(id: string, lastMessageAt: Date | null, createdAt = new Da
     title: id,
     archivedAt: null,
     telegram: false,
+    origin: 'user',
+    systemReason: null,
+    sourceTaskId: null,
+    sourceConversationId: null,
+    questionAttached: false,
+    sourceTaskStatus: null,
     createdAt: createdAt.toISOString(),
     lastMessageAt: lastMessageAt?.toISOString() ?? null,
   };

@@ -89,3 +89,9 @@ test('the orchestrator reasons are translated', () => {
   assert.equal(reasonText('the local model did not give a valid answer'), 'il modello locale non ha dato una risposta valida');
   assert.equal(reasonText('the gateway blocked the answer'), 'il gateway ha fermato la risposta');
 });
+
+test('the errors of the system chats become Italian (D-064)', () => {
+  assert.equal(errorText(new ApiError(400, 'the question is already attached')), 'La domanda è già allegata.');
+  assert.match(errorText(new ApiError(400, 'the task has no recorded error')), /non è stato salvato un errore/);
+  assert.equal(errorText(new ApiError(409, 'the task cannot do this now')), 'Il task non può farlo adesso.');
+});

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import ChatView from './components/ChatView.vue';
 import ConversationList from './components/ConversationList.vue';
+import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
 import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
@@ -17,7 +18,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
+const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
 
 // Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser.
 const showSidebar = ref(false);
@@ -129,7 +130,7 @@ const crumb = computed(() => {
   const conversation = current.value;
   if (conversation === undefined) return [];
   const project = conversation.workspace?.split('/').at(-1);
-  return [MODE_TEXT[conversation.mode], ...(project === undefined ? [] : [project])];
+  return [...(conversation.origin === 'system' ? ['Chat di sistema'] : []), MODE_TEXT[conversation.mode], ...(project === undefined ? [] : [project])];
 });
 
 const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
@@ -209,6 +210,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <ConversationList
         :conversations="conversations"
         :archived="archived"
+        :system="systemChats"
         :selected="chat?.conversationId ?? null"
         :rename="store.rename"
         @open="openConversation"
@@ -303,6 +305,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @send="store.send"
         @choose-model="store.chooseModel"
         @restore="store.archive(current.id, false)"
+        @explain="store.explain"
+        @retry="store.retry"
+        @attach-question="store.attachQuestion"
+        @open="openConversation"
       />
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">
@@ -332,5 +338,15 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @close="showPanel = false"
     />
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
+
+    <FailureDialog
+      v-if="failure !== null"
+      :task="failure.task"
+      :failure="failure.error"
+      :loading="failure.loading"
+      @close="store.closeFailure"
+      @retry="store.retry"
+      @chat="store.openSystemChat"
+    />
   </div>
 </template>

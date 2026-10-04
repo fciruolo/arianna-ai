@@ -13,7 +13,9 @@ import { processStepJob, STEP_QUEUE, submitTask, type StepExecutor } from '../sr
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
-import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { recordFailure } from '../src/failures.ts';
+import { createOrchestrator, SYSTEM_MESSAGE_MARK } from '../src/orchestrator/orchestrator.ts';
+import { openFailureChat } from '../src/system-chats.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { openReply } from '../src/reply.ts';
 import { loadTask } from '../src/tasks.ts';
@@ -385,4 +387,23 @@ test('the steps show in the chat as activity, never stored', async () => {
     [2, 'search', 'caparra'],
     [3, 'thinking', ''],
   ]);
+});
+
+test('in a system chat the model reads the messages of the system, marked, before the user question', async () => {
+  const { sql } = db();
+  const failed = await ask('private', 'Domanda finita male');
+  await db().owner`UPDATE tasks SET status = 'failed' WHERE id = ${failed.task.id}`;
+  await db().owner`UPDATE jobs SET status = 'failed' WHERE key = ${`task:${failed.task.id}`}`;
+  await recordFailure(sql, failed.task.id, { origin: 'local-model', code: 'local-model.unavailable', details: { endpoint: 'omlx', port: 7001 } });
+  const chat = await openFailureChat(sql, failed.task.id);
+  const { task } = await postUserMessage(sql, chat.id, 'Cosa è successo?');
+  const model = scripted([{ action: 'reply', text: 'Il modello locale era spento.' }]);
+  assert.deepEqual(await drain(task.id, model), ['answered']);
+  const messages = model.requests[0]?.messages ?? [];
+  const system = messages.find((message) => message.content.startsWith(SYSTEM_MESSAGE_MARK));
+  assert.ok(system !== undefined);
+  assert.equal(system.role, 'user');
+  assert.match(system.content, /local-model\.unavailable/);
+  assert.doesNotMatch(messages.map((message) => message.content).join('\n'), /Domanda finita male/, 'the question is not attached');
+  assert.equal(messages.at(-1)?.content, 'Cosa è successo?');
 });

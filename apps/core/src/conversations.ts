@@ -3,6 +3,7 @@ import { clearanceFor, createContext, labelForUserMessage, scanText, type Conver
 import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
+import type { TaskStatus } from './task-status.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 
 /**
@@ -25,11 +26,23 @@ export interface Conversation {
   archivedAt: Date | null;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
+  /** 'system' for a system chat, opened by the system and not by the user (D-064). */
+  origin: ConversationOrigin;
+  /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
+  systemReason: 'failure' | null;
+  /** The task a system chat is about, and its conversation. */
+  sourceTaskId: string | null;
+  sourceConversationId: string | null;
+  /** The user attached the question of the failed task to the system chat. */
+  questionAttached: boolean;
+  /** The status of the source task now: the chat offers "Riprova" only while it is failed. */
+  sourceTaskStatus: TaskStatus | null;
   createdAt: Date;
   /** Time of the last message, or null for an empty conversation. */
   lastMessageAt: Date | null;
 }
 
+export type ConversationOrigin = 'user' | 'system';
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type MessageChannel = 'web' | 'telegram' | 'voice';
 
@@ -70,6 +83,10 @@ export class ChatError extends Error {
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model,
   c.title, c.archived_at AS "archivedAt",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram,
+  c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
+  (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
+  c.question_attached AS "questionAttached",
+  (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
 
@@ -141,13 +158,26 @@ export async function loadConversation(sql: Queryable, id: string): Promise<Conv
   return row;
 }
 
-/** Most recently active first: the list, or with `archived` the archived conversations. */
-export async function listConversations(sql: Queryable, limit = 50, options: { archived?: boolean } = {}): Promise<Conversation[]> {
+/**
+ * Most recently active first: the user's conversations, with `origin: 'system'`
+ * the system chats (D-064), or with `archived` every archived conversation.
+ */
+export async function listConversations(
+  sql: Queryable,
+  limit = 50,
+  options: { archived?: boolean; origin?: ConversationOrigin } = {},
+): Promise<Conversation[]> {
+  const archived = options.archived === true;
+  // The archive holds every origin: asking for one of them there is a mistake of the caller.
+  if (archived && options.origin !== undefined) throw new ChatError('invalid', 'the archive is not split by origin');
   const rows = await sql.unsafe<Conversation[]>(
-    `SELECT * FROM (SELECT ${CONVERSATION_COLUMNS} FROM conversations c WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL) listed
+    `SELECT * FROM (
+       SELECT ${CONVERSATION_COLUMNS} FROM conversations c
+       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND ($2 OR c.origin = $3)
+     ) listed
      ORDER BY coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
-    [limit, options.archived === true],
+    [limit, archived, options.origin ?? 'user'],
   );
   return [...rows];
 }
@@ -207,11 +237,15 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
   });
 }
 
-/** What purge_conversation changed: the tasks it closed and the approvals it let expire. */
+/**
+ * What purge_conversation changed: the tasks it closed, the approvals it let
+ * expire and the system chats about its tasks it purged first (D-064).
+ */
 interface PurgeResult {
   tasks: number;
   failed: { taskId: string; from: string }[];
   expired: { approvalId: string; taskId: string }[];
+  system: { conversationId: string; tasks: number }[];
 }
 
 /**
@@ -225,13 +259,21 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
   const conversation = await loadConversation(sql, id);
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
   if (conversation.archivedAt === null) throw new ChatError('invalid', 'only an archived conversation can be deleted');
-  const [busy] = await sql<{ busy: boolean }[]>`
-    SELECT EXISTS (SELECT FROM tasks WHERE conversation_id = ${id} AND status IN ('ready', 'running')) AS busy`;
+  const [busy] = await sql<{ busy: boolean; system: boolean }[]>`
+    SELECT
+      EXISTS (SELECT FROM tasks WHERE conversation_id = ${id} AND status IN ('ready', 'running')) AS busy,
+      EXISTS (
+        SELECT FROM conversations s JOIN tasks t ON t.conversation_id = s.id
+        WHERE s.origin = 'system' AND s.purged_at IS NULL AND t.status IN ('ready', 'running')
+          AND s.source_task_id IN (SELECT id FROM tasks WHERE conversation_id = ${id})
+      ) AS system`;
   if (busy?.busy === true) throw new ChatError('busy', 'a task of the conversation is still at work: wait for it to finish');
+  // purge_conversation deletes the system chats about its tasks too (D-064).
+  if (busy?.system === true) throw new ChatError('busy', 'a system chat about this conversation is still at work: wait for it to finish');
   try {
     await sql.begin(async (tx) => {
       const [row] = await tx<{ purged: PurgeResult }[]>`SELECT purge_conversation(${id}::uuid) AS purged`;
-      const purged = row?.purged ?? { tasks: 0, failed: [], expired: [] };
+      const purged = row?.purged ?? { tasks: 0, failed: [], expired: [], system: [] };
       // The state changes the purge made, logged as the engine logs its own.
       for (const task of purged.failed) {
         await appendEvent(tx, { kind: 'task.status', taskId: task.taskId, payload: { from: task.from, to: 'failed', cause: 'purge' } });
@@ -243,6 +285,9 @@ export async function purgeConversation(sql: Sql, id: string): Promise<void> {
           label: 'L0',
           payload: { approvalId: approval.approvalId, state: 'expired', via: null },
         });
+      }
+      for (const chat of purged.system) {
+        await appendEvent(tx, { kind: 'conversation.purged', label: 'L0', payload: { conversationId: chat.conversationId, tasks: chat.tasks, cause: 'source' } });
       }
       await appendEvent(tx, { kind: 'conversation.purged', label: 'L0', payload: { conversationId: id, tasks: purged.tasks } });
     });
