@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .numbers import numbers_in_words
 from .wav import STT_RATE, encode_wav
 
 # Same rule as the catalog ids (packages/config/src/catalog.ts).
@@ -138,7 +139,7 @@ class Models:
         try:
             pieces, rate = [], 24_000
             for part in speak_parts(ref.family, text):
-                for result in model.generate(text=part, **kwargs):
+                for result in model.generate(text=part, **kwargs, **part_limits(ref.family, part)):
                     pieces.append(result.audio)
                     rate = int(getattr(result, "sample_rate", rate))
         except Exception as error:  # noqa: BLE001
@@ -172,9 +173,24 @@ def speak_parts(family: str, text: str) -> list[str]:
         # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
         return [SENTENCE_END.sub("\\1\n", text)]
     if family == "qwen3-tts":
-        # CustomVoice generates the whole text at once and drifts on long ones: a sentence each.
-        return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", text).split("\n")) if part]
+        # CustomVoice generates the whole text at once and drifts on long ones: a sentence
+        # each. Digits it reads in English or Chinese, then goes on in that language: words.
+        return [part for part in (piece.strip() for piece in SENTENCE_END.sub("\\1\n", numbers_in_words(text)).split("\n")) if part]
     return [text]
+
+
+# Qwen3-TTS-12Hz makes 12.5 audio tokens a second.
+QWEN3_TOKENS_PER_SECOND = 12.5
+# Italian speech runs at about 15 characters a second; a sentence gets time for 5, plus 2 s.
+SLOWEST_CHARS_PER_SECOND = 5
+
+
+def part_limits(family: str, part: str) -> dict[str, Any]:
+    """A ceiling on the audio of one sentence: a model that does not stop is cut,
+    instead of speaking for minutes in another language. Pure, for the tests."""
+    if family != "qwen3-tts":
+        return {}
+    return {"max_tokens": int(QWEN3_TOKENS_PER_SECOND * (len(part) / SLOWEST_CHARS_PER_SECOND + 2))}
 
 
 def speak_arguments(family: str, voice: str, voice_file: str | None) -> dict[str, Any]:
