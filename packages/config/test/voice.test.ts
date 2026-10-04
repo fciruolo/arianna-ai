@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { DEFAULT_SETTINGS, DEFAULT_VOICE, parseConfig, readSettings, renderSettings, EMPTY_CATALOG } from '../src/index.ts';
+import { aliasesOf, DEFAULT_SETTINGS, DEFAULT_VOICE, EMPTY_CATALOG, parseConfig, readSettings, renderSettings, VOICE_ALIAS } from '../src/index.ts';
 
 const HOME = resolve('some-home');
 const VALID = `
@@ -84,4 +84,9 @@ test('voice: the wizard writes the section back unchanged, and leaves it comment
   assert.deepEqual(parseConfig(rendered, HOME).voice, parseConfig(text, HOME).voice);
   assert.equal(parseConfig(renderSettings(DEFAULT_SETTINGS), HOME).voice, undefined);
   assert.match(renderSettings(DEFAULT_SETTINGS), /^# \[voice\]$/m);
+});
+
+test('the voice role gets its own alias on the local servers, outside the router (D-066)', () => {
+  assert.deepEqual(aliasesOf({ orchestrator: 'big', voice: 'small' }), { 'local-large': 'big', [VOICE_ALIAS]: 'small' });
+  assert.deepEqual(aliasesOf({ orchestrator: 'big' }), { 'local-large': 'big' });
 });

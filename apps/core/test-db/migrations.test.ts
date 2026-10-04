@@ -15,6 +15,7 @@ test('migrations apply from zero and create every table', async () => {
     tables.map((table) => table.name),
     [
       'approvals',
+      'calls',
       'conversations',
       'events',
       'gateway_log',

@@ -26,6 +26,7 @@ VOICE_ID = re.compile(r"^[a-z]{2}_[a-z0-9]{1,32}$")
 STT_FAMILIES = ("parakeet", "whisper")
 TTS_FAMILIES = ("kokoro", "chatterbox")
 LANGUAGE = "it"
+SENTENCE_END = re.compile(r"([.!?;:])\s+")
 # Kokoro's language code for Italian.
 KOKORO_ITALIAN = "i"
 # What Kokoro says so that Chatterbox, which has no voice of its own, can clone it.
@@ -62,6 +63,37 @@ class Speech:
     rate: int
 
 
+# The folder of the model in data/models where the catalog puts Chatterbox's speech tokenizer.
+S3_TOKENIZER_DIR = "s3tokenizer"
+S3_TOKENIZER_REPO = "mlx-community/S3TokenizerV2"
+
+
+def load_chatterbox(path: str) -> Any:
+    """Chatterbox, with its speech tokenizer from data/models instead of the
+    Hugging Face repository the library would download it from (the service
+    is offline on purpose, D-066)."""
+    import huggingface_hub
+    from mlx_audio.tts.utils import load_model as load_tts
+
+    local = Path(path) / S3_TOKENIZER_DIR
+    if not (local / "model.safetensors").is_file():
+        raise ModelError("missing")
+    # The library imports snapshot_download inside the loading function: replaced
+    # for the time of the load only (one worker thread loads, nothing else runs).
+    original = huggingface_hub.snapshot_download
+
+    def snapshot(*args: Any, **kwargs: Any) -> str:
+        if kwargs.get("repo_id", args[0] if args else None) == S3_TOKENIZER_REPO:
+            return str(local)
+        return original(*args, **kwargs)
+
+    huggingface_hub.snapshot_download = snapshot
+    try:
+        return load_tts(path)
+    finally:
+        huggingface_hub.snapshot_download = original
+
+
 class Models:
     def __init__(self, models_dir: Path, tmp_dir: Path) -> None:
         self._dir = models_dir
@@ -96,6 +128,8 @@ class Models:
                 from mlx_audio.stt.utils import load as load_stt
 
                 model = load_stt(path)
+            elif ref.family == "chatterbox":
+                model = load_chatterbox(path)
             else:
                 from mlx_audio.tts.utils import load_model as load_tts
 
@@ -106,6 +140,10 @@ class Models:
             raise ModelError("load") from error
         self._loaded[ref.id] = model
         return model
+
+    def warm(self, ref: ModelRef) -> None:
+        """Loads a model now, so the first words of a call do not wait for it."""
+        self._load(ref)
 
     def transcribe(self, ref: ModelRef, pcm16: bytes) -> tuple[str, float]:
         """Text and seconds spent, loading excluded."""
@@ -125,10 +163,17 @@ class Models:
         return str(getattr(result, "text", "")).strip(), time.monotonic() - started
 
     def speak(self, ref: ModelRef, text: str, voice: str, reference: ModelRef | None = None) -> tuple[Speech, float]:
-        """The speech and the seconds spent, loading excluded."""
+        """The speech as WAV and the seconds spent, loading excluded."""
+        pcm16, rate, spent = self.speak_pcm(ref, text, voice, reference)
+        return Speech(encode_wav(pcm16, rate), len(pcm16) / 2 / rate, rate), spent
+
+    def speak_pcm(self, ref: ModelRef, text: str, voice: str, reference: ModelRef | None = None) -> tuple[bytes, int, float]:
+        """16-bit mono samples, their rate and the seconds spent: what a call plays."""
         model = self._load(ref)
         kwargs: dict[str, Any] = {}
         if ref.family == "kokoro":
+            # Kokoro's Italian G2P does not chunk: one sentence per line, or a long text is cut.
+            text = SENTENCE_END.sub("\\1\n", text)
             kwargs = {"voice": self._voice_file(ref, voice), "lang_code": KOKORO_ITALIAN, "verbose": False}
         else:
             if reference is None:
@@ -147,8 +192,7 @@ class Models:
         import numpy as np
 
         samples = np.concatenate([np.asarray(piece, dtype=np.float32).reshape(-1) for piece in pieces]) if pieces else np.zeros(0, np.float32)
-        pcm16 = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes()
-        return Speech(encode_wav(pcm16, rate), len(samples) / rate, rate), spent
+        return (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes(), rate, spent
 
     def _voice_file(self, ref: ModelRef, voice: str) -> str:
         if not VOICE_ID.match(voice):

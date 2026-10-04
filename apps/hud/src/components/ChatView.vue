@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
@@ -23,7 +24,11 @@ const props = defineProps<{
   decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void>;
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
+  /** The calls of this conversation (D-066), shown as receipts among the messages. */
+  calls: readonly CallInfo[];
 }>();
+
+const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
 const emit = defineEmits<{
   send: [body: string];
   chooseModel: [model: string | null];
@@ -258,7 +263,11 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
-        <template v-for="message in chat.messages" :key="message.id">
+        <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
+          <Icon name="phone" :size="12" />{{ receiptText(call) }}
+        </p>
+
+        <template v-for="(message, index) in chat.messages" :key="message.id">
           <!-- User -->
           <div v-if="message.role === 'user'" class="flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
@@ -267,6 +276,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
+              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <template v-if="taskOf(message) !== undefined">
                 <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
                 <button
@@ -299,6 +309,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
               </span>
               <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
+              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span
                 v-if="repliesToTelegram(message)"
@@ -335,6 +346,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           </article>
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :key="approval.id" :approval="approval" :decide="decide" />
+          <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
+            <Icon name="phone" :size="12" />{{ receiptText(call) }}
+          </p>
         </template>
 
         <ApprovalCard v-for="approval in unplaced" :key="approval.id" :approval="approval" :decide="decide" />

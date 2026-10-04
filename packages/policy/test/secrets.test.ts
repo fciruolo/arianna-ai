@@ -10,6 +10,7 @@ const CLAUDE: Target = { kind: 'executor', id: 'claude', locality: 'cloud' };
 const LOCAL_MODEL: Target = { kind: 'executor', id: 'omlx', locality: 'local' };
 const TELEGRAM: Target = { kind: 'channel', id: 'telegram' };
 const WEB_CHAT: Target = { kind: 'channel', id: 'web' };
+const VOICE: Target = { kind: 'channel', id: 'voice' };
 
 const fragment = (value: unknown, label: Labeled<unknown>['label'] = 'L1'): Labeled<unknown> => ({ value, label, source: 'test' });
 
@@ -76,4 +77,10 @@ test('a matcher that throws blocks instead of letting the payload through', () =
   const decision = gatewayCheck([fragment('fake text', 'L2')], createContext('L2'), LOCAL_MODEL, broken);
   assert.equal(decision.decision, 'block');
   assert.equal(decision.rule, 'invalid-input');
+});
+
+test('a call (D-066) is local, yet a revealed secret never reaches it', () => {
+  const decision = gatewayCheck([fragment(`il token è ${FAKE_TOKEN}`, 'L2')], createContext('L2'), VOICE, known);
+  assert.ok(decision.decision === 'block');
+  assert.equal(decision.rule, 'secret');
 });

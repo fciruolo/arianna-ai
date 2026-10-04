@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { callBlocker, callErrorText, clock, receiptAnchors, receiptText, type CallInfo } from '../src/lib/calls.ts';
+
+const call = (fields: Partial<CallInfo>): CallInfo => ({
+  id: 'x',
+  conversationId: 'c',
+  direction: 'in',
+  reason: null,
+  taskId: null,
+  status: 'ended',
+  scheduledAt: null,
+  createdAt: '2026-10-04T10:00:00Z',
+  answeredAt: '2026-10-04T10:00:02Z',
+  endedAt: '2026-10-04T10:03:09Z',
+  endReason: 'hangup',
+  delegations: 0,
+  ...fields,
+});
+
+test('clock: minutes and seconds, hours past an hour', () => {
+  assert.equal(clock(0), '0:00');
+  assert.equal(clock(187.9), '3:07');
+  assert.equal(clock(3725), '1:02:05');
+  assert.equal(clock(-5), '0:00');
+});
+
+test('receiptText: who called, how long, how it ended', () => {
+  assert.equal(receiptText(call({})), 'Hai chiamato Arianna · 3:07');
+  assert.equal(receiptText(call({ endReason: 'time-limit', delegations: 2 })), 'Hai chiamato Arianna · 3:07 · finita per il limite di tempo · 2 lavori passati ad Arianna');
+  assert.equal(receiptText(call({ direction: 'out', reason: 'waiting', status: 'missed', answeredAt: null })), 'Arianna ti ha cercato: chiamata persa');
+  assert.equal(receiptText(call({ status: 'active', endedAt: null, endReason: null })), 'Hai chiamato Arianna: in corso');
+  assert.match(receiptText(call({ direction: 'out', reason: 'scheduled', status: 'skipped', endReason: 'quiet-hours' })), /fascia di silenzio/);
+});
+
+test('receiptAnchors: after the last message before the end; before everything when there is none', () => {
+  const messages = [{ ts: '2026-10-04T09:00:00Z' }, { ts: '2026-10-04T10:01:00Z' }, { ts: '2026-10-04T11:00:00Z' }];
+  const anchors = receiptAnchors(messages, [call({ id: 'a' }), call({ id: 'b', createdAt: '2026-10-04T08:00:00Z', endedAt: '2026-10-04T08:01:00Z' })]);
+  assert.deepEqual(anchors.get(1)?.map(({ id }) => id), ['a']);
+  assert.deepEqual(anchors.get(-1)?.map(({ id }) => id), ['b']);
+});
+
+test('callBlocker and callErrorText: the reasons in Italian', () => {
+  assert.equal(callBlocker('up', false, false), undefined);
+  assert.match(callBlocker('up', true, false) ?? '', /Ripristina/);
+  assert.match(callBlocker('up', false, true) ?? '', /già una chiamata/);
+  assert.match(callBlocker('off', false, false) ?? '', /\[voice\]/);
+  assert.match(callBlocker('not-installed', false, false) ?? '', /provino/);
+  assert.match(callErrorText('not-ready: assign and download: stt'), /Mancano dei modelli/);
+  assert.equal(callErrorText('boom'), 'La chiamata non è partita.');
+});

@@ -1,6 +1,8 @@
 import { computed, ref, shallowRef } from 'vue';
 
 import * as api from './lib/api.ts';
+import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
+import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
@@ -45,6 +47,14 @@ export function createChatStore() {
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
+  /** Calls (D-066): the receipts of the open conversation, the state of the voice, the call in progress. */
+  const calls = ref<CallInfo[]>([]);
+  const voiceState = ref<string | null>(null);
+  const callSession = shallowRef<CallSession | null>(null);
+  const callStarting = ref(false);
+  const callError = ref<string | null>(null);
+  /** A call still open on the core that this page does not hold (it was reloaded): it can be closed. */
+  const strayCall = ref<CallInfo | null>(null);
   let connection: LiveConnection | undefined;
 
   const current = computed(() =>
@@ -191,16 +201,73 @@ export function createChatStore() {
     chat.value = emptyChat(id);
     detached.value = undefined;
     tasks.value = {};
+    calls.value = [];
     try {
-      await refreshMessages();
+      await Promise.all([refreshMessages(), refreshCalls()]);
     } catch (cause) {
       fail(cause);
     }
   }
 
+  async function refreshCalls(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return;
+    const listed = await api.listConversationCalls(id);
+    if (chat.value?.conversationId === id) calls.value = listed;
+  }
+
+  async function refreshVoice(): Promise<void> {
+    try {
+      voiceState.value = (await api.loadVoiceTrial()).state;
+    } catch {
+      voiceState.value = 'off';
+    }
+  }
+
+  async function startCall(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id === undefined || callSession.value !== null || callStarting.value) return;
+    callError.value = null;
+    callStarting.value = true;
+    try {
+      const session = await openCallSession(id);
+      session.onDrop(() => {
+        void hangUp();
+      });
+      callSession.value = session;
+      await refreshCalls();
+    } catch (cause) {
+      callError.value =
+        cause instanceof api.ApiError ? callErrorText(cause.message) : cause instanceof DOMException && cause.name === 'NotAllowedError' ? 'Il browser non ha dato il microfono: consentilo e riprova.' : 'La chiamata non è partita.';
+    } finally {
+      callStarting.value = false;
+    }
+  }
+
+  async function refreshStrayCall(): Promise<void> {
+    const live = await api.loadLiveCall().catch(() => null);
+    strayCall.value = live !== null && live.id !== callSession.value?.call.id ? live : null;
+  }
+
+  async function closeStrayCall(): Promise<void> {
+    const stray = strayCall.value;
+    if (stray === null) return;
+    strayCall.value = null;
+    await api.endCall(stray.id).catch(() => undefined);
+  }
+
+  async function hangUp(): Promise<void> {
+    const session = callSession.value;
+    if (session === null) return;
+    callSession.value = null;
+    await session.hangUp();
+    await refreshCalls().catch(() => undefined);
+  }
+
   /** Back to no open conversation (the browser went back to the root). */
   function close(): void {
     error.value = null;
+    calls.value = [];
     chat.value = null;
     detached.value = undefined;
     tasks.value = {};
@@ -393,6 +460,19 @@ export function createChatStore() {
         }
         break;
       }
+      case 'call.started':
+      case 'call.ended': {
+        if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshCalls());
+        // Ended by the voice or the core (time limit, line down): the page lets go too.
+        const callId = payloadString(event, 'callId');
+        if (callId !== undefined && callId === strayCall.value?.id && event.kind === 'call.ended') strayCall.value = null;
+        if (event.kind === 'call.ended' && callId !== undefined && callId === callSession.value?.call.id) {
+          const session = callSession.value;
+          callSession.value = null;
+          void session.hangUp();
+        }
+        break;
+      }
       case 'approval.decided':
       case 'approval.requested':
         work.push(refreshApprovals());
@@ -410,7 +490,14 @@ export function createChatStore() {
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);
+      void refreshVoice();
     }, 60_000);
+    void refreshVoice();
+    void refreshStrayCall();
+    // Closing or reloading the page hangs up: the microphone and the call do not outlive it.
+    window.addEventListener('pagehide', () => {
+      callSession.value?.leave();
+    });
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     connection = connectLive({
       url: `${scheme}://${window.location.host}/api/ws`,
@@ -457,7 +544,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

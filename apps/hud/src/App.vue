@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
 import ConversationList from './components/ConversationList.vue';
 import FailureDialog from './components/FailureDialog.vue';
@@ -9,6 +10,7 @@ import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
+import { callBlocker } from './lib/calls.ts';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
@@ -20,6 +22,12 @@ import { createChatStore } from './store.ts';
 
 const store = createChatStore();
 const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
+const { calls, voiceState, callSession, callStarting, callError, strayCall } = store;
+
+// Calls (D-066): the phone in the top bar calls Arianna from the open conversation.
+const callBlocked = computed(() =>
+  current.value === undefined ? 'Apri una conversazione' : callBlocker(voiceState.value, current.value.archivedAt !== null, callSession.value !== null),
+);
 
 // Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser.
 const showSidebar = ref(false);
@@ -307,6 +315,17 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
           {{ current.clearance }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
         </span>
+        <button
+          v-if="current !== undefined && page === 'chat'"
+          type="button"
+          class="grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-accent disabled:text-muted disabled:opacity-60"
+          :disabled="callBlocked !== undefined || callStarting"
+          :aria-label="callBlocked ?? 'Chiama Arianna'"
+          :title="callBlocked ?? 'Chiama Arianna'"
+          @click="store.startCall"
+        >
+          <Icon name="phone" />
+        </button>
         <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <button
           type="button"
@@ -339,6 +358,16 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <p v-if="error !== null" role="alert" class="mx-4 mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
         {{ error }}
       </p>
+      <p v-if="callError !== null" role="alert" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <span class="flex-1">{{ callError }}</span>
+        <button type="button" class="rounded-md p-1 hover:bg-danger/20" aria-label="Chiudi" @click="callError = null"><Icon name="close" :size="14" /></button>
+      </p>
+      <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo Arianna… la prima volta i modelli si caricano.</p>
+      <p v-if="strayCall !== null && callSession === null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">
+        <Icon name="phone" :size="14" />
+        <span class="flex-1">Una chiamata risulta ancora aperta (forse da una pagina chiusa o ricaricata).</span>
+        <button type="button" class="btn px-2.5 py-1 text-xs" @click="store.closeStrayCall">Chiudila</button>
+      </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
       <ChatView
@@ -353,6 +382,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :decide="store.decide"
         :arianna="{ choice: characters?.agents.arianna, pose: poseFor('arianna') }"
         :status="status"
+        :calls="calls"
         @send="store.send"
         @choose-model="store.chooseModel"
         @restore="store.archive(current.id, false)"
@@ -389,6 +419,15 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @close="showPanel = false"
     />
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
+
+    <CallView
+      v-if="callSession !== null"
+      :session="callSession"
+      :title="conversations.find((item) => item.id === callSession?.call.conversationId)?.title ?? 'Chiamata'"
+      :messages="chat?.conversationId === callSession.call.conversationId ? chat.messages : []"
+      :choice="characters?.agents.arianna"
+      @hang-up="store.hangUp"
+    />
 
     <FailureDialog
       v-if="failure !== null"

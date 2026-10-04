@@ -38,7 +38,7 @@ export {
   type Project,
   type ProjectLabel,
 } from './projects.ts';
-export { aliasesOf, parseRoles, ROLE_ALIASES, type Roles } from './roles.ts';
+export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
 export { type TelegramConfig } from './telegram.ts';
 export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
 export { ConfigError } from './validate.ts';

@@ -383,3 +383,13 @@ models:
         url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/Cangjie5_TC.json
         size_bytes: 1920163
         sha256: "7073fd9de919443ae88e0bd2449917a65fe54898a4413ed1edcc4b67f28bce8c"
+      # The speech tokenizer Chatterbox loads from a repository of its own:
+      # kept in this folder, apps/voice points the library at it (no network).
+      - path: s3tokenizer/config.json
+        url: https://huggingface.co/mlx-community/S3TokenizerV2/resolve/e0c9886f0e1c35ae85b1f27277416fb19fc72bec/config.json
+        size_bytes: 126
+        sha256: "8591fcc0eaae8c2bbfc69cf9d439933ecdf2d58cb9be63d00ce88736c4f2aa9d"
+      - path: s3tokenizer/model.safetensors
+        url: https://huggingface.co/mlx-community/S3TokenizerV2/resolve/e0c9886f0e1c35ae85b1f27277416fb19fc72bec/model.safetensors
+        size_bytes: 494868984
+        sha256: "928726bc1f206a613d36b8f49e297eae9c5593a21bf9b92ddfe2c23f85eb92cc"

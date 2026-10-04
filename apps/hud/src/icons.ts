@@ -12,6 +12,7 @@ import {
   Menu,
   MessageCircle,
   Mic,
+  MicOff,
   Play,
   Square,
   Monitor,
@@ -21,6 +22,8 @@ import {
   PanelRight,
   PanelRightClose,
   PanelRightOpen,
+  Phone,
+  PhoneOff,
   Paperclip,
   Pencil,
   Plus,
@@ -70,8 +73,11 @@ export const ICONS = {
   retry: RotateCcw,
   attach: Paperclip,
   mic: Mic,
+  'mic-off': MicOff,
   play: Play,
   stop: Square,
+  phone: Phone,
+  'phone-off': PhoneOff,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

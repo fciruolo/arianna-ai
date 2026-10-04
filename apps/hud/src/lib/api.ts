@@ -1,3 +1,4 @@
+import type { CallInfo } from './calls.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -187,4 +188,19 @@ export async function speakTrial(text: string, model: string, voice: string): Pr
   }
   const seconds = Number(response.headers.get('x-seconds-spent'));
   return { audio: await response.blob(), seconds: Number.isFinite(seconds) && response.headers.has('x-seconds-spent') ? seconds : undefined };
+}
+
+/** Ends a call from its id (one left open by a page that was reloaded). */
+export async function endCall(callId: string): Promise<void> {
+  await call('POST', `/api/calls/${encodeURIComponent(callId)}/end`, {});
+}
+
+/** The calls of a conversation, as receipts (D-066). */
+export async function listConversationCalls(conversationId: string): Promise<CallInfo[]> {
+  return (await call<{ calls: CallInfo[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/calls`)).calls;
+}
+
+/** The call in progress on this machine, if any: a reloaded page finds it and can close it. */
+export async function loadLiveCall(): Promise<CallInfo | null> {
+  return (await call<{ call: CallInfo | null }>('GET', '/api/calls/live')).call;
 }

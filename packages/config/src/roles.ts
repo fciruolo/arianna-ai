@@ -30,6 +30,12 @@ export function parseRoles(value: unknown, catalog: ModelCatalog): Roles {
   return roles;
 }
 
+/**
+ * The alias of the `voice` role (D-066). Not a router alias: the replies of a
+ * call are not routed, the core asks this model directly on oMLX.
+ */
+export const VOICE_ALIAS = 'local-voice';
+
 /** Alias → model name on a local server, from the roles; the id is the name oMLX serves. */
 export function aliasesOf(roles: Roles): Record<string, string> {
   const models: Record<string, string> = {};
@@ -38,5 +44,6 @@ export function aliasesOf(roles: Roles): Record<string, string> {
     const id = roles[role];
     if (alias !== undefined && id !== undefined) models[alias] = id;
   }
+  if (roles.voice !== undefined) models[VOICE_ALIAS] = roles.voice;
   return models;
 }

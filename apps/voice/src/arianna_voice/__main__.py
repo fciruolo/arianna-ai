@@ -56,11 +56,23 @@ async def serve() -> None:
         models.close()
 
 
+def quiet_loguru() -> None:
+    """Pipecat logs with loguru, at DEBUG by default, and its TTS services log
+    the text they speak: only warnings, before Pipecat is imported."""
+    try:
+        from loguru import logger
+    except ImportError:
+        return
+    logger.remove()
+    logger.add(sys.stderr, level="WARNING")
+
+
 def main() -> None:
     # Libraries may log what they hear or say at INFO: only warnings reach the
     # log file, and our own logger writes closed codes only.
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     logging.getLogger("arianna_voice").setLevel(logging.INFO)
+    quiet_loguru()
     asyncio.run(serve())
 
 

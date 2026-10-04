@@ -12,6 +12,7 @@ from typing import Any
 
 from aiohttp import web
 
+from .call_request import parse_call, parse_say
 from .models import ModelError, Models
 from .trial import RequestError, parse_speak, parse_transcribe
 
@@ -21,6 +22,8 @@ log = logging.getLogger("arianna_voice")
 
 MODELS_KEY = web.AppKey("models", Models)
 TOKEN_KEY = web.AppKey("token", str)
+# The open calls; Pipecat is imported with the first one (calls.py).
+CALLS_KEY = web.AppKey("calls", dict)
 
 
 def authorized(header: str | None, token: str) -> bool:
@@ -85,13 +88,58 @@ async def speak(request: web.Request) -> web.Response:
     )
 
 
+def calls_of(app: web.Application):
+    holder = app[CALLS_KEY]
+    if "calls" not in holder:
+        from .calls import Calls
+
+        holder["calls"] = Calls(app[MODELS_KEY])
+    return holder["calls"]
+
+
+async def open_call(request: web.Request) -> web.Response:
+    parsed = parse_call(await read_json(request))
+    try:
+        answer = await calls_of(request.app).open(parsed)
+    except RequestError:
+        raise
+    except Exception as error:  # noqa: BLE001 - logged by class only
+        log.error("call failed: %s", type(error).__name__)
+        return web.json_response({"error": "call-failed"}, status=500)
+    return web.json_response(answer)
+
+
+async def say(request: web.Request) -> web.Response:
+    text = parse_say(await read_json(request))
+    call = calls_of(request.app).get(request.match_info["call_id"])
+    if call is None:
+        return web.json_response({"error": "not-found"}, status=404)
+    await call.say(text)
+    return web.json_response({"ok": True})
+
+
+async def close_call(request: web.Request) -> web.Response:
+    closed = await calls_of(request.app).close(request.match_info["call_id"])
+    return web.json_response({"ok": closed}, status=200 if closed else 404)
+
+
+async def close_all(app: web.Application) -> None:
+    if "calls" in app[CALLS_KEY]:
+        await app[CALLS_KEY]["calls"].close_all()
+
+
 def create_app(models: Models, token: str) -> web.Application:
     if len(token) < 32:
         raise ValueError("token too short")
     app = web.Application(middlewares=[guard], client_max_size=MAX_BODY_BYTES)
     app[MODELS_KEY] = models
     app[TOKEN_KEY] = token
+    app[CALLS_KEY] = {}
+    app.on_shutdown.append(close_all)
     app.router.add_get("/health", health)
     app.router.add_post("/trial/transcribe", transcribe)
     app.router.add_post("/trial/speak", speak)
+    app.router.add_post("/calls", open_call)
+    app.router.add_post("/calls/{call_id}/say", say)
+    app.router.add_delete("/calls/{call_id}", close_call)
     return app

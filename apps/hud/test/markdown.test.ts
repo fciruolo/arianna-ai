@@ -181,7 +181,9 @@ test('crafted or degenerate input does not stall the page', () => {
     const started = performance.now();
     parseMarkdown(input);
     const elapsed = performance.now() - started;
-    assert.ok(elapsed < 500, `${JSON.stringify(input.slice(0, 12))}… took ${String(Math.round(elapsed))} ms`);
+    // Linear parsing takes about 130 ms for the slowest input alone; a quadratic one would
+    // take seconds. The margin covers a machine busy with the rest of the suite.
+    assert.ok(elapsed < 1500, `${JSON.stringify(input.slice(0, 12))}… took ${String(Math.round(elapsed))} ms`);
   }
 });
 

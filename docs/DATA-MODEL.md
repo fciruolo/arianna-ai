@@ -1,6 +1,6 @@
 # Modello dati (bozza PostgreSQL)
 
-`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
+`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`); `calls` da D-066 (`0015_calls.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
 
 ```sql
 CREATE TYPE privacy_label AS ENUM ('L0','L1','L2','L3');
@@ -238,6 +238,26 @@ CREATE TABLE task_delegations (
 -- Vincoli (trigger task_delegations_guard): etichette entro la clearance del task; task, passo e brief
 -- immutabili; una delega finita non cambia stato; run_id solo un run cloud dello stesso task; message_id
 -- solo un messaggio dello stesso task; result_label alza effective_label del task. Mai DELETE.
+
+-- Chiamate via internet (D-066): solo metadati, nessun testo. Quello che si è
+-- detto sta in messages (channel 'voice'): le parole dell'utente con l'etichetta
+-- della clearance, le risposte con la più alta fra la storia letta e l'etichetta
+-- effettiva della conversazione (mai sopra la clearance).
+-- 'in' la fa l'utente dalla chat; 'out' la fa Arianna, con il motivo ammesso
+-- dalle regole di [voice.outgoing]. Una sola chiamata viva alla volta.
+CREATE TABLE calls (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id uuid NOT NULL REFERENCES conversations(id),
+  direction text NOT NULL,          -- in | out
+  reason text,                      -- solo out: waiting | task-done | scheduled
+  task_id uuid REFERENCES tasks(id),-- il task che fa chiamare (out)
+  status text NOT NULL,             -- scheduled | ringing | connecting | active | ended | missed | skipped | failed
+  scheduled_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+  answered_at timestamptz, ended_at timestamptz,
+  end_reason text,                  -- codice chiuso: hangup, time-limit, disconnected, voice-error, core-restart, no-answer, quiet-hours, daily-limit, cancelled
+  delegations integer NOT NULL DEFAULT 0
+);
+-- La cancellazione definitiva di una conversazione lascia le sue chiamate: non hanno testo.
 
 CREATE TABLE documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

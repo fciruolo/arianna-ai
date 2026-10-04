@@ -29,6 +29,7 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
+import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
 import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
@@ -64,6 +65,8 @@ export interface ApiServerOptions {
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
   /** apps/voice (D-066); absent when `[voice]` is not configured. */
   voice?: VoiceApi;
+  /** Calls from the chat (D-066); absent with the voice off. */
+  calls?: Calls;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -170,6 +173,54 @@ interface RouteOptions {
   agents: () => readonly string[];
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
+  calls: Calls | undefined;
+}
+
+/** The token of the voice for one call: `Authorization: Bearer <token>`. */
+function bearer(request: IncomingMessage): string | undefined {
+  const header = request.headers.authorization;
+  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+}
+
+const END_REASONS_FROM_VOICE: readonly CallEndReason[] = ['hangup', 'time-limit', 'disconnected', 'voice-error'];
+
+function callRoutes(sql: Sql, calls: Calls | undefined): Route[] {
+  const need = (): Calls => {
+    if (calls === undefined) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
+    return calls;
+  };
+  return [
+    // The call in progress, if any: a reloaded page finds it again.
+    route('GET', '/api/calls/live', async () => ({ body: { call: (await liveCall(sql)) ?? null } })),
+    route('GET', '/api/conversations/:id/calls', async (_request, _url, params) => ({ body: { calls: await listCalls(sql, idParam(params, 'id')) } })),
+    // The page calls: its WebRTC offer in, the answer of apps/voice out.
+    route('POST', '/api/calls', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['conversationId', 'sdp', 'type']);
+      const { conversationId, sdp, type } = body;
+      if (typeof conversationId !== 'string' || typeof sdp !== 'string' || typeof type !== 'string') throw new HttpError(400, 'conversationId, sdp and type are required');
+      return { status: 201, body: await need().start(conversationId, { sdp, type }) };
+    }),
+    route('POST', '/api/calls/:id/end', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: { call: await need().end(idParam(params, 'id'), 'hangup') } };
+    }),
+    // From apps/voice, with the token of the call.
+    route('POST', '/api/calls/:id/turn', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['text']);
+      return { body: await need().turn(idParam(params, 'id'), bearer(request), body.text) };
+    }),
+    route('POST', '/api/calls/:id/ended', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['reason']);
+      const reason = END_REASONS_FROM_VOICE.find((item) => item === body.reason);
+      if (reason === undefined) throw new HttpError(400, `reason must be one of ${END_REASONS_FROM_VOICE.join(', ')}`);
+      const token = bearer(request);
+      if (token === undefined) throw new CallError('unauthorized', 'the token of the call is required');
+      return { body: { call: await need().end(idParam(params, 'id'), reason, token) } };
+    }),
+  ];
 }
 
 /** A JSON answer of apps/voice, or the closed code of its error. */
@@ -216,9 +267,10 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, agents, characters, voice }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, agents, characters, voice, calls }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
+    ...callRoutes(sql, calls),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
@@ -457,6 +509,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
   if (error instanceof TrialError) return { status: 400, message: error.message };
+  if (error instanceof CallError) {
+    const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
+    return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };
+  }
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
 }
@@ -469,6 +525,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     agents: options.agents ?? (() => []),
     characters: options.characters,
     voice: options.voice,
+    calls: options.calls,
   });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);

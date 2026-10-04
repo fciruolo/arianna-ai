@@ -386,6 +386,16 @@ body {
     opacity: 0.25;
   }
 }
+/* Arianna "breathes" while she speaks in a call (D-066). */
+@keyframes call-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
 
 .animate-hud-spin {
   animation: hud-spin 9s linear infinite;
@@ -396,11 +406,15 @@ body {
 .animate-hud-blink {
   animation: hud-blink 1.1s steps(2) infinite;
 }
+.animate-call-breathe {
+  animation: call-breathe 0.9s ease-in-out infinite;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .animate-hud-spin,
   .animate-hud-bob,
-  .animate-hud-blink {
+  .animate-hud-blink,
+  .animate-call-breathe {
     animation: none;
   }
 }

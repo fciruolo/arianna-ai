@@ -20,6 +20,7 @@ import { selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
+import { createCalls, type Calls } from './voice/calls.ts';
 import { createVoiceService, type VoiceService } from './voice/service.ts';
 import { trialModels } from './voice/trial.ts';
 
@@ -130,6 +131,7 @@ const live = await startLiveFeed(sql, { onError: report });
 // background so that the chat never waits for it. Without the environment
 // (pnpm voice:sync) the trial page says what is missing.
 let voice: VoiceService | undefined;
+let calls: Calls | undefined;
 let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels> } | undefined;
 const voiceConfig = config.voice;
 if (voiceConfig !== undefined) {
@@ -147,6 +149,18 @@ if (voiceConfig !== undefined) {
   });
   if (voice.state === 'not-installed') console.error('voice off: data/voice/venv is missing (brew install uv, then pnpm voice:sync)');
   else voice.start().catch(report);
+  const host = config.server.host.includes(':') ? `[${config.server.host}]` : config.server.host;
+  calls = createCalls({
+    sql,
+    voice,
+    config: () => ({ roles: settings.current().roles, voice: voiceConfig, local: settings.current().local }),
+    candidates,
+    model: () => createLocalModel({ endpoints: settings.current().local.endpoints }),
+    coreUrl: `http://${host}:${String(config.server.port)}`,
+    onError: report,
+  });
+  const closed = await calls.closeLeftovers();
+  if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
 }
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
@@ -163,6 +177,7 @@ const server = await startApiServer({
     choices: () => settings.current().characters,
   },
   ...(voice === undefined || voiceApi === undefined ? {} : { voice: { service: voice, ...voiceApi } }),
+  ...(calls === undefined ? {} : { calls }),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });
@@ -192,6 +207,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   await telegram?.close();
   await server.close();
+  await calls?.close();
   await voice?.stop();
   await worker.stop();
   await live.close();

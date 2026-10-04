@@ -6,7 +6,9 @@ import { payloadText, scanParts } from './payload.ts';
 import { scanText, type Finding } from './scanner.ts';
 import type { KnownSecrets } from './secrets.ts';
 
-export type ChannelId = 'web' | 'telegram' | 'phone';
+// `voice`: a call from the web chat to apps/voice, on this machine (D-066);
+// `push`: the notification of a call, through Apple, Google or Mozilla.
+export type ChannelId = 'web' | 'telegram' | 'phone' | 'voice' | 'push';
 
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
@@ -51,7 +53,7 @@ export type Decision =
       findings?: Finding[];
     };
 
-const CHANNELS: readonly string[] = ['web', 'telegram', 'phone'];
+const CHANNELS: readonly string[] = ['web', 'telegram', 'phone', 'voice', 'push'];
 
 /**
  * Executors whose inference is always in the cloud: declaring them local is a
@@ -81,12 +83,13 @@ export function isTarget(value: unknown): value is Target {
 }
 
 /**
- * Where inference or delivery happens. Only the web chat, reached over the
- * VPN, is a local channel; Telegram and the phone are cloud (D-016).
+ * Where inference or delivery happens. The web chat, reached over the VPN,
+ * and the internet call to apps/voice (D-066) are local channels; Telegram,
+ * the phone and push notifications are cloud (D-016).
  */
 export function localityOf(target: Target): Locality {
   if (target.kind === 'executor') return target.locality;
-  if (target.kind === 'channel' && target.id === 'web') return 'local';
+  if (target.kind === 'channel' && (target.id === 'web' || target.id === 'voice')) return 'local';
   return 'cloud';
 }
 

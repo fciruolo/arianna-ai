@@ -8,6 +8,7 @@ import {
   spendAllowed,
   derive,
   gatewayCheck as check,
+  isTarget,
   localityOf,
   recordRead,
   secretMatcher,
@@ -26,6 +27,8 @@ const LOCAL_MODEL: Target = { kind: 'executor', id: 'omlx', locality: 'local' };
 const TELEGRAM: Target = { kind: 'channel', id: 'telegram' };
 const PHONE: Target = { kind: 'channel', id: 'phone' };
 const WEB_CHAT: Target = { kind: 'channel', id: 'web' };
+const VOICE: Target = { kind: 'channel', id: 'voice' };
+const PUSH: Target = { kind: 'channel', id: 'push' };
 const WEB_SEARCH: Target = { kind: 'web' };
 
 const fragment = (label: unknown, value: unknown = 'fake text'): Labeled<unknown> => ({
@@ -199,7 +202,7 @@ test('an empty payload sends nothing and is allowed', () => {
 
 test('locality and log name of each target', () => {
   assert.deepEqual(
-    [CLAUDE, LOCAL_MODEL, TELEGRAM, PHONE, WEB_CHAT, WEB_SEARCH].map((target) => [targetName(target), localityOf(target)]),
+    [CLAUDE, LOCAL_MODEL, TELEGRAM, PHONE, WEB_CHAT, WEB_SEARCH, VOICE, PUSH].map((target) => [targetName(target), localityOf(target)]),
     [
       ['claude', 'cloud'],
       ['omlx', 'local'],
@@ -207,8 +210,22 @@ test('locality and log name of each target', () => {
       ['phone', 'cloud'],
       ['web', 'local'],
       ['web-search', 'cloud'],
+      ['voice', 'local'],
+      ['push', 'cloud'],
     ],
   );
+});
+
+test('voice and push (D-066): a call on this machine may carry L2, a push notification only L0/L1', () => {
+  const privateChat = createContext('L2');
+  assert.equal(gatewayCheck([fragment('L2', 'la fattura di Giulia')], privateChat, VOICE).decision, 'allow');
+  // Local is not unlimited: L3 never reaches a call. (The clearance of a work
+  // conversation is held by the database and by storeReply, as for the web chat.)
+  assert.equal(gatewayCheck([fragment('L3', 'segreto')], privateChat, VOICE).decision, 'block');
+  assert.equal(gatewayCheck([fragment('L2', 'la fattura di Giulia')], privateChat, PUSH).decision, 'block');
+  assert.equal(gatewayCheck([fragment('L0', 'Arianna ti chiama')], createContext('L1'), PUSH).decision, 'allow');
+  assert.ok(isTarget(VOICE) && isTarget(PUSH));
+  assert.ok(!isTarget({ kind: 'channel', id: 'sms' }));
 });
 
 test('allowedBy: an allow made by the gateway records its target, label and texts', () => {
