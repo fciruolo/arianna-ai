@@ -108,6 +108,11 @@ export async function sendMessage(conversationId: string, body: string): Promise
   return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body });
 }
 
+/** "/nota" (D-080): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
+export async function captureNote(note: { text: string; kind: 'note' | 'link'; url?: string }): Promise<{ path: string; label: string }> {
+  return call('POST', '/api/capture', note);
+}
+
 export async function loadTask(id: string): Promise<Task> {
   return (await call<{ task: Task }>('GET', `/api/tasks/${encodeURIComponent(id)}`)).task;
 }

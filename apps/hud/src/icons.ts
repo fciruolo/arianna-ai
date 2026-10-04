@@ -66,6 +66,7 @@ export const ICONS = {
   'theme-dark': Moon,
   'theme-system': Monitor,
   approve: Check,
+  saved: Check,
   warning: TriangleAlert,
   project: Folder,
   private: Lock,

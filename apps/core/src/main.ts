@@ -324,6 +324,7 @@ const server = await startApiServer({
     restart: (id) => localServers.restart(id),
     log: (id) => logTail(config.paths.data, id),
   },
+  capture: { home: config.home, rules },
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

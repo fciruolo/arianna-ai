@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -6,7 +7,9 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { CharacterChoices } from '@arianna/config';
+import type { LabelRules } from '@arianna/policy';
 
+import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { assignCharacters, listPacks, readSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -81,6 +84,8 @@ export interface ApiServerOptions {
   settings?: SettingsPage;
   /** The local servers the core watches (D-071): state, restart, end of the log. */
   local?: LocalApi;
+  /** Capture into kb/inbox (D-080): the home whose kb/ receives the notes, and the folder rules. */
+  capture?: { home: string; rules: LabelRules };
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -208,6 +213,7 @@ interface RouteOptions {
   pusher: () => Pusher | undefined;
   settings: SettingsPage | undefined;
   local: LocalApi | undefined;
+  capture: ApiServerOptions['capture'];
   onError: (error: unknown) => void;
 }
 
@@ -411,9 +417,49 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, onError }: RouteOptions): Route[] {
+/**
+ * "/nota" of the web chat (D-080): a new note in kb/inbox, L2, without a
+ * model. The answer names the path and the label, never the text.
+ */
+const CAPTURE_BODY_BYTES = 2 * MAX_CAPTURE_BYTES + 4096;
+
+function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
+  return [
+    route('POST', '/api/capture', async (request) => {
+      if (capture === undefined) throw new HttpError(404, 'not found');
+      let body: Record<string, unknown>;
+      try {
+        // Room for a text at the limit, JSON-escaped, and the other fields.
+        body = await readJson(request, CAPTURE_BODY_BYTES);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) throw new HttpError(413, `text is longer than ${String(MAX_CAPTURE_BYTES / 1024)} KiB`);
+        throw error;
+      }
+      onlyFields(body, ['text', 'kind', 'url', 'title']);
+      const { text, kind, url, title } = body;
+      if (typeof text !== 'string') throw new HttpError(400, 'text is required');
+      const chosen = kind ?? 'note';
+      if (!isCaptureKind(chosen)) throw new HttpError(400, 'kind must be thought, link or note');
+      if (url !== undefined && typeof url !== 'string') throw new HttpError(400, 'url must be a string');
+      if (title !== undefined && typeof title !== 'string') throw new HttpError(400, 'title must be a string');
+      const note = captureNote({
+        home: capture.home,
+        rules: capture.rules,
+        text,
+        kind: chosen,
+        source: { channel: 'hud', id: randomUUID() },
+        ...(url === undefined ? {} : { url }),
+        ...(title === undefined ? {} : { title }),
+      });
+      return { status: 201, body: { path: note.path, label: note.label } };
+    }),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, onError }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
+    ...captureRoutes(capture),
     ...settingsRoutes(settings, local, onError),
     ...callRoutes(sql, voice, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
@@ -690,6 +736,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { invalid: 400, changed: 409, unreadable: 409, unknown: 404, expired: 410 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof CaptureError) {
+    const status = { invalid: 400, 'too-large': 413, 'not-allowed': 403, unavailable: 503 }[error.code];
+    return { status, message: error.message };
+  }
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
 }
@@ -707,6 +757,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     pusher: options.pusher ?? (() => undefined),
     settings: options.settings,
     local: options.local,
+    capture: options.capture,
     onError: options.onError ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();

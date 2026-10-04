@@ -23,7 +23,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending } = store;
+const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -431,6 +431,11 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
       <p v-if="error !== null" role="alert" class="mx-4 mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
         {{ error }}
+      </p>
+      <p v-if="notice !== null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm">
+        <Icon name="saved" :size="14" />
+        <span class="flex-1 font-mono text-xs">{{ notice }}</span>
+        <button type="button" class="rounded-md p-1 hover:bg-surface-2" aria-label="Chiudi" @click="notice = null"><Icon name="close" :size="14" /></button>
       </p>
       <p v-if="callError !== null" role="alert" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
         <span class="flex-1">{{ callError }}</span>

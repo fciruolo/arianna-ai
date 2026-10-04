@@ -71,6 +71,21 @@ describe('kb paths', () => {
     assert.deepEqual(parsePage('---\ntitle: T\nlabel: L1\nother: x\n---\n\nBody'), { header: { labels: ['L1'], title: 'T' }, body: 'Body' });
     assert.deepEqual(parsePage('No header'), { header: { labels: [] }, body: 'No header' });
   });
+
+  it('a value may say "label", a key that looks like one may not', () => {
+    assert.deepEqual(parsePage('---\nurl: https://x.it/label\ntitle: la label\n---\n\nB').header.labels, []);
+    // As before: Label is the label key in another case, x-label and labels may hide one (L3).
+    assert.deepEqual(parsePage('---\nlabel: L2\nLabel: L0\n---\n\nB').header.labels, ['L2', 'L0']);
+    assert.deepEqual(parsePage('---\nlabel: L2\nx-label: L0\n---\n\nB').header.labels, ['L2', 'invalid']);
+    assert.deepEqual(parsePage('---\nlabels: L0\n---\n\nB').header.labels, ['invalid']);
+    assert.deepEqual(parsePage('---\n- label L0\n---\n\nB').header.labels, ['invalid']);
+  });
+
+  it('reads a double-quoted title without its quotes, other titles as they are', () => {
+    assert.equal(parsePage('---\ntitle: "A: \\"b\\""\n---\n\nB').header.title, 'A: "b"');
+    assert.equal(parsePage('---\ntitle: "rotto\n---\n\nB').header.title, '"rotto');
+    assert.equal(parsePage('---\ntitle: Torta "buona"\n---\n\nB').header.title, 'Torta "buona"');
+  });
 });
 
 describe('kb read', () => {

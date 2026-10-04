@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
 import { test } from 'node:test';
+
+import { parseLabelRules, resolveHome } from '@arianna/config';
+
+import type { Sql } from '../src/db/client.ts';
+import type { LiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
 
 import { allowedHosts, checkRequest, securityHeaders, type RequestFacts } from '../src/server/security.ts';
 
@@ -60,4 +70,39 @@ test('responses forbid framing, sniffing and foreign scripts', () => {
   assert.match(headers['content-security-policy'] ?? '', /script-src 'self'/);
   assert.match(headers['content-security-policy'] ?? '', /connect-src 'self' ws:\/\/127\.0\.0\.1:7420/);
   assert.equal(headers['x-content-type-options'], 'nosniff');
+});
+
+// The capture route of D-080 behind the same checks, on a real server.
+test('POST /api/capture: same origin, known Host, JSON only, POST only', async () => {
+  const dir = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
+  mkdirSync(join(dir, 'kb'), { recursive: true });
+  const server = await startApiServer({
+    sql: undefined as unknown as Sql,
+    live: undefined as unknown as LiveFeed,
+    host: '127.0.0.1',
+    port: 0,
+    capture: { home: dir, rules: parseLabelRules('') },
+  });
+  const port = server.port;
+  const send = (method: string, headers: Record<string, string>, body = '{"text":"una nota"}') =>
+    new Promise<number>((resolve, reject) => {
+      const request = httpRequest({ host: '127.0.0.1', port, path: '/api/capture', method, headers }, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.on('error', reject);
+      request.end(method === 'GET' ? undefined : body);
+    });
+  const same = `http://127.0.0.1:${String(port)}`;
+  try {
+    assert.equal(await send('POST', { 'content-type': 'application/json', origin: same }), 201);
+    assert.equal(await send('POST', { 'content-type': 'application/json', origin: 'http://evil.example' }), 403);
+    assert.equal(await send('POST', { 'content-type': 'application/json', host: `evil.example:${String(port)}` }), 403);
+    assert.equal(await send('POST', { 'content-type': 'text/plain', origin: same }), 415);
+    assert.equal(await send('GET', { origin: same }), 405);
+    assert.equal(readdirSync(join(dir, 'kb', 'inbox')).length, 1);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

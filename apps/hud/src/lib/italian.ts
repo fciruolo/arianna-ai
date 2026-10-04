@@ -64,6 +64,18 @@ export function reasonText(reason: string | null): string | undefined {
 
 const ERRORS: Record<string, string> = {
   'the message is empty': 'Il messaggio è vuoto.',
+  // The capture of "/nota" (D-080, apps/core/src/capture.ts).
+  'text is empty': 'La nota è vuota.',
+  'text holds a NUL character': 'La nota contiene un carattere non valido.',
+  'url must be http or https': 'Il link deve essere un indirizzo http o https.',
+  'url must be a single http(s) address': 'Il link deve essere un indirizzo http o https.',
+  'there is no kb/ folder': 'Manca la cartella kb/: la nota non è stata salvata.',
+  'kb/inbox is not a folder': 'kb/inbox non è una cartella vera: la nota non è stata salvata.',
+  'cannot create the note': 'Non sono riuscita a creare la nota.',
+  'cannot create kb/inbox': 'Non sono riuscita a creare la cartella kb/inbox.',
+  'a link needs an url': 'Un link richiede un indirizzo.',
+  'title must be one line of at most 200 characters': 'Il titolo deve stare su una riga di al massimo 200 caratteri.',
+  'too many notes with the same name in this second': 'Troppe note con lo stesso nome in questo secondo: riprova.',
   'the message contains a NUL character': 'Il messaggio contiene un carattere non valido.',
   'only a work conversation has a project': 'Solo una conversazione di lavoro può avere un progetto.',
   'project is not among the approved projects': 'Questo progetto non è fra quelli approvati: aggiungilo con pnpm arianna:init --reconfigure.',
@@ -112,6 +124,9 @@ export function errorText(cause: unknown): string {
   const length = /^the message is longer than (\d+) characters$/.exec(cause.message);
   if (length?.[1] !== undefined) return `Il messaggio supera ${length[1]} caratteri.`;
   if (/^the approval is already/.test(cause.message)) return 'Questa richiesta è già stata decisa.';
+  const note = /^text is longer than (\d+) KiB$/.exec(cause.message);
+  if (note?.[1] !== undefined) return `La nota supera ${note[1]} KiB.`;
+  if (/^kb\/inbox is labeled L\d: captures stop at L2$/.test(cause.message)) return 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.';
   if (cause.status === 403) return 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
   if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
   return 'Richiesta non valida.';

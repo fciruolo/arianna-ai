@@ -4,6 +4,7 @@ import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
@@ -47,6 +48,8 @@ export function createChatStore() {
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
+  /** "Nota salvata in kb/inbox/… (L2)" after a "/nota" (D-080): path and label, never the text. */
+  const notice = ref<string | null>(null);
   /** Calls (D-066): the receipts of the open conversation, the state of the voice, the call in progress. */
   const calls = ref<CallInfo[]>([]);
   const voiceState = ref<string | null>(null);
@@ -350,8 +353,21 @@ export function createChatStore() {
     const state = chat.value;
     if (state === null || body.trim() === '') return false;
     error.value = null;
+    notice.value = null;
+    // "/note" for "/nota": not sent to Arianna, the draft stays in the composer.
+    const refused = commandError(body);
+    if (refused !== undefined) {
+      error.value = refused;
+      return false;
+    }
     sending.value = true;
     try {
+      // "/nota ..." does not reach Arianna: a note in kb/inbox, without a model (D-080).
+      const note = parseNoteCommand(body);
+      if (note !== undefined) {
+        notice.value = savedText(await api.captureNote(note));
+        return true;
+      }
       const { message, task } = await api.sendMessage(state.conversationId, body);
       if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
       tasks.value = { ...tasks.value, [task.id]: task };
@@ -623,7 +639,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

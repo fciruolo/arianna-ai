@@ -103,11 +103,24 @@ export function parsePage(text: string): { header: Header; body: string } {
     const key = match?.[1]?.toLowerCase();
     const value = match?.[2]?.trim() ?? '';
     if (key === 'label') header.labels.push(value);
-    else if (key === 'title') header.title = value;
+    // A key that looks like a label (x-label, labels) may hide one; a value may say "label" freely (a URL).
+    else if (key !== undefined && /label/i.test(key)) header.labels.push('invalid');
+    else if (key === 'title') header.title = unquote(value);
     else if (key === 'source') header.source = value;
-    else if (/label/i.test(line)) header.labels.push('invalid');
+    else if (key === undefined && /label/i.test(line)) header.labels.push('invalid');
   }
   return { header, body: normalized.slice(end + 4).replace(/^[^\n]*\n/, '').replace(/^\n+/, '') };
+}
+
+/** A YAML double-quoted title (as captures write it) read without its quotes; anything else as it is. */
+function unquote(value: string): string {
+  if (!/^".*"$/.test(value)) return value;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'string' ? parsed : value;
+  } catch {
+    return value;
+  }
 }
 
 /** Lowercase, without accents: "Caparra" and "càparra" match. */

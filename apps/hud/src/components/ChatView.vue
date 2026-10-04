@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { commandError } from '../lib/capture.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
@@ -130,6 +131,8 @@ function submit(): void {
   const body = draft.value;
   if (body.trim() === '' || props.sending) return;
   emit('send', body);
+  // An unknown command is not sent (D-080): the draft stays, to be corrected.
+  if (commandError(body) !== undefined) return;
   draft.value = '';
   void nextTick(resize);
 }
@@ -420,7 +423,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         </button>
       </form>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span>Invio per inviare · Maiusc+Invio a capo</span>
+        <span>Invio per inviare · Maiusc+Invio a capo · /nota testo: salva in kb/inbox (L2), senza Arianna</span>
         <span>Etichetta <b class="font-medium" :class="labelClass[conversation.clearance]">{{ conversation.clearance }}</b>: {{ MODE_HINT[conversation.mode] }}</span>
       </p>
     </div>
