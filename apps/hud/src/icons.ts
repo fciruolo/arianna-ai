@@ -11,6 +11,9 @@ import {
   Lock,
   Menu,
   MessageCircle,
+  Mic,
+  Play,
+  Square,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -66,6 +69,9 @@ export const ICONS = {
   system: LifeBuoy,
   retry: RotateCcw,
   attach: Paperclip,
+  mic: Mic,
+  play: Play,
+  stop: Square,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

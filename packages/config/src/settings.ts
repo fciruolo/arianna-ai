@@ -9,6 +9,7 @@ import { DATA_DIR, DEFAULT_SERVER, parseConfig } from './config.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { asTable } from './validate.ts';
+import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
 
 export interface EndpointSettings {
   id: string;
@@ -42,6 +43,8 @@ export interface Settings {
   /** Agent → "<pack>/<character>" (D-060). */
   characters: Record<string, string>;
   telegram?: { token: string; chats: number[] };
+  /** Calls (D-066): written with every key, defaults included. */
+  voice?: VoiceConfig;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -91,6 +94,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
     characters: { ...config.characters },
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
+    ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
   };
 }
 
@@ -121,6 +125,60 @@ function endpointSection(endpoint: EndpointSettings): string[] {
     `url = ${str(endpoint.url)}`,
     ...(endpoint.command === undefined ? [] : [`command = ${list(endpoint.command)}`]),
     ...(endpoint.models === undefined ? [] : [`models = ${inlineTable(endpoint.models)}`]),
+  ];
+}
+
+function voiceSection(voice: VoiceConfig | undefined): string[] {
+  if (voice === undefined) {
+    const { limits, outgoing } = DEFAULT_VOICE;
+    return [
+      '#',
+      '# [voice]',
+      `# port = ${String(DEFAULT_VOICE.port)}`,
+      `# voice = ${str(DEFAULT_VOICE.voice)}`,
+      '#',
+      '# [voice.limits]',
+      `# call_minutes = ${String(limits.callMinutes)}`,
+      `# warn_seconds = ${String(limits.warnSeconds)}`,
+      `# delegations = ${String(limits.delegations)}`,
+      `# delegation_seconds = ${String(limits.delegationSeconds)}`,
+      '#',
+      '# [voice.outgoing]',
+      `# max_per_day = ${String(outgoing.maxPerDay)}`,
+      `# quiet_from = ${str(outgoing.quietFrom)}`,
+      `# quiet_to = ${str(outgoing.quietTo)}`,
+      `# quiet_weekend = ${String(outgoing.quietWeekend)}`,
+      `# ring_seconds = ${String(outgoing.ringSeconds)}`,
+      `# waiting_minutes = ${String(outgoing.waitingMinutes)}`,
+      '#',
+      '# [voice.push]',
+      '# public_key = "<VAPID public key, base64url>"',
+      `# private_key = ${str(VAPID_PRIVATE_KEY_REF)}`,
+      '# subject = "mailto:you@example.org"',
+    ];
+  }
+  const { limits, outgoing, push } = voice;
+  return [
+    '[voice]',
+    `port = ${String(voice.port)}`,
+    `voice = ${str(voice.voice)}`,
+    '',
+    '[voice.limits]',
+    `call_minutes = ${String(limits.callMinutes)}`,
+    `warn_seconds = ${String(limits.warnSeconds)}`,
+    `delegations = ${String(limits.delegations)}`,
+    `delegation_seconds = ${String(limits.delegationSeconds)}`,
+    '',
+    '[voice.outgoing]',
+    `max_per_day = ${String(outgoing.maxPerDay)}`,
+    `quiet_from = ${str(outgoing.quietFrom)}`,
+    `quiet_to = ${str(outgoing.quietTo)}`,
+    `quiet_weekend = ${String(outgoing.quietWeekend)}`,
+    `ring_seconds = ${String(outgoing.ringSeconds)}`,
+    `waiting_minutes = ${String(outgoing.waitingMinutes)}`,
+    ...(push === undefined
+      ? []
+      : ['', '[voice.push]', `public_key = ${str(push.publicKey)}`, `private_key = ${str(push.privateKey)}`, `subject = ${str(push.subject)}`]),
   ];
 }
 
@@ -227,6 +285,17 @@ export function renderSettings(settings: Settings): string {
     ...(telegram === undefined
       ? ['#', '# [telegram]', `# token = ${str(TELEGRAM_TOKEN_REF)}`, '# chats = [123456789]']
       : ['[telegram]', `token = ${str(telegram.token)}`, `chats = ${list(telegram.chats)}`]),
+    '',
+    '# Calls over the internet (D-066): the web chat talks to apps/voice, which',
+    '# the core starts on this port (loopback). Off while this section is absent.',
+    '# The models come from [roles]: stt hears, tts speaks, voice replies. The',
+    '# Python environment: pnpm voice:sync (needs uv); the weights: pnpm',
+    '# arianna:models pull (--trial also the candidates of the voice trial page).',
+    '# Quiet hours are local time; scheduled calls skip them and the weekend but',
+    '# count in max_per_day. [voice.push] turns on Web Push: a notification',
+    '# without content through Apple, Google or Mozilla when the chat is closed;',
+    '# the private key stays in the vault (key vapid-private-key). Restart to apply.',
+    ...voiceSection(settings.voice),
   ];
   return `${lines.join('\n')}\n`;
 }

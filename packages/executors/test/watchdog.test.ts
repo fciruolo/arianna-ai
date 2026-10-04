@@ -154,6 +154,50 @@ describe('Watchdog', { timeout: 60_000 }, () => {
     assert.ok(events.some((event) => event.type === 'error' && event.message === 'ENOENT'));
   });
 
+  // apps/voice (D-066): its own health path with a token, its own environment,
+  // and an exit at the end of standard input so that it dies with the core.
+  const TOKEN_SERVER = [
+    "const http = require('node:http');",
+    "process.stdin.on('data', () => {}); process.stdin.on('end', () => process.exit(0));",
+    "http.createServer((q, r) => {",
+    "  const ok = q.url === '/health' && q.headers.authorization === 'Bearer ' + process.env.VOICE_TOKEN && process.env.SECRET === undefined;",
+    "  r.writeHead(ok ? 200 : 401).end();",
+    "}).listen(Number(process.argv[1]), '127.0.0.1');",
+  ].join('\n');
+
+  it('checks a custom health path with headers, in the environment it was given, with stdin kept open', async () => {
+    const port = await freePort();
+    const { watchdog } = await supervise(port, {
+      url: `http://127.0.0.1:${String(port)}`,
+      command: [process.execPath, '-e', TOKEN_SERVER, String(port)],
+      env: { PATH: process.env.PATH ?? '', VOICE_TOKEN: 't0ken' },
+      stdin: 'pipe',
+      healthPath: '/health',
+      healthHeaders: { authorization: 'Bearer t0ken' },
+    });
+    assert.equal(watchdog.state, 'up');
+  });
+
+  it('never reports up with the wrong token, a leaked variable or stdin closed', async () => {
+    const cases: Partial<WatchdogOptions>[] = [
+      { env: { PATH: process.env.PATH ?? '', VOICE_TOKEN: 't0ken' }, stdin: 'pipe', healthHeaders: { authorization: 'Bearer wrong' } },
+      { env: { PATH: process.env.PATH ?? '', VOICE_TOKEN: 't0ken', SECRET: 'x' }, stdin: 'pipe', healthHeaders: { authorization: 'Bearer t0ken' } },
+      { env: { PATH: process.env.PATH ?? '', VOICE_TOKEN: 't0ken' }, stdin: 'ignore', healthHeaders: { authorization: 'Bearer t0ken' } },
+    ];
+    for (const options of cases) {
+      const port = await freePort();
+      const { watchdog } = await supervise(port, {
+        url: `http://127.0.0.1:${String(port)}`,
+        command: [process.execPath, '-e', TOKEN_SERVER, String(port)],
+        healthPath: '/health',
+        startupTimeoutMs: 600,
+        maxRestarts: 0,
+        ...options,
+      });
+      assert.equal(watchdog.state, 'failed', JSON.stringify(options));
+    }
+  });
+
   it('lets start() return when stop() comes during the startup', async () => {
     const port = await freePort();
     const events: WatchdogEvent[] = [];

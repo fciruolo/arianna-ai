@@ -1,0 +1,23 @@
+# apps/voice (D-066): the voice of Arianna, started by the core. Exact versions
+# only; the indirect ones are fixed by uv.lock. Update: change a version, then
+# `pnpm voice:lock` and `pnpm voice:sync`; exclude-newer keeps every release at
+# least a day old, like minimumReleaseAge of pnpm (docs/SECURITY.md).
+[project]
+name = "arianna-voice"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # Pipeline, Silero VAD and SmallWebRTCTransport (aiortc); its aiohttp is also our HTTP server.
+  "pipecat-ai[webrtc]==1.12.0",
+  # Parakeet, Whisper, Kokoro and Chatterbox on MLX, without PyTorch.
+  "mlx-audio[stt,tts]==0.5.7",
+  # Italian phonemes for Kokoro: misaki over espeak-ng, bundled for macOS arm64.
+  "misaki==0.9.4",
+  "phonemizer-fork==3.3.2",
+  "espeakng-loader==0.2.4",
+]
+
+[tool.uv]
+# Not installed as a package: the core runs src/ with PYTHONPATH.
+package = false
+exclude-newer = "2026-10-03T00:00:00Z"

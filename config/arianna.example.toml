@@ -30,6 +30,8 @@ user = "arianna"
 # extractor = "<catalog id>"
 # embedder = "<catalog id>"
 # voice = "<catalog id>"
+# stt = "<catalog id>"
+# tts = "<catalog id>"
 
 # Local inference (task 1.3): OpenAI-compatible servers on this machine only,
 # because requests carry L2 data in clear. Endpoints in order of preference:
@@ -93,3 +95,36 @@ port = 7420
 # [telegram]
 # token = "vault://telegram-bot-token"
 # chats = [123456789]
+
+# Calls over the internet (D-066): the web chat talks to apps/voice, which
+# the core starts on this port (loopback). Off while this section is absent.
+# The models come from [roles]: stt hears, tts speaks, voice replies. The
+# Python environment: pnpm voice:sync (needs uv); the weights: pnpm
+# arianna:models pull (--trial also the candidates of the voice trial page).
+# Quiet hours are local time; scheduled calls skip them and the weekend but
+# count in max_per_day. [voice.push] turns on Web Push: a notification
+# without content through Apple, Google or Mozilla when the chat is closed;
+# the private key stays in the vault (key vapid-private-key). Restart to apply.
+#
+# [voice]
+# port = 7421
+# voice = "if_sara"
+#
+# [voice.limits]
+# call_minutes = 15
+# warn_seconds = 60
+# delegations = 6
+# delegation_seconds = 90
+#
+# [voice.outgoing]
+# max_per_day = 3
+# quiet_from = "21:00"
+# quiet_to = "08:00"
+# quiet_weekend = true
+# ring_seconds = 30
+# waiting_minutes = 30
+#
+# [voice.push]
+# public_key = "<VAPID public key, base64url>"
+# private_key = "vault://vapid-private-key"
+# subject = "mailto:you@example.org"

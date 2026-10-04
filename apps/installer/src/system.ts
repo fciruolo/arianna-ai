@@ -36,6 +36,8 @@ function firstLine(text: string): string {
 export interface SystemOptions {
   run?: Runner;
   nodeVersion?: string;
+  /** `[voice]` is configured: uv builds the Python environment of apps/voice (D-066). */
+  voice?: boolean;
 }
 
 /** Node, pnpm, Docker with its daemon running, sops and age, machine. */
@@ -60,12 +62,19 @@ export async function systemChecks(options: SystemOptions = {}): Promise<DoctorC
   await tool('system.docker', 'docker', ['info', '--format', '{{.ServerVersion}}'], 'Docker is not installed or not running: start Docker Desktop');
   await tool('system.sops', 'sops', ['--version'], 'sops is not installed: brew install sops (needed by the vault)');
   await tool('system.age', 'age', ['--version'], 'age is not installed: brew install age (needed by the vault)');
+  if (options.voice === true) await tool('system.uv', 'uv', ['--version'], 'uv is not installed: brew install uv (needed by the calls, D-066)');
   checks.push({
     id: 'system.machine',
     ok: true,
     detail: `${platform()} ${arch()}, ${String(Math.round(totalmem() / 2 ** 30))} GiB of RAM`,
   });
   return checks;
+}
+
+/** The Python environment of apps/voice, built by pnpm voice:sync (D-066). */
+export function voiceCheck(python: string): DoctorCheck {
+  const ok = existsSync(python);
+  return { id: 'voice.env', ok, detail: ok ? 'data/voice/venv is in place' : 'data/voice/venv is missing: pnpm voice:sync' };
 }
 
 /**

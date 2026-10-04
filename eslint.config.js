@@ -24,6 +24,14 @@ export default defineConfig(
     },
   },
   {
+    // Worklet and service worker of the web chat (D-066): plain scripts with their own globals.
+    files: ['apps/hud/public/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly', self: 'readonly', clients: 'readonly' },
+    },
+  },
+  {
     // Claude Code hook scripts: plain CommonJS (see .claude/hooks/package.json).
     files: ['.claude/hooks/**/*.js'],
     languageOptions: {

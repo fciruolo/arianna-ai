@@ -198,12 +198,13 @@ models:
         url: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/938d8919941c6e7efd3c7150eff7fe9d12afa631/vocab.json
         size_bytes: 6722759
         sha256: "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
-  # Small model: smoke test of the oMLX pipeline (task 1.4), candidate extractor.
+  # Small model: smoke test of the oMLX pipeline (task 1.4), candidate extractor,
+  # and the replies of a call (D-066: the voice answers in under a second).
   - id: qwen3-4b-instruct-2507-4bit
     family: qwen3
     runtime: mlx
     ram_min_gib: 3
-    roles: [extractor]
+    roles: [extractor, voice]
     status: experimental
     files:
       - path: added_tokens.json
@@ -250,3 +251,135 @@ models:
         url: https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit/resolve/50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b/vocab.json
         size_bytes: 2776833
         sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  # Hearing and speaking (D-066), run by apps/voice with mlx-audio, not by oMLX.
+  # Two candidates each for the voice trial page: the user picks by ear and
+  # assigns the winners to the stt and tts roles. Kokoro: only the Italian voices.
+  # Chatterbox has no voice of its own: the trial clones a phrase said by Kokoro.
+  - id: parakeet-tdt-0.6b-v3-mlx
+    family: parakeet
+    runtime: mlx
+    ram_min_gib: 3
+    roles: [stt]
+    status: experimental
+    files:
+      - path: config.json
+        url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/config.json
+        size_bytes: 244093
+        sha256: "f320f1292511f34ec47f513755fe20fd01dbfc09a925d42730e66059a6e1ef4c"
+      - path: model.safetensors
+        url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/model.safetensors
+        size_bytes: 2508288736
+        sha256: "05e01c7f396c298cf7d23f61da7b504adeab698f0aaeafd9c82d198625464592"
+      - path: tokenizer.model
+        url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/tokenizer.model
+        size_bytes: 360916
+        sha256: "eacec2b0a77f336d4a2ca4a25a7047575d3c2b74de47e997f4c205126ed3135e"
+      - path: tokenizer.vocab
+        url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/tokenizer.vocab
+        size_bytes: 101024
+        sha256: "41130ff456706304a1adec782ccc9e003c4d417e8e324353d281be958cac4e17"
+      - path: vocab.txt
+        url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/vocab.txt
+        size_bytes: 46772
+        sha256: "3cde1409fd78783a79b29ed4d32da57c746993856f7c8263bcb905d2e5839db7"
+  - id: whisper-large-v3-turbo-mlx
+    family: whisper
+    runtime: mlx
+    ram_min_gib: 3
+    roles: [stt]
+    status: experimental
+    files:
+      - path: added_tokens.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/added_tokens.json
+        size_bytes: 34648
+        sha256: "3c51f66c4c21f9e126970078f11ae77a78c74aee8df606ee9daba86e467108e0"
+      - path: config.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/config.json
+        size_bytes: 1301
+        sha256: "47ef28115e4b7e08c604546cc98eb1ead8ff72152cfaeb5d7bcb7ef1640a5bdd"
+      - path: generation_config.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/generation_config.json
+        size_bytes: 3772
+        sha256: "cce11bfe3aaa6ae9e072ea2637caaec8795e68d9b67e655a5af16ee509681a4c"
+      - path: merges.txt
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/merges.txt
+        size_bytes: 493869
+        sha256: "2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6"
+      - path: model.safetensors
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/model.safetensors
+        size_bytes: 1613977443
+        sha256: "a76ee3af9c01b616ab7caf1eed663dceb7d68e9dc62c990dac48112db6e57e34"
+      - path: model.safetensors.index.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/model.safetensors.index.json
+        size_bytes: 37633
+        sha256: "9cf894da1061ccc1657c6dabf1fa19dfcf1f0603df4194ab4fb913a554da789d"
+      - path: normalizer.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/normalizer.json
+        size_bytes: 52666
+        sha256: "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd"
+      - path: preprocessor_config.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/preprocessor_config.json
+        size_bytes: 340
+        sha256: "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"
+      - path: special_tokens_map.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/special_tokens_map.json
+        size_bytes: 2186
+        sha256: "baea4ea09372eb4fca86b4e4346139fd73cb807d5087e9de0948e971739c3e74"
+      - path: tokenizer.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/tokenizer.json
+        size_bytes: 2710337
+        sha256: "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"
+      - path: tokenizer_config.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/tokenizer_config.json
+        size_bytes: 282843
+        sha256: "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389"
+      - path: vocab.json
+        url: https://huggingface.co/mlx-community/whisper-large-v3-turbo-asr-fp16/resolve/624c19c9af5603fa73b83bce14d4aeea96156d18/vocab.json
+        size_bytes: 1036558
+        sha256: "e2aa043ef015641d363d8288e7c241c85e36a5c761fb303598e0710233344387"
+  - id: kokoro-82m-bf16-mlx
+    family: kokoro
+    runtime: mlx
+    ram_min_gib: 1
+    roles: [tts]
+    status: experimental
+    files:
+      - path: config.json
+        url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/config.json
+        size_bytes: 2351
+        sha256: "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f"
+      - path: kokoro-v1_0.safetensors
+        url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/kokoro-v1_0.safetensors
+        size_bytes: 327115152
+        sha256: "4e9ecdf03b8b6cf906070390237feda473dc13327cb8d56a43deaa374c02acd8"
+      - path: voices/if_sara.safetensors
+        url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/voices/if_sara.safetensors
+        size_bytes: 522320
+        sha256: "2f3d092c8ba16f2007e8b234c9a55bdebec614a1e50143e41b39dd7f89fdb45b"
+      - path: voices/im_nicola.safetensors
+        url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/voices/im_nicola.safetensors
+        size_bytes: 522320
+        sha256: "96b62f7d25c3e7efce4f2506beeaa9f63bcc73524c7b2862738c65433fe9ba16"
+  - id: chatterbox-multilingual-v3-mlx
+    family: chatterbox
+    runtime: mlx
+    ram_min_gib: 4
+    roles: [tts]
+    status: experimental
+    files:
+      - path: config.json
+        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/config.json
+        size_bytes: 666
+        sha256: "b2097a15078624f41fcdaad9fc82f7b91ab0d39771aebc1af1775b0feaafe309"
+      - path: model.safetensors
+        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/model.safetensors
+        size_bytes: 2711113780
+        sha256: "e702f2c441e040bd360e59a86c85d462539759d665e41cfd1938adadd74187a3"
+      - path: tokenizer.json
+        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/tokenizer.json
+        size_bytes: 69989
+        sha256: "69632f47220a788a52ce2661d096453c5655e9bf25289d89a8d832c46ee07dbf"
+      - path: Cangjie5_TC.json
+        url: https://huggingface.co/mlx-community/chatterbox-multilingual-v3/resolve/03565773edd72e949572557597af8063bb49a18a/Cangjie5_TC.json
+        size_bytes: 1920163
+        sha256: "7073fd9de919443ae88e0bd2449917a65fe54898a4413ed1edcc4b67f28bce8c"

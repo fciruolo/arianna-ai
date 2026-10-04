@@ -50,6 +50,8 @@ export function securityHeaders(host: string): Record<string, string> {
       "default-src 'self'",
       `connect-src 'self' ws://${host}`,
       "img-src 'self' data:",
+      // The voice trial plays the WAV it fetched through a blob: URL (D-066).
+      "media-src 'self' blob:",
       "style-src 'self'",
       "script-src 'self'",
       "object-src 'none'",

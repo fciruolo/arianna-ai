@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
-import { loadConfig, loadLabelRules, watchConfig } from '@arianna/config';
+import { loadCatalog, loadConfig, loadLabelRules, voicePaths, watchConfig } from '@arianna/config';
 import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
 import { createVault } from '@arianna/vault';
 
@@ -20,6 +20,8 @@ import { selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram, type TelegramChannel } from './telegram/channel.ts';
+import { createVoiceService, type VoiceService } from './voice/service.ts';
+import { trialModels } from './voice/trial.ts';
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -123,6 +125,29 @@ const worker = createWorker({
   onError: report,
 });
 const live = await startLiveFeed(sql, { onError: report });
+
+// apps/voice (D-066): on only with [voice] in arianna.toml, started in the
+// background so that the chat never waits for it. Without the environment
+// (pnpm voice:sync) the trial page says what is missing.
+let voice: VoiceService | undefined;
+let voiceApi: { voice: string; models: () => ReturnType<typeof trialModels> } | undefined;
+const voiceConfig = config.voice;
+if (voiceConfig !== undefined) {
+  const voiceDirs = voicePaths(config.home, config.paths.data);
+  // Read at each request, like the roles: a new catalog entry needs no restart.
+  const candidates = () => trialModels(loadCatalog(config.home), settings.current().roles, voiceDirs.models);
+  voiceApi = { voice: voiceConfig.voice, models: candidates };
+  voice = createVoiceService({
+    paths: voiceDirs,
+    port: voiceConfig.port,
+    logFile: join(voiceDirs.tmp, 'voice.log'),
+    onEvent: (event) => {
+      if (event.type === 'state' || event.type === 'gave-up' || event.type === 'spawn-error') console.log(`voice: ${event.type === 'state' ? event.state : event.type}`);
+    },
+  });
+  if (voice.state === 'not-installed') console.error('voice off: data/voice/venv is missing (brew install uv, then pnpm voice:sync)');
+  else voice.start().catch(report);
+}
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
   sql,
@@ -137,6 +162,7 @@ const server = await startApiServer({
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
     choices: () => settings.current().characters,
   },
+  ...(voice === undefined || voiceApi === undefined ? {} : { voice: { service: voice, ...voiceApi } }),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });
@@ -166,6 +192,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   await telegram?.close();
   await server.close();
+  await voice?.stop();
   await worker.stop();
   await live.close();
   await sql.end({ timeout: 5 });

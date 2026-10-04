@@ -137,3 +137,54 @@ export async function loadCharacters(): Promise<CharacterListing> {
 export function sheetUrl(choice: CharacterChoice): string {
   return `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;
 }
+
+/** A candidate of the voice trial page (D-066). */
+export interface TrialModel {
+  id: string;
+  family: string;
+  kind: 'stt' | 'tts';
+  present: boolean;
+  assigned: boolean;
+  sizeBytes: number;
+  voices: string[];
+}
+
+export interface VoiceTrial {
+  /** `off` without [voice]; `not-installed` without data/voice/venv; else the state of the watchdog. */
+  state: string;
+  voice: string | null;
+  models: TrialModel[];
+}
+
+export interface TrialTranscript {
+  id: string;
+  family: string;
+  text?: string;
+  seconds?: number;
+  error?: string;
+}
+
+export async function loadVoiceTrial(): Promise<VoiceTrial> {
+  return call<VoiceTrial>('GET', '/api/voice/trial');
+}
+
+/** The same recording written by every speech-to-text candidate on disk. */
+export async function transcribeTrial(pcm16: string): Promise<TrialTranscript[]> {
+  return (await call<{ results: TrialTranscript[] }>('POST', '/api/voice/trial/transcribe', { pcm16 })).results;
+}
+
+/** One candidate says `text`: the WAV and the seconds it took. */
+export async function speakTrial(text: string, model: string, voice: string): Promise<{ audio: Blob; seconds: number | undefined }> {
+  const response = await fetch('/api/voice/trial/speak', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, model, voice }),
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  }
+  const seconds = Number(response.headers.get('x-seconds-spent'));
+  return { audio: await response.blob(), seconds: Number.isFinite(seconds) && response.headers.has('x-seconds-spent') ? seconds : undefined };
+}

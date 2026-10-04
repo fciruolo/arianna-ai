@@ -29,6 +29,8 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
+import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
+import { MAX_TRANSCRIBE_BODY, speakCall, transcribeCall, TrialError, type TrialModel } from '../voice/trial.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
 /**
@@ -60,10 +62,20 @@ export interface ApiServerOptions {
   agents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
+  /** apps/voice (D-066); absent when `[voice]` is not configured. */
+  voice?: VoiceApi;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
   onError?: (error: unknown) => void;
+}
+
+/** What the routes need of the voice: the service and the trial candidates, read at each request. */
+export interface VoiceApi {
+  service: Pick<VoiceService, 'state' | 'request'>;
+  models: () => TrialModel[];
+  /** The Kokoro voice of `[voice]`. */
+  voice: string;
 }
 
 export interface ApiServer {
@@ -91,7 +103,8 @@ class HttpError extends Error {
 
 type Params = Record<string, string>;
 /** A JSON body, or `raw` bytes with their type (the character sheets). */
-type Result = { status?: number; body: unknown } | { raw: Buffer; type: string };
+/** `raw` bytes are cached by the browser unless `noStore` (the voice trial's WAV, D-066). */
+type Result = { status?: number; body: unknown } | { raw: Buffer; type: string; headers?: Record<string, string>; noStore?: boolean };
 type Handler = (request: IncomingMessage, url: URL, params: Params) => Promise<Result>;
 
 interface Route {
@@ -110,14 +123,14 @@ function route(method: string, path: string, handler: Handler): Route {
   return { method, pattern: new RegExp(`^${source}$`), keys, handler };
 }
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
   const declared = Number(request.headers['content-length'] ?? '0');
-  if (declared > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+  if (declared > limit) throw new HttpError(413, 'body too large');
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request as AsyncIterable<Buffer>) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+    if (size > limit) throw new HttpError(413, 'body too large');
     chunks.push(chunk);
   }
   let value: unknown;
@@ -156,10 +169,56 @@ interface RouteOptions {
   models: () => readonly { executor: string; model: string }[];
   agents: () => readonly string[];
   characters: ApiServerOptions['characters'];
+  voice: VoiceApi | undefined;
 }
 
-function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions): Route[] {
+/** A JSON answer of apps/voice, or the closed code of its error. */
+function voiceJson(answer: { status: number; body: Buffer }): unknown {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(answer.body.toString('utf8'));
+  } catch {
+    throw new HttpError(502, 'voice: invalid answer');
+  }
+  if (answer.status !== 200) {
+    const code = typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof parsed.error === 'string' ? parsed.error : 'error';
+    throw new HttpError(502, `voice: ${code.slice(0, 200)}`);
+  }
+  return parsed;
+}
+
+function voiceRoutes(voice: VoiceApi | undefined): Route[] {
+  const need = (): VoiceApi => {
+    if (voice === undefined) throw new HttpError(503, 'voice off: add [voice] to arianna.toml');
+    return voice;
+  };
   return [
+    // The trial page (D-066): service state, candidates on disk, voices.
+    route('GET', '/api/voice/trial', () => {
+      const state: 'off' | VoiceState = voice === undefined ? 'off' : voice.service.state;
+      return Promise.resolve({ body: { state, voice: voice?.voice ?? null, models: voice?.models() ?? [] } });
+    }),
+    route('POST', '/api/voice/trial/transcribe', async (request) => {
+      const { service, models } = need();
+      const call = transcribeCall(await readJson(request, MAX_TRANSCRIBE_BODY), models());
+      // Loading two models the first time takes a while.
+      return { body: voiceJson(await service.request('POST', '/trial/transcribe', { json: call, timeoutMs: 300_000 })) };
+    }),
+    route('POST', '/api/voice/trial/speak', async (request) => {
+      const { service, models } = need();
+      const call = speakCall(await readJson(request), models());
+      const answer = await service.request('POST', '/trial/speak', { json: call, timeoutMs: 300_000, maxBytes: 32 * 1024 * 1024 });
+      if (answer.status !== 200) voiceJson(answer);
+      if (answer.body.subarray(0, 4).toString('latin1') !== 'RIFF') throw new HttpError(502, 'voice: invalid answer');
+      const spent = Number(answer.headers['x-seconds-spent']);
+      return { raw: answer.body, type: 'audio/wav', noStore: true, ...(Number.isFinite(spent) ? { headers: { 'x-seconds-spent': spent.toFixed(3) } } : {}) };
+    }),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, agents, characters, voice }: RouteOptions): Route[] {
+  return [
+    ...voiceRoutes(voice),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
@@ -397,6 +456,8 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
+  if (error instanceof TrialError) return { status: 400, message: error.message };
+  if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
 }
 
@@ -407,6 +468,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     models: options.models ?? (() => []),
     agents: options.agents ?? (() => []),
     characters: options.characters,
+    voice: options.voice,
   });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
@@ -435,7 +497,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         });
         const result = await found.candidate.handler(request, url, params);
         if ('raw' in result) {
-          response.writeHead(200, { ...headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': 'no-cache' });
+          response.writeHead(200, { ...headers, ...result.headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': result.noStore === true ? 'no-store' : 'no-cache' });
           response.end(result.raw);
         } else {
           sendJson(response, result.status ?? 200, result.body, headers);

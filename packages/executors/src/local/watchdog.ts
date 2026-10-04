@@ -41,6 +41,17 @@ export interface WatchdogOptions {
   /** argv of the server (no shell). Without it the watchdog only monitors. */
   command?: readonly string[];
   cwd?: string;
+  /** The child's whole environment; without it the core's is inherited. */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * `pipe`: the child's standard input stays open for as long as this process
+   * lives, so a child that exits on end of input never outlives a crashed core.
+   */
+  stdin?: 'ignore' | 'pipe';
+  /** Path of the health check after `url`; `/models` for OpenAI-compatible servers. */
+  healthPath?: string;
+  /** Headers of the health check (apps/voice wants its service token, D-066). */
+  healthHeaders?: Record<string, string>;
   /** File that receives the server's stdout and stderr; discarded otherwise. Logs may contain prompts: keep it in data/. */
   logFile?: string;
   intervalMs?: number;
@@ -64,8 +75,8 @@ const STARTUP_POLL_MS = 250;
 export class Watchdog {
   readonly id: string;
   readonly #url: string;
-  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'logFile' | 'onEvent'>> &
-    Pick<WatchdogOptions, 'command' | 'cwd' | 'logFile' | 'onEvent'>;
+  readonly #options: Required<Omit<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders'>> &
+    Pick<WatchdogOptions, 'command' | 'cwd' | 'env' | 'logFile' | 'onEvent' | 'healthHeaders'>;
 
   #state: WatchdogState = 'idle';
   #running = false;
@@ -96,6 +107,8 @@ export class Watchdog {
       restartWindowMs: 600_000,
       backoffMs: 1_000,
       stopGraceMs: 5_000,
+      stdin: 'ignore',
+      healthPath: '/models',
       ...options,
     };
   }
@@ -246,8 +259,9 @@ export class Watchdog {
       // Own process group, so that stopping it also stops the workers it forks.
       child = spawn(file, args, {
         cwd: this.#options.cwd,
+        ...(this.#options.env === undefined ? {} : { env: this.#options.env }),
         detached: true,
-        stdio: ['ignore', log ?? 'ignore', log ?? 'ignore'],
+        stdio: [this.#options.stdin, log ?? 'ignore', log ?? 'ignore'],
       });
     } finally {
       if (log !== undefined) closeSync(log);
@@ -311,8 +325,9 @@ export class Watchdog {
 
   async #healthy(): Promise<boolean> {
     try {
-      const response = await localRequest(`${this.#url}/models`, {
+      const response = await localRequest(`${this.#url}${this.#options.healthPath}`, {
         method: 'GET',
+        ...(this.#options.healthHeaders === undefined ? {} : { headers: this.#options.healthHeaders }),
         signal: AbortSignal.timeout(this.#options.healthTimeoutMs),
       });
       return response.status >= 200 && response.status <= 299;

@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, layoutCheck, systemChecks, type Runner } from '../src/system.ts';
+import { DATA_LAYOUT, ensureLayout, layoutCheck, systemChecks, voiceCheck, type Runner } from '../src/system.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 
@@ -14,7 +14,7 @@ after(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-const versions: Record<string, string> = { pnpm: '12.8.1', docker: '28.1.1', sops: 'sops 3.13.3 (latest)\nmore', age: 'v1.3.2' };
+const versions: Record<string, string> = { pnpm: '12.8.1', docker: '28.1.1', sops: 'sops 3.13.3 (latest)\nmore', age: 'v1.3.2', uv: 'uv 0.12.23' };
 const runner = (missing: string[] = []): Runner => (binary) =>
   missing.includes(binary) ? Promise.reject(new Error('ENOENT')) : Promise.resolve(versions[binary] ?? '');
 
@@ -30,6 +30,16 @@ test('an old Node, a missing binary or a stopped Docker fail with what to do', a
   assert.deepEqual(failed, ['system.node', 'system.docker', 'system.age']);
   assert.match(checks.find((check) => check.id === 'system.docker')?.detail ?? '', /start Docker Desktop/);
   assert.equal((await systemChecks({ run: runner(), nodeVersion: 'v24.0.0' }))[0]?.ok, true);
+});
+
+test('uv is checked only when [voice] is configured, and the voice environment is reported (D-066)', async () => {
+  assert.ok(!(await systemChecks({ run: runner(['uv']), nodeVersion: 'v22.18.0' })).some((check) => check.id === 'system.uv'));
+  const missing = await systemChecks({ run: runner(['uv']), nodeVersion: 'v22.18.0', voice: true });
+  assert.match(missing.find((check) => check.id === 'system.uv' && !check.ok)?.detail ?? '', /brew install uv/);
+  const present = await systemChecks({ run: runner(), nodeVersion: 'v22.18.0', voice: true });
+  assert.equal(present.find((check) => check.id === 'system.uv')?.detail, 'uv 0.12.23');
+  assert.equal(voiceCheck(join(import.meta.dirname, 'arianna-no-such-python')).ok, false);
+  assert.equal(voiceCheck(process.execPath).ok, true);
 });
 
 test('install creates data/ and its folders, private where they hold secrets; twice is harmless', () => {

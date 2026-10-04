@@ -12,6 +12,13 @@ export function conversationFromPath(pathname: string): string | undefined {
   return id !== undefined && UUID.test(id) ? id.toLowerCase() : undefined;
 }
 
+/** The voice trial page (D-066): a page of its own, not a conversation. */
+export const VOICE_TRIAL_PATH = '/voce/provino';
+
+export function isVoiceTrialPath(pathname: string): boolean {
+  return pathname === VOICE_TRIAL_PATH || pathname === `${VOICE_TRIAL_PATH}/`;
+}
+
 /** The path of a conversation, or the root when none is open. */
 export function pathFor(conversationId: string | null): string {
   return conversationId === null ? '/' : `/c/${conversationId}`;

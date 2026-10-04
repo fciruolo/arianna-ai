@@ -8,10 +8,11 @@ import Icon from './components/Icon.vue';
 import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import StatusPanel from './components/StatusPanel.vue';
+import VoiceTrial from './components/VoiceTrial.vue';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
-import { conversationFromPath, documentTitle, pathFor } from './lib/route.ts';
+import { conversationFromPath, documentTitle, isVoiceTrialPath, pathFor, VOICE_TRIAL_PATH } from './lib/route.ts';
 import { poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
@@ -52,8 +53,24 @@ const clockText = computed(() => {
   return `${DAYS[date.getDay()] ?? ''} ${pad(date.getDate())} ${MONTHS[date.getMonth()] ?? ''} · ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
+// The voice trial page (D-066) has an address of its own and replaces the chat.
+const page = ref<'chat' | 'voice-trial'>('chat');
+
+function openVoiceTrial(): void {
+  showSidebar.value = false;
+  page.value = 'voice-trial';
+  if (chat.value !== null) store.close();
+  if (window.location.pathname !== VOICE_TRIAL_PATH) window.history.pushState(null, '', VOICE_TRIAL_PATH);
+  document.title = documentTitle('Provino della voce');
+}
+
 // The address follows the open conversation (/c/<id>), so a reload comes back to it.
 function followAddress(): void {
+  if (isVoiceTrialPath(window.location.pathname)) {
+    openVoiceTrial();
+    return;
+  }
+  page.value = 'chat';
   const id = conversationFromPath(window.location.pathname);
   if (id === undefined) {
     if (chat.value !== null) store.close();
@@ -65,6 +82,8 @@ function followAddress(): void {
 watch(
   () => chat.value?.conversationId ?? null,
   (id) => {
+    if (id !== null) page.value = 'chat';
+    else if (page.value === 'voice-trial') return;
     const path = pathFor(id);
     if (window.location.pathname === path) return;
     if (id === null) window.history.replaceState(null, '', path);
@@ -74,7 +93,7 @@ watch(
 watch(
   () => current.value?.title,
   (title) => {
-    document.title = documentTitle(title);
+    if (page.value === 'chat') document.title = documentTitle(title);
   },
   { immediate: true },
 );
@@ -95,12 +114,21 @@ onBeforeUnmount(() => {
 
 async function openConversation(id: string): Promise<void> {
   showSidebar.value = false;
+  page.value = 'chat';
   await store.open(id);
 }
 
 async function createConversation(mode: 'work' | 'private', project?: string): Promise<void> {
   showSidebar.value = false;
+  page.value = 'chat';
   await store.create(mode, project);
+}
+
+function openChat(): void {
+  if (page.value === 'chat') return;
+  page.value = 'chat';
+  window.history.pushState(null, '', '/');
+  document.title = documentTitle(undefined);
 }
 
 /** The last line of activity of a running task of the open conversation: it says what Arianna is doing. */
@@ -151,8 +179,27 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       >
         A
       </button>
-      <button type="button" class="grid size-[38px] place-items-center rounded-[9px] border border-line-strong bg-surface-2 text-accent" aria-label="Chat" aria-current="page">
+      <button
+        type="button"
+        class="grid size-[38px] place-items-center rounded-[9px] border"
+        :class="page === 'chat' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
+        aria-label="Chat"
+        title="Chat"
+        :aria-current="page === 'chat' ? 'page' : undefined"
+        @click="openChat"
+      >
         <Icon name="chat" />
+      </button>
+      <button
+        type="button"
+        class="grid size-[38px] place-items-center rounded-[9px] border"
+        :class="page === 'voice-trial' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
+        aria-label="Provino della voce"
+        title="Provino della voce"
+        :aria-current="page === 'voice-trial' ? 'page' : undefined"
+        @click="openVoiceTrial"
+      >
+        <Icon name="mic" />
       </button>
       <div class="flex-1" />
       <button
@@ -185,6 +232,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </div>
 
       <NewConversation :projects="projects" @create="createConversation" @refresh="store.refreshProjects" />
+      <!-- On narrow screens the icon rail is hidden: the voice trial is reached from here. -->
+      <button type="button" class="btn md:hidden" @click="openVoiceTrial"><Icon name="mic" :size="16" />Provino della voce</button>
 
       <section>
         <h2 class="hud-title mx-1.5 mb-1.5">Agenti</h2>
@@ -252,6 +301,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
+          <template v-else-if="page === 'voice-trial'">Voce / <b class="font-medium text-ink">Provino</b></template>
           <template v-else>Arianna</template>
         </p>
         <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
@@ -290,8 +340,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         {{ error }}
       </p>
 
+      <VoiceTrial v-if="page === 'voice-trial'" />
       <ChatView
-        v-if="chat !== null && current !== undefined"
+        v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"
         :chat="chat"
         :conversation="current"

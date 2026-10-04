@@ -20,7 +20,8 @@ import {
  */
 export const CATALOG_FILE = join('config', 'models.catalog.yaml');
 
-export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice'] as const;
+// `voice` writes the replies of a call; `stt` and `tts` hear and speak (D-066).
+export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
 export const MODEL_RUNTIMES = ['mlx', 'llama.cpp', 'vllm'] as const;

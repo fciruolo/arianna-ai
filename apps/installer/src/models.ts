@@ -68,10 +68,14 @@ function sizeOf(path: string): number | undefined {
   return existsSync(path) ? statSync(path).size : undefined;
 }
 
-/** The catalog entries assigned to a role, each once. */
-export function selectedModels(config: Pick<AriannaConfig, 'roles'>, catalog: ModelCatalog): CatalogEntry[] {
+/**
+ * The catalog entries assigned to a role, each once. With `trial`, also every
+ * candidate for hearing and speaking, for the voice trial page (D-066).
+ */
+export function selectedModels(config: Pick<AriannaConfig, 'roles'>, catalog: ModelCatalog, options: { trial?: boolean } = {}): CatalogEntry[] {
   const ids = new Set(Object.values(config.roles));
-  return catalog.models.filter((model) => ids.has(model.id));
+  const trial = (model: CatalogEntry): boolean => options.trial === true && (model.roles.includes('stt') || model.roles.includes('tts'));
+  return catalog.models.filter((model) => ids.has(model.id) || trial(model));
 }
 
 /**

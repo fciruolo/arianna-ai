@@ -13,7 +13,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CATALOG_FILE } from './catalog.ts';
 import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 
-const RESTART_SECTIONS = ['paths', 'database', 'server', 'cloud', 'telegram'] as const;
+const RESTART_SECTIONS = ['paths', 'database', 'server', 'cloud', 'telegram', 'voice'] as const;
 
 export interface ConfigChange {
   /** Applied: `current()` returns the new values (`roles`, `local.models`, `projects`, `characters`). */

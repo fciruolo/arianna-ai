@@ -25,6 +25,7 @@ export {
 } from './claude/profile.ts';
 export { ClaudeStream, type ClaudeEvent, type ClaudeUsage, type StreamFailure, type StreamResult } from './claude/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
+export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';
 export {
   createLocalModel,
   LocalModelError,

@@ -3,6 +3,7 @@
 //   install                   prerequisites, data/ layout, models, database, doctor
 //   doctor                    is this installation ready for real data? (exit 1 if not)
 //   models list|verify|pull   compare data/models with the models assigned to a role
+//                             (pull --trial: also the candidates of the voice trial page)
 // (tasks 1.17 and 1.18, docs/INSTALLER-PORTABILITY.md). Credentials of Claude
 // Code and Codex are never touched: their login stays manual.
 import { spawnSync } from 'node:child_process';
@@ -18,6 +19,7 @@ import {
   parseProjects,
   resolveHome,
   userHomeOf,
+  voicePaths,
   type AriannaConfig,
   type CatalogEntry,
 } from '@arianna/config';
@@ -27,7 +29,7 @@ import { createFetcher } from './http.ts';
 import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
 import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from './models.ts';
 import { folderProblem, projectChecks, syncProjectLinks } from './projects.ts';
-import { ensureLayout, freeBytes, layoutCheck, systemChecks } from './system.ts';
+import { ensureLayout, freeBytes, layoutCheck, systemChecks, voiceCheck } from './system.ts';
 import { runWizard, type Prompter } from './wizard.ts';
 
 // Room left on the disk after the downloads, for the database and the archive.
@@ -43,8 +45,8 @@ function print(checks: DoctorCheck[]): number {
   return checks.filter((check) => !check.ok).length;
 }
 
-function selected(config: AriannaConfig): CatalogEntry[] {
-  return selectedModels(config, loadCatalog(config.home));
+function selected(config: AriannaConfig, trial = false): CatalogEntry[] {
+  return selectedModels(config, loadCatalog(config.home), { trial });
 }
 
 async function modelsChecks(config: AriannaConfig): Promise<DoctorCheck[]> {
@@ -73,8 +75,9 @@ async function modelsChecks(config: AriannaConfig): Promise<DoctorCheck[]> {
 
 async function doctor(config: AriannaConfig): Promise<number> {
   const checks = [
-    ...(await systemChecks()),
+    ...(await systemChecks({ voice: config.voice !== undefined })),
     ...layoutCheck(config.home, config.paths.data),
+    ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
     ...(await modelsChecks(config)),
     ...projectChecks(config.home, config.projects),
     ...(await runDoctor({ config })),
@@ -88,10 +91,10 @@ function describe(status: FileStatus): string {
   return `${status.state.padEnd(10)}  ${status.model}/${status.file.path}  ${gib(status.file.sizeBytes)}`;
 }
 
-async function pull(config: AriannaConfig, verify = false): Promise<void> {
+async function pull(config: AriannaConfig, verify = false, trial = false): Promise<void> {
   // Also makes data/ private before anything is written in it.
   ensureLayout(config.paths.data);
-  const models = selected(config);
+  const models = selected(config, trial);
   const needed = (await modelStatus(models, config.paths.data))
     .filter((status) => status.state !== 'present')
     .reduce((sum, status) => sum + status.file.sizeBytes, 0);
@@ -122,7 +125,7 @@ function step(config: AriannaConfig, script: string, args: string[] = []): void 
 
 async function install(config: AriannaConfig): Promise<number> {
   console.log('Prerequisites');
-  const system = await systemChecks();
+  const system = await systemChecks({ voice: config.voice !== undefined });
   print(system);
   // sops and age serve the vault, which a first installation does not need yet.
   const blocking = system.filter((check) => !check.ok && !['system.sops', 'system.age'].includes(check.id));
@@ -134,6 +137,10 @@ async function install(config: AriannaConfig): Promise<number> {
   console.log(`\nFolders: ${created.length === 0 ? 'already in place' : `created or fixed ${created.join(', ')}`}`);
   console.log('\nModels');
   await pull(config);
+  if (config.voice !== undefined) {
+    console.log('\nVoice (Python environment in data/voice)');
+    step(config, 'scripts/voice.ts', ['sync']);
+  }
   console.log('\nDatabase');
   step(config, 'scripts/compose.ts', ['up', '--detach', '--wait']);
   step(config, 'apps/core/src/db/migrate-cli.ts');
@@ -207,7 +214,7 @@ async function init(mode: 'first' | 'reconfigure' | 'defaults'): Promise<boolean
 const [command, sub, flag, ...extra] = process.argv.slice(2);
 try {
   if (extra.length > 0 || (command === 'init' && flag !== undefined)) {
-    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify]');
+    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify|--trial]');
     process.exitCode = 2;
   } else if (command === 'init' && (sub === undefined || sub === '--reconfigure' || sub === '--defaults')) {
     const written = await init(sub === undefined ? 'first' : sub === '--reconfigure' ? 'reconfigure' : 'defaults');
@@ -224,10 +231,10 @@ try {
     for (const status of statuses) console.log(describe(status));
     if (statuses.length === 0) console.log('No model assigned to a role yet (pnpm arianna:init).');
     process.exitCode = statuses.every((status) => status.state === (sub === 'verify' ? 'ok' : 'present')) ? 0 : 1;
-  } else if (command === 'models' && sub === 'pull' && (flag === undefined || flag === '--verify')) {
-    await pull(loadConfig(), flag === '--verify');
+  } else if (command === 'models' && sub === 'pull' && (flag === undefined || flag === '--verify' || flag === '--trial')) {
+    await pull(loadConfig(), flag === '--verify', flag === '--trial');
   } else {
-    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify]');
+    console.error('usage: cli.ts init [--reconfigure|--defaults] | install | doctor | models list | models verify | models pull [--verify|--trial]');
     process.exitCode = 2;
   }
 } catch (error) {

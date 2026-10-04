@@ -6,10 +6,10 @@ import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { resolveHome, type CatalogEntry } from '@arianna/config';
+import { loadCatalog, resolveHome, type CatalogEntry } from '@arianna/config';
 
 import { createFetcher } from '../src/http.ts';
-import { fileTarget, modelStatus, ModelError, PART_SUFFIX, pullFile, pullModels } from '../src/models.ts';
+import { fileTarget, modelStatus, ModelError, PART_SUFFIX, pullFile, pullModels, selectedModels } from '../src/models.ts';
 
 // Fake weights: random bytes, never a real model.
 const BODY = randomBytes(64 * 1024 + 123);
@@ -206,4 +206,18 @@ test('pull with verify replaces a file of the right size but the wrong hash', as
   assert.deepEqual(await pullModels(models('/weights'), data, { fetch }), []);
   assert.equal((await pullModels(models('/weights'), data, { fetch, verify: true })).length, 1);
   assert.deepEqual(readFileSync(status.target), BODY);
+});
+
+test('selectedModels: the models of the roles, and with trial every stt and tts candidate too (D-066)', () => {
+  const catalog = loadCatalog(resolveHome({}));
+  const ids = (roles: Record<string, string>, trial?: boolean) => selectedModels({ roles }, catalog, trial === undefined ? {} : { trial }).map(({ id }) => id);
+  assert.deepEqual(ids({ voice: 'qwen3-4b-instruct-2507-4bit', tts: 'kokoro-82m-bf16-mlx' }), ['qwen3-4b-instruct-2507-4bit', 'kokoro-82m-bf16-mlx']);
+  assert.deepEqual(ids({ voice: 'qwen3-4b-instruct-2507-4bit' }, true), [
+    'qwen3-4b-instruct-2507-4bit',
+    'parakeet-tdt-0.6b-v3-mlx',
+    'whisper-large-v3-turbo-mlx',
+    'kokoro-82m-bf16-mlx',
+    'chatterbox-multilingual-v3-mlx',
+  ]);
+  assert.deepEqual(ids({}, false), []);
 });

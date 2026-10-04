@@ -13,6 +13,7 @@ import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
+import { parseVoice, type VoiceConfig } from './voice.ts';
 
 /**
  * The configuration of this installation, written by `pnpm arianna:init` and
@@ -65,6 +66,8 @@ export interface AriannaConfig {
   characters: CharacterChoices;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
+  /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
+  voice?: VoiceConfig;
 }
 
 /**
@@ -79,7 +82,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram', 'voice'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -101,6 +104,8 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
   }
 
   const telegram = parseTelegram(root.telegram);
+  const voice = parseVoice(root.voice);
+  if (voice !== undefined && voice.port === parseServer(root.server).port) throw new ConfigError('voice.port: must differ from server.port');
   const roles = parseRoles(root.roles, catalog);
   return {
     home,
@@ -113,6 +118,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     projects: parseProjects(root.project, home, userHome, data),
     characters: parseCharacters(root.characters),
     ...(telegram === undefined ? {} : { telegram }),
+    ...(voice === undefined ? {} : { voice }),
   };
 }
 
