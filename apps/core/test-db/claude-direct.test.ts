@@ -307,6 +307,32 @@ test('a chat holding a value of the vault is refused by the gateway: nothing rea
   assert.deepEqual(worktrees(), []);
 });
 
+test('the summary of the chat is part of what Claude reads, through the gateway, and never above L1 (D-077)', async () => {
+  const { sql, owner } = db();
+  const secret = new Secret('vault://direct-summary-test', 'fake-summary-secret-0123456789abcdef');
+  const chat = await directChat();
+  // A piece written by a local step of an earlier task of the chat, over its first message.
+  const earlier = await postUserMessage(sql, chat.id, 'Prima domanda');
+  const [run] = await owner<{ id: string }[]>`
+    INSERT INTO runs (task_id, step, agent, executor, locality, effective_label)
+    VALUES (${earlier.task.id}, 1, 'arianna', 'local', 'local', 'L1') RETURNING id::text`;
+  const [first] = await sql<{ id: string }[]>`SELECT min(id)::text AS id FROM messages WHERE conversation_id = ${chat.id}`;
+  const piece = (label: string, body: string) => sql`
+    INSERT INTO conversation_summaries (conversation_id, first_message_id, last_message_id, label, body, model, task_id, run_id)
+    VALUES (${chat.id}, ${first?.id ?? ''}::bigint, ${first?.id ?? ''}::bigint, ${label}::privacy_label, ${body}, 'local-large', ${earlier.task.id}, ${run?.id ?? ''})`;
+  // A work chat holds at most L1: a piece above it does not exist.
+  await assert.rejects(piece('L2', 'riassunto privato'), /above the clearance/);
+  await piece('L1', `riassunto con la chiave ${secret.reveal()}`);
+  await owner`UPDATE runs SET status = 'ok', ended_at = now() WHERE id = ${run?.id ?? ''}`;
+
+  const { task } = await postUserMessage(sql, chat.id, 'Cosa devo controllare?');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([]) })), ['waiting-user']);
+  // The secret was only in the summary: the gateway saw it in the brief for Claude and blocked it.
+  const gateway = await sql<{ decision: string }[]>`SELECT decision FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...gateway].map((row) => row.decision), ['block']);
+  assert.deepEqual(worktrees(), []);
+});
+
 /** The settings of the orchestrator, for calling runDirect itself. */
 function directEnv() {
   return {

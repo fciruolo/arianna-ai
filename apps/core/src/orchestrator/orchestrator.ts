@@ -26,6 +26,7 @@ import { canAnswerDirectly, directModelOf, runDirect } from './claude-direct.ts'
 import { canDelegate, NO_PROJECT, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
+import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
@@ -57,8 +58,6 @@ export const ORCHESTRATOR_MODEL = 'local-large';
 /** Tools that end the step with a message in the chat instead of running. */
 const CHAT_TOOLS: readonly ToolId[] = ['user.ask'];
 const DELEGATE: ToolId = 'task.delegate';
-/** Messages of the conversation the model reads before the task's turns. */
-const HISTORY_MESSAGES = 20;
 /** Longest message, tool result or turn shown to the model. */
 const MAX_TEXT = 8_000;
 
@@ -110,7 +109,13 @@ function delegationResult(delegation: Delegation | undefined): { text: string; l
 }
 
 /** What the model reads, each part with its label: the conversation, then the task's turns. */
-async function historyOf(sql: Sql, task: Task, turns: readonly Turn[], delegations: readonly Delegation[]): Promise<Labeled<TurnMessage>[]> {
+async function historyOf(
+  sql: Sql,
+  task: Task,
+  turns: readonly Turn[],
+  delegations: readonly Delegation[],
+  computed?: ConversationView,
+): Promise<Labeled<TurnMessage>[]> {
   const history: Labeled<TurnMessage>[] = [];
   if (task.conversationId === null) {
     // A task without a conversation: its title and goal are the request.
@@ -118,17 +123,15 @@ async function historyOf(sql: Sql, task: Task, turns: readonly Turn[], delegatio
     history.push({ value: { role: 'user', content }, label: task.label, source: `task:${task.id}` });
   } else {
     // Up to the message that started this task: later ones belong to other tasks.
-    // Reports of delegated steps are read from their delegation, not as messages.
-    // Messages of the system (a system chat, D-064) reach the model as the
-    // user's, marked: chat templates take one system prompt, at the start.
-    const rows = await sql<{ id: string; role: 'user' | 'assistant' | 'system'; body: string; label: Label }[]>`
-      SELECT * FROM (
-        SELECT id::text, role, body, label FROM messages
-        WHERE conversation_id = ${task.conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
-          AND id <= (SELECT max(id) FROM messages WHERE task_id = ${task.id} AND role = 'user')
-        ORDER BY messages.id DESC LIMIT ${HISTORY_MESSAGES}
-      ) recent ORDER BY recent.id::bigint`;
-    for (const row of rows) {
+    // The summary of what the anchor left behind first, then the messages from
+    // the anchor (D-077). Reports of delegated steps are read from their
+    // delegation, not as messages. Messages of the system (a system chat,
+    // D-064) reach the model as the user's, marked: chat templates take one
+    // system prompt, at the start.
+    const view = computed ?? (await conversationView(sql, task.conversationId, task.id, MAX_TEXT));
+    const summary = summaryMessage(view.pieces);
+    if (summary !== undefined) history.push(summary);
+    for (const row of view.messages) {
       const value: TurnMessage =
         row.role === 'system' ? { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${clip(row.body)}` } : { role: row.role, content: clip(row.body) };
       history.push({ value, label: row.label, source: `message:${row.id}` });
@@ -179,6 +182,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   const plans = new Map<string, DelegationPlan>();
   /** What `plan` decided about Claude answering directly (null: Arianna answers), for its `run`. */
   const directs = new Map<string, DirectModel | null>();
+  const summaryEnv = { sql, model: options.model };
   const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
   /** One line of activity in the chat (D-054); a task without a conversation shows none. Never fails the step. */
@@ -354,7 +358,17 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const done = turns.find((turn) => turn.step === step);
       if (done !== undefined) return replay(task, done, delegations, turns);
 
-      const history = await historyOf(sql, task, turns, delegations);
+      // The anchor jumped (D-077): at the first step of the task the local
+      // model summarizes what it left behind, before the answer; the later
+      // steps only read, so their prefix stays the one of the first.
+      let view = task.conversationId === null ? undefined : await conversationView(sql, task.conversationId, task.id, MAX_TEXT);
+      let summarized: SummarizeOutcome | undefined;
+      if (view !== undefined && task.conversationId !== null && step === 1 && view.missing.length > 0) {
+        summarized = await writeMissingSummaries(summaryEnv, task, { runId, signal: ctx.signal }, view);
+        // Read again only when the pieces changed: ours, or another task's that came first.
+        if (summarized.written > 0 || summarized.degraded === 'conflict') view = await conversationView(sql, task.conversationId, task.id, MAX_TEXT);
+      }
+      const history = await historyOf(sql, task, turns, delegations, view);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
       const context: Context = createContext(task.clearance, label);
@@ -384,7 +398,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         // Down, stuck or cancelled: the engine retries the step, or stops it.
         throw error;
       }
-      const usage = { steps: 1, tokensIn: asked.tokensIn, tokensOut: asked.tokensOut };
+      const usage = { steps: 1, tokensIn: asked.tokensIn + (summarized?.tokensIn ?? 0), tokensOut: asked.tokensOut + (summarized?.tokensOut ?? 0) };
       if (asked.read === undefined) return { kind: 'wait-user', reason: INVALID_ANSWER, usage };
       const { answer, thought } = asked.read;
       const turn = { taskId: task.id, step, runId, answer, ...(thought === undefined ? {} : { thought }) };
