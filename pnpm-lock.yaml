@@ -232,6 +232,18 @@ importers:
 
   apps/hud:
     dependencies:
+      '@fontsource/chakra-petch':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/figtree':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource/jetbrains-mono':
+        specifier: 5.3.0
+        version: 5.3.0
+      lucide-vue-next:
+        specifier: 1.0.0
+        version: 1.0.0(vue@3.5.43(typescript@6.0.3))
       vue:
         specifier: 3.5.43
         version: 3.5.43(typescript@6.0.3)
@@ -386,6 +398,15 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@fontsource/chakra-petch@5.3.0':
+    resolution: {integrity: sha512-QZvbM/q2R6n1pg2x+TJPftZmBNS+ADU37L4Z4L/6UJIz+JZ/SRaEf8usPFRiP7Ht28sIideMu/Bm1SnGlSrwNw==}
+
+  '@fontsource/figtree@5.3.0':
+    resolution: {integrity: sha512-/iTcTXL1eRBGhvD7NN9dnKzXzWqDLVZVEUFI9xIxAC1G/hXU8tCyYeXCAuPOuvSYPInFUP7H6KLGgygmDfy1SA==}
+
+  '@fontsource/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1105,6 +1126,12 @@ packages:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
 
+  lucide-vue-next@1.0.0:
+    resolution: {integrity: sha512-V6SPvx1IHTj/UY+FrIYWV5faISsPSb8BnWSFDxAtezWKvWc9ZZ40PDrdu1/Qb5vg4lHWr1hs1BAMGVGm6V1Xdg==}
+    deprecated: Package deprecated. Please use @lucide/vue instead.
+    peerDependencies:
+      vue: '>=3.0.1'
+
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
@@ -1391,6 +1418,12 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
+
+  '@fontsource/chakra-petch@5.3.0': {}
+
+  '@fontsource/figtree@5.3.0': {}
+
+  '@fontsource/jetbrains-mono@5.3.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -2037,6 +2070,10 @@ snapshots:
   locate-path@6.0.0:
     dependencies:
       p-locate: 5.0.0
+
+  lucide-vue-next@1.0.0(vue@3.5.43(typescript@6.0.3)):
+    dependencies:
+      vue: 3.5.43(typescript@6.0.3)
 
   magic-string@0.30.21:
     dependencies:

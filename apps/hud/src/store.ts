@@ -6,7 +6,7 @@ import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CloudModel, Conversation, ConversationMode, ProjectInfo, Task } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, ProjectInfo, StatusSnapshot, Task } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -30,6 +30,12 @@ export function createChatStore() {
   const storage = typeof window === 'undefined' ? undefined : window.localStorage;
   const dismissed = loadDismissed(storage);
   let decided: Approval[] = [];
+  /** The status panel (D-060), read again after events: counts and labels only. */
+  const status = ref<StatusSnapshot | null>(null);
+  /** Character packs and who wears what; read at the start and when the panel asks. */
+  const characters = ref<CharacterListing | null>(null);
+  let statusTimer: number | undefined;
+  let statusPoll: number | undefined;
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
@@ -222,8 +228,37 @@ export function createChatStore() {
     }
   }
 
+  async function refreshStatus(): Promise<void> {
+    status.value = await api.loadStatus();
+  }
+
+  /** Many events come in bursts: the panel is read once after them. */
+  function statusSoon(): void {
+    if (statusTimer !== undefined) return;
+    statusTimer = window.setTimeout(() => {
+      statusTimer = undefined;
+      refreshStatus().catch(fail);
+    }, 700);
+  }
+
+  async function refreshCharacters(): Promise<void> {
+    try {
+      characters.value = await api.loadCharacters();
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
   async function refreshAll(): Promise<void> {
-    await Promise.all([refreshAllConversations(), refreshApprovals(), refreshMessages(), refreshModels(), refreshProjects()]);
+    await Promise.all([
+      refreshAllConversations(),
+      refreshApprovals(),
+      refreshMessages(),
+      refreshModels(),
+      refreshProjects(),
+      refreshStatus(),
+      refreshCharacters(),
+    ]);
   }
 
   function onLive(message: ServerMessage): void {
@@ -240,6 +275,7 @@ export function createChatStore() {
       return;
     }
     const { event } = message;
+    statusSoon();
     const conversationId = payloadString(event, 'conversationId');
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
@@ -280,6 +316,10 @@ export function createChatStore() {
   }
 
   function start(): void {
+    // The gateway counts per hour move with the clock, not only with events.
+    statusPoll = window.setInterval(() => {
+      refreshStatus().catch(() => undefined);
+    }, 60_000);
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     connection = connectLive({
       url: `${scheme}://${window.location.host}/api/ws`,
@@ -322,9 +362,11 @@ export function createChatStore() {
 
   function stop(): void {
     connection?.close();
+    window.clearInterval(statusPoll);
+    window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, live, error, sending, open, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
+  return { conversations, archived, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, open, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

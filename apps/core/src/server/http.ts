@@ -5,7 +5,10 @@ import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import type { CharacterChoices } from '@arianna/config';
+
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { assignCharacters, listPacks, readSheet, type CharacterDirs } from '../characters.ts';
 import {
   archiveConversation,
   ChatError,
@@ -22,6 +25,7 @@ import {
 import type { Sql } from '../db/client.ts';
 import { recordDecision } from '../engine.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
+import { loadStatus } from '../status.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { allowedHosts, checkRequest, securityHeaders } from './security.ts';
 
@@ -50,6 +54,10 @@ export interface ApiServerOptions {
   projects?: () => readonly ProjectInfo[];
   /** The cloud models a work conversation may choose (task 1.10), from the current configuration. */
   models?: () => readonly { executor: string; model: string }[];
+  /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
+  agents?: () => readonly string[];
+  /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
+  characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -80,7 +88,9 @@ class HttpError extends Error {
 }
 
 type Params = Record<string, string>;
-type Handler = (request: IncomingMessage, url: URL, params: Params) => Promise<{ status?: number; body: unknown }>;
+/** A JSON body, or `raw` bytes with their type (the character sheets). */
+type Result = { status?: number; body: unknown } | { raw: Buffer; type: string };
+type Handler = (request: IncomingMessage, url: URL, params: Params) => Promise<Result>;
 
 interface Route {
   method: string;
@@ -139,9 +149,31 @@ function idParam(params: Params, key: string): string {
 
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
-function routes(sql: Sql, projects: () => readonly ProjectInfo[], models: () => readonly { executor: string; model: string }[]): Route[] {
+interface RouteOptions {
+  projects: () => readonly ProjectInfo[];
+  models: () => readonly { executor: string; model: string }[];
+  agents: () => readonly string[];
+  characters: ApiServerOptions['characters'];
+}
+
+function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions): Route[] {
   return [
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
+
+    // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
+    route('GET', '/api/status', async () => ({ body: await loadStatus(sql, agents()) })),
+
+    // The character packs and who wears what. Refused folders are named with the reason, never their content.
+    route('GET', '/api/characters', async () => {
+      if (characters === undefined) return { body: { packs: [], refused: [], agents: {} } };
+      const { packs, refused } = await listPacks(characters.dirs);
+      return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs) } };
+    }),
+    route('GET', '/api/characters/:pack/:character', async (_request, _url, params) => {
+      const png = characters === undefined ? undefined : await readSheet(characters.dirs, params.pack ?? '', params.character ?? '');
+      if (png === undefined) throw new HttpError(404, 'not found');
+      return { raw: png, type: 'image/png' };
+    }),
 
     // The cloud models of this installation: what the selector of a work conversation offers.
     route('GET', '/api/models', () => Promise.resolve({ body: { models: models() } })),
@@ -278,6 +310,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 /** A file of the built web chat; unknown paths get index.html (client-side routes). */
@@ -329,7 +362,12 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
-  const table = routes(sql, options.projects ?? (() => []), options.models ?? (() => []));
+  const table = routes(sql, {
+    projects: options.projects ?? (() => []),
+    models: options.models ?? (() => []),
+    agents: options.agents ?? (() => []),
+    characters: options.characters,
+  });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 
@@ -356,7 +394,12 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
           params[key] = found.match?.[index + 1] ?? '';
         });
         const result = await found.candidate.handler(request, url, params);
-        sendJson(response, result.status ?? 200, result.body, headers);
+        if ('raw' in result) {
+          response.writeHead(200, { ...headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': 'no-cache' });
+          response.end(result.raw);
+        } else {
+          sendJson(response, result.status ?? 200, result.body, headers);
+        }
         return;
       }
       if ((request.method === 'GET' || request.method === 'HEAD') && options.staticDir !== undefined) {

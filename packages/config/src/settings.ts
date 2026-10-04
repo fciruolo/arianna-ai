@@ -39,6 +39,8 @@ export interface Settings {
   cloud: { executors: CloudExecutor[] };
   /** As written in the file: `path` keeps its form. */
   projects: ProjectSettings[];
+  /** Agent → "<pack>/<character>" (D-060). */
+  characters: Record<string, string>;
   telegram?: { token: string; chats: number[] };
 }
 
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   endpoints: [],
   cloud: { executors: [] },
   projects: [],
+  characters: {},
 };
 
 /** Token reference of the Telegram bot (key `telegram-bot-token` in the vault). */
@@ -86,6 +89,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     }),
     cloud: { executors: [...config.cloud.executors] },
     projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
+    characters: { ...config.characters },
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
   };
 }
@@ -199,6 +203,14 @@ export function renderSettings(settings: Settings): string {
           `path = ${str(project.path)}`,
           `label = ${str(project.label)}`,
         ])),
+    '',
+    '# Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder',
+    '# of data/characters/ you copy there by hand (PNG sheets in the format of',
+    '# pixel-agents and a pack.json); "originali" is the pack in git. Without a',
+    '# line, an agent wears its original. Applies without a restart.',
+    ...(Object.keys(settings.characters).length === 0
+      ? ['#', '# [characters]', '# arianna = "originali/arianna"', '# coder = "originali/coder"']
+      : ['[characters]', ...Object.entries(settings.characters).map(([agent, choice]) => `${agent} = ${str(choice)}`)]),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

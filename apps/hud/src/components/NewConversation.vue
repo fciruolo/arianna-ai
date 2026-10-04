@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { ConversationMode, ProjectInfo } from '../lib/types.ts';
+import Icon from './Icon.vue';
 
 const props = defineProps<{ projects: ProjectInfo[] }>();
 const emit = defineEmits<{ create: [mode: ConversationMode, project?: string]; refresh: [] }>();
@@ -31,46 +32,39 @@ function submit(): void {
 
 <template>
   <form class="flex flex-col gap-2" @submit.prevent="submit">
-    <div class="grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1 dark:bg-stone-800" role="radiogroup" aria-label="Modalità">
+    <div class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità">
       <button
         v-for="option in modes"
         :key="option"
         type="button"
         role="radio"
         :aria-checked="mode === option"
-        class="rounded-md px-2 py-1.5 text-sm font-medium transition"
-        :class="
-          mode === option
-            ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-700 dark:text-white'
-            : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200'
-        "
+        class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium transition"
+        :class="mode === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
         @click="mode = option"
       >
-        {{ MODE_TEXT[option] }}
+        <Icon :name="option" :size="14" />{{ MODE_TEXT[option] }}
       </button>
     </div>
-    <p class="text-xs leading-snug text-stone-500 dark:text-stone-400">{{ MODE_HINT[mode] }}</p>
+    <p class="px-0.5 text-xs leading-snug text-muted">{{ MODE_HINT[mode] }}</p>
     <template v-if="mode === 'work'">
-      <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-stone-500 dark:text-stone-400">
+      <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
         Progetto
-        <select
-          v-model="project"
-          class="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-900 outline-none focus:border-indigo-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
-        >
+        <select v-model="project" class="field px-2.5 py-1.5 text-[13px]">
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           <option value="">Nessun progetto</option>
         </select>
       </label>
-      <p v-else class="text-xs leading-snug text-stone-500 dark:text-stone-400">
+      <p v-else class="text-xs leading-snug text-muted">
         Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno con
         <code class="font-mono">pnpm arianna:init --reconfigure</code>.
       </p>
     </template>
     <button
       type="submit"
-      class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+      class="flex w-full items-center gap-2 rounded-[9px] border border-line-strong bg-surface-2 px-3 py-2.5 text-left font-medium hover:border-accent"
     >
-      Nuova conversazione
+      <Icon name="new" />Nuova conversazione
     </button>
   </form>
 </template>

@@ -14,6 +14,7 @@ export {
   type ModelRuntime,
   type ModelStatus,
 } from './catalog.ts';
+export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { CLOUD_EXECUTORS, type CloudConfig, type CloudExecutor } from './cloud.ts';
 export {
   CONFIG_FILE,

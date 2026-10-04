@@ -1,0 +1,8 @@
+{
+  "name": "Originali",
+  "source": "Arianna, disegnati da Claude per il progetto (D-060); rigenerati con node apps/hud/characters/build.ts",
+  "characters": [
+    { "id": "arianna", "name": "Arianna", "file": "arianna.png" },
+    { "id": "coder", "name": "Coder", "file": "coder.png" }
+  ]
+}

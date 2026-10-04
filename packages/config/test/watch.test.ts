@@ -131,4 +131,5 @@ test('diffConfig names the changed sections only', () => {
   assert.deepEqual(diffConfig(config, structuredClone(config)), { applied: [], restart: [] });
   assert.deepEqual(diffConfig(config, { ...config, server: { host: '::1', port: 1 } }), { applied: [], restart: ['server'] });
   assert.deepEqual(diffConfig(config, { ...config, telegram: { token: 'vault://t', chats: [1] } }), { applied: [], restart: ['telegram'] });
+  assert.deepEqual(diffConfig(config, { ...config, characters: { coder: 'p/robot' } }), { applied: ['characters'], restart: [] });
 });

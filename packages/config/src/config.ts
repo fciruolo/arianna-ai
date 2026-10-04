@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 
 import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
+import { parseCharacters, type CharacterChoices } from './characters.ts';
 import { parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
@@ -60,6 +61,8 @@ export interface AriannaConfig {
   cloud: CloudConfig;
   /** The folders a cloud executor may work on (D-058); applied without a restart. */
   projects: Project[];
+  /** Agent → "<pack>/<character>" (D-060); applied without a restart. */
+  characters: CharacterChoices;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
 }
@@ -76,7 +79,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'telegram'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -108,6 +111,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     local: parseLocal(root.local, roles),
     cloud: parseCloud(root.cloud),
     projects: parseProjects(root.project, home, userHome, data),
+    characters: parseCharacters(root.characters),
     ...(telegram === undefined ? {} : { telegram }),
   };
 }

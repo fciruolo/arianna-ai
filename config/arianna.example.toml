@@ -68,6 +68,15 @@ executors = []
 # path = "~/Projects/site"
 # label = "L1"
 
+# Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder
+# of data/characters/ you copy there by hand (PNG sheets in the format of
+# pixel-agents and a pack.json); "originali" is the pack in git. Without a
+# line, an agent wears its original. Applies without a restart.
+#
+# [characters]
+# arianna = "originali/arianna"
+# coder = "originali/coder"
+
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).

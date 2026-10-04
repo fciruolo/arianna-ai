@@ -103,3 +103,56 @@ export interface Activity {
   kind: ActivityKind;
   detail: string;
 }
+
+/** What an agent is doing, from GET /api/status (apps/core/src/status.ts). */
+export type AgentState = 'idle' | 'thinking' | 'working' | 'waiting';
+
+export interface AgentStatus {
+  id: string;
+  state: AgentState;
+  run: { executor: string; model: string | null; startedAt: string; repo: string | null } | null;
+}
+
+/** The status panel (D-060): counts and labels only, never content. */
+export interface StatusSnapshot {
+  agents: AgentStatus[];
+  router: {
+    ts: string;
+    label: Label;
+    difficulty: string;
+    decision: 'route' | 'wait';
+    executor: string | null;
+    model: string | null;
+    locality: string | null;
+    reason: string;
+  } | null;
+  gateway: { since: string; allowedOut: number; blocked: number; privateOut: number; hours: number[] };
+  waiting: number;
+}
+
+export interface CharacterInfo {
+  id: string;
+  name: string;
+  rows: 3 | 4;
+}
+
+export interface CharacterPack {
+  id: string;
+  name: string;
+  source: string;
+  original: boolean;
+  characters: CharacterInfo[];
+}
+
+/** The character an agent wears: a sheet served at /api/characters/<pack>/<character>. */
+export interface CharacterChoice {
+  pack: string;
+  character: string;
+  rows: 3 | 4;
+}
+
+export interface CharacterListing {
+  packs: CharacterPack[];
+  refused: { pack: string; reason: string }[];
+  agents: Record<string, CharacterChoice>;
+}

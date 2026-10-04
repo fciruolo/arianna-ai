@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
-import { MODE_TEXT } from '../lib/labels.ts';
+import { groupByDay } from '../lib/day-groups.ts';
+import { LABEL_TEXT, MODE_TEXT } from '../lib/labels.ts';
 import type { Conversation } from '../lib/types.ts';
+import Icon from './Icon.vue';
 
 const props = defineProps<{
   conversations: Conversation[];
@@ -12,11 +14,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; purge: [id: string] }>();
 
-const format = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-function when(conversation: Conversation): string {
-  return format.format(new Date(conversation.lastMessageAt ?? conversation.createdAt));
-}
+const groups = computed(() => groupByDay(props.conversations, new Date()));
+const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function titleOf(conversation: Conversation): string {
   return conversation.title ?? 'Nuova conversazione';
@@ -75,190 +74,142 @@ function confirmArchive(id: string): void {
 </script>
 
 <template>
-  <nav aria-label="Conversazioni" class="flex flex-col">
-    <p v-if="conversations.length === 0" class="px-2 text-sm text-stone-500 dark:text-stone-400">Nessuna conversazione.</p>
-    <ul class="flex flex-col gap-0.5">
-      <li v-for="conversation in conversations" :key="conversation.id" class="group relative">
-        <div v-if="editing === conversation.id" class="flex items-center gap-2 rounded-lg px-2 py-1.5">
-          <label :for="`title-${conversation.id}`" class="sr-only">Titolo della conversazione</label>
-          <input
-            :id="`title-${conversation.id}`"
-            ref="input"
-            v-model="draft"
-            type="text"
-            maxlength="200"
-            class="min-w-0 flex-1 rounded-md border border-indigo-400 bg-white px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-stone-900"
-            @keydown="onRenameKey($event, conversation)"
-            @blur="saveRename(conversation)"
-          />
-        </div>
-        <div
-          v-else-if="confirming === conversation.id"
-          class="flex items-center gap-2 rounded-lg bg-amber-50 px-2 py-2 text-sm dark:bg-amber-950/40"
-          role="group"
-          :aria-label="`Archiviare ${titleOf(conversation)}?`"
-        >
-          <span class="min-w-0 flex-1" title="Sparisce dalla lista; i messaggi restano e la ritrovi in Archiviate. I task già avviati finiscono il loro lavoro.">
-            Archiviare? <span class="text-xs text-stone-500 dark:text-stone-400">I task avviati finiscono.</span>
-          </span>
-          <button
-            type="button"
-            class="rounded-md bg-amber-600 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-500"
-            @click="confirmArchive(conversation.id)"
-          >
-            Archivia
-          </button>
-          <button
-            type="button"
-            class="rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-800"
-            @click="confirming = null"
-          >
-            Annulla
-          </button>
-        </div>
-        <template v-else>
-          <button
-            type="button"
-            class="flex w-full flex-col rounded-lg px-2 py-2 pr-16 text-left text-sm transition md:pr-2"
-            :class="
-              conversation.id === selected
-                ? 'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100'
-                : 'hover:bg-stone-100 dark:hover:bg-stone-800'
-            "
-            :aria-current="conversation.id === selected ? 'true' : undefined"
-            @click="emit('open', conversation.id)"
-          >
-            <span class="flex w-full items-center gap-2">
-              <span
-                class="size-2 shrink-0 rounded-full"
-                :class="conversation.mode === 'private' ? 'bg-violet-500' : 'bg-sky-500'"
-                :title="MODE_TEXT[conversation.mode]"
-              />
-              <span class="truncate font-medium" :class="conversation.title === null ? 'text-stone-500 dark:text-stone-400' : ''">
-                {{ titleOf(conversation) }}
-              </span>
-            </span>
-            <span class="flex w-full items-center gap-1.5 pl-4 text-xs text-stone-500 dark:text-stone-400">
-              <span>{{ MODE_TEXT[conversation.mode] }}</span>
-              <span v-if="conversation.telegram">· Telegram</span>
-              <span v-if="conversation.workspace" class="truncate">· {{ conversation.workspace }}</span>
-              <span class="ml-auto shrink-0">{{ when(conversation) }}</span>
-            </span>
-          </button>
-          <div
-            class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md transition md:bg-white md:opacity-0 md:shadow-sm md:group-focus-within:opacity-100 md:group-hover:opacity-100 dark:md:bg-stone-900"
-          >
-            <button
-              type="button"
-              class="rounded-md p-1 text-stone-500 hover:bg-stone-200 hover:text-stone-800 dark:hover:bg-stone-700 dark:hover:text-stone-100"
-              :aria-label="`Rinomina ${titleOf(conversation)}`"
-              title="Rinomina"
-              @click="startRename(conversation)"
-            >
-              <svg class="size-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                <path d="M13.5 3.5l3 3L7 16H4v-3l9.5-9.5z" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              v-if="!conversation.telegram"
-              type="button"
-              class="rounded-md p-1 text-stone-500 hover:bg-stone-200 hover:text-stone-800 dark:hover:bg-stone-700 dark:hover:text-stone-100"
-              :aria-label="`Archivia ${titleOf(conversation)}`"
-              title="Archivia"
-              @click="confirming = conversation.id"
-            >
-              <svg class="size-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                <rect x="3" y="4" width="14" height="4" rx="1" />
-                <path d="M4.5 8v7a1 1 0 001 1h9a1 1 0 001-1V8M8 11h4" stroke-linecap="round" />
-              </svg>
-            </button>
-          </div>
-        </template>
-      </li>
-    </ul>
+  <nav aria-label="Conversazioni" class="flex flex-col gap-4">
+    <p v-if="conversations.length === 0" class="px-1.5 text-sm text-muted">Nessuna conversazione.</p>
 
-    <div v-if="archived.length > 0" class="mt-4 border-t border-stone-200 pt-3 dark:border-stone-800">
+    <section v-for="group in groups" :key="group.title">
+      <h2 class="hud-title mx-1.5 mb-1.5">{{ group.title }}</h2>
+      <ul class="flex flex-col gap-0.5">
+        <li v-for="conversation in group.conversations" :key="conversation.id" class="group relative">
+          <div v-if="editing === conversation.id" class="px-1 py-1">
+            <label :for="`title-${conversation.id}`" class="sr-only">Titolo della conversazione</label>
+            <input
+              :id="`title-${conversation.id}`"
+              ref="input"
+              v-model="draft"
+              type="text"
+              maxlength="200"
+              class="field w-full px-2 py-1.5 text-sm"
+              @keydown="onRenameKey($event, conversation)"
+              @blur="saveRename(conversation)"
+            />
+          </div>
+          <div
+            v-else-if="confirming === conversation.id"
+            class="flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-2 py-2 text-sm"
+            role="group"
+            :aria-label="`Archiviare ${titleOf(conversation)}?`"
+          >
+            <span class="min-w-0 flex-1" title="Sparisce dalla lista; i messaggi restano e la ritrovi in Archiviate. I task già avviati finiscono il loro lavoro.">
+              Archiviare? <span class="text-xs text-muted">I task avviati finiscono.</span>
+            </span>
+            <button type="button" class="btn px-2 py-1 text-xs" @click="confirmArchive(conversation.id)">Archivia</button>
+            <button type="button" class="rounded-md px-1.5 py-1 text-xs text-muted hover:text-ink" @click="confirming = null">Annulla</button>
+          </div>
+          <template v-else>
+            <button
+              type="button"
+              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-16 text-left md:pr-2 md:group-focus-within:pr-16 md:group-hover:pr-16"
+              :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
+              :aria-current="conversation.id === selected ? 'true' : undefined"
+              @click="emit('open', conversation.id)"
+            >
+              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="MODE_TEXT[conversation.mode]">
+                <Icon :name="conversation.telegram ? 'telegram' : conversation.mode" :size="14" />
+              </span>
+              <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
+              <span class="lab" :class="labelClass[conversation.clearance]" :title="`${MODE_TEXT[conversation.mode]}: fino a ${LABEL_TEXT[conversation.clearance]}`">
+                {{ conversation.clearance }}
+              </span>
+            </button>
+            <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+              <button
+                type="button"
+                class="rounded-md p-1 text-muted hover:text-ink"
+                :aria-label="`Rinomina ${titleOf(conversation)}`"
+                title="Rinomina"
+                @click="startRename(conversation)"
+              >
+                <Icon name="rename" :size="15" />
+              </button>
+              <button
+                v-if="!conversation.telegram"
+                type="button"
+                class="rounded-md p-1 text-muted hover:text-ink"
+                :aria-label="`Archivia ${titleOf(conversation)}`"
+                title="Archivia"
+                @click="confirming = conversation.id"
+              >
+                <Icon name="archive" :size="15" />
+              </button>
+            </div>
+          </template>
+        </li>
+      </ul>
+    </section>
+
+    <section v-if="archived.length > 0">
       <button
         type="button"
-        class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
+        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-muted hover:bg-surface-2 hover:text-ink"
         :aria-expanded="showArchived"
         @click="showArchived = !showArchived"
       >
-        <svg class="size-3 transition" :class="showArchived ? 'rotate-90' : ''" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <path d="M4 2l5 4-5 4V2z" />
-        </svg>
-        Archiviate ({{ archived.length }})
+        <Icon name="archive" :size="16" />
+        <span class="flex-1">Archiviate ({{ archived.length }})</span>
+        <span class="transition" :class="showArchived ? 'rotate-90' : ''"><Icon name="expand" :size="14" /></span>
       </button>
       <ul v-if="showArchived" class="mt-1 flex flex-col gap-0.5">
         <li v-for="conversation in archived" :key="conversation.id">
           <div
             v-if="purging === conversation.id"
-            class="flex flex-col gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm dark:border-rose-900 dark:bg-rose-950/40"
+            class="flex flex-col gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm"
             role="group"
             aria-label="Conferma dell'eliminazione definitiva"
           >
             <p class="font-medium">Eliminare per sempre “{{ titleOf(conversation) }}”?</p>
-            <p class="text-xs leading-snug text-stone-600 dark:text-stone-300">
-              Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede; i task ancora aperti si
-              chiudono. Resta il registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche
-              le carte e le pagine della base di conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e
-              le sessioni di Claude Code dei lavori delegati. Non si può annullare.
+            <p class="text-xs leading-snug text-muted">
+              Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede; i task ancora aperti si chiudono. Resta il
+              registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche le carte e le pagine della base di
+              conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e le sessioni di Claude Code dei lavori delegati. Non si
+              può annullare.
             </p>
             <div class="flex gap-2">
-              <button
-                type="button"
-                class="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-500"
-                @click="confirmPurge"
-              >
-                Elimina per sempre
-              </button>
-              <button
-                type="button"
-                class="rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-800"
-                @click="purging = null"
-              >
-                Annulla
-              </button>
+              <button type="button" class="btn btn-danger px-2 py-1 text-xs" @click="confirmPurge"><Icon name="delete" :size="14" />Elimina per sempre</button>
+              <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="purging = null">Annulla</button>
             </div>
           </div>
           <div v-else class="flex items-center gap-1">
             <button
               type="button"
-              class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-stone-600 transition dark:text-stone-300"
-              :class="
-                conversation.id === selected
-                  ? 'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100'
-                  : 'hover:bg-stone-100 dark:hover:bg-stone-800'
-              "
+              class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm text-muted"
+              :class="conversation.id === selected ? 'border-line-strong bg-surface-2 text-ink' : 'border-transparent hover:bg-surface-2'"
               :aria-current="conversation.id === selected ? 'true' : undefined"
               @click="emit('open', conversation.id)"
             >
-              <span
-                class="size-2 shrink-0 rounded-full opacity-60"
-                :class="conversation.mode === 'private' ? 'bg-violet-500' : 'bg-sky-500'"
-                :title="MODE_TEXT[conversation.mode]"
-              />
               <span class="truncate">{{ titleOf(conversation) }}</span>
             </button>
             <button
               type="button"
-              class="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-200 dark:text-stone-300 dark:hover:bg-stone-700"
+              class="shrink-0 rounded-md p-1 text-muted hover:text-ink"
               :aria-label="`Ripristina ${titleOf(conversation)}`"
+              title="Ripristina"
               @click="emit('archive', conversation.id, false)"
             >
-              Ripristina
+              <Icon name="restore" :size="15" />
             </button>
             <button
               type="button"
-              class="shrink-0 rounded-md px-2 py-1 text-xs text-rose-700 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950"
+              class="shrink-0 rounded-md p-1 text-muted hover:text-danger"
               :aria-label="`Elimina definitivamente ${titleOf(conversation)}`"
+              title="Elimina per sempre"
               @click="purging = conversation.id"
             >
-              Elimina
+              <Icon name="delete" :size="15" />
             </button>
           </div>
         </li>
       </ul>
-    </div>
+    </section>
   </nav>
 </template>

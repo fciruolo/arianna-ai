@@ -120,6 +120,11 @@ const server = await startApiServer({
   projects: () => settings.current().projects,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
+  agents: () => [...agents.keys()],
+  characters: {
+    dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
+    choices: () => settings.current().characters,
+  },
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

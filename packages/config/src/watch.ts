@@ -1,6 +1,6 @@
 // Reloads arianna.toml and the catalog while the core runs (task 1.18): a new
 // model for a role applies without a restart. Only the roles, the model
-// names they give the local servers and the projects (D-058: the user
+// names they give the local servers, the characters (cosmetic) and the projects (D-058: the user
 // approves one with the wizard and uses it right away; a project taken off
 // the list is closed at the next delegated step) change live; everything else
 // waits for a restart, privacy settings first, so that an edited file never turns on a
@@ -16,7 +16,7 @@ import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 const RESTART_SECTIONS = ['paths', 'database', 'server', 'cloud', 'telegram'] as const;
 
 export interface ConfigChange {
-  /** Applied: `current()` returns the new values (`roles`, `local.models`, `projects`). */
+  /** Applied: `current()` returns the new values (`roles`, `local.models`, `projects`, `characters`). */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
   restart: string[];
@@ -52,6 +52,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('roles') ? ['roles'] : []),
       ...(sameServers && changed('local') ? ['local.models'] : []),
       ...(changed('projects') ? ['projects'] : []),
+      ...(changed('characters') ? ['characters'] : []),
     ],
     restart: [...(sameServers ? [] : ['local.endpoints']), ...RESTART_SECTIONS.filter(changed)],
   };
@@ -90,7 +91,7 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
     read = next;
     const before = current;
     const sameServers = isDeepStrictEqual(servers(current), servers(next));
-    current = { ...current, roles: next.roles, projects: next.projects, ...(sameServers ? { local: next.local } : {}) };
+    current = { ...current, roles: next.roles, projects: next.projects, characters: next.characters, ...(sameServers ? { local: next.local } : {}) };
     const change = { applied: diffConfig(before, current).applied, restart: diffConfig(current, next).restart };
     // A file put back as it was changes nothing.
     if (!empty(change)) options.onChange(change);

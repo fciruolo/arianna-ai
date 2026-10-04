@@ -5,6 +5,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 ## Continuità fra conversazioni
 
 - **All'inizio di ogni sessione leggi `docs/HANDOFF.md`**: dice dove siamo, cosa è in sospeso e cosa aspetta l'utente.
+- **All'inizio di ogni sessione controlla che il sistema sia attivo e avvia ciò che manca** (richiesta dell'utente, 2026-10-04): database (`pnpm db:up`), core (`pnpm start`, in background, su 127.0.0.1:7420) e chat in sviluppo (`pnpm hud:dev`, in background, su 127.0.0.1:5173). Se Docker è spento non avviarlo: chiedi all'utente di aprirlo. oMLX non rientra nel controllo.
 - **Tienilo aggiornato**: a fine task, prima di fermarti, e quando cambia ciò che è in attesa dell'utente.
 - **Quando la conversazione diventa troppo grande, dillo e proponi di aprirne una nuova.** Segnali: il contesto è stato riassunto, sono stati chiusi più di due o tre task nella stessa conversazione, inizi a perdere dettagli già stabiliti. Prima di proporlo aggiorna `docs/HANDOFF.md` come consegna (stato, prossimi passi, attese, cose non ovvie) e dai all'utente il prompt da incollare nella nuova conversazione. Il momento migliore è fra un task e l'altro, non a metà.
 - La memoria di Claude Code fuori dal repository non è utilizzabile (l'hook la blocca): ciò che va ricordato sta qui o in `docs/HANDOFF.md`.
@@ -50,6 +51,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm start` | Avvia il core come `arianna_app`: migrazioni (solo con le password di sviluppo; con quelle vere prima `pnpm db:migrate`), worker dei task, API, WebSocket e chat web su `[server]` di `arianna.toml` (loopback) |
 | `pnpm hud:build` | Compila la chat web in `apps/hud/dist`, servita dal core |
 | `pnpm hud:dev` | Chat web in sviluppo con Vite su `127.0.0.1:5173`, che inoltra `/api` al core avviato con `pnpm start` |
+| `node apps/hud/characters/build.ts [--preview]` | Rigenera i fogli PNG dei personaggi originali (D-060) dalle mappe di pixel in `apps/hud/characters/art/`; `--preview` scrive anche gli ingrandimenti in `data/characters-preview/`. Un test fallisce se i PNG in git non corrispondono alle mappe |
 | `pnpm test:db` | Test che richiedono PostgreSQL (`apps/*/test-db`); avvia il database se serve. Fuori da `pnpm check`: obbligatorio a fine task se tocchi migrazioni o codice che parla con il database (D-029) |
 
 Aggiungi qui ogni comando quando esiste.

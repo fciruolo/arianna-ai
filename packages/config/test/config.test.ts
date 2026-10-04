@@ -37,7 +37,20 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     local: { endpoints: [] },
     cloud: { executors: [] },
     projects: [],
+    characters: {},
   });
+});
+
+test('characters (D-060): agent = "<pack>/<character>", nothing else', () => {
+  const characters = (section: string) => parseConfig(`${VALID}\n[characters]\n${section}\n`, HOME).characters;
+  assert.deepEqual(characters('arianna = "originali/arianna"\ncoder = "my-pack/robot_2"'), {
+    arianna: 'originali/arianna',
+    coder: 'my-pack/robot_2',
+  });
+  const dotted = ['..', 'x'].join('/');
+  for (const bad of ['arianna = "arianna"', 'arianna = "a/b/c"', `arianna = "${dotted}"`, 'arianna = "Pack/x"', 'arianna = "p/x.png"', 'arianna = ""', 'arianna = 1', 'Arianna = "p/x"']) {
+    assert.throws(() => characters(bad), { name: 'ConfigError' }, bad);
+  }
 });
 
 // The user's home of these tests: ARIANNA_HOME is not inside it.

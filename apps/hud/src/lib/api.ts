@@ -1,4 +1,4 @@
-import type { Approval, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, Task } from './types.ts';
+import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -96,4 +96,19 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
 
 export async function decide(approvalId: string, state: 'approved' | 'rejected'): Promise<Approval> {
   return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state })).approval;
+}
+
+/** The status panel: agents, last router decision, gateway today. */
+export async function loadStatus(): Promise<StatusSnapshot> {
+  return call<StatusSnapshot>('GET', '/api/status');
+}
+
+/** The character packs and who wears what (D-060). */
+export async function loadCharacters(): Promise<CharacterListing> {
+  return call<CharacterListing>('GET', '/api/characters');
+}
+
+/** Where the sheet of a character is served. */
+export function sheetUrl(choice: CharacterChoice): string {
+  return `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;
 }

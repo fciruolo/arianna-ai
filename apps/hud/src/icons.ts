@@ -1,0 +1,57 @@
+import type { Component } from 'vue';
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowUp,
+  Briefcase,
+  Check,
+  ChevronRight,
+  Folder,
+  Lock,
+  Menu,
+  MessageCircle,
+  Monitor,
+  Moon,
+  PanelRight,
+  Pencil,
+  Plus,
+  Route,
+  Send,
+  ShieldCheck,
+  Sun,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-vue-next';
+
+/**
+ * The only place that knows where the icons come from (D-061): today
+ * lucide-vue-next. Components use `<Icon name="…">` with these names; to
+ * switch to our own SVGs or another library, change this file only.
+ */
+export const ICONS = {
+  chat: MessageCircle,
+  new: Plus,
+  send: ArrowUp,
+  rename: Pencil,
+  archive: Archive,
+  restore: ArchiveRestore,
+  delete: Trash2,
+  expand: ChevronRight,
+  close: X,
+  menu: Menu,
+  panel: PanelRight,
+  'theme-light': Sun,
+  'theme-dark': Moon,
+  'theme-system': Monitor,
+  approve: Check,
+  warning: TriangleAlert,
+  project: Folder,
+  private: Lock,
+  work: Briefcase,
+  telegram: Send,
+  router: Route,
+  gateway: ShieldCheck,
+} satisfies Record<string, Component>;
+
+export type IconName = keyof typeof ICONS;

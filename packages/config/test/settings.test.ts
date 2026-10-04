@@ -48,6 +48,7 @@ const FULL: Settings = {
     { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
     { name: 'demo', path: 'repos/demo', label: 'L0' },
   ],
+  characters: { arianna: 'originali/arianna', coder: 'my-pack/robot_2' },
   telegram: { token: 'vault://telegram-bot-token', chats: [12345, 67890] },
 };
 
