@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { parse as parseToml } from 'smol-toml';
+import { parse as parseToml, TomlError } from 'smol-toml';
 
 import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
 import { parseCharacters, type CharacterChoices } from './characters.ts';
@@ -79,7 +79,9 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
   try {
     raw = parseToml(text);
   } catch (error) {
-    throw new ConfigError(`arianna.toml: ${error instanceof Error ? error.message : String(error)}`);
+    // Only where: the message of smol-toml quotes the lines around the error, values included.
+    if (error instanceof TomlError) throw new ConfigError(`arianna.toml: invalid TOML at line ${String(error.line)}, column ${String(error.column)}`);
+    throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
   onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram', 'voice'], 'arianna.toml');

@@ -13,6 +13,7 @@ import {
   loadCatalog,
   loadConfig,
   loadLabelRules,
+  userHomeOf,
   voicePaths,
   watchConfig,
 } from '@arianna/config';
@@ -27,11 +28,12 @@ import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
-import { createLocalServers, loggedEvent } from './local-servers.ts';
+import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
+import { createSettingsPage } from './settings-page.ts';
 import { createBotApi } from './telegram/api.ts';
 import { startTelegram } from './telegram/channel.ts';
 import { createTelegramSwitch } from './telegram/switch.ts';
@@ -285,6 +287,19 @@ const closed = await calls.closeLeftovers();
 if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
 // Before the API: with [voice] the routes never answer "voice off" at start.
 await voice.begin(settings.current().voice);
+// The settings page (D-071): it writes arianna.toml, which the watcher above
+// applies as any other change. Each write goes in the event log with the
+// names of the sections only, never their values.
+const settingsPage = createSettingsPage({
+  home: config.home,
+  userHome: userHomeOf(),
+  dataDir: config.paths.data,
+  running: () => settings.current(),
+  onChanged: (change) => {
+    console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
+    appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
+  },
+});
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
   sql,
@@ -303,6 +318,12 @@ const server = await startApiServer({
   voice: { service: voice.service, voice: () => voiceSettings().voice, models: candidates, clones: voiceDirs.clones },
   calls,
   pusher: () => voice.pusher(),
+  settings: settingsPage,
+  local: {
+    status: () => localServers.status(),
+    restart: (id) => localServers.restart(id),
+    log: (id) => logTail(config.paths.data, id),
+  },
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

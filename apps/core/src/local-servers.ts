@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -33,6 +33,8 @@ export interface LocalServerStatus {
   url: string;
   /** False: no `command`, the core only watches the server. */
   managed: boolean;
+  /** Already answering when its watchdog started: the core watches it but never stops it. */
+  adopted: boolean;
   state: WatchdogState;
 }
 
@@ -55,6 +57,13 @@ export interface LocalServers {
    */
   sync(endpoints: readonly LocalEndpointConfig[]): Promise<void>;
   status(): LocalServerStatus[];
+  /**
+   * Stops the server of `id` and starts it again ("Riavvia oMLX" of the
+   * settings page, D-071); resolves once it has settled, false when there is
+   * no such endpoint. Queued with the syncs. An adopted server is not the
+   * core's to stop: the new watchdog adopts it again.
+   */
+  restart(id: string): Promise<boolean>;
   /** For createLocalModel: an endpoint without a watchdog counts as available. */
   isAvailable(id: string): boolean;
   /** For createLocalModel: an unreachable or stuck endpoint is checked at once. */
@@ -83,6 +92,29 @@ export function loggedEvent(event: LocalServerEvent): boolean {
     case 'spawn':
     case 'restart':
       return false;
+  }
+}
+
+/**
+ * The end of data/<id>.log for the settings page (D-071): at most `maxBytes`,
+ * from the first whole line. Empty when there is no log yet.
+ */
+export function logTail(dataDir: string, id: string, maxBytes = 16 * 1024): string {
+  let fd: number;
+  try {
+    fd = openSync(join(dataDir, `${id}.log`), 'r');
+  } catch {
+    return '';
+  }
+  try {
+    const size = fstatSync(fd).size;
+    const start = Math.max(0, size - maxBytes);
+    const buffer = Buffer.alloc(size - start);
+    readSync(fd, buffer, 0, buffer.length, start);
+    const text = buffer.toString('utf8');
+    return start === 0 ? text : text.slice(text.indexOf('\n') + 1);
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -133,6 +165,7 @@ async function reapOrphan(file: string, graceMs: number): Promise<number | undef
 interface Supervised {
   endpoint: Pick<LocalEndpointConfig, 'id' | 'url' | 'command'>;
   watchdog: Watchdog;
+  adopted: boolean;
 }
 
 /** What decides the process: the model names change without touching it. */
@@ -161,6 +194,8 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
 
   /** Keeps data/<id>.pid in step with the process the watchdog started. */
   function track(event: WatchdogEvent): void {
+    const entry = supervised.get(event.endpoint);
+    if (entry !== undefined && (event.type === 'adopt' || event.type === 'spawn')) entry.adopted = event.type === 'adopt';
     try {
       if (event.type === 'spawn') {
         const started = processStart(event.pid);
@@ -214,7 +249,7 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
     for (const endpoint of wanted.values()) {
       if (supervised.has(endpoint.id)) continue;
       const watchdog = watchdogOf(endpoint);
-      supervised.set(endpoint.id, { endpoint, watchdog });
+      supervised.set(endpoint.id, { endpoint, watchdog, adopted: false });
       started.push(startWatchdog(endpoint, watchdog));
     }
     order = [...wanted.keys()];
@@ -234,8 +269,31 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       return order.flatMap((id) => {
         const entry = supervised.get(id);
         if (entry === undefined) return [];
-        return [{ id, url: entry.endpoint.url, managed: entry.endpoint.command !== undefined, state: entry.watchdog.state }];
+        return [{ id, url: entry.endpoint.url, managed: entry.endpoint.command !== undefined, adopted: entry.adopted, state: entry.watchdog.state }];
       });
+    },
+
+    restart(id) {
+      if (closed) return Promise.reject(new Error('local servers stopped'));
+      const next = queue.then(async () => {
+        const entry = supervised.get(id);
+        if (entry === undefined || isClosed()) return false;
+        // Listed while it stops, as not available: the model does not send it requests.
+        let starting: Promise<void> | undefined;
+        try {
+          await entry.watchdog.stop();
+        } finally {
+          if (!isClosed() && supervised.get(id) === entry) {
+            const watchdog = watchdogOf(entry.endpoint);
+            supervised.set(id, { endpoint: entry.endpoint, watchdog, adopted: false });
+            starting = startWatchdog(entry.endpoint, watchdog);
+          }
+        }
+        await starting;
+        return true;
+      });
+      queue = next.then(() => undefined, () => undefined);
+      return next;
     },
 
     isAvailable(id) {

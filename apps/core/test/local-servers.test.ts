@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { DATA_DIR, resolveHome, type LocalEndpointConfig } from '@arianna/config';
 
-import { createLocalServers, localServerEnv, loggedEvent, type LocalServerEvent, type LocalServers } from '../src/local-servers.ts';
+import { createLocalServers, localServerEnv, loggedEvent, logTail, type LocalServerEvent, type LocalServers } from '../src/local-servers.ts';
 
 const HOME = resolveHome({});
 const FAKE = fileURLToPath(new URL('support/fake-omlx.ts', import.meta.url));
@@ -96,6 +96,13 @@ it('localServerEnv: built from nothing; no secret of the core, no proxy, Hugging
   assert.equal(env.HF_HUB_OFFLINE, '1');
 });
 
+it('logTail: the end of data/<id>.log from a whole line; empty without a log', () => {
+  writeFileSync(join(tmpRoot, 'tail.log'), 'first line\nsecond line\nthird\n');
+  assert.equal(logTail(tmpRoot, 'tail'), 'first line\nsecond line\nthird\n');
+  assert.equal(logTail(tmpRoot, 'tail', 15), 'third\n');
+  assert.equal(logTail(tmpRoot, 'none'), '');
+});
+
 describe('createLocalServers', { timeout: 60_000 }, () => {
   afterEach(async () => {
     await servers.stop();
@@ -105,7 +112,7 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     const port = await freePort();
     create();
     await servers.sync([endpoint('omlx', port)]);
-    assert.deepEqual(servers.status(), [{ id: 'omlx', url: `http://127.0.0.1:${String(port)}/v1`, managed: true, state: 'up' }]);
+    assert.deepEqual(servers.status(), [{ id: 'omlx', url: `http://127.0.0.1:${String(port)}/v1`, managed: true, adopted: false, state: 'up' }]);
     assert.equal(servers.isAvailable('omlx'), true);
     const log = readFileSync(join(tmpRoot, 'omlx.log'), 'utf8');
     assert.match(log, /^env /);
@@ -125,7 +132,7 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     try {
       create();
       await servers.sync([endpoint('omlx', port)]);
-      assert.equal(servers.status()[0]?.state, 'up');
+      assert.deepEqual(servers.status().map(({ state, adopted }) => [state, adopted]), [['up', true]]);
       assert.ok(events.some((event) => event.type === 'adopt'));
       assert.deepEqual(spawns(), []);
       await servers.stop();
@@ -139,7 +146,7 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     const port = await freePort();
     create();
     await servers.sync([endpoint('spare', port, false)]);
-    assert.deepEqual(servers.status(), [{ id: 'spare', url: `http://127.0.0.1:${String(port)}/v1`, managed: false, state: 'down' }]);
+    assert.deepEqual(servers.status(), [{ id: 'spare', url: `http://127.0.0.1:${String(port)}/v1`, managed: false, adopted: false, state: 'down' }]);
     assert.equal(servers.isAvailable('spare'), false);
     // An endpoint the core does not know is not held back.
     assert.equal(servers.isAvailable('other'), true);
@@ -161,6 +168,40 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     assert.equal(spawns().length, 3);
     assert.deepEqual(servers.status().map(({ id, state }) => [id, state]), [['omlx', 'up']]);
     assert.equal(await answers(b), false);
+  });
+
+  it('restart(): a new process for that endpoint only; false for an unknown one', async () => {
+    const [a, b] = [await freePort(), await freePort()];
+    create();
+    await servers.sync([endpoint('omlx', a), endpoint('spare', b)]);
+    const [first, second] = spawns();
+    assert.ok(first !== undefined && second !== undefined);
+    // While it restarts the endpoint stays listed, and the model does not send it requests.
+    let done = false;
+    const restarting = servers.restart('omlx').finally(() => { done = true; });
+    const finished = (): boolean => done;
+    let checks = 0;
+    while (!finished()) {
+      assert.deepEqual(servers.status().map(({ id }) => id), ['omlx', 'spare']);
+      if (spawns().length === 2 && events.some((event) => event.type === 'exit' && event.pid === first)) assert.equal(servers.isAvailable('omlx'), false);
+      checks += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.ok(checks > 0);
+    assert.equal(await restarting, true);
+    assert.equal(spawns().length, 3);
+    assert.equal(alive(first), false);
+    assert.equal(alive(second), true);
+    assert.deepEqual(servers.status().map(({ id, state }) => [id, state]), [['omlx', 'up'], ['spare', 'up']]);
+    assert.equal(await answers(a), true);
+    assert.equal(await servers.restart('other'), false);
+    assert.equal(spawns().length, 3);
+  });
+
+  it('restart() after stop() is refused', async () => {
+    create();
+    await servers.stop();
+    await assert.rejects(servers.restart('omlx'), /stopped/);
   });
 
   it('a reported failure makes the watchdog check at once and restart a dead server', async () => {

@@ -39,7 +39,8 @@ user = "arianna"
 # with it the core starts the server, restarts it when it fails and stops it
 # with itself (D-071), and adopts one already running; without it, it only
 # monitors. The log is data/<id>.log. A change of `url` or `command`
-# restarts that server without restarting the core.
+# restarts that server without restarting the core. No secret in `command`:
+# the settings page of the web chat shows it.
 # The server is oMLX (github.com/jundot/omlx). Relative paths in `command` are
 # relative to ARIANNA_HOME. Without `models` the names come from [roles]: the
 # catalog id is the folder in data/models, the name oMLX serves. A server
@@ -125,7 +126,8 @@ port = 7420
 # Quiet hours are local time; scheduled calls skip them and the weekend but
 # count in max_per_day. [voice.push] turns on Web Push: a notification
 # without content through Apple, Google or Mozilla when the chat is closed;
-# the private key stays in the vault (key vapid-private-key). Restart to apply.
+# the private key stays in the vault (key vapid-private-key). Applies without
+# a restart, once no call is in progress.
 #
 # [voice]
 # port = 7421

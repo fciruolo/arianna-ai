@@ -416,3 +416,10 @@ test('cloud.executors lists the enabled official binaries, once each', () => {
   assert.throws(() => parseConfig(`${VALID}\n[cloud]\nexecutors = ["claude", "claude"]\n`, HOME), ConfigError);
   assert.throws(() => parseConfig(`${VALID}\n[cloud]\nexecutors = "claude"\n`, HOME), ConfigError);
 });
+
+test('a TOML syntax error says where, never the lines around it: they may hold values', () => {
+  assert.throws(
+    () => parseConfig(`${VALID}\n[database]\npassword = "s3cret" x\n`, HOME),
+    (error: unknown) => error instanceof ConfigError && /invalid TOML at line \d+, column \d+$/.test(error.message) && !error.message.includes('s3cret'),
+  );
+});

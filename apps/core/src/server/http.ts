@@ -27,6 +27,8 @@ import type { Sql } from '../db/client.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
+import type { LocalServerStatus } from '../local-servers.ts';
+import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -75,6 +77,10 @@ export interface ApiServerOptions {
   calls?: Calls;
   /** Web Push for the calls of Arianna (D-066), read at each request: undefined without [voice.push]. */
   pusher?: () => Pusher | undefined;
+  /** The settings page (D-071): arianna.toml read and written with its fingerprint. */
+  settings?: SettingsPage;
+  /** The local servers the core watches (D-071): state, restart, end of the log. */
+  local?: LocalApi;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -89,6 +95,14 @@ export interface VoiceApi {
   voice: () => string;
   /** Where the voices copied from a sample live (D-069): data/voice/voices. */
   clones: string;
+}
+
+export interface LocalApi {
+  status(): LocalServerStatus[];
+  /** Resolves once the server has settled, which may take minutes: the route does not wait. */
+  restart(id: string): Promise<boolean>;
+  /** The end of data/<id>.log: may hold prompts (L2), shown only in the web chat. */
+  log(id: string): string;
 }
 
 export interface ApiServer {
@@ -192,6 +206,9 @@ interface RouteOptions {
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
   pusher: () => Pusher | undefined;
+  settings: SettingsPage | undefined;
+  local: LocalApi | undefined;
+  onError: (error: unknown) => void;
 }
 
 /** The voice is configured: `[voice]` in arianna.toml (D-071: it turns on and off without a restart). */
@@ -358,9 +375,46 @@ function voiceRoutes(voice: VoiceApi | undefined): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher }: RouteOptions): Route[] {
+function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | undefined, onError: (error: unknown) => void): Route[] {
+  const need = (): SettingsPage => {
+    if (settings === undefined) throw new HttpError(404, 'not found');
+    return settings;
+  };
+  const server = (params: Params): { local: LocalApi; found: LocalServerStatus } => {
+    const found = local?.status().find((entry) => entry.id === params.id);
+    if (local === undefined || found === undefined) throw new HttpError(404, 'not found');
+    return { local, found };
+  };
+  return [
+    // Values, catalog, fingerprint, what applies now and what waits for a restart, local servers.
+    route('GET', '/api/settings', () => Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [] } })),
+    // Models, cloud models, characters, [voice]: written at once.
+    route('POST', '/api/settings', async (request) => ({ body: need().update(await readJson(request)) })),
+    // Cloud executors, Telegram, projects, local servers: shown first, written only on confirmation.
+    route('POST', '/api/settings/privacy/prepare', async (request) => ({ body: need().prepare(await readJson(request)) })),
+    route('POST', '/api/settings/privacy/confirm', async (request) => ({ body: need().confirm(await readJson(request)) })),
+    // "Riavvia oMLX": only a server the core starts; answered before the model has loaded.
+    route('POST', '/api/local/:id/restart', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      const { local: servers, found } = server(params);
+      if (!found.managed) throw new HttpError(409, 'this server has no command in arianna.toml: the core only watches it');
+      // Started outside the core: stopping it is not the core's to do.
+      if (found.adopted) throw new HttpError(409, 'this server was already running when the core started: restart it where it was started');
+      servers.restart(found.id).catch(onError);
+      return { status: 202, body: { ok: true } };
+    }),
+    // The id is one the core watches, never a path.
+    route('GET', '/api/local/:id/log', (_request, _url, params) => {
+      const { local: servers, found } = server(params);
+      return Promise.resolve({ body: { log: servers.log(found.id) } });
+    }),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, onError }: RouteOptions): Route[] {
   return [
     ...voiceRoutes(voice),
+    ...settingsRoutes(settings, local, onError),
     ...callRoutes(sql, voice, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
@@ -632,6 +686,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
     return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };
   }
+  if (error instanceof SettingsError) {
+    const status = { invalid: 400, changed: 409, unreadable: 409, unknown: 404, expired: 410 }[error.code];
+    return { status, message: error.message };
+  }
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
 }
@@ -647,6 +705,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     voice: options.voice,
     calls: options.calls,
     pusher: options.pusher ?? (() => undefined),
+    settings: options.settings,
+    local: options.local,
+    onError: options.onError ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);

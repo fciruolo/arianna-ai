@@ -64,3 +64,4 @@ export {
 } from './settings.ts';
 export { DEFAULT_VOICE, parseVoice, uvEnvironment, VAPID_PRIVATE_KEY_REF, voicePaths, type VoicePaths, type OutgoingRules, type PushConfig, type VoiceConfig, type VoiceLimits } from './voice.ts';
 export { diffConfig, watchConfig, type ConfigChange, type ConfigWatcher } from './watch.ts';
+export { settingsFingerprint, StaleSettingsError, writeSettings, type WriteOptions } from './write.ts';

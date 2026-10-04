@@ -1,16 +1,14 @@
-// Writing config/arianna.toml (task 1.18): validated exactly as loadConfig reads
-// it, then written beside it and renamed, so the running core, which checks
-// the file every second, never reads half of it.
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
+// Reading and writing config/arianna.toml for the wizard (task 1.18); the
+// writing itself is in @arianna/config, shared with the settings page.
+import { existsSync, readFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 
 import {
   CLOUD_EXECUTORS,
   CONFIG_FILE,
-  parseConfig,
   readSettings,
-  renderSettings,
   userHomeOf,
+  writeSettings,
   type CloudExecutor,
   type ModelCatalog,
   type Settings,
@@ -26,19 +24,8 @@ export function currentSettings(home: string, catalog: ModelCatalog): Settings |
   return existsSync(path) ? readSettings(readFileSync(path, 'utf8'), home, catalog, userHomeOf()) : undefined;
 }
 
-export function writeSettings(home: string, catalog: ModelCatalog, settings: Settings): void {
-  const text = renderSettings(settings);
-  // The same home the wizard and the links use (HOME), not the account's when they differ.
-  parseConfig(text, home, catalog, userHomeOf());
-  const path = configPath(home);
-  const temporary = join(dirname(path), `.arianna.toml.${String(process.pid)}`);
-  try {
-    writeFileSync(temporary, text, { mode: 0o644 });
-    renameSync(temporary, path);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-}
+/** Written as the settings page writes it (D-071). */
+export { writeSettings };
 
 /**
  * Whether each official binary is on PATH. Looked up, not run: the cloud
