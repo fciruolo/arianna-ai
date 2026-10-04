@@ -1,4 +1,4 @@
-import type { TaskFailure } from './types.ts';
+import type { CloudModel, ConversationMode, TaskFailure } from './types.ts';
 
 /**
  * Why a task failed, in Italian (D-064): the core stores a code and a few
@@ -37,6 +37,7 @@ function attempts(details: Details): string {
 const RETRY = 'Quando hai sistemato, premi «Riprova»: il task riparte dal passo che non è riuscito.';
 const START_SERVER = 'Avvia oMLX con il comando che trovi nell’esempio di config/arianna.toml (sezione [[local.endpoints]]).';
 const CHAT_SAME_MODEL = 'La chat di sistema usa lo stesso modello locale: finché non risponde, segui questi passi.';
+const CHAT_CLAUDE = 'Se ti serve aiuto, apri la chat di sistema: lì risponde Claude, che non usa il modello locale.';
 
 const CATALOG: Record<string, (details: Details) => FailureText> = {
   'local-model.unavailable': (details) => ({
@@ -100,10 +101,17 @@ function capital(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-/** Title, explanation and steps for a failure. */
-export function failureText(failure: Pick<TaskFailure, 'code' | 'details'>): FailureText {
+/**
+ * Title, explanation and steps for a failure. `claudeAnswers` says whether
+ * Claude can answer the task's system chat (claudeAnswersSystemChat): then the
+ * chat helps even when the local model is down.
+ */
+export function failureText(failure: Pick<TaskFailure, 'code' | 'details'>, claudeAnswers = false): FailureText {
   const known = CATALOG[failure.code];
-  if (known !== undefined) return known(failure.details);
+  if (known !== undefined) {
+    const result = known(failure.details);
+    return claudeAnswers ? { ...result, steps: result.steps.map((step) => (step === CHAT_SAME_MODEL ? CHAT_CLAUDE : step)) } : result;
+  }
   if (failure.code.startsWith('claude.')) {
     return {
       title: 'Claude Code si è fermato',
@@ -118,10 +126,21 @@ export function failureText(failure: Pick<TaskFailure, 'code' | 'details'>): Fai
   };
 }
 
+/** Claude models that answer a work system chat directly (D-064). Same list as DIRECT_MODELS in apps/core/src/conversations.ts. */
+export const DIRECT_MODELS: readonly string[] = ['sonnet', 'opus'];
+
 /**
- * Whether the system chat can help: it answers on the local model, so not
- * when the failure is the local model itself (D-064).
+ * Whether Claude can answer a system chat opened from a conversation in this
+ * mode: work only (L1), and only with a direct model turned on (D-064).
  */
-export function chatCanHelp(failure: Pick<TaskFailure, 'origin'>): boolean {
-  return failure.origin !== 'local-model';
+export function claudeAnswersSystemChat(mode: ConversationMode | undefined, models: readonly CloudModel[]): boolean {
+  return mode === 'work' && models.some((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model));
+}
+
+/**
+ * Whether the system chat can help: on the local model it cannot when the
+ * failure is the local model itself, unless Claude can answer it (D-064).
+ */
+export function chatCanHelp(failure: Pick<TaskFailure, 'origin'>, claudeAnswers = false): boolean {
+  return claudeAnswers || failure.origin !== 'local-model';
 }

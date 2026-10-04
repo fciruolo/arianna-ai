@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import type { ChatState } from '../lib/chat-state.ts';
+import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
@@ -40,8 +41,6 @@ function onModel(event: Event): void {
   emit('chooseModel', value === AUTO ? null : value);
 }
 
-/** Claude models that answer a work system chat directly (D-064): Sonnet and Opus. Same list as DIRECT_MODELS in apps/core/src/conversations.ts. */
-const DIRECT_MODELS: readonly string[] = ['sonnet', 'opus'];
 /** In a work system chat the selector chooses who answers, not the Coder's model. */
 const answersDirect = computed(() => props.conversation.origin === 'system' && props.conversation.mode === 'work');
 const selectable = computed(() =>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { chatCanHelp, failureText } from '../src/lib/failures.ts';
+import { chatCanHelp, claudeAnswersSystemChat, failureText } from '../src/lib/failures.ts';
 
 test('a local model that is down is explained with its server and port, and the steps to start it', () => {
   const text = failureText({ code: 'local-model.unavailable', details: { endpoint: 'omlx', port: 7001, attempts: 3 } });
@@ -31,4 +31,24 @@ test('an unknown code gets a generic text, and claude codes a common one', () =>
 test('the system chat is not offered as the fix when the local model is the problem', () => {
   assert.equal(chatCanHelp({ origin: 'local-model' }), false);
   assert.equal(chatCanHelp({ origin: 'engine' }), true);
+});
+
+test('with Claude answering the system chat, it is offered even when the local model is down', () => {
+  assert.equal(chatCanHelp({ origin: 'local-model' }, true), true);
+  const local = failureText({ code: 'local-model.unavailable', details: {} });
+  const claude = failureText({ code: 'local-model.unavailable', details: {} }, true);
+  assert.ok(local.steps.some((step) => /stesso modello locale/.test(step)));
+  assert.ok(!claude.steps.some((step) => /stesso modello locale/.test(step)));
+  assert.ok(claude.steps.some((step) => /risponde Claude/.test(step)));
+  assert.equal(claude.steps.length, local.steps.length);
+});
+
+test('Claude answers a system chat only from a work conversation with Sonnet or Opus turned on', () => {
+  const sonnet = [{ executor: 'claude', model: 'sonnet' }];
+  assert.equal(claudeAnswersSystemChat('work', sonnet), true);
+  assert.equal(claudeAnswersSystemChat('private', sonnet), false);
+  assert.equal(claudeAnswersSystemChat(undefined, sonnet), false);
+  assert.equal(claudeAnswersSystemChat('work', []), false);
+  assert.equal(claudeAnswersSystemChat('work', [{ executor: 'claude', model: 'fable' }]), false);
+  assert.equal(claudeAnswersSystemChat('work', [{ executor: 'codex', model: 'sonnet' }]), false);
 });

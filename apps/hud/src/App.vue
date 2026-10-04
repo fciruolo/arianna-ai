@@ -344,6 +344,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :task="failure.task"
       :failure="failure.error"
       :loading="failure.loading"
+      :claude-answers="failure.claudeAnswers"
       @close="store.closeFailure"
       @retry="store.retry"
       @chat="store.openSystemChat"

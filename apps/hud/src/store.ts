@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue';
 
 import * as api from './lib/api.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -19,7 +20,8 @@ export function createChatStore() {
   /** System chats, opened by the system (D-064): their own section, between the two. */
   const systemChats = ref<Conversation[]>([]);
   /** The failed task whose error window is open, with its error once read. */
-  const failure = ref<{ task: Task; error: TaskFailure | null; loading: boolean } | null>(null);
+  /** The failure window; `claudeAnswers`: Claude can answer the task's system chat (D-064). */
+  const failure = ref<{ task: Task; error: TaskFailure | null; loading: boolean; claudeAnswers: boolean } | null>(null);
   /** The open conversation when it is in neither list (an archived one beyond the first page). */
   const detached = ref<Conversation | undefined>(undefined);
   const chat = shallowRef<ChatState | null>(null);
@@ -240,11 +242,15 @@ export function createChatStore() {
    */
   async function explain(task: Task): Promise<void> {
     error.value = null;
-    failure.value = { task, error: null, loading: true };
+    const origin = [...conversations.value, ...archived.value, ...(detached.value === undefined ? [] : [detached.value])].find(
+      (conversation) => conversation.id === task.conversationId,
+    );
+    const claudeAnswers = claudeAnswersSystemChat(origin?.mode, models.value);
+    failure.value = { task, error: null, loading: true, claudeAnswers };
     try {
       const read = await api.loadTaskFailure(task.id);
       // The user may have closed the window, or opened another one, meanwhile.
-      if (openFailure()?.task.id === task.id) failure.value = { task, error: read, loading: false };
+      if (openFailure()?.task.id === task.id) failure.value = { task, error: read, loading: false, claudeAnswers };
     } catch (cause) {
       failure.value = null;
       fail(cause);

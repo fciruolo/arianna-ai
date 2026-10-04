@@ -9,10 +9,10 @@ import Icon from './Icon.vue';
  * Why a task failed (D-064): explanation and steps from the page's catalog,
  * the technical details as they were stored, "Riprova" and the system chat.
  */
-const props = defineProps<{ task: Task; failure: TaskFailure | null; loading: boolean }>();
+const props = defineProps<{ task: Task; failure: TaskFailure | null; loading: boolean; claudeAnswers: boolean }>();
 const emit = defineEmits<{ close: []; retry: [taskId: string]; chat: [taskId: string] }>();
 
-const text = computed(() => (props.failure === null ? undefined : failureText(props.failure)));
+const text = computed(() => (props.failure === null ? undefined : failureText(props.failure, props.claudeAnswers)));
 const details = computed(() => Object.entries(props.failure?.details ?? {}));
 const dialog = ref<HTMLElement | null>(null);
 
@@ -36,15 +36,15 @@ onBeforeUnmount(() => {
       aria-modal="true"
       aria-labelledby="failure-title"
       tabindex="-1"
-      class="hud-card flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-y-auto bg-surface outline-none"
+      class="hud-card flex max-h-[90vh] w-full max-w-[520px] flex-col bg-surface outline-none"
     >
-      <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
+      <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="grid size-6 shrink-0 place-items-center rounded-full bg-danger/15 font-mono font-bold text-danger" aria-hidden="true">!</span>
         <h2 id="failure-title" class="min-w-0 flex-1 truncate font-medium">{{ text?.title ?? 'Perché il task è fallito' }}</h2>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
-      <div class="flex flex-col gap-3 px-[15px] py-3 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[15px] py-3 text-[13.5px]">
         <p class="truncate text-xs text-muted" :title="task.title">Task: {{ task.title }}</p>
         <p v-if="loading" class="text-muted">Leggo l’errore…</p>
         <template v-else-if="failure === null || text === undefined">
@@ -71,13 +71,13 @@ onBeforeUnmount(() => {
               <dd class="text-ink">{{ new Date(failure.ts).toLocaleString('it-IT') }}</dd>
             </dl>
           </details>
-          <p v-if="!chatCanHelp(failure)" class="text-xs text-muted">
+          <p v-if="!chatCanHelp(failure, claudeAnswers)" class="text-xs text-muted">
             La chat di sistema risponde con il modello locale, che è proprio quello che non funziona: potrai usarla quando sarà di nuovo attivo.
           </p>
         </template>
       </div>
 
-      <footer class="flex flex-wrap justify-end gap-2 border-t border-line px-[15px] py-2.5">
+      <footer class="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-[15px] py-2.5">
         <button v-if="failure !== null" type="button" class="btn" @click="emit('chat', task.id)">
           <Icon name="system" :size="16" />Apri la chat di sistema
         </button>
