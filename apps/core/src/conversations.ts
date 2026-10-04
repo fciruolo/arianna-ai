@@ -58,7 +58,13 @@ export interface Message {
   taskId: string | null;
   /** The agent that wrote an assistant message when it is not Arianna (the Coder's report); null otherwise. */
   agent: string | null;
+  /** The cloud model that wrote an answer of Arianna's task (Claude in a system chat, D-064); null for the local model. */
+  model: string | null;
 }
+
+/** The Claude models that can answer a system chat directly (D-064, second part). */
+export const DIRECT_MODELS = ['sonnet', 'opus'] as const;
+export type DirectModel = (typeof DIRECT_MODELS)[number];
 
 /** The agent that answers in the chat. */
 export const CHAT_AGENT = 'arianna';
@@ -91,7 +97,7 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
-  task_id::text AS "taskId", agent`;
+  task_id::text AS "taskId", agent, model`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -145,6 +151,10 @@ export async function setConversationModel(sql: Queryable, id: string, model: st
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${id} does not exist`);
   if (conversation.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
   if (model !== null && !selectable.includes(model)) throw new ChatError('invalid', 'the model is not one of the cloud models of this installation');
+  // In a system chat the model answers directly (D-064): Sonnet or Opus, never one behind a budget approval.
+  if (model !== null && conversation.origin === 'system' && !(DIRECT_MODELS as readonly string[]).includes(model)) {
+    throw new ChatError('invalid', 'a system chat is answered by Arianna or by Claude Sonnet or Opus');
+  }
   await sql`UPDATE conversations SET model = ${model} WHERE id = ${id}`;
   await appendEvent(sql, { kind: 'conversation.model', label: 'L0', payload: { conversationId: id, model } });
   const updated = await loadConversation(sql, id);

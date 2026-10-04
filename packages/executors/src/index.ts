@@ -43,6 +43,7 @@ export {
   type WatchdogState,
 } from './local/watchdog.ts';
 export {
+  prepareEmptyWorkspace,
   prepareWorkspace,
   preparedPath,
   changedToolConfig,

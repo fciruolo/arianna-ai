@@ -54,6 +54,8 @@ export interface Message {
   taskId: string | null;
   /** The agent that wrote an assistant message when it is not Arianna (`coder`); null otherwise. */
   agent: string | null;
+  /** The cloud model that wrote Arianna's answer (Claude in a system chat, D-064); null for the local model. */
+  model: string | null;
 }
 
 export type TaskStatus = 'inbox' | 'ready' | 'running' | 'waiting_user' | 'to_verify' | 'done' | 'failed';

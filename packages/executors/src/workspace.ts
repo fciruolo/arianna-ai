@@ -606,6 +606,27 @@ export async function reopenWorkspace(options: ReopenOptions): Promise<PreparedW
   return workspace;
 }
 
+/**
+ * An empty `data/worktrees/<runId>` for a run that reads no file (Claude
+ * answering a system chat directly, D-064): the working directory exists only
+ * because the binary needs one. Throws when the folder already exists: it
+ * belongs to another run. Removed with `removeWorkspace`.
+ */
+export async function prepareEmptyWorkspace(options: WorkspaceOptions): Promise<PreparedWorkspace> {
+  const target = workspacePath(options);
+  await mkdir(join(options.data, WORKTREES_DIR), { recursive: true });
+  try {
+    await mkdir(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new WorkspaceError(`workspace ${options.runId} already exists`);
+    throw error;
+  }
+  const decision: WorkspaceDecision = { decision: 'allow', rule: 'workspace', reason: 'empty folder: no file to read' };
+  const workspace: PreparedWorkspace = Object.freeze({ decision, path: target });
+  prepared.set(workspace, await realpath(target));
+  return workspace;
+}
+
 /** Removes the workspace of a run. It is a plain folder: no repository is involved. */
 export async function removeWorkspace(options: WorkspaceOptions): Promise<void> {
   await rm(workspacePath(options), { recursive: true, force: true });

@@ -55,8 +55,8 @@ export type ClaudeStepResult =
    * nothing is paid beyond the subscription, D-002); the router waits (1.10).
    */
   | { kind: 'quota'; overage: boolean; resetsAt?: Date; usage: RunUsage }
-  /** The run failed; its usage counts anyway. */
-  | { kind: 'failed'; reason: string; usage: RunUsage };
+  /** The run failed; its usage counts anyway. `error` says how, for the readable error (D-064). */
+  | { kind: 'failed'; reason: string; usage: RunUsage; error: ClaudeError };
 
 const toUsage = (usage: ClaudeUsage | undefined): RunUsage =>
   usage === undefined ? { steps: 0 } : { steps: usage.turns, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, cost: 0 };
@@ -88,7 +88,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
         apiStatus: error.apiStatus ?? null,
       },
     });
-    return { kind: 'failed', reason: `claude: ${error.kind}`, usage: toUsage(error.usage) };
+    return { kind: 'failed', reason: `claude: ${error.kind}`, usage: toUsage(error.usage), error };
   };
 
   const sessionRef = step.resume?.sessionRef ?? undefined;

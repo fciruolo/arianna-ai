@@ -266,6 +266,8 @@ export function createChatStore() {
       const task = await api.retryTask(taskId);
       if (taskId in tasks.value) tasks.value = { ...tasks.value, [taskId]: task };
       failure.value = null;
+      // From a system chat the task belongs to another conversation: its status is shown in the chat's card.
+      if (current.value?.sourceTaskId === taskId) await refreshConversations();
     } catch (cause) {
       fail(cause);
     }

@@ -302,7 +302,9 @@ function routes(sql: Sql, { projects, models, agents, characters }: RouteOptions
     route('POST', '/api/tasks/:id/system-chat', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
-      return { body: { conversation: await openFailureChat(sql, id) } };
+      // Claude answers by default only where Arianna could not (D-064): Sonnet, when this installation has it.
+      const direct = models().some((entry) => entry.executor === 'claude' && entry.model === 'sonnet') ? { directModel: 'sonnet' as const } : {};
+      return { body: { conversation: await openFailureChat(sql, id, direct) } };
     }),
 
     route('GET', '/api/approvals', async (_request, url) => {

@@ -91,9 +91,10 @@ export function chunk(text: string, size: number = CHUNK): string[] {
  * Opens the reply of a task that answers in a conversation. `agent` names the
  * agent that writes it when it is not Arianna (the Coder's report of a
  * delegated step, task 1.10): the message carries it, and Arianna's own
- * answer is still awaited.
+ * answer is still awaited. `model` names the cloud model that writes the
+ * task's own answer (Claude in a system chat, D-064).
  */
-export async function openReply(sql: Sql, taskId: string, options: { runId?: string; agent?: string } = {}): Promise<ChatReply> {
+export async function openReply(sql: Sql, taskId: string, options: { runId?: string; agent?: string; model?: string } = {}): Promise<ChatReply> {
   const task = await loadTask(sql, taskId);
   if (task === undefined) throw new Error(`task ${taskId} does not exist`);
   const conversationId = task.conversationId;
@@ -140,8 +141,8 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
 
       const messageId = await sql.begin(async (tx) => {
         const [row] = await tx<{ id: string }[]>`
-          INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent)
-          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null})
+          INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent, model)
+          VALUES (${conversationId}, 'assistant', 'web', ${stored}::privacy_label, ${text}, ${taskId}, ${options.agent ?? null}, ${options.model ?? null})
           RETURNING id::text`;
         if (row === undefined) throw new Error('INSERT INTO messages returned no row');
         await appendEvent(tx, {
@@ -149,7 +150,7 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
           taskId,
           ...(options.runId === undefined ? {} : { runId: options.runId }),
           label: 'L0',
-          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id, ...(options.agent === undefined ? {} : { agent: options.agent }) },
+          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id, ...(options.agent === undefined ? {} : { agent: options.agent }), ...(options.model === undefined ? {} : { model: options.model }) },
         });
         return row.id;
       });

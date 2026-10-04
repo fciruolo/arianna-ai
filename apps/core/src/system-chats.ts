@@ -1,6 +1,6 @@
 import { clearanceFor, type ConversationMode } from '@arianna/policy';
 
-import { ChatError, isUuid, loadConversation, loadMessage, type Conversation, type Message } from './conversations.ts';
+import { ChatError, isUuid, loadConversation, loadMessage, type Conversation, type DirectModel, type Message } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { loadFailure, type StoredFailure } from './failures.ts';
@@ -12,7 +12,8 @@ import { loadFailure, type StoredFailure } from './failures.ts';
  * question of the task is attached only when the user asks. Mode and
  * clearance are those of the task's conversation (a task without one: private),
  * so the privacy constraints do not change. Arianna answers on the local
- * model like in any conversation.
+ * model like in any conversation; in a work system chat the user can have
+ * Claude answer directly instead (`conversations.model`, second part).
  */
 
 /**
@@ -62,8 +63,12 @@ export function failureMessage(failure: Pick<StoredFailure, 'origin' | 'code' | 
  * (brought back from the archive if needed, and told the newer error if the
  * task failed again). A new one only for a task that is failed now, with a
  * recorded error, whose conversation was not deleted.
+ *
+ * `directModel` is the Claude model this installation can use now: a new
+ * work system chat about a failure of the local model starts with it,
+ * because Arianna could not answer there (the user's choice, D-064).
  */
-export async function openFailureChat(sql: Sql, taskId: string): Promise<Conversation> {
+export async function openFailureChat(sql: Sql, taskId: string, options: { directModel?: DirectModel } = {}): Promise<Conversation> {
   if (!isUuid(taskId)) throw new ChatError('not-found', `task ${taskId} does not exist`);
   return sql.begin(async (tx) => {
     // One at a time per task: the unique index would refuse the second anyway.
@@ -95,9 +100,10 @@ export async function openFailureChat(sql: Sql, taskId: string): Promise<Convers
     if (task.status !== 'failed') throw new ChatError('invalid', 'the task is not failed');
 
     const mode: ConversationMode = task.mode ?? 'private';
+    const model = mode === 'work' && failure.origin === 'local-model' ? (options.directModel ?? null) : null;
     const [row] = await tx<{ id: string }[]>`
-      INSERT INTO conversations (mode, clearance, title, origin, system_reason, source_task_id, source_error_id)
-      VALUES (${mode}, ${clearanceFor(mode)}::privacy_label, ${ORIGIN_TITLE[failure.origin]}, 'system', 'failure', ${taskId}, ${failure.id}::bigint)
+      INSERT INTO conversations (mode, clearance, title, origin, system_reason, source_task_id, source_error_id, model)
+      VALUES (${mode}, ${clearanceFor(mode)}::privacy_label, ${ORIGIN_TITLE[failure.origin]}, 'system', 'failure', ${taskId}, ${failure.id}::bigint, ${model})
       RETURNING id::text`;
     if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
     await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode, origin: 'system' } });

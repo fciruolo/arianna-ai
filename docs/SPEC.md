@@ -95,7 +95,7 @@ Le interfacce parlano con un solo nucleo; il nucleo usa i modelli locali diretta
 
 ## Router dei modelli
 
-Il router assegna ogni passo a un esecutore guardando prima la privacy, poi la difficoltà, poi il costo; i due percorsi cloud sono le CLI ufficiali, lanciate come processi con il tuo login e senza API.
+Il router assegna ogni passo a un esecutore guardando prima la privacy, poi la difficoltà, poi il costo; i due percorsi cloud sono le CLI ufficiali, lanciate come processi con il tuo login e senza API. Unica eccezione: in una chat di sistema di lavoro sei tu a scegliere chi risponde (Arianna in locale, Claude Sonnet o Opus); privacy e quota restano controllate (D-064).
 
 **I tre esecutori**
 

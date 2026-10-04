@@ -15,13 +15,14 @@ import type { AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
-import { loadConversation } from '../conversations.ts';
+import { loadConversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
+import { canAnswerDirectly, directModelOf, runDirect } from './claude-direct.ts';
 import { canDelegate, NO_PROJECT, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
@@ -45,6 +46,9 @@ import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
  * A `task.delegate` call opens a delegation (D-055): the next step of the
  * task runs on Claude Code (delegate.ts), and the step after reads its
  * report as the result of the call.
+ *
+ * In a work system chat where the user chose Claude (D-064, second part),
+ * the whole step runs on Claude instead, without tools (claude-direct.ts).
  */
 export const ORCHESTRATOR_EXECUTOR = 'local';
 /** The model alias of the orchestrator role (docs/ROUTER-SPEC.md, planning and judgement). */
@@ -72,6 +76,8 @@ export interface OrchestratorOptions {
   rules: LabelRules;
   /** The `claude -p` adapter, when `claude` is enabled and runs on this machine. */
   claude?: ClaudeExecutor;
+  /** What Claude reads first when it answers a system chat directly (claude-direct.ts); for tests. */
+  directPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
   maxTokens?: number;
 }
@@ -167,9 +173,12 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     settings: options.settings,
     rules: options.rules,
     ...(options.claude === undefined ? {} : { claude: options.claude }),
+    ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, DelegationPlan>();
+  /** What `plan` decided about Claude answering directly (null: Arianna answers), for its `run`. */
+  const directs = new Map<string, DirectModel | null>();
   const localSpec = (task: Task): RunSpec => ({ agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local', model: ORCHESTRATOR_MODEL });
 
   /** One line of activity in the chat (D-054); a task without a conversation shows none. Never fails the step. */
@@ -209,6 +218,21 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     // Not JSON, or outside the schema: once more without the thought (D-052).
     read ??= await call(false);
     return { read, tokensIn, tokensOut };
+  }
+
+  /**
+   * The Claude model that answers this task directly: in a work system chat
+   * where the user chose one, while Claude can run and what it would read
+   * (the task and the chat) is within L1. `label` is that, for the run's
+   * record. Otherwise Arianna answers on the local model.
+   */
+  async function directFor(task: Task): Promise<{ model: DirectModel; label: Label } | undefined> {
+    if (task.conversationId === null || !canAnswerDirectly(env)) return undefined;
+    const model = directModelOf(await loadConversation(sql, task.conversationId));
+    if (model === undefined) return undefined;
+    const history = await historyOf(sql, task, [], []);
+    const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
+    return isAtMost(label, 'L1') ? { model, label } : undefined;
   }
 
   /** The step that follows a `task.delegate` call: planned by the router, or closed here. */
@@ -257,9 +281,17 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
   return {
     async plan(task: Task, step: number): Promise<RunSpec> {
+      const key = `${task.id}:${String(step)}`;
       const planned = await delegationPlanFor(task, step);
-      if (planned === undefined) return localSpec(task);
-      plans.set(`${task.id}:${String(step)}`, planned);
+      if (planned === undefined) {
+        const direct = await directFor(task);
+        directs.set(key, direct?.model ?? null);
+        // The run reads the task and the chat: their label, recorded with it.
+        return direct === undefined
+          ? localSpec(task)
+          : { agent: task.assignee, executor: 'claude', locality: 'cloud', model: direct.model, effectiveLabel: direct.label };
+      }
+      plans.set(key, planned);
       // The cloud run reads only the brief: its label, not the task's.
       return planned.kind === 'cloud'
         ? { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label }
@@ -271,6 +303,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const key = `${task.id}:${String(step)}`;
       const planned = plans.get(key) ?? (await delegationPlanFor(task, step));
       plans.delete(key);
+      const plannedDirect = directs.get(key);
+      directs.delete(key);
       if (planned !== undefined) {
         // The decision goes to router_decisions before anything acts on it.
         const decision = planned.kind === 'workspace' ? undefined : planned.decision;
@@ -304,6 +338,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const [answered] = await sql<{ id: string }[]>`
         SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
       if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
+
+      // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
+      const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
+      if (direct !== undefined) {
+        const history = await historyOf(sql, task, [], []);
+        if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
+        return runDirect(env, ctx, direct, history);
+      }
 
       const turns = await loadTurns(sql, task.id);
       const delegations = await loadDelegations(sql, task.id);

@@ -109,7 +109,8 @@ export type StepOutcome = (
   | { kind: 'retry'; at: Date; reason: string }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
   | { kind: 'wait-user'; reason: string }
-  | { kind: 'failed'; reason: string }
+  /** `failure`: the readable error, when the executor knows it (D-064); otherwise a generic one naming the executor. */
+  | { kind: 'failed'; reason: string; failure?: Failure }
 ) & { usage?: RunUsage };
 
 export interface EngineOptions {
@@ -424,7 +425,7 @@ export async function processStepJob(
       case 'failed':
         // The reason may quote the task: only the executor's name is kept.
         await moveTask(tx, task.id, 'failed', { cause: 'executor' });
-        await recordFailure(tx, task.id, { origin: 'engine', code: 'engine.step-failed', details: { executor: spec.executor } });
+        await recordFailure(tx, task.id, outcome.failure ?? { origin: 'engine', code: 'engine.step-failed', details: { executor: spec.executor } });
         return 'failed';
     }
   });

@@ -40,6 +40,28 @@ function onModel(event: Event): void {
   emit('chooseModel', value === AUTO ? null : value);
 }
 
+/** Claude models that answer a work system chat directly (D-064): Sonnet and Opus. Same list as DIRECT_MODELS in apps/core/src/conversations.ts. */
+const DIRECT_MODELS: readonly string[] = ['sonnet', 'opus'];
+/** In a work system chat the selector chooses who answers, not the Coder's model. */
+const answersDirect = computed(() => props.conversation.origin === 'system' && props.conversation.mode === 'work');
+const selectable = computed(() =>
+  answersDirect.value ? props.models.filter((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model)) : props.models,
+);
+const selectorName = computed(() => (answersDirect.value ? 'Chi risponde in questa chat' : 'Modello per i passi delegati'));
+const autoText = computed(() => (answersDirect.value ? 'Arianna (locale)' : 'automatico (router)'));
+/**
+ * The Claude model answering here, or null for the local model. A model no
+ * longer selectable (Claude turned off) means Arianna answers, as the core does.
+ */
+const directModel = computed(() => {
+  const model = props.conversation.model;
+  return answersDirect.value && model !== null && selectable.value.some((entry) => entry.model === model) ? model : null;
+});
+/** The selector's value: in a system chat, what actually answers. */
+const selected = computed(() => (answersDirect.value ? (directModel.value ?? AUTO) : (props.conversation.model ?? AUTO)));
+/** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
+const answerModel = computed(() => (directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value)));
+
 const draft = ref('');
 const list = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
@@ -165,13 +187,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <div>
               CONVERSAZIONE <b class="font-medium text-ink">{{ MODE_TEXT[conversation.mode].toLowerCase() }}<template v-if="conversation.workspace"> · {{ conversation.workspace.split('/').at(-1) }}</template></b>
             </div>
-            <div>MODELLO <b class="font-medium text-ink">locale</b></div>
+            <div>MODELLO <b class="font-medium" :class="answerModel === 'locale' ? 'text-ink' : 'text-l1'">{{ answerModel }}</b></div>
             <div v-if="conversation.mode === 'work'">
               <label class="inline-flex items-center gap-1">
-                CODER →
-                <select :value="conversation.model ?? AUTO" class="field px-1.5 py-0.5 font-mono text-[10.5px]" aria-label="Modello per i passi delegati" @change="onModel">
-                  <option :value="AUTO">automatico (router)</option>
-                  <option v-for="entry in models" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
+                {{ answersDirect ? 'RISPONDE →' : 'CODER →' }}
+                <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[10.5px]" :aria-label="selectorName" @change="onModel">
+                  <option :value="AUTO">{{ autoText }}</option>
+                  <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
                 </select>
               </label>
             </div>
@@ -184,10 +206,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <!-- The model selector on small screens -->
         <label v-if="conversation.mode === 'work'" class="flex items-center gap-2 text-xs text-muted sm:hidden">
-          Coder su
-          <select :value="conversation.model ?? AUTO" class="field px-2 py-1 text-xs" aria-label="Modello per i passi delegati" @change="onModel">
-            <option :value="AUTO">automatico (router)</option>
-            <option v-for="entry in models" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
+          {{ answersDirect ? 'Risponde' : 'Coder su' }}
+          <select :value="selected" class="field px-2 py-1 text-xs" :aria-label="selectorName" @change="onModel">
+            <option :value="AUTO">{{ autoText }}</option>
+            <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
           </select>
         </label>
 
@@ -196,8 +218,16 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[13px]">
             <p class="flex items-center gap-2 font-medium"><Icon name="system" :size="16" />Chat di sistema</p>
             <p class="text-muted">
-              L’ha aperta il sistema per un task fallito. Arianna vede solo l’errore; la domanda del task la vede solo se la alleghi tu.
+              L’ha aperta il sistema per un task fallito. Chi risponde vede solo l’errore; la domanda del task la vede solo se la alleghi tu.
               Solo tu puoi riprovare il task.
+              <template v-if="directModel !== null">
+                Qui risponde {{ answerModel }}: legge questa chat (passata dal gateway), senza strumenti né file.
+              </template>
+            </p>
+            <p v-if="conversation.sourceTaskStatus !== null" class="text-xs" aria-live="polite">
+              Stato del task:
+              <span :class="statusClass[conversation.sourceTaskStatus]">{{ STATUS_TEXT[conversation.sourceTaskStatus] }}</span>
+              <span v-if="conversation.sourceTaskStatus !== 'failed'" class="text-muted"> — l’avanzamento si vede nella conversazione del task.</span>
             </p>
             <div class="flex flex-wrap gap-2">
               <button
@@ -266,8 +296,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <div v-else class="max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
-                {{ message.role === 'system' ? 'Sistema' : 'Arianna' }}
+                {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
               </span>
+              <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span
                 v-if="repliesToTelegram(message)"

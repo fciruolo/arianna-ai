@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
@@ -10,6 +10,7 @@ import { resolveHome } from '@arianna/config';
 import {
   gitConfigFingerprint,
   openRepository,
+  prepareEmptyWorkspace,
   preparedPath,
   prepareWorkspace,
   removeWorkspace,
@@ -402,5 +403,23 @@ describe('openRepository (D-056)', () => {
     mkdirSync(join(dir, '.git', 'hooks'), { recursive: true });
     writeFileSync(join(dir, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\n');
     assert.notEqual(await gitConfigFingerprint(dir), withConfig);
+  });
+});
+
+describe('prepareEmptyWorkspace', () => {
+  it('makes an empty folder the adapter accepts, once per run, removed with removeWorkspace', async () => {
+    const runId = randomUUID();
+    const workspace = await prepareEmptyWorkspace({ data: DATA, runId });
+    assert.equal(workspace.decision.decision, 'allow');
+    assert.equal(workspace.path, join(DATA, 'worktrees', runId));
+    assert.ok(preparedPath(workspace) !== undefined);
+    assert.deepEqual(readdirSync(workspace.path), []);
+    await assert.rejects(prepareEmptyWorkspace({ data: DATA, runId }), WorkspaceError);
+    await removeWorkspace({ data: DATA, runId });
+    assert.equal(existsSync(workspace.path), false);
+  });
+
+  it('refuses a run id that is not a plain folder name', async () => {
+    await assert.rejects(prepareEmptyWorkspace({ data: DATA, runId: 'Not A Run' }), WorkspaceError);
   });
 });
