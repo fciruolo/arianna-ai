@@ -3,14 +3,15 @@
 // the local servers, the local servers themselves (the core restarts the one
 // whose `url` or `command` changed), the cloud executors and their models,
 // the projects, Telegram, `[voice]` (the core restarts apps/voice once no call
-// is in progress) and the characters change live; the core reads `current()`
-// at each use. Only `paths`, `database` and `server` wait for a restart.
+// is in progress), the characters and the personas change live; the core
+// reads `current()` at each use. Only `paths`, `database` and `server` wait
+// for a restart.
 //
-// The cloud executors, the projects and Telegram are privacy settings: the
-// user turns them on by editing the file (or confirming on the settings
-// page), never an agent. A file that cannot be read closes them until it is
-// valid again, so that an exit taken off by hand next to a typo is not left
-// open.
+// The cloud executors, the projects, Telegram and a persona declared L1
+// (D-107) are privacy settings: the user turns them on by editing the file
+// (or confirming on the settings page), never an agent. A file that cannot be
+// read closes them until it is valid again (the persona back to L2), so that
+// an exit taken off by hand next to a typo is not left open.
 import { unwatchFile, watchFile } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -24,7 +25,7 @@ export interface ConfigChange {
   /**
    * Applied: `current()` returns the new values (`roles`, `local.models`,
    * `local.endpoints`, `cloud.executors`, `cloud.models`, `projects`,
-   * `telegram`, `voice`, `characters`).
+   * `telegram`, `voice`, `characters`, `personas`).
    */
   applied: string[];
   /** Changed in the file but still the old values until the core restarts. */
@@ -43,7 +44,8 @@ export interface WatchOptions {
   onChange: (change: ConfigChange) => void;
   /**
    * An invalid file keeps the previous configuration, except the exits
-   * (projects, cloud executors, Telegram), which are closed until it is valid.
+   * (projects, cloud executors, Telegram, a persona declared L1 back to L2),
+   * which are closed until it is valid.
    */
   onError: (error: unknown) => void;
   /** How often the files are checked; 1 s by default. */
@@ -75,6 +77,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('voice') ? ['voice'] : []),
       ...(changed('characters') ? ['characters'] : []),
+      ...(changed('personas') ? ['personas'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),
@@ -85,9 +88,14 @@ function empty(change: ConfigChange): boolean {
   return change.applied.length + change.restart.length === 0;
 }
 
-/** `config` with every exit closed: no project, no cloud executor, no Telegram. */
+/**
+ * `config` with every exit closed: no project, no cloud executor, no Telegram,
+ * and no persona text declared L1 (D-107): back to L2, it reaches only steps
+ * with clearance L2.
+ */
 function closeExits(config: AriannaConfig): AriannaConfig {
-  const closed: AriannaConfig = { ...config, projects: [], cloud: { ...config.cloud, executors: [] } };
+  const personas = Object.fromEntries(Object.entries(config.personas).map(([agent, persona]) => [agent, { ...persona, label: 'L2' as const }]));
+  const closed: AriannaConfig = { ...config, projects: [], cloud: { ...config.cloud, executors: [] }, personas };
   delete closed.telegram;
   return closed;
 }

@@ -15,6 +15,7 @@ export {
   type ModelStatus,
 } from './catalog.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
+export { parsePersonas, type Personas } from './personas.ts';
 export {
   CLOUD_EXECUTORS,
   CLOUD_MODEL_NAME,

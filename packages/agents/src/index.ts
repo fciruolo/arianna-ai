@@ -37,6 +37,22 @@ export {
   type ReadAnswer,
   type TurnMessage,
 } from './protocol.ts';
+export {
+  ADDRESSES,
+  DEFAULT_PERSONA,
+  MAX_DISPLAY_NAME,
+  MAX_PERSONA_BLOCK,
+  MAX_TRAITS,
+  parsePersona,
+  personaBlock,
+  PersonaError,
+  personaParts,
+  TONES,
+  type Address,
+  type Persona,
+  type PersonaParts,
+  type Tone,
+} from './persona.ts';
 export { validate, type JsonSchema } from './schema.ts';
 export {
   AGENCY_COPYRIGHT,

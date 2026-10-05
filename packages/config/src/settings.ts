@@ -8,6 +8,7 @@ import { parse as parseToml } from 'smol-toml';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
+import type { Personas } from './personas.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { asTable } from './validate.ts';
@@ -49,6 +50,8 @@ export interface Settings {
   projects: ProjectSettings[];
   /** Agent → "<pack>/<character>" (D-060). */
   characters: Record<string, string>;
+  /** `[personas.<agent>]` (D-107); absent or empty, every agent has the defaults. */
+  personas?: Personas;
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -107,6 +110,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     },
     projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
     characters: { ...config.characters },
+    ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -151,6 +155,22 @@ function cloudModelsSection(cloud: Settings['cloud']): string[] {
     ...CLOUD_MODELS.map((model) => `${model} = ${value(models[model])}`),
     cloud.defaultModel === undefined ? '# default = "sonnet"' : `default = ${str(cloud.defaultModel)}`,
   ];
+}
+
+/** `[personas.<agent>]`: every field, the display name and the text only when set. */
+function personasSection(personas: Personas | undefined): string[] {
+  if (personas === undefined || Object.keys(personas).length === 0) {
+    return ['#', '# [personas.arianna]', '# tone = "equilibrato"', '# address = "tu"', '# display_name = "Ari"', '# traits = "Precisa e calma."', '# label = "L2"'];
+  }
+  return Object.entries(personas).flatMap(([agent, persona], index) => [
+    ...(index === 0 ? [] : ['']),
+    `[personas.${agent}]`,
+    `tone = ${str(persona.tone)}`,
+    `address = ${str(persona.address)}`,
+    ...(persona.displayName === undefined ? [] : [`display_name = ${str(persona.displayName)}`]),
+    ...(persona.traits === undefined ? [] : [`traits = ${str(persona.traits)}`]),
+    `label = ${str(persona.label)}`,
+  ]);
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -309,6 +329,19 @@ export function renderSettings(settings: Settings): string {
     ...(Object.keys(settings.characters).length === 0
       ? ['#', '# [characters]', '# arianna = "originali/arianna"', '# coder = "originali/coder"']
       : ['[characters]', ...Object.entries(settings.characters).map(([agent, choice]) => `${agent} = ${str(choice)}`)]),
+    '',
+    '# Personas (D-107): style only, never permissions; tools, labels and',
+    '# approvals stay in agents/*.yaml. Per agent id: `tone` is serio,',
+    '# equilibrato (default, adds nothing) or scherzoso; `address` is tu',
+    '# (default) or lei; `display_name` (1-24 letters, spaces, apostrophe,',
+    '# hyphen; the id never changes) and `traits` (free text, at most 250',
+    '# characters) are yours, so L2 by default: they reach only steps with',
+    '# clearance L2 (private conversations, local models) and are dropped',
+    '# elsewhere. `label = "L1"` lets them reach work and cloud steps too: a',
+    '# privacy setting, only the user declares it. Agents at L0 never read them.',
+    '# Without a table an agent has the defaults: its prompt does not change.',
+    '# Applies without a restart; an invalid file takes an L1 back to L2.',
+    ...personasSection(settings.personas),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

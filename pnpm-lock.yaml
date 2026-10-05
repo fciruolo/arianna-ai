@@ -287,6 +287,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@arianna/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@arianna/policy':
         specifier: workspace:*
         version: link:../policy

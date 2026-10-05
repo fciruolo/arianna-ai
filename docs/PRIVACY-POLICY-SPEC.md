@@ -72,6 +72,7 @@ Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag 
 | Messaggio dell'utente | Clearance della conversazione |
 | Output di un modello o di uno strumento | Massimo degli input (taint) |
 | Risultato di un esecutore cloud | Massimo degli input inviati (quindi ≤ L1) |
+| Personalità e nome visualizzato di un agente (`[personas]`, D-107) | L2; L1 solo per dichiarazione dell'utente (`label = "L1"` nel file; in Impostazioni con conferma dalla tappa A2); un file non valido la riporta a L2. Entrano in un passo solo se l'etichetta non supera la clearance (`personaFits`), altrimenti scartati; tono e forma sono frasi fisse L0 |
 | Tutto il resto | L2 |
 
 ### Regole per cartella e sorgente (`config/labels.toml`, D-031)

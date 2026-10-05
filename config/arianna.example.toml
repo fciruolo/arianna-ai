@@ -99,6 +99,25 @@ codex = true
 # arianna = "originali/arianna"
 # coder = "originali/coder"
 
+# Personas (D-107): style only, never permissions; tools, labels and
+# approvals stay in agents/*.yaml. Per agent id: `tone` is serio,
+# equilibrato (default, adds nothing) or scherzoso; `address` is tu
+# (default) or lei; `display_name` (1-24 letters, spaces, apostrophe,
+# hyphen; the id never changes) and `traits` (free text, at most 250
+# characters) are yours, so L2 by default: they reach only steps with
+# clearance L2 (private conversations, local models) and are dropped
+# elsewhere. `label = "L1"` lets them reach work and cloud steps too: a
+# privacy setting, only the user declares it. Agents at L0 never read them.
+# Without a table an agent has the defaults: its prompt does not change.
+# Applies without a restart; an invalid file takes an L1 back to L2.
+#
+# [personas.arianna]
+# tone = "equilibrato"
+# address = "tu"
+# display_name = "Ari"
+# traits = "Precisa e calma."
+# label = "L2"
+
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).
