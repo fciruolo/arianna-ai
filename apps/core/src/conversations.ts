@@ -24,6 +24,11 @@ export interface Conversation {
   model: string | null;
   /** Who answers (D-111): null is Arianna; 'coder' the direct chat with the Coder. Chosen at creation, never changed. */
   agent: ConversationAgent | null;
+  /**
+   * Direct chat only (D-111, tappa A2): tokens in the agent's session after
+   * its latest answer, for the context indicator; null before it or elsewhere.
+   */
+  contextTokens: number | null;
   /** One line, from the first user message or the user; null until the first message. Carries the clearance. */
   title: string | null;
   /** When the user archived it; null while it is in the list. */
@@ -103,7 +108,9 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   c.question_attached AS "questionAttached",
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.created_at AS "createdAt",
-  (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
+  (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
+  CASE WHEN c.agent IS NULL THEN NULL ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+    WHERE t.conversation_id = c.id AND d.status = 'ok' ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
   task_id::text AS "taskId", agent, model`;

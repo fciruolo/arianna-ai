@@ -10,6 +10,7 @@ import {
   repositoryHead,
   toolConfigFiles,
   WorkspaceError,
+  type ClaudeError,
   type ClaudeExecutor,
   type ClaudeModel,
   type ClaudeTool,
@@ -21,7 +22,7 @@ import {
 import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
-import { runClaudeStep } from '../claude-step.ts';
+import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
@@ -204,6 +205,88 @@ export const DIRECT_CHAT_TEXT = [
   'Answer in the language of the user, as in a chat: say what you did and what is left, briefly.',
   'Never ask the user for credentials, personal data, or commands to run outside the project.',
 ].join(' ');
+
+/** At most this many earlier exchanges of the direct chat, and this many characters, in the fallback brief (D-111). */
+export const DIRECT_HISTORY_EXCHANGES = 10;
+export const DIRECT_HISTORY_CHARS = 12_000;
+
+/**
+ * The session of the direct chat to continue (D-111, tappa A2): the one of
+ * the latest answer of the same agent in the same project, in this
+ * conversation. Undefined at the first message, or when none was kept.
+ */
+export async function directChatSession(sql: Sql, conversationId: string, delegation: Delegation): Promise<string | undefined> {
+  const [row] = await sql<{ sessionRef: string | null }[]>`
+    SELECT d.session_ref AS "sessionRef" FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
+        AND d.status = 'ok' AND d.id <> ${delegation.id}
+      ORDER BY d.created_at DESC, d.id DESC LIMIT 1`;
+  return row?.sessionRef ?? undefined;
+}
+
+/**
+ * When the session cannot be resumed (D-111, tappa A2): the latest exchanges
+ * of the direct chat, oldest first, as brief fragments with their labels.
+ * Only exchanges that ended with an answer: a message whose brief the gateway
+ * refused never reached the Coder and is not sent now either. Capped by
+ * exchanges and characters, the newest kept.
+ */
+export async function directChatHistory(sql: Sql, conversationId: string, delegation: Delegation): Promise<BriefFragment[]> {
+  const rows = await sql<{ brief: string; label: Label; answer: string | null; answerLabel: Label | null; taskId: string }[]>`
+    SELECT d.brief, d.label, m.body AS answer, m.label AS "answerLabel", d.task_id::text AS "taskId"
+      FROM task_delegations d JOIN tasks t ON t.id = d.task_id LEFT JOIN messages m ON m.id = d.message_id
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
+        AND d.status = 'ok' AND d.id <> ${delegation.id}
+      ORDER BY d.created_at DESC, d.id DESC LIMIT ${DIRECT_HISTORY_EXCHANGES}`;
+  const kept: BriefFragment[][] = [];
+  let chars = 0;
+  for (const row of rows) {
+    const exchange: BriefFragment[] = [{ text: `[earlier message of the user]\n${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
+    if (row.answer !== null && row.answerLabel !== null) {
+      exchange.push({ text: `[your earlier answer]\n${row.answer}`, label: row.answerLabel, source: `task:${row.taskId}` });
+    }
+    const size = exchange.reduce((sum, fragment) => sum + fragment.text.length, 0);
+    if (chars + size > DIRECT_HISTORY_CHARS) {
+      // The latest exchange alone above the cap is cut, not left out: the start of the message, the end of the answer.
+      if (kept.length === 0) kept.push(cutExchange(exchange, DIRECT_HISTORY_CHARS));
+      break;
+    }
+    chars += size;
+    kept.push(exchange);
+  }
+  return kept.reverse().flat();
+}
+
+const CUT = '[…]';
+
+const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
+  const sum = (x: number | undefined, y: number | undefined) => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
+  const tokensIn = sum(a.tokensIn, b.tokensIn);
+  const tokensOut = sum(a.tokensOut, b.tokensOut);
+  const cost = sum(a.cost, b.cost);
+  return {
+    steps: (a.steps ?? 1) + (b.steps ?? 1),
+    ...(tokensIn === undefined ? {} : { tokensIn }),
+    ...(tokensOut === undefined ? {} : { tokensOut }),
+    ...(cost === undefined ? {} : { cost }),
+  };
+};
+
+/** An exchange within `budget` characters: half to the start of the message, the rest to the end of the answer. */
+function cutExchange(exchange: BriefFragment[], budget: number): BriefFragment[] {
+  const [message, answer] = exchange;
+  if (message === undefined) return [];
+  const forMessage = answer === undefined ? budget : Math.min(message.text.length, Math.floor(budget / 2));
+  const cutMessage = message.text.length <= forMessage ? message.text : `${message.text.slice(0, forMessage - CUT.length)}${CUT}`;
+  if (answer === undefined) return [{ ...message, text: cutMessage }];
+  const forAnswer = budget - cutMessage.length;
+  const cutAnswer = answer.text.length <= forAnswer ? answer.text : `${CUT}${answer.text.slice(answer.text.length - (forAnswer - CUT.length))}`;
+  return [{ ...message, text: cutMessage }, { ...answer, text: cutAnswer }];
+}
+
+/** What the Coder reads before the earlier exchanges, when its session could not be resumed: our fixed text, L0. */
+export const DIRECT_HISTORY_TEXT =
+  'Your earlier session of this chat could not be resumed: the latest exchanges follow, oldest first, then the new message of the user. Answer the new message.';
 
 /** What Arianna reads when no project is there for the Coder. */
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
@@ -454,19 +537,22 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const entry = await isEntryDelegation(sql, delegation.id);
   // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
-  const brief = [
+  const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
+  const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
-    { text: delegation.brief, label, source: `task:${task.id}` },
   ];
+  // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
+  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
-  const result = await runClaudeStep(sql, claude, ctx, {
+  const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined) => runClaudeStep(sql, claude, ctx, {
     // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
-    // at the higher of the two labels, as the local run (a prompt of the user is L1, tappa T3b).
-    context: createContext(task.clearance, maxLabel(label, promptLabelOf(agent))),
+    // at the highest label of what it reads, as the local run (a prompt of the user is L1, tappa T3b).
+    context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
     brief,
+    ...(sessionRef === undefined ? {} : { sessionRef }),
     workspace,
     model: plan.model,
     tools: claudeToolsOf(agent.card.tools),
@@ -491,6 +577,16 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       }
     },
   });
+  let result = await attempt(session === undefined ? [...opening, message] : [message], session);
+  // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
+  if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
+    const history = await directChatHistory(sql, task.conversationId, delegation);
+    const fallback = history.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...history];
+    const lost = result.usage;
+    result = await attempt([...opening, ...fallback, message], null);
+    // The failed resume counts too.
+    if (result.kind !== 'blocked') result = { ...result, usage: addUsage(lost, result.usage) };
+  }
 
   switch (result.kind) {
     case 'answer': {
@@ -533,6 +629,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         result: text,
         resultLabel: result.result.label,
         sessionRef: result.result.sessionRef,
+        ...(result.result.usage.context === undefined ? {} : { contextTokens: result.result.usage.context }),
         ...(messageId === undefined ? {} : { messageId }),
       });
       return { kind: 'continue', usage: result.usage };
@@ -552,6 +649,17 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result.reason}`);
       return { kind: 'continue', usage: result.usage };
   }
+}
+
+/**
+ * A resume that found no session to continue (D-111, tappa A2): the binary
+ * ended before its first message, or reported another session.
+ */
+export function sessionLost(error: ClaudeError): boolean {
+  // Another session and nothing else: a binary that broke the profile in any other way is not started again.
+  if (error.kind === 'profile') return error.violations.length === 1 && error.violations[0] === 'session';
+  // A result before the init is refused as bad-output by the stream.
+  return error.sessionRef === undefined && (error.kind === 'exit' || error.kind === 'bad-output');
 }
 
 /** Longest report of an agent that only answers (characters). */

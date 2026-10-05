@@ -11,12 +11,12 @@ import { after, before, test } from 'node:test';
 
 import { type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
-import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@arianna/executors';
+import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKind, type LocalModel } from '@arianna/executors';
 
-import { ChatError, createConversation, postUserMessage } from '../src/conversations.ts';
+import { ChatError, createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_CHAT_TEXT } from '../src/orchestrator/delegate.ts';
+import { DIRECT_CHAT_TEXT, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, sessionLost } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -288,6 +288,169 @@ test('a run that fails leaves the task waiting for the user with why, and the lo
     const next = await postUserMessage(db().sql, direct.id, 'Riprova.');
     assert.equal((await loadTask(db().sql, task.id))?.status, 'done');
     assert.deepEqual(await drain(next.task.id, orchestrator(untouched())), ['answered']);
+  } finally {
+    restoreRepo();
+  }
+});
+
+function receivedArgv(): string[] {
+  return (JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { argv: string[] }).argv;
+}
+
+const FIRST_SESSION = '00000000-0000-4000-8000-000000000001';
+
+test('the next message resumes the session of the latest answer: only the new message leaves (D-111, tappa A2)', async () => {
+  const direct = await directChat();
+  try {
+    const first = await postUserMessage(db().sql, direct.id, 'Primo messaggio.');
+    assert.deepEqual(await drain(first.task.id, orchestrator(untouched())), ['answered']);
+    assert.equal(receivedArgv().includes('--resume'), false);
+    const [made] = await loadDelegations(db().sql, first.task.id);
+    assert.equal(made?.sessionRef, FIRST_SESSION);
+    // How full the session is, for the indicator: a number of tokens, only on the direct chat.
+    assert.equal((await directChat()).contextTokens, null);
+    const context = (await loadConversation(db().sql, direct.id))?.contextTokens;
+    assert.ok(typeof context === 'number' && context > 0 && context === made.contextTokens, String(context));
+
+    const second = await postUserMessage(db().sql, direct.id, 'Secondo messaggio.');
+    assert.deepEqual(await drain(second.task.id, orchestrator(untouched())), ['answered']);
+    const argv = receivedArgv();
+    assert.equal(argv[argv.indexOf('--resume') + 1], FIRST_SESSION);
+    // The prompt and the fixed text are already in the session: they do not leave again.
+    assert.equal(received().prompt, 'Secondo messaggio.');
+    const [resumed] = await loadDelegations(db().sql, second.task.id);
+    assert.deepEqual([resumed?.status, resumed?.sessionRef], ['ok', FIRST_SESSION]);
+  } finally {
+    restoreRepo();
+  }
+});
+
+test('another direct chat on the same project starts its own session', async () => {
+  const direct = await directChat();
+  const other = await directChat();
+  try {
+    const first = await postUserMessage(db().sql, direct.id, 'Nella prima.');
+    assert.deepEqual(await drain(first.task.id, orchestrator(untouched())), ['answered']);
+    // Another conversation on the same project starts its own session.
+    const elsewhere = await postUserMessage(db().sql, other.id, 'Nella seconda.');
+    assert.deepEqual(await drain(elsewhere.task.id, orchestrator(untouched())), ['answered']);
+    assert.equal(receivedArgv().includes('--resume'), false);
+    assert.ok(received().prompt.includes(DIRECT_CHAT_TEXT));
+  } finally {
+    restoreRepo();
+  }
+});
+
+for (const scenario of ['no-session', 'new-session', 'before-init']) {
+  test(`a session that cannot be resumed (${scenario}): one new start with the latest exchanges, the failed ones left out`, async () => {
+    const direct = await directChat();
+    try {
+      // A first message that fails: it never got an answer and is not sent again.
+      const failed = await postUserMessage(db().sql, direct.id, 'Messaggio fallito.');
+      assert.deepEqual(await drain(failed.task.id, orchestrator(untouched(), 'scenario: error\nYou are the Coder.')), ['waiting-user']);
+      const first = await postUserMessage(db().sql, direct.id, 'Primo messaggio.');
+      assert.deepEqual(await drain(first.task.id, orchestrator(untouched())), ['answered']);
+
+      const body = `scenario: ${scenario}\nSecondo messaggio.`;
+      const second = await postUserMessage(db().sql, direct.id, body);
+      assert.deepEqual(await drain(second.task.id, orchestrator(untouched())), ['answered']);
+      assert.equal(receivedArgv().includes('--resume'), false);
+      const prompt = received().prompt;
+      assert.ok(prompt.includes(DIRECT_CHAT_TEXT) && prompt.includes(DIRECT_HISTORY_TEXT), prompt);
+      assert.ok(prompt.includes('Primo messaggio.') && prompt.includes('[your earlier answer]\nok'), prompt);
+      assert.equal(prompt.includes('Messaggio fallito.'), false);
+      assert.ok(prompt.endsWith(body), prompt);
+      // Both attempts went through the gateway.
+      const [logged] = await db().sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM gateway_log WHERE task_id = ${second.task.id} AND target = 'claude' AND decision = 'allow'`;
+      assert.equal(logged?.count, 2);
+    } finally {
+      restoreRepo();
+    }
+  });
+}
+
+test('the fallback history keeps the newest exchanges within the cap of characters', async () => {
+  const direct = await directChat();
+  try {
+    const long = 'x'.repeat(DIRECT_HISTORY_CHARS - 20);
+    for (const body of [`Vecchio ${long}`, 'Recente.']) {
+      const { task } = await postUserMessage(db().sql, direct.id, body);
+      assert.deepEqual(await drain(task.id, orchestrator(untouched())), ['answered']);
+    }
+    const last = await postUserMessage(db().sql, direct.id, 'scenario: no-session\nUltimo.');
+    assert.deepEqual(await drain(last.task.id, orchestrator(untouched())), ['answered']);
+    const prompt = received().prompt;
+    assert.ok(prompt.includes('Recente.'), prompt);
+    assert.equal(prompt.includes('Vecchio'), false);
+  } finally {
+    restoreRepo();
+  }
+});
+
+test('sessionLost: only a resume that ended before its first message, or on another session', () => {
+  const lost = (kind: ClaudeErrorKind, details: { sessionRef?: string; violations?: string[] } = {}) => sessionLost(new ClaudeError(kind, kind, details));
+  assert.equal(lost('exit'), true);
+  assert.equal(lost('bad-output'), true);
+  assert.equal(lost('execution'), false);
+  assert.equal(lost('profile', { sessionRef: FIRST_SESSION, violations: ['session'] }), true);
+  // Another session and a broken profile: never started again.
+  assert.equal(lost('profile', { sessionRef: FIRST_SESSION, violations: ['session', 'tools'] }), false);
+  assert.equal(lost('exit', { sessionRef: FIRST_SESSION }), false);
+  assert.equal(lost('profile', { violations: ['tools'] }), false);
+  assert.equal(lost('quota'), false);
+  assert.equal(lost('timeout'), false);
+  assert.equal(lost('cancelled'), false);
+});
+
+test('a resume that fails after its start does not fall back: the task waits for the user, one brief out', async () => {
+  const direct = await directChat();
+  try {
+    const first = await postUserMessage(db().sql, direct.id, 'Primo messaggio.');
+    assert.deepEqual(await drain(first.task.id, orchestrator(untouched())), ['answered']);
+    const second = await postUserMessage(db().sql, direct.id, 'scenario: error\nSecondo.');
+    assert.deepEqual(await drain(second.task.id, orchestrator(untouched())), ['waiting-user']);
+    const argv = receivedArgv();
+    assert.equal(argv[argv.indexOf('--resume') + 1], FIRST_SESSION);
+    const [logged] = await db().sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM gateway_log WHERE task_id = ${second.task.id} AND target = 'claude' AND decision = 'allow'`;
+    assert.equal(logged?.count, 1);
+  } finally {
+    restoreRepo();
+  }
+});
+
+test('the fallback history: at most the latest exchanges, never those of another direct chat', async () => {
+  const direct = await directChat();
+  const other = await directChat();
+  try {
+    const elsewhere = await postUserMessage(db().sql, other.id, 'Messaggio altrove.');
+    assert.deepEqual(await drain(elsewhere.task.id, orchestrator(untouched())), ['answered']);
+    for (let index = 0; index <= DIRECT_HISTORY_EXCHANGES; index += 1) {
+      const { task } = await postUserMessage(db().sql, direct.id, `Scambio numero ${String(index)}.`);
+      assert.deepEqual(await drain(task.id, orchestrator(untouched())), ['answered']);
+    }
+    const last = await postUserMessage(db().sql, direct.id, 'scenario: no-session\nUltimo.');
+    assert.deepEqual(await drain(last.task.id, orchestrator(untouched())), ['answered']);
+    const prompt = received().prompt;
+    assert.equal(prompt.includes('Scambio numero 0.'), false);
+    assert.ok(prompt.includes('Scambio numero 1.') && prompt.includes(`Scambio numero ${String(DIRECT_HISTORY_EXCHANGES)}.`), prompt);
+    assert.equal(prompt.includes('Messaggio altrove.'), false);
+  } finally {
+    restoreRepo();
+  }
+});
+
+test('a latest exchange above the cap alone is cut, not left out', async () => {
+  const direct = await directChat();
+  try {
+    const { task } = await postUserMessage(db().sql, direct.id, `Inizio ${'y'.repeat(DIRECT_HISTORY_CHARS)}`);
+    assert.deepEqual(await drain(task.id, orchestrator(untouched())), ['answered']);
+    const last = await postUserMessage(db().sql, direct.id, 'scenario: no-session\nUltimo.');
+    assert.deepEqual(await drain(last.task.id, orchestrator(untouched())), ['answered']);
+    const prompt = received().prompt;
+    assert.ok(prompt.includes('[earlier message of the user]\nInizio') && prompt.includes('[…]'), prompt.slice(0, 200));
+    assert.ok(prompt.length < DIRECT_HISTORY_CHARS + 6000, String(prompt.length));
   } finally {
     restoreRepo();
   }
