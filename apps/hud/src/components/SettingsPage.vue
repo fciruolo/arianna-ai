@@ -5,6 +5,7 @@ import {
   ApiError,
   confirmPrivacy,
   listCopiedVoices,
+  loadChangelog,
   loadCharacters,
   loadLocalLog,
   loadSettings,
@@ -37,7 +38,7 @@ import {
 } from '../lib/persona.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
-import { SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
+import { CHANGELOG_PATH, SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
 import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, sectionDirty, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
 import {
   agentsBody,
@@ -107,7 +108,7 @@ import SettingsCard from './SettingsCard.vue';
 const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined }>();
 /** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
 /** `dirty`: some section holds edits not saved, for the back button of the browser (App.vue). */
-const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
+const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; changelog: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
 
 interface Forms {
   roles: Partial<Record<ModelRole, string>>;
@@ -340,9 +341,16 @@ async function poll(): Promise<void> {
 const ttsModels = ref<TrialModel[]>([]);
 const clones = ref<CopiedVoice[]>([]);
 const characters = ref<CharacterListing | null>(null);
+/** "Novità": the current version, in small at the bottom of the index; null until read or when there is none. */
+const currentVersion = ref<string | null>(null);
 
 onMounted(() => {
   void reload();
+  void loadChangelog()
+    .then((changelog) => {
+      currentVersion.value = changelog.current;
+    })
+    .catch(() => undefined);
   void loadVoiceTrial()
     .then((trial) => {
       ttsModels.value = trial.models.filter((model) => model.kind === 'tts');
@@ -514,17 +522,18 @@ function dirty(item: IndexItem): boolean {
 const unsaved = computed(() => pendingTitles('', (section) => changed(section as Section)));
 watch(unsaved, (titles) => emit('dirty', titles.length > 0), { immediate: true });
 /** Leaving the settings loses the edits not saved: ask first. */
-function leave(to: 'voiceTrial' | 'devProgress'): void {
+function leave(to: 'voiceTrial' | 'devProgress' | 'changelog'): void {
   const left = unsaved.value;
   if (left.length > 0 && !window.confirm(`Ci sono modifiche non salvate in: ${left.join(', ')}. Uscendo dalle Impostazioni si perdono. Vuoi uscire?`)) return;
   if (to === 'devProgress') emit('devProgress');
+  else if (to === 'changelog') emit('changelog');
   else emit('voiceTrial');
 }
 /** A section opened from the index shown alone (narrow screen): "‹ Impostazioni" goes back in the history. */
 let fromIndex = false;
 function open(item: IndexItem): void {
   if (item.page !== undefined) {
-    leave(item.id === 'dev-progress' ? 'devProgress' : 'voiceTrial');
+    leave(item.id === 'dev-progress' ? 'devProgress' : item.id === 'changelog' ? 'changelog' : 'voiceTrial');
     return;
   }
   fromIndex = !chosen.value.explicit;
@@ -592,6 +601,11 @@ watch(active, () => {
           <span v-if="item.page !== undefined" class="inline-flex -rotate-90 opacity-60" aria-hidden="true"><Icon name="expand" :size="13" /></span>
         </a>
       </template>
+      <!-- "Novità": the current version, in small at the bottom of the index. -->
+      <p class="mx-2.5 mt-auto pt-6 font-mono text-[11px] text-muted">
+        <span v-if="currentVersion !== null">Arianna {{ currentVersion }} · </span>
+        <a :href="CHANGELOG_PATH" class="hover:text-ink hover:underline" @click.prevent="leave('changelog')">Novità</a>
+      </p>
     </nav>
 
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">

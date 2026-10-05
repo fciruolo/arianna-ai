@@ -10,6 +10,7 @@ import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
+import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { assignCharacters, listPacks, readSheet, type CharacterDirs } from '../characters.ts';
@@ -116,6 +117,8 @@ export interface ApiServerOptions {
   approvedProjects?: () => readonly Project[];
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
   devProgress?: DevProgressApi;
+  /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
+  changelog?: { home: string };
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -971,6 +974,20 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
   ];
 }
 
+/**
+ * "Novità": the register of the versions from CHANGELOG.md, documentation of
+ * the repository (L2 by default, as the documents of D-102), served only to
+ * the local web chat like /api/dev/progress.
+ */
+function changelogRoutes(changelog: { home: string } | undefined): Route[] {
+  return [
+    route('GET', '/api/changelog', () => {
+      if (changelog === undefined) throw new HttpError(404, 'not found');
+      return Promise.resolve({ body: { changelog: loadChangelog(changelog.home) } });
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1098,6 +1115,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     onError: options.onError ?? (() => undefined),
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
+  table.push(...changelogRoutes(options.changelog));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

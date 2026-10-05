@@ -418,6 +418,8 @@ const server = await startApiServer({
   modelEvals,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home },
+  // "Novità": CHANGELOG.md at the root of the home, read only.
+  changelog: { home: config.home },
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
   installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
   ...(existsSync(dist) ? { staticDir: dist } : {}),

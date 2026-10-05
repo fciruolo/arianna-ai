@@ -4,7 +4,7 @@
  * (`/impostazioni/<slug>`) so that a reload and the back button keep it.
  * Pure: the page and the address use it, it decides.
  */
-import { DEV_PATH, SETTINGS_PATH, VOICE_TRIAL_PATH } from './route.ts';
+import { CHANGELOG_PATH, DEV_PATH, SETTINGS_PATH, VOICE_TRIAL_PATH } from './route.ts';
 
 /** How a section takes effect, as checked in the code of the core (settings-page.ts, D-071). */
 export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action';
@@ -69,6 +69,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       { id: 'labels', slug: 'etichette', title: 'Etichette', behaviour: 'read' },
       { id: 'installation', slug: 'installazione', title: 'Installazione', behaviour: 'read' },
       { id: 'dev-progress', slug: 'sviluppo', title: 'Sviluppo di Arianna', behaviour: 'read', page: DEV_PATH },
+      { id: 'changelog', slug: 'novita', title: 'Novità', behaviour: 'read', page: CHANGELOG_PATH },
     ],
   },
 ];

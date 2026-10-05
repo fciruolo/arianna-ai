@@ -6,7 +6,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -399,4 +399,9 @@ export async function loadDevProgress(): Promise<{ progress: DevProgress; maxAns
 /** `logged` false: the answer is saved but its event did not reach the chain. */
 export async function sendDevAnswer(key: string, text: string): Promise<{ key: string; at: string; logged: boolean }> {
   return call<{ key: string; at: string; logged: boolean }>('POST', '/api/dev/answers', { key, text });
+}
+
+/** "Novità": the register of the versions, read by the core from CHANGELOG.md. */
+export async function loadChangelog(): Promise<Changelog> {
+  return (await call<{ changelog: Changelog }>('GET', '/api/changelog')).changelog;
 }

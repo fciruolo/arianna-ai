@@ -86,3 +86,10 @@ export function documentTitle(title: string | null | undefined): string {
   const trimmed = title?.trim();
   return trimmed === undefined || trimmed === '' ? 'Arianna' : `${trimmed} · Arianna`;
 }
+
+/** "Novità": the register of the versions, reached from the settings. */
+export const CHANGELOG_PATH = '/novita';
+
+export function isChangelogPath(pathname: string): boolean {
+  return pathname === CHANGELOG_PATH || pathname === `${CHANGELOG_PATH}/`;
+}

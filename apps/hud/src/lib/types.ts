@@ -243,3 +243,29 @@ export interface FilePreview {
   size: number;
   text: string;
 }
+
+/** "Novità": a section of a version of CHANGELOG.md (Aggiunto, Cambiato, Corretto, Sicurezza, Rimosso, or another title). */
+export interface ChangelogSection {
+  title: string;
+  /** Markdown on one line. */
+  items: string[];
+}
+
+/** A version of the register; `version` and `date` are null for "Non rilasciato". */
+export interface ChangelogVersion {
+  version: string | null;
+  date: string | null;
+  unreleased: boolean;
+  /** Free text before the first section (Markdown), or null. */
+  summary: string | null;
+  sections: ChangelogSection[];
+}
+
+/** The register of the versions, read by the core from CHANGELOG.md. */
+export interface Changelog {
+  /** The highest released version, or null. */
+  current: string | null;
+  versions: ChangelogVersion[];
+  /** Lines the core did not understand. */
+  skipped: number;
+}
