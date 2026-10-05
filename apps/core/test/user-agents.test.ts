@@ -247,3 +247,129 @@ describe('/api/agents', () => {
     }
   });
 });
+
+describe('user agents, tappa T3 (D-119)', () => {
+  it('says where a delegated step of each agent runs', () => {
+    service.create(input);
+    service.create({ ...input, name: 'programmatore', template: 'code' });
+    service.create({ ...input, name: 'cercatore', template: 'web' });
+    const works = Object.fromEntries(service.list().user.map(({ name, works }) => [name, works]));
+    assert.deepEqual(works, { cercatore: null, programmatore: 'claude', traduttore: 'local' });
+    assert.equal(service.list().official[0]?.works, 'claude');
+  });
+
+  it('changes description and prompt, also of an active agent, at once', () => {
+    service.create(input);
+    service.activate('traduttore');
+    const edited = service.update('traduttore', { description: 'Translates everything', prompt: 'You translate into French.' });
+    assert.equal(edited.description, 'Translates everything');
+    assert.equal(edited.state, 'active');
+    assert.equal(agents.get('traduttore')?.prompt.trim(), 'You translate into French.');
+    assert.equal(agents.get('traduttore')?.origin, 'user');
+    // Only one of the two: the other stays.
+    service.update('traduttore', { prompt: 'Short.' });
+    assert.equal(service.permissions('traduttore').description, 'Translates everything');
+    // The card is still the template's: nothing else changed.
+    assert.equal(service.permissions('traduttore').card.maxLabel, 'L0');
+    const card = readFileSync(join(home, 'data', 'agents', 'attivi', 'traduttore.yaml'), 'utf8');
+    assert.match(card, /^# Created from the Agents page \(D-119\), template answer\./);
+  });
+
+  it('refuses an edit with personal data, a bad text or an unknown agent, and keeps the old texts', () => {
+    service.create(input);
+    assert.equal(code(() => service.update('traduttore', { prompt: 'Pay to IT60X0542811101000000123456.' })), 'invalid');
+    assert.equal(code(() => service.update('traduttore', { description: 'two\nlines' })), 'invalid');
+    assert.equal(code(() => service.update('traduttore', { prompt: 42 })), 'invalid');
+    assert.equal(code(() => service.update('nessuno', { prompt: 'x' })), 'not-found');
+    assert.equal(code(() => service.update('coder', { prompt: 'x' })), 'not-found');
+    assert.equal(readFileSync(join(home, 'data', 'agents', 'disattivati', 'traduttore.md'), 'utf8'), `${input.prompt}\n`);
+  });
+
+  it('deletes only a disabled agent, with its name, into eliminati', () => {
+    service.create(input);
+    service.activate('traduttore');
+    assert.equal(code(() => service.remove('traduttore', 'traduttore')), 'conflict');
+    service.deactivate('traduttore');
+    assert.equal(code(() => service.remove('traduttore', true)), 'invalid');
+    assert.equal(code(() => service.remove('traduttore', 'altro')), 'invalid');
+    const deleted = service.remove('traduttore', 'traduttore');
+    assert.match(deleted.folder, /^data\/agents\/eliminati\/.+-traduttore$/);
+    assert.ok(existsSync(join(home, deleted.folder, 'traduttore.yaml')));
+    assert.ok(existsSync(join(home, deleted.folder, 'traduttore.md')));
+    assert.equal(service.list().user.length, 0);
+    // The name is free again, and a second deletion goes into a folder of its own.
+    service.create(input);
+    assert.notEqual(service.remove('traduttore', 'traduttore').folder, deleted.folder);
+  });
+
+  it('deletes a card shown as refused, never outside its folder', () => {
+    mkdirSync(join(home, 'data', 'agents', 'disattivati'), { recursive: true });
+    writeFileSync(join(home, 'data', 'agents', 'disattivati', 'rotto.yaml'), 'name: [');
+    assert.equal(service.list().refused.length, 1);
+    service.remove('rotto', 'rotto');
+    assert.equal(service.list().refused.length, 0);
+    const outside = ['..', 'coder'].join('/');
+    assert.equal(code(() => service.remove(outside, outside)), 'not-found');
+    assert.equal(code(() => service.remove('coder', 'coder')), 'not-found');
+  });
+
+  it('takes back a promotion: the card goes back disabled, under the ceiling', () => {
+    service.create(input);
+    service.promote('traduttore', true);
+    assert.equal(service.list().official.find(({ name }) => name === 'traduttore')?.fromPage, true);
+    assert.equal(code(() => service.demote('traduttore', 'yes')), 'invalid');
+    const back = service.demote('traduttore', true);
+    assert.equal(back.state, 'disabled');
+    assert.equal(agents.has('traduttore'), false);
+    assert.equal(existsSync(join(home, 'agents', 'traduttore.yaml')), false);
+    assert.equal(existsSync(join(home, 'agents', 'traduttore.md')), false);
+    assert.deepEqual(
+      service.list().user.map(({ name, state }) => [name, state]),
+      [['traduttore', 'disabled']],
+    );
+    assert.equal(code(() => service.demote('traduttore', true)), 'not-found');
+  });
+
+  it('never takes back a card the page did not write, nor one changed beyond the ceiling', () => {
+    // The Coder of this test home: written by hand, no mark.
+    writeFileSync(join(home, 'agents', 'coder.yaml'), readFileSync(fileURLToPath(new URL('../../../agents/coder.yaml', import.meta.url))));
+    assert.equal(code(() => service.demote('coder', true)), 'invalid');
+    assert.equal(service.list().official.find(({ name }) => name === 'coder')?.fromPage, undefined);
+    service.create(input);
+    service.promote('traduttore', true);
+    const card = join(home, 'agents', 'traduttore.yaml');
+    writeFileSync(card, readFileSync(card, 'utf8').replace('max_label: L0', 'max_label: L2'));
+    assert.equal(code(() => service.demote('traduttore', true)), 'invalid');
+    assert.ok(existsSync(card));
+  });
+
+  it('never takes back over a card of data/agents', () => {
+    service.create(input);
+    service.promote('traduttore', true);
+    writeFileSync(join(home, 'data', 'agents', 'disattivati', 'traduttore.md'), 'x');
+    assert.equal(code(() => service.demote('traduttore', true)), 'conflict');
+    assert.ok(existsSync(join(home, 'agents', 'traduttore.yaml')));
+  });
+
+  it('/api/agents: edit, delete and demote, with their confirmations', async () => {
+    const server = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, userAgents: service });
+    try {
+      const origin = `http://127.0.0.1:${String(server.port)}`;
+      const post = (path: string, body: unknown = {}) =>
+        fetch(`${origin}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body) });
+      assert.equal((await post('/api/agents', input)).status, 201);
+      assert.equal((await post('/api/agents/traduttore/edit', { prompt: 'Nuovo.' })).status, 200);
+      assert.equal((await post('/api/agents/traduttore/edit', { name: 'altro' })).status, 400);
+      assert.equal((await post('/api/agents/traduttore/promote', { confirm: true })).status, 200);
+      assert.equal((await post('/api/agents/traduttore/demote')).status, 400);
+      assert.equal((await post('/api/agents/traduttore/demote', { confirm: true })).status, 200);
+      assert.equal((await post('/api/agents/traduttore/delete', { confirm: 'sì' })).status, 400);
+      const deleted = await post('/api/agents/traduttore/delete', { confirm: 'traduttore' });
+      assert.equal(deleted.status, 200);
+      assert.match(((await deleted.json()) as { deleted: { folder: string } }).deleted.folder, /eliminati/);
+      assert.equal((await post('/api/agents/traduttore/delete', { confirm: 'traduttore' })).status, 404);
+    } finally {
+      await server.close();
+    }
+  });
+});

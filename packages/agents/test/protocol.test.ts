@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_PERSONA, personaBlock, personaParts, type Persona } from '../src/persona.ts';
-import { answerText, chatMessages, offerable, readAnswer, responseSchema, systemPrompt, TOOL_ARGS, toolResult } from '../src/protocol.ts';
+import { answerText, chatMessages, CODER_ONLY, offerable, readAnswer, responseSchema, systemPrompt, TOOL_ARGS, toolResult } from '../src/protocol.ts';
 import { TOOLS, type ToolId } from '../src/tools.ts';
 
 describe('orchestrator protocol', () => {
@@ -67,6 +67,27 @@ describe('orchestrator protocol', () => {
 
   it('shows the examples only to an agent that searches the knowledge base', () => {
     assert.ok(systemPrompt('', ['user.ask']).length < 2000);
+  });
+
+  it('keeps task.delegate as it was with the Coder alone (D-119, tappa T3)', () => {
+    const delegating: ToolId[] = ['task.delegate', 'user.ask'];
+    assert.equal(systemPrompt('A.', delegating, true, '', CODER_ONLY), systemPrompt('A.', delegating));
+    assert.equal(systemPrompt('A.', delegating, true, '', [{ name: 'coder', description: 'anything' }]), systemPrompt('A.', delegating));
+    assert.deepEqual(responseSchema(delegating, true, CODER_ONLY), responseSchema(delegating));
+  });
+
+  it("names the user's agents with their description, and only them", () => {
+    const delegating: ToolId[] = ['task.delegate'];
+    const delegates = [...CODER_ONLY, { name: 'traduttore', description: 'Traduce le note "di rilascio"' }];
+    const prompt = systemPrompt('A.', delegating, true, '', delegates);
+    assert.match(prompt, /traduttore, "Traduce le note \\"di rilascio\\""/);
+    assert.match(prompt, /"enum":\["coder","traduttore"\]/);
+    const call = (agent: string) => ({ thought: 't', action: 'call', tool: 'task.delegate', arguments: { agent, brief: 'Traduci.' } });
+    assert.ok(readAnswer(call('traduttore'), delegating, true, delegates));
+    assert.equal(readAnswer(call('traduttore'), delegating), undefined);
+    assert.equal(readAnswer(call('ricercatore'), delegating, true, delegates), undefined);
+    // Without the Coder, the Coder is not offered either.
+    assert.equal(readAnswer(call('coder'), delegating, true, [{ name: 'traduttore', description: 'x' }]), undefined);
   });
 
   it('offers only tools with an argument schema, all from the registry', () => {

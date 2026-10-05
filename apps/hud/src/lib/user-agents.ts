@@ -1,6 +1,7 @@
 /**
  * The agents the user creates from the Agents page (D-119): types and calls
- * of `/api/agents`, and the Italian text of what a card allows.
+ * of `/api/agents`, and the Italian text of what a card allows and of the
+ * work Arianna can hand to it (tappa T3).
  */
 
 export type UserAgentState = 'disabled' | 'active' | 'official';
@@ -16,11 +17,17 @@ export interface CardSummary {
   limits: { maxSteps: number; maxMinutes: number; maxCost: number };
 }
 
+/** Where a step Arianna delegates to the agent runs; null: it takes none yet (D-119, tappa T3). */
+export type UserAgentWork = 'claude' | 'local' | null;
+
 export interface UserAgentView {
   name: string;
   description: string;
   state: UserAgentState;
   card: CardSummary;
+  works: UserAgentWork;
+  /** An official agent created from this page and promoted: it can go back among the user's ones. */
+  fromPage?: true;
 }
 
 export interface UserAgentListing {
@@ -73,12 +80,74 @@ export const activateUserAgent = async (name: string): Promise<UserAgentView> =>
 export const deactivateUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'deactivate'))).agent;
 /** Only from the confirmation of the page: the L1/A1 ceiling is lifted. */
 export const promoteUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'promote'), { confirm: true })).agent;
+/** The prompt of a user's agent, read only when the page opens it to change it. */
+export const loadUserAgentPrompt = async (name: string): Promise<string> => (await call<{ prompt: string }>('GET', path(name, 'prompt'))).prompt;
+/** Description and prompt; the core checks them as at the creation. */
+export const editUserAgent = async (name: string, edit: { description?: string; prompt?: string }): Promise<UserAgentView> =>
+  (await call<{ agent: UserAgentView }>('POST', path(name, 'edit'), edit)).agent;
+/** Only from the confirmation of the page, where the user typed the name: the files go into data/agents/eliminati. */
+export const deleteUserAgent = async (name: string, typed: string): Promise<{ name: string; folder: string }> =>
+  (await call<{ deleted: { name: string; folder: string } }>('POST', path(name, 'delete'), { confirm: typed })).deleted;
+/** Only from the confirmation of the page: the card goes back disabled, under the L1/A1 ceiling. */
+export const demoteUserAgent = async (name: string): Promise<UserAgentView> => (await call<{ agent: UserAgentView }>('POST', path(name, 'demote'), { confirm: true })).agent;
 
-export const TEMPLATE_TEXT: Record<string, { title: string; text: string }> = {
-  code: { title: 'Codice', text: 'Lavora sul codice dei progetti approvati, con i test, come il Coder ma senza dati privati.' },
-  web: { title: 'Ricerca sul web', text: 'Cerca e legge pagine pubbliche; vede solo dati pubblici e propone soltanto.' },
-  answer: { title: 'Solo risposte', text: 'Nessuno strumento: risponde con quello che sa, su dati pubblici.' },
+export interface TemplateText {
+  title: string;
+  text: string;
+  /** What Arianna can hand to an agent of this template (tappa T3). */
+  work: string;
+  /** A starting point the page offers; invented, like every example. */
+  example: { name: string; description: string; prompt: string };
+}
+
+export const TEMPLATE_TEXT: Record<string, TemplateText> = {
+  answer: {
+    title: 'Solo risposte',
+    text: 'Nessuno strumento: risponde con quello che sa, su dati pubblici.',
+    work: 'Arianna gli passa un testo da trattare (tradurre, riassumere, riscrivere) e lui risponde sul modello locale. Un testo che non è pubblico parte solo con la tua approvazione.',
+    example: {
+      name: 'traduttore',
+      description: 'Traduce testi tra italiano e inglese mantenendo il tono',
+      prompt:
+        'Traduci il testo che ricevi: dall’italiano all’inglese, oppure dall’inglese all’italiano.\nMantieni il tono e la formattazione dell’originale (elenchi, titoli, a capo).\nRispondi solo con la traduzione, senza commenti.',
+    },
+  },
+  code: {
+    title: 'Codice',
+    text: 'Lavora sul codice dei progetti approvati, con i test, come il Coder ma senza dati privati.',
+    work: 'Arianna gli passa lavori sul codice del progetto della conversazione, che fa con Claude Code come il Coder. Un incarico sopra L1 parte solo con la tua approvazione.',
+    example: {
+      name: 'revisore',
+      description: 'Rilegge il codice indicato e corregge errori e casi limite, con i test',
+      prompt:
+        'Sei un revisore di codice TypeScript.\nLeggi i file che l’incarico indica, cerca errori, casi limite e test mancanti.\nCorreggi solo ciò che serve, fai girare i test e alla fine elenca cosa hai cambiato e perché.',
+    },
+  },
+  web: {
+    title: 'Ricerca sul web',
+    text: 'Cerca e legge pagine pubbliche; vede solo dati pubblici e propone soltanto.',
+    work: 'Per ora non riceve lavoro: gli strumenti del web arrivano più avanti. Puoi già crearlo e prepararne il prompt.',
+    example: {
+      name: 'ricercatore',
+      description: 'Cerca fonti pubbliche su un argomento e le riassume',
+      prompt: 'Cerca sul web fonti pubbliche e affidabili sull’argomento dell’incarico.\nPer ogni fonte scrivi titolo, indirizzo e una riga su cosa dice.',
+    },
+  },
 };
+
+/** The order of the templates on the page: the one that works with no cloud first. */
+export const TEMPLATE_ORDER: readonly string[] = ['answer', 'code', 'web'];
+
+const WORK_TEXT: Record<'claude' | 'local' | 'none', string> = {
+  claude: 'riceve lavoro da Arianna (Claude Code)',
+  local: 'riceve lavoro da Arianna (modello locale)',
+  none: 'non riceve ancora lavoro',
+};
+
+/** One short line on the work an agent gets from Arianna, for the lists. */
+export function workText(works: UserAgentWork): string {
+  return WORK_TEXT[works ?? 'none'];
+}
 
 const TOOL_TEXT: Record<string, string> = {
   'repo.read': 'legge il codice del progetto',
@@ -129,8 +198,17 @@ export function permissionLines(card: CardSummary): string[] {
 export function userAgentErrorText(error: unknown): string {
   if (!(error instanceof UserAgentApiError)) return 'Il core non risponde.';
   const message = error.message;
-  if (error.status === 409) return message.startsWith('agents/') ? 'In agents/ c’è già una scheda con questo nome.' : 'Esiste già un agente con questo nome.';
+  if (error.status === 409) {
+    if (message.startsWith('agents/')) return 'In agents/ c’è già una scheda con questo nome.';
+    if (message.startsWith('data/agents')) return 'In data/agents c’è già una scheda con questo nome: spostala o eliminala prima.';
+    if (message.startsWith('deactivate')) return 'Disattiva l’agente prima di eliminarlo.';
+    return 'Esiste già un agente con questo nome.';
+  }
   if (error.status === 404) return 'L’agente non c’è più: ricarica la pagina.';
+  if (/was not created from the Agents page/.test(message)) return 'Questo agente non è nato da questa pagina: resta ufficiale.';
+  if (/does not match any template/.test(message)) return 'La scheda è stata cambiata a mano oltre il suo modello: non può tornare fra i tuoi agenti.';
+  if (/above (L1|A1)|not allowed/.test(message)) return 'La scheda supera il tetto L1/A1 delle schede utente: non può tornare fra i tuoi agenti.';
+  if (/as confirmation/.test(message)) return 'Per eliminare scrivi esattamente il nome dell’agente.';
   const field = message.startsWith('the prompt') ? 'Il prompt' : message.startsWith('the name') ? 'Il nome' : 'La descrizione';
   if (/looks like personal data or a secret/.test(message)) return `${field} sembra contenere dati personali o un segreto: non salvato.`;
   if (/value of the vault/.test(message)) return `${field} contiene un valore del vault: non salvato.`;

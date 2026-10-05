@@ -22,6 +22,10 @@ export type UserAgentState = (typeof USER_AGENT_STATES)[number];
 export const USER_AGENT_FOLDERS: Readonly<Record<UserAgentState, string>> = { disabled: 'disattivati', active: 'attivi' };
 
 const NAME = /^[a-z][a-z0-9-]{1,39}$/;
+/** The name of a user's agent: what the page and the routes accept. */
+export const USER_AGENT_NAME = NAME;
+/** The first line of a card written by the page: a promoted card keeps it, and only such a card goes back (D-119, tappa T3). */
+export const USER_CARD_MARK = '# Created from the Agents page (D-119)';
 const MAX_DESCRIPTION = 200;
 export const MAX_USER_PROMPT = 4000;
 const CEILING_TOOLS: readonly ToolId[] = ['task.delegate', 'channel.send'];
@@ -118,7 +122,7 @@ export function userCard(input: NewUserAgent): UserCardFiles {
     prompt: `${name}.md`,
   };
   const header = [
-    `# Created from the Agents page (D-119), template ${template.id}.`,
+    `${USER_CARD_MARK}, template ${template.id}.`,
     '# Tools, labels and autonomy come from the template; while the card is in',
     '# data/agents it stays at L1 and A1, whatever is written here.',
   ].join('\n');

@@ -1,4 +1,4 @@
-import type { LoadedAgent, ToolId } from '@arianna/agents';
+import type { AgentCard, DelegateTarget, LoadedAgent, ToolId } from '@arianna/agents';
 import { projectNamed, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
@@ -14,6 +14,8 @@ import {
   type ClaudeModel,
   type ClaudeTool,
   type FileChange,
+  LocalModelError,
+  type LocalModel,
   type OpenedRepository,
 } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
@@ -23,7 +25,8 @@ import { runClaudeStep } from '../claude-step.ts';
 import { loadConversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
-import { applyDeclassifyIn } from '../gateway.ts';
+import type { RunUsage } from '../runs.ts';
+import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
@@ -53,11 +56,15 @@ export interface DelegateEnv {
   claude?: ClaudeExecutor;
   /** What Claude reads first when it answers a system chat directly; DIRECT_PROMPT by default (tests pick a scenario). */
   directPrompt?: string;
+  /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */
+  model?: () => LocalModel;
 }
 
 /** What the step with an open delegation will do. */
 export type DelegationPlan =
   | { kind: 'cloud'; delegation: Delegation; decision: RouteDecision; model: ClaudeModel; label: Label; declassify?: { approvalId: string; to: Label } }
+  /** An agent that only answers, on the local model (D-119, tappa T3). */
+  | { kind: 'local'; delegation: Delegation; decision: RouteDecision; model: string; label: Label; declassify?: { approvalId: string; to: Label } }
   | { kind: 'budget'; delegation: Delegation; decision: RouteDecision; model: string }
   /** The project folder has uncommitted changes: the user approves first (D-056). */
   | { kind: 'workspace'; delegation: Delegation; repo: string; files: string[] }
@@ -68,6 +75,46 @@ export type DelegationPlan =
 /** The orchestrator may offer `task.delegate` only when a cloud executor can take the step. */
 export function canDelegate(env: DelegateEnv): boolean {
   return env.claude !== undefined && env.settings().cloud.executors.includes('claude');
+}
+
+/**
+ * Where a delegated step of an agent runs (D-119, tappa T3): on Claude Code
+ * in a project folder, like the Coder; or, for an agent without tools (the
+ * template `answer`), in one call to the local model. Any other agent takes
+ * no delegated step: the web tools of the template `web` do not exist yet.
+ */
+export type DelegationRoute = 'claude' | 'local';
+
+export function delegationRoute(card: AgentCard): DelegationRoute | undefined {
+  if (card.executors.includes('claude')) return 'claude';
+  if (card.executors.includes('local') && card.tools.length === 0) return 'local';
+  return undefined;
+}
+
+/**
+ * The agents `assignee` may delegate to now: the Coder and the user's active
+ * agents whose executor can run (Claude enabled, a local model there). The
+ * Coder first, then by name, so that the prompt stays the same between steps.
+ */
+export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTarget[] {
+  const targets: DelegateTarget[] = [];
+  for (const [name, agent] of env.agents) {
+    if (name === assignee) continue;
+    const where = delegationRoute(agent.card);
+    if (where === 'claude' ? canDelegate(env) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
+  }
+  const rank = (name: string): number => (name === 'coder' ? 0 : 1);
+  return targets.sort((a, b) => rank(a.name) - rank(b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * The highest label a brief to `card` may carry without the user's
+ * declassification: L1 for a cloud run (the Coder's ceiling in the cloud),
+ * the agent's own clearance for a local one.
+ */
+export function briefCeiling(card: AgentCard): Label {
+  if (delegationRoute(card) === 'local') return card.maxLabel;
+  return isAtMost(card.cloudMaxLabel ?? card.maxLabel, 'L1') ? (card.cloudMaxLabel ?? card.maxLabel) : 'L1';
 }
 
 /** The built-in tools of `claude -p` that a card's repository tools stand for. */
@@ -162,19 +209,31 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   });
   const agent = env.agents.get(delegation.agent);
   if (agent === undefined) return closed('failed', `no agent card for ${delegation.agent}`);
+  const where = delegationRoute(agent.card);
+  if (where === undefined) return closed('failed', `${delegation.agent} does not take delegated steps`);
 
-  // A brief written after reading L2 leaves only as the exact text the user approved.
+  // A brief above what the agent may read leaves only as the exact text the user approved.
   let label = delegation.label;
   let declassify: { approvalId: string; to: Label } | undefined;
-  if (!isAtMost(label, 'L1')) {
+  const ceiling = briefCeiling(agent.card);
+  if (!isAtMost(label, ceiling)) {
     const approval = await declassificationOf(env.sql, delegation);
     if (approval?.state !== 'approved') {
-      return closed('refused', 'the user did not approve sending the brief to the cloud: do what you can here, or tell the user');
+      const to = where === 'local' ? `to ${delegation.agent}` : 'to the cloud';
+      return closed('refused', `the user did not approve sending the brief ${to}: do what you can here, or tell the user`);
     }
     const to = approval.detail.to;
-    if (to !== 'L0' && to !== 'L1') return closed('failed', 'the declassification does not say a cloud label');
+    if ((to !== 'L0' && to !== 'L1') || !isAtMost(to, ceiling)) return closed('failed', `the declassification does not say a label ${delegation.agent} may read`);
     declassify = { approvalId: approval.id, to };
     label = to;
+  }
+
+  if (where === 'local') {
+    // One call to the local model: no folder, no quota; the router checks the label against the agent.
+    const decision = route({ kind: 'judge', agent: agent.card, text: delegation.brief }, createContext(task.clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings()));
+    if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
+    if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
+    return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
   }
 
   // The folder itself (D-056): with changes the user has not committed, the launch waits for their word.
@@ -256,6 +315,41 @@ export function storableFiles(changes: readonly FileChange[]): FileChange[] {
     .map((item) => (item.from === undefined ? { path: item.path, change: item.change } : { path: item.path, change: item.change, from: item.from }));
 }
 
+/** The declassification of a plan, once: the lowered label is written with its label_changes row. */
+async function applyPlannedDeclassify(env: DelegateEnv, task: Task, delegation: Delegation, declassify: { approvalId: string; to: Label } | undefined): Promise<Label> {
+  const label = delegation.label;
+  if (declassify === undefined || isAtMost(label, declassify.to)) return label;
+  const { approvalId, to } = declassify;
+  await env.sql.begin(async (tx) => {
+    await applyDeclassifyIn(tx, { value: delegation.brief, label, source: `task:${task.id}` }, to, approvalId);
+    await updateDelegation(tx, delegation.id, { label: to });
+  });
+  return to;
+}
+
+/**
+ * A crash after the report was stored, before the delegation was closed: the
+ * run is not launched again, the stored report is the result. Only a report
+ * written after this delegation and taken by no other one: the report of an
+ * earlier delegation of the same task is never this one's (0.6.1). True when so.
+ */
+async function closeFromStored(sql: Sql, task: Task, delegation: Delegation): Promise<boolean> {
+  const [stored] = await sql<Pick<Message, 'id' | 'body' | 'label'>[]>`
+    SELECT m.id::text, m.body, m.label FROM messages m
+    WHERE m.task_id = ${task.id} AND m.agent = ${delegation.agent}
+      AND m.ts >= (SELECT created_at FROM task_delegations WHERE id = ${delegation.id})
+      AND NOT EXISTS (SELECT FROM task_delegations d WHERE d.task_id = ${task.id} AND d.message_id = m.id)
+    ORDER BY m.id DESC LIMIT 1`;
+  if (stored === undefined) return false;
+  await updateDelegation(sql, delegation.id, { status: 'ok', result: stored.body, resultLabel: stored.label, messageId: stored.id });
+  return true;
+}
+
+/** The prompt of an agent as the gateway reads it: one of agents/ is in git (L0), one written by the user is L1 by declaration (D-119). */
+function promptPart(agent: LoadedAgent, name: string): { text: string; label: Label; source: string } {
+  return { text: agent.prompt, label: agent.origin === 'user' ? 'L1' : 'L0', source: `agent:${name}` };
+}
+
 /** The cloud step: the plan is `cloud`. */
 export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'cloud' }>): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
@@ -271,31 +365,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // A user agent deactivated between the plan and the run (D-119): the delegation fails, the task goes on.
   if (agent === undefined) return failed(`${delegation.agent} is no longer active`);
 
-  // The declassification, once: the lowered label is written with its label_changes row.
-  let label = delegation.label;
-  if (plan.declassify !== undefined && !isAtMost(label, plan.declassify.to)) {
-    const { approvalId, to } = plan.declassify;
-    await sql.begin(async (tx) => {
-      await applyDeclassifyIn(tx, { value: delegation.brief, label, source: `task:${task.id}` }, to, approvalId);
-      await updateDelegation(tx, delegation.id, { label: to });
-    });
-    label = to;
-  }
-
-  // A crash after the report was stored, before the delegation was closed: the
-  // run is not launched again, the stored report is the result. Only a report
-  // written after this delegation and taken by no other one: the report of an
-  // earlier delegation of the same task is never this one's.
-  const [stored] = await sql<Pick<Message, 'id' | 'body' | 'label'>[]>`
-    SELECT m.id::text, m.body, m.label FROM messages m
-    WHERE m.task_id = ${task.id} AND m.agent = ${delegation.agent}
-      AND m.ts >= (SELECT created_at FROM task_delegations WHERE id = ${delegation.id})
-      AND NOT EXISTS (SELECT FROM task_delegations d WHERE d.task_id = ${task.id} AND d.message_id = m.id)
-    ORDER BY m.id DESC LIMIT 1`;
-  if (stored !== undefined) {
-    await updateDelegation(sql, delegation.id, { status: 'ok', result: stored.body, resultLabel: stored.label, messageId: stored.id });
-    return { kind: 'continue', usage: { steps: 1 } };
-  }
+  const label = await applyPlannedDeclassify(env, task, delegation, plan.declassify);
+  if (await closeFromStored(sql, task, delegation)) return { kind: 'continue', usage: { steps: 1 } };
 
   // The project folder itself (D-056), opened again at every attempt: nothing is copied.
   const folder = await folderOf(env, delegation);
@@ -316,11 +387,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
-  const brief = [
-    // A prompt of agents/ is in git (L0); one written by the user is L1 by declaration (D-119).
-    { text: agent.prompt, label: agent.origin === 'user' ? ('L1' as const) : ('L0' as const), source: `agent:${delegation.agent}` },
-    { text: delegation.brief, label, source: `task:${task.id}` },
-  ];
+  const brief = [promptPart(agent, delegation.agent), { text: delegation.brief, label, source: `task:${task.id}` }];
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
   const result = await runClaudeStep(sql, claude, ctx, {
@@ -411,4 +478,110 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result.reason}`);
       return { kind: 'continue', usage: result.usage };
   }
+}
+
+/** Longest report of an agent that only answers (characters). */
+export const MAX_LOCAL_REPORT = 6000;
+export const LOCAL_REPORT_SCHEMA_NAME = 'agent_report';
+/**
+ * One string field, applied from the first token (constrained decoding, as
+ * for the summaries): a reasoning model cannot write its reasoning in place
+ * of the report.
+ */
+const LOCAL_REPORT_SCHEMA: Readonly<Record<string, unknown>> = {
+  type: 'object',
+  properties: { report: { type: 'string', minLength: 1, maxLength: MAX_LOCAL_REPORT } },
+  required: ['report'],
+  additionalProperties: false,
+};
+
+/** What an agent that only answers reads before its own prompt: the frame is ours, the rest is the user's. */
+export const LOCAL_FRAME = [
+  'You are an agent of Arianna, a personal assistant. Arianna hands you one step of a task with a brief: the next message.',
+  'Do what the brief asks, following your instructions below, and write only the result in the field "report" of the JSON object, in the language of the brief.',
+  'You have no tools: you cannot read files, search or act; if the brief needs that, say so in the report.',
+  'Your instructions:',
+].join('\n');
+
+/**
+ * The step of an agent that only answers (D-119, tappa T3): one call to the
+ * local model with the agent's prompt and the brief, through the gateway.
+ * The report goes to the chat as the agent's message, and becomes the result
+ * Arianna reads at the next step; it carries the highest label of the two.
+ */
+export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'local' }>): Promise<StepOutcome> {
+  const { task, step, runId } = ctx;
+  const { delegation } = plan;
+  const { sql } = env;
+  const failed = async (result: string, usage: RunUsage = { steps: 1 }): Promise<StepOutcome> => {
+    await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result}`);
+    return { kind: 'continue', usage };
+  };
+  const agent = env.agents.get(delegation.agent);
+  // Deactivated between the plan and the run: the delegation fails, the task goes on.
+  if (agent === undefined) return failed(`${delegation.agent} is no longer active`);
+  const model = env.model;
+  if (model === undefined) return failed('no local model for the agents');
+
+  const label = await applyPlannedDeclassify(env, task, delegation, plan.declassify);
+  if (await closeFromStored(sql, task, delegation)) return { kind: 'continue', usage: { steps: 1 } };
+
+  await updateDelegation(sql, delegation.id, { status: 'running', executor: 'local', model: plan.model, runId });
+  await show(sql, task, step, 'delegate', `${delegation.agent} · local/${plan.model}`);
+
+  const prompt = promptPart(agent, delegation.agent);
+  const parts = [prompt, { text: delegation.brief, label, source: `task:${task.id}` }];
+  const read = maxLabel(prompt.label, label);
+  const decision = await passGateway(
+    sql,
+    parts.map((part) => ({ value: part.text, label: part.label, source: part.source })),
+    createContext(task.clearance, read),
+    { kind: 'executor', id: 'local', locality: 'local' },
+    { taskId: task.id, runId },
+  );
+  if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
+  const [instructions, brief] = decision.texts;
+  if (instructions === undefined || brief === undefined || decision.texts.length !== 2) throw new Error('the gateway allowed a different number of texts');
+
+  let report: string;
+  const usage = { steps: 1, tokensIn: 0, tokensOut: 0 };
+  try {
+    const result = await model().chat({
+      model: plan.model,
+      messages: [
+        { role: 'system', content: `${LOCAL_FRAME}\n${instructions}` },
+        { role: 'user', content: brief },
+      ],
+      schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },
+      temperature: 0,
+      maxTokens: 4096,
+      signal: ctx.signal,
+    });
+    usage.tokensIn = result.usage?.promptTokens ?? 0;
+    usage.tokensOut = result.usage?.completionTokens ?? 0;
+    if (result.finishReason === 'length') return await failed(`the answer of ${delegation.agent} was cut`, usage);
+    const value: unknown = result.value;
+    const text = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as { report?: unknown }).report : undefined;
+    if (typeof text !== 'string' || text.trim() === '') return await failed(`${delegation.agent} gave no report`, usage);
+    report = text.trim();
+  } catch (error) {
+    // Stopped by the user or the engine: the engine decides.
+    if (ctx.signal.aborted) throw error;
+    if (error instanceof LocalModelError) return failed(`the local model did not answer (${error.kind})`);
+    throw error;
+  }
+
+  // Shown in the chat as the agent's message; a report the chat cannot hold is not read either.
+  let messageId: string | undefined;
+  if (task.conversationId !== null) {
+    const reply = await openReply(sql, task.id, { runId, agent: delegation.agent });
+    const saved = await reply.finish(report, read);
+    if (!saved.stored) {
+      const why = saved.reason === 'blocked' ? `the gateway refused the report (${saved.decision.reason})` : 'the report is above what the conversation may hold';
+      return failed(why, usage);
+    }
+    messageId = saved.message.id;
+  }
+  await updateDelegation(sql, delegation.id, { status: 'ok', result: report, resultLabel: read, ...(messageId === undefined ? {} : { messageId }) });
+  return { kind: 'continue', usage };
 }

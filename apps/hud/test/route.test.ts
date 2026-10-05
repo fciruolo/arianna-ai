@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { conversationFromPath, documentTitle, isOfficePath, isThoughtsPath, OFFICE_PATH, knowledgeFocus, knowledgePathFor, pathFor, THOUGHTS_PATH } from '../src/lib/route.ts';
+import {
+  conversationFromPath,
+  documentTitle,
+  isNewAgentPath,
+  isOfficePath,
+  isSettingsPath,
+  isThoughtsPath,
+  NEW_AGENT_PATH,
+  OFFICE_PATH,
+  knowledgeFocus,
+  knowledgePathFor,
+  pathFor,
+  THOUGHTS_PATH,
+} from '../src/lib/route.ts';
 
 const ID = '384fde7f-ba40-44cb-a3d1-64d4b09045aa';
 
@@ -44,4 +57,11 @@ test('the office has its own address, and nothing else is the office', () => {
   assert.equal(isOfficePath('/ufficio/'), true);
   for (const path of ['/', '/ufficio/x', '/uffici', `/c/${ID}`]) assert.equal(isOfficePath(path), false, path);
   assert.equal(conversationFromPath(OFFICE_PATH), undefined);
+});
+
+test('the page "Nuovo agente" has its own address, apart from the sections of the settings (D-119, tappa T3)', () => {
+  assert.ok(isNewAgentPath(NEW_AGENT_PATH));
+  assert.ok(isNewAgentPath(`${NEW_AGENT_PATH}/`));
+  assert.equal(isSettingsPath(NEW_AGENT_PATH), false);
+  for (const path of ['/impostazioni/agenti', '/impostazioni/agenti/nuovo/x', '/agenti/nuovo']) assert.equal(isNewAgentPath(path), false, path);
 });

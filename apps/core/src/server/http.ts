@@ -1013,7 +1013,8 @@ function changelogRoutes(changelog: { home: string } | undefined): Route[] {
 
 /**
  * The user's agents (D-119). Promotion into agents/ lifts the L1/A1 ceiling:
- * it needs `{ confirm: true }`, sent only by the confirmation of the page.
+ * it needs `{ confirm: true }`, sent only by the confirmation of the page;
+ * so does taking it back, and a deletion needs the agent's name.
  */
 function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
   const need = (): UserAgents => {
@@ -1054,6 +1055,27 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
       const body = await readJson(request);
       onlyFields(body, ['confirm']);
       return answer(() => ({ body: { agent: service.promote(name(params), body.confirm) } }));
+    }),
+    // Tappa T3: read and change the texts, delete a disabled agent (its name as confirmation), take back a promotion.
+    // The prompt is the user's own text (L1 by declaration), served only to the local web chat like the personas.
+    route('GET', '/api/agents/:id/prompt', (_request, _url, params) => answer(() => ({ body: { prompt: need().prompt(name(params)) } }))),
+    route('POST', '/api/agents/:id/edit', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['description', 'prompt']);
+      return answer(() => ({ body: { agent: service.update(name(params), body) } }));
+    }),
+    route('POST', '/api/agents/:id/delete', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return answer(() => ({ body: { deleted: service.remove(name(params), body.confirm) } }));
+    }),
+    route('POST', '/api/agents/:id/demote', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return answer(() => ({ body: { agent: service.demote(name(params), body.confirm) } }));
     }),
   ];
 }

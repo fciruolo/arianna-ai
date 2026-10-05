@@ -12,7 +12,8 @@ import SheetPreview from './SheetPreview.vue';
  * it again, writes it anew and saves it in data/characters/miei. A character
  * of the same name is replaced only after the user says so.
  */
-const props = defineProps<{ agentLabel: string }>();
+/** `keep`: how the choice is kept, at the end of the message (the agent's card: "premi Salva"). */
+const props = withDefaults(defineProps<{ agentLabel: string; keep?: string }>(), { keep: 'premi Salva per tenerlo' });
 const emit = defineEmits<{ uploaded: [character: UploadedCharacter] }>();
 
 const MAX_BYTES = 256 * 1024;
@@ -102,7 +103,7 @@ async function send(replace: boolean): Promise<void> {
     }
     const saved = result.saved;
     clear();
-    done.value = `${saved.replaced ? 'Sostituito' : 'Caricato'} «${saved.name}» nei tuoi personaggi (pacchetto miei) e scelto per ${props.agentLabel}: premi Salva per tenerlo.`;
+    done.value = `${saved.replaced ? 'Sostituito' : 'Caricato'} «${saved.name}» nei tuoi personaggi (pacchetto miei) e scelto per ${props.agentLabel}: ${props.keep}.`;
     emit('uploaded', saved);
   } catch (cause) {
     error.value = uploadErrorText(cause);

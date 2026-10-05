@@ -117,7 +117,8 @@ const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
 /** `dirty`: some section holds edits not saved, for the back button of the browser (App.vue). */
-const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; changelog: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
+/** `newAgent`: the page "Nuovo agente" (D-119, tappa T3). */
+const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; changelog: []; newAgent: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
 
 interface Forms {
   roles: Partial<Record<ModelRole, string>>;
@@ -953,7 +954,7 @@ watch(active, () => {
                 <code class="font-mono">data/characters/miei</code>, fuori da git; un pacchetto intero si copia a mano in <code class="font-mono">data/characters</code>, poi si ricarica questa pagina.
               </p>
             </SettingsCard>
-            <UserAgents v-if="active === 'agents'" @changed="onAgentsChanged" />
+            <UserAgents v-if="active === 'agents'" @changed="onAgentsChanged" @new-agent="emit('newAgent')" />
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />

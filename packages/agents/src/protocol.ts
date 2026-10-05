@@ -37,6 +37,41 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'web.search': 'Search the web.',
 };
 
+/**
+ * An agent the orchestrator may hand a step to (D-119, tappa T3): the Coder
+ * and the user's active agents that an executor can run. The description is
+ * what the model reads to choose; a user's one is L1 by declaration, and the
+ * prompt goes only to the local model.
+ */
+export interface DelegateTarget {
+  name: string;
+  description: string;
+}
+
+/** The Coder alone: `task.delegate` as it was before the user's agents (D-055). */
+export const CODER_ONLY: readonly DelegateTarget[] = [{ name: 'coder', description: 'Writes and changes code in a worktree, with tests' }];
+
+/** The arguments of `tool`; those of `task.delegate` name the agents of `delegates`. */
+function argsOf(tool: ToolId, delegates: readonly DelegateTarget[]): JsonSchema | undefined {
+  if (tool !== 'task.delegate' || isCoderOnly(delegates)) return TOOL_ARGS[tool];
+  return object({ agent: { type: 'string', enum: delegates.map((target) => target.name) }, brief: text(2000) }, ['agent', 'brief']);
+}
+
+function isCoderOnly(delegates: readonly DelegateTarget[]): boolean {
+  return delegates.length === 1 && delegates[0]?.name === 'coder';
+}
+
+/**
+ * What the model reads about `tool`. With the Coder alone, `task.delegate`
+ * reads as before, byte for byte (the cached prefix, D-075); with other
+ * agents, each follows with its description, quoted as data.
+ */
+function descriptionOf(tool: ToolId, delegates: readonly DelegateTarget[]): string {
+  const base = DESCRIPTIONS[tool] ?? '';
+  if (tool !== 'task.delegate' || isCoderOnly(delegates)) return base;
+  return `${base} Choose the agent by what it does: ${delegates.map((target) => `${target.name}, ${JSON.stringify(target.description)}`).join('; ')}.`;
+}
+
 /** A message of the step's history: `tool` is a tool result or error, shown to the model as data. */
 export interface TurnMessage {
   role: 'user' | 'assistant' | 'tool';
@@ -91,11 +126,12 @@ function optionOf(thought: boolean, properties: Record<string, JsonSchema>, requ
 /**
  * The response schema: one option per offered tool, plus reply, plan and
  * refuse. `thought: false` is the fallback without reasoning (D-052).
+ * `delegates`: the agents `task.delegate` may name, the Coder alone by default.
  */
-export function responseSchema(tools: readonly ToolId[], thought = true): JsonSchema {
+export function responseSchema(tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY): JsonSchema {
   const option = (properties: Record<string, JsonSchema>, required: string[]) => optionOf(thought, properties, required);
   const calls = tools.map((tool) => {
-    const args = TOOL_ARGS[tool];
+    const args = argsOf(tool, delegates);
     if (args === undefined) throw new Error(`no argument schema for ${tool}`);
     return option({ action: { const: 'call' }, tool: { const: tool }, arguments: args }, ['action', 'tool', 'arguments']);
   });
@@ -120,11 +156,12 @@ export function responseSchema(tools: readonly ToolId[], thought = true): JsonSc
  * them out anyway. No example names a page that exists in kb/ (a test checks).
  * `persona` is the block of `personaBlock` (D-107), after the examples and
  * before the thought rule, so that the cached block stays the same for every
- * persona; empty, the prompt is the same byte for byte as without it.
+ * persona, the prompt is the same byte for byte as without it. `delegates`
+ * as in `responseSchema`.
  */
-export function systemPrompt(agentPrompt: string, tools: readonly ToolId[], thought = true, persona = ''): string {
+export function systemPrompt(agentPrompt: string, tools: readonly ToolId[], thought = true, persona = '', delegates: readonly DelegateTarget[] = CODER_ONLY): string {
   const list = tools
-    .map((tool) => `- ${tool}: ${DESCRIPTIONS[tool] ?? ''} Arguments: ${JSON.stringify(TOOL_ARGS[tool])}`)
+    .map((tool) => `- ${tool}: ${descriptionOf(tool, delegates)} Arguments: ${JSON.stringify(argsOf(tool, delegates))}`)
     .join('\n');
   // The examples are about the knowledge base: an agent without it does not read them.
   const examples = tools.includes('kb.search') ? `\n\n${EXAMPLES}` : '';
@@ -217,9 +254,10 @@ export function chatMessages(
   history: readonly TurnMessage[],
   thought = true,
   persona = '',
+  delegates: readonly DelegateTarget[] = CODER_ONLY,
 ): ModelMessage[] {
   return [
-    { role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona) },
+    { role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona, delegates) },
     ...history.map(
       (message): ModelMessage =>
         // The local model has no tool role: results arrive fenced, as data.
@@ -251,12 +289,13 @@ export function answerText(answer: Answer): string {
 }
 
 /**
- * The answer when `value` conforms to the response schema for `tools`, else
+ * The answer when `value` conforms to the response schema for `tools` (and
+ * `delegates`), else
  * undefined. The server may not really constrain decoding: never act on an
  * answer that has not passed this.
  */
-export function readAnswer(value: unknown, tools: readonly ToolId[], thought = true): ReadAnswer | undefined {
-  if (validate(responseSchema(tools, thought), value).length > 0) return undefined;
+export function readAnswer(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY): ReadAnswer | undefined {
+  if (validate(responseSchema(tools, thought, delegates), value).length > 0) return undefined;
   const { thought: reasoning, ...rest } = value as Record<string, unknown> & { thought?: string };
   const answer = rest as unknown as Answer;
   return reasoning === undefined ? { answer } : { answer, thought: reasoning };

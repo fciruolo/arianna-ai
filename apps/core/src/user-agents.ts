@@ -1,12 +1,16 @@
-import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
   AgentCardError,
   CARD_TEMPLATES,
+  checkUserCeiling,
   loadAgent,
   loadUserAgents,
+  matchingTemplate,
   USER_AGENT_FOLDERS,
+  USER_AGENT_NAME,
+  USER_CARD_MARK,
   userCard,
   type AgentCard,
   type LoadedAgent,
@@ -17,6 +21,8 @@ import {
 import { scanText } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
+import { delegationRoute, type DelegationRoute } from './orchestrator/delegate.ts';
+
 /**
  * The agents the user creates from the Agents page (D-119). Their cards live
  * in `data/agents/disattivati` and `data/agents/attivi` and stay under the
@@ -24,7 +30,10 @@ import { knownSecrets } from '@arianna/vault';
  * Activating and deactivating change the map of the running agents at once:
  * a delegation planned for an agent deactivated meanwhile fails, and the task
  * goes on. Promotion moves a card into `agents/`, where the ceiling no longer
- * applies: only on the user's click, with `confirm`.
+ * applies: only on the user's click, with `confirm`. Tappa T3: description and
+ * prompt change in place (an active agent reads them at its next delegation);
+ * a disabled agent is deleted into `data/agents/eliminati`, never erased; a
+ * promoted card goes back to the disabled ones, under the ceiling again.
  */
 export class UserAgentError extends Error {
   override name = 'UserAgentError';
@@ -40,6 +49,16 @@ export interface UserAgentView {
   description: string;
   state: UserAgentState | 'official';
   card: CardSummary;
+  /** Where a step Arianna delegates to it runs; null: it takes none (D-119, tappa T3). */
+  works: DelegationRoute | null;
+  /** An official card written by the page and promoted: it can go back to the user's ones. */
+  fromPage?: true;
+}
+
+/** What the page may change of a user's agent after its creation. */
+export interface UserAgentEdit {
+  description?: unknown;
+  prompt?: unknown;
 }
 
 export interface CardSummary {
@@ -69,6 +88,14 @@ export interface UserAgents {
   activate(name: string): UserAgentView;
   deactivate(name: string): UserAgentView;
   promote(name: string, confirm: unknown): UserAgentView;
+  /** The prompt of a user's agent, for the page that changes it (L1 by declaration, like a persona). */
+  prompt(name: string): string;
+  /** Description and prompt, checked as at the creation. */
+  update(name: string, edit: UserAgentEdit): UserAgentView;
+  /** Only a disabled agent, with its name as `confirm`: its files move into `data/agents/eliminati`. */
+  remove(name: string, confirm: unknown): { name: string; folder: string };
+  /** A promoted card back among the disabled ones, with `confirm`. */
+  demote(name: string, confirm: unknown): UserAgentView;
 }
 
 export interface CardSummaryTemplate extends CardSummary {
@@ -90,7 +117,7 @@ function summary(card: AgentCard): CardSummary {
 }
 
 function view(agent: LoadedAgent, state: UserAgentView['state']): UserAgentView {
-  return { name: agent.card.name, description: agent.card.description, state, card: summary(agent.card) };
+  return { name: agent.card.name, description: agent.card.description, state, card: summary(agent.card), works: delegationRoute(agent.card) ?? null };
 }
 
 /**
@@ -103,6 +130,18 @@ function checkText(text: unknown, field: string): void {
   const kinds = [...new Set(scanText(text).map((finding) => finding.kind))];
   if (kinds.length > 0) throw new UserAgentError('invalid', `${field} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
   if (knownSecrets.find(text).length > 0) throw new UserAgentError('invalid', `${field} holds a value of the vault: not saved`);
+}
+
+/** Writes a file whole: a hidden temporary file, then a rename over the old one. */
+function writeWhole(path: string, dir: string, name: string, text: string): void {
+  const temporary = join(dir, `.${name}.${String(process.pid)}.tmp`);
+  writeFileSync(temporary, text, { mode: 0o600, flag: 'wx' });
+  try {
+    renameSync(temporary, path);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
 }
 
 /** A rename, or a copy when `data/` is on another volume than `agents/` (promotion). */
@@ -161,6 +200,20 @@ export function createUserAgents(options: {
     }
   }
 
+  /** Whether the card of agents/ named `name` was written by the page: its first line is the mark. */
+  function fromPage(name: string): boolean {
+    try {
+      return readFileSync(join(officialDir, `${name}.yaml`), 'utf8').startsWith(USER_CARD_MARK);
+    } catch {
+      return false;
+    }
+  }
+
+  function officialView(agent: LoadedAgent): UserAgentView {
+    const shown = view(agent, 'official');
+    return fromPage(agent.card.name) ? { ...shown, fromPage: true } : shown;
+  }
+
   function taken(name: string): boolean {
     if (official.has(name)) return true;
     return (['disabled', 'active'] as const).some((state) => existsSync(join(dirOf(state), `${name}.yaml`)) || existsSync(join(dirOf(state), `${name}.md`)));
@@ -177,7 +230,7 @@ export function createUserAgents(options: {
       const listing: UserAgentListing = { official: [], user: [], refused: [] };
       for (const name of [...official].sort()) {
         const agent = agents.get(name);
-        if (agent !== undefined) listing.official.push(view(agent, 'official'));
+        if (agent !== undefined) listing.official.push(officialView(agent));
       }
       const seen = new Set<string>();
       for (const state of ['active', 'disabled'] as const) {
@@ -265,7 +318,84 @@ export function createUserAgents(options: {
       official.add(name);
       // A promoted agent is active: an official card always is.
       agents.set(name, agent);
-      return view(agent, 'official');
+      return officialView(agent);
+    },
+
+    prompt(name) {
+      return find(name).agent.prompt;
+    },
+
+    update(name, edit) {
+      const { state, agent } = find(name);
+      const template = matchingTemplate(agent.card);
+      // Never undefined: a card that matches no template is refused when read.
+      if (template === undefined) throw new UserAgentError('invalid', `${name}: the card does not match any template`);
+      checkText(edit.description, 'the description');
+      checkText(edit.prompt, 'the prompt');
+      let files;
+      try {
+        // Rewritten from its template, as at the creation: nothing but the two texts changes.
+        files = userCard({
+          name,
+          template: template.id,
+          description: (edit.description ?? agent.card.description) as string,
+          prompt: (edit.prompt ?? agent.prompt) as string,
+        });
+      } catch (error) {
+        if (error instanceof AgentCardError) throw new UserAgentError('invalid', error.message);
+        throw error;
+      }
+      const dir = dirOf(state);
+      writeWhole(join(dir, `${name}.md`), dir, `${name}.md`, files.md);
+      writeWhole(join(dir, `${name}.yaml`), dir, `${name}.yaml`, files.yaml);
+      const fresh = find(name);
+      // An active agent reads the new texts at its next delegation.
+      if (fresh.state === 'active') agents.set(name, fresh.agent);
+      return view(fresh.agent, fresh.state);
+    },
+
+    remove(name, confirm) {
+      if (!USER_AGENT_NAME.test(name)) throw new UserAgentError('not-found', `no user agent ${JSON.stringify(name)}`);
+      if (confirm !== name) throw new UserAgentError('invalid', 'deletion needs the name of the agent as confirmation');
+      const has = (state: UserAgentState): boolean => existsSync(join(dirOf(state), `${name}.yaml`)) || existsSync(join(dirOf(state), `${name}.md`));
+      if (has('active')) throw new UserAgentError('conflict', `deactivate ${name} before deleting it`);
+      // Also a card shown as refused: what is wrong with it does not keep it there.
+      if (!has('disabled')) throw new UserAgentError('not-found', `no disabled agent ${JSON.stringify(name)}`);
+      const bin = join(options.dataDir, 'agents', 'eliminati');
+      mkdirSync(bin, { recursive: true, mode: 0o700 });
+      if (!lstatSync(bin).isDirectory()) throw new UserAgentError('invalid', 'data/agents/eliminati is not a folder');
+      const folder = `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}`;
+      const to = join(bin, folder);
+      mkdirSync(to, { mode: 0o700 });
+      for (const file of [`${name}.md`, `${name}.yaml`]) {
+        if (existsSync(join(dirOf('disabled'), file))) moveFile(join(dirOf('disabled'), file), join(to, file));
+      }
+      return { name, folder: `data/agents/eliminati/${folder}` };
+    },
+
+    demote(name, confirm) {
+      if (confirm !== true) throw new UserAgentError('invalid', 'taking back a promotion needs the confirmation of the user');
+      if (!official.has(name) || !USER_AGENT_NAME.test(name)) throw new UserAgentError('not-found', `no official agent ${JSON.stringify(name)}`);
+      // Only a card the page wrote: Arianna, the Coder and any card written by hand stay where they are.
+      if (!fromPage(name)) throw new UserAgentError('invalid', `${name} was not created from the Agents page`);
+      let agent: LoadedAgent;
+      try {
+        agent = loadAgent(officialDir, name);
+        checkUserCeiling(agent.card);
+        if (matchingTemplate(agent.card) === undefined) throw new AgentCardError(`${name}: the card does not match any template (tools, executors, trifecta or labels changed)`);
+      } catch (error) {
+        // Changed by hand after the promotion: it would be refused among the user's cards.
+        if (error instanceof AgentCardError) throw new UserAgentError('invalid', error.message);
+        throw error;
+      }
+      if ((['disabled', 'active'] as const).some((state) => existsSync(join(dirOf(state), `${name}.yaml`)) || existsSync(join(dirOf(state), `${name}.md`)))) {
+        throw new UserAgentError('conflict', `data/agents already has ${name}`);
+      }
+      folders();
+      move(name, officialDir, dirOf('disabled'));
+      official.delete(name);
+      agents.delete(name);
+      return view({ ...agent, origin: 'user' }, 'disabled');
     },
   };
 }

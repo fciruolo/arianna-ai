@@ -14,6 +14,7 @@ import OfficePage from './components/OfficePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
 import ChangelogPage from './components/ChangelogPage.vue';
+import NewAgentPage from './components/NewAgentPage.vue';
 import DevProgressPage from './components/DevProgressPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
@@ -39,6 +40,7 @@ import {
   isChangelogPath,
   isDevPath,
   isKnowledgePath,
+  isNewAgentPath,
   isOfficePath,
   isSettingsPath,
   isThoughtsPath,
@@ -46,6 +48,7 @@ import {
   KNOWLEDGE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  NEW_AGENT_PATH,
   OFFICE_PATH,
   pathFor,
   settingsPathFor,
@@ -256,9 +259,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null) store.close();
@@ -295,6 +298,11 @@ watch(page, readDevPending);
 watch(live, (state) => {
   if (state === 'open') readDevPending();
 });
+
+/** "Nuovo agente" (D-119, tappa T3), reached from the Agents section of the settings. */
+function openNewAgent(): void {
+  openPage('new-agent', NEW_AGENT_PATH, 'Nuovo agente');
+}
 
 /** "Novità": the register of the versions, reached from the settings. */
 function openChangelog(): void {
@@ -373,6 +381,10 @@ function followAddress(): void {
   }
   if (isVoiceTrialPath(window.location.pathname)) {
     openVoiceTrial();
+    return;
+  }
+  if (isNewAgentPath(window.location.pathname)) {
+    openNewAgent();
     return;
   }
   if (isSettingsPath(window.location.pathname)) {
@@ -520,7 +532,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
       :inert="!showSidebar && !wideSidebar"
       :live="live"
-      :page="page === 'dev' || page === 'changelog' ? 'settings' : page"
+      :page="page === 'dev' || page === 'changelog' || page === 'new-agent' ? 'settings' : page"
       :theme="theme"
       :conversations="conversations"
       :archived="archived"
@@ -585,6 +597,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
           <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
           <template v-else-if="page === 'changelog'">Impostazioni / <b class="font-medium text-ink">Novità</b></template>
+          <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
@@ -669,9 +682,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
       <ChangelogPage v-else-if="page === 'changelog'" />
+      <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <OfficePage

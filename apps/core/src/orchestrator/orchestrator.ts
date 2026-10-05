@@ -6,6 +6,7 @@ import {
   RESPONSE_SCHEMA_NAME,
   responseSchema,
   type Answer,
+  type DelegateTarget,
   type LoadedAgent,
   type ReadAnswer,
   type ToolId,
@@ -23,7 +24,18 @@ import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
 import { canAnswerDirectly, directModelOf, runDirect } from './claude-direct.ts';
-import { canDelegate, NO_PROJECT, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
+import {
+  briefCeiling,
+  delegateTargets,
+  delegationRoute,
+  NO_PROJECT,
+  planDelegation,
+  repoFor,
+  runDelegation,
+  runLocalDelegation,
+  type DelegateEnv,
+  type DelegationPlan,
+} from './delegate.ts';
 import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
@@ -224,6 +236,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     agents: options.agents,
     settings: options.settings,
     rules: options.rules,
+    model: options.model,
     ...(options.claude === undefined ? {} : { claude: options.claude }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
   };
@@ -245,6 +258,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     prompt: string,
     history: readonly TurnMessage[],
     signal: AbortSignal,
+    delegates: readonly DelegateTarget[],
   ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
@@ -252,15 +266,15 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const call = async (thought: boolean) => {
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
-        messages: chatMessages(prompt, tools, history, thought),
-        schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought) },
+        messages: chatMessages(prompt, tools, history, thought, '', delegates),
+        schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates) },
         temperature: 0,
         maxTokens: options.maxTokens ?? 2048,
         signal,
       });
       tokensIn += result.usage?.promptTokens ?? 0;
       tokensOut += result.usage?.completionTokens ?? 0;
-      return readAnswer(result.value, tools, thought);
+      return readAnswer(result.value, tools, thought, delegates);
     };
     let read: ReadAnswer | undefined;
     try {
@@ -297,8 +311,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
   /**
    * The model called `task.delegate`: the turn and the delegation are
-   * written together. A brief above L1 asks the user's declassification
-   * first; the next step runs the delegation (or reads why it could not).
+   * written together. A brief above what the agent may read (L1 for the
+   * cloud, the agent's clearance on the local model) asks the user's
+   * declassification first; the next step runs the delegation (or reads why
+   * it could not). Only an agent offered at this step is taken.
    */
   async function delegateCall(
     ctx: StepContext,
@@ -306,18 +322,21 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     label: Label,
     args: Record<string, unknown>,
     usage: { steps: number; tokensIn: number; tokensOut: number },
+    delegates: readonly DelegateTarget[],
   ): Promise<StepOutcome> {
     const { task, step } = ctx;
     const agentName = String(args.agent);
     const brief = String(args.brief).trim();
     const target = options.agents.get(agentName);
-    const conversation = task.conversationId === null ? undefined : await loadConversation(sql, task.conversationId);
-    const repo = repoFor(conversation?.workspace, options.settings().projects);
+    const where = target === undefined || !delegates.some((item) => item.name === agentName) ? undefined : delegationRoute(target.card);
+    // Only a run on Claude works in a project folder.
+    const conversation = where === 'claude' && task.conversationId !== null ? await loadConversation(sql, task.conversationId) : undefined;
+    const repo = where === 'claude' ? repoFor(conversation?.workspace, options.settings().projects) : undefined;
     let error: string | undefined;
-    if (target === undefined || !target.card.executors.includes('claude')) error = `${agentName} does not take delegated steps`;
+    if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';
-    else if (repo === undefined) error = NO_PROJECT;
-    if (error !== undefined || repo === undefined) {
+    else if (where === 'claude' && repo === undefined) error = NO_PROJECT;
+    if (error !== undefined || target === undefined) {
       const result = `error: ${DELEGATE}: ${error ?? ''}`;
       await recordTurn(sql, { ...turn, label, result });
       await show(task, step, 'error', error);
@@ -325,11 +344,12 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     }
     await sql.begin(async (tx) => {
       await recordTurn(tx, { ...turn, label });
-      await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, repo });
+      await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, ...(repo === undefined ? {} : { repo }) });
     });
     await show(task, step, 'delegate', agentName);
-    // The brief carries what the step has read: above L1 it leaves only as the text the user approves.
-    return isAtMost(label, 'L1') ? { kind: 'continue', usage } : { kind: 'declassify', text: brief, from: label, to: 'L1', usage };
+    // The brief carries what the step has read: above what the agent may read it leaves only as the text the user approves.
+    const ceiling = briefCeiling(target.card);
+    return isAtMost(label, ceiling) ? { kind: 'continue', usage } : { kind: 'declassify', text: brief, from: label, to: ceiling, usage };
   }
 
   return {
@@ -345,10 +365,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           : { agent: task.assignee, executor: 'claude', locality: 'cloud', model: direct.model, effectiveLabel: direct.label };
       }
       plans.set(key, planned);
-      // The cloud run reads only the brief: its label, not the task's.
-      return planned.kind === 'cloud'
-        ? { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label }
-        : localSpec(task);
+      // The delegated run reads only the brief (and the agent's prompt): that label, not the task's.
+      if (planned.kind === 'cloud') return { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label };
+      if (planned.kind === 'local') {
+        const agent = options.agents.get(planned.delegation.agent);
+        const prompt: Label = agent?.origin === 'user' ? 'L1' : 'L0';
+        return { agent: planned.delegation.agent, executor: 'local', locality: 'local', model: planned.model, effectiveLabel: maxLabel(planned.label, prompt) };
+      }
+      return localSpec(task);
     },
 
     async run(ctx: StepContext): Promise<StepOutcome> {
@@ -365,6 +389,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         switch (planned.kind) {
           case 'cloud':
             return runDelegation(env, ctx, planned);
+          case 'local':
+            return runLocalDelegation(env, ctx, planned);
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
             return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step };
@@ -435,11 +461,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         (part) => part.value,
       );
 
-      const tools = orchestratorTools(agent, canDelegate(env), await updateOffered(sql, task));
+      // The agents this step may delegate to (D-119, tappa T3): the Coder and the user's active ones.
+      const delegates = delegateTargets(env, task.assignee);
+      const tools = orchestratorTools(agent, delegates.length > 0, await updateOffered(sql, task));
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, agent.prompt, allowed, ctx.signal);
+        asked = await ask(tools, agent.prompt, allowed, ctx.signal, delegates);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };
@@ -482,7 +510,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (answer.action !== 'call' || !tools.includes(answer.tool)) {
         return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       }
-      if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage);
+      if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage, delegates);
       if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       const tool = answer.tool;
       // The same call again is not run (D-076): the model reads where its

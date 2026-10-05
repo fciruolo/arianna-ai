@@ -93,3 +93,10 @@ export const CHANGELOG_PATH = '/novita';
 export function isChangelogPath(pathname: string): boolean {
   return pathname === CHANGELOG_PATH || pathname === `${CHANGELOG_PATH}/`;
 }
+
+/** "Nuovo agente" (D-119, tappa T3): a page of its own under the Agents section of the settings. */
+export const NEW_AGENT_PATH = '/impostazioni/agenti/nuovo';
+
+export function isNewAgentPath(pathname: string): boolean {
+  return pathname === NEW_AGENT_PATH || pathname === `${NEW_AGENT_PATH}/`;
+}

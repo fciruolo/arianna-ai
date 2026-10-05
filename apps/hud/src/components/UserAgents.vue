@@ -1,50 +1,46 @@
 <script setup lang="ts">
 /**
- * The agents the user creates (D-119, tappa T2): a new card from a template,
- * activation, deactivation and promotion to official. A first, small page:
- * the full "Nuovo agente" page is tappa T3.
+ * The agents the user creates (D-119): the list with activation,
+ * deactivation and promotion to official (tappa T2); description and prompt
+ * changed in place, deletion of a disabled agent (its name typed as the
+ * confirmation) and a promotion taken back (tappa T3). A new agent is made
+ * on a page of its own, "Nuovo agente".
  */
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { agentName } from '../lib/italian.ts';
 import {
   activateUserAgent,
-  createUserAgent,
   deactivateUserAgent,
+  deleteUserAgent,
+  demoteUserAgent,
+  editUserAgent,
   listUserAgents,
-  loadTemplates,
+  loadUserAgentPrompt,
   MAX_USER_PROMPT,
   permissionLines,
   promoteUserAgent,
-  TEMPLATE_TEXT,
-  USER_AGENT_NAME,
   userAgentErrorText,
-  type TemplateSource,
+  workText,
   type UserAgentListing,
   type UserAgentView,
 } from '../lib/user-agents.ts';
 
-const emit = defineEmits<{ changed: [] }>();
+/** `newAgent`: open the page "Nuovo agente"; `changed`: an agent changed state, the rest of the page reads again. */
+const emit = defineEmits<{ changed: []; newAgent: [] }>();
 
 const listing = ref<UserAgentListing | null>(null);
-const templates = ref<TemplateSource[]>([]);
 const loadError = ref('');
 const busy = ref('');
 const error = ref('');
 const open = ref<string | null>(null);
 const promoting = ref<UserAgentView | null>(null);
-
-const creating = ref(false);
-const form = ref({ name: '', description: '', template: 'answer', prompt: '' });
-const formError = ref('');
-const chosenTemplate = computed(() => templates.value.find((template) => template.id === form.value.template));
-const formProblem = computed(() => {
-  if (!USER_AGENT_NAME.test(form.value.name)) return 'Nome: da 2 a 40 caratteri, minuscole, cifre e trattini.';
-  if (form.value.description.trim() === '') return 'Scrivi una descrizione di una riga.';
-  if (form.value.prompt.trim() === '') return 'Scrivi il prompt: cosa fa l’agente e come.';
-  if (form.value.prompt.length > MAX_USER_PROMPT) return `Il prompt supera ${String(MAX_USER_PROMPT)} caratteri.`;
-  return '';
-});
+const demoting = ref<UserAgentView | null>(null);
+/** The agent to delete; `typed` must be its name. */
+const deleting = ref<{ name: string; typed: string } | null>(null);
+/** The agent whose texts are being changed, with the prompt as the core has it. */
+const editing = ref<{ name: string; description: string; prompt: string; loaded: boolean } | null>(null);
+const notice = ref('');
 
 const STATE_TEXT = { active: 'attivo', disabled: 'disattivato', official: 'ufficiale' } as const;
 const STATE_CLASS = { active: 'text-ok', disabled: 'text-muted', official: 'text-accent' } as const;
@@ -52,7 +48,7 @@ const FOLDER_TEXT = { active: 'attivi', disabled: 'disattivati' } as const;
 
 async function load(): Promise<void> {
   try {
-    [listing.value, templates.value] = await Promise.all([listUserAgents(), loadTemplates()]);
+    listing.value = await listUserAgents();
     loadError.value = '';
   } catch (cause) {
     loadError.value = userAgentErrorText(cause);
@@ -63,6 +59,7 @@ onMounted(() => void load());
 async function run(name: string, action: () => Promise<unknown>): Promise<boolean> {
   busy.value = name;
   error.value = '';
+  notice.value = '';
   try {
     await action();
     await load();
@@ -76,26 +73,52 @@ async function run(name: string, action: () => Promise<unknown>): Promise<boolea
   }
 }
 
-async function create(): Promise<void> {
-  if (formProblem.value !== '') return;
-  busy.value = 'nuovo';
-  formError.value = '';
-  try {
-    await createUserAgent({ ...form.value });
-    form.value = { name: '', description: '', template: 'answer', prompt: '' };
-    creating.value = false;
-    await load();
-  } catch (cause) {
-    formError.value = userAgentErrorText(cause);
-  } finally {
-    busy.value = '';
-  }
-}
-
 async function promote(): Promise<void> {
   const agent = promoting.value;
   if (agent === null) return;
   if (await run(agent.name, () => promoteUserAgent(agent.name))) promoting.value = null;
+}
+
+async function demote(): Promise<void> {
+  const agent = demoting.value;
+  if (agent === null) return;
+  if (await run(agent.name, () => demoteUserAgent(agent.name))) demoting.value = null;
+}
+
+async function remove(): Promise<void> {
+  const target = deleting.value;
+  if (target === null || target.typed !== target.name) return;
+  let folder = '';
+  const ok = await run(target.name, async () => {
+    folder = (await deleteUserAgent(target.name, target.typed)).folder;
+  });
+  if (ok) {
+    deleting.value = null;
+    notice.value = `Eliminato: i due file sono in ${folder}, da cui si recuperano a mano.`;
+  }
+}
+
+/** Opens the texts of `agent`: the prompt is read from the core's file, never kept by the list. */
+async function startEdit(agent: UserAgentView): Promise<void> {
+  editing.value = { name: agent.name, description: agent.description, prompt: '', loaded: false };
+  error.value = '';
+  try {
+    const prompt = await loadUserAgentPrompt(agent.name);
+    // Another agent opened meanwhile: this answer is for nobody.
+    if (editing.value?.name === agent.name) editing.value = { ...editing.value, prompt: prompt.trimEnd(), loaded: true };
+  } catch (cause) {
+    error.value = userAgentErrorText(cause);
+    if (editing.value?.name === agent.name) editing.value = null;
+  }
+}
+
+async function saveEdit(): Promise<void> {
+  const draft = editing.value;
+  if (draft === null || !draft.loaded) return;
+  if (await run(draft.name, () => editUserAgent(draft.name, { description: draft.description.trim(), prompt: draft.prompt }))) {
+    editing.value = null;
+    notice.value = `Salvato: ${draft.name} usa i testi nuovi dal prossimo lavoro.`;
+  }
 }
 </script>
 
@@ -103,79 +126,79 @@ async function promote(): Promise<void> {
   <section id="user-agents" class="hud-card" aria-labelledby="user-agents-title">
     <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
       <h2 id="user-agents-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] uppercase">Agenti nuovi</h2>
-      <button v-if="!creating" type="button" class="btn btn-primary px-2.5 py-1 text-xs" @click="creating = true">Nuovo da modello</button>
+      <a href="/impostazioni/agenti/nuovo" class="btn btn-primary px-2.5 py-1 text-xs" @click.prevent="emit('newAgent')">Nuovo agente</a>
     </header>
     <div class="flex flex-col gap-3 p-4">
       <p class="text-xs text-muted">
         Un agente creato qui nasce disattivato, in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (L1) e agisce solo nella sandbox (A1),
-        qualunque cosa dica la sua scheda. Strumenti e permessi vengono dal modello scelto: una scheda modificata a mano oltre il suo modello non si carica.
+        qualunque cosa dica la sua scheda. Strumenti e permessi vengono dal modello scelto: una scheda modificata a mano oltre il suo modello non si carica. Da attivo, Arianna gli passa i
+        lavori adatti a lui.
       </p>
       <p v-if="loadError" class="text-xs text-danger" role="alert">{{ loadError }}</p>
-      <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
-
-      <!-- New agent from a template -->
-      <form v-if="creating" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3" @submit.prevent="create">
-        <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
-          <label class="flex flex-col gap-1 text-xs text-muted">
-            Nome (si usa anche per i file)
-            <input v-model.trim="form.name" class="field px-2 py-1.5 font-mono text-[13px] text-ink" maxlength="40" placeholder="traduttore" autocomplete="off" />
-          </label>
-          <label class="flex flex-col gap-1 text-xs text-muted">
-            Modello
-            <select v-model="form.template" class="field px-2 py-1.5 text-[13px] text-ink">
-              <option v-for="template in templates" :key="template.id" :value="template.id">{{ TEMPLATE_TEXT[template.id]?.title ?? template.id }}</option>
-            </select>
-          </label>
-        </div>
-        <p v-if="chosenTemplate" class="text-xs text-muted">{{ TEMPLATE_TEXT[chosenTemplate.id]?.text }}</p>
-        <ul v-if="chosenTemplate" class="list-disc pl-5 text-xs text-muted">
-          <li v-for="line in permissionLines(chosenTemplate)" :key="line">{{ line }}</li>
-        </ul>
-        <label class="flex flex-col gap-1 text-xs text-muted">
-          Descrizione (una riga)
-          <input v-model="form.description" class="field px-2 py-1.5 text-[13px] text-ink" maxlength="200" placeholder="Traduce le note di rilascio in italiano" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-muted">
-          <span class="flex">Prompt: cosa fa e come <span class="ml-auto font-mono">{{ form.prompt.length }}/{{ MAX_USER_PROMPT }}</span></span>
-          <textarea v-model="form.prompt" rows="6" class="field px-2 py-1.5 text-[13px] text-ink" :maxlength="MAX_USER_PROMPT" placeholder="Traduci in italiano i testi che ti passo, mantenendo il tono originale." />
-        </label>
-        <p class="text-xs text-muted">
-          Nome, descrizione e prompt valgono come L1 per tua dichiarazione e possono arrivare a un esecutore cloud: non scriverci dati personali. Un testo con IBAN, codici fiscali, carte,
-          chiavi o valori del vault viene rifiutato.
-        </p>
-        <p v-if="formError || formProblem" class="text-xs" :class="formError ? 'text-danger' : 'text-muted'" role="alert">{{ formError || formProblem }}</p>
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn px-2.5 py-1 text-xs" @click="creating = false; formError = ''">Annulla</button>
-          <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="formProblem !== '' || busy === 'nuovo'">Crea disattivato</button>
-        </div>
-      </form>
+      <p v-if="error && !promoting && !demoting && !deleting" class="text-xs text-danger" role="alert">{{ error }}</p>
+      <p v-if="notice" class="text-xs text-ok" role="status">{{ notice }}</p>
 
       <!-- The user's agents -->
-      <p v-if="listing && listing.user.length === 0 && !creating" class="text-xs text-muted">Nessun agente nuovo, per ora.</p>
+      <p v-if="listing && listing.user.length === 0" class="text-xs text-muted">Nessun agente nuovo, per ora.</p>
       <div v-for="agent in listing?.user ?? []" :key="agent.name" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 p-3">
         <div class="flex flex-wrap items-center gap-2">
           <h3 class="hud-title font-mono">{{ agent.name }}</h3>
           <span class="chip" :class="STATE_CLASS[agent.state]">{{ STATE_TEXT[agent.state] }}</span>
           <span class="min-w-0 flex-1 truncate text-xs text-muted">{{ agent.description }}</span>
           <button type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="open === agent.name" @click="open = open === agent.name ? null : agent.name">Permessi</button>
+          <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy !== '' || editing?.name === agent.name" @click="startEdit(agent)">Modifica</button>
           <button v-if="agent.state === 'disabled'" type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="run(agent.name, () => activateUserAgent(agent.name))">Attiva</button>
           <button v-else type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="run(agent.name, () => deactivateUserAgent(agent.name))">Disattiva</button>
-          <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="promoting = agent">Promuovi a ufficiale…</button>
+          <button v-if="agent.state === 'disabled'" type="button" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="deleting = { name: agent.name, typed: '' }; error = ''">Elimina…</button>
+          <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="promoting = agent; error = ''">Promuovi a ufficiale…</button>
         </div>
+        <p class="text-xs" :class="agent.works === null ? 'text-warn' : 'text-muted'">{{ agent.state === 'active' ? 'Da attivo' : 'Quando è attivo' }} {{ workText(agent.works) }}.</p>
         <ul v-if="open === agent.name" class="list-disc pl-5 text-xs text-muted">
           <li v-for="line in permissionLines(agent.card)" :key="line">{{ line }}</li>
           <li>Tetto finché resta in <code class="font-mono">data/agents</code>: al massimo L1 e A1</li>
         </ul>
+
+        <!-- Description and prompt, changed in place -->
+        <form v-if="editing?.name === agent.name" class="flex flex-col gap-2.5 border-t border-line pt-2.5" @submit.prevent="saveEdit">
+          <p v-if="!editing.loaded" class="text-xs text-muted">Leggo il prompt…</p>
+          <template v-else>
+            <label class="flex flex-col gap-1 text-xs text-muted">
+              Descrizione (una riga)
+              <input v-model="editing.description" class="field px-2 py-1.5 text-[13px] text-ink" maxlength="200" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-muted">
+              <span class="flex">Prompt <span class="ml-auto font-mono">{{ editing.prompt.length }}/{{ MAX_USER_PROMPT }}</span></span>
+              <textarea v-model="editing.prompt" rows="8" class="field px-2 py-1.5 text-[13px] text-ink" :maxlength="MAX_USER_PROMPT" />
+            </label>
+            <p class="text-xs text-muted">
+              {{ agent.state === 'active' ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano L1 per tua
+              dichiarazione e passano dagli stessi controlli della creazione.
+            </p>
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn px-2.5 py-1 text-xs" @click="editing = null; error = ''">Annulla</button>
+              <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy !== '' || editing.description.trim() === '' || editing.prompt.trim() === ''">Salva</button>
+            </div>
+          </template>
+        </form>
       </div>
 
-      <!-- Cards that could not be read: never loaded -->
-      <div v-for="item in listing?.refused ?? []" :key="`${item.state}-${item.name}`" class="rounded-[10px] border border-danger/50 px-3 py-2 text-xs">
-        <span class="font-mono">{{ item.name }}</span> (in {{ FOLDER_TEXT[item.state] }}) non caricato: <span class="font-mono text-muted">{{ item.reason }}</span>
+      <!-- Cards that could not be read: never loaded; a disabled one can be deleted -->
+      <div v-for="item in listing?.refused ?? []" :key="`${item.state}-${item.name}`" class="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger/50 px-3 py-2 text-xs">
+        <span class="min-w-0 flex-1">
+          <span class="font-mono">{{ item.name }}</span> (in {{ FOLDER_TEXT[item.state] }}) non caricato: <span class="font-mono text-muted">{{ item.reason }}</span>
+        </span>
+        <button v-if="item.state === 'disabled'" type="button" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="deleting = { name: item.name, typed: '' }; error = ''">Elimina…</button>
       </div>
 
-      <p v-if="listing" class="text-xs text-muted">
-        Ufficiali, in <code class="font-mono">agents/</code>: {{ listing.official.map((agent) => agentName(agent.name)).join(', ') }}.
-      </p>
+      <!-- Official agents: the ones born here can go back -->
+      <div v-if="listing" class="flex flex-col gap-1.5 text-xs text-muted">
+        <p>Ufficiali, in <code class="font-mono">agents/</code>: {{ listing.official.map((agent) => agentName(agent.name)).join(', ') }}.</p>
+        <div v-for="agent in listing.official.filter((item) => item.fromPage)" :key="agent.name" class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-ink">{{ agent.name }}</span>
+          <span>nato da questa pagina e promosso</span>
+          <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="demoting = agent; error = ''">Riporta fra i miei…</button>
+        </div>
+      </div>
     </div>
 
     <!-- Promotion: what changes, then the user's click -->
@@ -191,13 +214,50 @@ async function promote(): Promise<void> {
           <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a L2;</li>
           <li>i file risultano nuovi in git: un commit li rende visibili a chi ha il repository, e un push li pubblica.</li>
         </ul>
-        <p class="text-xs text-muted">La promozione non si annulla da questa pagina: per tornare indietro si spostano a mano i due file in <code class="font-mono">data/agents/disattivati</code>.</p>
+        <p class="text-xs text-muted">Si torna indietro da questa pagina con «Riporta fra i miei», finché la scheda resta quella scritta qui.</p>
         <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
         <div class="flex justify-end gap-2">
           <button type="button" class="btn px-2.5 py-1 text-xs" @click="promoting = null; error = ''">Annulla</button>
           <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="promote">Promuovi</button>
         </div>
       </div>
+    </div>
+
+    <!-- A promotion taken back -->
+    <div v-if="demoting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="demote-title">
+      <div class="hud-card flex max-w-lg flex-col gap-3 p-4">
+        <h2 id="demote-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
+        <ul class="list-disc pl-5 text-[13px]">
+          <li>la scheda torna in <code class="font-mono">data/agents/disattivati</code>, fuori da git, e l’agente si ferma: Arianna non gli passa più lavoro finché non lo riattivi;</li>
+          <li>torna il tetto L1 e A1;</li>
+          <li>se i file di <code class="font-mono">agents/{{ demoting.name }}</code> erano già in un commit, git li vedrà come tolti: il prossimo commit lo registra.</li>
+        </ul>
+        <p class="text-xs text-muted">Una scheda cambiata a mano oltre il suo modello non può tornare: resta ufficiale.</p>
+        <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-xs" @click="demoting = null; error = ''">Annulla</button>
+          <button type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy !== ''" @click="demote">Riporta fra i miei</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deletion: the name typed by the user -->
+    <div v-if="deleting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+      <form class="hud-card flex max-w-lg flex-col gap-3 p-4" @submit.prevent="remove">
+        <h2 id="delete-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Eliminare {{ deleting.name }}?</h2>
+        <p class="text-[13px]">
+          L’agente sparisce dalla pagina e Arianna non lo vede più. I due file (scheda e prompt) vanno in <code class="font-mono">data/agents/eliminati</code>: da lì si recuperano solo a mano.
+        </p>
+        <label class="flex flex-col gap-1 text-xs text-muted">
+          Per confermare scrivi il nome dell’agente
+          <input v-model.trim="deleting.typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="deleting.name" autocomplete="off" />
+        </label>
+        <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-xs" @click="deleting = null; error = ''">Annulla</button>
+          <button type="submit" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busy !== '' || deleting.typed !== deleting.name">Elimina</button>
+        </div>
+      </form>
     </div>
   </section>
 </template>
