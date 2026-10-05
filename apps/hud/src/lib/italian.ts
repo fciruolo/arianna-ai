@@ -1,5 +1,6 @@
 import { ApiError } from './api.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
+import type { ModelEvalStatus } from './model-evals.ts';
 import type { Activity } from './types.ts';
 
 /**
@@ -101,6 +102,12 @@ const ERRORS: Record<string, string> = {
     'Una chat di sistema su questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala (sparisce insieme).',
   'only a system chat takes the question of a task': 'Solo una chat di sistema può allegare la domanda di un task.',
   'the task has no question to attach': 'Questo task non ha una domanda da allegare.',
+  // Trials of a model (D-081).
+  'the model is not in the catalog': 'Il modello non è nel catalogo.',
+  'the catalog does not list this role for the model': 'Il catalogo non indica questo modello per l’orchestratore.',
+  'the files of the model are not in data/models': 'I file del modello non sono in data/models: scaricali con pnpm arianna:models pull.',
+  'no local endpoint in arianna.toml': 'Nessun server locale in arianna.toml: aggiungilo nelle impostazioni.',
+  'a trial of this model is already queued or running': 'Una prova di questo modello è già in coda o in corso.',
 };
 
 /** An error of the API (or of the network) as the user reads it. */
@@ -124,6 +131,7 @@ export function errorText(cause: unknown): string {
   const length = /^the message is longer than (\d+) characters$/.exec(cause.message);
   if (length?.[1] !== undefined) return `Il messaggio supera ${length[1]} caratteri.`;
   if (/^the approval is already/.test(cause.message)) return 'Questa richiesta è già stata decisa.';
+  if (/^the trial is already /.test(cause.message)) return 'Questa prova è già finita.';
   const note = /^text is longer than (\d+) KiB$/.exec(cause.message);
   if (note?.[1] !== undefined) return `La nota supera ${note[1]} KiB.`;
   if (/^kb\/inbox is labeled L\d: captures stop at L2$/.test(cause.message)) return 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.';
@@ -219,4 +227,35 @@ const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna' 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
   return AGENT_TEXT[agent] ?? agent;
+}
+
+/** The state of a trial of a model (D-081). */
+export const MODEL_EVAL_STATUS_TEXT: Record<ModelEvalStatus, string> = {
+  queued: 'in coda',
+  running: 'in corso',
+  passed: 'soglie superate',
+  failed: 'soglie mancate',
+  error: 'errore',
+  cancelled: 'annullata',
+};
+
+// The closed codes of a trial of a model (D-081, apps/core/src/model-evals.ts).
+const MODEL_EVAL_ERRORS: Record<string, string> = {
+  user: 'annullata da te',
+  preempted: 'annullata: chiamate e task hanno avuto la precedenza troppe volte sullo stesso caso',
+  interrupted: 'interrotta dal riavvio del nucleo',
+  'lock-lost': 'interrotta: il nucleo ha perso la coda',
+  'not-in-catalog': 'il modello non è più nel catalogo',
+  role: 'il catalogo non indica più il modello per l’orchestratore',
+  'files-missing': 'i file del modello non sono in data/models',
+  'no-endpoint': 'nessun server locale in arianna.toml',
+};
+
+/** Why a trial ended without an outcome; a code not listed gets a generic text. */
+export function modelEvalErrorText(code: string | null): string | undefined {
+  if (code === null) return undefined;
+  const known = MODEL_EVAL_ERRORS[code];
+  if (known !== undefined) return known;
+  if (code.startsWith('LocalModelError')) return 'il modello locale non ha risposto';
+  return 'errore del nucleo';
 }

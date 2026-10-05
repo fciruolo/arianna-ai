@@ -211,6 +211,9 @@ importers:
       '@arianna/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@arianna/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@arianna/executors':
         specifier: workspace:*
         version: link:../../packages/executors

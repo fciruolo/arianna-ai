@@ -51,7 +51,7 @@ test('doctor, with the development passwords: database sound, not ready for real
   assert.equal(checks('database.owner').ok, true);
   assert.equal(checks('database.default-passwords').ok, false);
   assert.match(checks('database.default-passwords').detail, /still accepted for arianna, arianna_app/);
-  assert.deepEqual(checks('database.migrations'), { ok: true, detail: '18 applied' });
+  assert.deepEqual(checks('database.migrations'), { ok: true, detail: '19 applied' });
   assert.equal(checks('database.app-role').ok, true, checks('database.app-role').detail);
   assert.equal(checks('events.chain').ok, true);
 });

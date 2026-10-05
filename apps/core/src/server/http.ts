@@ -31,6 +31,7 @@ import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
+import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -86,6 +87,8 @@ export interface ApiServerOptions {
   local?: LocalApi;
   /** Capture into kb/inbox (D-080): the home whose kb/ receives the notes, and the folder rules. */
   capture?: { home: string; rules: LabelRules };
+  /** Trials of catalog models with the orchestrator evals (D-081). */
+  modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -214,6 +217,7 @@ interface RouteOptions {
   settings: SettingsPage | undefined;
   local: LocalApi | undefined;
   capture: ApiServerOptions['capture'];
+  modelEvals: ApiServerOptions['modelEvals'];
   onError: (error: unknown) => void;
 }
 
@@ -456,8 +460,48 @@ function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, onError }: RouteOptions): Route[] {
+/**
+ * Trials of a catalog model (D-081): queued here, run by the core in the
+ * background. Rows hold ids, outcomes, times and codes only (L0).
+ */
+function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
+  const need = (): NonNullable<ApiServerOptions['modelEvals']> => {
+    if (evals === undefined) throw new HttpError(404, 'not found');
+    return evals;
+  };
+  const evalId = (params: Params): string => {
+    const id = params.id ?? '';
+    if (!/^[1-9]\d{0,17}$/.test(id)) throw new HttpError(404, 'not found');
+    return id;
+  };
   return [
+    route('GET', '/api/model-evals', async (_request, url) => {
+      const modelId = url.searchParams.get('modelId');
+      const limit = url.searchParams.get('limit') === null ? 20 : limitParam(url);
+      return { body: { evals: await need().list({ ...(modelId === null ? {} : { modelId }), limit }) } };
+    }),
+    route('POST', '/api/model-evals', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['modelId', 'role']);
+      const { modelId, role } = body;
+      if (typeof modelId !== 'string' || typeof role !== 'string') throw new HttpError(400, 'modelId and role are required');
+      return { status: 202, body: { id: await need().request(modelId, role) } };
+    }),
+    route('GET', '/api/model-evals/:id', async (_request, _url, params) => {
+      const found = await need().get(evalId(params));
+      if (found === undefined) throw new HttpError(404, 'not found');
+      return { body: { eval: found } };
+    }),
+    route('POST', '/api/model-evals/:id/cancel', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: { eval: await need().cancel(evalId(params)) } };
+    }),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, onError }: RouteOptions): Route[] {
+  return [
+    ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(capture),
     ...settingsRoutes(settings, local, onError),
@@ -740,6 +784,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { invalid: 400, 'too-large': 413, 'not-allowed': 403, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
 }
@@ -758,6 +803,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     settings: options.settings,
     local: options.local,
     capture: options.capture,
+    modelEvals: options.modelEvals,
     onError: options.onError ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();

@@ -83,8 +83,9 @@ export function matchesExpectation(actual: unknown, expect: unknown): boolean {
 }
 
 export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string): Evaluate {
-  const ask = async (input: OrchestratorInput, thought: boolean) => {
+  const ask = async (input: OrchestratorInput, thought: boolean, signal: AbortSignal | undefined) => {
     const result = await model().chat({
+      ...(signal === undefined ? {} : { signal }),
       model: 'local-large',
       messages: chatMessages(agentPrompt, input.tools, input.messages, thought),
       schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(input.tools, thought) },
@@ -97,14 +98,14 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
     });
     return summarize(result.value, input.tools, thought);
   };
-  return async (raw) => {
+  return async (raw, signal) => {
     const input = raw as OrchestratorInput;
     try {
-      return await ask(input, true);
+      return await ask(input, true, signal);
     } catch (error) {
       // An answer that is not JSON: once more without the thought (D-051).
-      if (!(error instanceof LocalModelError) || error.kind !== 'bad-response') throw error;
-      return ask(input, false);
+      if (!(error instanceof LocalModelError) || error.kind !== 'bad-response' || signal?.aborted === true) throw error;
+      return ask(input, false, signal);
     }
   };
 }

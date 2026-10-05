@@ -61,6 +61,7 @@ import {
 } from '../lib/settings.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
 import Icon from './Icon.vue';
+import ModelEvals from './ModelEvals.vue';
 import PixelAgent from './PixelAgent.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
@@ -425,6 +426,7 @@ const INDEX: { group: string; items: { id: string; title: string; privacy?: bool
     group: 'Valgono subito',
     items: [
       { id: 'roles', title: 'Modelli locali' },
+      { id: 'model-evals', title: 'Prove dei modelli' },
       { id: 'cloud-models', title: 'Modelli cloud' },
       { id: 'voice', title: 'Voce' },
       { id: 'characters', title: 'Personaggi' },
@@ -549,6 +551,9 @@ function go(id: string): void {
                 <code class="font-mono">pnpm arianna:models pull</code>. Cambiare modello non riavvia oMLX: lo carica per nome alla prossima richiesta.
               </p>
             </SettingsCard>
+
+            <!-- Trials of the catalog models (D-081) -->
+            <ModelEvals :catalog="catalog" :current="view.values?.roles.orchestrator" />
 
             <!-- Cloud models -->
             <SettingsCard id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :saved="saved === 'cloudModels'" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">

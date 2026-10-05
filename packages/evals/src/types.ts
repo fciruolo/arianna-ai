@@ -10,7 +10,8 @@ export interface EvalCase {
   tags: string[];
 }
 
-export type Evaluate = (input: unknown) => unknown;
+/** `signal` aborts the case (a trial of the core gives way to a call or a task, D-081). */
+export type Evaluate = (input: unknown, signal?: AbortSignal) => unknown;
 
 /**
  * A pass rate measured on part of a group, with its own threshold (for
@@ -52,6 +53,11 @@ export interface CaseResult {
   durationMs: number;
   actual?: unknown;
   error?: string;
+  /**
+   * The error as a short code (class name and `code` or `kind`), never a
+   * message: what the core stores of a failed case (D-081).
+   */
+  errorCode?: string;
 }
 
 export type GroupReport =

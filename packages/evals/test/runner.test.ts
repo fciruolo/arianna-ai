@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, it, test } from 'node:test';
 
-import { formatReport, runGroup, runTier, type EvalCase, type EvalGroup } from '../src/index.ts';
+import { caseErrorCode, formatReport, runGroup, runTier, type EvalCase, type EvalGroup } from '../src/index.ts';
 
 function makeCase(id: string, input: unknown, expect: unknown, tags: string[] = []): EvalCase {
   return { id, input, expect, tags };
@@ -99,4 +99,120 @@ test('a tier with only passed and pending groups is ok', async () => {
   const report = await runTier('deterministic', groups, () => [makeCase('a', 1, 2)]);
   assert.equal(report.ok, true);
   assert.match(formatReport(report), /later\s+PENDING\s+waits for task 9\.9/);
+});
+
+describe('hooks of runGroup (D-081)', () => {
+  it('waits before each case and reports each result in order', async () => {
+    const log: string[] = [];
+    const group = makeGroup({
+      subject: {
+        status: 'active',
+        evaluate: (input) => {
+          log.push(`run ${String(input)}`);
+          return double(input);
+        },
+      },
+    });
+    const report = await runGroup(group, [makeCase('a', 1, 2), makeCase('b', 2, 4)], {
+      beforeCase: () => {
+        log.push('wait');
+        return Promise.resolve();
+      },
+      onResult: (result, index, total) => log.push(`result ${result.id} ${String(index)}/${String(total)}`),
+    });
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(log, ['wait', 'run 1', 'result a 0/2', 'wait', 'run 2', 'result b 1/2']);
+  });
+
+  it('without hooks the evaluator gets no signal', async () => {
+    const seen: unknown[] = [];
+    const evaluate = (input: unknown, signal?: AbortSignal): number => {
+      seen.push(signal);
+      return double(input);
+    };
+    await runGroup(makeGroup({ subject: { status: 'active', evaluate } }), [makeCase('a', 1, 2)]);
+    assert.deepEqual(seen, [undefined]);
+  });
+
+  it('stops at the signal: the case in progress is aborted and no other case starts', async () => {
+    const controller = new AbortController();
+    const started: string[] = [];
+    const group = makeGroup({
+      subject: {
+        status: 'active',
+        evaluate: (input, signal) => {
+          started.push(String(input));
+          controller.abort(new Error('cancelled by the user'));
+          if (signal?.aborted === true) throw new Error('aborted');
+          return double(input);
+        },
+      },
+    });
+    await assert.rejects(runGroup(group, [makeCase('a', 1, 2), makeCase('b', 2, 4)], { signal: controller.signal }), /cancelled by the user/);
+    assert.deepEqual(started, ['1']);
+  });
+
+  it('a preempted attempt is dropped and the case runs again after beforeCase', async () => {
+    let attempts = 0;
+    let waits = 0;
+    let stops = 0;
+    let current: AbortController | undefined;
+    const results: string[] = [];
+    const group = makeGroup({
+      subject: {
+        status: 'active',
+        evaluate: (input, signal) => {
+          attempts += 1;
+          // The first attempt is preempted while it runs.
+          if (attempts === 1) {
+            current?.abort();
+            assert.equal(signal?.aborted, true);
+            throw new Error('cancelled');
+          }
+          return double(input);
+        },
+      },
+    });
+    const report = await runGroup(group, [makeCase('a', 1, 2)], {
+      beforeCase: () => {
+        waits += 1;
+        return Promise.resolve();
+      },
+      watchCase: () => {
+        current = new AbortController();
+        return {
+          signal: current.signal,
+          stop: () => {
+            stops += 1;
+          },
+        };
+      },
+      onResult: (result) => results.push(`${result.id}:${String(result.passed)}`),
+    });
+    assert.equal(report.status, 'passed');
+    assert.equal(attempts, 2);
+    assert.equal(waits, 2);
+    assert.equal(stops, 2);
+    assert.deepEqual(results, ['a:true']);
+  });
+
+  it('a failed case carries a short error code', async () => {
+    class FakeModelError extends Error {
+      override name = 'LocalModelError';
+      readonly kind = 'timeout';
+    }
+    const group = makeGroup({
+      subject: {
+        status: 'active',
+        evaluate: () => {
+          throw new FakeModelError('endpoint x echoed a prompt');
+        },
+      },
+    });
+    const report = await runGroup(group, [makeCase('a', 1, 2)]);
+    assert.equal(report.status, 'failed');
+    assert.equal(report.results[0]?.errorCode, 'LocalModelError:timeout');
+    assert.equal(caseErrorCode(Object.assign(new Error('x'), { code: 'ECONNREFUSED' })), 'Error:ECONNREFUSED');
+    assert.equal(caseErrorCode(Object.assign(new Error('x'), { code: 'not a code!' })), 'error');
+  });
 });

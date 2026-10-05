@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 
-import { CaseFileError, GROUPS, loadCases, parseCases, runTier } from '../src/index.ts';
+import { CaseFileError, casesFingerprint, GROUPS, loadCases, parseCases, runTier } from '../src/index.ts';
 
 const LINE = '{"id":"a","input":1,"expect":2,"tags":["x"]}';
 
@@ -44,4 +44,25 @@ test('every group folder under evals/ belongs to a registered group', () => {
     .map((entry) => entry.name);
   const known = GROUPS.map((group) => group.name);
   assert.deepEqual(folders.filter((folder) => !known.includes(folder)), []);
+});
+
+test('the fingerprint of the cases follows names and contents of the JSONL files only', () => {
+  const dir = join(resolveHome(), 'data', 'test-tmp', `cases-${String(process.pid)}-${String(Date.now())}`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    const empty = casesFingerprint(dir);
+    assert.equal(empty, casesFingerprint(join(dir, 'missing')));
+    writeFileSync(join(dir, 'b.jsonl'), LINE);
+    writeFileSync(join(dir, 'a.jsonl'), LINE.replace('"a"', '"z"'));
+    writeFileSync(join(dir, 'notes.md'), 'ignored');
+    const first = casesFingerprint(dir);
+    assert.match(first, /^[0-9a-f]{64}$/);
+    assert.notEqual(first, empty);
+    writeFileSync(join(dir, 'notes.md'), 'still ignored');
+    assert.equal(casesFingerprint(dir), first);
+    writeFileSync(join(dir, 'b.jsonl'), `${LINE}\n`);
+    assert.notEqual(casesFingerprint(dir), first);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });

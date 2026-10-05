@@ -29,6 +29,7 @@ import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
+import { createModelEvals } from './model-evals.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
@@ -300,6 +301,29 @@ const settingsPage = createSettingsPage({
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
   },
 });
+// Trials of a catalog model with the orchestrator evals (D-081): in the
+// background, one at a time, giving way to calls and task steps. The model
+// under trial is `local-large` on the endpoints of arianna.toml.
+const modelEvals = createModelEvals({
+  sql,
+  catalog: () => loadCatalog(config.home),
+  modelsDir: voiceDirs.models,
+  endpoints: () => settings.current().local.endpoints,
+  assignedModels: () => Object.values(settings.current().roles),
+  prompt: () => {
+    const arianna = agents.get('arianna');
+    if (arianna === undefined) throw new Error('agents/arianna.md is missing');
+    return arianna.prompt;
+  },
+  casesDir: join(config.home, 'evals', 'orchestrator'),
+  createModel: (endpoints) =>
+    createLocalModel({
+      endpoints,
+      isAvailable: (id) => localServers.isAvailable(id),
+      onFailure: (id) => { localServers.onFailure(id); },
+    }),
+  onError: report,
+});
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const server = await startApiServer({
   sql,
@@ -325,10 +349,13 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
   },
   capture: { home: config.home, rules },
+  modelEvals,
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });
 await worker.start();
+// Trials left running by the previous run are closed as `interrupted`, never resumed.
+await modelEvals.start();
 
 // The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing];
 // with the voice off nothing rings.
@@ -362,6 +389,7 @@ async function shutdown(): Promise<void> {
   ringer.stop();
   await calls.close();
   await voice.close();
+  await modelEvals.stop();
   await worker.stop();
   await localServers.stop();
   await live.close();

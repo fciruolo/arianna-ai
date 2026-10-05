@@ -9,6 +9,7 @@ import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/exe
 
 import { loadCases } from '../src/cases.ts';
 import { GROUPS } from '../src/groups.ts';
+import { createOrchestratorGroup } from '../src/orchestrator-group.ts';
 import {
   createOrchestratorEvaluator,
   matchesExpectation,
@@ -190,5 +191,58 @@ describe('orchestrator cases', () => {
     assert.ok(first !== undefined);
     const report = await runGroup(group, [first]);
     assert.ok(report.status === 'failed' && /local\.endpoints|arianna:init/.test(report.results[0]?.error ?? ''), JSON.stringify(report));
+  });
+});
+
+describe('createOrchestratorGroup (D-081)', () => {
+  const evalCase = {
+    id: 'fake-1',
+    input: { tools: ['kb.search', 'user.ask'], messages: [{ role: 'user', content: 'Cerca la caparra nel contratto finto.' }] },
+    expect: { accept: [{ action: 'call', tool: 'kb.search' }] },
+    tags: ['tool'],
+  };
+
+  it('runs the cases on the given model and prompt, with the signal of the run', async () => {
+    const requests: ChatRequest[] = [];
+    const model: LocalModel = {
+      chat: (request) => {
+        requests.push(request);
+        const value = { thought: 'Cerco.', action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } };
+        return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'fake', model: 'candidate', durationMs: 1 });
+      },
+    };
+    const group = createOrchestratorGroup({ model, prompt: 'You are a fake Arianna.' });
+    assert.equal(group.name, 'orchestrator');
+    const controller = new AbortController();
+    const report = await runGroup(group, [evalCase], { signal: controller.signal });
+    assert.ok(report.status !== 'pending');
+    assert.equal(report.passed, 1);
+    assert.deepEqual(report.measures.map((measure) => measure.name), ['schema', 'tool', 'refusal', 'recovery', 'plan']);
+    const request = requests[0];
+    assert.ok(request !== undefined);
+    assert.equal(request.model, 'local-large');
+    assert.match(request.messages[0]?.content ?? '', /You are a fake Arianna\./);
+    assert.equal(request.signal?.aborted, false);
+  });
+
+  it('a cancelled answer is not asked again without the thought', async () => {
+    let calls = 0;
+    const model: LocalModel = {
+      chat: () => {
+        calls += 1;
+        return Promise.reject(new LocalModelError('bad-response', 'fake: not JSON'));
+      },
+    };
+    // Not cancelled: the answer that is not JSON is asked once more (D-051).
+    const report = await runGroup(createOrchestratorGroup({ model: () => model, prompt: () => 'P' }), [evalCase]);
+    assert.equal(report.status, 'failed');
+    assert.equal(calls, 2);
+    calls = 0;
+    const controller = new AbortController();
+    controller.abort();
+    const subject = createOrchestratorGroup({ model, prompt: 'P' }).subject;
+    assert.ok(subject.status === 'active');
+    await assert.rejects(Promise.resolve(subject.evaluate(evalCase.input, controller.signal)), LocalModelError);
+    assert.equal(calls, 1);
   });
 });

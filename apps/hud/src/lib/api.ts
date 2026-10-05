@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -143,6 +144,20 @@ export async function loadCharacters(): Promise<CharacterListing> {
 /** Where the sheet of a character is served. */
 export function sheetUrl(choice: CharacterChoice): string {
   return `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;
+}
+
+/** The trials of catalog models, newest first (D-081). */
+export async function listModelEvals(limit = 20): Promise<ModelEval[]> {
+  return (await call<{ evals: ModelEval[] }>('GET', `/api/model-evals?limit=${String(limit)}`)).evals;
+}
+
+/** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */
+export async function requestModelEval(modelId: string): Promise<string> {
+  return (await call<{ id: string }>('POST', '/api/model-evals', { modelId, role: 'orchestrator' })).id;
+}
+
+export async function cancelModelEval(id: string): Promise<ModelEval> {
+  return (await call<{ eval: ModelEval }>('POST', `/api/model-evals/${encodeURIComponent(id)}/cancel`, {})).eval;
 }
 
 /** A candidate of the voice trial page (D-066). */

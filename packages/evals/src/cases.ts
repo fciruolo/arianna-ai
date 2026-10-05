@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -48,4 +49,20 @@ export function loadCases(groupDir: string): EvalCase[] {
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   if (duplicate !== undefined) throw new CaseFileError(`${groupDir}: duplicate id ${duplicate}`);
   return cases;
+}
+
+/**
+ * sha256 of the `*.jsonl` files of a group folder, names and contents in name
+ * order: which cases a stored result was measured on (D-081). A missing folder
+ * has the fingerprint of no files.
+ */
+export function casesFingerprint(groupDir: string): string {
+  const hash = createHash('sha256');
+  const files = existsSync(groupDir) ? readdirSync(groupDir).filter((file) => file.endsWith('.jsonl')).sort() : [];
+  for (const file of files) {
+    const body = readFileSync(join(groupDir, file));
+    hash.update(`${file}\n${String(body.length)}\n`);
+    hash.update(body);
+  }
+  return hash.digest('hex');
 }

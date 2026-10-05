@@ -9,6 +9,7 @@
   "dependencies": {
     "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
+    "@arianna/evals": "workspace:*",
     "@arianna/executors": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@arianna/router": "workspace:*",
