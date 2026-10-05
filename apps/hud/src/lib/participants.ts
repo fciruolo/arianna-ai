@@ -19,6 +19,15 @@ export function isEventLine(message: Pick<Message, 'role' | 'taskId'>): boolean 
   return message.role === 'system' && message.taskId !== null;
 }
 
+/**
+ * The line that says why Arianna brings an agent in ("Arianna aggiunge
+ * traduttore: …", written by the core in `addingLine`): a little more in view
+ * than the other events (user's request, 2026-10-05).
+ */
+export function isAddingLine(message: Pick<Message, 'role' | 'taskId' | 'body'>): boolean {
+  return isEventLine(message) && message.body.startsWith('Arianna aggiunge ');
+}
+
 /** Where the agent works, as the bar writes it under its name. */
 export function executorText(participant: Pick<Participant, 'executor'>): string {
   if (participant.executor === null) return 'non più attivo';

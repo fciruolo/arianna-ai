@@ -11,7 +11,7 @@ import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
-import { executorText, isEventLine, participantPose, removeText } from '../lib/participants.ts';
+import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
 import ActivityLog from './ActivityLog.vue';
@@ -497,7 +497,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
           <!-- A line of the system about a task: who joined, who left, a wait closed (D-125, D-109) -->
           <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[12px] text-muted">
-            <span class="break-words">{{ message.body }}</span>
+            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line bg-surface-2 px-3 py-1 text-[12.5px] font-medium text-ink' : ''">{{ message.body }}</span>
             <MessageTime class="font-mono text-[10.5px]" :ts="message.ts" :now="now" />
           </p>
 
