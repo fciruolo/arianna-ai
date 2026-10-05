@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 - **Registro delle versioni:** questo file, i tag `vX.Y.Z` su `main` e la pagina "Novità" nelle Impostazioni, con la versione attuale in fondo alla pagina delle Impostazioni.
+- **Domande di "Sviluppo di Arianna" comprensibili da sole** (D-122): ogni domanda mostra cosa si decide, le opzioni con le conseguenze (la consigliata per prima, un clic la mette nella risposta, che resta libera) e un esempio; le 143 domande aperte riscritte così nei documenti.
 
 ## [0.1.2] - 2026-10-05
 

@@ -12,6 +12,7 @@ import {
   filterQuestions,
   groupItems,
   groupQuestions,
+  isPicked,
   markAnswered,
   pendingBadge,
   pendingCount,
@@ -19,6 +20,7 @@ import {
   pendingText,
   percentDone,
   phases,
+  pickOption,
   skippedText,
   type OpenQuestion,
   type ProgressItem,
@@ -35,7 +37,7 @@ const ITEMS: ProgressItem[] = [
 ];
 
 function question(key: string, overrides: Partial<OpenQuestion> = {}): OpenQuestion {
-  return { key, kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Domanda?', detail: null, source: 'PROPOSTE.md', answer: null, ...overrides };
+  return { key, kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Domanda?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null, ...overrides };
 }
 
 test('the bar has three parts summing to 100, empty without items', () => {
@@ -175,4 +177,24 @@ test('the number of the core is read only when it is a count', () => {
   assert.equal(pendingFromBody({ pending: '4' }), 0);
   assert.equal(pendingFromBody(null), 0);
   assert.equal(pendingFromBody('4'), 0);
+});
+
+test('a click on an option puts its label in the answer, in place of another option, keeping what was written (D-122)', () => {
+  const labels = ['Clone separato', 'Stessa cartella'];
+  assert.equal(pickOption('', labels, 'Clone separato'), 'Clone separato');
+  assert.equal(pickOption('  \n', labels, 'Clone separato'), 'Clone separato');
+  // Another option chosen before is replaced, not added.
+  assert.equal(pickOption('Clone separato', labels, 'Stessa cartella'), 'Stessa cartella');
+  // What the user wrote stays, below the label.
+  assert.equal(pickOption('ma solo dopo la prova', labels, 'Clone separato'), 'Clone separato\nma solo dopo la prova');
+  assert.equal(pickOption('Clone separato\nma solo dopo la prova', labels, 'Stessa cartella'), 'Stessa cartella\nma solo dopo la prova');
+  // The same option twice changes nothing.
+  assert.equal(pickOption('Clone separato\nnota', labels, 'Clone separato'), 'Clone separato\nnota');
+});
+
+test('an option shows pressed only when a line of the draft is its label', () => {
+  assert.equal(isPicked('Clone separato\nnota', 'Clone separato'), true);
+  assert.equal(isPicked(' Clone separato ', 'Clone separato'), true);
+  assert.equal(isPicked('Clone separato, ma...', 'Clone separato'), false);
+  assert.equal(isPicked(undefined, 'Clone separato'), false);
 });

@@ -90,7 +90,7 @@ test('an answer goes through the gateway towards Claude Code: allowed is written
 
 test('the event of a key made from a row holds a hash, never the slug', async () => {
   const { sql } = db();
-  const question: OpenQuestion = { key: 'ho-chiave-age-vera', kind: 'waiting', ref: 'In attesa', topic: '', text: 'Chiave age vera', detail: null, source: 'HANDOFF.md', answer: null };
+  const question: OpenQuestion = { key: 'ho-chiave-age-vera', kind: 'waiting', ref: 'In attesa', topic: '', text: 'Chiave age vera', detail: null, explain: null, source: 'HANDOFF.md', answer: null };
   await recordAnswer(sql, { key: question.key, question });
   const events = (await readEvents(sql, { limit: 1000 })).filter((event) => event.kind === 'dev.answer_saved');
   const payload = events.at(-1)?.payload as { key: string; kind: string; source: string };

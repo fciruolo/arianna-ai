@@ -16,6 +16,19 @@ export interface ProgressItem {
   source: string;
 }
 
+export interface QuestionOption {
+  label: string;
+  effect: string;
+  recommended: boolean;
+}
+
+/** Context, options and example of a question (D-122); null when the document does not write them. */
+export interface Explanation {
+  context: string | null;
+  options: QuestionOption[];
+  example: string | null;
+}
+
 export interface OpenQuestion {
   key: string;
   kind: QuestionKind;
@@ -23,6 +36,7 @@ export interface OpenQuestion {
   topic: string;
   text: string;
   detail: string | null;
+  explain: Explanation | null;
   source: string;
   answer: { state: 'new' | 'done'; at: string } | null;
 }
@@ -199,6 +213,25 @@ export function checkAnswer(text: string, max: number): { text: string } | { err
   if (trimmed === '') return { error: ANSWER_EMPTY_TEXT };
   if (trimmed.length > max) return { error: answerTooLongText(max) };
   return { text: trimmed };
+}
+
+/**
+ * The draft after a click on an option (D-122): the label of the option on
+ * the first line, in place of another option chosen before; what the user
+ * wrote stays below it, so nothing typed is lost.
+ */
+export function pickOption(draft: string, labels: readonly string[], label: string): string {
+  const written = draft
+    .split('\n')
+    .filter((line) => !labels.includes(line.trim()))
+    .join('\n')
+    .trim();
+  return written === '' ? label : `${label}\n${written}`;
+}
+
+/** Whether the draft is that option (the button shows it pressed). */
+export function isPicked(draft: string | undefined, label: string): boolean {
+  return (draft ?? '').split('\n').some((line) => line.trim() === label);
 }
 
 /** The question marked as answered now, before the page reloads the list. */

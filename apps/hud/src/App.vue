@@ -295,6 +295,7 @@ watch(page, readDevPending);
 watch(live, (state) => {
   if (state === 'open') readDevPending();
 });
+
 /** "Novità": the register of the versions, reached from the settings. */
 function openChangelog(): void {
   openPage('changelog', CHANGELOG_PATH, 'Novità');

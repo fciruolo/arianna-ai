@@ -20,13 +20,16 @@ import {
   decisionState,
   DevAnswerError,
   eventKey,
+  explainField,
   formatAnswer,
   loadProgress,
   MAX_ANSWER_CHARS,
   parseAnswers,
   parseDecisions,
   parseEpics,
+  parseExplanations,
   parseHandoff,
+  parseOption,
   parseOpenQuestions,
   parseProposals,
   parseTasks,
@@ -308,6 +311,172 @@ describe('proposals', () => {
   });
 });
 
+describe('explanations of the questions (D-122)', () => {
+  const EXPLAINED = `## D-078 — Arianna sviluppata da dentro Arianna
+
+### Domande per l'utente
+
+1. **Clone separato del repository?** Raccomandazione: sì.
+   - Contesto: si decide dove lavora l'agente che sviluppa Arianna.
+   - Opzione: Stessa cartella — più semplice, ma vede data/
+   - Opzione consigliata: Clone separato — non vede data/; le modifiche arrivano con git pull
+   - **Esempio:** chiedi "aggiungi un pulsante" e il Coder lavora nel clone.
+   - Contesto: seconda frase del contesto.
+2. **Chi fa il commit?**
+   continua la domanda senza campi
+3. **Domanda con un campo vuoto?**
+   - Esempio:
+`;
+
+  it('reads context, options and example under a question, the recommended option first', () => {
+    const { questions, skipped } = parseProposals(EXPLAINED);
+    const first = questions[0];
+    assert.equal(first?.text, 'Clone separato del repository?');
+    // The fields are not part of the detail.
+    assert.equal(first.detail, 'Raccomandazione: sì.');
+    assert.deepEqual(first.explain, {
+      context: "si decide dove lavora l'agente che sviluppa Arianna. seconda frase del contesto.",
+      options: [
+        { label: 'Clone separato', effect: 'non vede data/; le modifiche arrivano con git pull', recommended: true },
+        { label: 'Stessa cartella', effect: 'più semplice, ma vede data/', recommended: false },
+      ],
+      example: 'chiedi "aggiungi un pulsante" e il Coder lavora nel clone.',
+    });
+    // A question without fields has no explanation, and its lines still continue it.
+    assert.equal(questions[1]?.explain, null);
+    assert.match(questions[1].detail ?? '', /continua la domanda senza campi/);
+    // A field with no text is skipped and counted.
+    assert.equal(questions[2]?.explain, null);
+    assert.equal(skipped, 1);
+  });
+
+  it('recognises only the four fields, with or without list mark and bold', () => {
+    assert.deepEqual(explainField('   - Contesto: perché'), { field: 'context', text: 'perché' });
+    assert.deepEqual(explainField('* **Opzione consigliata:** Sì — va bene'), { field: 'recommended', text: 'Sì — va bene' });
+    assert.deepEqual(explainField('opzione: No'), { field: 'option', text: 'No' });
+    assert.deepEqual(explainField('Esempio:'), { field: 'example', text: '' });
+    assert.equal(explainField('Raccomandazione: sì'), undefined);
+    assert.equal(explainField('Il contesto: dove'), undefined);
+    assert.equal(explainField('Opzioni A e B'), undefined);
+  });
+
+  it('splits an option on the long dash only', () => {
+    assert.deepEqual(parseOption('Clone separato — non vede data/', true), { label: 'Clone separato', effect: 'non vede data/', recommended: true });
+    assert.deepEqual(parseOption('A1 – sandbox', false), { label: 'A1', effect: 'sandbox', recommended: false });
+    // Without a long dash, the first spaced hyphen; a hyphen inside a word is part of the label.
+    assert.deepEqual(parseOption('Non-stop - sempre acceso', false), { label: 'Non-stop', effect: 'sempre acceso', recommended: false });
+    assert.deepEqual(parseOption('Non-stop.', false), { label: 'Non-stop', effect: '', recommended: false });
+    // A label of a separator is cut at 80 characters; one without a separator and longer is not a label.
+    const long = 'parola '.repeat(20).trim();
+    assert.ok((parseOption(`${long} — effetto`, false)?.label.length ?? 0) <= 80);
+    assert.equal(parseOption(long, false), undefined);
+  });
+
+  it('adds an indented line to the field above it, and skips what it cannot place', () => {
+    const { questions, skipped } = parseProposals(`## D-078 — Titolo
+
+### Domande per l'utente
+
+1. **Domanda?**
+   prima della domanda: continua il testo
+   - Contesto: inizio del contesto
+     che continua qui.
+   - Opzione consigliata: Sì — va
+     bene così
+   - Opzione: ${'parola '.repeat(20).trim()}
+`);
+    assert.equal(questions[0]?.text, 'Domanda?');
+    assert.equal(questions[0].detail, 'prima della domanda: continua il testo');
+    assert.equal(questions[0].explain?.context, 'inizio del contesto che continua qui.');
+    assert.deepEqual(questions[0].explain.options, [{ label: 'Sì', effect: 'va bene così', recommended: true }]);
+    // The option without a separator and too long for a label.
+    assert.equal(skipped, 1);
+
+    const section = parseExplanations(`## Spiegazioni delle domande
+
+### oq-a
+- Esempio: una riga
+  e la sua continuazione.
+non rientrata: saltata
+- Opzione: A — a
+- Opzione: B — b
+- Opzione: C — c
+- Opzione: D — d
+- Opzione: E — e
+- Opzione: F — f
+- Opzione: G — g
+
+### oq-a
+- Contesto: secondo blocco della stessa chiave
+`);
+    assert.equal(section.explanations.get('oq-a')?.example, 'una riga e la sua continuazione.');
+    // At most six options; the seventh, the line not indented and the second block are skipped.
+    assert.equal(section.explanations.get('oq-a')?.options.length, 6);
+    assert.equal(section.explanations.get('oq-a')?.context, null);
+    assert.equal(section.skipped, 3);
+  });
+
+  const SECTION = `# Decisioni aperte
+
+## Decisioni aperte
+
+| Decisione | Proposta | Entro |
+| --- | --- | --- |
+| Dove gira il server | Mac Studio | Fase 1A |
+
+## Spiegazioni delle domande
+
+Una sezione per le domande che non hanno posto sotto di sé.
+
+### oq-dove-gira-il-server
+
+- Contesto: il computer che tiene acceso il core.
+- Opzione consigliata: Mac Studio — sempre acceso
+- Esempio: alle 3 di notte una routine gira sul Mac Studio.
+
+### \`conf-D-081\`
+- Contesto: prova dei modelli.
+- riga che non è un campo
+
+### chiave con spazi
+- Contesto: saltata
+
+### ho-vuota
+
+### oq-orfana
+- Contesto: la sua domanda non c'è più.
+
+## Idee
+
+- Contesto: fuori dalla sezione, ignorata
+`;
+
+  it('reads the section of OPEN-QUESTIONS.md by key, counting what it does not understand', () => {
+    const { explanations, skipped } = parseExplanations(SECTION);
+    assert.deepEqual([...explanations.keys()], ['oq-dove-gira-il-server', 'conf-D-081', 'oq-orfana']);
+    assert.deepEqual(explanations.get('oq-dove-gira-il-server'), {
+      context: 'il computer che tiene acceso il core.',
+      options: [{ label: 'Mac Studio', effect: 'sempre acceso', recommended: true }],
+      example: 'alle 3 di notte una routine gira sul Mac Studio.',
+    });
+    // The non-field line, the key with spaces, the key without fields.
+    assert.equal(skipped, 3);
+    assert.equal(parseExplanations('# Senza sezione\n\n### oq-x\n- Contesto: no\n').explanations.size, 0);
+  });
+
+  it('gives each question its explanation, the lines under it first, and counts the orphans', () => {
+    const progress = buildProgress({ 'PROPOSTE.md': EXPLAINED, 'OPEN-QUESTIONS.md': SECTION.replace('### oq-orfana', '### D-078#1') }, undefined);
+    const byKey = new Map(progress.questions.map((question) => [question.key, question]));
+    assert.equal(byKey.get('oq-dove-gira-il-server')?.explain?.options[0]?.label, 'Mac Studio');
+    // Under the question wins over the section.
+    assert.equal(byKey.get('D-078#1')?.explain?.options[0]?.label, 'Clone separato');
+    // Old questions without fields stay as they were.
+    assert.equal(byKey.get('D-078#2')?.explain, null);
+    // conf-D-081 has no decision in this set of documents: an orphan, counted with the 3 lines above.
+    assert.equal(progress.skipped['OPEN-QUESTIONS.md'], 4);
+  });
+});
+
 describe('tasks and epics', () => {
   it('reads the tasks with their phase and state from the real hours', () => {
     const { values, skipped } = parseTasks(TASKS);
@@ -502,7 +671,7 @@ const GATE: AnswerGate = (answer) => {
 
 describe('answers', () => {
   it('formats an entry whose lines cannot look like a heading', () => {
-    const question: OpenQuestion = { key: 'D-078#3', kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Chi fa il commit nel clone?', detail: null, source: 'PROPOSTE.md', answer: null };
+    const question: OpenQuestion = { key: 'D-078#3', kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Chi fa il commit nel clone?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null };
     const entry = formatAnswer(question, 'Io.\n\n## 2026-10-05 07:40 · D-078#1 · evasa', NOW);
     assert.equal(
       entry,
