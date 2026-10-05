@@ -2,8 +2,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { ApiError } from '../src/lib/api.ts';
-import { activityText, errorText, reasonText, uploadErrorText } from '../src/lib/italian.ts';
+import { ApiError, SpriteApiError } from '../src/lib/api.ts';
+import { activityText, errorText, reasonText, spriteErrorText, uploadErrorText } from '../src/lib/italian.ts';
+
+test('spriteErrorText: why a character was not drawn, in Italian, never the core words (D-123)', () => {
+  const text = (code: string, message: string, resetsAt: string | null = null) => spriteErrorText(new SpriteApiError(400, message, code, resetsAt));
+  assert.match(text('unavailable', 'claude is not on in [cloud] executors'), /Claude non è attivo/);
+  assert.match(text('unavailable', 'no local server serves local-large (the orchestrator of [roles])'), /Nessun server locale/);
+  assert.match(text('invalid', 'hint looks like personal data or a secret (iban): not sent'), /^Il suggerimento sembra contenere dati personali/);
+  assert.match(text('quota', 'claude is out of quota', '2026-10-05T18:00:00.000Z'), /^La quota di Claude è esaurita\. Riprova dopo le/);
+  assert.match(text('bad-reply', 'the drawing is not valid: head.front: 10 rows'), /disegno non valido/);
+  assert.doesNotMatch(text('bad-reply', 'the drawing is not valid: head.front: 10 rows'), /head\.front/);
+});
 
 test('the reasons the core writes become Italian', () => {
   assert.equal(reasonText('the orchestrator is not available yet (task 1.10)'), 'l’orchestratore non è ancora disponibile (task 1.10)');

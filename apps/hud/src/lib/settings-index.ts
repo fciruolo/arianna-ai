@@ -102,7 +102,7 @@ export function hrefOf(item: IndexItem): string {
 
 /** The parts of the settings (the `Section`s of lib/settings.ts) a section edits, if any. */
 export const EDITED_BY: Record<string, readonly string[]> = {
-  roles: ['roles'],
+  roles: ['roles', 'sprites'],
   'cloud-models': ['cloudModels'],
   agents: ['characters', 'personas', 'agents'],
   voice: ['voice'],

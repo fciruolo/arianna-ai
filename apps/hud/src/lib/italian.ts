@@ -447,3 +447,42 @@ export function uploadErrorText(cause: unknown): string {
   if (cause.status === 400) return 'Il PNG è danneggiato o contiene parti non standard: esportalo di nuovo dall’editor come PNG semplice.';
   return errorText(cause);
 }
+
+/** The model of `[sprites]` (D-123), in the words of the page. */
+export const SPRITE_MODEL_TEXT: Readonly<Record<string, string>> = { sonnet: 'Claude Sonnet', opus: 'Claude Opus', local: 'modello locale' };
+
+/** Why a model cannot draw now, from the reason the core gives (D-123). */
+export function spriteReasonText(reason: string): string {
+  if (/not on in \[cloud\] executors/.test(reason)) return 'Claude non è attivo fra gli esecutori cloud (Impostazioni → Esecutori): attivalo o scegli il modello locale per i personaggi.';
+  if (/is off in \[cloud\.models\]/.test(reason)) return 'Il modello scelto per i personaggi è spento in Modelli cloud: riaccendilo o scegline un altro.';
+  if (/cannot run on this installation/.test(reason)) return 'Claude non può partire su questa installazione (sandbox rifiutata): scegli il modello locale per i personaggi.';
+  if (/no local server serves/.test(reason)) return 'Nessun server locale serve il modello dell’orchestratore: configuralo in Server locali o scegli Claude per i personaggi.';
+  return 'Il modello scelto per i personaggi non è disponibile ora.';
+}
+
+/** A drawing refused or failed, in Italian; the core's message is never shown as it is (D-123). */
+export function spriteErrorText(cause: unknown): string {
+  if (!(cause instanceof ApiError)) return errorText(cause);
+  const code = 'code' in cause && typeof cause.code === 'string' ? cause.code : '';
+  const message = cause.message;
+  if (code === 'unavailable') return spriteReasonText(message);
+  if (code === 'busy') return 'Sto già disegnando un personaggio: aspetta che finisca.';
+  if (code === 'quota') {
+    const resets = 'resetsAt' in cause && typeof cause.resetsAt === 'string' ? new Date(cause.resetsAt) : undefined;
+    const when = resets === undefined || Number.isNaN(resets.getTime()) ? '' : ` Riprova dopo le ${resets.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}.`;
+    return `La quota di Claude è esaurita.${when}`;
+  }
+  if (code === 'blocked') return 'Il gateway ha fermato i testi verso il modello: togli dati personali o valori del vault dal nome, dalla descrizione, dal prompt o dal suggerimento.';
+  if (code === 'bad-reply') return 'Il modello ha risposto con un disegno non valido: premi «Rigenera».';
+  if (code === 'failed') return 'Il modello non ha risposto: riprova fra poco.';
+  const personal = /^(name|description|prompt|hint) (looks like personal data|holds a value of the vault)/.exec(message);
+  if (personal !== null) {
+    const field: Record<string, string> = { name: 'Il nome', description: 'La descrizione', prompt: 'Il prompt', hint: 'Il suggerimento' };
+    return `${field[personal[1] ?? ''] ?? 'Un testo'} sembra contenere dati personali o un valore del vault: non lo mando al modello.`;
+  }
+  if (/^(name|description): required/.test(message)) return 'Servono nome e descrizione dell’agente per disegnarlo.';
+  if (/at most \d+ characters/.test(message)) return 'Un testo è troppo lungo: nome al massimo 40 caratteri, descrizione 200, prompt 4000, suggerimento 300.';
+  if (/^(name|description): one line/.test(message)) return 'Nome e descrizione vanno su una riga sola.';
+  // Fields or types the page never sends: a generic message, never the core's words.
+  return 'La richiesta del disegno non è valida: ricarica la pagina e riprova.';
+}

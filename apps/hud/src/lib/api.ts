@@ -209,6 +209,62 @@ export async function uploadCharacter(
   return { saved: data.character };
 }
 
+/** The model that draws a character (D-123), as `[sprites]` of arianna.toml names it. */
+export type SpriteModel = 'sonnet' | 'opus' | 'local';
+
+/** What draws and what leaves, before "Genera personaggio". */
+export interface SpriteInfo {
+  model: SpriteModel;
+  available: boolean;
+  reason: string | null;
+  sends: string[];
+}
+
+/** A drawing not saved yet: "Tieni" sends `png` to uploadCharacter. */
+export interface GeneratedSprite {
+  png: string;
+  rows: 4;
+  model: SpriteModel;
+  label: 'L1';
+}
+
+export function loadSpriteInfo(): Promise<SpriteInfo> {
+  return call<SpriteInfo>('GET', '/api/characters/generate');
+}
+
+/** A refused drawing keeps the core's code (`invalid`, `unavailable`, `busy`, `quota`, `bad-reply`…) and the reset of the quota. */
+export class SpriteApiError extends ApiError {
+  override name = 'SpriteApiError';
+  readonly code: string;
+  readonly resetsAt: string | null;
+
+  constructor(status: number, message: string, code: string, resetsAt: string | null) {
+    super(status, message);
+    this.code = code;
+    this.resetsAt = resetsAt;
+  }
+}
+
+/** One drawing by the model of `[sprites]` (D-123), from the agent's texts and the user's hint. */
+export async function generateSprite(subject: { name: string; description: string; prompt: string; hint: string }): Promise<GeneratedSprite> {
+  const response = await fetch('/api/characters/generate', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(subject),
+  });
+  const data = (await response.json().catch(() => ({}))) as Partial<GeneratedSprite> & { error?: unknown; code?: unknown; resetsAt?: unknown };
+  if (!response.ok || typeof data.png !== 'string') {
+    throw new SpriteApiError(
+      response.status,
+      typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`,
+      typeof data.code === 'string' ? data.code : '',
+      typeof data.resetsAt === 'string' ? data.resetsAt : null,
+    );
+  }
+  return data as GeneratedSprite;
+}
+
 /** The trials of catalog models, newest first (D-081). */
 export async function listModelEvals(limit = 20): Promise<ModelEval[]> {
   return (await call<{ evals: ModelEval[] }>('GET', `/api/model-evals?limit=${String(limit)}`)).evals;

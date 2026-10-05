@@ -42,6 +42,8 @@ export interface SettingsValues {
   personas: Record<string, PersonaValues>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModelAlias }>;
+  /** The model that draws a character (D-123): `[sprites] model`, sonnet when absent. */
+  sprites: 'sonnet' | 'opus' | 'local';
   voice: VoiceValues | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -105,7 +107,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -137,6 +139,7 @@ export const SECTION_TEXT: Record<string, string> = {
   characters: 'Personaggi',
   personas: 'Personalità',
   agents: 'Modelli degli agenti',
+  sprites: 'Modello dei personaggi',
   voice: 'Voce',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',

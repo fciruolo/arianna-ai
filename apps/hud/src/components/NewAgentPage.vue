@@ -32,6 +32,7 @@ import {
   type UserAgentView,
   type UserPermissions,
 } from '../lib/user-agents.ts';
+import CharacterGenerate from './CharacterGenerate.vue';
 import CharacterUpload from './CharacterUpload.vue';
 import Icon from './Icon.vue';
 import PermissionConfirm from './PermissionConfirm.vue';
@@ -360,6 +361,14 @@ function another(): void {
               </select>
             </label>
           </div>
+          <CharacterGenerate
+            :agent-label="form.name || 'il nuovo agente'"
+            :name="form.name"
+            :description="form.description"
+            :prompt="form.prompt"
+            keep="si tiene con «Crea disattivato»"
+            @uploaded="onUploaded"
+          />
           <CharacterUpload :agent-label="form.name || 'il nuovo agente'" keep="si tiene con «Crea disattivato»" @uploaded="onUploaded" />
 
           <div class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">

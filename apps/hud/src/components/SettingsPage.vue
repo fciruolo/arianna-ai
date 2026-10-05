@@ -91,6 +91,8 @@ import {
   type VoiceValues,
 } from '../lib/settings.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
+import { listUserAgents, loadUserAgentPrompt } from '../lib/user-agents.ts';
+import CharacterGenerate from './CharacterGenerate.vue';
 import CharacterUpload from './CharacterUpload.vue';
 import Icon from './Icon.vue';
 import ModelEvals from './ModelEvals.vue';
@@ -126,6 +128,7 @@ interface Forms {
   characters: Record<string, string>;
   personas: Record<string, PersonaForm>;
   agents: AgentsForm;
+  sprites: SettingsValues['sprites'];
   voice: VoiceForm;
   executors: string[];
   telegram: TelegramForm;
@@ -140,6 +143,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     characters: { ...values.characters },
     personas: personasForm(values.personas),
     agents: agentsForm(values.agents, agentModels),
+    sprites: values.sprites,
     voice: voiceForm(values.voice, defaults),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
@@ -148,7 +152,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -252,6 +256,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('voice')) values.voice = voiceBody(current.voice);
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
+  if (parts.includes('sprites')) values.sprites = current.sprites;
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -354,8 +359,19 @@ const characters = ref<CharacterListing | null>(null);
 /** "Novità": the current version, in small at the bottom of the index; null until read or when there is none. */
 const currentVersion = ref<string | null>(null);
 
+/** Agent → its description and whether it is the user's (its prompt can be read): what "Genera personaggio" sends (D-123). */
+const agentTexts = ref<Record<string, { description: string; user: boolean }>>({});
+
 onMounted(() => {
   void reload();
+  void listUserAgents()
+    .then((listing) => {
+      agentTexts.value = Object.fromEntries([
+        ...listing.official.map((agent) => [agent.name, { description: agent.description, user: false }] as const),
+        ...listing.user.map((agent) => [agent.name, { description: agent.description, user: true }] as const),
+      ]);
+    })
+    .catch(() => undefined);
   void loadChangelog()
     .then((changelog) => {
       currentVersion.value = changelog.current;
@@ -705,7 +721,18 @@ watch(active, () => {
 
           <template v-if="forms !== null">
             <!-- Models by role -->
-            <SettingsCard v-if="active === 'roles'" id="roles" title="Modelli locali per ruolo" kind="now" :changed="changed('roles')" :saved="saved === 'roles'" :busy="busy === 'roles'" :error="errors.roles" @cancel="reset('roles')" @save="save('roles')">
+            <SettingsCard
+              v-if="active === 'roles'"
+              id="roles"
+              title="Modelli locali per ruolo"
+              kind="now"
+              :changed="changed('roles') || changed('sprites')"
+              :saved="saved === 'roles'"
+              :busy="busy === 'roles'"
+              :error="errors.roles"
+              @cancel="reset('roles'); reset('sprites')"
+              @save="save('roles', ['roles', 'sprites'])"
+            >
               <div class="flex flex-col">
                 <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1.5 border-t border-line py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[140px_minmax(0,1fr)] md:grid-cols-[140px_minmax(0,1fr)_auto] md:gap-3">
                   <label :for="`role-${role}`" class="font-medium">
@@ -729,6 +756,19 @@ watch(active, () => {
                   </div>
                 </div>
               </div>
+              <!-- D-123: the model that draws a character; Claude Sonnet unless the user chooses -->
+              <div class="grid grid-cols-1 items-center gap-1.5 border-t border-line pt-2.5 sm:grid-cols-[140px_minmax(0,1fr)] md:gap-3">
+                <label for="role-sprites" class="font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
+                <select id="role-sprites" v-model="forms.sprites" class="field min-w-0 px-2 py-1.5 text-[13px]">
+                  <option value="sonnet">Claude Sonnet (predefinito)</option>
+                  <option value="opus">Claude Opus</option>
+                  <option value="local">modello locale (quello dell’orchestratore)</option>
+                </select>
+              </div>
+              <p class="text-xs text-muted">
+                Con Claude, «Genera personaggio» manda verso il cloud, passando dal gateway, nome, descrizione e prompt dell’agente, tono e specializzazione e il tuo suggerimento (L1), e usa
+                la tua quota; serve Claude attivo fra gli esecutori cloud. Con il modello locale non esce nulla.
+              </p>
               <p class="text-xs text-muted">
                 Un modello senza file in <code class="font-mono">data/models</code> si può scegliere, ma va scaricato con
                 <code class="font-mono">pnpm arianna:models pull</code>. Cambiare modello non riavvia oMLX: lo carica per nome alla prossima richiesta.
@@ -854,6 +894,15 @@ watch(active, () => {
                   </div>
                 </div>
                 <SheetPreview v-if="animationsOpen.has(agent) && previewOf(agent)" :src="sheetUrl(previewOf(agent)!, sheetVersion)" :rows="previewOf(agent)!.rows" />
+                <CharacterGenerate
+                  v-if="agentTexts[agent]"
+                  :agent-label="agentName(agent)"
+                  :name="agent"
+                  :description="agentTexts[agent].description"
+                  prompt=""
+                  :fetch-prompt="agentTexts[agent].user ? () => loadUserAgentPrompt(agent) : undefined"
+                  @uploaded="(saved) => onUploaded(agent, saved)"
+                />
                 <CharacterUpload :agent-label="agentName(agent)" @uploaded="(saved) => onUploaded(agent, saved)" />
                 <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                   <label class="flex flex-col gap-1 text-xs text-muted">
