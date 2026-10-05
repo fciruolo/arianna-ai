@@ -185,6 +185,61 @@ body {
   outline: none;
 }
 
+/*
+ * Scrollbars in the style of Claude Code (user's request, 2026-10-05): thin,
+ * no arrows and no track, a rounded thumb in a faint gray from --muted that
+ * shows only while the pointer is over the scrolling area (always, faintly,
+ * on touch screens). Browsers that know scrollbar-color (Firefox, Chrome 121+)
+ * use the standard properties, which in Chrome turn the ::-webkit-scrollbar
+ * rules off; Safari, which lacks it, gets the same look from those rules alone.
+ */
+:root {
+  --scroll-thumb: color-mix(in srgb, var(--muted) 40%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--muted) 70%, transparent);
+  --scroll-thumb-idle: var(--scroll-thumb);
+}
+@media (hover: hover) {
+  :root {
+    --scroll-thumb-idle: transparent;
+  }
+}
+@supports (scrollbar-color: auto) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb-idle) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-color: var(--scroll-thumb-idle);
+    background-clip: padding-box;
+  }
+  :hover::-webkit-scrollbar-thumb {
+    background-color: var(--scroll-thumb);
+  }
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scroll-thumb-hover);
+  }
+}
+
 @layer components {
   /* Section titles of the HUD: small caps, wide tracking. */
   .hud-title {
