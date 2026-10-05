@@ -2482,7 +2482,8 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-3 | Una pagina "Modelli" sola, locali e cloud, con le schede | funzione | 28-41 h (tappe M1-M6) | task 1.16 per M6 | proposta `docs/I-3-modelli.md` (ramo `task/i3-modelli-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |
 | I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
-| I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | da progettare (richiesta dell'utente del 2026-10-05 sera) |
+| I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | scelta fatta (tutta la conversazione, una nota che si aggiorna): da scrivere come decisione e implementare |
+| I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | proposta qui sotto, 2 domande (richiesta dell'utente del 2026-10-05 sera) |
 
 ### I-1, notifiche delle risposte
 
@@ -2511,6 +2512,24 @@ Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre un
 ### I-7, salvare l'intera conversazione nella conoscenza
 
 Richiesta dell'utente (2026-10-05, sera): "un pulsante che permetta di salvare l'intera conversazione (ovviamente con il riassunto, contesto ecc come succede per il singolo messaggio) nella conoscenza (Salva in inbox)". Da progettare partendo da "Salva in inbox" del messaggio e dai riassunti a pezzi delle conversazioni (`conversation_summaries`): una nota in `kb/inbox/` con titolo, riassunto, contesto e testo; etichetta = la più alta dei messaggi salvati (una conversazione privata resta L2); da decidere dove sta il pulsante, se salva tutto o un intervallo, come tratta righe di sistema e rapporti degli agenti, e cosa succede a un secondo salvataggio della stessa conversazione.
+
+- **Scelta dell'utente (2026-10-05, sera):** "Salva in inbox" nella testata della chat salva **tutta la conversazione**: messaggi dell'utente, di Arianna e rapporti degli agenti, senza le righe di sistema; titolo e riassunto dal modello locale come per il singolo messaggio; etichetta = la più alta dei messaggi salvati. **Un secondo salvataggio aggiorna la stessa nota** (la nota ricorda l'id della conversazione), non ne crea un'altra. Restano da decidere nella decisione: cosa succede se la nota è stata spostata o modificata a mano in `kb/`, e il limite di lunghezza per il riassunto del modello locale.
+
+### I-8, un agente esce da solo dalla conversazione
+
+Richiesta dell'utente (2026-10-05, sera), dopo aver chiesto come funziona D-125: oggi un agente entrato resta nella barra finché l'utente non lo toglie, e Arianna non lo fa mai uscire. Restare dentro non costa nulla e non manda dati all'agente (riceve solo il brief di ogni delega), ma la barra si riempie di agenti che non servono più. Proposta: l'uscita la decide il codice, senza strumenti nuovi per Arianna né passi del modello in più; scrive in chat "<agente> è uscito" (riga di sistema come "Hai tolto"), con `removed_at` e l'evento `participant.removed` già esistenti; l'agente rientra alla delega seguente con le stesse righe di D-125.
+
+1. **Quando esce un agente da solo?**
+   - Contesto: Un agente entrato in una conversazione oggi resta nella barra per sempre, finché non lo togli tu. Si decide quale regola lo fa uscire da solo; la regola la applica il codice, non il modello, quindi non rallenta Arianna.
+   - Opzione consigliata: Dopo 10 messaggi senza deleghe — esce quando sono passati 10 tuoi messaggi senza che Arianna gli abbia passato lavoro; il numero si cambia nelle Impostazioni.
+   - Opzione: Dopo un'ora senza deleghe — esce se Arianna non gli passa lavoro da un'ora, anche se la conversazione continua.
+   - Opzione: Alla chiusura della conversazione — resta finché la conversazione è aperta ed esce quando la chiudi o la archivi.
+   - Esempio: Chiedi una traduzione, entra il traduttore; poi parli con Arianna di altro per 10 messaggi: compare "traduttore è uscito" e la barra si svuota.
+2. **Vale anche per il Coder?**
+   - Contesto: Il Coder lavora su un progetto e spesso torna utile dopo molti messaggi; gli agenti che rispondono e basta (traduttore, oroscopo) servono di solito una volta. Si decide se la regola della domanda 1 vale per tutti.
+   - Opzione consigliata: Tutti tranne il Coder — il Coder resta finché non lo togli; gli altri escono con la regola.
+   - Opzione: Tutti — anche il Coder esce con la regola e rientra alla delega seguente.
+   - Esempio: In una conversazione di lavoro sul progetto demo il Coder resta nella barra tutta la sera; il traduttore entrato per una frase esce dopo 10 messaggi.
 
 ### Risposte dell'utente sulle idee (2026-10-05, sera)
 
