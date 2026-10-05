@@ -6,7 +6,7 @@ import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_M
 import { canSaveToInbox } from '../lib/capture.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
-import type { ChatState } from '../lib/chat-state.ts';
+import { activityLines, type ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
@@ -138,9 +138,7 @@ function taskOf(message: Message): Task | undefined {
 /** What the task of a user message is doing, while it is queued or running (D-054). */
 function activityOf(message: Message): Activity[] {
   if (message.role !== 'user' || message.taskId === null) return [];
-  const status = props.tasks[message.taskId]?.status;
-  if (status !== undefined && status !== 'ready' && status !== 'running') return [];
-  return props.chat.activity[message.taskId] ?? [];
+  return activityLines(props.chat, message.taskId, props.tasks[message.taskId]?.status);
 }
 
 /** The approvals a user message's task waits for. */

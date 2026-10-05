@@ -184,7 +184,9 @@ function toolError(detail: string): string {
 export function activityText(activity: Activity | SavedActivity): string {
   switch (activity.kind) {
     case 'thinking':
-      return `Sto ragionando (passo ${String(activity.step)})…`;
+      // Step 0: nothing known yet, as after a reload before the first saved line.
+      if (activity.step > 0) return `Sto ragionando (passo ${String(activity.step)})…`;
+      return activity.detail === 'queued' ? 'In coda…' : 'Sto lavorando…';
     case 'search':
       return `Cerco nella knowledge base: «${activity.detail}»`;
     case 'read':

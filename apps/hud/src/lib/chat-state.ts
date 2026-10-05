@@ -1,4 +1,4 @@
-import type { Activity, Delta, Message } from './types.ts';
+import type { Activity, Delta, Message, SavedActivity } from './types.ts';
 
 /**
  * The open conversation: stored messages plus the answers being written.
@@ -26,6 +26,9 @@ export function emptyChat(conversationId: string): ChatState {
   return { conversationId, messages: [], streaming: [], activity: {} };
 }
 
+/** The detail of the waiting line of a queued task (step 0, never a real step). */
+export const QUEUED = 'queued';
+
 /** Longest activity kept per task: older lines scroll away. */
 const MAX_ACTIVITY = 30;
 
@@ -40,6 +43,35 @@ export function applyActivity(state: ChatState, activity: Activity): ChatState {
   const last = lines.at(-1);
   if (last !== undefined && last.step === activity.step && last.kind === activity.kind && last.detail === activity.detail) return state;
   return { ...state, activity: { ...state.activity, [activity.taskId]: [...lines, activity].slice(-MAX_ACTIVITY) } };
+}
+
+/**
+ * The lines a task saved so far (D-083), put back after a reload while it is
+ * still queued or running: the live lines arrived meanwhile follow them, once.
+ */
+export function restoreActivity(state: ChatState, taskId: string, saved: readonly SavedActivity[]): ChatState {
+  const key = (line: Pick<Activity, 'step' | 'kind' | 'detail'>): string => `${String(line.step)}\u0000${line.kind}\u0000${line.detail}`;
+  const restored: Activity[] = saved.map(({ step, kind, detail }) => ({ conversationId: state.conversationId, taskId, step, kind, detail }));
+  const known = new Set(restored.map(key));
+  const lastStep = Math.max(0, ...saved.map((line) => line.step));
+  // "thinking" is never saved: one of a step the saved lines went past is stale.
+  const live = (state.activity[taskId] ?? []).filter((line) => !known.has(key(line)) && !(line.kind === 'thinking' && line.step < lastStep));
+  const lines = [...restored, ...live].slice(-MAX_ACTIVITY);
+  if (lines.length === 0) return state;
+  return { ...state, activity: { ...state.activity, [taskId]: lines } };
+}
+
+/**
+ * What the card of a task shows: its lines while it is queued or running,
+ * and a waiting line when none arrived yet (a page reloaded before the first
+ * saved line). A stopped task shows nothing: its saved steps open below the
+ * answer.
+ */
+export function activityLines(state: ChatState, taskId: string, status: string | undefined): Activity[] {
+  if (status !== undefined && status !== 'ready' && status !== 'running') return [];
+  const lines = state.activity[taskId] ?? [];
+  if (lines.length > 0 || status === undefined) return lines;
+  return [{ conversationId: state.conversationId, taskId, step: 0, kind: 'thinking', detail: status === 'ready' ? QUEUED : '' }];
 }
 
 /** Adds messages of this conversation, without duplicates, in id order. */

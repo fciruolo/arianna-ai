@@ -3,7 +3,7 @@ import { computed, ref, shallowRef } from 'vue';
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, type CallInfo } from './lib/calls.ts';
-import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
+import { applyActivity, applyDelta, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { draftStep, firstMessageProblem, type Draft } from './lib/draft.ts';
@@ -228,6 +228,26 @@ export function createChatStore() {
     if (chat.value?.conversationId !== state.conversationId) return;
     chat.value = mergeMessages(chat.value, messages);
     await Promise.all([...taskIds(chat.value).map(refreshTask), refreshCredits(), refreshActivityCounts()]);
+    // Not awaited: the card of the steps never holds back messages and replies.
+    void restoreRunning();
+  }
+
+  /**
+   * After a reload (or a reconnection) the live lines of a task still at work
+   * are gone: the lines it saved so far come back (D-083), so the card keeps
+   * showing what it is doing instead of vanishing.
+   */
+  async function restoreRunning(): Promise<void> {
+    const state = chat.value;
+    if (state === null) return;
+    const running = taskIds(state).filter((id) => tasks.value[id]?.status === 'ready' || tasks.value[id]?.status === 'running');
+    await Promise.all(
+      running.map(async (id) => {
+        // A conversation deleted meanwhile, the core restarting: the live lines stay as they are.
+        const saved = await api.listActivities(id).catch(() => undefined);
+        if (saved !== undefined && chat.value?.conversationId === state.conversationId) chat.value = restoreActivity(chat.value, id, saved);
+      }),
+    );
   }
 
   async function refreshActivityCounts(): Promise<void> {
