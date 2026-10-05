@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.9.1] - 2026-10-05
+
+### Cambiato
+- Le schede proposte da `pnpm agency:import` nascono dentro i permessi degli agenti utente: un esecutore, punto di partenza `code` (engineering, testing) o `answer` (le altre divisioni), sempre L0 con prompt L0 (D-119, preparazione della tappa T4; D-079).
+
+### Rimosso
+- `templateFor` di `packages/agents` e la scelta del modello `web` per le divisioni del web (D-119).
+
 ## [0.9.0] - 2026-10-05
 
 ### Aggiunto

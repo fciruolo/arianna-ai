@@ -197,12 +197,7 @@ Importatore a sola lettura, che non attiva nulla e non tocca prompt, router né 
    - Opzione: Comando pnpm agency:fetch — lo fa da solo; più comodo, ma è codice in più che scarica dalla rete, da scrivere e controllare.
    - Opzione: Più avanti, quando servirà il catalogo — nessun passo ora; l'importatore resta inutilizzato.
    - Esempio: Nel terminale lanci git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents e poi il checkout; pnpm agency:import ti stampa lo sha completo, che Claude copia in config/agency.lock.
-3. **Tetto delle schede adottate: L1 o L0?** Raccomandazione: L1 per `engineering` e `testing` (lavorano sul codice dei progetti approvati), L0 per tutte le altre (marketing, vendite, finanza: non devono vedere nemmeno gli appunti di lavoro); mai L2.
-   - Contesto: L0, L1, L2 sono i livelli di riservatezza: L0 pubblico, L1 lavoro, L2 privato. Il "tetto" di una scheda è il livello più alto di dati che quell'agente può leggere. Un prompt scritto da terzi potrebbe contenere istruzioni malevole, quindi conviene che veda il meno possibile.
-   - Opzione consigliata: L1 solo per codice e test — L1 per engineering e testing, L0 per tutte le altre, mai L2; chi lavora sul codice vede i progetti di lavoro; marketing, vendite, finanza non vedono nemmeno gli appunti di lavoro.
-   - Opzione: L1 per tutte — più agenti utili sul lavoro, ma anche un agente di marketing leggerebbe i tuoi appunti di lavoro.
-   - Opzione: L0 per tutte — massima prudenza, ma gli agenti di codice non possono lavorare sui tuoi progetti.
-   - Esempio: Adotti "Content Creator" (marketing) e "Code Reviewer" (engineering). Il primo scrive un post partendo solo da ciò che gli scrivi nel messaggio; il secondo può leggere il codice del progetto "sito-demo", ma nessuno dei due vede note private.
+3. **Tetto delle schede adottate:** chiusa dalla scelta di T3b (D-119): le schede di agency-agents restano L0, con prompt L0.
 4. **Autonomia delle schede adottate: A0 (solo proposte) o A1 (sandbox)?** Raccomandazione: A0 per le divisioni senza codice, A1 per `engineering`/`testing` con gli strumenti del Coder.
    - Contesto: L'autonomia dice quanto un agente può fare da solo: A0 = solo proposte (scrive testo, non tocca file), A1 = lavora nella sandbox (una gabbia senza rete) con gli strumenti del Coder. Si decide l'autonomia delle schede prese dal catalogo.
    - Opzione consigliata: A0, A1 solo per codice e test — A0 per le divisioni senza codice, A1 per engineering e testing; chi scrive codice può provarlo nella gabbia; gli altri si limitano a proporre testo.
