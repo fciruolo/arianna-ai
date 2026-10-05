@@ -13,6 +13,10 @@ import {
   groupItems,
   groupQuestions,
   markAnswered,
+  pendingBadge,
+  pendingCount,
+  pendingFromBody,
+  pendingText,
   percentDone,
   phases,
   skippedText,
@@ -137,4 +141,38 @@ test('the page of the development has its own address, not the settings one', ()
   assert.equal(isDevPath(`${DEV_PATH}/`), true);
   assert.equal(isDevPath('/sviluppo/altro'), false);
   assert.equal(isSettingsPath(DEV_PATH), false);
+});
+
+test('the dot counts the questions without an answer, sent or applied (D-120)', () => {
+  const questions = [
+    question('D-078#1'),
+    question('D-078#2', { answer: { state: 'new', at: '2026-10-05 07:40' } }),
+    question('conf-D-081', { kind: 'confirm', answer: { state: 'done', at: '' } }),
+    question('D-078#3'),
+  ];
+  assert.equal(pendingCount(questions), 2);
+  assert.equal(pendingCount(markAnswered(questions, 'D-078#1', '2026-10-05 08:00')), 1);
+  assert.equal(pendingCount([]), 0);
+});
+
+test('the dot says how many questions wait, singular for one, nothing for none', () => {
+  assert.equal(pendingText(1), 'Devi rispondere a 1 quesito');
+  assert.equal(pendingText(3), 'Devi rispondere a 3 quesiti');
+  assert.equal(pendingText(0), null);
+  assert.equal(pendingText(-2), null);
+  assert.equal(pendingText(Number.NaN), null);
+  assert.equal(pendingBadge(7), '7');
+  assert.equal(pendingBadge(99), '99');
+  assert.equal(pendingBadge(150), '99+');
+  assert.equal(pendingBadge(0), null);
+});
+
+test('the number of the core is read only when it is a count', () => {
+  assert.equal(pendingFromBody({ pending: 4 }), 4);
+  assert.equal(pendingFromBody({ pending: 0 }), 0);
+  assert.equal(pendingFromBody({ pending: -1 }), 0);
+  assert.equal(pendingFromBody({ pending: 2.5 }), 0);
+  assert.equal(pendingFromBody({ pending: '4' }), 0);
+  assert.equal(pendingFromBody(null), 0);
+  assert.equal(pendingFromBody('4'), 0);
 });

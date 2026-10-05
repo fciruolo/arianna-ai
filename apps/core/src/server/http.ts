@@ -32,7 +32,7 @@ import {
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import { DelegationFileError, listCredits, listRecentDelegations, readDelegationFile } from '../delegation-view.ts';
-import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
@@ -947,6 +947,8 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
   };
   return [
     route('GET', '/api/dev/progress', () => Promise.resolve({ body: { progress: loadProgress(need().home), maxAnswer: MAX_ANSWER_CHARS } })),
+    // The dot of the chat (D-120): only the number leaves, no text of the documents.
+    route('GET', '/api/dev/pending', () => Promise.resolve({ body: { pending: pendingQuestions(loadProgress(need().home)) } })),
     route('POST', '/api/dev/answers', async (request) => {
       const { home, gate = viaGateway, recorded = (saved) => recordAnswer(sql, saved) } = need();
       const body = await readJson(request, 64 * 1024);

@@ -213,3 +213,27 @@ export function skippedText(skipped: Record<string, number>): string | null {
     .map(([doc, count]) => `${String(count)} in ${doc}`);
   return parts.length === 0 ? null : `Righe non riconosciute e saltate: ${parts.join(', ')}.`;
 }
+
+/** The questions that wait for the user (D-120): open and without an answer, sent or applied. */
+export function pendingCount(questions: readonly OpenQuestion[]): number {
+  return questions.filter((question) => question.answer === null).length;
+}
+
+/** The number in the body of GET /api/dev/pending, or 0 for anything else. */
+export function pendingFromBody(body: unknown): number {
+  if (typeof body !== 'object' || body === null || !('pending' in body)) return 0;
+  const { pending } = body;
+  return typeof pending === 'number' && Number.isSafeInteger(pending) && pending > 0 ? pending : 0;
+}
+
+/** "Devi rispondere a 3 quesiti", singular for one; null when nothing waits. */
+export function pendingText(count: number): string | null {
+  if (!Number.isSafeInteger(count) || count <= 0) return null;
+  return count === 1 ? 'Devi rispondere a 1 quesito' : `Devi rispondere a ${String(count)} quesiti`;
+}
+
+/** What the dot shows: the number, 99+ above 99; null when there is no dot. */
+export function pendingBadge(count: number): string | null {
+  if (!Number.isSafeInteger(count) || count <= 0) return null;
+  return count > 99 ? '99+' : String(count);
+}

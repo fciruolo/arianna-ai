@@ -667,6 +667,16 @@ export function loadProgress(home: string): Progress {
   return buildProgress(docs, readDoc(join(home, ANSWERS_FILE)));
 }
 
+/**
+ * The questions that wait for an answer of the user (D-120): open in the
+ * documents and without an entry in data/dev/RISPOSTE.md or a section of
+ * answers in PROPOSTE.md. An answer still to apply (`nuova`) waits for Claude,
+ * not for the user, so it does not count.
+ */
+export function pendingQuestions(progress: Pick<Progress, 'questions'>): number {
+  return progress.questions.filter((question) => question.answer === null).length;
+}
+
 export class DevAnswerError extends Error {
   override name = 'DevAnswerError';
   readonly code: 'invalid' | 'unknown-question' | 'blocked' | 'unavailable';

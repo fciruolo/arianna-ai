@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import type { IconName } from '../icons.ts';
+import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import type { LiveState } from '../lib/live.ts';
 import { activeText } from '../lib/sidebar.ts';
 import type { Pose } from '../lib/sprites.ts';
@@ -33,6 +34,8 @@ const props = defineProps<{
   /** Why "Chiama" cannot call now, or undefined. */
   callBlocked: string | undefined;
   callStarting: boolean;
+  /** Open questions of "Sviluppo di Arianna" without an answer (D-120): a dot on "Impostazioni". */
+  devPending: number;
 }>();
 const emit = defineEmits<{
   fold: [];
@@ -52,6 +55,8 @@ const emit = defineEmits<{
   purge: [id: string];
 }>();
 
+const devDot = computed(() => pendingBadge(props.devPending));
+const devLabel = computed(() => pendingText(props.devPending));
 const active = computed(() => props.agentIds.filter((id) => props.poseFor(id) !== 'idle').length);
 const callOff = computed(() => props.callBlocked !== undefined || props.callStarting);
 function call(): void {
@@ -142,6 +147,14 @@ function itemClass(on: boolean): string {
         @click="emit('settings')"
       >
         <Icon name="settings" :size="16" />Impostazioni
+        <!-- Questions of "Sviluppo di Arianna" that wait for an answer (D-120). -->
+        <span
+          v-if="devDot !== null"
+          role="img"
+          class="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
+          :title="devLabel ?? undefined"
+          :aria-label="devLabel ?? undefined"
+        >{{ devDot }}</span>
       </button>
     </nav>
 

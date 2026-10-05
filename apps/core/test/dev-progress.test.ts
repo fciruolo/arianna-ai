@@ -30,6 +30,7 @@ import {
   parseOpenQuestions,
   parseProposals,
   parseTasks,
+  pendingQuestions,
   saveAnswer,
   type AnswerGate,
   type OpenQuestion,
@@ -445,6 +446,28 @@ describe('the page', () => {
     assert.equal(answerOf('D-078#3'), null);
   });
 
+  it('counts the questions that wait for the user: not those answered, applied or still to apply (D-120)', () => {
+    assert.equal(pendingQuestions(buildProgress(docs, undefined)), 10);
+    const answers = `${ANSWERS_HEADER}
+## 2026-10-05 07:40 · D-078#1 · evasa
+
+> sì
+
+## 2026-10-05 07:41 · conf-D-081 · nuova
+
+> confermo
+`;
+    assert.equal(pendingQuestions(buildProgress(docs, answers)), 8);
+    // An entry for a question no longer in the documents changes nothing.
+    assert.equal(pendingQuestions(buildProgress(docs, `${ANSWERS_HEADER}\n## 2026-10-05 07:40 · D-001#9 · nuova\n\n> x\n`)), 10);
+  });
+
+  it('counts no pending question without documents or questions', () => {
+    assert.equal(pendingQuestions(buildProgress({}, undefined)), 0);
+    assert.equal(pendingQuestions(buildProgress({ 'DECISIONS.md': '' }, '')), 0);
+    assert.equal(pendingQuestions({ questions: [] }), 0);
+  });
+
   it('survives missing and empty documents', () => {
     const progress = buildProgress({ 'DECISIONS.md': '' }, '');
     assert.equal(progress.items.length, 0);
@@ -659,6 +682,30 @@ describe('routes', () => {
     assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#2', text: 'sì' }, { origin: 'http://evil.example' })).status, 403);
     assert.equal(recorded.length, 1);
     assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
+  });
+
+  it('serves only the number of the questions waiting for the user (D-120)', async (t) => {
+    const home = makeHome();
+    const server = await startApiServer({
+      sql: undefined as unknown as Sql,
+      live: undefined as unknown as LiveFeed,
+      host: '127.0.0.1',
+      port: 0,
+      devProgress: { home, gate: GATE, recorded: () => Promise.resolve() },
+    });
+    const bare = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
+    t.after(async () => {
+      await server.close();
+      await bare.close();
+    });
+    const expected = pendingQuestions(loadProgress(home));
+    assert.ok(expected > 0);
+    const before = await send(server.port, 'GET', '/api/dev/pending');
+    assert.equal(before.status, 200);
+    assert.deepEqual(before.body, { pending: expected });
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#1', text: 'sì' })).status, 201);
+    assert.deepEqual((await send(server.port, 'GET', '/api/dev/pending')).body, { pending: expected - 1 });
+    assert.equal((await send(bare.port, 'GET', '/api/dev/pending')).status, 404);
   });
 
   it('answers 201 with logged false when the event fails, and 404 without the option', async (t) => {
