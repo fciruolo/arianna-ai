@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 import { checkArt, renderSheet, type CharacterArt, type Part } from '../characters/compose.ts';
-import { NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, sheetPng } from '../characters/originals.ts';
+import { APP_ICONS, headIconPng, NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, publicPath, sheetPng } from '../characters/originals.ts';
 import { encodePng } from '../characters/png.ts';
 
 test('the sheets in git are the ones the pixel maps give (run node apps/hud/characters/build.ts after a change)', () => {
@@ -16,6 +16,26 @@ test('the sheets in git are the ones the pixel maps give (run node apps/hud/char
 
 test('the icon of the notifications in git is the head of Arianna the pixel maps give (I-1)', () => {
   assert.deepEqual(readFileSync(NOTIFICATION_ICON), notificationIconPng());
+});
+
+test('the icons of the installed app in git are the head the pixel maps give, and the manifest lists them (D-126)', () => {
+  for (const icon of APP_ICONS) {
+    assert.deepEqual(readFileSync(publicPath(icon.file)), headIconPng(icon.size, icon.scale), icon.file);
+    assert.ok(16 * icon.scale <= icon.size, icon.file);
+    // A maskable icon keeps only a safe circle of 80% of the side: the whole head stays inside it.
+    if (icon.purpose === 'maskable') assert.ok(16 * icon.scale * Math.SQRT2 <= 0.8 * icon.size, icon.file);
+  }
+  const manifest = JSON.parse(readFileSync(publicPath('manifest.webmanifest'), 'utf8')) as {
+    name: string;
+    display: string;
+    icons: { src: string; sizes: string; purpose: string }[];
+  };
+  assert.equal(manifest.name, 'Arianna');
+  assert.equal(manifest.display, 'standalone');
+  assert.deepEqual(
+    manifest.icons.map(({ src, sizes, purpose }) => [src, sizes, purpose]),
+    APP_ICONS.map((icon) => [`/${icon.file}`, `${String(icon.size)}x${String(icon.size)}`, icon.purpose]),
+  );
 });
 
 test('pack.json lists every original sheet', () => {
