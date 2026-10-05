@@ -262,3 +262,237 @@ Seconda parte, dopo le risposte: strumento `kb.capture` per Arianna (tocca `pack
 - Se `claude -p` con il profilo di D-049 legge `CLAUDE.md` del progetto e ignora gli hook di `.claude/` del clone (D-078).
 - Se `mlx-audio` 0.5.7 gestisce audio lunghi con Parakeet senza spezzarli a mano (D-080).
 - Se Safari su iOS supporta oggi `share_target` delle PWA (D-080; ricordo di no).
+
+## Seconda serie (notte del 2026-10-05, richiesta dell'utente alle 05:15)
+
+## D-093 — openwork: idee sì, integrazione no
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere
+- **Collegate:** D-002 (esecutori come processi), D-050 (sandbox), D-055/D-056/D-058 (Coder nei progetti), D-063 (niente motori esterni), D-079 (catalogo di terzi non fidato), D-082/D-083 (attività e file), P10 di `OPENDOTS.md`
+
+### Contesto
+
+**Cos'è.** OpenWork (`different-ai/openwork`) si presenta come "the free, open-source alternative to Claude Cowork": un'app desktop in cui un agente lavora sui file locali, con skill, server MCP, automazioni programmate, browser integrato e, per i team, un piano di controllo ("OpenWork Den") per condividere skill, plugin e connessioni e governare modelli e costi.
+
+**Licenza: divisa per cartella**, testo letto in `LICENSE`: "Copyright (c) 2026-present Different AI, Inc."; tutto ciò che sta fuori da `ee/` è **MIT** (obbligo: tenere avviso di copyright e permesso nelle copie o parti sostanziali); ciò che sta in `ee/` è sotto la **OpenWork Enterprise Edition License**, source-available (gratuita fino a 5 utenti, 30 giorni di prova, sempre libera per sviluppo e test; le release di `ee/` diventano MIT dopo 2 anni); le release più vecchie erano FSL-1.1-MIT. **Attenzione:** `apps/app/package.json` dipende da `@openwork-ee/telemetry-contracts` (`workspace:*`), quindi l'app "MIT" importa un pacchetto della parte EE: copiare l'app intera non è un'operazione solo MIT.
+
+**Architettura** (da README, `AGENTS.md` e `package.json`):
+- Electron 43 + React (shadcn/ui, TanStack Query, Zustand, Zod, Drizzle, `better-sqlite3`), Node 24, pnpm; cartelle `apps/{app,desktop,server,review,ui-demo}`, `packages/`, `ee/`, `evals/`, `worlds/`, `.opencode/skills/`.
+- **Il motore è OpenCode**: `@opencode-ai/sdk` in app e desktop; "anything OpenCode can do is available in OpenWork". OpenWork è un'interfaccia e un server sopra un orchestratore altrui.
+- **Modelli:** "50+ providers", chiavi proprie, accesso con ChatGPT o Claude Code, modelli locali via Ollama o endpoint compatibili OpenAI. Il loop dell'agente, quindi, gira in OpenCode e chiama le API dei fornitori (o un endpoint locale).
+- **Cloud:** Den (piano di controllo cloud o self-hosted), gateway MCP con OAuth, integrazioni Google Workspace e Microsoft 365. "Your files stay local. Cloud is optional."
+- **Telemetria:** `@sentry/electron` nel processo desktop (segnalazione errori verso Sentry) e il pacchetto `telemetry-contracts` nell'app; le release parlano di una panoramica "chi spende cosa e su quali modelli". Il README non dice cosa esce né come spegnerlo. `electron-updater` controlla gli aggiornamenti in rete.
+- **Esecuzione:** `node-pty` (terminale vero), `@xterm/xterm` nell'interfaccia, browser integrato. **Nessuna sandbox documentata**: né README né `AGENTS.md` parlano di confinamento, container o permessi del sistema operativo.
+- **Estensione:** skill, server MCP, plugin "compatibili Anthropic", marketplace interno; il gateway espone quattro strumenti MCP (`search_capabilities`, `execute_capability`, `list_skills`, `get_skill`).
+
+**Maturità:** molto attivo. Ultime release v0.18.56 e v0.18.55 (3 ottobre 2026), v0.18.54 (25 settembre); circa 24 mila stelle, 2,4 mila fork, 5,7 mila commit sul branch `dev`, ~290 issue e ~310 PR aperte. Versione 0.x: interfacce che cambiano ogni settimana.
+
+**Cosa fa davvero per l'utente:** è Claude Cowork senza Anthropic: una chat desktop che apre una cartella, lavora sui file con un modello qualsiasi, lancia comandi in un terminale, naviga in un browser integrato, esegue skill e automazioni, e in azienda condivide tutto via Den.
+
+**Cosa Arianna ha già, voce per voce:**
+
+| OpenWork | Arianna oggi |
+| --- | --- |
+| Agente che lavora su una cartella | Coder delegato su `claude -p` (poi `codex exec`) nella cartella vera del progetto approvato (D-055, D-056, D-058), con sandbox senza rete né loopback (D-050) |
+| Motore OpenCode, 50+ fornitori via API | Esecutori solo come binari ufficiali con abbonamento (D-002), modello locale su oMLX; niente API key |
+| Terminale e browser integrati | Righe di attività dal vivo e salvate (D-083), file modificati e chi ha fatto cosa (D-082); terminale e browser: P10, da fare (D-095) |
+| Skill e marketplace | Schede agente YAML (D-034), catalogo di terzi non fidato (D-079) |
+| Automazioni programmate | Scheduler della fase 2 |
+| Den: team, costi, policy | Fuori scopo (un utente); costi per delega in D-082 |
+| Nessuna etichetta sui dati | Etichette L0-L3, gateway unico, default-deny |
+
+### Proposta
+
+**Non integrare OpenWork, né come app accanto ad Arianna né come esecutore.** Prendere tre idee e riscriverle nel nostro stack, senza copiare codice:
+
+1. **Terminale del run in diretta** (loro: `node-pty` + xterm): diventa la tappa 1 di D-095, ma in **sola lettura** e alimentato dagli eventi che il core già riceve da `claude -p`, non da un pty che l'utente o l'agente comandano.
+2. **Anteprima isolata dei file HTML** (release recenti: "HTML file preview isolation"): diventa la parte (b) di D-094.
+3. **Rassegna delle capacità in quattro verbi** (`search/execute capability`, `list/get skill`): è la stessa idea del caricamento differito già in D-079 (nel catalogo solo nome e descrizione, corpo caricato solo per una scheda attiva). Da ricordare quando si scrive il server MCP di Arianna (1.10): pochi strumenti generici invece di uno per capacità.
+
+Nessuna dipendenza nuova; nessun file di OpenWork copiato (se un giorno lo si fa, solo da fuori `ee/`, con l'avviso MIT in `third_party/openwork/LICENSE` come per OpenDots).
+
+### Alternative scartate
+
+- **Usare OpenWork come interfaccia al posto della chat di Arianna.** Porterebbe un secondo orchestratore (OpenCode) che non conosce etichette, gateway né approvazioni: è esattamente ciò che D-063 esclude ("un motore esterno sarebbe un secondo orchestratore su cui reimporre da fuori gateway, etichette e default-deny").
+- **OpenWork/OpenCode come terzo esecutore cloud accanto a `claude` e `codex`.** OpenCode chiama i fornitori via API con chiavi (o con l'accesso ChatGPT/Claude di OpenWork): contraddice D-002 e la regola "solo binari ufficiali `claude` e `codex`, nessun token". Con un modello locale non serve: per il codice L2 c'è già il modello locale, e Codex con provider locale è la strada prevista (`OPEN-QUESTIONS.md`).
+- **Adattatore che parla con un OpenWork installato dall'utente** (Arianna manda brief, OpenWork esegue). Il brief uscirebbe dal gateway verso un processo che ha telemetria Sentry, updater in rete, connettori OAuth e nessuna sandbox documentata: sarebbe una sesta superficie d'uscita da sorvegliare senza guadagno rispetto al Coder.
+- **Copiare l'interfaccia React.** La chat è Vue (D-060); riscrivere costa meno che adattare, e il pacchetto `telemetry-contracts` di `ee/` complica la licenza.
+
+### Rischi per la privacy
+
+- **Se l'utente installasse OpenWork per conto suo sulla stessa macchina** e lo puntasse a una cartella di `data/` o della KB vera, i file finirebbero al fornitore del modello scelto senza passare dal gateway. Non è un rischio del codice di Arianna, ma va scritto in `SECURITY.md` come per Claude Code lanciato a mano: "mai su `ARIANNA_HOME` né su cartelle L2".
+- **Telemetria non documentata:** Sentry riceve tracce d'errore che possono contenere percorsi e frammenti di contenuto; anche per un uso personale su progetti L1 conviene spegnerla (da verificare come).
+- **Skill e plugin dal marketplace:** stesso problema di D-079 (prompt di terzi, ma qui anche codice eseguito).
+
+### Cosa si può costruire subito a basso rischio
+
+Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima isolata) e D-095 (terminale del run in diretta), che hanno ciascuna il proprio "subito". Una riga in `docs/SECURITY.md` sugli strumenti agentici installati a mano dall'utente (OpenWork, OpenCode, Open Design) si può aggiungere quando l'utente approva.
+
+### Domande per l'utente
+
+1. **OpenWork resta fuori da Arianna (niente integrazione, niente adattatore) e se ne prendono solo le idee (terminale del run, anteprima isolata, pochi strumenti MCP generici)?** Raccomandazione: sì; è un secondo orchestratore su API cloud, senza etichette né sandbox documentata.
+2. **Vuoi provarlo per conto tuo, fuori da Arianna, su un progetto L1?** Raccomandazione: se sì, solo su un clone di un progetto senza dati veri, con Sentry spento, e non su `ARIANNA_HOME`; nulla di ciò che fa entra nel registro di Arianna.
+3. **Aggiungere a `docs/SECURITY.md` una riga sugli strumenti agentici installati a mano?** Raccomandazione: sì, una riga accanto a quella esistente sui file di configurazione che altri strumenti eseguono.
+
+
+
+---
+
+## D-094 — "Claude Design" locale: mockup del Coder nel progetto, anteprima isolata in chat
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere
+- **Collegate:** D-002, D-055/D-056/D-058 (Coder nel progetto), D-060 (identità grafica), D-063, D-082 (file modificati), regola "mai artefatti pubblicati" di `CLAUDE.md` (2026-10-04)
+
+### Contesto
+
+**open-design.ai è davvero open source**, non solo un servizio: il sito rimanda a `github.com/nexu-io/open-design`, **licenza Apache-2.0** (testo letto: "Apache License, Version 2.0", "Copyright 2026 Open Design contributors"; alcune parti incluse restano MIT, per esempio i modelli `guizang-ppt` e `html-ppt`). Obblighi Apache-2.0: tenere licenza e avvisi di copyright, segnalare i file modificati, riportare il file `NOTICE` se c'è (sezione 4(d)); concessione esplicita di brevetti. Accanto c'è un **servizio cloud a pagamento** (Open Design Cloud, piani Plus/Pro/Max e team, crediti per modelli ospitati, "da 8 $ al mese"), facoltativo: l'app desktop funziona "with your local coding agent or your own API key. No account required".
+
+**Cosa fa:** "the open-source alternative to Claude Design": un agente genera prototipi HTML interattivi, landing page, dashboard, slide (esportabili in PPTX), immagini e video HTML (HyperFrames: HTML+CSS+GSAP renderizzati con Chrome headless e FFmpeg in MP4), come file veri. Ha 151 sistemi di design pronti (`DESIGN.md` per marca: Stripe, Linear, Apple…), più di 100 skill nel formato `SKILL.md` di Claude Code, centinaia di plugin con manifesto `open-design.json`.
+
+**Architettura** (README): Electron con React 18 / Next.js 16; un **demone Node 24 (Express + SQLite) su 127.0.0.1**; tre modi di chiamare l'agente: (1) adattatori nativi, (2) **CLI di agenti di coding lanciati come processi figli** (`spawn(cli, [...], { cwd: managed project cwd })`: Claude Code, Codex, Cursor, Copilot e altri, una ventina), (3) proxy BYOK verso Anthropic, OpenAI, Azure, Google, Ollama con protezione SSRF. **Anteprima in un iframe `srcdoc` sandboxato** che segue i file del progetto scritti dall'agente. Uscite: HTML in un file solo, PDF, PPTX, MP4, ZIP, Markdown.
+
+**Telemetria:** analisi di prodotto e **registrazione delle sessioni con consenso**, più una telemetria "di sicurezza e affidabilità" ripulita e **sempre attiva**; dalla 0.24.1 "diagnostica limitata e redatta" dei fallimenti, che si ferma solo togliendo il consenso. Il README cita anche asset da CDN per modelli e anteprime. **Nessuna sandbox per i CLI**: lanciati nella cartella del progetto, senza confinamento oltre la cartella di lavoro.
+
+**Maturità:** molto popolare e giovanissimo: circa 99 mila stelle, 11,5 mila fork, 3,7 mila commit su `main`, 432 contributori, ~530 issue e ~630 PR aperte; release 0.23.0, 0.24.0, 0.24.1 a pochi giorni l'una dall'altra (settembre; la pagina letta indica il 2024, incoerente con la licenza del 2026: data da verificare).
+
+**Cosa ha Arianna:** il Coder lavora già nella cartella vera di un progetto L1 con la sandbox (D-056, D-050) e mostra i file modificati (D-082). La regola dell'utente vieta artefatti pubblicati: anteprime e mockup solo come file locali (`docs/mockups/` per Arianna stessa, o nel progetto). Oggi la chat non sa mostrare un file HTML del progetto; l'utente lo apre a mano (`open docs/mockups/<file>.html`).
+
+### Proposta
+
+Un "Claude Design" locale è **il Coder già esistente con un modo di lavorare e un'anteprima**, non un'app nuova.
+
+**(a) Scheda agente `designer`** (`agents/designer.yaml` + `.md`): `max_label: L1`, `executors: [claude, codex]`, stessi strumenti del Coder (`repo.read`, `repo.write`), nessuno strumento `kb.*`, nessuna rete. Prompt fisso: produce **file HTML autonomi** (CSS e JS in linea, nessuna risorsa remota: niente Google Fonts, CDN o immagini esterne) in una cartella del progetto scelta dall'utente, predefinita `mockups/` (per il repository di Arianna: `docs/mockups/`); legge il `DESIGN.md` del progetto se c'è (stessa convenzione di Open Design, che non costa nulla adottare) e scrive varianti numerate invece di sovrascrivere. Lavora nella cartella vera, quindi i file restano nel progetto e si vedono con gli strumenti dell'utente, come per il Coder.
+
+**(b) Anteprima in chat, solo locale.** Sotto il rapporto del designer, per ogni file `.html` fra i "File modificati" (D-082), un pulsante "Anteprima" apre un pannello. **Nessuna rotta nuova:**
+- il testo del file arriva dalla rotta esistente `GET /api/delegations/:id/files/:index` (`readDelegationFile` in `apps/core/src/delegation-view.ts`, D-082), che legge **solo i file registrati nella delega**, per indice e mai per percorso: progetto ancora approvato e ≤ L1, cartella uguale al percorso approvato, niente link fuori né `.git`, solo file regolari di testo UTF-8 fino a 256 KiB, niente valori del vault, niente conversazioni archiviate. La lettura resta ai file della delega di proposito: i mockup sono proprio i file che il designer ha scritto, e un lettore di percorsi qualsiasi del progetto sarebbe una superficie in più senza un caso;
+- l'HUD lo mette in un `<iframe sandbox="allow-scripts" srcdoc="...">` **senza `allow-same-origin`**: il documento ha un'origine opaca e non vede cookie, storage né API del core;
+- in testa al `srcdoc` l'HUD aggiunge un `<meta http-equiv="Content-Security-Policy">` con `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'`, così il mockup non può chiamare né la rete né il core anche se il Coder vi mette un `fetch`. Per questo il designer mette tutto in linea (immagini come `data:`): un riferimento relativo nel `srcdoc` non si risolve, ed è voluto;
+- **niente "Apri nel browser" sull'origine del core**: un file servito da `127.0.0.1:7420` senza sandbox avrebbe la stessa origine della chat. Per vederlo fuori dalla chat l'utente apre il file dal progetto (Finder, `open mockups/<file>.html`), come oggi con `docs/mockups/`; nessuna pubblicazione, nessun caricamento altrove.
+
+**(c) Sistemi di design come file del progetto, non come catalogo.** Niente import dei 151 `DESIGN.md` di Open Design. Se l'utente vuole partire da uno, lo copia nel progetto (Apache-2.0: con l'avviso di licenza in testa al file e il `NOTICE` se presente); per Arianna stessa si scrive `docs/DESIGN.md` dai token di D-060/D-062 già in `apps/hud/src/style.css`, così i mockup futuri usano l'identità approvata.
+
+**(d) Più avanti, facoltativo:** esportazione PDF dal browser dell'utente (stampa), niente PPTX né video finché non c'è un caso.
+
+### Alternative scartate
+
+- **Installare Open Design e lasciargli lanciare `claude`/`codex`.** Lancia i CLI senza il nostro profilo (niente `--restricted`, niente sandbox di D-050, configurazione utente ereditata), con telemetria sempre attiva e asset da CDN: due regole non negoziabili violate (esecutori cloud solo da `packages/executors`, confinamento).
+- **Usare il demone di Open Design come servizio dietro un'interfaccia nostra.** Express + SQLite + proxy BYOK + MCP: un secondo orchestratore (D-063) e decine di dipendenze per ottenere ciò che il Coder già fa (scrivere file in un progetto).
+- **Copiare skill e sistemi di design in blocco** (come D-079 per agency-agents). Possibile più avanti con la stessa forma di D-079 (catalogo non fidato in `data/catalogs/`, solo testo), ma oggi non c'è richiesta; e molti `DESIGN.md` imitano marchi altrui, che per mockup personali va bene ma non va in git.
+- **Anteprima come artefatto pubblicato** (claude.ai o simili): vietato dalla regola dell'utente.
+- **Anteprima nell'iframe con `allow-same-origin`** o servita dalla stessa origine senza CSP: il mockup scritto dal Coder potrebbe leggere le API del core (conversazioni L2) dal browser dell'utente. È la differenza che conta.
+
+### Rischi per la privacy
+
+- **Il Coder scrive l'HTML, il browser dell'utente lo esegue.** Senza sandbox e CSP un mockup potrebbe chiamare `http://127.0.0.1:7420/api/...` con i cookie dell'utente o inviare dati fuori. Mitigazione: iframe senza `allow-same-origin`, CSP con `connect-src 'none'`, nessuna risorsa remota; test che lo verificano.
+- **Lettura dei file.** Nessun lettore nuovo: `readDelegationFile` ha già i controlli (solo i file della delega per indice, progetto approvato ≤ L1, realpath, niente `.git`, niente valori del vault) e i suoi test. L'anteprima non allarga ciò che la chat mostra già nel riquadro "File modificati": cambia solo il modo di mostrarlo (eseguito in un iframe isolato invece che come testo).
+- **Contenuti del mockup:** il designer lavora in conversazioni di lavoro L1; un mockup con dati veri (nomi di clienti) sarebbe L1 per etichetta del progetto. Nulla di nuovo rispetto al Coder.
+
+### Cosa si può costruire subito a basso rischio
+
+- **File:** `agents/designer.yaml` + `agents/designer.md`; `apps/hud/src/lib/mockup-preview.ts` (funzione pura che costruisce il `srcdoc` con il `<meta>` della CSP in testa e gli attributi dell'iframe); `apps/hud/src/components/MockupPreview.vue` (pannello con iframe) agganciato al riquadro "File modificati", con il testo preso da `GET /api/delegations/:id/files/:index`. Nessuna modifica al core.
+- **Test:** scheda `designer` valida e rifiutata con `max_label: L2` o con `kb.read` (`packages/agents/test`); in `apps/hud/test` la funzione mette il `<meta>` della CSP prima di qualsiasi contenuto del file (anche se il file comincia con `<!doctype>`, un commento o un `<meta>` suo), la CSP contiene `default-src 'none'` e `connect-src 'none'`, gli attributi dell'iframe sono `sandbox="allow-scripts"` senza `allow-same-origin`, l'anteprima si offre solo per i file `.html` della delega. I controlli di lettura restano quelli già testati di `readDelegationFile`.
+- **Senza codice, subito:** chiedere al Coder di oggi, in una conversazione di lavoro su un progetto L1, "fai un mockup HTML autonomo in `mockups/`" e aprirlo a mano. Prova che il flusso regge prima di scrivere il pannello.
+
+### Domande per l'utente
+
+1. **Il "Claude Design" di Arianna è una scheda `designer` sul Coder esistente, con anteprima in chat, invece di installare Open Design?** Raccomandazione: sì; Open Design lancia `claude`/`codex` senza il nostro confinamento e ha telemetria sempre attiva.
+2. **Cartella predefinita dei mockup in un progetto: `mockups/` (e `docs/mockups/` per il repository di Arianna)?** Raccomandazione: sì, configurabile per progetto.
+3. **Anteprima solo dentro la chat (iframe isolato, origine opaca, CSP), e fuori dalla chat il file si apre dal progetto con Finder, senza un pulsante "Apri nel browser" servito dal core?** Raccomandazione: sì; un pulsante sul core richiederebbe una rotta nuova che serva l'HTML con la direttiva CSP `sandbox allow-scripts` nell'intestazione (origine opaca) oltre a `connect-src 'none'`, e non aggiunge nulla rispetto ad aprire il file.
+4. **Scrivere `docs/DESIGN.md` di Arianna dai token di D-060/D-062, così i mockup futuri seguono l'identità approvata?** Raccomandazione: sì, è un file di testo senza rischi.
+5. **Importare i sistemi di design o le skill di Open Design come catalogo (forma D-079)?** Raccomandazione: non ora; solo se un progetto lo chiede, copiando un file alla volta con l'avviso Apache-2.0.
+
+
+
+---
+
+## D-095 — Computer dell'agente (P10): spazio isolato per run, visibile dalla chat
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere
+- **Collegate:** P10 e P8 di `OPENDOTS.md`, D-050 (sandbox), D-056/D-058 (cartella vera), D-063, D-082/D-083 (file e attività), P7 (lettore di pagine pubbliche), riga 2 di "Idee dalla ricerca" in `SPEC.md` (sandbox a microVM)
+
+### Contesto
+
+**Cosa fa OpenDots** (`OPENDOTS.md`, "Computer per agente"): un container Docker per agente con volumi persistenti, creato da un supervisor che è l'unico ad avere il socket Docker (gVisor facoltativo); credenziale HMAC per agente e verifica dell'identità del container; permessi browser/file/shell per agente, spenti all'inizio, ricontrollati ogni 50 ms, con revoca che interrompe; un pannello con schede **Browser** (screenshot cliccabile ogni 4 s), **File**, **Terminale**, **Attività**; presa di controllo manuale del browser (l'agente rilegge la pagina prima di ripartire); registro delle azioni senza valori digitati né contenuti, ultime 1000.
+
+**Cosa ha Arianna** (verificato nel repository):
+- il Coder su `claude -p` gira nella cartella vera del progetto con la **sandbox nativa di Claude Code** (`sandbox-runtime`, su macOS costruita su Seatbelt, cioè lo stesso meccanismo di `sandbox-exec`): niente rete, niente loopback, letture negate fuori dal progetto e dalla toolchain (D-050);
+- righe di attività dal vivo (canale `activity` di `apps/core/src/live.ts`) e salvate (`task_activities`, D-083), che per il Coder contengono **solo il nome dello strumento**; file modificati per delega (D-082);
+- sulla macchina: macOS 26.6 su Apple silicon, Docker 29.7 installato (usato per PostgreSQL), `/usr/bin/sandbox-exec` presente; il CLI `container` di Apple non è installato.
+
+**Opzioni d'isolamento realistiche su questo Mac:**
+
+| Opzione | Isolamento | Dipendenze | Schermo | Note |
+| --- | --- | --- | --- | --- |
+| Sandbox di Claude Code (oggi) | Processo, Seatbelt | Nessuna nuova | No | Vale solo per i processi lanciati da `claude`; il resto del Mac resta lo stesso utente |
+| `sandbox-exec` con profilo nostro | Processo, Seatbelt | Nessuna (di sistema; Apple la dichiara deprecata ma la usa ancora) | No | Utile per processi nostri (es. `apps/voice`, un browser headless) senza Docker |
+| Docker Desktop (container Linux nella VM di Docker) | VM condivisa + namespace | Già installato; immagini da scegliere e fissare per digest | Sì, con un server VNC nel container | È ciò che fa OpenDots; Linux, non macOS: un browser Chromium sì, app macOS no |
+| CLI `container` di Apple (una microVM per container, Virtualization.framework) | VM per container, kernel separato | Nuova (Apache-2.0, binario di Apple), richiede macOS 26 | Come Docker | Isolamento migliore di Docker Desktop; giovane; da valutare quando si arriva lì |
+| VM macOS con Virtualization.framework (Tart, UTM, Lima) | VM completa | Nuova e pesante (immagini da decine di GB, RAM) | Sì, desktop macOS vero | Licenze e peso; utile solo per "usare app macOS", oggi senza caso |
+
+### Proposta
+
+Tre tappe, ciascuna utile da sola, ciascuna con la propria voce D- prima del codice. Il computer dell'agente è **di un run, non di un agente**: nasce con la delega, muore con essa (con eventuale volume di lavoro persistente solo per il progetto); niente container sempre accesi per agente come in OpenDots, perché da noi gli agenti sono schede e i run sono task.
+
+**Tappa 1 — "Terminale e file del run in diretta", senza nuovo isolamento (subito).** Riusa D-083 e D-082; nessuna dipendenza.
+- **Terminale:** dagli eventi `stream-json` di `claude -p` il core prende, per le chiamate `Bash`, il comando e l'uscita (troncati: per esempio 200 righe o 16 KiB per comando), li passa dallo stesso filtro di `postActivity` (che riconosce solo i valori del vault già rivelati, **non** i segreti di un `.env` del progetto: quelli restano visibili a schermo), e li manda in una scheda "Terminale" del pannello del run, **in sola lettura** (nessun input dall'utente al processo: il run resta non interattivo). Etichetta = etichetta del progetto (L1), mostrata solo a conversazioni con clearance ≥ quella. Se salvarli o solo mostrarli dal vivo è una scelta (domanda 2): oggi D-083 salva solo il nome dello strumento, e salvare comandi e uscite allarga ciò che il database contiene.
+- **File:** scheda "File" con l'elenco aggiornato durante il run (solo percorsi, ricavati dagli eventi `Edit`/`Write`), sostituito a fine run da quello di D-082 (`task_delegations.files`, da `repositoryChanges`). Cliccando un file a run finito se ne vede il contenuto attuale dalla rotta esistente `GET /api/delegations/:id/files/:index` (`readDelegationFile`): nessuna rotta nuova, e la lettura resta ai file della delega. Durante il run niente contenuti: i file non sono ancora registrati nella delega, e leggere percorsi presi dagli eventi vorrebbe dire fidarsi di ciò che dice il binario. Il diff è un'aggiunta successiva: se serve, si estende `readDelegationFile` (stessi file della delega, comandi git già induriti di D-056), senza aprire un lettore di percorsi.
+- **Attività:** la scheda è il registro di D-083 che esiste già.
+- **Interfaccia:** icona dello schermo nell'intestazione della conversazione (come OpenDots) che apre un pannello a destra con le tre schede; durante il run si aggiorna dal WebSocket, dopo il run si rilegge.
+
+**Tappa 2 — Browser isolato (dopo P7 e dopo una voce D- sulla dipendenza).** Un Chromium headless in un **container Docker** per run, avviato dal core (unico a parlare con Docker, come il supervisor di OpenDots), con:
+- rete solo verso l'esterno pubblico attraverso il proxy anti-SSRF di P7 (IP privati, loopback e `host.docker.internal` bloccati; DNS fissato), nessun volume del Mac montato, filesystem in sola lettura salvo `/tmp`, utente non root, limiti di CPU, memoria e durata, immagine fissata per digest;
+- **solo L0**: il browser serve solo a leggere il web pubblico (P7); nessun file del progetto (L1) copiato nel container, perché il browser ha rete e un contenuto L1 lì dentro uscirebbe senza gateway (i mockup del progetto si vedono con l'anteprima isolata di D-094, che non ha rete); una sessione con `effective_label ≥ L2` non ha il browser (regola già scritta per le ricerche web in PRIVACY-POLICY-SPEC);
+- schermo come **screenshot periodici** (come OpenDots, ogni 2-4 s) mostrati nella scheda "Browser" in sola lettura; niente VNC in questa tappa;
+- comandato da strumenti nostri (`browser.open`, `browser.read`, `browser.screenshot`) esposti dal server MCP di Arianna (1.10), non dal Coder direttamente: il Coder resta senza rete.
+
+**Tappa 3 — Desktop (solo con un caso concreto).** Container Linux con desktop leggero e server VNC, visto dalla chat con noVNC in sola lettura (presa di controllo manuale come opzione esplicita, con pausa dell'agente e rilettura dello schermo prima di ripartire, come OpenDots). Prima di farla, valutare il CLI `container` di Apple (una microVM per container) al posto di Docker Desktop. Una VM macOS completa resta fuori finché non serve usare app macOS.
+
+**Regole comuni a tutte le tappe:** il pannello è in sola lettura di base; l'agente non vede l'utente che guarda; ogni computer ha i permessi del run (pausa globale e revoca di P5 lo fermano); nulla del computer va a un canale esterno; il registro delle azioni non contiene valori digitati né contenuti (come OpenDots e D-083).
+
+### Alternative scartate
+
+- **Container sempre acceso per agente, con volumi persistenti** (forma di OpenDots). Stato che si accumula fuori dal registro, superficie permanente, RAM occupata sul Mac da 32 GB che già fatica con 27B e modelli della voce (D-074). Per run è più semplice e si pulisce da solo.
+- **Spostare subito il Coder in un container Docker** (P8). Oggi la sandbox di Claude Code fa il lavoro senza dipendenze; nel container `claude` avrebbe bisogno delle credenziali dell'abbonamento dentro il container, che la regola "mai token OAuth" vieta di copiare. Da riprendere solo se Anthropic documenta un modo ufficiale.
+- **VNC fin dalla tappa 2.** Un server VNC e noVNC sono dipendenze e una porta in più; gli screenshot bastano per vedere cosa fa un browser.
+- **Terminale interattivo (pty) come in OpenWork.** Darebbe all'utente una shell nel contesto del run, e all'agente un canale di input non previsto: fuori dal modello non interattivo di D-049.
+- **VM macOS (Tart, UTM, Lima).** Peso e licenze senza un caso d'uso.
+
+### Rischi per la privacy
+
+- **Tappa 1, terminale:** comandi e uscite possono contenere contenuti di file del progetto (L1) o segreti che il Coder ha letto da un `.env` ignorato (D-056 lo consente). Il filtro di `postActivity` riconosce solo i valori del vault già rivelati, non i segreti del progetto: un `.env` stampato da un comando si vede a schermo. Mitigazioni: quel filtro, taglio, nessuna uscita verso canali esterni, visibile solo a clearance ≥ L1; se salvati, cancellati da `purge_conversation`. Se non salvati (raccomandato all'inizio), il rischio è solo a schermo.
+- **Tappa 2, browser:** è una superficie di rete nuova. Il rischio è l'esfiltrazione: un brief o una pagina che porta dati L2 nell'URL. Mitigazioni: solo L0, proxy di P7, nessun volume montato, nessun accesso a loopback o alla rete locale, test canarino come per la sandbox (stringa L2 finta che non deve uscire). Docker Desktop condivide una VM per tutti i container: un container ostile vede la VM, non il Mac; PostgreSQL di Arianna sta nella stessa VM ma in un'altra rete Docker, da isolare esplicitamente (rete dedicata, niente `host.docker.internal`).
+- **Tappa 3, desktop:** VNC è un canale d'ingresso; solo su loopback, con un gettone per sessione, mai esposto.
+- **Dipendenze:** tappa 1 nessuna; tappa 2 un'immagine Chromium (Playwright o simile) fissata per digest più, forse, `playwright-core` nel core (voce D-); tappa 3 immagine con VNC e noVNC nell'HUD (voce D-).
+
+**Stima:** tappa 1 circa 1-2 giorni (core: lettura di comandi e uscite dagli eventi già ricevuti; HUD: pannello con tre schede; test); tappa 2 circa 4-6 giorni dopo P7 (immagine, ciclo di vita del container, proxy, strumenti MCP, canarino); tappa 3 da stimare quando c'è il caso.
+
+### Cosa si può costruire subito a basso rischio
+
+La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non sceglie:
+- **File:** `packages/executors/src/claude/` (estrarre comando e uscita delle chiamate `Bash` dagli eventi del binario, con taglio); `apps/core/src/reply.ts` e `live.ts` (nuovo tipo di notifica `terminal`, filtrato come `activity`); nessuna rotta nuova per i file (contenuto dalla rotta esistente `GET /api/delegations/:id/files/:index`); `apps/hud/src/components/ComputerPanel.vue` (schede Terminale, File, Attività) e icona nell'intestazione.
+- **Test:** l'estrazione taglia oltre il limite e scarta i valori del vault rivelati (`packages/executors/test`); una conversazione con clearance sotto l'etichetta del progetto non riceve notifiche `terminal` (`apps/core/test`); durante il run la scheda File mostra solo percorsi e non chiama la rotta dei file (`apps/hud/test`); nell'HUD il pannello non ha campi d'input verso il run (`apps/hud/test`).
+- **Da mettere in coda nei documenti** (con l'approvazione dell'utente): P10 come task con tre tappe in `ROADMAP.md`, così smette di vivere solo in `OPENDOTS.md`.
+
+### Domande per l'utente
+
+1. **Computer per run (nasce e muore con la delega) invece che per agente come in OpenDots?** Raccomandazione: per run; niente stato fuori dal registro e niente RAM occupata.
+2. **Tappa 1: comandi e uscite del terminale solo dal vivo, o anche salvati come le righe di D-083?** Raccomandazione: solo dal vivo all'inizio; salvarli allarga ciò che il database contiene (contenuti di file L1, possibili segreti di un `.env`).
+3. **Tappa 2 su Docker (già installato) con un'immagine Chromium fissata, solo per pagine L0 e dopo P7?** Raccomandazione: sì; il CLI `container` di Apple si valuta alla tappa 3.
+4. **Schermo: screenshot periodici nella tappa 2, VNC/noVNC solo alla tappa 3 e solo con un caso?** Raccomandazione: sì.
+5. **Presa di controllo manuale (tu che clicchi nel browser dell'agente)?** Raccomandazione: non prima della tappa 3; fino ad allora sola lettura.
+6. **Mettere P10 in `ROADMAP.md` con le tre tappe, subito dopo le proposte in attesa?** Raccomandazione: sì, la tappa 1 come prossimo lavoro di P10, le altre in coda.
+
+
+
+---
+
+## Cose non verificate
+
+- Numeri di stelle, commit e date: letti da pagine GitHub riassunte da un modello; la data delle release di Open Design (2024 sulla pagina, incoerente con la licenza del 2026) va controllata.
+- Telemetria di OpenWork: dedotta da `@sentry/electron` e `@openwork-ee/telemetry-contracts` nei `package.json`; cosa invii e come si spenga non è documentato nel README.
+- Open Design: che i CLI siano lanciati "senza sandbox oltre la cartella di lavoro" viene dal riassunto del README; non è stato letto il codice di spawn.
+- Che gli eventi `stream-json` di `claude -p` contengano l'uscita dei comandi `Bash` in forma utilizzabile per la tappa 1 di D-095: da verificare sul binario installato prima di scrivere il codice.
+- Il CLI `container` di Apple non è installato: requisiti e stato da verificare quando si arriva alla tappa 3.
