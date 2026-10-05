@@ -236,6 +236,11 @@ export function agentName(agent: string): string {
   return AGENT_TEXT[agent] ?? agent;
 }
 
+/** The fixed name of a known agent; undefined for any other id (never the id itself). */
+export function knownAgentName(agent: string): string | undefined {
+  return Object.hasOwn(AGENT_TEXT, agent) ? AGENT_TEXT[agent] : undefined;
+}
+
 /** The state of a trial of a model (D-081). */
 export const MODEL_EVAL_STATUS_TEXT: Record<ModelEvalStatus, string> = {
   queued: 'in coda',

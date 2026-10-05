@@ -14,12 +14,12 @@ import PixelAgent from './PixelAgent.vue';
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
  * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Pensieri, Conoscenza, Chiama, Impostazioni) and the theme; one compact row
+ * Pensieri, Conoscenza, Ufficio, Chiama, Impostazioni) and the theme; one compact row
  * of the agents that opens the right bar; the conversations, pinned first.
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office';
   theme: Theme;
   conversations: Conversation[];
   archived: Conversation[];
@@ -41,6 +41,7 @@ const emit = defineEmits<{
   create: [];
   thoughts: [];
   knowledge: [];
+  office: [];
   call: [];
   settings: [];
   theme: [theme: Theme];
@@ -116,6 +117,9 @@ function itemClass(on: boolean): string {
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'knowledge')" :aria-current="page === 'knowledge' ? 'page' : undefined" @click="emit('knowledge')">
         <Icon name="knowledge" :size="16" />Conoscenza
+      </button>
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'office')" :aria-current="page === 'office' ? 'page' : undefined" @click="emit('office')">
+        <Icon name="office" :size="16" />Ufficio
       </button>
       <!-- Not `disabled`: it stays reachable with Tab and says why it cannot call. -->
       <button

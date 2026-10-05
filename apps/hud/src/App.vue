@@ -10,6 +10,7 @@ import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
 import InstallationBadge from './components/InstallationBadge.vue';
 import NewConversationDialog from './components/NewConversationDialog.vue';
+import OfficePage from './components/OfficePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
 import DevProgressPage from './components/DevProgressPage.vue';
@@ -34,12 +35,14 @@ import {
   documentTitle,
   isDevPath,
   isKnowledgePath,
+  isOfficePath,
   isSettingsPath,
   isThoughtsPath,
   isVoiceTrialPath,
   KNOWLEDGE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  OFFICE_PATH,
   pathFor,
   settingsPathFor,
   settingsSlug,
@@ -52,7 +55,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -249,9 +252,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'office'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'office', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null) store.close();
@@ -290,6 +293,11 @@ function openKnowledge(nodeId?: string): void {
 /** The thoughts (D-090). */
 function openThoughts(): void {
   openPage('thoughts', THOUGHTS_PATH, 'Pensieri');
+}
+
+/** The office (D-106). */
+function openOffice(): void {
+  openPage('office', OFFICE_PATH, 'Ufficio');
 }
 
 /** A "/" command of the chat (D-090). */
@@ -349,6 +357,10 @@ function followAddress(): void {
   }
   if (isThoughtsPath(window.location.pathname)) {
     openThoughts();
+    return;
+  }
+  if (isOfficePath(window.location.pathname)) {
+    openOffice();
     return;
   }
   page.value = 'chat';
@@ -490,6 +502,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @create="openNew"
       @thoughts="openThoughts"
       @knowledge="openKnowledge()"
+      @office="openOffice"
       @call="callArianna"
       @settings="openSettings"
       @theme="(value) => (theme = value)"
@@ -533,6 +546,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
+          <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
         </p>
@@ -618,6 +632,17 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <DevProgressPage v-else-if="page === 'dev'" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
+      <OfficePage
+        v-else-if="page === 'office'"
+        :status="status"
+        :approvals="approvals"
+        :projects="projects"
+        :conversations="conversations"
+        :characters="characters"
+        :signals="officeSignals"
+        @open="openConversation"
+        @draft="(mode, project) => openDraft(mode, project)"
+      />
       <DraftChat
         v-else-if="draft !== null"
         :key="draft.key"

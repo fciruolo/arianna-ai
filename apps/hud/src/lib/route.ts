@@ -51,6 +51,13 @@ export function isKnowledgePath(pathname: string): boolean {
   return pathname === KNOWLEDGE_PATH || pathname === `${KNOWLEDGE_PATH}/`;
 }
 
+/** The office (D-106): the agents in a pixel office. */
+export const OFFICE_PATH = '/ufficio';
+
+export function isOfficePath(pathname: string): boolean {
+  return pathname === OFFICE_PATH || pathname === `${OFFICE_PATH}/`;
+}
+
 /** The page of the thoughts (D-090). */
 export const THOUGHTS_PATH = '/pensieri';
 

@@ -43,6 +43,13 @@
   --graph-4: #f2b34b;
   --graph-5: #c08bf0;
   --graph-6: #f07fa8;
+  /* The office (D-106): furniture and floor of the canvas, read by lib/office/draw.ts. */
+  --office-floor: #0f1d21; --office-floor-alt: #112227; --office-wall-top: #070e10; --office-wall-face: #16292e; --office-wall-line: #24434a;
+  --office-window: #1b3a42; --office-window-light: #2c5d66; --office-desk: #24383d; --office-desk-top: #34525a; --office-desk-shadow: #050b0d;
+  --office-monitor: #081013; --office-screen-off: #16303a; --office-screen: #4fd1c1; --office-chair: #2a5560;
+  --office-rug-l2: #f2b34b1c; --office-rug-l1: #4fd1c117; --office-rug-neutral: #7fb4f012; --office-rug-line: #4fd1c133;
+  --office-plant: #7cc796; --office-plant-dark: #3f7a55; --office-pot: #8a5a3a; --office-pot-dark: #5e3c26; --office-sofa: #2a5560; --office-sofa-dark: #1c3d45;
+  --office-paper: #dcebe8; --office-counter: #2b4c53; --office-counter-top: #3d6871; --office-outline: #1a1c2c; --office-speech: #f4f1e8; --office-speech-ink: #24302e; --office-shadow: #00000059;
   color-scheme: dark;
 }
 
@@ -75,6 +82,12 @@
     --graph-4: #b07612;
     --graph-5: #8a52c4;
     --graph-6: #c0447a;
+    --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;
+    --office-window: #bcd9d4; --office-window-light: #e4f2ef; --office-desk: #b98f63; --office-desk-top: #d6b386; --office-desk-shadow: #c2b49b;
+    --office-monitor: #24302e; --office-screen-off: #46524f; --office-screen: #3fb8a9; --office-chair: #3d7e75;
+    --office-rug-l2: #b9801c24; --office-rug-l1: #23887c1f; --office-rug-neutral: #3f6fa817; --office-rug-line: #23887c40;
+    --office-plant: #5aa572; --office-plant-dark: #2f6b45; --office-pot: #b0703f; --office-pot-dark: #8a5530; --office-sofa: #3d7e75; --office-sofa-dark: #2c5e57;
+    --office-paper: #ffffff; --office-counter: #b39a74; --office-counter-top: #d4bf98; --office-outline: #1a1c2c; --office-speech: #ffffff; --office-speech-ink: #24302e; --office-shadow: #0000002e;
     color-scheme: light;
   }
 }
@@ -107,6 +120,12 @@
   --graph-4: #b07612;
   --graph-5: #8a52c4;
   --graph-6: #c0447a;
+  --office-floor: #ece8de; --office-floor-alt: #e6e1d4; --office-wall-top: #bfc7c2; --office-wall-face: #dfe2dc; --office-wall-line: #c9cfca;
+  --office-window: #bcd9d4; --office-window-light: #e4f2ef; --office-desk: #b98f63; --office-desk-top: #d6b386; --office-desk-shadow: #c2b49b;
+  --office-monitor: #24302e; --office-screen-off: #46524f; --office-screen: #3fb8a9; --office-chair: #3d7e75;
+  --office-rug-l2: #b9801c24; --office-rug-l1: #23887c1f; --office-rug-neutral: #3f6fa817; --office-rug-line: #23887c40;
+  --office-plant: #5aa572; --office-plant-dark: #2f6b45; --office-pot: #b0703f; --office-pot-dark: #8a5530; --office-sofa: #3d7e75; --office-sofa-dark: #2c5e57;
+  --office-paper: #ffffff; --office-counter: #b39a74; --office-counter-top: #d4bf98; --office-outline: #1a1c2c; --office-speech: #ffffff; --office-speech-ink: #24302e; --office-shadow: #0000002e;
   color-scheme: light;
 }
 

@@ -12,6 +12,7 @@ import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
@@ -51,6 +52,13 @@ export function createChatStore() {
   let decided: Approval[] = [];
   /** The status panel (D-060), read again after events: counts and labels only. */
   const status = ref<StatusSnapshot | null>(null);
+  /**
+   * What the office (D-106) may know of the live feed: the kind of the latest
+   * activity line per conversation (never its detail) and the agents paused
+   * by a quota of their executor, until when (with the agent of each run seen
+   * starting: the quota event names only its run). Signals only, never text.
+   */
+  const officeSignals = ref<OfficeSignals>(emptySignals());
   /** Character packs and who wears what; read at the start and when the panel asks. */
   const characters = ref<CharacterListing | null>(null);
   let statusTimer: number | undefined;
@@ -601,11 +609,13 @@ export function createChatStore() {
       return;
     }
     if (message.type === 'activity') {
+      noteActivity(officeSignals.value, message.conversationId, message.kind);
       if (chat.value !== null) chat.value = applyActivity(chat.value, message);
       return;
     }
     const { event } = message;
     statusSoon();
+    notePause(officeSignals.value, event);
     const conversationId = payloadString(event, 'conversationId');
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
@@ -738,7 +748,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
