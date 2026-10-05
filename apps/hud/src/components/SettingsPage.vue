@@ -456,15 +456,6 @@ function defaultOption(agent: string) {
   const originals = characterOptions.value.filter((option) => option.pack.original);
   return originals.find((option) => option.character.id === agent) ?? originals.find((option) => option.character.id === 'coder');
 }
-/** The chosen character's name; without a choice, the default one. */
-function characterLabel(agent: string): string {
-  const value = forms.value?.characters[agent];
-  if (value === undefined) {
-    const fallback = defaultOption(agent);
-    return fallback === undefined ? 'predefinito' : `predefinito (${fallback.character.name})`;
-  }
-  return characterOptions.value.find((option) => option.value === value)?.label ?? `${value} (non disponibile)`;
-}
 function previewOf(agent: string): CharacterChoice | undefined {
   const value = forms.value?.characters[agent] ?? '';
   const option = value === '' ? defaultOption(agent) : characterOptions.value.find((item) => item.value === value);
@@ -903,11 +894,13 @@ watch(active, () => {
                 <div class="flex items-center gap-3">
                   <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" :version="sheetVersion" />
                   <h3 class="hud-title">{{ agentName(agent) }}</h3>
-                  <div v-if="previewOf(agent)" class="ml-auto flex flex-wrap gap-2">
-                    <button type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="animationsOpen.has(agent)" @click="toggleAnimations(agent)">
+                  <div v-if="previewOf(agent) || forms.characters[agent] !== undefined" class="ml-auto flex flex-wrap gap-2">
+                    <!-- The character comes from Genera personaggio or Carica PNG; a chosen one, even one no longer served, can go back to the default. -->
+                    <button v-if="forms.characters[agent] !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="resetCharacter(agent)">Torna al predefinito</button>
+                    <button v-if="previewOf(agent)" type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="animationsOpen.has(agent)" @click="toggleAnimations(agent)">
                       {{ animationsOpen.has(agent) ? 'Chiudi animazioni' : 'Animazioni' }}
                     </button>
-                    <a class="btn px-2.5 py-1 text-xs" :href="sheetUrl(previewOf(agent)!, sheetVersion)" :download="`${previewOf(agent)!.character}.png`">Scarica PNG</a>
+                    <a v-if="previewOf(agent)" class="btn px-2.5 py-1 text-xs" :href="sheetUrl(previewOf(agent)!, sheetVersion)" :download="`${previewOf(agent)!.character}.png`">Scarica PNG</a>
                   </div>
                 </div>
                 <SheetPreview v-if="animationsOpen.has(agent) && previewOf(agent)" :src="sheetUrl(previewOf(agent)!, sheetVersion)" :rows="previewOf(agent)!.rows" />
@@ -921,15 +914,7 @@ watch(active, () => {
                   @uploaded="(saved) => onUploaded(agent, saved)"
                 />
                 <CharacterUpload :agent-label="agentName(agent)" @uploaded="(saved) => onUploaded(agent, saved)" />
-                <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
-                  <!-- The character comes from Carica PNG or Genera personaggio; a chosen one can go back to the default. -->
-                  <div class="flex flex-col gap-1 text-xs text-muted">
-                    Personaggio
-                    <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
-                      {{ characterLabel(agent) }}
-                      <button v-if="forms.characters[agent] !== undefined" type="button" class="text-xs text-accent hover:underline" @click="resetCharacter(agent)">Torna al predefinito</button>
-                    </p>
-                  </div>
+                <div class="flex flex-col gap-2.5">
                   <!-- Arianna: the orchestrator of Modelli locali, one place to set it, local only. -->
                   <div v-if="agent === 'arianna'" class="flex flex-col gap-1 text-xs text-muted">
                     Modello
