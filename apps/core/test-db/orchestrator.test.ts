@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type Answer, type Autonomy } from '@arianna/agents';
+import { type Answer, type Autonomy } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { createContext } from '@arianna/policy';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
@@ -23,10 +23,11 @@ import { openReply } from '../src/reply.ts';
 import { loadTask, moveTask, type Task } from '../src/tasks.ts';
 import { listWaitingTasks } from '../src/waiting.ts';
 import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
 const HOME = resolveHome({});
-const agents = loadAgents(join(HOME, AGENTS_DIR));
+const agents = committedAgents(HOME);
 const OPTIONS = {
   allowedActions: () => agents.get('arianna')?.card.approvals ?? [],
   agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }),

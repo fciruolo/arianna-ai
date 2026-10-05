@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type AgentCard } from '@arianna/agents';
+import { type AgentCard } from '@arianna/agents';
 import { CLOUD_MODEL_NAME, parseConfig, resolveHome } from '@arianna/config';
 import { MODEL_NAME } from '@arianna/executors';
 import { candidateKey } from '@arianna/router';
 
 import { agentDefaultModel, agentModels, routerConfigOf, selectableModels } from '../src/orchestrator/routing.ts';
+import { committedAgents } from './support/committed-agents.ts';
 
 const BASE = `
 [paths]
@@ -63,7 +64,7 @@ test('a cloud model turned off in [cloud.models] is not a candidate; one with an
   assert.deepEqual(keys('[cloud]\nexecutors = []\n\n[cloud.models]\nopus = true\n'), [], 'turning a model on never turns its executor on');
 });
 
-const AGENTS = loadAgents(join(resolveHome({}), AGENTS_DIR));
+const AGENTS = committedAgents(resolveHome({}));
 const card = (id: string): AgentCard => {
   const agent = AGENTS.get(id);
   assert.ok(agent !== undefined, `agents/${id}.yaml`);

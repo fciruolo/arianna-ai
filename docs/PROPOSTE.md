@@ -2438,6 +2438,11 @@ Pagina "Nuovo agente" "migliore e più ampia". Restano il tetto L1/A1 delle sche
 - **Agenti `answer` a L1** (scelta dell'utente dopo la revisione: "L1 per gli agenti che crei tu"): il prompt scritto dall'utente è L1, quindi l'agente legge fino a L1; un incarico da una conversazione di lavoro parte senza approvazione, uno da una privata la chiede. Le schede di agency-agents restano L0.
 - **Quali agenti lavorano** (risposta dell'utente: "al momento facciamo code ed answer ma dobbiamo ampliare"): `code` su Claude come il Coder, `answer` con un esecutore locale nuovo; `web` resta senza lavoro finché non esistono gli strumenti del web. Da ampliare più avanti: strumenti del web, altri modelli di scheda, agenti locali con strumenti.
 
+### Risposte dopo la prova di T3 (2026-10-05)
+
+- Prove 1-4 **Funziona**, T3 unita come 0.7.0. Sulla pagina "Nuovo agente" l'utente chiede: "Ma non posso cambiargli i permessi? vorrei farlo".
+- **Tappa T3b, scelta: permessi scelti dentro il tetto.** Nella pagina (alla creazione e con "Modifica") l'utente sceglie gli strumenti da un elenco ammesso per le schede utente (codice, domande in chat, base di conoscenza fino a L1), dove gira (locale, Claude), autonomia (A0 o A1) e limiti; la scheda di conferma mostra cosa cambia, trifecta compresa. Restano il tetto L1/A1 e i divieti (deleghe, canali, approvazioni). Il controllo "uguale al suo modello" (`matchingTemplate`) diventa "dentro l'elenco ammesso": da progettare, con test positivi e negativi per ogni regola. Stima 6-8 ore.
+
 ### Tappa T3, com'è stata fatta
 
 - `packages/agents/src/protocol.ts`: `task.delegate` prende l'elenco degli agenti (`DelegateTarget`); con il Coder da solo il prompt e lo schema restano identici byte per byte (blocco in cache, eval), con altri agenti ognuno compare con la sua descrizione fra virgolette e l'`enum` li nomina.

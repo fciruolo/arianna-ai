@@ -2,10 +2,9 @@
 // anchor computed from the database, the pieces written by the local model
 // when it jumps, their labels, the guards of conversation_summaries and the purge.
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
+import { type Answer } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 import type { Label } from '@arianna/policy';
@@ -30,10 +29,11 @@ import {
 } from '../src/orchestrator/summaries.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
 const HOME = resolveHome({});
-const agents = loadAgents(join(HOME, AGENTS_DIR));
+const agents = committedAgents(HOME);
 const RULES = parseLabelRules('[[folder]]\npath = "kb/work"\nlabel = "L1"\n');
 const CONFIG = loadConfig();
 const OPTIONS = {

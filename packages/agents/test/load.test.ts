@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,6 +11,16 @@ import { resolveHome } from '@arianna/config';
 const HOME = resolveHome({});
 const COMMITTED = join(HOME, AGENTS_DIR);
 const scratch = join(HOME, 'data', 'test-tmp', randomUUID());
+
+/**
+ * The names of the cards of agents/ that git tracks. An agent promoted from
+ * the Agents page (D-119) and not committed sits next to them on this
+ * machine only: these tests are about the repository's cards.
+ */
+function trackedCards(home: string): Set<string> {
+  const listed = execFileSync('git', ['-C', home, 'ls-files', '--', `${AGENTS_DIR}/*.yaml`], { encoding: 'utf8' });
+  return new Set(listed.split('\n').flatMap((line) => /\/([a-z][a-z0-9-]*)\.yaml$/.exec(line)?.[1] ?? []));
+}
 
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
@@ -43,7 +54,8 @@ describe('committed agent cards', () => {
   });
 
   it('start at autonomy A1', () => {
-    for (const { card } of loadAgents(COMMITTED).values()) assert.equal(card.autonomy, 'A1', card.name);
+    const tracked = trackedCards(HOME);
+    for (const { card } of loadAgents(COMMITTED).values()) if (tracked.has(card.name)) assert.equal(card.autonomy, 'A1', card.name);
   });
 });
 

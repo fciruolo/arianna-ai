@@ -4,13 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgent, loadAgents, userCard, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, userCard, type LoadedAgent } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
 import { briefCeiling, delegateTargets, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
+import { committedAgents } from './support/committed-agents.ts';
 
-const official = loadAgents(join(resolveHome({}), AGENTS_DIR));
+const HOME = resolveHome({});
+// Only the committed cards: an agent promoted on this machine would join the list.
+const official = committedAgents(HOME);
 const arianna = official.get('arianna');
 const cards = mkdtempSync(join(tmpdir(), 'arianna-delegates-'));
 after(() => {

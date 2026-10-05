@@ -10,7 +10,7 @@ import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type Answer, type LoadedAgent } from '@arianna/agents';
+import { type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
@@ -29,6 +29,7 @@ import { startApiServer } from '../src/server/http.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask, type Task } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
 const ROOT = resolveHome({});
@@ -47,7 +48,7 @@ const claude = createClaudeExecutor({
   killGraceMs: 200,
   modelName: (model) => cloudModels[model].name,
 });
-const loaded = loadAgents(join(ROOT, AGENTS_DIR));
+const loaded = committedAgents(ROOT);
 
 /** Git in a test repository, without the user's configuration. */
 function gitIn(repo: string, ...args: string[]): string {

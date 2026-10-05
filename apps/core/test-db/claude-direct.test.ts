@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
+import { type Answer } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, WORKTREES_DIR, type ChatRequest, type LocalModel } from '@arianna/executors';
 
@@ -25,6 +25,7 @@ import { Secret } from '@arianna/vault';
 import { appendEvent } from '../src/events.ts';
 import { runDirect } from '../src/orchestrator/claude-direct.ts';
 import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
 const ROOT = resolveHome({});
@@ -37,7 +38,7 @@ const BASE = loadConfig();
 const SELECTABLE = ['sonnet', 'opus', 'fable'];
 
 const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 });
-const agents = loadAgents(join(ROOT, AGENTS_DIR));
+const agents = committedAgents(ROOT);
 
 after(() => {
   rmSync(HOME, { recursive: true, force: true });

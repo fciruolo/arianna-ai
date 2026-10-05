@@ -9,7 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgent, loadAgents, userCard, type Answer, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, userCard, type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
@@ -23,6 +23,7 @@ import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask, type Task } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
 
 const db = useTestDatabase();
 const ROOT = resolveHome({});
@@ -30,7 +31,7 @@ const HOME = join(ROOT, 'data', 'test-tmp', `local-delegation-${randomUUID()}`);
 const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
 const OPTIONS = { allowedActions: () => [] as readonly string[], agentLimits: () => ({ maxSteps: 30, maxMinutes: 20 }) };
 const BASE = loadConfig();
-const loaded = loadAgents(join(ROOT, AGENTS_DIR));
+const loaded = committedAgents(ROOT);
 
 after(() => {
   rmSync(HOME, { recursive: true, force: true });
