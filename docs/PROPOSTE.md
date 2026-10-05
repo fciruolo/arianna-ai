@@ -489,6 +489,200 @@ La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non 
 
 ---
 
+## D-096 — Backup cifrato notturno, 3-2-1, con prova di ripristino
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere
+- **Collegate:** D-028 (PostgreSQL in Docker), D-030 (due cartelle, Synology), D-042 (vault), D-046 (ruoli, doctor), D-047 (installer), D-058 (percorsi dei progetti), D-088 (Aggiorna), task 2.8 di `INSTALLER-PORTABILITY.md` (`export`/`import`, Fase 2), criterio di uscita della Fase 2 in `ROADMAP.md` ("ripristino da `export` provato su cartella nuova")
+
+### Contesto
+
+**Richiesta dell'utente:** backup notturno del core quando non c'è nulla in corso, con `pg_dump` più `data/kb`, `data/files`, vault e `config/arianna.toml` (non i modelli); archivio cifrato con una chiave age dedicata ai backup, la cui chiave privata non sta sul Mac; regola 3-2-1 (Mac, disco esterno o Time Machine escludendo i file vivi di PostgreSQL, Synology o fuori casa); conservazione di 7 giornalieri, 4 settimanali e 12 mensili; prova di ripristino automatica ogni settimana in un database temporaneo, con il controllo della catena degli eventi; stato e pulsanti in Impostazioni; backup prima di ogni Aggiorna (D-088).
+
+**Cosa c'è oggi** (verificato nel repository e sulla macchina di sviluppo il 2026-10-05):
+- **PostgreSQL** gira in Docker da `compose.yaml` (`postgres:17.11-alpine` fissata per digest, D-028), lanciato con `pnpm db:up` → `scripts/compose.ts`, che passa a `docker compose` porta, nome, proprietario e cartella dati presi da `arianna.toml`; i file vivi stanno in `data/postgres` (bind mount su `/var/lib/postgresql/data`). Il container (`arianna-postgres-1`) ha **`pg_dump` e `pg_restore` 17.11**, `tar` e `gzip`; sul Mac `pg_dump` non c'è, e non serve installarlo: si usa quello del container, della stessa versione del server. Nel container l'accesso dal socket locale è `trust` (`local all all trust` in `pg_hba.conf`, come lo crea l'immagine): `docker compose exec postgres pg_dump -U <proprietario>` funziona senza password. È già vero oggi per chiunque abbia il socket di Docker; va scritto in `SECURITY.md`.
+- **Cartelle di `data/`:** esistono `data/backups/` (vuota, oggi con permessi 755), `data/vault/` (700), `data/kb/` (vuota), `data/archive/`, `data/models/`, `data/omlx-cache/`, `data/postgres/`. `data/files/` **non esiste ancora**: nasce con la cattura di D-080 (`data/files/inbox/<sha256>.<ext>` in questo file). La KB vera vive in `data/kb/` secondo `ARCHITECTURE.md`, ma il codice di oggi (`scripts/kb-capture.ts`, `apps/core/src/organize.ts`) scrive in `kb/` della radice, cioè nel campione finto in git (vedi "Cose non verificate" qui sotto).
+- **Vault:** `data/vault/secrets.yaml` cifrato con sops+age e `data/vault/.sops.yaml` con la sola chiave pubblica (D-042); la chiave privata del vault sta dove sops la cerca, fuori da `ARIANNA_HOME`. `age` e `sops` sono installati (`/opt/homebrew/bin`).
+- **Catena degli eventi:** `verifyEventChain` in `apps/core/src/events.ts` chiama la funzione SQL `verify_event_chain()` e restituisce il primo id che non torna; `pnpm arianna:doctor` la esegue come `arianna_app` (`apps/core/src/doctor.ts`, controllo `events.chain`). Il commento della funzione dice il limite: **le righe tolte dalla coda del registro non si vedono dalla sola catena**. Per questo il backup salva ultimo id e ultimo hash, e la prova di ripristino li confronta.
+- **"Nulla in corso"** si legge dal database: `tasks.status = 'running'` (enum di `0001_init.sql`), `jobs.status = 'running'` in qualunque coda (passi dei task, riordino di D-086, prove dei modelli), `calls.status IN ('ringing', 'connecting', 'active')` (`0015_calls.sql`), `model_evals.status = 'running'` (`0019_model_evals.sql`). Dal controllo dei job va esclusa la coda `backup` stessa: il lavoro di backup, mentre controlla, è `running` e altrimenti vedrebbe sempre qualcosa in corso. La coda è quella di `apps/core/src/jobs.ts` (`FOR UPDATE SKIP LOCKED`, `run_at` per i lavori programmati, chiave unica per lavoro): un lavoro notturno si mette in coda senza un cron nuovo.
+- **Time Machine:** `tmutil isexcluded data/postgres` risponde oggi `[Included]`: se Time Machine è attivo, copia i file vivi del database, proprio ciò che la richiesta vuole evitare.
+- **Spazio:** il disco del Mac di sviluppo è al 95% (20,8 GB liberi, letti con `df` nel container sul bind mount). Conta per la conservazione locale.
+- **Documenti esistenti:** `INSTALLER-PORTABILITY.md` prevede `arianna export` → `backups/arianna-AAAA-MM-GG.tar.age` e `arianna import` (task 2.8, Fase 2) e vieta di sincronizzare `data/postgres` dal vivo ("si sincronizzano i dump in `backups/`"); D-088 prevede un `pg_dump` in chiaro in `data/backups/`, mai sincronizzato, prima dell'aggiornamento. **D-096 assorbe e allarga il task 2.8:** l'export diventa automatico e notturno, con copie, conservazione e prova di ripristino; l'`import` diventa la procedura di ripristino del punto 9. **Quando la proposta si applica vanno allineati** (non li tocco ora): il passo (2) di D-088 (dump in chiaro in `data/backups/` → `data/updates/pre-update/`, punto 11); `INSTALLER-PORTABILITY.md` riga 17 (`backups/  # dump cifrati`: restano solo archivi cifrati e `status.json`) e riga 101 (`data/postgres/`: "si sincronizzano i dump in `backups/`" → si sincronizzano gli archivi cifrati di `data/backups/daily/`), più la sezione "Export e import" e la riga del 2.8 nelle stime; `ROADMAP.md` per il 2.8 e il criterio di uscita della Fase 2.
+
+### Proposta
+
+**Un comando, un formato, tre destinazioni.** Nuovo comando `pnpm arianna:backup run|verify|list|prune` in `apps/installer` (dove stanno già `doctor` e `models`), con soli moduli di Node e binari già presenti (`docker`, `age`, `tar` e `gzip` di sistema). **Nessuna dipendenza nuova.**
+
+**1. Cosa entra nell'archivio.**
+
+| Contenuto | Fonte | Note |
+| --- | --- | --- |
+| `db/arianna.dump` | `pg_dump --format=custom` del database `arianna`, lanciato con `docker compose exec -T postgres` come proprietario (socket del container, senza password) | Un'unica transazione MVCC: è coerente anche con lavori in corso; contiene `verify_event_chain()`, i trigger e i GRANT ad `arianna_app` |
+| `db/roles.sql` | `pg_dumpall --roles-only --no-role-passwords` | Per ricreare `arianna_app` in un cluster nuovo; nessuna password né verificatore |
+| `kb/`, `files/`, `archive/` | `data/kb`, `data/files`, `data/archive` (quelle che esistono) | `archive/` non è nella richiesta ma è L2 e `INSTALLER-PORTABILITY.md` lo mette nell'export: domanda 4 |
+| `vault/` | `data/vault/secrets.yaml` e `.sops.yaml` | Già cifrati con la chiave del vault: nell'archivio restano cifrati due volte. La chiave privata del vault **non** entra |
+| `config/arianna.toml` | `config/arianna.toml` | Contiene solo riferimenti `vault://` (D-046), nessun segreto |
+| `manifest.json` | scritto dal comando | Versione del formato, data, commit di `HEAD`, migrazioni applicate con sha256 (da `schema_migrations`), ultimo id e ultimo hash di `events`, righe per tabella, dimensioni, se c'erano lavori in corso |
+| `SHA256SUMS` | scritto dal comando | Un'impronta per ogni file dell'archivio |
+
+**Fuori:** `data/models/` (si riscaricano con `pnpm arianna:models pull`), `data/omlx-cache/` (stato derivato, D-075), `data/postgres/` (si salva solo il dump), `data/voice/venv` (si ricostruisce con `pnpm voice:sync`), `data/evals/`, log, `data/tmp/`, `data/worktrees/`, `data/backups/` stessa. Il codice non entra: il manifest dice il commit, e si ripristina con quel commit.
+
+**2. Formato e cifratura.** Un file per backup: `arianna-<AAAA-MM-GG>T<HHMM>-<commit7>.tar.gz.age`, cioè un tar compresso con gzip e cifrato con `age -r <chiave pubblica>` (formato standard: si apre con `age` e `tar` su qualunque macchina, senza Arianna). Il comando scrive il dump in una cartella di lavoro, poi fa una sola pipeline `tar | gzip | age` verso `<nome>.part`, `fsync` e rinomina, come i download di D-047. L'archivio si rinomina solo se **ogni processo della pipeline** (`pg_dump` prima, poi `tar`, `gzip`, `age`) è uscito con 0: un `tar` fallito con `age` riuscito darebbe un archivio troncato ma valido in apparenza. Dopo la rinomina il comando calcola lo sha256 del file `.age` e lo registra in `status.json`: serve a rileggere le copie senza la chiave (punto 5). Il dump in chiaro sta **fuori da `data/backups/` per costruzione**, in `data/tmp/backup-work/` (700, file 600), perché `tar` deve conoscere le dimensioni in anticipo. La cartella resta in vita e si **svuota** alla fine del giro e, se un crollo l'ha lasciata piena, all'inizio del successivo: così l'esclusione da Time Machine, che vale per il percorso, non si perde. KB, file e vault si leggono al loro posto, senza copie in chiaro.
+- **La chiave dei backup è diversa da quella del vault** (domanda 2) e il Mac ne conosce **solo la pubblica**: `[backup] recipients = ["age1..."]` in `arianna.toml` (una chiave pubblica non è un segreto). La privata si genera con `age-keygen` su un altro computer o direttamente su una chiavetta, e si tiene stampata o in un gestore di password più una copia su chiavetta in un cassetto. Si possono mettere due destinatari (per esempio la chiave su carta e una seconda in un'altra casa): `age` cifra per tutti.
+- Conseguenza voluta: **un ladro del Mac o un ransomware non può aprire i backup**, e un archivio preso dal disco esterno o dal Synology è illeggibile; ma neppure Arianna può aprirli da sola. Per questo la prova automatica (punto 5) lavora sul dump ancora in chiaro, prima che sia cifrato, e la prova con la chiave privata la fa l'utente a mano (punto 9).
+
+**3. Dove scrive (tutto relativo a `ARIANNA_HOME`).**
+In `data/backups/` stanno **solo archivi `.age` e `status.json`**: niente in chiaro, mai, così la cartella intera si può sincronizzare e copiare senza eccezioni.
+- `data/backups/daily/`: archivi cifrati (700, file 600).
+- `data/backups/status.json`: esito di ogni giro, prova e copia, sha256 di ogni archivio; letto dal core e dal doctor, sopravvive anche alla perdita del database.
+- `data/tmp/backup-work/`: dump in chiaro durante il giro; sempre presente e vuota fuori dal giro, mai sincronizzata, esclusa da Time Machine.
+- `data/updates/pre-update/`: il dump in chiaro di D-088 (accanto ai log degli aggiornamenti che D-088 già mette in `data/updates/`), che deve restare ripristinabile in automatico per il ritorno indietro dell'Aggiorna: con un archivio cifrato per una chiave che sul Mac non c'è, il ritorno indietro non si potrebbe fare. Mai sincronizzata, esclusa da Time Machine; conservazione al punto 7.
+- Le destinazioni fuori dal Mac stanno in `[backup]`: `external = "/Volumes/<disco>/Arianna-backup"` e `offsite = "/Volumes/<condivisione Synology>/Arianna-backup"` (oppure una cartella sincronizzata da Synology Drive). Sono le uniche eccezioni ai percorsi relativi, come `~/` per i progetti (D-058): ammesse solo sotto `/Volumes/`, validate da `packages/config`. La radice dei volumi (`/Volumes`) è un parametro del codice, non una costante: i test ne iniettano una finta dentro `data/test-tmp/`.
+
+**4. Quando gira.** Il core mette in coda ogni notte un lavoro `backup` (coda di `jobs.ts`, chiave unica, `run_at` alle 03:00). Il worker controlla le quattro condizioni del Contesto (escludendo la coda `backup`); se c'è qualcosa in corso **chiude il job come fatto e ne accoda uno nuovo** con `run_at` fra 10 minuti, nella stessa transazione e con la stessa chiave, invece di usare il ritorno in coda per errore (`retry`) di `jobs.ts`, che consumerebbe un tentativo a ogni rinvio e dopo `max_attempts` darebbe `failed`; il job porta nel payload l'ora limite, così il rinvio non sposta la finestra. Così fino alle 05:00. Se alle 05:00 è ancora occupato, il backup parte lo stesso (il dump è comunque coerente) e il manifest lo segna "con lavori in corso". Durante il giro il core non sospende nulla. Il giro lo esegue un **processo figlio** (`node apps/installer/src/cli.ts backup run`) con ambiente ridotto, come i binari del vault: il processo che resta acceso continua a non conoscere la password del proprietario, ma il figlio usa `docker compose exec` e quindi ha di fatto i poteri del proprietario (domanda 5 sull'alternativa launchd). Eventi `backup.started`, `backup.done`, `backup.failed` (L0: dimensione, durata, codice d'errore; mai percorsi di file della KB).
+
+**5. Prova di ripristino automatica (ogni domenica, nello stesso giro).** Prima di cifrare e cancellare il dump in chiaro, il comando:
+1. toglie un eventuale `arianna-restore-check` rimasto da un crollo (`docker rm -f arianna-restore-check`), poi avvia un **container temporaneo** con quel nome dalla stessa immagine fissata, con `--network none`, senza porte né volumi, dati in `--tmpfs /var/lib/postgresql/data` (niente sul disco del Mac, sparisce con il container) e un `POSTGRES_PASSWORD` casuale generato per la prova, che l'immagine richiede per inizializzare il cluster e che nessuno usa (si entra dal socket);
+2. applica `db/roles.sql`, poi `pg_restore --exit-on-error --single-transaction`;
+3. **ripristina il permesso che il dump non porta:** `pg_dump` senza `--create` non salva i permessi del database, quindi il `REVOKE TEMPORARY ON DATABASE ... FROM PUBLIC` e `FROM arianna_app` di `0007_app_role.sql` si perde. La prova li riesegue e controlla che `has_database_privilege('arianna_app', current_database(), 'TEMPORARY')` sia falso: è lo stesso passo della procedura a mano (punto 9);
+4. esegue `SELECT verify_event_chain()` e confronta ultimo id e ultimo hash di `events` con il manifest (così si vedono anche le righe tolte dalla coda), le migrazioni con `schema_migrations` e le righe per tabella;
+5. verifica `SHA256SUMS` sui file messi nell'archivio;
+6. ferma e cancella il container, scrive l'esito in `status.json` e un evento `backup.verified` o `backup.verify_failed`.
+
+Un container a parte non tocca il cluster di produzione (niente `CREATE DATABASE` lì, niente blocchi, niente spazio nel suo disco) e prova anche il percorso di un Mac nuovo, ruoli compresi. Il comando rilegge inoltre le copie già scritte e confronta lo sha256 del file cifrato con quello di `status.json`: **ogni notte l'ultimo archivio** su ogni destinazione, e **tutti gli altri a rotazione nell'arco di una settimana**, così la lettura notturna resta breve. Trova un archivio rovinato sul disco esterno senza bisogno della chiave.
+
+**6. Copie e regola 3-2-1.** Tre copie su due supporti, una fuori casa: (a) dati vivi più archivi in `data/backups/daily/` sul Mac; (b) disco esterno; (c) Synology, o una sua copia fuori casa (domanda 1). Arianna **non usa mai la rete** per i backup: scrive solo su percorsi montati. Se l'utente vuole la copia fuori casa in un cloud, la fa il Synology (per esempio Hyper Backup) con file già cifrati: un archivio cifrato con una chiave che non sta sul Mac rispetta `INSTALLER-PORTABILITY.md` ("mai verso cloud di terzi senza cifratura") e non è un'uscita di Arianna fuori dal gateway.
+- **Time Machine** è un'alternativa al disco esterno dedicato, non un'aggiunta obbligatoria. Se è attivo, l'installer stampa i comandi `tmutil addexclusion` (li lancia l'utente) per `data/postgres`, `data/tmp/backup-work`, `data/updates/pre-update`, `data/omlx-cache` e `data/models`. Attenzione: Time Machine copia anche `data/kb`, `data/files` e `data/archive` in chiaro, quindi il suo disco deve essere cifrato (domanda 3).
+- **Disco esterno assente:** prima di scrivere il comando controlla che il percorso sia un volume montato (il dispositivo di `/Volumes/<disco>` diverso da quello di `/`) e che contenga il file `.arianna-backup-target` con l'id dell'installazione, scritto alla prima configurazione; altrimenti **non crea nulla** (niente cartelle sul disco interno sotto `/Volumes/`, l'errore classico). Sotto `/Volumes/` possono comparire anche **volumi di servizi cloud** (client basati su macFUSE, WebDAV, rclone, Mountain Duck e simili): il comando legge il tipo di file system del volume (`statfs`) e accetta solo dischi locali e condivisioni del NAS (`apfs`, `hfs`, `exfat`, `msdos`, `smbfs`, `afpfs`, `nfs`), rifiutando il resto con un errore che lo spiega; una copia verso un cloud la fa il NAS, non un volume montato sul Mac. La copia resta "in attesa", l'archivio resta sul Mac e la copia riparte quando il disco torna, al giro successivo o dal pulsante. Stato giallo dopo 2 giorni senza copia esterna, rosso dopo 7, con un avviso nella chat web; su Telegram al massimo un testo fisso L0.
+- **Spazio:** se lo spazio libero è sotto il doppio dell'ultimo archivio, il giro si ferma prima di cominciare con un errore chiaro, senza riempire il disco del database.
+
+**7. Conservazione.** Nonno-padre-figlio, calcolata su ogni destinazione per conto suo: l'ultimo archivio di ognuno degli ultimi 7 giorni, di ognuna delle ultime 4 settimane e di ognuno degli ultimi 12 mesi (al massimo 23 file). Sul Mac, dato lo spazio, bastano i 7 giornalieri (domanda 6). Un archivio con la prova fallita non conta come valido e non fa scadere i più vecchi. I dump di `data/updates/pre-update/` non contano qui: ognuno si cancella 7 giorni dopo l'aggiornamento riuscito, e comunque se ne tengono al massimo 5 (i più recenti), che è anche la raccomandazione della domanda 3 di D-088.
+
+**8. Impostazioni.** Sezione "Backup" in `apps/hud/src/components/SettingsPage.vue`: ultimo backup (ora, dimensione, esito, "con lavori in corso"), ultima prova di ripristino (ora, esito, eventi verificati), una riga per destinazione (Mac, disco esterno, fuori casa: ultima copia, verde/giallo/rosso, "disco non collegato"), prossimo giro. Pulsanti: **"Fai un backup ora"**, **"Prova il ripristino ora"**, **"Copia ora sul disco esterno"**. Nessun pulsante di ripristino: sostituire il database è irreversibile e si fa dal terminale (punto 9). Rotte `GET /api/backups`, `POST /api/backups/run`, `POST /api/backups/verify`, `POST /api/backups/copy`, solo dalla chat su loopback, mai da Telegram, dalla voce o da un agente (stessa regola di D-088). La sezione mostra stati e date, mai nomi di file della KB.
+
+**9. Ripristino a mano.** Su un Mac nuovo, o nella stessa installazione dopo un guasto: dalla cartella `ARIANNA_HOME`, con il codice clonato e `pnpm install` fatto, `data/postgres` vuota o assente e la chiave privata dei backup su una chiavetta.
+
+```sh
+# 1. Decifrare in una cartella privata sotto data/
+mkdir -m 700 data/restore
+age --decrypt -i /Volumes/<chiavetta>/arianna-backup-key.txt \
+  /Volumes/<disco>/Arianna-backup/arianna-2026-10-05T0310-82e7849.tar.gz.age \
+  | tar -xzf - -C data/restore
+(cd data/restore && shasum -a 256 -c SHA256SUMS)
+cat data/restore/manifest.json          # commit e migrazioni
+
+# 2. Stesso codice del backup, con le sue dipendenze
+git checkout <commit del manifest>
+pnpm install --frozen-lockfile
+
+# 3. Configurazione, vault, KB, file
+cp data/restore/config/arianna.toml config/arianna.toml
+mkdir -p -m 700 data/vault && cp -R data/restore/vault/. data/vault/
+mkdir -p data/kb && cp -R data/restore/kb/. data/kb/
+[ -d data/restore/files ] && mkdir -p data/files && cp -R data/restore/files/. data/files/
+[ -d data/restore/archive ] && mkdir -p data/archive && cp -R data/restore/archive/. data/archive/
+# la chiave privata del vault va rimessa dove sops la cerca (D-042), dalla sua copia
+
+# 4. Database: cluster nuovo, ruoli, dati
+pnpm db:up
+node scripts/compose.ts exec -T postgres psql -U arianna -d postgres < data/restore/db/roles.sql
+#    (l'errore "role arianna already exists" è atteso)
+node scripts/compose.ts exec -T postgres pg_restore -U arianna -d arianna \
+  --exit-on-error --single-transaction < data/restore/db/arianna.dump
+#    il dump non porta i permessi del database: si rifà il REVOKE di 0007_app_role.sql
+node scripts/compose.ts exec -T postgres psql -U arianna -d arianna -v ON_ERROR_STOP=1 \
+  -c 'REVOKE TEMPORARY ON DATABASE arianna FROM PUBLIC' \
+  -c 'REVOKE TEMPORARY ON DATABASE arianna FROM arianna_app' \
+  -c "SELECT has_database_privilege('arianna_app', 'arianna', 'TEMPORARY')"   # deve dire f
+
+# 5. Password vere e controlli (D-046)
+#    psql: \password del proprietario, come in SECURITY.md
+pnpm db:migrate        # ridà ad arianna_app la sua password; le migrazioni risultano già applicate
+pnpm arianna:models pull
+pnpm arianna:doctor    # catena degli eventi compresa
+
+# 6. Pulizia
+rm -rf data/restore
+```
+
+Un comando `pnpm arianna:backup restore <file> --identity <chiave>` potrà fare gli stessi passi, solo su un `data/postgres` vuoto e con conferma; per ora la procedura resta a mano e va scritta in `SECURITY.md`. La **prova completa con la chiave privata** (decifrare un archivio vero dal disco esterno e ripristinarlo come sopra in una cartella nuova) è il criterio della Fase 2 e conviene ripeterla ogni tre mesi; l'utente la registra con `pnpm arianna:backup verify --manual-done` e il doctor ricorda la data dell'ultima.
+
+**10. Cosa entra in `pnpm arianna:doctor`.**
+- `[backup]` presente, con almeno una chiave pubblica age valida;
+- la chiave dei backup **non è** quella del vault (confronto con i destinatari di `data/vault/.sops.yaml`), e **nessuna delle identità age che il doctor sa trovare** (`SOPS_AGE_KEY_FILE`, `SOPS_AGE_KEY`, il file predefinito di sops) corrisponde a uno dei `recipients` (pubblica ricavata con `age-keygen -y`). Il controllo dice "la privata dei backup non è dove sops la cerca", non "non è sul Mac": un file messo altrove non si vede, e il messaggio lo dice;
+- ultimo backup riuscito da meno di 36 ore; ultima prova di ripristino riuscita da meno di 8 giorni; ultima copia esterna da meno di 7 giorni e ultima fuori casa da meno di 30 (soglie da confermare, domanda 7);
+- `data/backups` 700 e archivi 600; in `data/backups/` solo file `.age` e `status.json`; `data/tmp/backup-work/` esistente, 700 e **vuota** fuori da un giro in corso; in `data/updates/pre-update/` al massimo 5 dump, nessuno più vecchio di 7 giorni dopo l'aggiornamento;
+- se Time Machine ha una destinazione (`tmutil destinationinfo`), esclusi (`tmutil isexcluded`) `data/postgres`, `data/tmp/backup-work` e `data/updates/pre-update`;
+- nessuna `data/restore/` rimasta da un ripristino a mano;
+- spazio libero almeno il doppio dell'ultimo archivio;
+- data dell'ultima prova manuale con la chiave privata (solo avviso, oltre 90 giorni).
+
+Come oggi, in sviluppo con dati finti alcuni controlli falliscono ed è normale; nell'installazione vera devono passare tutti.
+
+**11. Prima di ogni Aggiorna (D-088).** Il passo (2) di D-088 diventa `pnpm arianna:backup run --reason pre-update`: archivio cifrato completo (con le copie, se il disco c'è) **e** dump in chiaro in `data/updates/pre-update/` per il ritorno indietro automatico. Applicando D-096, il testo del passo (2) di D-088 va corretto di conseguenza: oggi dice `data/backups/<data>-<commit>.dump`, cioè un dump in chiaro nella cartella che qui contiene solo archivi cifrati. Se il backup fallisce, l'aggiornamento non parte.
+
+### Alternative scartate
+
+- **Copiare `data/postgres`** (direttamente, o lasciandolo a Time Machine o a Synology Drive). Copie di file vivi, corruzione possibile; già vietato da `INSTALLER-PORTABILITY.md`.
+- **Archiviazione continua dei WAL e ripristino a un istante** (pgBackRest, WAL-G, `pg_basebackup`). Dipendenze nuove e configurazione del server; con un database di poche centinaia di MB (oggi 222 MB su disco, dati finti) un dump notturno basta. Si riprende se si vuole perdere meno di un giorno.
+- **Restic o Borg** (deduplicazione, cifratura propria). Dipendenze nuove e un secondo sistema di chiavi accanto ad age, che c'è già e basta.
+- **Cifrare con la chiave del vault.** Chi ruba il Mac con la chiave del vault aprirebbe anche tutti i backup, e perdere quella chiave porterebbe via insieme vault e backup.
+- **Chiave privata dei backup sul Mac per una prova automatica completa.** Toglierebbe proprio la protezione richiesta; la prova sul dump in chiaro prima della cifratura, lo sha256 delle copie e la prova manuale trimestrale coprono gli stessi guasti.
+- **Prova di ripristino in un database temporaneo dello stesso cluster.** Più semplice, ma tocca la produzione (spazio, blocchi, `CREATE DATABASE`) e non prova i ruoli; il container temporaneo sì.
+- **Invio diretto al cloud da Arianna.** Un'uscita di dati L2 (cifrati, ma comunque un canale) fuori dal gateway; la copia fuori casa la fa il NAS dell'utente.
+- **Pulsante "Ripristina" nelle Impostazioni.** Irreversibile e raro: meglio dal terminale, con la procedura scritta.
+
+### Rischi per la privacy
+
+- **Dump in chiaro temporaneo** in `data/tmp/backup-work/` per la durata del giro, fuori da `data/backups/` per costruzione. Mitigazioni: 700/600, svuotata alla fine e al giro successivo, esclusa da Time Machine e da Synology Drive, il doctor la vuole vuota. La prova di ripristino non scrive su disco (`--tmpfs`). È la stessa esposizione dei file di `data/postgres`, già in chiaro sullo stesso disco.
+- **I dump di `data/updates/pre-update/`** sono in chiaro fino a 7 giorni dopo l'aggiornamento, al massimo 5: mai sincronizzati, esclusi da Time Machine, poi cancellati.
+- **Ripristino a mano:** durante la procedura del punto 9 tutto l'archivio sta decifrato in `data/restore/` (700). Va cancellato alla fine (ultimo passo della procedura) e non deve stare su un percorso sincronizzato; il doctor segnala una `data/restore/` rimasta.
+- **Time Machine** copia `data/kb`, `data/files` e `data/archive` in chiaro: va bene solo con un disco cifrato. Il doctor vede se Time Machine ha una destinazione; che sia cifrata lo conferma l'utente (domanda 3).
+- **Poteri del processo di backup:** `docker compose exec` sul socket `trust` del container equivale a essere il proprietario del database. Il processo figlio lo usa solo per `pg_dump`, `pg_dumpall` e il container di prova; le connessioni del core restano `arianna_app`. Da scrivere in `SECURITY.md`.
+- **Chiave privata dei backup persa = backup inutili.** È il prezzo della chiave fuori dal Mac: due copie della privata in due posti, e la prova manuale trimestrale dimostra che almeno una funziona.
+- **Metadati:** sul disco esterno e sul NAS si vedono nome del file (data e commit) e dimensione, nulla di più. Gli eventi `backup.*` sono L0.
+- **Nessun canale esterno:** nessuna rete, nessun esecutore cloud; i testi verso Telegram, se attivati, sono fissi e L0.
+- **Sviluppo:** qui ci sono solo dati finti; il comando si prova con una chiave generata nei test, e la chiave vera si crea solo per l'installazione di produzione.
+
+### Cosa si può costruire subito a basso rischio
+
+**Piano a tappe** (stime mie, non misurate):
+
+| Tappa | Cosa | Ore |
+| --- | --- | --- |
+| 1 | `[backup]` in `packages/config` (chiavi pubbliche, `external`, `offsite`, solo sotto `/Volumes/`); `pnpm arianna:backup run` a mano: `data/tmp/backup-work/`, `pg_dump` e `pg_dumpall` dal container, manifest, `SHA256SUMS`, pipeline `tar \| gzip \| age` con l'esito di ogni processo, rinomina atomica, sha256 del `.age`, permessi, `status.json`, `list` | 5-7 |
+| 2 | `pnpm arianna:backup verify`: `docker rm -f` del container rimasto, container temporaneo `--network none` con `--tmpfs`, ruoli, `pg_restore`, `REVOKE TEMPORARY` e controllo con `has_database_privilege`, `verify_event_chain()`, confronto con il manifest; sha256 delle copie (l'ultimo ogni notte, gli altri a rotazione) | 4-6 |
+| 3 | Copie su disco esterno e fuori casa con controllo del volume, del tipo di file system e del file segnaposto, conservazione 7/4/12 per destinazione (`prune`), controllo dello spazio | 3-4 |
+| 4 | Controlli nel doctor (punto 10); procedura di ripristino in `SECURITY.md`; allineamento di `INSTALLER-PORTABILITY.md` (righe 17 e 101, export/import, 2.8), `ROADMAP.md` e D-088; comando in `CLAUDE.md` | 2-3 |
+| 5 | Nel core: lavoro notturno nella coda, condizioni di "nulla in corso" (senza la coda `backup`), rinvio con un job nuovo senza consumare tentativi, finestra 03:00-05:00, processo figlio, eventi `backup.*`, rotte; sezione "Backup" in Impostazioni | 5-7 |
+| 6 | Aggancio a D-088 (`--reason pre-update`, `data/updates/pre-update/`, al massimo 5 per 7 giorni), quando D-088 viene costruita | 1-2 |
+
+Totale: circa 20-29 ore.
+
+**Subito, con soli dati finti:** le tappe 1 e 2 come comandi a mano. Test in `apps/installer/test` (senza servizi): validazione di `[backup]` (relativo, `/Volumes/` accettato, altro percorso assoluto rifiutato, chiave pubblica malformata); conservazione 7/4/12 su date finte (un archivio con prova fallita non fa scadere i precedenti); controllo del volume con una radice dei volumi finta iniettata dal test (cartella sul disco interno rifiutata, segnaposto con un altro id rifiutato, tipo di file system non ammesso rifiutato); un processo della pipeline che fallisce non lascia un archivio rinominato; il rinvio del job non consuma tentativi e non conta la coda `backup` come "in corso"; in `data/backups/` non finisce mai un file in chiaro; l'archivio non contiene `models/`, `postgres/` né `omlx-cache/`; manifest e `SHA256SUMS` coerenti; la chiave del vault usata come chiave dei backup fa fallire il controllo. Test in `apps/installer/test-db` (`pnpm test:db`): giro completo su un database finto con una chiave age generata nel test; prova di ripristino che passa, che fallisce se dal dump manca l'ultimo evento (la catena da sola non lo vedrebbe, il manifest sì) e che fallisce se dopo il ripristino `arianna_app` ha ancora `TEMPORARY`. D-096 assorbe e allarga il task 2.8 della Fase 2: serve l'assenso dell'utente (regola "una fase alla volta"), e applicandola vanno allineati `ROADMAP.md` e `INSTALLER-PORTABILITY.md`.
+
+### Domande per l'utente
+
+1. **Dove va la copia fuori dal Mac?** (a) Synology di casa, come cartella condivisa montata o cartella di Synology Drive (secondo dispositivo, ma stessa casa); (b) Synology più Hyper Backup verso un secondo sito o un cloud, con file già cifrati; (c) un secondo disco esterno tenuto fuori casa a rotazione. Raccomandazione: (a) subito e (b) appena possibile: la regola 3-2-1 chiede una copia fuori casa, e un incendio o un furto prende Mac, disco e NAS insieme.
+2. **Chiave age dei backup separata da quella del vault, con la privata solo fuori dal Mac (carta o gestore di password, più una chiavetta)?** Raccomandazione: sì, separata; e due destinatari se c'è un secondo posto sicuro.
+3. **Disco esterno dedicato o Time Machine? E se Time Machine, il suo disco è cifrato?** Raccomandazione: disco esterno cifrato (APFS cifrato); Time Machine solo se cifrato e con le esclusioni di `tmutil`, perché altrimenti copia la KB in chiaro.
+4. **`data/archive/` entra nel backup?** Non era nella richiesta, ma è L2 e `INSTALLER-PORTABILITY.md` lo mette nell'export. Raccomandazione: sì.
+5. **Chi lancia il giro notturno: il core (lavoro in coda, sa quando nulla è in corso) o un servizio launchd separato (il core non arriva mai a Docker)?** Raccomandazione: il core, con un processo figlio; launchd servirà comunque per D-088 e il giro si può spostare lì.
+6. **Sul Mac solo i 7 giornalieri (disco di sviluppo al 95%) e i 7/4/12 completi su disco esterno e fuori casa?** Raccomandazione: sì.
+7. **Soglie degli avvisi** (copia esterna: giallo dopo 2 giorni, rosso dopo 7; fuori casa: dopo 30) **e un testo fisso L0 anche su Telegram?** Raccomandazione: soglie così, Telegram solo per il rosso.
+
+### Cose non verificate (D-096)
+
+- Dove vive la KB vera: `ARCHITECTURE.md` dice `data/kb/`, ma `scripts/kb-capture.ts` e `apps/core/src/organize.ts` lavorano su `kb/` della radice. Prima dei dati veri documenti e codice vanno messi d'accordo (D-013); il backup legge il percorso da quel punto unico.
+- Che `pg_dumpall --roles-only --no-role-passwords` più `pg_restore` ricrei `arianna_app` con gli stessi attributi di `0007_app_role.sql`: da provare nella tappa 2; `pnpm arianna:doctor` lo controlla comunque dopo un ripristino. Il `REVOKE TEMPORARY ON DATABASE` invece si perde di sicuro (`pg_dump` senza `--create` non salva i permessi del database) e per questo è un passo esplicito del ripristino e della prova.
+- Tempo di `pg_dump` e dimensione dell'archivio con i dati veri: oggi `data/postgres` occupa 222 MB con dati finti.
+- Se Time Machine è davvero configurato su questo Mac (`tmutil isexcluded` risponde anche senza destinazione) e se il suo disco è cifrato.
+- Come Synology Drive tratta un `.part` in scrittura (che non ne sincronizzi uno a metà): da provare con la cartella vera, oppure scrivere il `.part` fuori dalla cartella sincronizzata e spostarlo alla fine.
+
+
+
+---
+
 ## Cose non verificate
 
 - Numeri di stelle, commit e date: letti da pagine GitHub riassunte da un modello; la data delle release di Open Design (2024 sulla pagina, incoerente con la licenza del 2026) va controllata.
