@@ -7,8 +7,11 @@ import {
   clipPiece,
   HISTORY_LIMITS,
   MAX_PIECE,
+  MAX_SUMMARY,
+  readSummary,
   SUMMARY_LIMITS,
   SUMMARY_MARK,
+  SUMMARY_PROMPT,
   summaryMessage,
   summaryInputLine,
   type AnchorLimits,
@@ -118,4 +121,23 @@ test('a piece is trimmed and kept within its maximum', () => {
   const long = clipPiece('a'.repeat(MAX_PIECE * 2));
   assert.equal(long.length, MAX_PIECE);
   assert.ok(long.endsWith('…'));
+});
+
+test('the summary is read from {"summary": ...} only when complete, in shape and without control characters', () => {
+  assert.deepEqual(readSummary({ value: { summary: ' Riassunto.\nAltro. ' }, finishReason: 'stop' }), { summary: 'Riassunto.\nAltro.' });
+  assert.deepEqual(readSummary({ value: { summary: 'Riassunto.' }, finishReason: 'length' }), { reason: 'truncated' });
+  assert.deepEqual(readSummary({ finishReason: 'stop' }), { reason: 'bad-response' });
+  assert.deepEqual(readSummary({ value: 'We need to summarize...', finishReason: 'stop' }), { reason: 'bad-response' });
+  assert.deepEqual(readSummary({ value: { summary: 'Ok.', thought: 'x' }, finishReason: 'stop' }), { reason: 'bad-response' });
+  assert.deepEqual(readSummary({ value: { summary: 'Ok\u001b[2J' }, finishReason: 'stop' }), { reason: 'bad-response' });
+  assert.deepEqual(readSummary({ value: { summary: 'a'.repeat(MAX_SUMMARY + 1) }, finishReason: 'stop' }), { reason: 'bad-response' });
+  assert.deepEqual(readSummary({ value: { summary: 'a'.repeat(MAX_SUMMARY) }, finishReason: 'stop' }), { summary: 'a'.repeat(MAX_SUMMARY) });
+  assert.deepEqual(readSummary({ value: { summary: ' \t ' }, finishReason: 'stop' }), { reason: 'empty-summary' });
+});
+
+test('the summarizer is told to keep secrets out and to tell requests from things done', () => {
+  assert.match(SUMMARY_PROMPT, /Never write passwords, access codes or card numbers/);
+  // Addresses and phone numbers are useful facts: the label the piece inherits protects them.
+  assert.doesNotMatch(SUMMARY_PROMPT, /address|phone/i);
+  assert.match(SUMMARY_PROMPT, /a request is not a fact/);
 });

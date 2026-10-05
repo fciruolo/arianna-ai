@@ -16,7 +16,18 @@ import { processStepJob, STEP_QUEUE } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
-import { conversationView, HISTORY_LIMITS, MAX_PIECES_PER_STEP, PLACEHOLDER_PIECE, SUMMARY_MARK, writeMissingSummaries } from '../src/orchestrator/summaries.ts';
+import {
+  conversationView,
+  HISTORY_LIMITS,
+  MAX_PIECES_PER_STEP,
+  MAX_SUMMARY,
+  PLACEHOLDER_PIECE,
+  SUMMARY_MARK,
+  SUMMARY_SCHEMA,
+  SUMMARY_SCHEMA_NAME,
+  SUMMARY_TIMEOUT_MS,
+  writeMissingSummaries,
+} from '../src/orchestrator/summaries.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -31,12 +42,15 @@ const OPTIONS = {
 };
 const kb = createKb({ home: HOME, rules: RULES });
 
-type Summary = string | LocalModelError;
+/** A scripted summary: the text of {"summary": ...}, an error, a raw answer of the model, or "hang". */
+type Summary = string | LocalModelError | { text: string; value?: unknown; finishReason?: string };
+const HANG = 'hang';
 
 /**
- * A local model: requests without a schema are the summarizer's, answered
- * with the next scripted summary (default "Riassunto N."); the others are the
- * orchestrator's, answered with the next scripted answer.
+ * A local model: requests with the summary schema are the summarizer's,
+ * answered with the next scripted summary (default "Riassunto N."); the
+ * others are the orchestrator's, answered with the next scripted answer.
+ * "hang" answers only when the signal aborts, as the adapter does.
  */
 function fake(answers: Answer[], summaries: Summary[] = [], onSummary?: () => Promise<void>) {
   const requests: ChatRequest[] = [];
@@ -45,14 +59,26 @@ function fake(answers: Answer[], summaries: Summary[] = [], onSummary?: () => Pr
   const model: LocalModel = {
     chat(request) {
       requests.push(request);
-      const reply = (text: string, value?: unknown) =>
-        Promise.resolve({ text, ...(value === undefined ? {} : { value }), finishReason: 'stop', usage: { promptTokens: 7, completionTokens: 3 }, endpoint: 'stub', model: 'stub', durationMs: 1 });
-      if (request.schema === undefined) {
+      const reply = (text: string, value?: unknown, finishReason = 'stop') =>
+        Promise.resolve({ text, ...(value === undefined ? {} : { value }), finishReason, usage: { promptTokens: 7, completionTokens: 3 }, endpoint: 'stub', model: 'stub', durationMs: 1 });
+      if (request.schema?.name === SUMMARY_SCHEMA_NAME) {
         summaryRequests.push(request);
         const next = summaries[summaryRequests.length - 1] ?? `Riassunto ${String(summaryRequests.length)}.`;
         const before = onSummary === undefined ? Promise.resolve() : onSummary();
-        return before.then(() => (next instanceof LocalModelError ? Promise.reject(next) : reply(next)));
+        return before.then(() => {
+          if (next instanceof LocalModelError) return Promise.reject(next);
+          if (next === HANG) {
+            return new Promise<never>((_, reject) => {
+              request.signal?.addEventListener('abort', () => {
+                reject(new LocalModelError('cancelled', 'stub: aborted', { endpoint: 'stub' }));
+              });
+            });
+          }
+          if (typeof next === 'string') return reply(JSON.stringify({ summary: next }), { summary: next });
+          return reply(next.text, next.value, next.finishReason);
+        });
       }
+      if (request.schema === undefined) return Promise.reject(new Error('the orchestrator always asks a schema'));
       answerRequests.push(request);
       const next = answers[answerRequests.length - 1];
       if (next === undefined) return Promise.reject(new Error('no answer scripted'));
@@ -143,6 +169,16 @@ test('past the maximum the anchor jumps: the local model summarizes what it left
   assert.equal(fakeModel.summaryRequests.length, 1);
   assert.equal(fakeModel.requests[0], fakeModel.summaryRequests[0]);
   assert.equal(fakeModel.summaryRequests[0]?.model, 'local-large');
+  // Constrained to {"summary": string}: no free text where a reasoning model writes its reasoning.
+  assert.deepEqual(fakeModel.summaryRequests[0].schema, { name: SUMMARY_SCHEMA_NAME, schema: SUMMARY_SCHEMA });
+  assert.deepEqual(SUMMARY_SCHEMA, {
+    type: 'object',
+    properties: { summary: { type: 'string', minLength: 1, maxLength: MAX_SUMMARY } },
+    required: ['summary'],
+    additionalProperties: false,
+  });
+  assert.equal(fakeModel.summaryRequests[0].timeoutMs, SUMMARY_TIMEOUT_MS);
+  assert.equal(SUMMARY_TIMEOUT_MS, 90_000);
   const input = contents(fakeModel.summaryRequests[0])[1] ?? '';
   assert.equal(input.split('\n').length, 21);
   assert.deepEqual(JSON.parse(input.split('\n')[0] ?? ''), { role: 'user', text: 'Messaggio 1' });
@@ -432,7 +468,7 @@ test('a cancelled step stops with its error, without a piece or an event', async
   assert.deepEqual(await degraded(taskId), []);
 });
 
-test('past MAX_PIECES_PER_STEP pieces a step stops; the first step of the next task goes on', async () => {
+test('one piece per step before the answer; the first step of the next task goes on', async () => {
   const { sql, owner } = db();
   const conversation = await createConversation(sql, { mode: 'private' });
   await owner`
@@ -440,15 +476,75 @@ test('past MAX_PIECES_PER_STEP pieces a step stops; the first step of the next t
     SELECT ${conversation.id}, CASE WHEN n % 2 = 1 THEN 'user' ELSE 'assistant' END, 'L1', 'Messaggio ' || n
     FROM generate_series(1, 120) n`;
   const { task } = await postUserMessage(sql, conversation.id, 'Domanda');
+  assert.equal(MAX_PIECES_PER_STEP, 1);
   const first = fake([{ action: 'reply', text: 'Risposta.' }]);
   assert.deepEqual(await drain(task.id, first.model), ['answered']);
-  assert.equal(first.summaryRequests.length, MAX_PIECES_PER_STEP);
-  assert.equal((await pieces(conversation.id)).length, MAX_PIECES_PER_STEP);
+  assert.equal(first.summaryRequests.length, 1);
+  assert.equal((await pieces(conversation.id)).length, 1);
   assert.deepEqual(await degraded(task.id), ['piece-limit']);
 
   const next = await postUserMessage(sql, conversation.id, 'Altra domanda');
   assert.deepEqual(await drain(next.task.id, fake([{ action: 'reply', text: 'Ok.' }]).model), ['answered']);
   const all = await pieces(conversation.id);
-  assert.equal(all.length, MAX_PIECES_PER_STEP + 1);
-  assert.deepEqual(all.map((piece) => piece.first), ['Messaggio 1', 'Messaggio 31', 'Messaggio 61', 'Messaggio 91']);
+  assert.equal(all.length, 2);
+  assert.deepEqual(all.map((piece) => piece.first), ['Messaggio 1', 'Messaggio 31']);
+  assert.deepEqual(await degraded(next.task.id), ['piece-limit']);
+});
+
+/** A task over 30 earlier messages, its view, and what the summarizer did with `summary`. */
+async function summarizeOnce(summary: Summary, timeoutMs?: number) {
+  const { sql } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  await seed(conversation.id, 30);
+  const { taskId, runId } = await taskWithRun(conversation.id);
+  const task = await loadTask(sql, taskId);
+  assert.ok(task !== undefined);
+  const model = fake([], [summary]);
+  const view = await conversationView(sql, conversation.id, taskId, 8_000);
+  assert.ok(view.missing.length > 0);
+  const env = timeoutMs === undefined ? { sql, model: () => model.model } : { sql, model: () => model.model, timeoutMs };
+  const outcome = await writeMissingSummaries(env, task, { runId, signal: new AbortController().signal }, view);
+  return { outcome, model, pieces: await pieces(conversation.id), events: await degraded(taskId) };
+}
+
+test('free reasoning instead of the JSON summary gives no piece, only an event', async () => {
+  const reasoning = 'We need to summarize the conversation. Let\'s parse conversation: {"role": "user", "text": "Messaggio 1"}';
+  // The adapter refuses an answer that is not JSON when a schema was asked.
+  const notJson = await summarizeOnce(new LocalModelError('bad-response', 'stub: content is not JSON', { endpoint: 'stub' }));
+  assert.deepEqual([notJson.outcome.written, notJson.outcome.degraded, notJson.pieces, notJson.events], [0, 'bad-response', [], ['bad-response']]);
+  // JSON of another shape, or a summary with control characters or too long, is not a summary either.
+  const wrongValues: unknown[] = [
+    { thought: reasoning },
+    { summary: reasoning, extra: 1 },
+    { summary: 42 },
+    ['Riassunto'],
+    { summary: 'Riassunto\u0007.' },
+    { summary: 'a'.repeat(MAX_SUMMARY + 1) },
+  ];
+  for (const value of wrongValues) {
+    const wrong = await summarizeOnce({ text: JSON.stringify(value), value });
+    assert.deepEqual([wrong.outcome.written, wrong.pieces, wrong.events], [0, [], ['bad-response']], JSON.stringify(value).slice(0, 60));
+  }
+  const empty = await summarizeOnce({ text: '{"summary": "  "}', value: { summary: '  ' } });
+  assert.deepEqual([empty.pieces, empty.events], [[], ['empty-summary']]);
+  // A summary on more lines is fine.
+  const good = await summarizeOnce({ text: '', value: { summary: ' Prima riga.\nSeconda riga. ' } });
+  assert.deepEqual([good.outcome.written, good.pieces.map((piece) => piece.body), good.events], [1, ['Prima riga.\nSeconda riga.'], []]);
+});
+
+test('a summary stopped by the token limit gives no piece, only an event', async () => {
+  const value = { summary: 'Il riassunto si ferma a metà' };
+  const truncated = await summarizeOnce({ text: JSON.stringify(value), value, finishReason: 'length' });
+  assert.deepEqual([truncated.outcome.written, truncated.outcome.degraded, truncated.pieces, truncated.events], [0, 'truncated', [], ['truncated']]);
+  // The tokens it spent still count.
+  assert.deepEqual([truncated.outcome.tokensIn, truncated.outcome.tokensOut], [7, 3]);
+});
+
+test('a summary past its timeout gives no piece, only an event, and the step is not cancelled', async () => {
+  const slow = await summarizeOnce(HANG, 50);
+  assert.deepEqual([slow.outcome.written, slow.outcome.degraded, slow.pieces, slow.events], [0, 'timeout', [], ['timeout']]);
+  assert.equal(slow.model.summaryRequests[0]?.timeoutMs, 50);
+  // The adapter's own timeout is a timeout too.
+  const adapter = await summarizeOnce(new LocalModelError('timeout', 'stub: timed out', { endpoint: 'stub' }));
+  assert.deepEqual([adapter.outcome.degraded, adapter.events], ['timeout', ['timeout']]);
 });
