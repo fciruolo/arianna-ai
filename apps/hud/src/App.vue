@@ -19,7 +19,8 @@ import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
-import { loadInstallation } from './lib/api.ts';
+import { loadDevPending, loadInstallation } from './lib/api.ts';
+import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
@@ -271,6 +272,27 @@ function openDevProgress(): void {
   openPage('dev', DEV_PATH, 'Sviluppo di Arianna');
 }
 
+/**
+ * Questions of "Sviluppo di Arianna" that wait for an answer (D-120): a dot on
+ * "Impostazioni" and on the entry of the index. Only the number comes from the
+ * core; read at the start, when the link is back and at every change of page,
+ * and from the page itself after an answer. A core without the page gives 0.
+ */
+const devPending = ref(0);
+/** With the left bar closed or folded, its button carries a plain dot and this text. */
+const devPendingText = computed(() => pendingText(devPending.value));
+function readDevPending(): void {
+  loadDevPending()
+    .then((count) => {
+      devPending.value = count;
+    })
+    .catch(() => undefined);
+}
+watch(page, readDevPending);
+watch(live, (state) => {
+  if (state === 'open') readDevPending();
+});
+
 /** The section of the settings in the address (D-105): `/impostazioni/<slug>`; undefined is the first one. */
 const settingsSection = ref<string | undefined>(undefined);
 /** The settings hold edits not saved (D-105): the back button of the browser asks before leaving them. */
@@ -407,6 +429,7 @@ onMounted(() => {
   window.addEventListener('resize', measureWidth);
   store.start();
   readInstallation();
+  readDevPending();
   clock = window.setInterval(() => {
     now.value = new Date();
   }, 15_000);
@@ -496,6 +519,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :status="status"
       :call-blocked="callBlocked"
       :call-starting="callStarting || calling"
+      :dev-pending="devPending"
       @fold="foldSidebar"
       @home="openChat(); showSidebar = false"
       @search="openSearch"
@@ -519,22 +543,24 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <header class="flex h-[60px] shrink-0 items-center gap-3.5 border-b border-line bg-bg/85 px-4 backdrop-blur-sm md:px-5.5">
         <button
           type="button"
-          class="grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 md:hidden"
-          aria-label="Apri il menu"
+          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 md:hidden"
+          :aria-label="devPendingText === null ? 'Apri il menu' : `Apri il menu. ${devPendingText}`"
           @click="showSidebar = true"
         >
           <Icon name="menu" />
+          <span v-if="devPendingText !== null" class="absolute -top-1 -right-1 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <!-- Left bar folded (D-097): only its icon, here in the top bar; the page takes the whole width. -->
         <button
           v-if="layout.sidebar"
           type="button"
-          class="-ml-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink md:grid"
-          aria-label="Apri la barra"
-          title="Apri la barra"
+          class="relative -ml-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink md:grid"
+          :aria-label="devPendingText === null ? 'Apri la barra' : `Apri la barra. ${devPendingText}`"
+          :title="devPendingText === null ? 'Apri la barra' : `Apri la barra. ${devPendingText}`"
           @click="layout.sidebar = false"
         >
           <Icon name="sidebar-expand" />
+          <span v-if="devPendingText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <p class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
           <template v-if="current !== undefined">
@@ -628,8 +654,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" />
-      <DevProgressPage v-else-if="page === 'dev'" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" />
+      <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <OfficePage

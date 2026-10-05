@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { loadDevProgress, sendDevAnswer } from '../lib/api.ts';
 import {
@@ -12,6 +12,9 @@ import {
   groupItems,
   groupQuestions,
   markAnswered,
+  pendingBadge,
+  pendingCount,
+  pendingText,
   percentDone,
   phases,
   phaseText,
@@ -71,6 +74,15 @@ const questionCounts = computed(() => {
 });
 const questionGroups = computed(() => groupQuestions(filterQuestions(progress.value?.questions ?? [], questionFilter.value)));
 const skipped = computed(() => (progress.value === null ? null : skippedText(progress.value.skipped)));
+/** The questions that wait for the user (D-120): the dot of the settings follows this page. */
+const pending = computed(() => pendingCount(progress.value?.questions ?? []));
+const pendingLabel = computed(() => pendingText(pending.value));
+const pendingDot = computed(() => pendingBadge(pending.value));
+
+const emit = defineEmits<{ pending: [count: number] }>();
+watch(pending, (count) => {
+  if (progress.value !== null) emit('pending', count);
+});
 
 const BAR_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent', todo: 'bg-line-strong' };
 const DOT_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent shadow-[0_0_6px_var(--accent)]', todo: 'bg-line-strong' };
@@ -179,6 +191,12 @@ onMounted(refresh);
       <section v-if="progress !== null" class="flex flex-col gap-3" aria-labelledby="dev-questions">
         <div class="flex flex-wrap items-center gap-2">
           <h2 id="dev-questions" class="hud-title mx-1">Domande aperte</h2>
+          <span
+            v-if="pendingDot !== null"
+            aria-hidden="true"
+            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
+          >{{ pendingDot }}</span>
+          <span v-if="pendingLabel !== null" class="text-xs text-accent">{{ pendingLabel }}</span>
           <div class="ml-auto flex rounded-lg border border-line bg-surface p-0.5" role="radiogroup" aria-label="Quali domande">
             <button
               v-for="item in QUESTION_FILTERS"
