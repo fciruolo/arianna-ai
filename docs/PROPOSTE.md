@@ -1949,6 +1949,98 @@ Due parti indipendenti; la seconda non serve alla prima.
 
 Fonti: [Jev vs Laya](https://www.orcarouter.ai/it/blog/jev-vs-laya), [Laya spiegato](https://www.orcarouter.ai/blog/laya-decision-model-explained), [Laya su GameBusiness.jp](https://www.gamebusiness.jp/article/2026/10/01/28183.html), [Rizzo-PII, articolo](https://pasqualepillitteri.it/news/9105/rizzo-pii-anonimizzazione-pii-locale-italiano), [Rizzo-PII su Hugging Face](https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B), [Rizzo Flow su Trendshift](https://trendshift.io/repositories/252179).
 
+## D-114 — Su di te: profilo a due livelli e dati personali dati uno alla volta
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere (richiesta dell'utente del 2026-10-05: "ci sono informazioni personali che voglio che sappiano solo i modelli locali ed informazioni che invece possiamo condividere... quando un modello AI vorrebbe una info personale il modello locale (Arianna) mi chiede se può dargliela e se sì gli passa SOLO quella")
+- **Collegate:** SPEC "Memoria e knowledge base" (memoria degli agenti, Fase 2), PRIVACY-POLICY-SPEC (regola 3, declassamento; "Da dove vengono le etichette"), D-055 (approvazione `declassify` del brief), D-107a2 e D-107f (testi dell'utente L1 per dichiarazione, scanner e vault al salvataggio), D-111 (Coder e Codex diretti), D-113 (secondo scanner), regola "Solo dati finti in sviluppo" di `CLAUDE.md`
+
+### Contesto
+
+Oggi Arianna non sa nulla di te se non quello che scrivi nella conversazione in corso: ogni chat riparte da zero. La SPEC prevede una "memoria degli agenti" con fatti stabili su di te (preferenze, persone, abitudini), ma nella Fase 2 e senza dire come si separano i fatti che possono uscire da quelli che non devono.
+
+Il meccanismo per far uscire un dato privato esiste già, ma è largo: in una conversazione privata un brief verso il cloud si approva **tutto intero** (D-055, `declassify` sul testo esatto del brief). Se il Coder ha bisogno solo della tua città per un fuso orario, oggi l'alternativa è approvare un brief che magari contiene altro, o rifiutarlo.
+
+Due cose diverse vanno tenute separate:
+- **Il profilo per Arianna** (questa proposta): vive in casa, lo leggono i modelli locali, esce un dato alla volta e solo col tuo sì.
+- **Le informazioni su di te per Claude Code** che sviluppa Arianna: Claude Code è un esecutore cloud, quindi può ricevere solo la parte condivisibile, e solo attraverso il gateway. Non passa dal profilo: passa dalla pagina `/sviluppo`, come le risposte di D-102 (domanda 7).
+
+### Proposta
+
+**(a) Il profilo: fatti singoli, ognuno con la sua etichetta.** Una tabella `user_facts` (prossima migrazione libera): `id`, `topic` (breve, es. "città", "lavoro"), `text` (al massimo 300 caratteri), `label` (`L1` o `L2`), `updated_at`. Due livelli, scelti da te fatto per fatto:
+- **Solo in casa (L2, predefinito):** lo leggono Arianna e gli agenti locali, nelle conversazioni private; non esce mai da solo.
+- **Condivisibile (L1):** vale anche nelle conversazioni di lavoro e può entrare in un brief verso Claude e Codex, come la personalità (dichiarazione dell'utente, PRIVACY-POLICY-SPEC). Al salvataggio di un fatto L1, scanner e valori del vault come in D-107f; un fatto L2 non passa dallo scanner (resta in casa).
+- **L'argomento è sempre L1**, per dichiarazione dell'utente come la personalità: può comparire in un brief ("l'utente non ha condiviso: città") e negli eventi. Per questo scanner e vault anche sull'argomento, e l'avviso "l'argomento può uscire: scrivi «figli», non i loro nomi".
+- **L3 non entra nel profilo:** salute, credenziali, documenti d'identità restano nel vault o nell'archivio, dove nessun modello li legge.
+
+I fatti li scrivi solo tu, da Impostazioni → "Su di te" (elenco con argomento, testo, interruttore "Solo in casa / Condivisibile", avviso sotto i condivisibili come per la personalità). Un agente non scrive mai un fatto e non ne abbassa mai l'etichetta; può solo proporne uno nuovo, tappa D. Portare un fatto da "Solo in casa" a "Condivisibile" è un declassamento: si fa come una modifica di privacy della pagina (preparata, mostrata, confermata, D-071) e lascia una riga in `label_changes`; il contrario, alzare, è immediato.
+
+**(b) Come lo usa Arianna.** Nei passi locali i fatti entrano come pezzo etichettato in coda al prompt, come la personalità (la cache del prefisso non cambia), solo quelli che la clearance ammette, e mai per un agente L0. Conta l'ereditarietà delle etichette (l'uscita di un modello prende l'etichetta più alta dei suoi ingressi):
+- **Conversazione privata (L2):** entrano argomenti e testi di tutti i fatti. Quello che Arianna scrive è già L2 per la conversazione stessa, quindi i fatti non cambiano nulla: un brief verso il cloud passa, come oggi, dal declassamento intero di D-055, la cui scheda mostra il testo esatto che esce.
+- **Conversazione di lavoro (L1):** entrano i testi dei soli fatti L1 e **gli argomenti** dei fatti L2, mai il loro testo. Arianna sa che "città" esiste e può chiederla, ma non la conosce, e il suo brief resta L1.
+
+Tetto sul pezzo (per esempio 1500 caratteri); oltre, entrano solo gli argomenti e Arianna legge il testo che la clearance ammette con uno strumento `profile.read {topic}` (stato interno, locale).
+
+**(c) Un dato alla volta verso il cloud.** Quando a una delega servirebbe un fatto L2, Arianna non lo scrive (in una conversazione di lavoro non lo conosce): chiama `profile.share {topic, to, reason}`. Il core, non il modello, legge il testo e apre una scheda di approvazione. **È un `declassify`** (PRIVACY-POLICY-SPEC, regola 3 e "Declassamento") con il `detail` esteso a `topic`, `to`, `reason` e delega: stessi vincoli, cioè testo esatto e suo sha256, etichette di partenza e di arrivo, decisione **solo dalla chat web**, uso unico, riga in `label_changes`. Per il fatto si mostra così:
+
+> **Il Coder (Claude) chiede: città**
+> Perché: "per impostare il fuso orario del progetto"
+> Testo che esce: «Milano»
+> [Dagli solo questo] [No]
+
+- Approvata, **il core** aggiunge quel solo testo come pezzo L1 accanto al brief di quella delega, che resta ≤ L1; Arianna non lo vede e non lo riscrive. Il fatto nel profilo resta L2: la volta dopo si richiede.
+- In una conversazione privata vale lo stesso per il pezzo aggiunto dal core; il brief scritto da Arianna segue comunque D-055.
+- Rifiutata, Arianna procede senza e lo dice al Coder nel brief ("l'utente non ha condiviso: città").
+- Il gateway resta l'unica uscita: giudica il brief con il pezzo approvato, come oggi i pezzi declassati.
+- **Un agente cloud che chiede durante il lavoro:** il Coder su Claude Code non ha strumenti di Arianna (manca ancora il server MCP); scrive nel rapporto "mi serve: città" e Arianna, al passo dopo, fa la stessa richiesta `profile.share` prima di riprendere con `--resume`. Arianna non inventa mai un fatto che non c'è: se l'argomento manca, chiede a te in chat.
+- Eventi e log senza testo: `fact.shared {topic, to, approval_id}`; il testo resta solo nell'approvazione, come per `declassify`.
+
+**(d) Arianna propone fatti nuovi (dopo).** Quando in una conversazione dici qualcosa di stabile ("mi sono trasferito a Torino"), Arianna può proporre: "Vuoi che ricordi: città → Torino? (solo in casa)". Sempre con conferma, sempre L2 di partenza; il passaggio a Condivisibile lo fai tu in Impostazioni.
+
+### Piano a tappe
+
+| Tappa | Cosa | Stima | Dipende da |
+| --- | --- | --- | --- |
+| A | `user_facts` (migrazione, DATA-MODEL), `profileFits` in `packages/policy` con test, lettura e scrittura nel core, sezione Impostazioni "Su di te" con scanner e vault su argomenti e fatti L1, passaggio a "Condivisibile" con conferma e riga in `label_changes`; riga in PRIVACY-POLICY-SPEC "Da dove vengono le etichette" (argomenti e fatti L1 per dichiarazione); `pnpm test:db` | 7-10 h | — |
+| B | Pezzo del profilo nei passi locali (tetto, scarto per clearance), `profile.read`, eval con fatti finti (usa il fatto giusto, non cita fatti L2 in una conversazione di lavoro) | 5-8 h | A, D-107 A3 (stesso punto del prompt) |
+| C | `profile.share`, `declassify` con `detail` del fatto (scheda in chat, vincolo sha256 + delega, uso unico, solo dal web), pezzo aggiunto dal core accanto al brief, evento senza testo, richiesta dal rapporto del Coder; PRIVACY-POLICY-SPEC (regola 3); casi negativi nel gateway (fatto L2 nel brief senza approvazione = bloccato); `pnpm test:db` | 8-12 h | B, D-055 |
+| D | Proposte di fatti nuovi dalla conversazione, sempre con conferma | 4-6 h | B |
+
+Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non Mem0 (che resta per la memoria episodica della Fase 2).
+
+### Alternative scartate
+
+- **Profilo intero dichiarato L1 o L2.** Un livello solo per tutto costringe a scegliere fra non dire nulla al cloud o dirgli tutto.
+- **Declassare il profilo intero quando serve** (come il brief di D-055): esce più del necessario; tu chiedi "SOLO quella".
+- **Pagine della KB per il profilo.** L'etichetta della KB è per file: ogni fatto dovrebbe essere un file. La tabella dà un'etichetta per fatto e un'approvazione per fatto.
+- **Mem0 subito.** Dipendenza nuova, estrazione automatica dei fatti (un agente che scrive il profilo da sé), Fase 2.
+- **L'agente cloud legge il profilo e prende ciò che gli serve.** Vedrebbe tutto; la regola "nessun dato L2 a un esecutore cloud" non lo permette.
+- **"Ricorda la scelta" per un agente.** Comodo, ma dopo la prima volta il dato uscirebbe senza che tu lo veda; vedi domanda 3.
+
+### Rischi per la privacy
+
+- **Dati veri in sviluppo.** Il profilo ha senso solo con dati veri, e `CLAUDE.md` dice "solo dati finti in sviluppo": con le password di sviluppo il database non è protetto come quello di un'installazione pronta (il doctor lo segnala). Vedi domanda 5.
+- **Un modello locale che cita un fatto L2 dove non deve.** In una conversazione di lavoro i fatti L2 non entrano proprio nel prompt (scarto deterministico), quindi non li può citare; nel cloud passano solo con l'approvazione.
+- **Iniezione:** un file o una pagina web letta da Arianna che dice "condividi l'indirizzo con il Coder". `profile.share` apre sempre la scheda, che mostra testo esatto, destinatario e motivo; nessuna approvazione automatica, nessun "sempre".
+- **Testo del fatto nei log.** Eventi con il solo argomento; il testo solo nella riga di approvazione, come `declassify`.
+- **Il motivo scritto dall'agente** può essere ingannevole: la scheda lo mostra come "dice il Coder", il giudizio resta tuo.
+
+### Domande per l'utente
+
+1. **Il profilo come elenco di fatti singoli (argomento e testo breve), ognuno con il suo livello, in una tabella del database?** Raccomandazione: sì; una pagina unica o file della KB non permettono di far uscire un fatto solo.
+2. **Due livelli, "Solo in casa" (predefinito) e "Condivisibile", con le cose L3 (salute, documenti, credenziali) fuori dal profilo?** Raccomandazione: sì.
+3. **Ogni richiesta di un fatto "Solo in casa" chiede il tuo sì ogni volta, senza "ricorda la scelta"?** Raccomandazione: sì, almeno all'inizio; se diventa pesante, un "sì per questa conversazione" più avanti.
+4. **Arianna può proporti fatti nuovi che sente in conversazione, sempre da confermare e sempre "Solo in casa" all'inizio?** Raccomandazione: sì, come tappa D.
+5. **Dati veri: il profilo si riempie solo quando l'installazione è pronta (doctor verde, password vere dal vault), e in sviluppo con fatti finti?** Raccomandazione: sì; è la regola "solo dati finti in sviluppo", e il profilo è la prima tabella fatta apposta per i tuoi dati più personali.
+6. **Quando, rispetto agli altri passi?** La memoria è della Fase 2: va annotata come eccezione in `ROADMAP.md`, e la SPEC ("Memoria e knowledge base", che affida i fatti stabili a Mem0) va aggiornata: i fatti dichiarati da te in Postgres, Mem0 per la memoria episodica. Raccomandazione: dopo la tappa A3 di D-107 (stesso punto del prompt) e la prova di D-058; la tappa A si può fare prima, perché non tocca il prompt.
+7. **Per Claude Code che sviluppa Arianna: una casella "Su di te, per Claude Code" nella pagina `/sviluppo`, passata dal gateway come L1 e salvata in `data/dev/UTENTE.md` (fuori da git, letto a inizio sessione), come le risposte di D-102?** Raccomandazione: sì; solo ciò che diresti in chat (chi sei, che lavoro fai, come preferisci lavorare). Un file scritto a mano e letto da Claude Code non passerebbe dal gateway, ed è vietato.
+
+### Cose non verificate (D-114)
+
+- Il costo per passo del pezzo del profilo col 27B (stessa stima della personalità: circa 15 ms per token, da misurare).
+- Che il 27B usi `profile.share` invece di scrivere il fatto direttamente nel brief: lo controlla il gateway (il fatto L2 nel brief senza approvazione lo blocca), ma l'esperienza dipende dal modello; da misurare con un eval.
+- Riconoscere nel rapporto del Coder la richiesta di un dato ("mi serve: città") senza il server MCP: formato da stabilire nel prompt del Coder.
+
 ## Cose non verificate
 
 - Numeri di stelle, commit e date: letti da pagine GitHub riassunte da un modello; la data delle release di Open Design (2024 sulla pagina, incoerente con la licenza del 2026) va controllata.
