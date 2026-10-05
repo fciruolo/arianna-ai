@@ -3,27 +3,42 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 
 import { ApiError, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
 import {
+  advanceOrbit,
   blendView,
+  breathOffset,
   centerOn,
   createSimulation,
   fitView,
   folderName,
   folderSlots,
+  frameDue,
+  frameInterval,
+  hubGlow,
   isSettled,
+  makeStars,
   matchesFilter,
   neighbours,
   nodeAt,
+  pulseProgress,
   reheat,
   resolveWikilink,
+  rotatePoint,
+  sceneMode,
+  seededRandom,
+  starPosition,
   step,
+  themeIsDark,
   toScreen,
   toWorld,
+  updatePulses,
   wheelFactor,
   withAlpha,
   zoomAt,
   type GraphData,
   type KnowledgePage,
+  type Pulse,
   type Simulation,
+  type Star,
   type View,
 } from '../lib/graph.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
@@ -34,9 +49,22 @@ import MarkdownText from './MarkdownText.vue';
  * "Conoscenza" (D-087): the pages of kb/ up to L2 as a force graph drawn on a
  * <canvas>, wikilinks and shared tags as edges. A click opens the page in the
  * panel on the right; its wikilinks jump to their node.
+ *
+ * D-087b: a control room. With the dark theme it is always black, with its
+ * own palette (the CSS variables are redefined on the root of the page); with
+ * the light theme it follows the platform unless "Sfondo scuro" is on. Stars
+ * drift on a background canvas, a graph that keeps breathing after it settles, pulses
+ * running along the edges, an optional slow orbit and full screen.
  */
 
+const props = defineProps<{
+  /** A node to select once the graph is loaded (D-090, `/conoscenza?nota=…`). */
+  focus?: string | undefined;
+}>();
+
+const root = ref<HTMLDivElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
+const backdrop = ref<HTMLCanvasElement | null>(null);
 const box = ref<HTMLDivElement | null>(null);
 const graph = shallowRef<GraphData | null>(null);
 const loading = ref(true);
@@ -48,6 +76,19 @@ const page = ref<KnowledgePage | null>(null);
 const pageLoading = ref(false);
 const pageError = ref<string | null>(null);
 const jumpNotice = ref<string | null>(null);
+const focusNotice = ref<string | null>(null);
+/** The focus asked by the address, applied once. */
+let pendingFocus = props.focus;
+const canFullscreen = ref(false);
+const fullscreen = ref(false);
+const orbiting = ref(false);
+const reducedMotion = ref(false);
+/** The theme the chat shows, as style.css decides it. */
+const themeDark = ref(true);
+/** "Sfondo scuro" with the light theme: a convenience of this browser (localStorage). */
+const darkChoice = ref(false);
+const mode = computed(() => sceneMode(themeDark.value, darkChoice.value));
+const DARK_KEY = 'arianna.knowledge.dark';
 
 let sim: Simulation | null = null;
 let adjacency: Set<number>[] = [];
@@ -60,22 +101,50 @@ let height = 0;
 let dpr = 1;
 let frame = 0;
 let lastDraw = 0;
+/** A drawing was asked for (an event, a change): it happens even when the loop would rest. */
+let dirty = true;
 let reduced = false;
-/** Pulses and particles stop a few seconds after the last interaction, or when the window loses focus. */
-const IDLE_MS = 6_000;
+/** After an interaction the page draws at full rate for this long. */
+const INTERACT_MS = 1_500;
 let lastInteraction = 0;
 let windowFocused = true;
+/** When the simulation settled (0: not settled); the breath fades in from there. */
+let settledAt = 0;
+let orbitAngle = 0;
+let pulses: readonly Pulse[] = [];
+const pulseRandom = seededRandom(87);
+let stars: Star[] = [];
+let maxDegree = 0;
+/** Where each node is drawn this frame: turned by the orbit, plus its breath. */
+let px = new Float64Array(0);
+let py = new Float64Array(0);
+/** Screen pixels of the breath. */
+const BREATH_PX = 2.4;
+
+/** The palette of the black control room: luminous on black (D-087b). */
+const SCENE = {
+  bg: '#02050a',
+  surface: '#07111a',
+  ink: '#d6f4ff',
+  muted: '#7690a8',
+  tag: '#8aa0c4',
+  accent: '#3ee8ff',
+  violet: '#a879ff',
+  folders: ['#3ee8ff', '#5cffb1', '#a879ff', '#ffb547', '#5b9dff', '#ff6bcb'],
+} as const;
 
 interface Palette {
+  /** Black control room (light on black, additive glows) or the light platform. */
+  dark: boolean;
   bg: string;
   surface: string;
   ink: string;
   muted: string;
+  tag: string;
   accent: string;
-  grid: string;
-  folders: string[];
-  dark: boolean;
-  /** A soft glow per folder colour, drawn as an image: cheaper than a gradient per node. */
+  violet: string;
+  folders: readonly string[];
+  /** A soft glow per colour, drawn as an image: cheaper than a gradient per node. */
   glows: Map<string, HTMLCanvasElement>;
 }
 let palette: Palette | null = null;
@@ -109,15 +178,8 @@ function folderVar(folder: string): string {
 function colorOf(index: number): string {
   const node = nodes.value[index];
   if (palette === null || node === undefined) return '#888888';
-  if (node.kind === 'tag') return palette.muted;
+  if (node.kind === 'tag') return palette.tag;
   return palette.folders[slots.value.get(node.folder) ?? 0] ?? palette.accent;
-}
-
-function luminance(hex: string): number {
-  const match = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex.trim());
-  if (match === null) return 0;
-  const [r, g, b] = [match[1], match[2], match[3]].map((part) => parseInt(part ?? '0', 16) / 255);
-  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
 function glowSprite(color: string, dark: boolean): HTMLCanvasElement {
@@ -127,8 +189,8 @@ function glowSprite(color: string, dark: boolean): HTMLCanvasElement {
   const ctx = sprite.getContext('2d');
   if (ctx !== null) {
     const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gradient.addColorStop(0, withAlpha(color, dark ? 0.75 : 0.45));
-    gradient.addColorStop(0.3, withAlpha(color, dark ? 0.28 : 0.16));
+    gradient.addColorStop(0, withAlpha(color, dark ? 0.8 : 0.45));
+    gradient.addColorStop(0.3, withAlpha(color, dark ? 0.3 : 0.16));
     gradient.addColorStop(1, withAlpha(color, 0));
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 64, 64);
@@ -136,38 +198,85 @@ function glowSprite(color: string, dark: boolean): HTMLCanvasElement {
   return sprite;
 }
 
-/** The colours of the theme in use, read from the CSS variables. */
-function readPalette(): void {
-  const style = getComputedStyle(document.documentElement);
-  const v = (name: string) => style.getPropertyValue(name).trim();
-  const bg = v('--bg') || '#0a1316';
-  const dark = luminance(bg) < 0.4;
-  const folders = [1, 2, 3, 4, 5, 6].map((i) => v(`--graph-${String(i)}`) || '#4fd1c1');
-  const muted = v('--muted') || '#7f9b98';
+/** The black palette, or the light theme's colours read from the CSS variables of <html>. */
+function buildPalette(): void {
+  let base: Omit<Palette, 'glows'>;
+  if (mode.value.dark) {
+    base = { dark: true, ...SCENE };
+  } else {
+    const style = getComputedStyle(document.documentElement);
+    const v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+    const folders = ['#1f8a7d', '#3f8a56', '#3a6cb0', '#b07612', '#8a52c4', '#c0447a'].map((fallback, i) => v(`--graph-${String(i + 1)}`, fallback));
+    const muted = v('--muted', '#687673');
+    base = { dark: false, bg: v('--bg', '#f5f4f0'), surface: v('--surface', '#fbfaf7'), ink: v('--ink', '#24302e'), muted, tag: muted, accent: v('--accent', '#23887c'), violet: folders[4] ?? '#8a52c4', folders };
+  }
   const glows = new Map<string, HTMLCanvasElement>();
-  for (const color of [...folders, muted, v('--accent')]) glows.set(color, glowSprite(color, dark));
-  palette = { bg, surface: v('--surface'), ink: v('--ink'), muted, accent: v('--accent') || '#4fd1c1', grid: v('--grid'), folders, dark, glows };
+  for (const color of [...base.folders, base.tag, base.accent]) glows.set(color, glowSprite(color, base.dark));
+  palette = { ...base, glows };
   requestFrame();
 }
 
+function readTheme(): void {
+  const systemLight = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches;
+  themeDark.value = themeIsDark(document.documentElement.getAttribute('data-theme'), systemLight);
+}
+
+function loadDarkChoice(): boolean {
+  try {
+    return window.localStorage.getItem(DARK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function toggleDark(): void {
+  darkChoice.value = !darkChoice.value;
+  try {
+    window.localStorage.setItem(DARK_KEY, darkChoice.value ? '1' : '0');
+  } catch {
+    // Private window or blocked storage: the choice lasts until the page closes.
+  }
+  wake();
+}
+
+watch(() => mode.value.dark, () => buildPalette());
+
+function sizeCanvas(element: HTMLCanvasElement | null): void {
+  if (element === null) return;
+  element.width = Math.max(1, Math.round(width * dpr));
+  element.height = Math.max(1, Math.round(height * dpr));
+  element.style.width = `${String(width)}px`;
+  element.style.height = `${String(height)}px`;
+}
+
 function resize(): void {
-  const element = canvas.value;
   const parent = box.value;
-  if (element === null || parent === null) return;
+  if (parent === null) return;
   const rect = parent.getBoundingClientRect();
   dpr = window.devicePixelRatio || 1;
   const first = width === 0;
   width = rect.width;
   height = rect.height;
-  element.width = Math.max(1, Math.round(width * dpr));
-  element.height = Math.max(1, Math.round(height * dpr));
-  element.style.width = `${String(width)}px`;
-  element.style.height = `${String(height)}px`;
-  if (first && sim !== null) view = fitView(sim.nodes, width, height);
+  sizeCanvas(canvas.value);
+  sizeCanvas(backdrop.value);
+  // A few hundred stars, fewer on a small screen; the same ones at every size.
+  const count = Math.min(360, Math.round((width * height) / 5200));
+  if (count !== stars.length) stars = makeStars(count);
+  if (first && sim !== null) view = fitView(turnedNodes(), width, height);
   requestFrame();
 }
 
+/** The nodes as the orbit shows them, for fitting and centring. */
+function turnedNodes(): { x: number; y: number; r: number }[] {
+  return (sim?.nodes ?? []).map((node) => ({ ...rotatePoint(node.x, node.y, orbitAngle), r: node.r }));
+}
+
 function requestFrame(): void {
+  dirty = true;
+  schedule();
+}
+
+function schedule(): void {
   if (frame !== 0 || typeof document === 'undefined' || document.hidden) return;
   frame = requestAnimationFrame(tick);
 }
@@ -177,52 +286,119 @@ function tick(now: number): void {
   if (sim === null || document.hidden) return;
   if (window.devicePixelRatio !== dpr) resize();
   const settled = isSettled(sim);
+  const interval = frameInterval({
+    hidden: document.hidden,
+    focused: windowFocused,
+    reduced,
+    busy: !settled || glide !== null || drag !== null,
+    interacting: now - lastInteraction < INTERACT_MS,
+  });
+  // Resting (reduced motion, nothing to do): wait for the next request.
+  if (interval === undefined && !dirty) return;
+  if (!dirty && interval !== undefined && !frameDue(now, lastDraw, interval)) {
+    schedule();
+    return;
+  }
+  dirty = false;
   if (!settled) {
     step(sim);
-    if (autoFit && glide === null) view = blendView(view, fitView(sim.nodes, width, height), 0.08);
+    settledAt = 0;
+    if (autoFit && glide === null) view = blendView(view, fitView(turnedNodes(), width, height), 0.08);
+  } else if (settledAt === 0) {
+    settledAt = now;
   }
   if (glide !== null) {
     const t = (now - glide.start) / 450;
     view = blendView(glide.from, glide.to, t);
     if (t >= 1) glide = null;
   }
-  const animating = !reduced && windowFocused && now - lastInteraction < IDLE_MS;
-  // Settled and only pulsing: half the frame rate is enough.
-  if (settled && glide === null && drag === null && animating && now - lastDraw < 32) {
-    requestFrame();
-    return;
-  }
+  if (orbiting.value && !reduced && drag === null) orbitAngle = advanceOrbit(orbitAngle, now - lastDraw);
   lastDraw = now;
+  drawBackdrop(now);
   draw(now);
-  if (!isSettled(sim) || glide !== null || animating) requestFrame();
+  if (interval !== undefined || glide !== null || !isSettled(sim)) schedule();
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, colors: Palette): void {
+/** Black, a halo at the centre of the world, a grid of dots and the drifting stars. */
+function drawBackdrop(now: number): void {
+  const ctx = backdrop.value?.getContext('2d');
+  const colors = palette;
+  if (ctx === null || ctx === undefined || colors === null) return;
+  const dark = colors.dark;
+  const time = reduced ? 0 : now / 1000;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = colors.bg;
+  ctx.fillRect(0, 0, width, height);
+
+  // The halo, as a reactor glow under the graph.
+  const centre = toScreen(view, 0, 0);
+  const radius = Math.max(width, height) * 0.55;
+  const halo = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, radius);
+  halo.addColorStop(0, withAlpha(colors.accent, dark ? 0.11 : 0.06));
+  halo.addColorStop(0.45, withAlpha(colors.violet, dark ? 0.045 : 0.025));
+  halo.addColorStop(1, withAlpha(colors.violet, 0));
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, width, height);
+
+  // Stars behind everything, deeper ones dimmer and slower; faint specks on the light theme.
+  for (const star of stars) {
+    const at = starPosition(star, time, view.x, view.y, width, height);
+    const twinkle = reduced ? 0 : 0.22 * Math.sin(time * 1.3 + star.phase);
+    ctx.globalAlpha = Math.max(0.08, Math.min(1, 0.25 + 0.5 * star.depth + twinkle)) * (dark ? 1 : 0.3);
+    ctx.fillStyle = dark ? (star.depth > 0.9 ? '#e6fbff' : star.phase > 4.5 ? '#c9b8ff' : '#9fdcff') : star.phase > 4.5 ? colors.violet : colors.accent;
+    ctx.fillRect(at.x, at.y, star.size, star.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // The grid of dots moves with the world; every fourth one is a little cross.
   let spacing = 40 * view.k;
   while (spacing < 22) spacing *= 2;
   while (spacing > 90) spacing /= 2;
   const ox = ((view.x % spacing) + spacing) % spacing;
   const oy = ((view.y % spacing) + spacing) % spacing;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = colors.grid || withAlpha(colors.accent, 0.05);
-  ctx.beginPath();
-  for (let x = ox; x < width; x += spacing) {
-    ctx.moveTo(Math.round(x) + 0.5, 0);
-    ctx.lineTo(Math.round(x) + 0.5, height);
+  const firstColumn = Math.round((ox - view.x) / spacing);
+  const firstRow = Math.round((oy - view.y) / spacing);
+  ctx.fillStyle = withAlpha(colors.accent, dark ? 0.13 : 0.16);
+  const crosses: [number, number][] = [];
+  let column = firstColumn;
+  for (let x = ox; x < width; x += spacing, column += 1) {
+    let row = firstRow;
+    for (let y = oy; y < height; y += spacing, row += 1) {
+      if (column % 4 === 0 && row % 4 === 0) crosses.push([x, y]);
+      else ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
   }
-  for (let y = oy; y < height; y += spacing) {
-    ctx.moveTo(0, Math.round(y) + 0.5);
-    ctx.lineTo(width, Math.round(y) + 0.5);
+  ctx.strokeStyle = withAlpha(colors.accent, dark ? 0.22 : 0.2);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const [x, y] of crosses) {
+    const cx = Math.round(x) + 0.5;
+    const cy = Math.round(y) + 0.5;
+    ctx.moveTo(cx - 3, cy);
+    ctx.lineTo(cx + 4, cy);
+    ctx.moveTo(cx, cy - 3);
+    ctx.lineTo(cx, cy + 4);
   }
   ctx.stroke();
-  // A soft halo at the centre of the world, as a reactor glow.
-  const centre = toScreen(view, 0, 0);
-  const radius = Math.max(width, height) * 0.6;
-  const halo = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, radius);
-  halo.addColorStop(0, withAlpha(colors.accent, colors.dark ? 0.07 : 0.05));
-  halo.addColorStop(1, withAlpha(colors.accent, 0));
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, width, height);
+}
+
+/** Where every node is drawn this frame: the orbit, then the breath once the graph has settled. */
+function placeNodes(now: number): void {
+  if (sim === null) return;
+  const count = sim.nodes.length;
+  if (px.length !== count) {
+    px = new Float64Array(count);
+    py = new Float64Array(count);
+  }
+  const weight = reduced || settledAt === 0 ? 0 : Math.min(1, (now - settledAt) / 1500);
+  const amplitude = (BREATH_PX / view.k) * weight;
+  const time = now / 1000;
+  sim.nodes.forEach((node, i) => {
+    const turned = rotatePoint(node.x, node.y, orbitAngle);
+    const breath = amplitude > 0 && !node.fixed ? breathOffset(i, time, amplitude) : { dx: 0, dy: 0 };
+    px[i] = turned.x + breath.dx;
+    py[i] = turned.y + breath.dy;
+  });
 }
 
 function draw(now: number): void {
@@ -235,27 +411,27 @@ function draw(now: number): void {
   const time = now / 1000;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = colors.bg;
-  ctx.fillRect(0, 0, width, height);
-  drawGrid(ctx, colors);
+  placeNodes(now);
 
   const focus = hovered.value >= 0 ? hovered.value : selected.value;
   const lit = focus >= 0 ? new Set([focus, ...(adjacency[focus] ?? [])]) : null;
   const showFilter = filtering.value;
   const visible = (i: number): boolean => (lit === null || lit.has(i)) && (!showFilter || matches.value[i] === true);
   const simNodes = sim.nodes;
+  const X = (i: number): number => px[i] ?? 0;
+  const Y = (i: number): number => py[i] ?? 0;
 
   ctx.save();
   ctx.translate(view.x, view.y);
   ctx.scale(view.k, view.k);
   const pixel = 1 / view.k;
 
-  // Edges, grouped by phase so the pulse costs a few strokes, not one per edge.
+  // Edges, grouped by phase so the shimmer costs a few strokes, not one per edge.
   const PHASES = 6;
   for (const type of ['link', 'tag'] as const) {
     ctx.setLineDash(type === 'tag' ? [3 * pixel, 4 * pixel] : []);
     for (let phase = 0; phase < PHASES; phase += 1) {
-      const pulse = reduced ? 1 : 0.75 + 0.25 * Math.sin(time * 1.6 + phase * 1.05);
+      const shimmer = reduced ? 1 : 0.75 + 0.25 * Math.sin(time * 1.6 + phase * 1.05);
       for (const bright of [false, true]) {
         ctx.beginPath();
         let any = false;
@@ -263,17 +439,14 @@ function draw(now: number): void {
           if (index % PHASES !== phase || data.edges[link.edge]?.type !== type) return;
           const on = lit !== null && (link.source === focus || link.target === focus);
           if (on !== bright) return;
-          const a = simNodes[link.source];
-          const b = simNodes[link.target];
-          if (a === undefined || b === undefined) return;
           if (!bright && (lit !== null || showFilter) && !(visible(link.source) && visible(link.target))) return;
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
+          ctx.moveTo(X(link.source), Y(link.source));
+          ctx.lineTo(X(link.target), Y(link.target));
           any = true;
         });
         if (!any) continue;
-        const base = bright ? 0.85 : type === 'link' ? 0.32 : 0.2;
-        ctx.strokeStyle = withAlpha(bright ? colors.accent : type === 'link' ? colors.accent : colors.muted, base * pulse);
+        const base = bright ? 0.9 : type === 'link' ? 0.3 : 0.2;
+        ctx.strokeStyle = withAlpha(bright || type === 'link' ? colors.accent : colors.tag, base * shimmer);
         ctx.lineWidth = (bright ? 1.6 : 1) * pixel;
         ctx.stroke();
       }
@@ -286,15 +459,38 @@ function draw(now: number): void {
     sim.links.forEach((link) => {
       if (visible(link.source) && visible(link.target)) return;
       if (lit !== null && (link.source === focus || link.target === focus)) return;
-      const a = simNodes[link.source];
-      const b = simNodes[link.target];
-      if (a === undefined || b === undefined) return;
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(X(link.source), Y(link.source));
+      ctx.lineTo(X(link.target), Y(link.target));
     });
-    ctx.strokeStyle = withAlpha(colors.muted, 0.07);
+    ctx.strokeStyle = withAlpha(colors.muted, 0.08);
     ctx.lineWidth = pixel;
     ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = colors.dark ? 'lighter' : 'source-over';
+  if (!reduced) {
+    // Lights travelling at random along the edges, a few at a time, with a short tail.
+    pulses = updatePulses(pulses, now, pulseRandom, sim.links.length);
+    for (const pulse of pulses) {
+      const t = pulseProgress(pulse, now);
+      const link = sim.links[pulse.link];
+      if (t === undefined || link === undefined) continue;
+      const dim = (lit !== null || showFilter) && !(visible(link.source) && visible(link.target));
+      const from = pulse.reverse ? link.target : link.source;
+      ctx.fillStyle = colorOf(from);
+      const fade = Math.sin(Math.min(1, Math.max(0, pulse.reverse ? 1 - t : t)) * Math.PI);
+      for (let j = 0; j < 5; j += 1) {
+        const at = t + (pulse.reverse ? j : -j) * 0.025;
+        if (at < 0 || at > 1) continue;
+        const x = X(link.source) + (X(link.target) - X(link.source)) * at;
+        const y = Y(link.source) + (Y(link.target) - Y(link.source)) * at;
+        ctx.globalAlpha = (dim ? 0.15 : 0.9) * fade * (1 - j / 5);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(1, 2 * pixel) * (1 - j * 0.15), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   // Particles flowing out of the selected node along its edges.
@@ -303,13 +499,11 @@ function draw(now: number): void {
     ctx.fillStyle = colors.accent;
     sim.links.forEach((link, index) => {
       if (link.source !== from && link.target !== from) return;
-      const a = simNodes[from];
-      const b = simNodes[link.source === from ? link.target : link.source];
-      if (a === undefined || b === undefined) return;
+      const to = link.source === from ? link.target : link.source;
       for (let j = 0; j < 3; j += 1) {
         const t = (time * 0.45 + j / 3 + index * 0.137) % 1;
-        const x = a.x + (b.x - a.x) * t;
-        const y = a.y + (b.y - a.y) * t;
+        const x = X(from) + (X(to) - X(from)) * t;
+        const y = Y(from) + (Y(to) - Y(from)) * t;
         const size = Math.max(1.2, 2.2 * pixel) * (1 - Math.abs(t - 0.5));
         ctx.globalAlpha = 0.35 + 0.65 * Math.sin(t * Math.PI);
         ctx.beginPath();
@@ -320,36 +514,35 @@ function draw(now: number): void {
     ctx.globalAlpha = 1;
   }
 
-  // Glows: additive light on the dark theme.
+  // Glows: additive light; the most connected nodes pulse.
   const many = simNodes.length > 1200;
-  ctx.globalCompositeOperation = colors.dark ? 'lighter' : 'source-over';
   simNodes.forEach((node, i) => {
     const on = visible(i);
     if (many && !(lit?.has(i) ?? false)) return;
     const sprite = colors.glows.get(colorOf(i));
     if (sprite === undefined) return;
-    const breathe = reduced ? 1 : 1 + 0.06 * Math.sin(time * 2 + i);
-    const radius = node.r * (i === focus ? 4.4 : 3.2) * breathe;
+    const pulse = reduced ? 1 : hubGlow(data.nodes[i]?.degree ?? 0, maxDegree, time, i);
+    const radius = node.r * (i === focus ? 4.4 : 3.2) * pulse;
     ctx.globalAlpha = on ? 1 : 0.12;
-    ctx.drawImage(sprite, node.x - radius, node.y - radius, radius * 2, radius * 2);
+    ctx.drawImage(sprite, X(i) - radius, Y(i) - radius, radius * 2, radius * 2);
   });
   ctx.globalCompositeOperation = 'source-over';
 
   // Cores.
   simNodes.forEach((node, i) => {
     const color = colorOf(i);
-    const on = visible(i);
-    ctx.globalAlpha = on ? 1 : 0.18;
-    const isTag = nodes.value[i]?.kind === 'tag';
+    const x = X(i);
+    const y = Y(i);
+    ctx.globalAlpha = visible(i) ? 1 : 0.18;
     ctx.beginPath();
-    if (isTag) {
+    if (nodes.value[i]?.kind === 'tag') {
       // A hexagon for the tag nodes.
       for (let side = 0; side < 6; side += 1) {
         const angle = (Math.PI / 3) * side + Math.PI / 6;
-        const x = node.x + Math.cos(angle) * node.r;
-        const y = node.y + Math.sin(angle) * node.r;
-        if (side === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        const hx = x + Math.cos(angle) * node.r;
+        const hy = y + Math.sin(angle) * node.r;
+        if (side === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
       }
       ctx.closePath();
       ctx.fillStyle = colors.bg;
@@ -358,12 +551,12 @@ function draw(now: number): void {
       ctx.lineWidth = 1.4 * pixel;
       ctx.stroke();
     } else {
-      ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+      ctx.arc(x, y, node.r, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(node.x, node.y, node.r * 0.42, 0, Math.PI * 2);
-      ctx.fillStyle = withAlpha(colors.dark ? '#ffffff' : colors.bg, colors.dark ? 0.55 : 0.7);
+      ctx.arc(x, y, node.r * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = withAlpha(colors.dark ? '#ffffff' : colors.bg, colors.dark ? 0.6 : 0.7);
       ctx.fill();
     }
   });
@@ -373,6 +566,8 @@ function draw(now: number): void {
   const ring = (i: number, spin: boolean) => {
     const node = simNodes[i];
     if (node === undefined) return;
+    const x = X(i);
+    const y = Y(i);
     const radius = node.r + 5 * pixel + 3;
     ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 1.3 * pixel;
@@ -380,16 +575,16 @@ function draw(now: number): void {
       const turn = reduced ? 0 : time * 0.8;
       for (let q = 0; q < 4; q += 1) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius, turn + (q * Math.PI) / 2, turn + (q * Math.PI) / 2 + Math.PI / 3.2);
+        ctx.arc(x, y, radius, turn + (q * Math.PI) / 2, turn + (q * Math.PI) / 2 + Math.PI / 3.2);
         ctx.stroke();
       }
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius + 6 * pixel, 0, Math.PI * 2);
+      ctx.arc(x, y, radius + 6 * pixel, 0, Math.PI * 2);
       ctx.strokeStyle = withAlpha(colors.accent, 0.25);
       ctx.stroke();
     } else {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.stroke();
     }
   };
@@ -408,13 +603,13 @@ function draw(now: number): void {
     const matched = showFilter && matches.value[i] === true;
     const zoomed = view.k >= 1.15 && visible(i) && node.r * view.k >= 6;
     if (!(special || near || (matched && shown < 40) || zoomed)) return;
-    const at = toScreen(view, node.x, node.y + node.r);
+    const at = toScreen(view, X(i), Y(i) + node.r);
     if (at.x < -100 || at.x > width + 100 || at.y < -20 || at.y > height + 20) return;
     const title = nodes.value[i]?.title ?? '';
     const text = title.length > 32 ? `${title.slice(0, 31)}…` : title;
     const w = ctx.measureText(text).width;
     ctx.globalAlpha = special ? 1 : 0.85;
-    ctx.fillStyle = withAlpha(colors.surface || colors.bg, 0.78);
+    ctx.fillStyle = withAlpha(colors.surface, 0.8);
     ctx.fillRect(at.x - w / 2 - 4, at.y + 4, w + 8, 16);
     ctx.fillStyle = special ? colors.accent : colors.ink;
     ctx.fillText(text, at.x, at.y + 6.5);
@@ -436,9 +631,15 @@ function local(event: PointerEvent | WheelEvent | MouseEvent): { x: number; y: n
   return { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) };
 }
 
+/** The world point under a screen point, before the orbit turned it. */
+function worldAt(x: number, y: number): { x: number; y: number } {
+  const world = toWorld(view, x, y);
+  return rotatePoint(world.x, world.y, -orbitAngle);
+}
+
 function hit(x: number, y: number, touch: boolean): number {
   if (sim === null) return -1;
-  const world = toWorld(view, x, y);
+  const world = worldAt(x, y);
   return nodeAt(sim.nodes, world.x, world.y, (touch ? 14 : 4) / view.k);
 }
 
@@ -510,7 +711,7 @@ function onPointerMove(event: PointerEvent): void {
     }
     if (drag.moved) {
       const node = sim.nodes[drag.index];
-      const world = toWorld(view, at.x, at.y);
+      const world = worldAt(at.x, at.y);
       if (node !== undefined) {
         node.x = world.x;
         node.y = world.y;
@@ -570,7 +771,7 @@ function glideTo(to: View): void {
 }
 
 function fit(): void {
-  if (sim !== null) glideTo(fitView(sim.nodes, width - (selected.value >= 0 && width > 900 ? 400 : 0), height));
+  if (sim !== null) glideTo(fitView(turnedNodes(), width - (selected.value >= 0 && width > 900 ? 400 : 0), height));
 }
 
 function focusOn(index: number): void {
@@ -579,7 +780,8 @@ function focusOn(index: number): void {
   void select(index);
   // Leave room for the panel on wide screens.
   const panel = width > 900 ? 400 : 0;
-  glideTo(centerOn(width - panel, height, node.x, node.y, Math.max(view.k, 1.4)));
+  const at = rotatePoint(node.x, node.y, orbitAngle);
+  glideTo(centerOn(width - panel, height, at.x, at.y, Math.max(view.k, 1.4)));
 }
 
 let pageRequest = 0;
@@ -635,16 +837,20 @@ async function load(): Promise<void> {
     graph.value = data;
     sim = createSimulation(data.nodes, data.edges, previous);
     adjacency = neighbours(data.nodes.length, sim.links);
+    maxDegree = data.nodes.reduce((most, node) => Math.max(most, node.degree), 0);
+    pulses = [];
+    settledAt = 0;
     // A head start, so the first frame is not a tangle.
     if (previous.size === 0) {
       const warm = Math.min(120, Math.floor(60_000 / Math.max(1, data.nodes.length)));
       for (let i = 0; i < warm; i += 1) step(sim);
       autoFit = true;
-      if (width > 0) view = fitView(sim.nodes, width, height);
+      if (width > 0) view = fitView(turnedNodes(), width, height);
     }
     selected.value = selectedId === undefined ? -1 : data.nodes.findIndex((node) => node.id === selectedId);
     hovered.value = -1;
     if (selected.value < 0) page.value = null;
+    applyFocus();
     requestFrame();
   } catch (failure) {
     error.value = failure instanceof ApiError ? `Non riesco a caricare il grafo (${failure.message}).` : 'Non riesco a caricare il grafo.';
@@ -653,49 +859,122 @@ async function load(): Promise<void> {
   }
 }
 
+/** Selects the node the address asks for (a thought opened "in the graph"), once. */
+function applyFocus(): void {
+  const id = pendingFocus;
+  if (id === undefined) return;
+  pendingFocus = undefined;
+  const index = nodes.value.findIndex((node) => node.id === id);
+  if (index < 0) {
+    focusNotice.value = 'Questa nota non è ancora nel grafo: aggiornalo fra qualche secondo.';
+    return;
+  }
+  focusNotice.value = null;
+  focusOn(index);
+}
+
+watch(
+  () => props.focus,
+  (id) => {
+    if (id === undefined) return;
+    pendingFocus = id;
+    if (graph.value !== null) applyFocus();
+  },
+);
+
 watch([filter, selected], () => wake());
 
+function typing(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+}
+
 function onKey(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && selected.value >= 0) void select(-1);
+  if (typing(event.target)) return;
+  if (event.key === 'Escape') {
+    if (selected.value >= 0) void select(-1);
+    else if (document.fullscreenElement !== null && document.fullscreenElement === root.value) void document.exitFullscreen().catch(() => undefined);
+    return;
+  }
+  if ((event.key === 'f' || event.key === 'F') && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey && canFullscreen.value) {
+    event.preventDefault();
+    void toggleFullscreen();
+  }
+}
+
+async function toggleFullscreen(): Promise<void> {
+  const element = root.value;
+  if (element === null || !canFullscreen.value) return;
+  try {
+    if (document.fullscreenElement === element) await document.exitFullscreen();
+    else await element.requestFullscreen();
+  } catch {
+    // Refused (no user gesture, a policy): the page stays as it is.
+  }
+}
+
+function onFullscreenChange(): void {
+  fullscreen.value = document.fullscreenElement !== null && document.fullscreenElement === root.value;
+  resize();
+  wake();
+}
+
+function toggleOrbit(): void {
+  orbiting.value = !orbiting.value;
+  wake();
 }
 
 function onVisibility(): void {
   if (!document.hidden) wake();
 }
 
-/** Any interaction: the animation resumes for IDLE_MS. */
+/** Any interaction: full frame rate for INTERACT_MS, then 30 fps (10 without focus); with reduced motion, one drawing. */
 function wake(): void {
-  lastInteraction = performance.now();
+  if (!reduced) lastInteraction = performance.now();
   windowFocused = document.hasFocus();
   requestFrame();
 }
 
 function onBlur(): void {
   windowFocused = false;
+  requestFrame();
 }
 
 const WAKE_EVENTS = ['pointermove', 'pointerdown', 'wheel', 'keydown', 'focus'] as const;
 let observer: ResizeObserver | undefined;
-let themeObserver: MutationObserver | undefined;
 const motion = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-reduced-motion: reduce)');
 const scheme = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-color-scheme: light)');
+let themeObserver: MutationObserver | undefined;
+const onTheme = () => {
+  readTheme();
+  // The light palette is read from the CSS: read it again even if the mode stays.
+  buildPalette();
+};
 const onMotion = () => {
   reduced = motion?.matches ?? false;
+  reducedMotion.value = reduced;
+  if (reduced) {
+    orbiting.value = false;
+    pulses = [];
+  }
   requestFrame();
 };
 
 onMounted(() => {
-  reduced = motion?.matches ?? false;
+  onMotion();
   motion?.addEventListener('change', onMotion);
-  scheme?.addEventListener('change', readPalette);
-  themeObserver = new MutationObserver(readPalette);
+  canFullscreen.value = document.fullscreenEnabled && typeof root.value?.requestFullscreen === 'function';
+  darkChoice.value = loadDarkChoice();
+  readTheme();
+  buildPalette();
+  scheme?.addEventListener('change', onTheme);
+  themeObserver = new MutationObserver(onTheme);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  readPalette();
   observer = new ResizeObserver(resize);
   if (box.value !== null) observer.observe(box.value);
   resize();
   canvas.value?.addEventListener('wheel', onWheel, { passive: false });
   document.addEventListener('visibilitychange', onVisibility);
+  document.addEventListener('fullscreenchange', onFullscreenChange);
   window.addEventListener('keydown', onKey);
   window.addEventListener('blur', onBlur);
   for (const name of WAKE_EVENTS) window.addEventListener(name, wake, { passive: true });
@@ -706,12 +985,14 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (frame !== 0) cancelAnimationFrame(frame);
   frame = 0;
+  if (fullscreen.value && document.fullscreenElement !== null) void document.exitFullscreen().catch(() => undefined);
   observer?.disconnect();
   themeObserver?.disconnect();
+  scheme?.removeEventListener('change', onTheme);
   motion?.removeEventListener('change', onMotion);
-  scheme?.removeEventListener('change', readPalette);
   canvas.value?.removeEventListener('wheel', onWheel);
   document.removeEventListener('visibilitychange', onVisibility);
+  document.removeEventListener('fullscreenchange', onFullscreenChange);
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('blur', onBlur);
   for (const name of WAKE_EVENTS) window.removeEventListener(name, wake);
@@ -720,11 +1001,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative flex min-h-0 flex-1 overflow-hidden">
+  <div ref="root" class="relative flex min-h-0 flex-1 overflow-hidden" :class="{ 'kp-dark': mode.dark }">
     <div ref="box" class="absolute inset-0">
+      <canvas ref="backdrop" class="pointer-events-none absolute inset-0 block" aria-hidden="true" />
       <canvas
         ref="canvas"
-        class="block touch-none select-none"
+        class="relative block touch-none select-none"
         style="cursor: grab"
         role="img"
         :aria-label="`Grafo della conoscenza: ${counts.notes} note e ${counts.links} collegamenti. Usa il filtro per cercare una nota.`"
@@ -735,6 +1017,7 @@ onBeforeUnmount(() => {
         @pointerleave="onPointerLeave"
         @dblclick="onDoubleClick"
       />
+      <div class="kp-vignette pointer-events-none absolute inset-0" :class="{ light: !mode.dark }" aria-hidden="true" />
     </div>
 
     <!-- Title, counter, filter -->
@@ -777,6 +1060,7 @@ onBeforeUnmount(() => {
           <li v-if="results.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna nota corrisponde.</li>
         </ul>
       </div>
+      <p v-if="focusNotice !== null" role="status" class="pointer-events-auto rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ focusNotice }}</p>
       <p v-if="error !== null" role="alert" class="pointer-events-auto rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ error }}</p>
     </div>
 
@@ -813,7 +1097,7 @@ onBeforeUnmount(() => {
     <!-- The page of the selected node -->
     <aside
       v-if="selectedNode !== undefined"
-      class="hud-card absolute top-3 right-3 bottom-3 flex w-[min(400px,calc(100%-24px))] flex-col bg-surface/95 backdrop-blur-sm"
+      class="hud-card absolute top-14 right-3 bottom-3 flex w-[min(400px,calc(100%-24px))] flex-col bg-surface/95 backdrop-blur-sm"
       aria-label="Nota selezionata"
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
@@ -861,5 +1145,136 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </aside>
+
+    <!-- Orbit and full screen -->
+    <div class="absolute top-3 right-3 flex items-center gap-1.5">
+      <button
+        v-if="mode.toggle"
+        type="button"
+        class="kp-tool"
+        :class="{ on: darkChoice }"
+        :aria-pressed="darkChoice"
+        title="Sfondo scuro: la sala di controllo nera anche col tema chiaro"
+        @click="toggleDark"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="3" />
+          <path d="M8 9.5l.01 0M15.5 8l.01 0M12 14l.01 0M17 15.5l.01 0" />
+        </svg>
+        <span>Sfondo scuro</span>
+      </button>
+      <button
+        v-if="!reducedMotion"
+        type="button"
+        class="kp-tool"
+        :class="{ on: orbiting }"
+        :aria-pressed="orbiting"
+        title="Orbita: rotazione lentissima della vista"
+        @click="toggleOrbit"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="2.6" />
+          <ellipse cx="12" cy="12" rx="10" ry="4.2" transform="rotate(-24 12 12)" />
+          <circle cx="20.2" cy="8.4" r="1.1" fill="currentColor" stroke="none" />
+        </svg>
+        <span>Orbita</span>
+      </button>
+      <button
+        v-if="canFullscreen"
+        type="button"
+        class="kp-tool"
+        :class="{ on: fullscreen }"
+        :title="fullscreen ? 'Esci dallo schermo intero (F o Esc)' : 'Schermo intero (F)'"
+        :aria-label="fullscreen ? 'Esci dallo schermo intero' : 'Schermo intero'"
+        @click="toggleFullscreen"
+      >
+        <svg v-if="!fullscreen" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        </svg>
+        <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/*
+ * D-087b: in the dark mode the page is a black control room. The theme
+ * variables are redefined here, so the cards, the panel and the legend
+ * (Tailwind colours read them) turn dark with luminous accents. Without
+ * .kp-dark the page keeps the platform's colours.
+ */
+.kp-dark {
+  --bg: #02050a;
+  --surface: #07111a;
+  --surface-2: #0c1a26;
+  --line: #12283a;
+  --line-strong: #1f4058;
+  --ink: #d6f4ff;
+  --muted: #7690a8;
+  --accent: #3ee8ff;
+  --accent-ink: #00222a;
+  --glow: #3ee8ff33;
+  --warn: #ffb547;
+  --danger: #ff6b5b;
+  --ok: #5cffb1;
+  --info: #5b9dff;
+  --l0: #5cffb1;
+  --l1: #3ee8ff;
+  --l2: #ffb547;
+  --l3: #ff6b5b;
+  --graph-1: #3ee8ff;
+  --graph-2: #5cffb1;
+  --graph-3: #a879ff;
+  --graph-4: #ffb547;
+  --graph-5: #5b9dff;
+  --graph-6: #ff6bcb;
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.kp-vignette {
+  background:
+    radial-gradient(ellipse at center, transparent 52%, rgb(0 0 0 / 0.55) 88%, rgb(0 0 0 / 0.8) 100%),
+    linear-gradient(to bottom, rgb(62 232 255 / 0.04), transparent 18%, transparent 82%, rgb(168 121 255 / 0.04));
+}
+
+.kp-vignette.light {
+  background: radial-gradient(ellipse at center, transparent 60%, rgb(36 48 46 / 0.06) 100%);
+}
+
+.kp-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--muted);
+  font: 600 10.5px/1 var(--font-hud);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  backdrop-filter: blur(4px);
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.kp-tool:hover,
+.kp-tool:focus-visible {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.kp-tool.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+</style>
