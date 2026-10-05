@@ -18,6 +18,7 @@ import { createDelegation, updateDelegation } from '../src/orchestrator/delegati
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { LOCAL_FRAME, LOCAL_REPORT_SCHEMA_NAME } from '../src/orchestrator/delegate.ts';
+import { ENTRY_TEXT } from '../src/participants.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -117,7 +118,7 @@ async function waitingFor(taskId: string): Promise<string> {
 }
 
 const translator = (): LoadedAgent => userAgent('traduttore', 'answer', 'Traduci in inglese il testo che ricevi.');
-const DELEGATE: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'traduttore', brief: 'Traduci: buongiorno a tutti.' } };
+const DELEGATE: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'traduttore', reason: 'per la traduzione', brief: 'Traduci: buongiorno a tutti.' } };
 const REPLY: Answer = { action: 'reply', text: 'Ecco la traduzione: good morning everyone.' };
 
 test('Arianna offers the agents that can work now: an answering agent without Claude, never a web one', async () => {
@@ -150,7 +151,8 @@ test('an L1 brief goes to the agent at once, and it answers on the local model',
   // The agent read the frame, its own prompt and the brief; nothing else of the chat.
   const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
   assert.ok(call !== undefined);
-  assert.equal(call.messages[0]?.content, `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n`);
+  // Its first delegation in this conversation: it also reads how to enter it (D-125).
+  assert.equal(call.messages[0]?.content, `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n\n\n${ENTRY_TEXT}`);
   assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'Traduci: buongiorno a tutti.' }]);
 
   // The report is in the chat as the agent's message, and Arianna read it as the result of her call.

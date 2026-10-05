@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { NewUserAgent } from '@arianna/agents';
 import type { CharacterChoices, Project } from '@arianna/config';
-import { createContext, isLabel, maxLabel, type LabelRules } from '@arianna/policy';
+import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { loadChangelog } from '../changelog.ts';
@@ -48,6 +48,7 @@ import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
+import { activeParticipants, removeParticipant } from '../participants.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -123,6 +124,12 @@ export interface ApiServerOptions {
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
   userAgents?: UserAgents;
+  /**
+   * What the participant bar shows of an agent (D-125): where it runs and the
+   * label of its name in the lines of the chat; undefined for an agent no
+   * longer active. Without it every agent reads as gone (executor null, L1).
+   */
+  participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -1201,6 +1208,31 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   return undefined;
 }
 
+const AGENT_PARAM = /^[a-z][a-z0-9-]{0,63}$/;
+
+/**
+ * The participants of a conversation (D-125): who is in it besides the user
+ * and Arianna, with where each runs; the user takes one out with a click.
+ */
+function participantRoutes(sql: Sql, agentOf: NonNullable<ApiServerOptions['participantAgent']>): Route[] {
+  return [
+    route('GET', '/api/conversations/:id/participants', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      const participants = (await activeParticipants(sql, id)).map((participant) => ({ ...participant, executor: agentOf(participant.agent)?.executor ?? null }));
+      return { body: { participants } };
+    }),
+    route('POST', '/api/conversations/:id/participants/:agent/remove', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const agent = params.agent ?? '';
+      if (!AGENT_PARAM.test(agent)) throw new HttpError(404, 'not found');
+      onlyFields(await readJson(request), []);
+      await removeParticipant(sql, id, agent, agentOf(agent)?.nameLabel ?? 'L1');
+      return { body: { removed: agent } };
+    }),
+  ];
+}
+
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
   const table = routes(sql, {
@@ -1223,6 +1255,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...changelogRoutes(options.changelog));
   table.push(...userAgentRoutes(options.userAgents));
+  table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

@@ -21,6 +21,7 @@ import { loadConversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
+import { enterOnDelegation, isParticipant, nameLabelOf, participantsAt, participantsNote } from '../participants.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
@@ -134,6 +135,7 @@ function delegationResult(delegation: Delegation | undefined): { text: string; l
 /** What the model reads, each part with its label: the conversation, then the task's turns. */
 async function historyOf(
   sql: Sql,
+  agents: ReadonlyMap<string, LoadedAgent>,
   task: Task,
   turns: readonly Turn[],
   delegations: readonly Delegation[],
@@ -158,6 +160,14 @@ async function historyOf(
       const value: TurnMessage =
         row.role === 'system' ? { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${clip(row.body)}` } : { role: row.role, content: clip(row.body) };
       history.push({ value, label: row.label, source: `message:${row.id}` });
+    }
+    // Who else is here (D-125): the agents that joined before this task, as a note of the system after
+    // the chat, never in the system prompt. The same for every step of the task, so its prefix stays.
+    const present = history.length === 0 ? [] : await participantsAt(sql, task.conversationId, task.createdAt);
+    const note = participantsNote(present);
+    if (note !== undefined) {
+      const label = maxLabel(...present.map((name) => nameLabelOf(agents.get(name))));
+      history.push({ value: { role: 'user', content: `${SYSTEM_MESSAGE_MARK}\n${note}` }, label, source: `participants:${task.conversationId}` });
     }
   }
   for (const turn of turns) {
@@ -298,7 +308,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     if (task.conversationId === null || !canAnswerDirectly(env)) return undefined;
     const model = directModelOf(await loadConversation(sql, task.conversationId), enabledCloudModels(env.settings().cloud));
     if (model === undefined) return undefined;
-    const history = await historyOf(sql, task, [], []);
+    const history = await historyOf(sql, options.agents, task, [], []);
     const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
     return isAtMost(label, 'L1') ? { model, label } : undefined;
   }
@@ -328,6 +338,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const { task, step } = ctx;
     const agentName = String(args.agent);
     const brief = String(args.brief).trim();
+    const reason = typeof args.reason === 'string' ? args.reason.replace(/\s+/g, ' ').trim() : '';
     const target = options.agents.get(agentName);
     const where = target === undefined || !delegates.some((item) => item.name === agentName) ? undefined : delegationRoute(target.card);
     // Only a run on Claude works in a project folder.
@@ -336,6 +347,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     let error: string | undefined;
     if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';
+    else if (reason === '') error = 'the reason is empty: say in one short line why you bring this agent in';
     else if (where === 'claude' && repo === undefined) error = NO_PROJECT;
     if (error !== undefined || target === undefined) {
       const result = `error: ${DELEGATE}: ${error ?? ''}`;
@@ -343,14 +355,39 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       await show(task, step, 'error', error);
       return { kind: 'continue', usage };
     }
+    // The agent joins the conversation with its first delegation there (D-125): the reason reaches the
+    // chat as the model wrote it, through the gateway towards the web chat like an answer.
+    const conversationId = task.conversationId;
+    const shown = conversationId !== null && !(await isParticipant(sql, conversationId, agentName)) ? await reasonForChat(task, reason, label, ctx.runId) : undefined;
     await sql.begin(async (tx) => {
       await recordTurn(tx, { ...turn, label });
-      await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, ...(repo === undefined ? {} : { repo }) });
+      const delegation = await createDelegation(tx, { taskId: task.id, step, agent: agentName, brief, label, ...(repo === undefined ? {} : { repo }) });
+      if (conversationId === null) return;
+      await enterOnDelegation(tx, {
+        conversationId,
+        taskId: task.id,
+        delegationId: delegation.id,
+        agent: agentName,
+        reason: shown,
+        reasonLabel: label,
+        nameLabel: nameLabelOf(target),
+      });
     });
     await show(task, step, 'delegate', agentName);
     // The brief carries what the step has read: above what the agent may read it leaves only as the text the user approves.
     const ceiling = briefCeiling(target.card);
     return isAtMost(label, ceiling) ? { kind: 'continue', usage } : { kind: 'declassify', text: brief, from: label, to: ceiling, usage };
+  }
+
+  /**
+   * The reason of a delegation as the chat may show it: allowed by the gateway
+   * towards the web chat (logged in gateway_log), else undefined and the line
+   * says only who joins. Never above what the task may hold.
+   */
+  async function reasonForChat(task: Task, reason: string, label: Label, runId: string): Promise<string | undefined> {
+    if (!isAtMost(label, task.clearance)) return undefined;
+    const decision = await passGateway(sql, [{ value: reason, label, source: `task:${task.id}` }], createContext(task.clearance, label), { kind: 'channel', id: 'web' }, { taskId: task.id, runId });
+    return decision.decision === 'allow' ? decision.texts[0] : undefined;
   }
 
   return {
@@ -423,7 +460,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
       if (direct !== undefined) {
-        const history = await historyOf(sql, task, [], []);
+        const history = await historyOf(sql, options.agents, task, [], []);
         if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
         return runDirect(env, ctx, direct, history);
       }
@@ -451,7 +488,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         // Read again only when the pieces changed: ours, or another task's that came first.
         if (summarized.written > 0 || summarized.degraded === 'conflict') view = await conversationView(sql, task.conversationId, task.id, MAX_TEXT);
       }
-      const history = await historyOf(sql, task, turns, delegations, view);
+      const history = await historyOf(sql, options.agents, task, turns, delegations, view);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
       const context: Context = createContext(task.clearance, label);

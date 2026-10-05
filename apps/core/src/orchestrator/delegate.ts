@@ -28,6 +28,7 @@ import type { StepContext, StepOutcome } from '../engine.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
+import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
@@ -402,7 +403,13 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
-  const brief = [promptPart(agent, delegation.agent), { text: delegation.brief, label, source: `task:${task.id}` }];
+  // At its first delegation in this conversation the agent also reads how to enter it (D-125): our fixed text, L0.
+  const entry = await isEntryDelegation(sql, delegation.id);
+  const brief = [
+    promptPart(agent, delegation.agent),
+    ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
+    { text: delegation.brief, label, source: `task:${task.id}` },
+  ];
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
   const result = await runClaudeStep(sql, claude, ctx, {
@@ -521,6 +528,14 @@ export const LOCAL_FRAME = [
 ].join('\n');
 
 /**
+ * What an agent that only answers reads first: the frame, its instructions,
+ * and at its first delegation in a conversation how to enter it (D-125).
+ */
+export function localSystem(instructions: string, entry: boolean): string {
+  return `${LOCAL_FRAME}\n${instructions}${entry ? `\n\n${ENTRY_TEXT}` : ''}`;
+}
+
+/**
  * The step of an agent that only answers (D-119, tappa T3): one call to the
  * local model with the agent's prompt and the brief, through the gateway.
  * The report goes to the chat as the agent's message, and becomes the result
@@ -560,13 +575,14 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const [instructions, brief] = decision.texts;
   if (instructions === undefined || brief === undefined || decision.texts.length !== 2) throw new Error('the gateway allowed a different number of texts');
 
+  const entry = await isEntryDelegation(sql, delegation.id);
   let report: string;
   const usage = { steps: 1, tokensIn: 0, tokensOut: 0 };
   try {
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: `${LOCAL_FRAME}\n${instructions}` },
+        { role: 'system', content: localSystem(instructions, entry) },
         { role: 'user', content: brief },
       ],
       schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },

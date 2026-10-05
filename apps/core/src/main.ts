@@ -29,10 +29,12 @@ import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { createUserAgents } from './user-agents.ts';
 import { passGateway } from './gateway.ts';
+import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
+import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
@@ -405,6 +407,11 @@ const server = await startApiServer({
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
   defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
   agents: () => [...agents.keys()],
+  // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
+  participantAgent: (name) => {
+    const agent = agents.get(name);
+    return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? null, nameLabel: nameLabelOf(agent) };
+  },
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },
     choices: () => settings.current().characters,

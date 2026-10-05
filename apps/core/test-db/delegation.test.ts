@@ -22,6 +22,7 @@ import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
 import { MAX_QUOTA_RETRIES } from '../src/orchestrator/delegate.ts';
+import { ENTRY_TEXT } from '../src/participants.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
 import { listCredits } from '../src/delegation-view.ts';
@@ -159,7 +160,7 @@ async function ask(mode: 'work' | 'private', body: string, project?: string, pro
   return { conversation, ...(await postUserMessage(db().sql, conversation.id, body)) };
 }
 
-const DELEGATE: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'coder', brief: 'Add a line to README.md saying hello.' } };
+const DELEGATE: Answer = { action: 'call', tool: 'task.delegate', arguments: { agent: 'coder', reason: 'per aggiungere la riga al README', brief: 'Add a line to README.md saying hello.' } };
 const REPLY: Answer = { action: 'reply', text: 'Fatto: il Coder ha aggiunto la riga.' };
 
 /** The task, which must be waiting for an approval. */
@@ -208,6 +209,9 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
       [...messages].map((row) => [row.role, row.agent, row.body, row.label]),
       [
         ['user', null, 'Aggiungi una riga al README.', 'L1'],
+        // The Coder joins the conversation with its first delegation (D-125): two lines for the user.
+        ['system', null, 'Arianna aggiunge Coder: per aggiungere la riga al README', 'L1'],
+        ['system', null, 'Coder è stato aggiunto', 'L0'],
         ['assistant', 'coder', 'ok', 'L1'],
         ['assistant', null, 'Fatto: il Coder ha aggiunto la riga.', 'L1'],
       ],
@@ -223,6 +227,8 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
     const { argv, prompt } = received();
     assert.match(prompt, /^You are the Coder/);
     assert.match(prompt, /Add a line to README\.md saying hello\.$/);
+    // Its first delegation here: it reads how to enter, between its prompt and the brief.
+    assert.ok(prompt.includes(`\n\n${ENTRY_TEXT}\n\nAdd a line`));
     assert.equal(argv[argv.indexOf('--model') + 1], 'sonnet');
     assert.equal(argv[argv.indexOf('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash');
 
@@ -1094,7 +1100,7 @@ test('a delegation above L1: no preview, and its credit shows neither project no
 test('a second delegation of the same task runs again: the report of the first is never its result', async () => {
   // The loop seen on 2026-10-05: every later delegation closed at once with the first report.
   const { task } = await ask('work', 'Due giri di modifiche.', 'site');
-  const model = scripted([DELEGATE, { ...DELEGATE, arguments: { agent: 'coder', brief: 'Now add a second line.' } }, REPLY]);
+  const model = scripted([DELEGATE, { ...DELEGATE, arguments: { agent: 'coder', reason: 'per la seconda riga', brief: 'Now add a second line.' } }, REPLY]);
   assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'continued', 'continued', 'continued', 'answered']);
   const delegations = await loadDelegations(db().sql, task.id);
   assert.deepEqual(
@@ -1108,4 +1114,8 @@ test('a second delegation of the same task runs again: the report of the first i
   const reports = await db().sql`SELECT 1 FROM messages WHERE task_id = ${task.id} AND agent = 'coder'`;
   assert.equal(reports.length, 2);
   assert.match(received().prompt, /Now add a second line\.$/);
+  // Already in the conversation: no entry text, no second pair of lines (D-125).
+  assert.equal(received().prompt.includes(ENTRY_TEXT), false);
+  const lines = await db().sql`SELECT 1 FROM messages WHERE task_id = ${task.id} AND role = 'system'`;
+  assert.equal(lines.length, 2);
 });
