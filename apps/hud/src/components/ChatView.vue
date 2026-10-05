@@ -497,7 +497,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
           <!-- A line of the system about a task: who joined, who left, a wait closed (D-125, D-109) -->
           <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[12px] text-muted">
-            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line bg-surface-2 px-3 py-1 text-[12.5px] font-medium text-ink' : ''">{{ message.body }}</span>
+            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-[12.5px] font-medium text-ink' : ''">{{ message.body }}</span>
             <MessageTime class="font-mono text-[10.5px]" :ts="message.ts" :now="now" />
           </p>
 

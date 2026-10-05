@@ -1,3 +1,4 @@
+import { ADDING_PREFIX } from './adding-line.ts';
 import { agentName } from './italian.ts';
 import { EXECUTOR_TEXT } from './labels.ts';
 import type { AgentStatus, Message, Participant } from './types.ts';
@@ -25,7 +26,7 @@ export function isEventLine(message: Pick<Message, 'role' | 'taskId'>): boolean 
  * than the other events (user's request, 2026-10-05).
  */
 export function isAddingLine(message: Pick<Message, 'role' | 'taskId' | 'body'>): boolean {
-  return isEventLine(message) && message.body.startsWith('Arianna aggiunge ');
+  return isEventLine(message) && message.body.startsWith(ADDING_PREFIX);
 }
 
 /** Where the agent works, as the bar writes it under its name. */

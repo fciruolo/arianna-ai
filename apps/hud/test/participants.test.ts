@@ -18,6 +18,7 @@ test('only the line of Arianna bringing an agent in stands out among the events'
   assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Arianna aggiunge traduttore: Traduzione richiesta' }), true);
   assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Arianna aggiunge Coder' }), true);
   assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'traduttore è stato aggiunto' }), false);
+  assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Hai tolto traduttore' }), false);
   assert.equal(isAddingLine({ role: 'system', taskId: null, body: 'Arianna aggiunge Coder' }), false);
   assert.equal(isAddingLine({ role: 'assistant', taskId: 'a1', body: 'Arianna aggiunge Coder' }), false);
 });
