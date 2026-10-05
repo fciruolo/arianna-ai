@@ -93,3 +93,17 @@ export {
   type AgencyScan,
 } from './agency-catalog.ts';
 export { CARD_TEMPLATES, templateFor, type CardTemplate } from './templates.ts';
+export {
+  checkUserCeiling,
+  loadUserAgents,
+  matchingTemplate,
+  MAX_USER_PROMPT,
+  templateById,
+  USER_AGENT_FOLDERS,
+  USER_AGENT_STATES,
+  userCard,
+  type NewUserAgent,
+  type RefusedUserAgent,
+  type UserAgentState,
+  type UserCardFiles,
+} from './user.ts';

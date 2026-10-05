@@ -26,7 +26,8 @@ function copy(): string {
 describe('committed agent cards', () => {
   it('load: Arianna local only, Coder L1 in the cloud and L2 locally', () => {
     const agents = loadAgents(COMMITTED);
-    assert.deepEqual([...agents.keys()], ['arianna', 'coder']);
+    // Agents promoted from the Agents page (D-119) may sit next to them.
+    assert.ok(agents.has('arianna') && agents.has('coder'));
 
     const arianna = agents.get('arianna');
     assert.ok(arianna !== undefined);

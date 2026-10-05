@@ -98,6 +98,7 @@ import PixelAgent from './PixelAgent.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
 import SheetPreview from './SheetPreview.vue';
+import UserAgents from './UserAgents.vue';
 
 /**
  * The settings page of the web chat (D-071), over /api/settings. Each card
@@ -409,6 +410,15 @@ function toggleAnimations(agent: string): void {
   const next = new Set(animationsOpen.value);
   if (!next.delete(agent)) next.add(agent);
   animationsOpen.value = next;
+}
+/** An agent activated, deactivated or promoted (D-119): its card, character and model show up at once. */
+async function onAgentsChanged(): Promise<void> {
+  await reload();
+  try {
+    characters.value = await loadCharacters();
+  } catch {
+    // The next reload lists it.
+  }
 }
 /** A sheet saved in the pack miei (D-118): listed again and chosen for the agent; the card's Salva keeps it. */
 async function onUploaded(agent: string, saved: UploadedCharacter): Promise<void> {
@@ -942,6 +952,7 @@ watch(active, () => {
                 <code class="font-mono">data/characters/miei</code>, fuori da git; un pacchetto intero si copia a mano in <code class="font-mono">data/characters</code>, poi si ricarica questa pagina.
               </p>
             </SettingsCard>
+            <UserAgents v-if="active === 'agents'" @changed="onAgentsChanged" />
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />
