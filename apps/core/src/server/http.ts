@@ -13,7 +13,7 @@ import { countConversationActivities, listTaskActivities } from '../activities.t
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
-import { assignCharacters, listPacks, readSheet, type CharacterDirs } from '../characters.ts';
+import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
   archiveConversation,
   ChatError,
@@ -707,6 +707,18 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const { packs, refused } = await listPacks(characters.dirs);
       return { body: { packs, refused, agents: assignCharacters(agents(), characters.choices(), packs) } };
     }),
+    // A sheet uploaded from the chat (D-118): decoded, written again, saved in data/characters/miei.
+    // A character of the same name answers 409 with `existing`: the page asks, then sends `replace`.
+    route('POST', '/api/characters/upload', async (request) => {
+      if (characters === undefined) throw new HttpError(404, 'not found');
+      try {
+        return { status: 201, body: { character: await uploadSheet(characters.dirs, parseUpload(await readJson(request, MAX_UPLOAD_BODY))) } };
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) throw new HttpError(413, 'the sheet is too large');
+        if (error instanceof UploadError && error.code === 'conflict') return { status: 409, body: { error: error.message, existing: error.existing } };
+        throw error;
+      }
+    }),
     route('GET', '/api/characters/:pack/:character', async (_request, _url, params) => {
       const png = characters === undefined ? undefined : await readSheet(characters.dirs, params.pack ?? '', params.character ?? '');
       if (png === undefined) throw new HttpError(404, 'not found');
@@ -1090,6 +1102,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };
+  if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;

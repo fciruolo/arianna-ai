@@ -13,8 +13,10 @@ import {
   preparePrivacy,
   restartLocal,
   saveSettings,
+  sheetUrl,
   type CopiedVoice,
   type TrialModel,
+  type UploadedCharacter,
 } from '../lib/api.ts';
 import { MODE_BADGE, MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
 import {
@@ -88,11 +90,13 @@ import {
   type VoiceValues,
 } from '../lib/settings.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
+import CharacterUpload from './CharacterUpload.vue';
 import Icon from './Icon.vue';
 import ModelEvals from './ModelEvals.vue';
 import PixelAgent from './PixelAgent.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
+import SheetPreview from './SheetPreview.vue';
 
 /**
  * The settings page of the web chat (D-071), over /api/settings. Each card
@@ -393,6 +397,25 @@ const agentIds = computed(() => {
 const characterOptions = computed(() =>
   (characters.value?.packs ?? []).flatMap((pack) => pack.characters.map((character) => ({ value: `${pack.id}/${character.id}`, label: `${pack.name} · ${character.name}`, pack, character }))),
 );
+/** Bumped by an upload: the sheets are asked again, a replaced one included (D-118). */
+const sheetVersion = ref(0);
+/** The agents whose animations are open. */
+const animationsOpen = ref(new Set<string>());
+function toggleAnimations(agent: string): void {
+  const next = new Set(animationsOpen.value);
+  if (!next.delete(agent)) next.add(agent);
+  animationsOpen.value = next;
+}
+/** A sheet saved in the pack miei (D-118): listed again and chosen for the agent; the card's Salva keeps it. */
+async function onUploaded(agent: string, saved: UploadedCharacter): Promise<void> {
+  sheetVersion.value += 1;
+  try {
+    characters.value = await loadCharacters();
+  } catch {
+    // The choice below still names it; a reload lists it.
+  }
+  if (forms.value !== null) forms.value.characters[agent] = `${saved.pack}/${saved.character}`;
+}
 function previewOf(agent: string): CharacterChoice | undefined {
   const value = forms.value?.characters[agent] ?? '';
   const option = characterOptions.value.find((item) => item.value === value);
@@ -798,9 +821,17 @@ watch(active, () => {
               </p>
               <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
                 <div class="flex items-center gap-3">
-                  <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" />
+                  <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" :version="sheetVersion" />
                   <h3 class="hud-title">{{ agentName(agent) }}</h3>
+                  <div v-if="previewOf(agent)" class="ml-auto flex flex-wrap gap-2">
+                    <button type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="animationsOpen.has(agent)" @click="toggleAnimations(agent)">
+                      {{ animationsOpen.has(agent) ? 'Chiudi animazioni' : 'Animazioni' }}
+                    </button>
+                    <a class="btn px-2.5 py-1 text-xs" :href="sheetUrl(previewOf(agent)!, sheetVersion)" :download="`${previewOf(agent)!.character}.png`">Scarica PNG</a>
+                  </div>
                 </div>
+                <SheetPreview v-if="animationsOpen.has(agent) && previewOf(agent)" :src="sheetUrl(previewOf(agent)!, sheetVersion)" :rows="previewOf(agent)!.rows" />
+                <CharacterUpload :agent-label="agentName(agent)" @uploaded="(saved) => onUploaded(agent, saved)" />
                 <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                   <label class="flex flex-col gap-1 text-xs text-muted">
                     Personaggio
@@ -896,8 +927,8 @@ watch(active, () => {
               </p>
               <p class="text-xs text-muted">
                 {{ PERSONA_WHERE }} La specializzazione si aggiunge al ruolo scritto nella scheda dell’agente, non lo sostituisce. Al salvataggio un testo con IBAN, codici fiscali,
-                carte, chiavi o valori del vault viene rifiutato. Un pacchetto di personaggi nuovo si copia in <code class="font-mono">data/characters</code>, fuori da git; poi
-                ricarica questa pagina.
+                carte, chiavi o valori del vault viene rifiutato. Un foglio caricato con «Carica PNG» va nel pacchetto
+                <code class="font-mono">data/characters/miei</code>, fuori da git; un pacchetto intero si copia a mano in <code class="font-mono">data/characters</code>, poi si ricarica questa pagina.
               </p>
             </SettingsCard>
 

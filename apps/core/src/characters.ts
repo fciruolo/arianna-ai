@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { CHARACTER_ID, ORIGINAL_PACK, type CharacterChoices } from '@arianna/config';
+
+import { decodePng, encodePng, PngError } from './png.ts';
 
 /**
  * The pixel characters of the web chat (D-060). A pack is a folder: the
@@ -241,4 +244,156 @@ export function assignCharacters(
     }
   }
   return result;
+}
+
+/** The pack of data/characters where the sheets uploaded from the chat go (D-118); never `originali`. */
+export const USER_PACK = 'miei';
+const USER_PACK_MANIFEST = { name: 'Miei', source: 'Caricati dalla pagina Agenti (D-118)' };
+const MAX_NAME = 40;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** The JSON body of an upload: a sheet in base64 plus the name. */
+export const MAX_UPLOAD_BODY = Math.ceil((MAX_SHEET_BYTES * 4) / 3) + 4096;
+
+export class UploadError extends Error {
+  override name = 'UploadError';
+  readonly code: 'invalid' | 'conflict' | 'pack' | 'full' | 'taken';
+  /** The character of the same id already in the pack: the page asks before replacing it. */
+  readonly existing: { id: string; name: string } | undefined;
+
+  constructor(code: UploadError['code'], message: string, existing?: { id: string; name: string }) {
+    super(message);
+    this.code = code;
+    this.existing = existing;
+  }
+}
+
+export interface UploadRequest {
+  name: string;
+  /** The file as uploaded: decoded, checked and written again before it is saved. */
+  png: Buffer;
+  /** Replace a character of the same id: only after the user confirmed it. */
+  replace: boolean;
+}
+
+export interface UploadResult {
+  pack: string;
+  character: string;
+  name: string;
+  rows: 3 | 4;
+  replaced: boolean;
+}
+
+/** The id of a character from its name: lower case ascii letters, digits and dashes. */
+export function characterId(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, MAX_NAME)
+    .replace(/-+$/, '');
+}
+
+/** `{ name, png, replace? }`, `png` in base64: checked here, the image itself in `uploadSheet`. */
+export function parseUpload(body: Record<string, unknown>): UploadRequest {
+  const unknown = Object.keys(body).filter((key) => !['name', 'png', 'replace'].includes(key));
+  if (unknown.length > 0) throw new UploadError('invalid', `unknown field(s): ${unknown.join(', ')}`);
+  const { name, png, replace } = body;
+  if (typeof name !== 'string' || name.trim() === '' || name.trim().length > MAX_NAME || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name)) {
+    throw new UploadError('invalid', `name: one line of 1-${String(MAX_NAME)} characters`);
+  }
+  if (characterId(name) === '') throw new UploadError('invalid', 'name: at least a letter or a digit');
+  if (replace !== undefined && typeof replace !== 'boolean') throw new UploadError('invalid', 'replace: true or false');
+  if (typeof png !== 'string' || png.length === 0 || png.length % 4 !== 0 || !BASE64.test(png)) throw new UploadError('invalid', 'png: the file in base64');
+  const bytes = Buffer.from(png, 'base64');
+  if (bytes.length > MAX_SHEET_BYTES) throw new UploadError('invalid', `png: at most ${String(MAX_SHEET_BYTES / 1024)} KiB`);
+  return { name: name.trim(), png: bytes, replace: replace === true };
+}
+
+/**
+ * The sheet decoded and written again from its pixels only (D-118): a PNG of
+ * 112×96 or 112×128 and nothing else of the file, no metadata, no chunk the
+ * standard does not know. Throws UploadError with the reason.
+ */
+export function cleanSheet(png: Buffer): { png: Buffer; rows: 3 | 4 } {
+  let image;
+  try {
+    image = decodePng(png, 128);
+  } catch (error) {
+    if (error instanceof PngError) throw new UploadError('invalid', error.message.includes('pixels per side') ? 'a sheet is 112×96 or 112×128' : error.message);
+    throw error;
+  }
+  const rows = SHEET_HEIGHTS[image.height];
+  if (image.width !== SHEET_WIDTH || rows === undefined) throw new UploadError('invalid', 'a sheet is 112×96 or 112×128');
+  return { png: encodePng(image), rows };
+}
+
+/** Writes `content` next to `target` under a hidden name, then renames it over: a reader never sees half a file. */
+async function writeAtomically(dir: string, file: string, content: Buffer | string): Promise<void> {
+  const temporary = join(dir, `.${file}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, content, { flag: 'wx', mode: 0o600 });
+    await rename(temporary, join(dir, file));
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+/** The folder of the user's pack, made when missing; never through a link. */
+async function userPackDir(dirs: CharacterDirs): Promise<string> {
+  await mkdir(dirs.data, { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(join(dirs.data, USER_PACK), { mode: 0o700 });
+  } catch (error) {
+    if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST')) throw error;
+  }
+  try {
+    return await packDir(dirs, USER_PACK);
+  } catch (error) {
+    throw new UploadError('pack', `data/characters/${USER_PACK} ${reasonOf(error)}`);
+  }
+}
+
+/** One upload at a time: two at once would both read pack.json and one would lose its line. */
+let uploads: Promise<unknown> = Promise.resolve();
+
+/**
+ * Saves an uploaded sheet in the pack `miei` of data/characters (D-118), with
+ * an id made from the name. A character of the same id is replaced only with
+ * `replace`; otherwise UploadError `conflict` names it, and the page asks.
+ */
+export function uploadSheet(dirs: CharacterDirs, request: UploadRequest): Promise<UploadResult> {
+  const run = async (): Promise<UploadResult> => {
+    const { png, rows } = cleanSheet(request.png);
+    const id = characterId(request.name);
+    const dir = await userPackDir(dirs);
+    let manifest: Manifest;
+    try {
+      manifest = await readManifest(dir);
+    } catch (error) {
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) {
+        throw new UploadError('pack', `data/characters/${USER_PACK}: ${reasonOf(error)}; fix it or move it away`);
+      }
+      manifest = { ...USER_PACK_MANIFEST, characters: [] };
+    }
+    const existing = manifest.characters.find((entry) => entry.id === id);
+    // A replacement writes over the file the pack names: no sheet left behind.
+    const file = existing?.file ?? `${id}.png`;
+    if (existing !== undefined && !request.replace) {
+      throw new UploadError('conflict', `a character "${existing.name}" (${id}) is already in the pack ${USER_PACK}`, { id, name: existing.name });
+    }
+    if (manifest.characters.some((entry) => entry.id !== id && entry.file === file)) throw new UploadError('taken', `${file} belongs to another character of the pack`);
+    if (existing === undefined && manifest.characters.length >= MAX_CHARACTERS) throw new UploadError('full', `the pack ${USER_PACK} holds at most ${String(MAX_CHARACTERS)} characters`);
+
+    const entry = { id, name: request.name, file };
+    const characters = existing === undefined ? [...manifest.characters, entry] : manifest.characters.map((item) => (item.id === id ? entry : item));
+    await writeAtomically(dir, file, png);
+    await writeAtomically(dir, 'pack.json', `${JSON.stringify({ name: manifest.name, source: manifest.source === '' ? undefined : manifest.source, characters }, null, 2)}\n`);
+    return { pack: USER_PACK, character: id, name: request.name, rows, replaced: existing !== undefined };
+  };
+  const next = uploads.then(run, run);
+  uploads = next.catch(() => undefined);
+  return next;
 }

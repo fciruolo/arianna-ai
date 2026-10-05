@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { activityText, errorText, reasonText } from '../src/lib/italian.ts';
+import { activityText, errorText, reasonText, uploadErrorText } from '../src/lib/italian.ts';
 
 test('the reasons the core writes become Italian', () => {
   assert.equal(reasonText('the orchestrator is not available yet (task 1.10)'), 'l’orchestratore non è ancora disponibile (task 1.10)');
@@ -96,4 +96,24 @@ test('the errors of the system chats become Italian (D-064)', () => {
   assert.equal(errorText(new ApiError(400, 'the question is already attached')), 'La domanda è già allegata.');
   assert.match(errorText(new ApiError(400, 'the task has no recorded error')), /non è stato salvato un errore/);
   assert.equal(errorText(new ApiError(409, 'the task cannot do this now')), 'Il task non può farlo adesso.');
+});
+
+test('uploadErrorText: the reasons of a refused sheet in Italian, never as the core wrote them (D-118)', () => {
+  const cases: [number, string, RegExp][] = [
+    [400, 'a sheet is 112×96 or 112×128', /112×96 o 112×128/],
+    [400, 'not a PNG', /non è un PNG/],
+    [400, 'interlaced PNGs are not accepted: save it without interlacing', /interlacciato/],
+    [400, 'unknown chunk prVt', /parti non standard/],
+    [400, 'name: one line of 1-40 characters', /Nome non valido/],
+    [413, 'the sheet is too large', /256 KiB/],
+    [409, 'data/characters/miei not a folder', /data\/characters\/miei/],
+    [409, 'the pack miei holds at most 32 characters', /già 32/],
+    [409, 'robot.png belongs to another character of the pack', /un altro personaggio usa già il file/],
+  ];
+  for (const [status, message, expected] of cases) {
+    const text = uploadErrorText(new ApiError(status, message));
+    assert.match(text, expected, message);
+    assert.equal(text.includes(message), false, message);
+  }
+  assert.equal(uploadErrorText(new TypeError('fetch failed')), errorText(new TypeError('fetch failed')));
 });

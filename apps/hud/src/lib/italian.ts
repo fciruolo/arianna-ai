@@ -392,3 +392,19 @@ export const THOUGHT_STATE_HINT: Record<'organizing' | 'stuck' | 'organized', st
   stuck: 'Il riordino non è arrivato: puoi chiederlo di nuovo',
   organized: 'Titolo, riassunto, collegamenti e tag scritti dal modello locale; il testo originale è in fondo',
 };
+
+/** Why an upload of a character sheet failed (D-118), in Italian; the reasons of the core are never shown as they are. */
+export function uploadErrorText(cause: unknown): string {
+  if (!(cause instanceof ApiError)) return errorText(cause);
+  const message = cause.message;
+  if (cause.status === 413 || /KiB/.test(message)) return 'Il file supera 256 KiB: un foglio di personaggio è molto più piccolo.';
+  if (/112×96 or 112×128/.test(message)) return 'Il foglio deve misurare 112×96 o 112×128 pixel (7 colonne di fotogrammi 16×32).';
+  if (/^not a PNG$/.test(message)) return 'Il file non è un PNG.';
+  if (/interlaced/.test(message)) return 'Il PNG è interlacciato: salvalo di nuovo senza interlacciamento.';
+  if (/^name:/.test(message)) return 'Nome non valido: una riga di 1-40 caratteri, con almeno una lettera o una cifra.';
+  if (/holds at most/.test(message)) return 'I tuoi personaggi sono già 32, il massimo del pacchetto miei: togline uno da data/characters/miei prima di caricarne un altro.';
+  if (/belongs to another character/.test(message)) return 'Nel pacchetto miei un altro personaggio usa già il file di questo nome: scegli un nome diverso.';
+  if (cause.status === 409) return 'La cartella data/characters/miei non è leggibile o il suo pack.json non è valido: controllala a mano.';
+  if (cause.status === 400) return 'Il PNG è danneggiato o contiene parti non standard: esportalo di nuovo dall’editor come PNG semplice.';
+  return errorText(cause);
+}

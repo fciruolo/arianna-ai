@@ -1,6 +1,6 @@
 # Proposte da discutere (notte 2026-10-05)
 
-Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-103, D-107, D-106, D-110 e D-111, scritte da Claude nella sessione notturna del 2026-10-05, e D-113, scritta la mattina dopo su richiesta dell'utente. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
+Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-103, D-107, D-106, D-110 e D-111, scritte da Claude nella sessione notturna del 2026-10-05, D-113, scritta la mattina dopo su richiesta dell'utente, e D-118 + D-119 (piano, risposte dell'utente e tappa T1). Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata, salvo la tappa T1 di D-118.
 
 ## D-078 — Arianna sviluppata da dentro Arianna
 
@@ -2040,6 +2040,43 @@ Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non 
 - Il costo per passo del pezzo del profilo col 27B (stessa stima della personalità: circa 15 ms per token, da misurare).
 - Che il 27B usi `profile.share` invece di scrivere il fatto direttamente nel brief: lo controlla il gateway (il fatto L2 nel brief senza approvazione lo blocca), ma l'esperienza dipende dal modello; da misurare con un eval.
 - Riconoscere nel rapporto del Coder la richiesta di un dato ("mi serve: città") senza il server MCP: formato da stabilire nel prompt del Coder.
+
+## D-118 + D-119 — Agenti nuovi dalla pagina Agenti, con il loro personaggio PNG
+
+- **Data:** 2026-10-05
+- **Stato:** Accettate (risposte dell'utente, 2026-10-05); tappa T1 fatta sul ramo `task/d118-t1-png`, in attesa della prova dell'utente; T4 cambiata, da confermare
+- **Collegate:** D-060 (formato dei fogli, pacchetti in `data/characters/`), D-079 (catalogo agency-agents), D-107 (personalità, permessi solo nei `.yaml`), D-111 (B: "+ Nuovo" con gli agenti; D: ospiti), D-116 (pagina Agenti), AGENT-CARDS
+
+### Contesto
+
+Oggi un agente si aggiunge solo scrivendo a mano una scheda `agents/<id>.yaml`, e un personaggio solo copiando a mano un pacchetto in `data/characters/`. L'utente vuole "solo aggiungere un agente e caricargli un png (un file) e poi poterlo scaricare/visualizzare le varie animazioni" (D-118), e una schermata per aggiungere agenti (D-119), da un modello di scheda o da una scheda proposta di agency-agents, disattivato finché non conferma i permessi.
+
+### Piano
+
+- **Schede create dall'utente** in `data/agents/disattivati` e `data/agents/attivi`, fuori da git, con un **tetto**: etichetta massima L1 e azioni fino ad A1, qualunque cosa dica la scheda. Le schede di `agents/` (in git) restano le uniche senza tetto.
+- **PNG del personaggio**: il core decodifica il file e lo riscrive con `node:zlib`, senza dipendenze (112×96 o 112×128); file non validi, dimensioni sbagliate e chunk sconosciuti rifiutati; salvato nel pacchetto `miei` di `data/characters/`, con sostituzione solo su conferma.
+- **Rotte**: `POST /api/characters/upload` (T1); `GET /api/agents/sources`, `POST /api/agents`, `GET /api/agents/:id/permissions`, `POST /api/agents/:id/activate` e `deactivate` (T2-T3).
+- **Anteprima delle animazioni** su canvas nella pagina Agenti.
+
+Tappe (stime grezze): **T1** personaggi PNG 9-12 h; **T2** schede utente 10-14 h; **T3** pagina "Nuovo agente" 6-8 h; **T4** schede di agency-agents.
+
+### Risposte dell'utente (2026-10-05)
+
+1. **Schede create dall'utente in `data/agents` (disattivate o attive) con tetto L1 e A1: scelta.** Con un'aggiunta: l'utente vuole poter **promuovere un agente a "ufficiale"**, cioè portarne la scheda fra quelle di `agents/`, senza tetto, con un'azione esplicita e confermata. **Requisito della tappa T2**, da progettare lì: la scheda di conferma deve mostrare cosa cambia (il tetto L1/A1 cade, valgono etichette, strumenti e azioni scritti nella scheda), e la promozione non può partire da un modello né da un'altra scheda, solo da un clic dell'utente con conferma.
+2. **Schede di agency-agents: revisione di un modello forte prima dell'attivazione (proposta dell'utente, da confermare).** Al clic su "Attiva" di una scheda importata, un modello forte (Opus) legge il testo della scheda e valuta se è sicura (prompt injection, permessi che chiede, istruzioni che cercano di uscire dal ruolo) e scrive un **rapporto**; poi decide l'utente. Disegno raccomandato, da confermare, al posto di "aspetta prompt_trust" (o come sua prima implementazione):
+   - il testo di agency-agents è pubblico (L0): mandarlo a Opus non viola la privacy, e passa comunque dal gateway;
+   - Opus si lancia da `packages/executors`, **senza strumenti** e con **uscita strutturata** (esito, rischi trovati con la riga citata, permessi richiesti), validata dal core;
+   - **l'esito di Opus non attiva mai da solo**: il rapporto va sempre all'utente, che conferma; un testo malevolo potrebbe convincere anche il revisore;
+   - il tetto L1/A1 delle schede utente resta anche dopo un rapporto favorevole.
+3. **PNG caricati nel pacchetto `miei`, con sostituzione solo su conferma: scelta.**
+
+### Tappa T1, com'è stata fatta
+
+- `apps/core/src/png.ts`: decodificatore PNG severo (firma, CRC di ogni chunk, ordine IHDR/PLTE/tRNS/IDAT/IEND, IDAT consecutivi, niente dati dopo IEND, tutti i tipi di colore e profondità dello standard, niente interlacciamento, decompressione fermata alla dimensione esatta dell'immagine) e codificatore pulito (solo IHDR, IDAT, IEND, RGBA a 8 bit). I chunk accessori standard (profilo colore, risoluzione, testo, data) si tollerano e si buttano; uno sconosciuto o privato fa rifiutare il file. I pixel del tutto trasparenti perdono il colore.
+- `apps/core/src/characters.ts`: `parseUpload`, `cleanSheet`, `uploadSheet`. Id dal nome (minuscole ascii, cifre, trattini); il pacchetto `miei` si crea se manca, mai attraverso un link; un `pack.json` rotto fa rifiutare il caricamento senza toccarlo; scritture atomiche (file nascosto e rinomina), un caricamento alla volta; una sostituzione riscrive il file che `pack.json` indica; al massimo 32 personaggi nel pacchetto.
+- Limite noto: chi ha già il foglio aperto altrove (pannello di stato, ufficio) vede quello vecchio finché non ricarica la pagina; la pagina Agenti lo aggiorna subito.
+- `POST /api/characters/upload` con `{ name, png (base64), replace? }`: 201 col personaggio, 409 con `existing` se il nome c'è già (la pagina chiede), 400 per un file non valido, 413 oltre 256 KiB.
+- Pagina Agenti: per ogni agente "Carica PNG" (anteprima delle animazioni prima dell'invio, nome modificabile, conferma per sostituire), "Animazioni" (canvas con camminata nelle quattro direzioni, scrive, legge e, con la quarta riga, pensa, aspetta, pausa e battito di ciglia, più il foglio intero) e "Scarica PNG". Il foglio caricato viene scelto per l'agente nel modulo: si tiene con "Salva" della scheda.
 
 ## Cose non verificate
 
