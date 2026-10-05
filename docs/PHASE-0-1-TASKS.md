@@ -53,14 +53,15 @@ Convergenza        1.7 (dopo 1.2, 1.3; fatto prima di 1.5, D-040) · 1.9 (dopo 1
 
 Le tre corsie non si toccano fino alla convergenza: si possono portare avanti in worktree paralleli (`DEV-WORKFLOW.md`). 1.4 va fatto appena finito 1.3: se il modello locale non regge, lo si scopre dopo 7-10 ore e non dopo 60.
 
-## Fase 1B — Completamenti (25-39 h)
+## Fase 1B — Completamenti (33-51 h)
 
 Non bloccano il criterio di uscita; l'ordine è per utilità.
 
 | Id | Task | Ore | Reali | Fatto quando |
 | --- | --- | --- | --- | --- |
 | 1.14 | Vault minimo: `sops` + `age`, riferimenti `vault://` risolti dal codice | 3-5 | 0,8 (solo sessione di Claude; anticipato su scelta dell'utente, D-042; verificato con un `sops` finto e con `sops` 3.13.3 e `age` 1.3.2 veri) | Un segreto finto usato senza comparire in prompt, log o eventi |
-| 1.15 | Telegram: notifiche e chat L0/L1 come canale esterno dietro gateway; approvazioni con pulsanti | 4-6 | 1,5 (solo sessione di Claude, contro un finto Bot API, D-044; aperto fino alla prova dal telefono all'installazione vera) | Un contenuto L2 arriva come riferimento; approvazione da telefono |
+| 1.15 | Telegram: notifiche e chat L0/L1 come canale esterno dietro gateway; approvazioni con pulsanti | 4-6 | 1,5 (solo sessione di Claude, contro un finto Bot API, D-044; codice spento per scelta dell'utente, D-110 domanda 12: la prova dal telefono passa a 1.19) | Un contenuto L2 arriva come riferimento; approvazione da telefono |
+| 1.19 | App sul telefono (D-110, domanda 12): accesso via VPN (Tailscale con certificato HTTPS, ascolto fuori da loopback solo sull'interfaccia della VPN, autenticazione, host ammessi), chat web installabile come PWA, notifiche Web Push di chat accanto a quelle di chiamata (D-066), testi fissi senza contenuto | 8-12 | | Approvazione data dal telefono con l'app via VPN; nessuna notifica contiene il testo di un messaggio, di nessuna etichetta; senza VPN il core non è raggiungibile |
 | 1.16 | Adattatore `codex exec --json` con lo stesso profilo di confinamento; scheda Reviewer | 4-7 | | Compito banale e canarino; accesso ChatGPT verificato |
 | 1.17 | Installer: prerequisiti, download modelli con sha256, `doctor`, collegamento a oMLX | 8-12 | 1,0 finora (solo sessione di Claude, compresa la revisione: prerequisiti, cartelle, download e verifica dal manifest contro un server finto, doctor completo, D-047; mancano oMLX, le voci vere del manifest e la prova in una cartella vuota) | Installazione pulita in cartella vuota; modelli Qwen scaricati e verificati |
 | 1.18 | Wizard `init`, schema `arianna.toml`, catalogo modelli curato e ruoli | 6-9 | 1,2 (solo sessione di Claude, compresa la revisione: catalogo al posto del manifest, `[roles]`, `[cloud] executors`, `arianna.toml` fuori da git, wizard provato con `expect` in una cartella vuota, ricarica senza riavvio provata sulla configurazione; D-048. Il cambio di modello su una chiamata vera aspetta il 1.10 e oMLX) | Wizard completo da zero; cambio modello di un ruolo senza riavvio |

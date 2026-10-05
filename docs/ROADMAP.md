@@ -6,7 +6,7 @@ Le ore sono **mie stime, non misurate**: lavoro effettivo di uno sviluppatore es
 | --- | --- | --- | --- |
 | 0 Fondamenta | Repo, controlli locali, registro eventi, primo test, harness eval, layout portabile | 13-21 | `pnpm check` passa e blocca un commit rotto; evento scritto e letto dal DB con catena di hash valida |
 | 1A Nucleo e chat | Policy, gateway, confinamento, router, orchestratore, adattatori locale e Claude Code, chat web | 65-97 | Con dati finti: 0 fughe L2 negli eval e canarino mai uscito; un task di coding L1 completato via Claude Code, uno L2 solo in locale; ripresa dopo `kill` del core; log del gateway leggibile |
-| 1B Completamenti | Vault, Telegram, Codex, installer, wizard | 25-39 | Approvazione data da Telegram senza contenuti L2 nel messaggio; installazione pulita in cartella vuota |
+| 1B Completamenti | Vault, app sul telefono (PWA via VPN), Codex, installer, wizard | 33-51 | Approvazione data dal telefono con l'app via VPN, notifica senza contenuto; installazione pulita in cartella vuota (Telegram spento per ora, D-110) |
 | 2 Memoria e cardwall | Archivio, estrazione, ricerca ibrida, Mem0, cardwall, export/import | 64-96 | Domande su documenti veri (dopo verifica) con fonti corrette; cardwall usato per una settimana; ripristino da `export` provato su cartella nuova |
 | 3 HUD e ufficio pixel | HUD Arianna, ufficio pixel, approvazioni e impostazioni in UI | 43-69 | Vedi agenti al lavoro e approvi azioni dall'HUD |
 | 4 Voce e chiamate | Voce locale, delega, telefonia, chiamate in uscita | 50-90 | Conversazione fluida in italiano; chiamata in uscita con approvazione; nessun L2 al telefono vero (D-110) |
@@ -25,11 +25,11 @@ Rispetto alla prima stesura il totale sale di 15-23 ore: è lavoro che la specif
 | 20 | 5-7 settimane | 18-29 settimane |
 | 30 | 3-5 settimane | 12-19 settimane |
 
-Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 129-196 ore. Le idee scelte dalla lista (`OPEN-QUESTIONS.md`) si aggiungono, salvo quelle che sostituiscono lavoro previsto. Dopo la Fase 1A usa il sistema per qualche settimana prima di proseguire.
+Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 137-208 ore (8-12 in più per l'app sul telefono, task 1.19, D-110). Le idee scelte dalla lista (`OPEN-QUESTIONS.md`) si aggiungono, salvo quelle che sostituiscono lavoro previsto. Dopo la Fase 1A usa il sistema per qualche settimana prima di proseguire.
 
 ## Cosa accorcia davvero i tempi
 
-1. **Percorso critico corto (D-017):** installer, wizard, Codex e Telegram escono dal percorso verso il primo uso reale.
+1. **Percorso critico corto (D-017):** installer, wizard, Codex e l'app sul telefono escono dal percorso verso il primo uso reale.
 2. **Rischio grosso per primo:** il test di accettazione del modello locale (1.4) arriva dopo 7-10 ore di Fase 1, non alla fine.
 3. **Corsie parallele:** privacy, esecutori e nucleo sono indipendenti fino al router; con worktree paralleli il tempo di calendario scende, il collo di bottiglia resta la tua revisione.
 4. **Controlli veloci:** `pnpm check` non ha bisogno di modelli né di rete (D-018, D-019).
@@ -60,4 +60,4 @@ Se serve stringere ancora, queste parti non reggono altre parti e si possono rin
 | --- | --- | --- |
 | Wizard `init` (1.18) | 6-9 | Configurazione guidata; resta `arianna.toml` a mano con validazione (fatto, D-048) |
 | Ufficio pixel | 12-18 | La vista pixel-art; l'HUD mostra comunque gli agenti |
-| Telefonia SIP e chiamate in uscita | 22-41 | Le telefonate; restano voce nel browser e Telegram |
+| Telefonia SIP e chiamate in uscita | 22-41 | Le telefonate; resta la chiamata via internet dal browser e dall'app |

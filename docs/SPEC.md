@@ -18,7 +18,7 @@ Arianna è un assistente personale e un sistema di agenti che gira sul tuo hardw
 - **Conoscenza viva:** una knowledge base stile Notion, interrogabile e aggiornata dagli agenti.
 - **Formazione continua:** un agente che segue fonti autorevoli e ti fa studiare le tecnologie più recenti.
 
-**Non-obiettivi della v1:** niente multi-utente, niente SaaS, niente app mobile nativa (si usa il browser e Telegram), niente addestramento di modelli.
+**Non-obiettivi della v1:** niente multi-utente, niente SaaS, niente app mobile nativa (dal telefono si usa la chat web installata come app, PWA, attraverso la VPN; D-110), niente addestramento di modelli.
 
 **Come si misura il successo:** dopo tre mesi lo usi ogni giorno, non deve essere riavviato più di una volta a settimana, e nessun dato classificato come privato compare mai nei log o nelle richieste verso il cloud.
 
@@ -28,7 +28,7 @@ Il sistema deve coprire sette aree, costruite in cinque fasi in modo che ogni fa
 
 | Area | Requisito | Fase |
 | --- | --- | --- |
-| Chat | Chat web e Telegram con lo stesso agente, stesso storico, risposte in streaming | 1 (web in 1A, Telegram in 1B) |
+| Chat | Chat web con risposte in streaming, anche dal telefono come app (PWA) via VPN con notifiche di chiamata e di chat; Telegram spento per ora (D-110) | 1 (web in 1A, app sul telefono in 1B) |
 | Coding | Agenti che lanciano Claude Code e Codex sui repository, nella cartella del progetto approvato (D-056, D-058) | 1 |
 | Router | Scelta automatica del modello per compito, livello di privacy, costo e difficoltà | 1 |
 | Privacy | Classificazione di ogni dato e documento; i dati privati arrivano solo a modelli locali | 1 |
@@ -71,15 +71,15 @@ Ogni dato ha un'etichetta di riservatezza, e un controllo nel codice, non nel pr
 5. **Clienti con NDA:** finché non verifichi i singoli contratti, tratta il loro codice come L2, quindi solo locale.
 6. **L'etichetta segue il contenuto:** ciò che un modello scrive dopo aver letto un dato L2 è L2. Ogni conversazione, task e sessione ha un tetto di lettura; una conversazione "di lavoro" si ferma a L1 e può usare il cloud, una "privata" arriva a L2 e resta locale, salvo tua approvazione del testo esatto che esce.
 7. **Il gateway copre ogni uscita, non solo il prompt:** i file che Claude Code e Codex possono aprire (cartella del progetto approvato o copia confinata, sandbox), gli strumenti MCP che chiamano, le ricerche web e i canali esterni.
-8. **Telegram e telefono sono cloud:** ricevono al massimo L1; un contenuto L2 arriva come notifica con riferimento e si legge nella chat web via VPN.
+8. **Telegram e telefonia sono cloud:** ricevono al massimo L1; l'app sul telefono via VPN invece è la chat web, un canale locale (Telegram è spento per ora, D-110: la regola vale se torna); un contenuto L2 arriva come notifica con riferimento e si legge nella chat web via VPN.
 
 Il rischio principale non è un modello che "decide" di barare, ma un agente cloud che riceve per errore un file privato in un contesto più ampio del previsto, oppure un brief scritto dall'orchestratore locale dopo aver letto dati privati. Per questo il controllo sta sull'uscita, non sulle istruzioni all'agente. Dettagli in `docs/PRIVACY-POLICY-SPEC.md`.
 
 ## Architettura
 
 ```
- Interfacce    chat web (VPN) · HUD · ufficio pixel      Telegram · telefono
-               canali locali, fino a L2                  canali esterni, fino a L1
+ Interfacce    chat web e app (VPN) · HUD · ufficio pixel  telefonia · (Telegram spento)
+               canali locali, fino a L2                    canali esterni, fino a L1
                       │                                         ▲
  Nucleo        API e WebSocket · task e run · orchestratore · coda · registro eventi
                       │                                         │
@@ -285,7 +285,7 @@ Todo e cardwall sono la stessa lista di task vista in due modi, con un campo "as
 
 Sono tre viste sugli stessi dati e sugli stessi eventi: la chat per parlare, l'HUD per controllare, l'ufficio pixel-art per vedere gli agenti lavorare.
 
-**Chat (Fase 1).** Una chat web con risposte in streaming e un bot Telegram che parlano con la stessa Arianna e lo stesso storico. Le richieste di approvazione compaiono come schede con pulsanti "approva" e "rifiuta", e l'allegato con le prove. Ogni conversazione è "di lavoro" (L1, può usare il cloud) o "privata" (L2, solo locale). I messaggi dei bot passano dai server di Telegram, quindi lì arrivano solo contenuti L0 e L1: una risposta L2 diventa "apri la chat web".
+**Chat (Fase 1).** Una chat web con risposte in streaming. Dal telefono è la stessa chat, installata nella schermata Home come app (PWA) e raggiunta attraverso la VPN, con notifiche push di chiamata e di chat dai testi fissi senza contenuto (su iPhone solo dall'app installata; D-110, domanda 12). Le richieste di approvazione compaiono come schede con pulsanti "approva" e "rifiuta", e l'allegato con le prove. Ogni conversazione è "di lavoro" (L1, può usare il cloud) o "privata" (L2, solo locale). Il bot Telegram (task 1.15) è scritto ma spento per scelta dell'utente: se torna, i suoi messaggi passano dai server di Telegram, quindi lì arrivano solo contenuti L0 e L1 e una risposta L2 diventa "apri la chat web".
 
 Cosa mostra già la chat web, oltre alle risposte (tutto "applicato, da confermare"):
 
@@ -333,7 +333,7 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 - le approvazioni importanti richiedono un codice detto a voce o una conferma sulla chat, non un semplice "sì";
 - risponde solo al tuo numero, verificato, e ignora tutti gli altri.
 
-**Quando ti chiama.** Arianna chiama nella chat web e, se la chat è chiusa, manda una notifica push senza contenuto ("Arianna ti chiama"; D-066: scelte 3 e 7; il link su Telegram è fra i "Non fatto"). La chiamata scatta solo in pochi casi: una scadenza vicina senza risposta, una carta in "Attende te" marcata urgente (finché le carte non hanno l'urgenza: un task che ti aspetta da più di mezz'ora), o un briefing che hai richiesto, programmato ("chiamami alle 18") o legato a un lavoro ("chiamami quando finisci"). Ci sono fasce orarie di silenzio, un massimo di chiamate al giorno e, se non rispondi, un messaggio scritto invece di insistere. Prima della telefonia la chiamata è via internet, dalla chat web ad `apps/voice` con WebRTC (D-066).
+**Quando ti chiama.** Arianna chiama nella chat web e, se la chat è chiusa, manda una notifica push senza contenuto ("Arianna ti chiama"; D-066: scelte 3 e 7), anche sul telefono con l'app installata (D-110). La chiamata scatta solo in pochi casi: una scadenza vicina senza risposta, una carta in "Attende te" marcata urgente (finché le carte non hanno l'urgenza: un task che ti aspetta da più di mezz'ora), o un briefing che hai richiesto, programmato ("chiamami alle 18") o legato a un lavoro ("chiamami quando finisci"). Ci sono fasce orarie di silenzio, un massimo di chiamate al giorno e, se non rispondi, un messaggio scritto invece di insistere. Prima della telefonia la chiamata è via internet, dalla chat web ad `apps/voice` con WebRTC (D-066).
 
 ## Modulo apprendimento
 
@@ -438,7 +438,7 @@ Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac
 
 Fasi, criteri di uscita ed epic sono in `docs/ROADMAP.md`; i task delle Fasi 0 e 1 in `docs/PHASE-0-1-TASKS.md`.
 
-Ogni fase ha un controllo manuale da superare prima di andare oltre; i dati veri entrano nel sistema solo dopo il criterio della Fase 1A, quando hai verificato che nessun dato L2 esce. La Fase 1 è divisa in 1A (percorso critico: policy, gateway, confinamento, router, orchestratore, chat web) e 1B (vault, Telegram, Codex, installer, wizard). Le Fasi 3, 4 e 5 sono indipendenti fra loro: l'ordine si decide a fine Fase 2.
+Ogni fase ha un controllo manuale da superare prima di andare oltre; i dati veri entrano nel sistema solo dopo il criterio della Fase 1A, quando hai verificato che nessun dato L2 esce. La Fase 1 è divisa in 1A (percorso critico: policy, gateway, confinamento, router, orchestratore, chat web) e 1B (vault, app sul telefono, Codex, installer, wizard; Telegram spento per ora, D-110). Le Fasi 3, 4 e 5 sono indipendenti fra loro: l'ordine si decide a fine Fase 2.
 
 ## Stime di tempo
 
@@ -450,7 +450,7 @@ Le ore sono quelle davanti al progetto per uno sviluppatore esperto che fa scriv
 | --- | --- | --- |
 | 0 Fondamenta | 13-21 | Bassa: repository, controlli locali, registro eventi, primo test |
 | 1A Nucleo e chat | 65-97 | Alta: affidabilità del modello orchestratore locale, correttezza del gateway e del confinamento |
-| 1B Completamenti | 25-39 | Media: regole di Codex, installer su macchina pulita |
+| 1B Completamenti | 33-51 | Media: regole di Codex, installer su macchina pulita, VPN con HTTPS per l'app sul telefono |
 | 2 Memoria e cardwall | 64-96 | Media: qualità di OCR e ricerca sui tuoi documenti veri |
 | 3 HUD e ufficio pixel | 43-69 | Bassa: integrazione di pixel-agents con un provider tuo |
 | 4 Voce e chiamate | 50-90 | Alta: latenza, qualità del TTS in italiano, telefonia SIP |
@@ -463,7 +463,7 @@ Le ore sono quelle davanti al progetto per uno sviluppatore esperto che fa scriv
 | 20 | 5-7 settimane | 18-29 settimane |
 | 30 | 3-5 settimane | 12-19 settimane |
 
-Le Fasi 0 e 1A con margine valgono 98-148 ore; con la 1B, 129-196. Le idee scelte dalla lista si aggiungono a queste ore. Regola di controllo: alla fine della Fase 0 confronta ore previste e reali; se lo scarto supera il 30%, si rifanno le stime delle fasi successive.
+Le Fasi 0 e 1A con margine valgono 98-148 ore; con la 1B, 137-208 (8-12 in più per l'app sul telefono, D-110). Le idee scelte dalla lista si aggiungono a queste ore. Regola di controllo: alla fine della Fase 0 confronta ore previste e reali; se lo scarto supera il 30%, si rifanno le stime delle fasi successive.
 
 ## Sviluppo con Claude Code
 

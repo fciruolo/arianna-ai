@@ -56,6 +56,7 @@
 
 ## Telegram
 
+- **Spento per ora (D-110, domanda 12, scelta dell'utente del 2026-10-05):** dal telefono si usa la chat web come app via VPN (task 1.19). Il codice resta e le regole sotto valgono se l'utente lo riaccende.
 - Telegram è un canale cloud (D-016): riceve al massimo L1, solo attraverso il gateway, e un contenuto sopra L1 diventa un rimando alla chat web. Il client del Bot API (`apps/core/src/telegram/api.ts`) accetta solo testi usciti da una decisione `allow` verso `channel:telegram`.
 - In sviluppo nessun bot vero né token reale: i test usano un finto Bot API su loopback (D-044).
 - Per l'uso vero (dopo il criterio della Fase 1A): creare il bot con BotFather, mettere il token nel vault con `pnpm vault:edit` alla chiave `telegram-bot-token`, scrivere in `arianna.toml` la sezione `[telegram]` con `token = "vault://telegram-bot-token"` e l'id della propria chat privata in `chats`. Il token non va mai in `arianna.toml`: la configurazione accetta solo un riferimento `vault://`.

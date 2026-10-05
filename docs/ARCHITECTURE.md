@@ -3,8 +3,8 @@
 Sintesi operativa della sezione "Architettura" di `SPEC.md`. In caso di conflitto fra documenti vale D-013.
 
 ```
- Interfacce    chat web (VPN) · HUD · ufficio pixel      Telegram · telefono
-               canali locali, fino a L2                  canali esterni, fino a L1
+ Interfacce    chat web e app (VPN) · HUD · ufficio pixel  telefonia · (Telegram spento)
+               canali locali, fino a L2                    canali esterni, fino a L1
                       │                                         ▲
  Nucleo        apps/core: API e WebSocket · task e run · orchestratore · coda · registro eventi
                       │                                         │
