@@ -2,7 +2,7 @@
 // docs/EVALS.md): one model call per case, with schema-constrained decoding.
 // The model answers with one JSON object: call a tool, reply, plan, or refuse,
 // after a free `thought` (D-051).
-import { chatMessages, RESPONSE_SCHEMA_NAME, responseSchema, validate, type ToolId, type TurnMessage } from '@arianna/agents';
+import { CODER_ONLY, chatMessages, RESPONSE_SCHEMA_NAME, responseSchema, validate, type DelegateTarget, type ToolId, type TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 
 import type { Evaluate } from './types.ts';
@@ -11,6 +11,8 @@ export interface OrchestratorInput {
   tools: ToolId[];
   /** `tool` messages are tool results or errors, shown to the model as such. */
   messages: TurnMessage[];
+  /** The agents `task.delegate` may name, as the core offers them (D-119); the Coder alone when omitted. */
+  delegates?: DelegateTarget[];
 }
 
 export interface OrchestratorActual {
@@ -43,8 +45,8 @@ export interface OrchestratorExpectation {
 }
 
 /** What the measures look at, from the model's answer. */
-export function summarize(value: unknown, tools: readonly ToolId[], thought = true): OrchestratorActual {
-  const schemaOk = validate(responseSchema(tools, thought), value).length === 0;
+export function summarize(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY): OrchestratorActual {
+  const schemaOk = validate(responseSchema(tools, thought, delegates), value).length === 0;
   const record = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   const action = record.action;
   if (action === 'call') {
@@ -84,11 +86,12 @@ export function matchesExpectation(actual: unknown, expect: unknown): boolean {
 
 export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string): Evaluate {
   const ask = async (input: OrchestratorInput, thought: boolean, signal: AbortSignal | undefined) => {
+    const delegates = input.delegates ?? CODER_ONLY;
     const result = await model().chat({
       ...(signal === undefined ? {} : { signal }),
       model: 'local-large',
-      messages: chatMessages(agentPrompt, input.tools, input.messages, thought),
-      schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(input.tools, thought) },
+      messages: chatMessages(agentPrompt, input.tools, input.messages, thought, '', delegates),
+      schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(input.tools, thought, delegates) },
       temperature: 0,
       // Room for the thought before the answer (with 1024 the JSON could be cut
       // short), and a bound on a stuck answer: 2048 tokens of the 27B on the
@@ -96,7 +99,7 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
       maxTokens: 2048,
       timeoutMs: 300_000,
     });
-    return summarize(result.value, input.tools, thought);
+    return summarize(result.value, input.tools, thought, delegates);
   };
   return async (raw, signal) => {
     const input = raw as OrchestratorInput;

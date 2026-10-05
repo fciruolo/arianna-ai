@@ -74,12 +74,15 @@ function isCoderOnly(delegates: readonly DelegateTarget[]): boolean {
 /**
  * What the model reads about `tool`. With the Coder alone, `task.delegate`
  * reads as before, byte for byte (the cached prefix, D-075); with other
- * agents, each follows with its description, quoted as data.
+ * agents, each follows with its description, quoted as data, and the rule
+ * that a request one of them does is theirs: the local model would rather
+ * answer by itself what it can (a translation, seen on 2026-10-05).
  */
 function descriptionOf(tool: ToolId, delegates: readonly DelegateTarget[]): string {
   const base = DESCRIPTIONS[tool] ?? '';
   if (tool !== 'task.delegate' || isCoderOnly(delegates)) return base;
-  return `${base} Choose the agent by what it does: ${delegates.map((target) => `${target.name}, ${JSON.stringify(target.description)}`).join('; ')}.`;
+  const agents = delegates.map((target) => `${target.name}, ${JSON.stringify(target.description)}`).join('; ');
+  return `${base} Choose the agent by what it does: ${agents}. When one of them does just what the user asks, hand it the step instead of doing it yourself, even if you could.`;
 }
 
 /** A message of the step's history: `tool` is a tool result or error, shown to the model as data. */

@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+- Quando un agente attivo fa proprio ciò che l'utente chiede, Arianna gli passa il lavoro invece di farlo da sola anche se saprebbe farlo (prima traduceva da sé con il `traduttore` attivo); con il solo Coder il prompt non cambia (D-119, tappa T3).
+- Gli eval dell'orchestratore provano anche la scelta fra più agenti: un caso positivo e due negativi (D-119).
+
 ## [0.11.0] - 2026-10-05
 
 ### Aggiunto

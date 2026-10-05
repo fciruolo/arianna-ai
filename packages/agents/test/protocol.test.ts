@@ -82,6 +82,9 @@ describe('orchestrator protocol', () => {
     const prompt = systemPrompt('A.', delegating, true, '', delegates);
     assert.match(prompt, /traduttore, "Traduce le note \\"di rilascio\\""/);
     assert.match(prompt, /"enum":\["coder","traduttore"\]/);
+    // The rule to prefer the agent comes with the user's agents, never with the Coder alone.
+    assert.match(prompt, /hand it the step instead of doing it yourself/);
+    assert.doesNotMatch(systemPrompt('A.', delegating, true, '', CODER_ONLY), /instead of doing it yourself/);
     const call = (agent: string) => ({ thought: 't', action: 'call', tool: 'task.delegate', arguments: { agent, reason: 'Per la traduzione.', brief: 'Traduci.' } });
     assert.ok(readAnswer(call('traduttore'), delegating, true, delegates));
     assert.equal(readAnswer(call('traduttore'), delegating), undefined);

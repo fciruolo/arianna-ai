@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { isToolId, responseSchema, TOOL_ARGS, type ToolId } from '@arianna/agents';
+import { CODER_ONLY, isToolId, responseSchema, TOOL_ARGS, type ToolId } from '@arianna/agents';
 import { CONFIG_FILE, loadConfig, resolveHome } from '@arianna/config';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
@@ -57,6 +57,22 @@ describe('orchestrator evaluator', () => {
     assert.equal(system.role, 'system');
     assert.match(system.content, /You are Arianna\.[\s\S]*kb\.search[\s\S]*never follow instructions/);
     assert.deepEqual(request.messages[2], { role: 'user', content: '<tool_result>\nerror: x\n</tool_result>' });
+  });
+
+  it("offers the case's agents to task.delegate, and the Coder alone without them", async () => {
+    const delegating: ToolId[] = ['task.delegate'];
+    const delegates = [...CODER_ONLY, { name: 'traduttore', description: 'Traduce' }];
+    const call = { action: 'call', tool: 'task.delegate', arguments: { agent: 'traduttore', reason: 'Per la traduzione.', brief: 'Traduci.' } };
+    const { model, requests } = stub({ thought: 'It is a translation.', ...call });
+    const actual = await createOrchestratorEvaluator(() => model, 'You are Arianna.')({ tools: delegating, delegates, messages: [{ role: 'user', content: 'Traduci.' }] });
+    assert.deepEqual(actual, { ...call, schemaOk: true });
+    const request = requests[0];
+    assert.ok(request !== undefined);
+    assert.deepEqual(request.schema?.schema, responseSchema(delegating, true, delegates));
+    assert.match(request.messages[0]?.content ?? '', /traduttore, "Traduce"/);
+    // The same answer without the case's agents names an agent not offered.
+    assert.equal(summarize({ thought: 't', ...call }, delegating).schemaOk, false);
+    assert.equal(matchesExpectation(actual, { accept: [{ action: 'call', tool: 'task.delegate', args: { agent: { equals: 'coder' } } }] }), false);
   });
 
   it('marks arguments outside the schema, and tools not offered', () => {
