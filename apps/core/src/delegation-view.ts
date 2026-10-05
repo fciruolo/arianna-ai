@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -238,6 +239,15 @@ function shownText(bytes: Uint8Array): string {
  * MAX_PREVIEW_BYTES, shown as text.
  */
 async function readProjectText(root: string, path: string): Promise<{ text: string; size: number }> {
+  const bytes = await readProjectBytes(root, path, MAX_PREVIEW_BYTES);
+  return { text: shownText(bytes), size: bytes.length };
+}
+
+/**
+ * The bytes of `path` in the project folder `root`: inside it after resolving
+ * links, not under `.git`, a regular file of at most `max` bytes.
+ */
+async function readProjectBytes(root: string, path: string, max: number, refuseHidden = false): Promise<Buffer> {
   if (path === '' || isAbsolute(path) || path.includes('\0') || path.split('/').some((part) => part === '..' || isGitName(part))) {
     throw new DelegationFileError('refused', 'the path is not a file of the project');
   }
@@ -254,6 +264,10 @@ async function readProjectText(root: string, path: string): Promise<{ text: stri
   if (!inside(real, root) || relative(root, real).split(sep).some(isGitName)) {
     throw new DelegationFileError('refused', 'the file leads out of the project');
   }
+  // "Apri": a link named page.html must not lead to .env either.
+  if (refuseHidden && relative(root, real).split(sep).some((part) => part.startsWith('.'))) {
+    throw new DelegationFileError('refused', 'hidden files are not opened');
+  }
   // A fifo or a device would block the read or never end: only a regular file is opened, without waiting.
   const before = await lstat(real).catch(() => undefined);
   if (before === undefined) throw new DelegationFileError('deleted', 'the file is no longer there');
@@ -269,11 +283,11 @@ async function readProjectText(root: string, path: string): Promise<{ text: stri
     if (now === undefined || again !== real || now.dev !== stats.dev || now.ino !== stats.ino || before.dev !== stats.dev || before.ino !== stats.ino) {
       throw new DelegationFileError('refused', 'the file changed while it was opened');
     }
-    if (stats.size > MAX_PREVIEW_BYTES) throw new DelegationFileError('too-large', `the file is larger than ${String(MAX_PREVIEW_BYTES / 1024)} KiB`);
-    const buffer = Buffer.alloc(MAX_PREVIEW_BYTES + 1);
+    if (stats.size > max) throw new DelegationFileError('too-large', `the file is larger than ${String(max / 1024)} KiB`);
+    const buffer = Buffer.alloc(max + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    if (bytesRead > MAX_PREVIEW_BYTES) throw new DelegationFileError('too-large', `the file is larger than ${String(MAX_PREVIEW_BYTES / 1024)} KiB`);
-    return { text: shownText(buffer.subarray(0, bytesRead)), size: bytesRead };
+    if (bytesRead > max) throw new DelegationFileError('too-large', `the file is larger than ${String(max / 1024)} KiB`);
+    return buffer.subarray(0, bytesRead);
   } finally {
     await handle.close();
   }
@@ -294,6 +308,147 @@ export async function readDelegationFile(sql: Queryable, projects: readonly Proj
   const root = await approvedRoot(projects, row.repo);
   const { text, size } = await readProjectText(root, entry.path);
   return { path: entry.path, change: entry.change, repo: row.repo, size, text };
+}
+
+/** Largest file "Apri" serves (D-117, tappa 3). */
+export const MAX_OPEN_BYTES = 5 * 1024 * 1024;
+/** How long a link of "Apri" serves its project's files. */
+export const OPEN_LINK_MS = 15 * 60_000;
+const MAX_OPEN_LINKS = 100;
+
+/**
+ * What "Apri" serves, by extension: pages, their styles and classic scripts,
+ * images. Text types are checked for vault values. Fonts and module scripts
+ * are left out: the browser asks for them in CORS mode with `Origin: null`,
+ * which the core refuses, and CORS is never opened to it.
+ */
+export const OPEN_TYPES: Readonly<Record<string, { type: string; text: boolean }>> = {
+  html: { type: 'text/html; charset=utf-8', text: true },
+  htm: { type: 'text/html; charset=utf-8', text: true },
+  css: { type: 'text/css; charset=utf-8', text: true },
+  js: { type: 'text/javascript; charset=utf-8', text: true },
+  json: { type: 'application/json; charset=utf-8', text: true },
+  txt: { type: 'text/plain; charset=utf-8', text: true },
+  svg: { type: 'image/svg+xml', text: true },
+  png: { type: 'image/png', text: false },
+  jpg: { type: 'image/jpeg', text: false },
+  jpeg: { type: 'image/jpeg', text: false },
+  gif: { type: 'image/gif', text: false },
+  webp: { type: 'image/webp', text: false },
+  avif: { type: 'image/avif', text: false },
+  ico: { type: 'image/x-icon', text: false },
+};
+/** The files "Apri" offers in the chat: a page or an image the run changed. */
+export const OPENABLE = new Set(['html', 'htm', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif']);
+
+export function extensionOf(path: string): string {
+  const name = path.split('/').at(-1) ?? '';
+  const dot = name.lastIndexOf('.');
+  return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * The links of "Apri" (D-117, tappa 3), in memory: a random token for one
+ * project, valid OPEN_LINK_MS. The page opens sandboxed, with an opaque
+ * origin, so its styles and images are loaded cross-origin: the token, which
+ * only the chat received, is what keeps any other site from loading them.
+ */
+export interface OpenLinks {
+  issue(repo: string): string;
+  /** The project of a live token, or undefined. */
+  repoOf(token: string): string | undefined;
+}
+
+export function createOpenLinks(now: () => number = Date.now): OpenLinks {
+  const links = new Map<string, { repo: string; until: number }>();
+  return {
+    issue(repo) {
+      const time = now();
+      for (const [token, link] of links) if (link.until <= time) links.delete(token);
+      // The oldest goes first when too many are open.
+      while (links.size >= MAX_OPEN_LINKS) {
+        const oldest = links.keys().next().value;
+        if (oldest === undefined) break;
+        links.delete(oldest);
+      }
+      const token = randomBytes(24).toString('base64url');
+      links.set(token, { repo, until: time + OPEN_LINK_MS });
+      return token;
+    },
+    repoOf(token) {
+      const link = links.get(token);
+      if (link === undefined) return undefined;
+      if (link.until <= now()) {
+        links.delete(token);
+        return undefined;
+      }
+      return link.repo;
+    },
+  };
+}
+
+/** A path "Apri" may serve: relative, without hidden files or folders (.env, .git, .claude) and of a known type. */
+function openPathProblem(path: string): string | undefined {
+  if (path === '' || isAbsolute(path) || path.includes('\0') || path.includes('\\')) return 'the path is not a file of the project';
+  if (path.split('/').some((part) => part === '' || part.startsWith('.'))) return 'hidden files are not opened';
+  if (OPEN_TYPES[extensionOf(path)] === undefined) return 'this kind of file is not opened';
+  return undefined;
+}
+
+/**
+ * "Apri" on the file `index` of a delegation (D-117, tappa 3): the same
+ * checks as its preview, a page or an image, then a link for its project.
+ */
+export async function openDelegationFile(sql: Queryable, projects: readonly Project[], links: OpenLinks, id: string, index: number): Promise<{ url: string }> {
+  const row = await loadDelegationRow(sql, id);
+  const entry = row.files[index];
+  if (entry === undefined) throw new DelegationFileError('not-found', 'no such file');
+  if (entry.change === 'deleted') throw new DelegationFileError('deleted', 'the run deleted this file');
+  if (!OPENABLE.has(extensionOf(entry.path))) throw new DelegationFileError('refused', 'only a page or an image is opened');
+  const problem = openPathProblem(entry.path);
+  if (problem !== undefined) throw new DelegationFileError('refused', problem);
+  const root = await approvedRoot(projects, row.repo);
+  // Read once now: a file that cannot be served is said in the chat, not in an empty tab.
+  await readOpenBytes(root, entry.path);
+  const token = links.issue(row.repo);
+  return { url: `/api/open/${token}/${entry.path.split('/').map(encodeURIComponent).join('/')}` };
+}
+
+async function readOpenBytes(root: string, path: string): Promise<{ body: Buffer; type: string }> {
+  const kind = OPEN_TYPES[extensionOf(path)];
+  if (kind === undefined) throw new DelegationFileError('refused', 'this kind of file is not opened');
+  const body = await readProjectBytes(root, path, MAX_OPEN_BYTES, true);
+  // A page, a style or a script with a value of the vault in it is not served.
+  if (kind.text && knownSecrets.find(body.toString('utf8')).length > 0) throw new DelegationFileError('refused', 'the file holds a value of the vault');
+  return { body, type: kind.type };
+}
+
+/** A file of the project behind a link of "Apri": the project still approved, the same checks as the preview. */
+export async function readOpenFile(projects: readonly Project[], links: OpenLinks, token: string, path: string): Promise<{ body: Buffer; type: string }> {
+  const repo = links.repoOf(token);
+  if (repo === undefined) throw new DelegationFileError('not-found', 'the link has expired: open the file again from the chat');
+  const problem = openPathProblem(path);
+  if (problem !== undefined) throw new DelegationFileError('refused', problem);
+  return readOpenBytes(await approvedRoot(projects, repo), path);
+}
+
+/** The headers of a file of "Apri": sandboxed, no network beyond the project's own files, loadable only through the token. */
+export function openHeaders(host: string): Record<string, string> {
+  // Not 'self': in a sandboxed page it is the opaque origin. The host is already one of allowedHosts (checkRequest).
+  const self = `http://${host}`;
+  return {
+    'content-security-policy': [
+      'sandbox allow-scripts',
+      `default-src ${self} 'unsafe-inline' data: blob:`,
+      "connect-src 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "object-src 'none'",
+    ].join('; '),
+    'cross-origin-resource-policy': 'cross-origin',
+    'cache-control': 'no-store',
+  };
 }
 
 /** Files diffed in one request; the others are listed with `too-many`. */

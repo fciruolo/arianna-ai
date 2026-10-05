@@ -32,7 +32,17 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
-import { DelegationFileError, listCredits, listRecentDelegations, readDelegationDiff, readDelegationFile } from '../delegation-view.ts';
+import {
+  createOpenLinks,
+  DelegationFileError,
+  listCredits,
+  listRecentDelegations,
+  openDelegationFile,
+  openHeaders,
+  readDelegationDiff,
+  readDelegationFile,
+  readOpenFile,
+} from '../delegation-view.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -671,6 +681,8 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
  * route opens Finder or runs `open` (the API has no authentication before 1.13).
  */
 function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]): Route[] {
+  // The links of "Apri" (D-117, tappa 3): in memory, gone with a restart.
+  const openLinks = createOpenLinks();
   const delegationId = (params: Params): string => {
     const id = params.id ?? '';
     if (!/^[1-9]\d{0,17}$/.test(id)) throw new HttpError(404, 'not found');
@@ -697,6 +709,30 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
       const id = delegationId(params);
       return { body: { diff: await readDelegationDiff(sql, approvedProjects(), id) } };
     }),
+    // D-117, tappa 3: "Apri" on a page or an image the run changed: a link with a random token, same origin only.
+    route('POST', '/api/delegations/:id/open', async (request, _url, params) => {
+      const id = delegationId(params);
+      const body = await readJson(request);
+      const index = body.index;
+      if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 9999) throw new HttpError(400, 'index must be a file of the delegation');
+      return { body: await openDelegationFile(sql, approvedProjects(), openLinks, id, index) };
+    }),
+    // The files behind the link, sandboxed: the page and the styles, scripts and images it loads from its project.
+    {
+      method: 'GET',
+      pattern: /^\/api\/open\/([A-Za-z0-9_-]{32})\/(.+)$/,
+      keys: ['token', 'path'],
+      handler: async (request, _url, params) => {
+        let path: string;
+        try {
+          path = (params.path ?? '').split('/').map(decodeURIComponent).join('/');
+        } catch {
+          throw new HttpError(400, 'bad path');
+        }
+        const file = await readOpenFile(approvedProjects(), openLinks, params.token ?? '', path);
+        return { raw: file.body, type: file.type, headers: openHeaders(request.headers.host?.toLowerCase() ?? ''), noStore: true };
+      },
+    },
   ];
 }
 

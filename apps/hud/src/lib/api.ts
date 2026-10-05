@@ -468,6 +468,11 @@ export async function loadDelegationFile(delegationId: string, index: number): P
   return (await call<{ file: FilePreview }>('GET', `/api/delegations/${encodeURIComponent(delegationId)}/files/${String(index)}`)).file;
 }
 
+/** "Apri" (D-117, tappa 3): the link of a page or an image of the delegation, served sandboxed for a few minutes. */
+export async function openDelegationFile(delegationId: string, index: number): Promise<string> {
+  return (await call<{ url: string }>('POST', `/api/delegations/${encodeURIComponent(delegationId)}/open`, { index })).url;
+}
+
 /** The graph of kb/ (D-087): pages up to L2 with their links and tags, never their text. */
 export async function loadKnowledgeGraph(): Promise<GraphData> {
   return call<GraphData>('GET', '/api/knowledge/graph');
