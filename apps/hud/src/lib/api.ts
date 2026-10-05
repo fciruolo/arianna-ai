@@ -1,7 +1,7 @@
 import type { CallInfo } from './calls.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
-import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Message, MessageCredit, ProjectInfo, RecentDelegation, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -312,6 +312,16 @@ export async function loadLocalLog(id: string): Promise<string> {
 /** Who wrote the cloud answers of a conversation, and the files of each run (D-082). */
 export async function listCredits(conversationId: string): Promise<MessageCredit[]> {
   return (await call<{ credits: MessageCredit[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/credits`)).credits;
+}
+
+/** The activity lines a task saved (D-083), oldest first. */
+export async function listActivities(taskId: string): Promise<SavedActivity[]> {
+  return (await call<{ activities: SavedActivity[] }>('GET', `/api/tasks/${encodeURIComponent(taskId)}/activities`)).activities;
+}
+
+/** How many lines each task of a conversation saved (D-083). */
+export async function activityCounts(conversationId: string): Promise<Record<string, number>> {
+  return (await call<{ counts: Record<string, number> }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/activity-counts`)).counts;
 }
 
 /** The latest delegations, metadata only. */

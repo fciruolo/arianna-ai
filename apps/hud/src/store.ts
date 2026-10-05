@@ -32,6 +32,8 @@ export function createChatStore() {
   const tasks = ref<Record<string, Task>>({});
   /** Who wrote the cloud answers of the open conversation, and the files of each run (D-082). */
   const credits = ref<Map<string, MessageCredit>>(new Map());
+  /** Saved activity lines per task of the open conversation (D-083). */
+  const activityCounts = ref<Record<string, number>>({});
   const approvals = ref<Approval[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
   const models = ref<CloudModel[]>([]);
@@ -201,7 +203,14 @@ export function createChatStore() {
     // The user may have opened another conversation meanwhile.
     if (chat.value?.conversationId !== state.conversationId) return;
     chat.value = mergeMessages(chat.value, messages);
-    await Promise.all([...taskIds(chat.value).map(refreshTask), refreshCredits()]);
+    await Promise.all([...taskIds(chat.value).map(refreshTask), refreshCredits(), refreshActivityCounts()]);
+  }
+
+  async function refreshActivityCounts(): Promise<void> {
+    const state = chat.value;
+    if (state === null || state.messages.every((message) => message.taskId === null)) return;
+    const counts = await api.activityCounts(state.conversationId);
+    if (chat.value?.conversationId === state.conversationId) activityCounts.value = counts;
   }
 
   async function refreshCredits(): Promise<void> {
@@ -218,6 +227,7 @@ export function createChatStore() {
     detached.value = undefined;
     tasks.value = {};
     credits.value = new Map();
+    activityCounts.value = {};
     calls.value = [];
     try {
       await Promise.all([refreshMessages(), refreshCalls()]);
@@ -587,6 +597,8 @@ export function createChatStore() {
         break;
       default:
         if (event.kind.startsWith('task.') && known && event.taskId !== null) work.push(refreshTask(event.taskId));
+        // A task that settles has saved its last activity lines: "Mostra i passi (N)" follows (D-083).
+        if (event.kind === 'task.status' && known) work.push(refreshActivityCounts());
         // The source task of the open system chat: its "Riprova" follows the task's status.
         if (event.kind.startsWith('task.') && event.taskId !== null && event.taskId === current.value?.sourceTaskId) work.push(refreshConversations());
     }
@@ -651,7 +663,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

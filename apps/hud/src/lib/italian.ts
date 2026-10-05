@@ -1,7 +1,7 @@
 import { ApiError } from './api.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
-import type { Activity, FileChangeKind, MessageCredit, RecentDelegation } from './types.ts';
+import type { Activity, FileChangeKind, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
 
 /**
  * The page is in Italian; the core writes its reasons and errors in English,
@@ -173,8 +173,8 @@ function toolError(detail: string): string {
   return 'uno strumento ha restituito un errore';
 }
 
-/** One line of what a task is doing, in Italian (D-054). */
-export function activityText(activity: Activity): string {
+/** One line of what a task is doing, in Italian (D-054), live or saved (D-083). */
+export function activityText(activity: Activity | SavedActivity): string {
   switch (activity.kind) {
     case 'thinking':
       return `Sto ragionando (passo ${String(activity.step)})…`;
@@ -326,4 +326,23 @@ export function previewErrorText(cause: unknown): string {
   if (cause.status === 409) return 'La conversazione è archiviata: ripristinala per vedere i file.';
   if (cause.status === 404) return 'Questo file non è fra quelli della delega.';
   return errorText(cause);
+}
+
+/** The button that opens the saved lines of a finished task (D-083). */
+export function stepsButtonText(count: number, open: boolean): string {
+  return open ? 'Nascondi i passi' : `Mostra i passi (${String(count)})`;
+}
+
+/** How long ago, in Italian: "adesso", "3 min fa", "2 h fa", "ieri", "4 giorni fa". */
+export function relativeTimeText(at: string, now: Date): string {
+  const time = Date.parse(at);
+  if (Number.isNaN(time)) return '';
+  const seconds = Math.max(0, Math.floor((now.getTime() - time) / 1000));
+  if (seconds < 60) return 'adesso';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${String(minutes)} min fa`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${String(hours)} h fa`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'ieri' : `${String(days)} giorni fa`;
 }

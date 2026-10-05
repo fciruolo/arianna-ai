@@ -118,13 +118,24 @@ export interface Delta {
 
 export type ActivityKind = 'thinking' | 'search' | 'read' | 'write' | 'card' | 'plan' | 'error' | 'delegate' | 'tool' | 'wait';
 
-/** One line of what a task is doing (D-054): never stored, gone after a reload. */
+/** One line of what a task is doing (D-054), live over the WebSocket; saved lines come as SavedActivity (D-083). */
 export interface Activity {
   conversationId: string;
   taskId: string;
   step: number;
   kind: ActivityKind;
   detail: string;
+}
+
+/** A line a task saved (D-083), from GET /api/tasks/:id/activities; "thinking" is never saved. */
+export interface SavedActivity {
+  id: string;
+  step: number;
+  kind: Exclude<ActivityKind, 'thinking'>;
+  detail: string;
+  label: Label;
+  /** ISO time. */
+  at: string;
 }
 
 /** What an agent is doing, from GET /api/status (apps/core/src/status.ts). */

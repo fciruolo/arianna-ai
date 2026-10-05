@@ -43,6 +43,8 @@ async function busyConversation(): Promise<{ conversationId: string; taskId: str
     VALUES (${task.id}, 1, ${run?.id ?? ''}, 'L2', ${owner.json({ action: 'reply', text: MARK })}, ${`pensiero ${MARK}`}, ${`risultato ${MARK}`}, ${reply?.id ?? ''})`;
   await owner`UPDATE runs SET status = 'ok', ended_at = now() WHERE id = ${run?.id ?? ''}`;
   await owner`
+    INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${task.id}, 1, 'search', ${`cerca ${MARK}`}, 'L2')`;
+  await owner`
     INSERT INTO task_delegations (task_id, step, agent, brief, label, status, result, result_label, ended_at)
     VALUES (${task.id}, 2, 'coder', ${`brief ${MARK}`}, 'L1', 'ok', ${`rapporto ${MARK}`}, 'L1', now())`;
   const text = `testo da declassare ${MARK}`;
@@ -85,6 +87,7 @@ async function leftovers(conversationId: string, ...taskIds: string[]): Promise<
     UNION ALL SELECT 'tasks' FROM tasks t WHERE t.id::text = ANY (${taskIds}) AND t::text LIKE ${mark}
     UNION ALL SELECT 'task_turns' FROM task_turns tt WHERE tt.task_id::text = ANY (${taskIds})
     UNION ALL SELECT 'task_delegations' FROM task_delegations d WHERE d.task_id::text = ANY (${taskIds})
+    UNION ALL SELECT 'task_activities' FROM task_activities ta WHERE ta.task_id::text = ANY (${taskIds})
     UNION ALL SELECT 'approvals' FROM approvals a WHERE a.task_id::text = ANY (${taskIds}) AND a::text LIKE ${mark}
     UNION ALL SELECT 'jobs' FROM jobs j WHERE j.key = ANY (${keys}) AND j::text LIKE ${mark}
     UNION ALL SELECT 'events' FROM events e
@@ -167,6 +170,7 @@ test('after a purge the append-only guards are on again', async () => {
   await assert.rejects(owner`DELETE FROM messages WHERE conversation_id = ${other.id}`, /append-only/);
   await assert.rejects(owner`DELETE FROM task_turns`, /append-only/);
   await assert.rejects(owner`DELETE FROM task_delegations`, /append-only/);
+  await assert.rejects(owner`DELETE FROM task_activities`, /append-only/);
   await assert.rejects(owner`UPDATE approvals SET detail = '{}' WHERE task_id = ${taskId} AND state = 'approved'`, /already approved/);
   await assert.rejects(owner`UPDATE conversations SET mode = 'work', clearance = 'L1' WHERE id = ${other.id}`, /only the effective label/);
   const [triggers] = await owner<{ disabled: number }[]>`

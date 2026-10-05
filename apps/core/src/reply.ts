@@ -164,8 +164,9 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
 /**
  * What a task is doing, shown under the user's message while it works (task
  * 1.10, D-054): a kind and a short detail (a query, a path, a card title),
- * never stored, sent to the web chat only, like reply fragments. The page
- * writes the line in Italian (D-045).
+ * sent to the web chat only, like reply fragments. The page writes the line
+ * in Italian (D-045). Since D-083 the same line is also saved in
+ * task_activities, to be read again once the task has ended.
  */
 export const ACTIVITY_KINDS = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
@@ -184,17 +185,69 @@ export function activityChannel(schema: string): string {
 }
 
 const MAX_DETAIL = 300;
+/**
+ * Lines saved per task (D-083). The same cap is in the trigger
+ * task_activities_guard of 0021_task_activities.sql, which refuses more:
+ * change both together. Later lines are still shown live.
+ */
+export const MAX_SAVED_ACTIVITIES = 200;
+
+/** The detail as the page receives it: spaces and control characters compacted, at most 300 characters. */
+export function activityDetail(detail: string): string {
+  const points = Array.from(detail.replace(/[\s\p{Cc}]+/gu, ' ').trim());
+  return points.length > MAX_DETAIL ? `${points.slice(0, MAX_DETAIL - 1).join('')}…` : points.join('');
+}
+
+/** Whether a line is saved (D-083): "thinking" is not, the next line replaces it on the page. */
+export function isSavedActivity(kind: ActivityKind): boolean {
+  return kind !== 'thinking';
+}
+
+// The saves in flight, one after the other: the lines of a task keep their
+// order, and the check against the last saved line sees the one before.
+let saving: Promise<void> = Promise.resolve();
+
+/** Resolves once every line posted so far is saved or dropped: for tests and shutdown. */
+export function activitiesSaved(): Promise<void> {
+  return saving;
+}
 
 /**
- * Sends one activity line. A detail holding a value revealed by the vault is
- * refused, as a fragment would be; a long one is cut.
+ * Sends one activity line, then saves it (D-083). A detail holding a value
+ * revealed by the vault is refused before anything else, as a fragment would
+ * be: no notice, no saved line; a long one is cut. The live line does not
+ * wait for the save: it runs after the notice, queued behind the previous
+ * saves, and a failed save is dropped, as a failed notice is by callers.
+ * The saved line carries the effective label of the task at that moment;
+ * it is skipped when equal to the last saved line of the task, past the cap,
+ * or for a task outside the conversation of the notice.
+ *
+ * `sql` is the pool, never a transaction (the type `Sql` refuses a
+ * `TransactionSql`): the save outlives the call, and a line must not vanish
+ * with the rollback of a step.
  */
 export async function postActivity(sql: Sql, notice: ActivityNotice): Promise<void> {
-  const points = Array.from(notice.detail.replace(/\s+/g, ' ').trim());
-  const detail = points.length > MAX_DETAIL ? `${points.slice(0, MAX_DETAIL - 1).join('')}…` : points.join('');
+  const detail = activityDetail(notice.detail);
   const refs = knownSecrets.find(detail);
   if (refs.length > 0) throw new Error(`the activity contains the value of ${refs.join(', ')}`);
   const payload = JSON.stringify({ ...notice, detail });
   if (Buffer.byteLength(payload) > MAX_NOTICE_BYTES) throw new Error('the activity notice is too long');
   await sql`SELECT pg_notify(${activityChannel('')} || current_schema(), ${payload})`;
+  if (isSavedActivity(notice.kind)) {
+    const line = { ...notice, detail };
+    saving = saving.then(() => saveActivity(sql, line)).catch(() => undefined);
+  }
+}
+
+async function saveActivity(sql: Sql, notice: ActivityNotice): Promise<void> {
+  await sql`
+    INSERT INTO task_activities (task_id, step, kind, detail, label)
+    SELECT t.id, ${notice.step}, ${notice.kind}, ${notice.detail}, t.effective_label
+    FROM tasks t
+    WHERE t.id = ${notice.taskId}::uuid AND t.conversation_id = ${notice.conversationId}::uuid
+      AND (SELECT count(*) FROM task_activities a WHERE a.task_id = t.id) < ${MAX_SAVED_ACTIVITIES}
+      AND NOT EXISTS (
+        SELECT FROM (SELECT step, kind, detail FROM task_activities a WHERE a.task_id = t.id ORDER BY a.id DESC LIMIT 1) last
+        WHERE last.step = ${notice.step} AND last.kind = ${notice.kind} AND last.detail = ${notice.detail}
+      )`;
 }

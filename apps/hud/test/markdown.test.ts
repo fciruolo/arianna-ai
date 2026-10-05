@@ -160,30 +160,62 @@ test('deep nesting is cut to text instead of recursing without end', () => {
 });
 
 test('crafted or degenerate input does not stall the page', () => {
-  const n = 64_000;
-  const inputs = [
-    '*a '.repeat(n / 3),
-    '['.repeat(n),
-    '`x '.repeat(n / 3),
-    '_'.repeat(n),
-    '## Passi' + ' '.repeat(n) + '.',
-    'a|b\n|-' + ' '.repeat(n) + 'x',
-    '- a' + '\n'.repeat(n) + '   b',
-    'https://a' + '.'.repeat(n) + 'a',
-    'https://a' + ')'.repeat(n),
-    'https://['.repeat(n / 9),
-    '[a](b'.repeat(n / 5),
-    '[a]('.repeat(n / 4),
-    '[a](<'.repeat(n / 5),
-    '[a](b "'.repeat(n / 7),
+  // Each input is built for a size n; the parser must grow linearly with it. A wall-clock cap alone
+  // fails on a machine busy with the rest of the suite, so the test compares sizes n and 8n
+  // measured back to back (best of a few rounds): linear gives a ratio near 8, quadratic near 64.
+  // The small size is large enough (16k) that its time is not timer noise, and is never taken
+  // below 1 ms.
+  const inputs: ((n: number) => string)[] = [
+    (n) => '*a '.repeat(n / 3),
+    (n) => '['.repeat(n),
+    (n) => '`x '.repeat(n / 3),
+    (n) => '_'.repeat(n),
+    (n) => '## Passi' + ' '.repeat(n) + '.',
+    (n) => 'a|b\n|-' + ' '.repeat(n) + 'x',
+    (n) => '- a' + '\n'.repeat(n) + '   b',
+    (n) => 'https://a' + '.'.repeat(n) + 'a',
+    (n) => 'https://a' + ')'.repeat(n),
+    (n) => 'https://['.repeat(n / 9),
+    (n) => '[a](b'.repeat(n / 5),
+    (n) => '[a]('.repeat(n / 4),
+    (n) => '[a](<'.repeat(n / 5),
+    (n) => '[a](b "'.repeat(n / 7),
   ];
-  for (const input of inputs) {
-    const started = performance.now();
+  const small = 16_000;
+  const large = 8 * small;
+  // CPU time of this process, in ms: other processes of the suite do not count, wall-clock time does.
+  const time = (input: string) => {
+    const started = process.cpuUsage();
     parseMarkdown(input);
-    const elapsed = performance.now() - started;
-    // Linear parsing takes about 130 ms for the slowest input alone; a quadratic one would
-    // take seconds. The margin covers a machine busy with the rest of the suite.
-    assert.ok(elapsed < 1500, `${JSON.stringify(input.slice(0, 12))}… took ${String(Math.round(elapsed))} ms`);
+    const used = process.cpuUsage(started);
+    return (used.user + used.system) / 1000;
+  };
+  const measure = (a: string, b: string) => {
+    let bestSmall = Infinity;
+    let bestLarge = Infinity;
+    for (let round = 0; round < 5; round++) {
+      bestSmall = Math.min(bestSmall, time(a));
+      bestLarge = Math.min(bestLarge, time(b));
+    }
+    return { bestSmall, bestLarge };
+  };
+  for (const build of inputs) {
+    const [a, b] = [build(small), build(large)];
+    time(a);
+    // A burst of load can still hit every round of one measure: a linear parser passes on a repeat,
+    // a quadratic one fails them all.
+    let label = '';
+    let linear = false;
+    for (let attempt = 0; attempt < 3 && !linear; attempt++) {
+      const { bestSmall, bestLarge } = measure(a, b);
+      label = `${JSON.stringify(b.slice(0, 12))}…: ${bestSmall.toFixed(1)} ms at ${String(small)}, ${bestLarge.toFixed(1)} ms at ${String(large)}`;
+      // Linear parsing takes a few hundred ms for the slowest input at the large size; quadratic, far more.
+      // Very wide: only a stall fails it, never a loaded machine.
+      assert.ok(bestLarge < 10_000, label);
+      // Under 5 ms the large size is fast whatever the ratio (timer noise dominates).
+      linear = bestLarge < 5 || bestLarge / Math.max(bestSmall, 1) < 25;
+    }
+    assert.ok(linear, `grows faster than linear: ${label}`);
   }
 });
 

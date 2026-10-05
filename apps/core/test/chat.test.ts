@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ChatError, checkMessageBody, isUuid, MAX_MESSAGE_LENGTH, taskTitle } from '../src/conversations.ts';
-import { chunk, notices } from '../src/reply.ts';
+import { activityDetail, chunk, isSavedActivity, notices } from '../src/reply.ts';
+
+test('an activity detail is compacted, cut at 300 characters, without control characters (D-054, D-083)', () => {
+  assert.equal(activityDetail('  cerca\n\tnella   KB  '), 'cerca nella KB');
+  assert.equal(activityDetail(`a${String.fromCharCode(1)}b${String.fromCharCode(0x7f)}c`), 'a b c');
+  const long = activityDetail('x'.repeat(400));
+  assert.equal(Array.from(long).length, 300);
+  assert.ok(long.endsWith('…'));
+  assert.equal(activityDetail('y'.repeat(300)), 'y'.repeat(300));
+});
+
+test('every activity line is saved except "thinking", which the next line replaces (D-083)', () => {
+  assert.equal(isSavedActivity('thinking'), false);
+  for (const kind of ['search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'] as const) assert.equal(isSavedActivity(kind), true);
+});
 
 test('a message must have text and stay under the limit', () => {
   assert.equal(checkMessageBody('ciao'), 'ciao');

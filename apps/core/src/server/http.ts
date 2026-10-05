@@ -9,6 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { CharacterChoices, Project } from '@arianna/config';
 import type { LabelRules } from '@arianna/policy';
 
+import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { assignCharacters, listPacks, readSheet, type CharacterDirs } from '../characters.ts';
@@ -667,6 +668,19 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const task = await loadTask(sql, idParam(params, 'id'));
       if (task === undefined) throw new HttpError(404, 'not found');
       return { body: { task } };
+    }),
+
+    // The activity lines a task saved (D-083), read as the messages of its conversation are.
+    route('GET', '/api/tasks/:id/activities', async (_request, _url, params) => {
+      const activities = await listTaskActivities(sql, idParam(params, 'id'));
+      if (activities === undefined) throw new HttpError(404, 'not found');
+      return { body: { activities } };
+    }),
+    // How many lines each task of a conversation saved: the chat offers "Mostra i passi (N)" (D-083).
+    route('GET', '/api/conversations/:id/activity-counts', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      return { body: { counts: await countConversationActivities(sql, id) } };
     }),
 
     // Why the task failed (D-064): origin, code and scalar details; null when nothing was recorded.

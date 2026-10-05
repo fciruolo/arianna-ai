@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { stepsAnchors } from '../lib/activity-log.ts';
 import { commandError } from '../lib/capture.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
@@ -9,6 +10,7 @@ import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
+import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
 import Icon from './Icon.vue';
@@ -21,6 +23,8 @@ const props = defineProps<{
   tasks: Record<string, Task>;
   /** Who wrote each cloud answer, and the files of the Coder's runs (D-082), by message id. */
   credits: Map<string, MessageCredit>;
+  /** Saved activity lines per task (D-083): "Mostra i passi (N)" under a finished task. */
+  activityCounts: Record<string, number>;
   sending: boolean;
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
@@ -33,6 +37,7 @@ const props = defineProps<{
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
+const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
   send: [body: string];
   chooseModel: [model: string | null];
@@ -380,6 +385,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               </li>
             </ul>
           </article>
+
+          <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :key="approval.id" :approval="approval" :decide="decide" />
           <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">

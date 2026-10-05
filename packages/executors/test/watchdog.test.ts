@@ -158,6 +158,9 @@ describe('Watchdog', { timeout: 60_000 }, () => {
   // and an exit at the end of standard input so that it dies with the core.
   const TOKEN_SERVER = [
     "const http = require('node:http');",
+    // Without a pipe on stdin (stdin closed or ignored) it exits before listening, so a loaded
+    // machine cannot let a health check in before the end of stdin is read.
+    "const s = require('node:fs').fstatSync(0); if (!s.isFIFO() && !s.isSocket()) process.exit(0);",
     "process.stdin.on('data', () => {}); process.stdin.on('end', () => process.exit(0));",
     "http.createServer((q, r) => {",
     "  const ok = q.url === '/health' && q.headers.authorization === 'Bearer ' + process.env.VOICE_TOKEN && process.env.SECRET === undefined;",

@@ -287,9 +287,27 @@ describe('claude executor', () => {
 
   it('timeout, cancel and the turn limit stop the process, with SIGKILL if it ignores SIGTERM', async () => {
     assert.equal((await failure((await start('hang', { limits: { timeoutMs: 300 } })).run.result)).kind, 'timeout');
-    assert.equal((await failure((await start('ignore-term', { limits: { timeoutMs: 300 } })).run.result)).kind, 'timeout');
-    const { run } = await start('hang');
-    setTimeout(() => { run.cancel(); }, 200);
+    // SIGKILL is proven only if SIGTERM came after the fake installed its handler, which it does
+    // before printing init (so the error carries the session). On a loaded machine the fake may
+    // take longer than the cap just to start: then the cap is raised and the run repeated.
+    let ignored: ClaudeError | undefined;
+    for (const timeoutMs of [400, 2_000, 8_000]) {
+      ignored = await failure((await start('ignore-term', { limits: { timeoutMs } })).run.result);
+      assert.equal(ignored.kind, 'timeout');
+      assert.equal(ignored.exitCode, undefined, 'ended by a signal, not by an exit');
+      if (ignored.sessionRef !== undefined) break;
+    }
+    assert.equal(ignored?.sessionRef, SESSION, 'SIGTERM reached a process that ignores it: only SIGKILL stopped it');
+    // Cancelled once the run is under way (the init event), not after a fixed delay.
+    let cancel: () => void = () => undefined;
+    const { run } = await start('hang', {
+      onEvent: (event) => {
+        if (event.type === 'init') cancel();
+      },
+    });
+    cancel = () => {
+      run.cancel();
+    };
     const cancelled = await failure(run.result);
     assert.equal(cancelled.kind, 'cancelled');
     assert.equal(cancelled.sessionRef, SESSION);
@@ -446,8 +464,30 @@ describe('claude executor, after review', () => {
   });
 
   it('an onEvent that never settles cannot hang the run past its timeout', async () => {
-    const { run } = await start('ok', { limits: { timeoutMs: 300 }, onEvent: () => new Promise<void>(() => undefined) });
-    assert.equal((await failure(run.result)).kind, 'timeout');
+    // It counts only if the handler was reached before the cap fired (the time is measured from
+    // before the launch, so it can only overstate): on a loaded machine the cap is raised.
+    const handler = { reached: false };
+    for (const timeoutMs of [300, 2_000, 8_000]) {
+      const { prepared } = await workspace();
+      const decision = brief('scenario: ok\nfake task');
+      const launched = performance.now();
+      let reachedAfter = Infinity;
+      const run = executor().start({
+        brief: decision,
+        workspace: prepared,
+        model: 'sonnet',
+        tools: ['Read', 'Grep'],
+        limits: { timeoutMs },
+        onEvent: () => {
+          reachedAfter = Math.min(reachedAfter, performance.now() - launched);
+          return new Promise<void>(() => undefined);
+        },
+      });
+      assert.equal((await failure(run.result)).kind, 'timeout');
+      handler.reached = reachedAfter < timeoutMs;
+      if (handler.reached) break;
+    }
+    assert.ok(handler.reached, 'the handler was called before the cap and never settled');
   });
 });
 
