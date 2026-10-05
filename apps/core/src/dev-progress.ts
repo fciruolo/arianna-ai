@@ -191,6 +191,11 @@ export interface ProposalQuestion {
 export interface Proposals {
   titles: Map<string, string>;
   questions: ProposalQuestion[];
+  /**
+   * Proposals with a "### Risposte dell'utente" section: the date of its heading
+   * ('' without one; the last section wins) and the numbers it answers.
+   */
+  answered: Map<string, { at: string; numbers: Set<number> }>;
   skipped: number;
 }
 
@@ -211,9 +216,15 @@ function splitQuestion(body: string): { text: string; detail: string | null } {
   return { text: shorten(plain(text), MAX_QUESTION), detail: detail === '' ? null : shorten(detail, MAX_DETAIL) };
 }
 
-/** docs/PROPOSTE.md: "## D-0NN — title" sections with a "### Domande per l'utente" numbered list. */
+/**
+ * docs/PROPOSTE.md: "## D-0NN — title" sections with a "### Domande per l'utente"
+ * numbered list; a "### Risposte dell'utente (date, ...)" numbered list answers
+ * the questions with the same numbers.
+ */
 export function parseProposals(text: string): Proposals {
   const titles = new Map<string, string>();
+  const answered = new Map<string, { at: string; numbers: Set<number> }>();
+  let answers: Set<number> | undefined;
   const questions: ProposalQuestion[] = [];
   let skipped = 0;
   let current: string | undefined;
@@ -240,12 +251,23 @@ export function parseProposals(text: string): Proposals {
       inQuestions = false;
       const heading = /^##\s+(D-\d{3}[a-z]?)\s+[—–-]\s+(.+)$/.exec(line);
       current = heading?.[1];
+      answers = undefined;
       if (heading !== null && current !== undefined) titles.set(current, shorten(plain(heading[2] ?? ''), MAX_TITLE));
       continue;
     }
     if (/^###\s/.test(line)) {
       close();
       inQuestions = current !== undefined && /^###\s+Domande per l/i.test(line);
+      answers = undefined;
+      if (current !== undefined && /^###\s+Risposte dell/i.test(line)) {
+        answers = new Set();
+        answered.set(current, { at: /\d{4}-\d{2}-\d{2}/.exec(line)?.[0] ?? '', numbers: answers });
+      }
+      continue;
+    }
+    if (answers !== undefined) {
+      const number = /^(\d+)\.\s/.exec(line)?.[1];
+      if (number !== undefined) answers.add(Number(number));
       continue;
     }
     if (!inQuestions) continue;
@@ -262,7 +284,7 @@ export function parseProposals(text: string): Proposals {
     }
   }
   close();
-  return { titles, questions, skipped };
+  return { titles, questions, answered, skipped };
 }
 
 /** The tables of docs/PHASE-0-1-TASKS.md: id, task, hours, real hours, done when. */
@@ -582,6 +604,7 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
 
   const questions: OpenQuestion[] = [];
   for (const question of proposals.questions) {
+    const answered = proposals.answered.get(question.id);
     questions.push({
       key: `${question.id}#${String(question.number)}`,
       kind: 'proposal',
@@ -590,7 +613,8 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
       text: question.text,
       detail: question.detail,
       source: 'PROPOSTE.md',
-      answer: null,
+      // Answered in conversation and written in the document: already applied.
+      answer: answered?.numbers.has(question.number) === true ? { state: 'done', at: answered.at } : null,
     });
   }
   for (const row of decisions.values) {
@@ -613,6 +637,7 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
   for (const entry of parseAnswers(answers ?? '')) latest.set(entry.key, entry);
   const withAnswers = unique(questions).map((question) => {
     const entry = latest.get(question.key);
+    // An answer sent from the page wins over the section of PROPOSTE.md.
     return entry === undefined ? question : { ...question, answer: { state: entry.state, at: entry.at } };
   });
 

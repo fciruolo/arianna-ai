@@ -236,6 +236,70 @@ describe('proposals', () => {
     assert.equal(skipped, 0);
   });
 
+  it('marks as answered the questions whose number the section of answers holds, and only those', () => {
+    const answeredText = `${PROPOSALS}
+## D-111 — Agenti nella chat
+
+### Domande per l'utente
+
+1. **Quattro carte?** Raccomandazione: sì.
+2. **Ospiti?**
+3. **Codex?**
+
+### Risposte dell'utente (2026-10-05, mattina, in conversazione)
+
+1. **No:** prima Privata/Lavoro, sotto gli agenti.
+3. Alla pari di Claude.
+
+\`\`\`md
+### Risposte dell'utente
+2. Dentro un blocco di codice: non conta.
+\`\`\`
+
+## D-112 — Risposte prima delle domande, senza data
+
+### Risposte dell'utente
+
+1. Sì.
+
+### Domande per l'utente
+
+1. **Ora accanto ai messaggi?**
+
+## D-113 — Risposte senza domande
+
+### Risposte dell'utente
+
+1. Niente da chiedere.
+`;
+    const { questions, answered, skipped } = parseProposals(answeredText);
+    assert.deepEqual(
+      [...answered].map(([id, entry]) => [id, entry.at, [...entry.numbers]]),
+      [
+        ['D-111', '2026-10-05', [1, 3]],
+        ['D-112', '', [1]],
+        ['D-113', '', [1]],
+      ],
+    );
+    // The numbered answers are not questions.
+    assert.deepEqual(
+      questions.filter((question) => question.id !== 'D-078' && question.id !== 'D-096').map((question) => `${question.id}#${String(question.number)}`),
+      ['D-111#1', 'D-111#2', 'D-111#3', 'D-112#1'],
+    );
+    assert.equal(skipped, 0);
+    const progress = buildProgress({ 'PROPOSTE.md': answeredText }, undefined);
+    const answerOf = (key: string) => progress.questions.find((question) => question.key === key)?.answer;
+    assert.deepEqual(answerOf('D-111#1'), { state: 'done', at: '2026-10-05' });
+    // A question the section does not answer stays open.
+    assert.equal(answerOf('D-111#2'), null);
+    assert.deepEqual(answerOf('D-111#3'), { state: 'done', at: '2026-10-05' });
+    assert.deepEqual(answerOf('D-112#1'), { state: 'done', at: '' });
+    assert.equal(answerOf('D-078#1'), null);
+    // An answer sent from the page wins over the section.
+    const fromPage = buildProgress({ 'PROPOSTE.md': answeredText }, `${ANSWERS_HEADER}\n## 2026-10-06 09:00 · D-111#1 · nuova\n\n> aggiungo\n`);
+    assert.deepEqual(fromPage.questions.find((question) => question.key === 'D-111#1')?.answer, { state: 'new', at: '2026-10-06 09:00' });
+  });
+
   it('returns nothing from a text without proposals', () => {
     const { titles, questions } = parseProposals('# Titolo\n\n1. **Domanda fuori sezione?**\n');
     assert.equal(titles.size, 0);

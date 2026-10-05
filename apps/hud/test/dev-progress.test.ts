@@ -112,6 +112,8 @@ test('an answered question says it waits for Claude, or that Claude applied it',
   assert.equal(answerStatus(question('a')), null);
   assert.equal(answerStatus(question('a', { answer: { state: 'new', at: '2026-10-05 07:40' } })), 'Risposta inviata (2026-10-05 07:40), in attesa di Claude');
   assert.match(answerStatus(question('a', { answer: { state: 'done', at: '2026-10-05 07:40' } })) ?? '', /applicata da Claude/);
+  // A section of answers in PROPOSTE.md without a date.
+  assert.equal(answerStatus(question('a', { answer: { state: 'done', at: '' } })), 'Risposta applicata da Claude');
   const marked = markAnswered([question('a'), question('b')], 'b', '2026-10-05 08:00');
   assert.equal(marked[0]?.answer, null);
   assert.deepEqual(marked[1]?.answer, { state: 'new', at: '2026-10-05 08:00' });

@@ -142,7 +142,7 @@ export type QuestionFilter = 'open' | 'answered' | 'all';
 
 export const QUESTION_FILTERS: { value: QuestionFilter; text: string }[] = [
   { value: 'open', text: 'Senza risposta' },
-  { value: 'answered', text: 'Risposte inviate' },
+  { value: 'answered', text: 'Con risposta' },
   { value: 'all', text: 'Tutte' },
 ];
 
@@ -182,7 +182,9 @@ export function groupQuestions(questions: readonly OpenQuestion[]): QuestionGrou
 /** What the page says of a question already answered; null when it has no answer. */
 export function answerStatus(question: OpenQuestion): string | null {
   if (question.answer === null) return null;
-  return question.answer.state === 'new' ? `Risposta inviata (${question.answer.at}), in attesa di Claude` : `Risposta applicata da Claude (${question.answer.at})`;
+  // A section of answers in PROPOSTE.md without a date in its heading has none.
+  const at = question.answer.at === '' ? '' : ` (${question.answer.at})`;
+  return question.answer.state === 'new' ? `Risposta inviata${at}, in attesa di Claude` : `Risposta applicata da Claude${at}`;
 }
 
 export const ANSWER_EMPTY_TEXT = 'Scrivi una risposta prima di inviarla.';
