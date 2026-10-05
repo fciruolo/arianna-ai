@@ -24,7 +24,7 @@ export {
   type ClaudeModel,
   type ClaudeTool,
 } from './claude/profile.ts';
-export { ClaudeStream, type ClaudeEvent, type ClaudeUsage, type StreamFailure, type StreamResult } from './claude/stream.ts';
+export { ClaudeStream, fileEditOf, FILE_EDIT_TOOLS, type ClaudeEvent, type FileEditPart, type FileEditTool, type ClaudeUsage, type StreamFailure, type StreamResult } from './claude/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
 export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';
 export {
@@ -49,16 +49,20 @@ export {
   prepareWorkspace,
   preparedPath,
   changedToolConfig,
+  committedFiles,
+  fileFingerprints,
   gitConfigFingerprint,
   openRepository,
   removeWorkspace,
   reopenWorkspace,
   repositoryChanges,
+  repositoryHead,
   repositoryStatus,
   scanWorkspace,
   toolConfigFiles,
   WorkspaceError,
   WORKTREES_DIR,
+  type CommittedFile,
   type FileChange,
   type FileChangeKind,
   type PreparedWorkspace,

@@ -6,7 +6,7 @@ import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_M
 import { canSaveToInbox } from '../lib/capture.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
-import { activityLines, type ChatState } from '../lib/chat-state.ts';
+import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
@@ -17,6 +17,7 @@ import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
 import Icon from './Icon.vue';
+import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
@@ -139,6 +140,12 @@ function taskOf(message: Message): Task | undefined {
 function activityOf(message: Message): Activity[] {
   if (message.role !== 'user' || message.taskId === null) return [];
   return activityLines(props.chat, message.taskId, props.tasks[message.taskId]?.status);
+}
+
+/** The Coder's live changes to files of the task of a user message, while it works (D-117). */
+function editsOf(message: Message): LiveEdit[] {
+  if (message.role !== 'user' || message.taskId === null) return [];
+  return liveEdits(props.chat, message.taskId, props.tasks[message.taskId]?.status);
 }
 
 /** The approvals a user message's task waits for. */
@@ -525,6 +532,7 @@ onBeforeUnmount(() => clearInterval(clock));
                 <span class="break-words">{{ activityText(line) }}</span>
               </li>
             </ul>
+            <LiveEdits v-if="editsOf(message).length > 0" :edits="editsOf(message)" />
           </article>
 
           <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />

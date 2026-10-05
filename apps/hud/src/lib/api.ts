@@ -6,7 +6,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, DelegationDiff, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -358,6 +358,11 @@ export async function activityCounts(conversationId: string): Promise<Record<str
 /** The latest delegations, metadata only. */
 export async function listDelegations(limit = 10): Promise<RecentDelegation[]> {
   return (await call<{ delegations: RecentDelegation[] }>('GET', `/api/delegations?limit=${String(limit)}`)).delegations;
+}
+
+/** The diff of every file of a delegation (D-117), computed on request. */
+export async function loadDelegationDiff(delegationId: string): Promise<DelegationDiff> {
+  return (await call<{ diff: DelegationDiff }>('GET', `/api/delegations/${encodeURIComponent(delegationId)}/diff`)).diff;
 }
 
 /** A file changed by a run, as it is now in the approved project. */

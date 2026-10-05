@@ -8,6 +8,8 @@ import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 import {
+  committedFiles,
+  fileFingerprints,
   gitConfigFingerprint,
   openRepository,
   prepareEmptyWorkspace,
@@ -16,6 +18,7 @@ import {
   removeWorkspace,
   reopenWorkspace,
   repositoryChanges,
+  repositoryHead,
   repositoryStatus,
   scanWorkspace,
   WorkspaceError,
@@ -397,6 +400,62 @@ describe('openRepository (D-056)', () => {
       { path: 'sub/b.ts', change: 'added' },
     ]);
     await assert.rejects(repositoryChanges(join(dir, 'sub')), WorkspaceError);
+  });
+
+  it('repositoryHead and committedFiles read the base of a diff from the object database (D-117)', async () => {
+    const repo = makeRepo(
+      'inplace-base',
+      { 'a.ts': 'old a\n', 'big.txt': 'x'.repeat(64), 'dir/b.ts': 'old b\n', 'two words.md': 'spaced\n', '*.md': 'star\n' },
+      { 'link.ts': 'a.ts', 'far.ts': '/etc/hosts' },
+    );
+    const dir = join(HOME, repo);
+    const head = await repositoryHead(dir);
+    assert.equal(head, git(dir, 'rev-parse', 'HEAD').trim());
+    write(dir, { 'a.ts': 'new a\n', 'c.ts': 'new c\n' });
+    const files = await committedFiles(dir, head, ['a.ts', 'c.ts', 'big.txt', 'dir', 'dir/b.ts', 'dir/../a.ts', '.git/config', 'two words.md', 'a\nb', 'link.ts', 'far.ts', '*.md', '*.ts'], 32);
+    // Links are not files: their target is never shown as content. Paths are literal, not patterns.
+    assert.deepEqual(
+      files.map((file) => (file.kind === 'ok' ? file.bytes.toString('utf8') : file.kind)),
+      ['old a\n', 'missing', 'too-large', 'missing', 'old b\n', 'missing', 'missing', 'spaced\n', 'missing', 'missing', 'missing', 'star\n', 'missing'],
+    );
+    // Not a commit id: refused before git runs.
+    await assert.rejects(committedFiles(dir, 'HEAD', ['a.ts'], 32), WorkspaceError);
+    await assert.rejects(committedFiles(dir, '--output=x', ['a.ts'], 32), WorkspaceError);
+    // An unknown commit is an error of git, not a missing file.
+    await assert.rejects(committedFiles(dir, '0'.repeat(40), ['a.ts'], 32));
+  });
+
+  it('fileFingerprints tells a file changed again from one left as it was (D-117)', async () => {
+    const repo = makeRepo('inplace-prints', { 'a.ts': 'x\n', 'b.ts': 'y\n' }, { 'l.ts': 'a.ts' });
+    const dir = join(HOME, repo);
+    const before = await fileFingerprints(dir, ['a.ts', 'b.ts', 'l.ts', 'gone.ts', 'a/../b.ts']);
+    assert.deepEqual([before.get('gone.ts'), before.get('l.ts'), before.get('a/../b.ts')], ['missing', 'link:a.ts', 'other']);
+    write(dir, { 'a.ts': 'changed\n' });
+    const after = await fileFingerprints(dir, ['a.ts', 'b.ts']);
+    assert.notEqual(after.get('a.ts'), before.get('a.ts'));
+    assert.equal(after.get('b.ts'), before.get('b.ts'));
+  });
+
+  it('repositoryHead is null without commits, and refuses a subfolder', async () => {
+    const dir = join(HOME, 'repos', 'inplace-nohead');
+    mkdirSync(join(dir, 'sub'), { recursive: true });
+    git(dir, 'init', '--quiet');
+    assert.equal(await repositoryHead(dir), null);
+    await assert.rejects(repositoryHead(join(dir, 'sub')), WorkspaceError);
+  });
+
+  it('committedFiles runs no filter or diff driver of the repository', async () => {
+    const repo = makeRepo('inplace-base-filter', { 'a.txt': 'x\n', '.gitattributes': '*.txt filter=evil diff=evil\n' });
+    const dir = join(HOME, repo);
+    writeFileSync(
+      join(dir, '.git', 'config'),
+      `${readFileSync(join(dir, '.git', 'config'), 'utf8')}[filter "evil"]\n\tsmudge = touch ${join(dir, 'evil-ran')}\n[diff "evil"]\n\ttextconv = touch ${join(dir, 'evil-ran')}\n`,
+    );
+    const head = await repositoryHead(dir);
+    assert.ok(head !== null);
+    const [file] = await committedFiles(dir, head, ['a.txt'], 1024);
+    assert.equal(file?.kind === 'ok' ? file.bytes.toString('utf8') : file?.kind, 'x\n');
+    assert.equal(existsSync(join(dir, 'evil-ran')), false);
   });
 
   it('runs no filter of the repository\'s own configuration, and no hook', async () => {

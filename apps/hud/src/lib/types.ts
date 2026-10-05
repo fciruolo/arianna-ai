@@ -129,6 +129,31 @@ export interface Activity {
   detail: string;
 }
 
+export type EditTool = 'Edit' | 'MultiEdit' | 'Write';
+export type LiveEditError = 'too-large' | 'refused';
+
+/**
+ * A piece of a change the Coder is making to a file (D-117, second stage),
+ * live over the WebSocket only: the lines come in `total` pieces, joined by
+ * `seq`. Never stored.
+ */
+export interface EditPiece {
+  editId: string;
+  conversationId: string;
+  taskId: string;
+  step: number;
+  /** Relative to the project. */
+  path: string;
+  tool: EditTool;
+  label: 'L0' | 'L1';
+  added: number;
+  removed: number;
+  error?: LiveEditError;
+  seq: number;
+  total: number;
+  text: string;
+}
+
 /** A line a task saved (D-083), from GET /api/tasks/:id/activities; "thinking" is never saved. */
 export interface SavedActivity {
   id: string;
@@ -233,6 +258,33 @@ export interface RecentDelegation {
   durationMs: number | null;
   cost: number | null;
   files: number | null;
+}
+
+/** A line of a diff (D-117). */
+export interface DiffLine {
+  kind: 'context' | 'added' | 'removed';
+  text: string;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+/** Why the diff of a file is not shown: the preview's reasons, plus `too-many`, `no-base` and `unreadable`. */
+export type FileDiffError = 'not-found' | 'deleted' | 'not-approved' | 'refused' | 'too-large' | 'binary' | 'archived' | 'busy' | 'too-many' | 'no-base' | 'unreadable';
+
+/** The diff of one file of a delegation, or why it is not shown. */
+export type FileDiff = DelegationFile & { index: number } & ({ added: number; removed: number; hunks: DiffHunk[] } | { error: FileDiffError });
+
+/** What the run changed, file by file, against the commit its files were listed against. */
+export interface DelegationDiff {
+  repo: string;
+  baseCommit: string | null;
+  files: FileDiff[];
 }
 
 /** A changed file as it is now, read only. */

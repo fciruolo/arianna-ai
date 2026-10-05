@@ -2,7 +2,7 @@ import { ApiError } from './api.ts';
 import type { CopyResult } from './clipboard.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
-import type { Activity, FileChangeKind, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
+import type { Activity, EditTool, FileChangeKind, FileDiffError, LiveEditError, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
 
 /**
  * The page is in Italian; the core writes its reasons and errors in English,
@@ -327,6 +327,44 @@ export function filesTitle(count: number): string {
   return count === 1 ? 'File modificato (1)' : `File modificati (${String(count)})`;
 }
 
+/** Above a diff: what it is compared against (D-117); the Coder may have changed files already changed before. */
+export function baseCommitText(commit: string): string {
+  return `Rispetto all’ultimo commit (${commit.slice(0, 7)}): se il file era già modificato prima del lavoro del Coder, si vedono anche quelle modifiche.`;
+}
+
+/** "+12 −3": lines added and removed (D-117). */
+export function diffCountText(added: number, removed: number): string {
+  return `+${String(added)} −${String(removed)}`;
+}
+
+/** What a live change of the Coder is (D-117, second stage). */
+export const EDIT_TOOL_TEXT: Record<EditTool, string> = {
+  Edit: 'modifica',
+  MultiEdit: 'più modifiche',
+  Write: 'scritto per intero',
+};
+
+/** Why the lines of a live change are not shown. */
+export const LIVE_EDIT_ERROR_TEXT: Record<LiveEditError, string> = {
+  'too-large': 'Modifica troppo grande da mostrare qui: il diff completo arriva a fine lavoro.',
+  refused: 'Modifica non mostrata: contiene un valore del vault.',
+};
+
+/** Why the diff of a changed file is not shown (D-117). */
+export const DIFF_ERROR_TEXT: Record<FileDiffError, string> = {
+  'not-found': 'Questo file non è fra quelli della delega.',
+  deleted: 'Il file non c’è più nella cartella del progetto.',
+  'not-approved': 'Il progetto non è più fra quelli approvati: niente diff.',
+  refused: 'Il file esce dal progetto, contiene un valore del vault o non si può leggere: niente diff.',
+  'too-large': 'Il file supera 256 KiB, o il diff è troppo lungo per la chat: guardalo dalla cartella del progetto.',
+  binary: 'Non è un file di testo UTF-8: niente diff.',
+  archived: 'La conversazione è archiviata: ripristinala per vedere i file.',
+  busy: 'Il Coder sta lavorando su questo progetto: il diff si vede quando ha finito.',
+  'too-many': 'Troppi file in questa delega: il diff si mostra per i primi 100.',
+  'no-base': 'Manca la versione di partenza (una delega di prima del diff, o il file non era nel commit): apri la versione attuale.',
+  unreadable: 'Non riesco a leggere la versione di partenza dal repository (cartella o commit cambiati): apri la versione attuale.',
+};
+
 /** Why the preview of a changed file is not shown. */
 export function previewErrorText(cause: unknown): string {
   if (!(cause instanceof ApiError)) return errorText(cause);
@@ -337,6 +375,7 @@ export function previewErrorText(cause: unknown): string {
   if (cause.status === 403 && /not the approved path|does not exist/.test(cause.message)) return 'La cartella del progetto non è più quella approvata: niente anteprima.';
   if (cause.status === 403 && /value of the vault/.test(cause.message)) return 'Il file contiene un valore del vault: niente anteprima.';
   if (cause.status === 403) return 'Il file esce dal progetto o non si può leggere: niente anteprima.';
+  if (cause.status === 409 && /is working on/.test(cause.message)) return 'Il Coder sta lavorando su questo progetto: il diff si vede quando ha finito.';
   if (cause.status === 409) return 'La conversazione è archiviata: ripristinala per vedere i file.';
   if (cause.status === 404) return 'Questo file non è fra quelli della delega.';
   return errorText(cause);

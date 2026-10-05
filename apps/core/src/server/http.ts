@@ -31,7 +31,7 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
-import { DelegationFileError, listCredits, listRecentDelegations, readDelegationFile } from '../delegation-view.ts';
+import { DelegationFileError, listCredits, listRecentDelegations, readDelegationDiff, readDelegationFile } from '../delegation-view.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -678,6 +678,11 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
       if (!/^\d{1,4}$/.test(index)) throw new HttpError(404, 'not found');
       return { body: { file: await readDelegationFile(sql, approvedProjects(), id, Number(index)) } };
     }),
+    // D-117: what the run changed in each file, from the commit its files were listed against.
+    route('GET', '/api/delegations/:id/diff', async (_request, _url, params) => {
+      const id = delegationId(params);
+      return { body: { diff: await readDelegationDiff(sql, approvedProjects(), id) } };
+    }),
   ];
 }
 
@@ -1088,7 +1093,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof DelegationFileError) {
-    const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409 }[error.code];
+    const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };

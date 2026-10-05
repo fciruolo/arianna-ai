@@ -12,11 +12,27 @@ export interface ClaudeUsage {
   turns: number;
 }
 
-/** What a run reports while it works. Tool inputs are left out: names are enough to follow it. */
+/** One replacement of a file edit: `before` is empty when the tool wrote the whole file. */
+export interface FileEditPart {
+  before: string;
+  after: string;
+}
+
+/** The tools whose input is a change to a file (D-117, second stage). */
+export const FILE_EDIT_TOOLS = ['Edit', 'MultiEdit', 'Write'] as const;
+export type FileEditTool = (typeof FILE_EDIT_TOOLS)[number];
+
+/**
+ * What a run reports while it works. Tool inputs are left out, names are
+ * enough to follow it; the only exception is a change to a file (`edit`, after
+ * its `tool`), which the core turns into a live diff for the chat (D-117).
+ * `filePath` is as the binary wrote it: the caller checks it is in the project.
+ */
 export type ClaudeEvent =
   | { type: 'init'; sessionRef: string; model: string; tools: string[] }
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
+  | { type: 'edit'; tool: FileEditTool; filePath: string; parts: FileEditPart[] }
   | { type: 'usage'; usage: ClaudeUsage }
   | {
       type: 'rate-limit';
@@ -59,6 +75,37 @@ const count = (value: unknown): number => (typeof value === 'number' && Number.i
 
 function tokensIn(usage: Record<string, unknown>): number {
   return count(usage.input_tokens) + count(usage.cache_creation_input_tokens) + count(usage.cache_read_input_tokens);
+}
+
+/**
+ * The change a call to Edit, MultiEdit or Write makes, from its input; nothing
+ * for another tool or an input of an unexpected shape (a newer binary).
+ */
+export function fileEditOf(name: string, input: unknown): Extract<ClaudeEvent, { type: 'edit' }> | undefined {
+  if (!isRecord(input) || typeof input.file_path !== 'string' || input.file_path === '') return undefined;
+  const filePath = input.file_path;
+  const part = (value: unknown): FileEditPart | undefined =>
+    isRecord(value) && typeof value.old_string === 'string' && typeof value.new_string === 'string' ? { before: value.old_string, after: value.new_string } : undefined;
+  switch (name) {
+    case 'Edit': {
+      const one = part(input);
+      return one === undefined ? undefined : { type: 'edit', tool: 'Edit', filePath, parts: [one] };
+    }
+    case 'MultiEdit': {
+      if (!Array.isArray(input.edits) || input.edits.length === 0) return undefined;
+      const parts: FileEditPart[] = [];
+      for (const item of input.edits as unknown[]) {
+        const one = part(item);
+        if (one === undefined) return undefined;
+        parts.push(one);
+      }
+      return { type: 'edit', tool: 'MultiEdit', filePath, parts };
+    }
+    case 'Write':
+      return typeof input.content === 'string' ? { type: 'edit', tool: 'Write', filePath, parts: [{ before: '', after: input.content }] } : undefined;
+    default:
+      return undefined;
+  }
 }
 
 /** Epoch seconds to a date; undefined for anything else. */
@@ -155,7 +202,11 @@ export class ClaudeStream {
     for (const block of Array.isArray(body.content) ? body.content : []) {
       if (!isRecord(block)) continue;
       if (block.type === 'text' && typeof block.text === 'string' && block.text !== '') events.push({ type: 'text', text: block.text });
-      if (block.type === 'tool_use' && typeof block.name === 'string') events.push({ type: 'tool', name: block.name });
+      if (block.type === 'tool_use' && typeof block.name === 'string') {
+        events.push({ type: 'tool', name: block.name });
+        const edit = fileEditOf(block.name, block.input);
+        if (edit !== undefined) events.push(edit);
+      }
     }
     if (isRecord(body.usage)) {
       const id = typeof body.id === 'string' ? body.id : `response-${String(this.#responses.size)}`;

@@ -1,10 +1,11 @@
-import type { Activity, ActivityKind, Delta, LiveEvent } from './types.ts';
+import type { Activity, ActivityKind, Delta, EditPiece, EditTool, LiveEvent } from './types.ts';
 
 /** What the core's WebSocket sends (apps/core/src/live.ts and server/http.ts). */
 export type ServerMessage =
   | { type: 'event'; event: LiveEvent }
   | ({ type: 'delta' } & Delta)
   | ({ type: 'activity' } & Activity)
+  | ({ type: 'edit' } & EditPiece)
   | { type: 'ready' };
 
 const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'];
@@ -14,6 +15,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const DIGITS = /^\d{1,19}$/;
+// The same list as FILE_EDIT_TOOLS of @arianna/executors, repeated: the page does not import the core's packages.
+const EDIT_TOOLS: readonly EditTool[] =['Edit', 'MultiEdit', 'Write'];
+const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+/** A piece of a live change (D-117): only L0 and L1, a known tool, a piece within its total. */
+function parseEdit(value: Record<string, unknown>): ({ type: 'edit' } & EditPiece) | undefined {
+  const { editId, conversationId, taskId, step, path, tool, label, added, removed, error, seq, total, text } = value;
+  const known = EDIT_TOOLS.find((item) => item === tool);
+  if (
+    typeof editId !== 'string' ||
+    typeof conversationId !== 'string' ||
+    typeof taskId !== 'string' ||
+    !count(step) ||
+    typeof path !== 'string' ||
+    path === '' ||
+    known === undefined ||
+    (label !== 'L0' && label !== 'L1') ||
+    !count(added) ||
+    !count(removed) ||
+    (error !== undefined && error !== 'too-large' && error !== 'refused') ||
+    !count(seq) ||
+    !count(total) ||
+    seq >= total ||
+    typeof text !== 'string'
+  ) {
+    return undefined;
+  }
+  return { type: 'edit', editId, conversationId, taskId, step, path, tool: known, label, added, removed, ...(error === undefined ? {} : { error }), seq, total, text };
+}
 
 /** Parses one frame; anything malformed is dropped rather than trusted. */
 export function parseServerMessage(raw: string): ServerMessage | undefined {
@@ -57,6 +87,8 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
       }
       return { type: 'activity', conversationId, taskId, step, kind: known, detail };
     }
+    case 'edit':
+      return parseEdit(value);
     case 'event': {
       const event = value.event;
       if (!isRecord(event) || typeof event.id !== 'string' || !DIGITS.test(event.id) || typeof event.kind !== 'string') return undefined;

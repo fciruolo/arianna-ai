@@ -3,11 +3,12 @@ import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { Project } from '@arianna/config';
-import type { FileChange } from '@arianna/executors';
+import { committedFiles, type CommittedFile, type FileChange } from '@arianna/executors';
 import { isAtMost, isLabel } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 import type { Queryable } from './db/client.ts';
+import { diffLines, MAX_CELLS, splitLines, type LineDiff } from './line-diff.ts';
 
 /**
  * "Who did what" and "Files changed" under the answers written in the cloud
@@ -148,7 +149,7 @@ export async function listRecentDelegations(sql: Queryable, limit: number): Prom
 /** Largest file shown in the chat. */
 export const MAX_PREVIEW_BYTES = 256 * 1024;
 
-export type DelegationFileErrorCode = 'not-found' | 'deleted' | 'not-approved' | 'refused' | 'too-large' | 'binary' | 'archived';
+export type DelegationFileErrorCode = 'not-found' | 'deleted' | 'not-approved' | 'refused' | 'too-large' | 'binary' | 'archived' | 'busy';
 
 export class DelegationFileError extends Error {
   override name = 'DelegationFileError';
@@ -177,16 +178,16 @@ function inside(path: string, root: string): boolean {
   return fromRoot !== '' && fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
 }
 
-/**
- * Reads the file `index` of a delegation from its project folder (D-082): the
- * project must still be approved (D-058) at L1 or below, its folder exactly
- * the approved path (no link on the way); the file inside it after resolving
- * links, not under `.git`, a regular file of at most MAX_PREVIEW_BYTES, UTF-8
- * text without NUL, and without a value of the vault.
- */
-export async function readDelegationFile(sql: Queryable, projects: readonly Project[], id: string, index: number): Promise<FilePreview> {
-  const [row] = await sql.unsafe<{ repo: string | null; files: FileChange[] | null; label: string; resultLabel: string | null; archived: boolean }[]>(
-    `SELECT d.repo, d.files, d.label, d.result_label AS "resultLabel", coalesce(c.archived_at IS NOT NULL, false) AS archived
+interface DelegationRow {
+  repo: string;
+  files: FileChange[];
+  baseCommit: string | null;
+}
+
+/** The delegation, its labels and its conversation checked: its project and files, or why not. */
+async function loadDelegationRow(sql: Queryable, id: string): Promise<DelegationRow> {
+  const [row] = await sql.unsafe<{ repo: string | null; files: FileChange[] | null; baseCommit: string | null; label: string; resultLabel: string | null; archived: boolean }[]>(
+    `SELECT d.repo, d.files, d.base_commit AS "baseCommit", d.label, d.result_label AS "resultLabel", coalesce(c.archived_at IS NOT NULL, false) AS archived
      FROM task_delegations d JOIN tasks t ON t.id = d.task_id LEFT JOIN conversations c ON c.id = t.conversation_id
      WHERE d.id = $1::bigint`,
     [id],
@@ -197,24 +198,46 @@ export async function readDelegationFile(sql: Queryable, projects: readonly Proj
   if (!isLabel(row.label) || !isAtMost(row.label, 'L1') || (row.resultLabel !== null && (!isLabel(row.resultLabel) || !isAtMost(row.resultLabel, 'L1')))) {
     throw new DelegationFileError('not-found', 'no such file');
   }
-  const entry = row.files[index];
-  if (entry === undefined) throw new DelegationFileError('not-found', 'no such file');
-  if (entry.change === 'deleted') throw new DelegationFileError('deleted', 'the run deleted this file');
-  const project = projects.find((candidate) => candidate.name === row.repo);
-  if (project === undefined) throw new DelegationFileError('not-approved', `the project ${row.repo} is no longer among the approved projects`);
-  if (!isAtMost(project.label, 'L1')) throw new DelegationFileError('not-approved', `the project ${row.repo} is above L1`);
+  return { repo: row.repo, files: row.files, baseCommit: row.baseCommit };
+}
 
+/** The folder of the delegation's project, still approved at L1 or below and exactly the approved path. */
+async function approvedRoot(projects: readonly Project[], repo: string): Promise<string> {
+  const project = projects.find((candidate) => candidate.name === repo);
+  if (project === undefined) throw new DelegationFileError('not-approved', `the project ${repo} is no longer among the approved projects`);
+  if (!isAtMost(project.label, 'L1')) throw new DelegationFileError('not-approved', `the project ${repo} is above L1`);
   const { absolute } = project;
   let root: string;
   try {
     root = await realpath(absolute);
   } catch {
-    throw new DelegationFileError('not-approved', `the folder of ${row.repo} does not exist`);
+    throw new DelegationFileError('not-approved', `the folder of ${repo} does not exist`);
   }
   if (!isAbsolute(absolute) || resolve(absolute) !== absolute || root !== absolute || !(await lstat(root)).isDirectory()) {
-    throw new DelegationFileError('not-approved', `the folder of ${row.repo} is not the approved path`);
+    throw new DelegationFileError('not-approved', `the folder of ${repo} is not the approved path`);
   }
-  const path = entry.path;
+  return root;
+}
+
+/** Bytes shown as text: UTF-8 without NUL, without a value of the vault. */
+function shownText(bytes: Uint8Array): string {
+  if (bytes.includes(0)) throw new DelegationFileError('binary', 'not a text file');
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch {
+    throw new DelegationFileError('binary', 'not a UTF-8 text file');
+  }
+  if (knownSecrets.find(text).length > 0) throw new DelegationFileError('refused', 'the file holds a value of the vault');
+  return text;
+}
+
+/**
+ * The current text of `path` in the project folder `root`: inside it after
+ * resolving links, not under `.git`, a regular file of at most
+ * MAX_PREVIEW_BYTES, shown as text.
+ */
+async function readProjectText(root: string, path: string): Promise<{ text: string; size: number }> {
   if (path === '' || isAbsolute(path) || path.includes('\0') || path.split('/').some((part) => part === '..' || isGitName(part))) {
     throw new DelegationFileError('refused', 'the path is not a file of the project');
   }
@@ -250,17 +273,130 @@ export async function readDelegationFile(sql: Queryable, projects: readonly Proj
     const buffer = Buffer.alloc(MAX_PREVIEW_BYTES + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     if (bytesRead > MAX_PREVIEW_BYTES) throw new DelegationFileError('too-large', `the file is larger than ${String(MAX_PREVIEW_BYTES / 1024)} KiB`);
-    const bytes = buffer.subarray(0, bytesRead);
-    if (bytes.includes(0)) throw new DelegationFileError('binary', 'not a text file');
-    let text: string;
-    try {
-      text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
-    } catch {
-      throw new DelegationFileError('binary', 'not a UTF-8 text file');
-    }
-    if (knownSecrets.find(text).length > 0) throw new DelegationFileError('refused', 'the file holds a value of the vault');
-    return { path, change: entry.change, repo: row.repo, size: bytesRead, text };
+    return { text: shownText(buffer.subarray(0, bytesRead)), size: bytesRead };
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Reads the file `index` of a delegation from its project folder (D-082): the
+ * project must still be approved (D-058) at L1 or below, its folder exactly
+ * the approved path (no link on the way); the file inside it after resolving
+ * links, not under `.git`, a regular file of at most MAX_PREVIEW_BYTES, UTF-8
+ * text without NUL, and without a value of the vault.
+ */
+export async function readDelegationFile(sql: Queryable, projects: readonly Project[], id: string, index: number): Promise<FilePreview> {
+  const row = await loadDelegationRow(sql, id);
+  const entry = row.files[index];
+  if (entry === undefined) throw new DelegationFileError('not-found', 'no such file');
+  if (entry.change === 'deleted') throw new DelegationFileError('deleted', 'the run deleted this file');
+  const root = await approvedRoot(projects, row.repo);
+  const { text, size } = await readProjectText(root, entry.path);
+  return { path: entry.path, change: entry.change, repo: row.repo, size, text };
+}
+
+/** Files diffed in one request; the others are listed with `too-many`. */
+export const MAX_DIFF_FILES = 100;
+/** Characters of diff lines in one answer; the files past it come with `too-large`. */
+export const MAX_DIFF_CHARS = 2 * 1024 * 1024;
+/** LCS cells over all the files of one request (see line-diff.ts): the time the event loop may spend. */
+export const MAX_DIFF_CELLS = 20_000_000;
+
+/** The diff of one file of a delegation, or why it is not shown (the codes of DelegationFileError, plus `too-many`, `no-base` and `unreadable`). */
+export type FileDiff = FileChange & { index: number } & (LineDiff | { error: DelegationFileErrorCode | 'too-many' | 'no-base' | 'unreadable' });
+
+export interface DelegationDiff {
+  repo: string;
+  /** The commit the files are compared against; null without one. */
+  baseCommit: string | null;
+  files: FileDiff[];
+}
+
+/**
+ * The diff of every file of a delegation (D-117): the version in the commit
+ * the changes were listed against, read from git without filters
+ * (`committedFiles`), and the current one in the folder, read with the same
+ * checks as `readDelegationFile`. Both sides must be text without vault
+ * values and within MAX_PREVIEW_BYTES; a file that fails says why and the
+ * others are still shown. Nothing is stored: it is computed on request.
+ */
+export async function readDelegationDiff(sql: Queryable, projects: readonly Project[], id: string): Promise<DelegationDiff> {
+  const row = await loadDelegationRow(sql, id);
+  const root = await approvedRoot(projects, row.repo);
+  // git runs in the folder on request: never while a run may be rewriting its configuration.
+  const [running] = await sql.unsafe<{ id: string }[]>(`SELECT id::text FROM task_delegations WHERE repo = $1 AND status = 'running' LIMIT 1`, [row.repo]);
+  if (running !== undefined) throw new DelegationFileError('busy', `the Coder is working on ${row.repo}: the diff is shown when it ends`);
+  const shown = row.files.slice(0, MAX_DIFF_FILES);
+  // Old versions in one pass: the path before a rename, nothing for an added file.
+  const oldPaths = shown.map((entry) => (entry.change === 'added' ? undefined : (entry.from ?? entry.path)));
+  const wanted = oldPaths.flatMap((path, index) => (path === undefined ? [] : [{ path, index }]));
+  const old = new Map<number, CommittedFile>();
+  let unreadable = false;
+  if (row.baseCommit !== null && wanted.length > 0) {
+    try {
+      const found = await committedFiles(
+        root,
+        row.baseCommit,
+        wanted.map(({ path }) => path),
+        MAX_PREVIEW_BYTES,
+      );
+      wanted.forEach(({ index }, at) => {
+        const file = found[at];
+        if (file !== undefined) old.set(index, file);
+      });
+    } catch {
+      // Not the top of a repository any more, or the commit is gone: said apart from a missing file.
+      unreadable = true;
+    }
+  }
+  let chars = 0;
+  let cells = MAX_DIFF_CELLS;
+  const files: FileDiff[] = [];
+  for (const [index, entry] of row.files.entries()) {
+    const base = { ...entry, index };
+    if (index >= MAX_DIFF_FILES) {
+      files.push({ ...base, error: 'too-many' });
+      continue;
+    }
+    // Past the limit nothing more is read.
+    if (chars >= MAX_DIFF_CHARS) {
+      files.push({ ...base, error: 'too-large' });
+      continue;
+    }
+    try {
+      let before = '';
+      if (entry.change !== 'added') {
+        if (unreadable) {
+          files.push({ ...base, error: 'unreadable' });
+          continue;
+        }
+        const file = old.get(index);
+        // No commit recorded (a delegation from before D-117), or the old version is not in it as a file.
+        if (row.baseCommit === null || file === undefined || file.kind === 'missing') {
+          files.push({ ...base, error: 'no-base' });
+          continue;
+        }
+        if (file.kind === 'too-large') throw new DelegationFileError('too-large', 'the old version is too large');
+        before = shownText(file.bytes);
+      }
+      const after = entry.change === 'deleted' ? '' : (await readProjectText(root, entry.path)).text;
+      // The LCS tables of one request share a budget: past it a file is shown as all removed, then all added.
+      const cost = Math.min(MAX_CELLS, (splitLines(before).length + 1) * (splitLines(after).length + 1));
+      const diff = diffLines(before, after, { maxCells: cells });
+      cells = Math.max(0, cells - cost);
+      const size = diff.hunks.reduce((total, hunk) => total + hunk.lines.reduce((sum, line) => sum + line.text.length + 1, 0), 0);
+      if (chars + size > MAX_DIFF_CHARS) {
+        chars = MAX_DIFF_CHARS;
+        files.push({ ...base, error: 'too-large' });
+        continue;
+      }
+      chars += size;
+      files.push({ ...base, ...diff });
+    } catch (error) {
+      if (!(error instanceof DelegationFileError)) throw error;
+      files.push({ ...base, error: error.code });
+    }
+  }
+  return { repo: row.repo, baseCommit: row.baseCommit, files };
 }

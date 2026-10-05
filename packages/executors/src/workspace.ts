@@ -77,6 +77,11 @@ function gitEnv(): NodeJS.ProcessEnv {
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
+    // No transport at all, whatever `protocol.<name>.allow` the repository's
+    // configuration says (it wins over `protocol.allow`), and no lazy fetch of
+    // a missing object from a promisor remote a run could have added (D-117).
+    GIT_ALLOW_PROTOCOL: '',
+    GIT_NO_LAZY_FETCH: '1',
   };
 }
 
@@ -84,6 +89,12 @@ const GIT_FLAGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false
 
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await run('git', [...GIT_FLAGS, '-C', cwd, ...args], { env: gitEnv(), maxBuffer: 64 * 1024 * 1024 });
+  return stdout;
+}
+
+/** `git` with every pathspec taken as a literal path: no `:(glob)`, wildcards or other magic. */
+async function gitLiteral(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await run('git', [...GIT_FLAGS, '--literal-pathspecs', '-C', cwd, ...args], { env: gitEnv(), maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 }
 
@@ -424,6 +435,73 @@ export async function repositoryChanges(path: string): Promise<FileChange[]> {
   return [...changes.values()].filter((item) => item.path !== '' && !item.path.endsWith('/')).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * The commit HEAD points to, or null in a repository without commits: the
+ * base `repositoryChanges` compares against, saved with the files of a run
+ * so that the chat can show their diff later (D-117).
+ */
+export async function repositoryHead(path: string): Promise<string | null> {
+  await checkedRepository(path);
+  let head: string;
+  try {
+    head = (await git(path, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'])).trim();
+  } catch {
+    return null;
+  }
+  if (!COMMIT.test(head)) throw new WorkspaceError('unexpected answer from git rev-parse');
+  return head;
+}
+
+/** A file as it was in a commit: its raw bytes, or why they are not given. */
+export type CommittedFile = { kind: 'ok'; bytes: Buffer } | { kind: 'missing' } | { kind: 'too-large' };
+
+/** Regular files only: not a link (120000), a submodule (160000) or a tree. */
+const REGULAR_MODES = new Set(['100644', '100755']);
+
+/**
+ * The raw content of `paths` in `commit` (D-117), straight from the object
+ * database: `ls-tree` gives mode, id and size of each path (taken literally,
+ * no pathspec magic), and `cat-file --batch` without `--filters` or
+ * `--textconv` reads the blobs, so no filter or driver of the repository's
+ * configuration runs. Only regular files: a path that is not in the commit,
+ * is a link, a submodule or a folder, or is not a plain tree path is
+ * `missing`; one larger than `maxBytes` is not read.
+ */
+export async function committedFiles(path: string, commit: string, paths: readonly string[], maxBytes: number): Promise<CommittedFile[]> {
+  if (!COMMIT.test(commit)) throw new WorkspaceError('not a commit id');
+  await checkedRepository(path);
+  const results: CommittedFile[] = paths.map(() => ({ kind: 'missing' }));
+  const asked = paths.map((item, index) => ({ item, index })).filter(({ item }) => safeTreePath(item) && !/[\n\r]/.test(item));
+  if (asked.length === 0) return results;
+  const listed = new Map<string, { mode: string; type: string; oid: string; size: string }>();
+  const out = await gitLiteral(path, ['ls-tree', '-r', '-l', '-z', '--full-tree', commit, '--', ...new Set(asked.map(({ item }) => item))]);
+  for (const line of zList(out)) {
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const [mode = '', type = '', oid = '', size = ''] = line.slice(0, tab).split(/ +/);
+    listed.set(line.slice(tab + 1), { mode, type, oid, size });
+  }
+  const wanted: { index: number; oid: string }[] = [];
+  for (const { item, index } of asked) {
+    const entry = listed.get(item);
+    if (entry === undefined || entry.type !== 'blob' || !REGULAR_MODES.has(entry.mode) || !COMMIT.test(entry.oid) || !/^\d+$/.test(entry.size)) continue;
+    if (Number(entry.size) > maxBytes) results[index] = { kind: 'too-large' };
+    else wanted.push({ index, oid: entry.oid });
+  }
+  if (wanted.length === 0) return results;
+  const blobs = await readBlobs(
+    path,
+    wanted.map(({ oid }) => oid),
+  );
+  wanted.forEach(({ index }, at) => {
+    const bytes = blobs[at];
+    if (bytes !== undefined) results[index] = { kind: 'ok', bytes };
+  });
+  return results;
+}
+
 /** Files git reads configuration and attributes from, as a relative list; all `.gitattributes` of the tree included. */
 async function gitConfigFiles(root: string): Promise<string[]> {
   const files = ['.git', '.git/config', '.git/info/attributes', '.git/info/exclude'];
@@ -483,6 +561,35 @@ export async function toolConfigFiles(path: string): Promise<Map<string, string>
   };
   for (const name of TOOL_CONFIG) await visit(name);
   return files;
+}
+
+/**
+ * A fingerprint for each of `paths` in the folder (D-117): sha256 of a
+ * regular file, the target of a link, `missing` or `other`. Taken on the
+ * files the user had already changed before a run, and again after it, to
+ * tell which of them the run changed once more. Read straight from the
+ * folder, never through git; a path out of the folder is `other`.
+ */
+export async function fileFingerprints(path: string, paths: readonly string[]): Promise<Map<string, string>> {
+  const prints = new Map<string, string>();
+  for (const rel of paths) {
+    if (!safeTreePath(rel)) {
+      prints.set(rel, 'other');
+      continue;
+    }
+    const absolute = join(path, ...rel.split('/'));
+    let stats;
+    try {
+      stats = await lstat(absolute);
+    } catch {
+      prints.set(rel, 'missing');
+      continue;
+    }
+    if (stats.isSymbolicLink()) prints.set(rel, `link:${await readlink(absolute)}`);
+    else if (stats.isFile()) prints.set(rel, createHash('sha256').update(await readFile(absolute)).digest('hex'));
+    else prints.set(rel, 'other');
+  }
+  return prints;
 }
 
 /** The paths whose tool configuration differs between two `toolConfigFiles`. */

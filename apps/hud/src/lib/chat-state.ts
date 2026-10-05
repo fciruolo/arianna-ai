@@ -1,4 +1,4 @@
-import type { Activity, Delta, Message, SavedActivity } from './types.ts';
+import type { Activity, Delta, EditPiece, EditTool, LiveEditError, Message, SavedActivity } from './types.ts';
 
 /**
  * The open conversation: stored messages plus the answers being written.
@@ -20,10 +20,84 @@ export interface ChatState {
   streaming: StreamingReply[];
   /** What each task of this conversation did so far, by task id, oldest first. */
   activity: Record<string, Activity[]>;
+  /** The Coder's live changes to files (D-117), by task id, oldest first: in memory only. */
+  edits: Record<string, LiveEdit[]>;
 }
 
 export function emptyChat(conversationId: string): ChatState {
-  return { conversationId, messages: [], streaming: [], activity: {} };
+  return { conversationId, messages: [], streaming: [], activity: {}, edits: {} };
+}
+
+/** A row of a live change: `gap` stands between two hunks or two parts of a change. */
+export interface LiveEditRow {
+  kind: 'context' | 'added' | 'removed' | 'gap';
+  text: string;
+}
+
+/** A change the Coder is making to a file, as its pieces arrive (D-117). */
+export interface LiveEdit {
+  editId: string;
+  step: number;
+  path: string;
+  tool: EditTool;
+  added: number;
+  removed: number;
+  error?: LiveEditError;
+  total: number;
+  /** Pieces arrived so far, by sequence number; emptied once the rows are set. */
+  pieces: Record<number, string>;
+  /** Set once every piece arrived. */
+  rows?: LiveEditRow[];
+}
+
+/** Changes kept per task: older ones scroll away. */
+const MAX_EDITS = 10;
+/** More pieces than the core ever sends for one change (64 KiB of text): a larger total is dropped. */
+const MAX_PIECES = 256;
+
+/** The rows of the lines of a live change, as the core writes them (apps/core/src/live-edit.ts). */
+export function liveEditRows(text: string): LiveEditRow[] {
+  if (text === '') return [];
+  return text.split('\n').map((line): LiveEditRow => {
+    const sign = line.charAt(0);
+    const rest = line.slice(1);
+    if (sign === '+') return { kind: 'added', text: rest };
+    if (sign === '-') return { kind: 'removed', text: rest };
+    if (sign === '@') return { kind: 'gap', text: '' };
+    return { kind: 'context', text: rest };
+  });
+}
+
+/** Adds a piece of a live change of a task in this conversation; the rows appear once every piece is there. */
+export function applyEdit(state: ChatState, piece: EditPiece): ChatState {
+  if (piece.conversationId !== state.conversationId || piece.total > MAX_PIECES) return state;
+  const list = state.edits[piece.taskId] ?? [];
+  const current = list.find((edit) => edit.editId === piece.editId) ?? {
+    editId: piece.editId,
+    step: piece.step,
+    path: piece.path,
+    tool: piece.tool,
+    added: piece.added,
+    removed: piece.removed,
+    ...(piece.error === undefined ? {} : { error: piece.error }),
+    total: piece.total,
+    pieces: {},
+  };
+  if (current.rows !== undefined || piece.total !== current.total || piece.seq in current.pieces) return state;
+  const pieces = { ...current.pieces, [piece.seq]: piece.text };
+  let next: LiveEdit = { ...current, pieces };
+  if (Object.keys(pieces).length === current.total) {
+    const text = Array.from({ length: current.total }, (_, seq) => pieces[seq] ?? '').join('');
+    next = { ...current, pieces: {}, rows: current.error === undefined ? liveEditRows(text) : [] };
+  }
+  const edits = list.some((edit) => edit.editId === piece.editId) ? list.map((edit) => (edit.editId === piece.editId ? next : edit)) : [...list, next];
+  return { ...state, edits: { ...state.edits, [piece.taskId]: edits.slice(-MAX_EDITS) } };
+}
+
+/** The complete live changes the card of a task shows: only while it is queued or running, as its lines. */
+export function liveEdits(state: ChatState, taskId: string, status: string | undefined): LiveEdit[] {
+  if (status !== undefined && status !== 'ready' && status !== 'running') return [];
+  return (state.edits[taskId] ?? []).filter((edit) => edit.rows !== undefined);
 }
 
 /** The detail of the waiting line of a queued task (step 0, never a real step). */

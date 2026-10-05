@@ -59,7 +59,7 @@ const CHUNK = 1_500;
 // fragment: a secret split over several fragments is still found. Longer than
 // any secret the vault is meant for (a PEM key is about 3 KB).
 const STREAMED_TAIL = 16_384;
-const MAX_NOTICE_BYTES = 7_000;
+export const MAX_NOTICE_BYTES = 7_000;
 
 /** The JSON notices for a fragment, each under the pg_notify limit. */
 export function notices(text: string, base: Omit<DeltaNotice, 'seq' | 'text'>, firstSeq: number): string[] {
