@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.8.2] - 2026-10-05
+
+### Corretto
+- Nei tuoi messaggi «Copia» e «Salva in inbox» non spostano più ora, etichetta e stato lontano dalla bolla: stanno a sinistra della riga (idea I-2).
+
 ## [0.8.1] - 2026-10-05
 
 ### Corretto
