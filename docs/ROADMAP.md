@@ -9,7 +9,7 @@ Le ore sono **mie stime, non misurate**: lavoro effettivo di uno sviluppatore es
 | 1B Completamenti | Vault, Telegram, Codex, installer, wizard | 25-39 | Approvazione data da Telegram senza contenuti L2 nel messaggio; installazione pulita in cartella vuota |
 | 2 Memoria e cardwall | Archivio, estrazione, ricerca ibrida, Mem0, cardwall, export/import | 64-96 | Domande su documenti veri (dopo verifica) con fonti corrette; cardwall usato per una settimana; ripristino da `export` provato su cartella nuova |
 | 3 HUD e ufficio pixel | HUD Arianna, ufficio pixel, approvazioni e impostazioni in UI | 43-69 | Vedi agenti al lavoro e approvi azioni dall'HUD |
-| 4 Voce e chiamate | Voce locale, delega, telefonia, chiamate in uscita | 50-90 | Conversazione fluida in italiano; chiamata in uscita con approvazione; nessun L2 letto salvo abilitazione |
+| 4 Voce e chiamate | Voce locale, delega, telefonia, chiamate in uscita | 50-90 | Conversazione fluida in italiano; chiamata in uscita con approvazione; nessun L2 al telefono vero (D-110) |
 | 5 Studio e mentor | Fonti, curriculum, ripasso FSRS, brief giornaliero | 25-45 | Una settimana di brief e ripassi utili |
 | **Totale** | | **285-457** | Con margine 25%: 356-571 |
 

@@ -1072,6 +1072,17 @@ Totale circa 73-111 h. Nessuna dipendenza esterna nuova (solo la dipendenza inte
 7. **Voce: risposte degli specialisti asincrone in chiamata, ciascuno con una voce scelta al provino?** Raccomandazione: sì, dopo B2, nella Fase 4.
 8. **Mac Studio: Max da 128 GB o Ultra (96/256 GB)?** Con il Max lo stesso modello va circa 1,3-1,4 volte più veloce e il guadagno è soprattutto la memoria; nel frattempo si fa la tappa E sul 32 GB.
 
+### Risposte dell'utente (2026-10-05, mattina, in conversazione)
+
+1. **Toni e testo libero più ampi:** testo libero fino a **500 caratteri** (circa 4 s in più a passo sull'M1 Max, da misurare: la pagina lo dirà) e **almeno 5 toni**; Claude propone serio, asciutto, equilibrato, caloroso, scherzoso. **Lo scherzoso non ha tabù** (parole dell'utente: "il tono scherzoso si può avere su qualsiasi argomento, non ti sono tabù"): la frase fissa perde "never about failures, approvals, money or private matters" (approvazioni e avvisi restano testi del codice, non del modello). **Specializzazioni** (ruolo, competenze, standard, "sei uno sviluppatore senior..."): l'utente chiedeva dove vanno; spiegati i tre strati (scheda = chi è e cosa sa fare, skill = procedure caricate quando servono, personalità = stile). Scelta dell'utente: **ruolo e competenze interamente modificabili da Impostazioni**; permessi, strumenti, etichette e limiti restano solo in `agents/*.yaml`. Il testo di specializzazione è testo dell'utente come la personalità (vedi 3), con lo stesso tetto da decidere e il costo in secondi mostrato nella pagina; il prompt di base della scheda in `agents/<nome>.md` resta come ripiego quando il campo è vuoto.
+2. **Nome visualizzato modificabile, ma non per Arianna:** gli altri agenti si possono rinominare (id interno invariato, avvisi esterni con il nome fisso), Arianna resta "Arianna".
+3. **Tutto L1 per dichiarazione dell'utente** (parole dell'utente: "di queste cose tutto può andare nel cloud... andiamo a scrivere cose sicure... tipo che è specializzato in X Y"): personalità, nome e specializzazione sono L1 per tutti gli agenti, dichiarazione dell'utente del 2026-10-05 da scrivere in `PRIVACY-POLICY-SPEC.md` ("Da dove vengono le etichette"); sotto i campi l'avviso fisso "Questo testo va anche a Claude e Codex: non scriverci dati personali"; scanner e valori del vault al salvataggio. Cambia la tappa A1 già fatta (`b32c8f2`, etichetta L2 predefinita): da riallineare.
+4. **Già decisa con D-111 (domanda 2):** ogni aggiunta di un agente chiede l'approvazione dell'utente, anche quando la propone Arianna; in privata solo agenti compatibili.
+5. **Sì:** 6 interventi per messaggio, al massimo 2 dello stesso agente, "Basta così" e `/basta`.
+6. **Saluto generato** dal modello (costa un passo), non la frase fissa della scheda.
+7. **Sì, nella Fase 4:** interventi asincroni in chiamata, una voce per agente.
+8. **Mac Studio M5 Max** (CPU 18 core, GPU 40 core), **128 GB** di RAM, SSD da 1 TB: "spero di prendere" (acquisto non ancora fatto).
+
 ### Cose non verificate
 
 - Costo per passo del blocco col 27B e col 9B (stima circa 2 s sull'M1 Max per 130-140 token).
@@ -1700,6 +1711,24 @@ Stime grezze (±50%).
 14. **Approvi una nuova eccezione accanto a D-044: sui canali cloud una frase fissa con soli numeri contati dal codice senza modello (todo, attese, fatti, falliti, in corso, pensieri) esce come L1?** Raccomandazione: sì, con i test in `packages/policy`; si contano solo righe fino a L2 (carte L3 e attese sopra L2 escluse); niente email, né il conteggio delle importanti né "novità nella posta", che restano su voice e web.
 15. **Vuoi anche le ricorrenze che creano carte (per esempio "ogni lunedì: pagare l'affitto"), la tappa D?** Raccomandazione: dopo il cardwall della Fase 2, con la stessa tabella.
 
+### Risposte dell'utente (2026-10-05, mattina, in conversazione)
+
+1. **Aspettare:** nessun anticipo, le routine arrivano nelle loro fasi.
+2. **Entrambe, prima la pagina "Routine"**, poi la creazione a parole con approvazione.
+3. **Una conversazione privata per routine**, e in più le chat routine **riconoscibili nella barra sinistra**: una sezione tutta loro, o almeno un indicatore (l'utente propone una "R").
+4. **Prima i numeri**, poi "Vuoi i dettagli?" (chiamata via internet, locale).
+5. **Telefono vero: solo numeri** ("in questo momento al telefono vero usiamo solo i numeri"): vale la regola 10, **la regola 7 di `PRIVACY-POLICY-SPEC.md` va riscritta** di conseguenza (contraddizione da chiudere per D-013). L'utente aveva proposto "anche cose personali purché passino obbligatoriamente dal modello locale": spiegato che chi scrive la frase non cambia dove finisce l'audio (rete dell'operatore). L'utente ha chiesto se Telegram è cifrato: spiegato che le chat dei bot non sono cifrate end-to-end e i bot non telefonano. **Resta la chiamata via VPN** per rispondere da fuori casa (Tailscale sul Mac e sull'iPhone, task 1.13), dove anche L2 è ammesso.
+6. **Nessun richiamo di default, attivabile per routine** (uno dopo 15 minuti, fuori dal silenzio).
+7. **Recupero entro 2 ore anche con la chiamata** (fuori dalle fasce di silenzio), **con Arianna che si scusa del ritardo** (parole dell'utente: "scusandosi che ha fatto tardi"); oltre le 2 ore la riga "persa". Modello non pronto: resoconto fisso subito, sintesi entro 20 minuti.
+8. **IMAP nel core**, password per app nel vault (dipendenza da registrare quando si arriva alla tappa).
+9. **Gmail** (password per app con verifica in due passaggi).
+10. **Regole più modello:** mittenti sempre/mai importanti in `arianna.toml`, il resto dal modello locale con motivo da elenco chiuso.
+11. **Sì, il calendario dopo le email** (Google Calendar, sola lettura).
+12. **Telegram si toglie per ora** (parole dell'utente: "se possiamo fare chat, chiamate e tutto tramite vpn, togliamolo al momento. Però voglio un utilizzo stile app... notifica della chiamata, notifica chat ecc."). Dal telefono tutto passa dalla chat web via VPN, installata come app nella schermata Home (PWA), con **notifiche di chiamata e di chat** (Web Push con testi fissi senza contenuto; su iPhone solo dalla schermata Home, via il servizio di Apple). Il codice di Telegram resta spento. Effetti da portare nei documenti: SPEC, ROADMAP e PRIVACY-POLICY-SPEC (Telegram non più canale attivo), notifica di chat nuova accanto a quella delle chiamate (D-066).
+13. **Come una chiamata programmata:** salta silenzio e fine settimana, conta nel massimo di 3, giorni scelti nella routine.
+14. **Sì, l'eccezione** accanto a D-044: frase fissa di soli numeri scritta dal codice come L1, con test in `packages/policy`; L3 escluse dal conteggio, email escluse.
+15. **Sì, le ricorrenze che creano carte, dopo il cardwall** (Fase 2).
+
 ### Cose non verificate (D-110)
 
 - **Libreria IMAP:** nome, versione, licenza e dipendenze non controllati (niente rete). Lo stesso vale per `mbsync`.
@@ -1826,6 +1855,21 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 10. **In "+ Nuovo" si sceglie prima con chi parli (Arianna, Modello locale, Claude, ChatGPT) e da questo discendono privata o lavoro?** Raccomandazione: sì; solo con Arianna resta la scelta fra privata e lavoro, con gli interlocutori cloud la conversazione è sempre di lavoro.
 11. **Il modello locale usa lo stesso modello dell'orchestratore, per non caricarne un secondo sul Mac da 32 GB?** Raccomandazione: sì finché c'è il Mac da 32 GB; con il Mac Studio nuovo un modello a scelta fra quelli del catalogo.
 12. **Quale costruire per primo fra Coder diretto (tappe 1-3) e "Con chi parli" (tappa 6)?** Raccomandazione: prima il Coder diretto, che porta la parte difficile (sessione ripresa, consenso sulla cartella); poi le altre carte riusano la stessa colonna `agent`.
+
+### Risposte dell'utente (2026-10-05, mattina, in conversazione)
+
+1. **Sì:** chat diretta con Claude (con o senza progetto) solo in conversazioni di lavoro, con avviso e segno "va a Claude"; mai in privata.
+2. **L'agente iniziale si sceglie alla creazione e non si sostituisce, ma gli agenti possono aggiungerne altri** (parole dell'utente: "parliamo con il coder per fargli sviluppare un html e poi chiediamo modifiche grafiche... quindi lui inserisce nella chat il designer"). Regola scelta dall'utente: **ospiti con la sua approvazione** (ogni aggiunta chiede un clic), solo se compatibili con il tipo di chat (in una privata solo agenti locali), con una riga visibile in chat ("Il Coder ha aggiunto il Designer"); l'ospite cloud riceve la storia dal gateway. È la chat multi-agente di D-107 estesa alle chat dirette.
+3. **Sì, sessione ripresa con `--resume`** e ripiego sugli ultimi messaggi, **con attenzione al consumo di token**: l'utente chiede "dati di contesto nella chat". Interpretazione di Claude, da confermare alla prima schermata: un indicatore nella chat con i token della sessione, la parte della finestra di contesto occupata e il consumo di ogni risposta (la riga dei crediti di D-082 c'è già per risposta).
+4. **Come oggi:** Sonnet predefinito, Opus selezionabile, Fable con approvazione di budget a ogni messaggio.
+5. **Sì:** conferma "Va davvero a Claude?" oltre 4000 caratteri.
+6. **Stessa scheda `coder`** più la frase fissa del modo diretto.
+7. **Dopo la prova dal vivo di D-058**, poi tappe 1-3 come anticipo.
+8. **Codex alla pari di Claude** (parole dell'utente: "codex è già installato sul pc ed è operativo. Deve funzionare come claude. ovvero che posso assegnare i suoi modelli ai vari agenti e quant'altro"): i modelli di Codex si assegnano agli agenti come quelli di Claude, e c'è la chat diretta con o senza progetto. Prerequisito: l'adattatore del task 1.16 (oggi il binario c'è ed è in `[cloud] executors`, ma il core non lo lancia ancora con il profilo di confinamento).
+9. **Permesso `workspace` per conversazione**, che copre i file cambiati dal Coder in quella chat.
+10. **Le quattro carte sono rifiutate.** Scelta dell'utente: in "+ Nuovo" **prima Privata o Lavoro, sotto l'elenco degli agenti con Arianna predefinita**; aprendo la conversazione **dall'ufficio con un agente** si apre una chat con lui, che chiede prima se privata o di lavoro. Conseguenza (detta all'utente): in una privata gli agenti cloud (Claude, Codex, Coder) compaiono disattivati con il motivo; dall'ufficio, per un agente cloud, la scelta "privata" è disattivata.
+11. **Stesso modello dell'orchestratore** per la chat con il modello locale finché c'è il Mac da 32 GB.
+12. **Ordine: A, B, C, D.** (A) Coder diretto (sessione ripresa, indicatore del contesto, permesso per conversazione), dopo la prova di D-058; (B) "+ Nuovo" con privata/lavoro e scelta dell'agente, chat dall'ufficio, modello locale e Claude senza progetto; (C) Codex alla pari di Claude, a partire dall'adattatore del 1.16; (D) ospiti aggiunti da un agente con approvazione (D-107).
 
 ### Cose non verificate (D-111)
 

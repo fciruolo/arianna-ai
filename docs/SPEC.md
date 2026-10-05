@@ -329,7 +329,7 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 
 **Chiamate in uscita e in entrata.** Servono un numero e un collegamento SIP forniti da un operatore, quindi l'audio della telefonata passa dalla rete telefonica anche se riconoscimento e sintesi restano in casa. Per questo, sul canale telefonico:
 
-- Arianna non legge ad alta voce dati L2 (importi, IBAN, dati dei familiari) a meno che tu non lo abbia attivato esplicitamente per quella chiamata;
+- Arianna non legge ad alta voce dati L2 (importi, IBAN, dati dei familiari): al telefono vero solo numeri e un rimando alla chat (regola 10 della policy; scelta del 2026-10-05, D-110). I dettagli passano dalla chiamata via internet, dal browser o dal telefono attraverso la VPN, che resta locale;
 - le approvazioni importanti richiedono un codice detto a voce o una conferma sulla chat, non un semplice "sì";
 - risponde solo al tuo numero, verificato, e ignora tutti gli altri.
 
