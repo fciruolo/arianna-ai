@@ -2482,6 +2482,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-3 | Una pagina "Modelli" sola, locali e cloud, con le schede | funzione | 28-41 h (tappe M1-M6) | task 1.16 per M6 | proposta `docs/I-3-modelli.md` (ramo `task/i3-modelli-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |
 | I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
+| I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | da progettare (richiesta dell'utente del 2026-10-05 sera) |
 
 ### I-1, notifiche delle risposte
 
@@ -2506,6 +2507,10 @@ L'utente vuole capire prima di tutto **se è possibile e se conviene** sviluppar
 ### I-6, chat dal registro delle versioni
 
 Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre una chat con il contesto caricato: testo della voce, decisione D-NNN, commit e file toccati (L0/L1, è codice di Arianna). Dipende da I-5.
+
+### I-7, salvare l'intera conversazione nella conoscenza
+
+Richiesta dell'utente (2026-10-05, sera): "un pulsante che permetta di salvare l'intera conversazione (ovviamente con il riassunto, contesto ecc come succede per il singolo messaggio) nella conoscenza (Salva in inbox)". Da progettare partendo da "Salva in inbox" del messaggio e dai riassunti a pezzi delle conversazioni (`conversation_summaries`): una nota in `kb/inbox/` con titolo, riassunto, contesto e testo; etichetta = la più alta dei messaggi salvati (una conversazione privata resta L2); da decidere dove sta il pulsante, se salva tutto o un intervallo, come tratta righe di sistema e rapporti degli agenti, e cosa succede a un secondo salvataggio della stessa conversazione.
 
 ### Risposte dell'utente sulle idee (2026-10-05, sera)
 
