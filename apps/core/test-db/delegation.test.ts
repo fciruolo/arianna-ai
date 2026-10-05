@@ -1088,3 +1088,22 @@ test('a delegation above L1: no preview, and its credit shows neither project no
     assert.equal(rows.some((item) => item.id === delegation.id), false);
   });
 });
+
+test('a second delegation of the same task runs again: the report of the first is never its result', async () => {
+  // The loop seen on 2026-10-05: every later delegation closed at once with the first report.
+  const { task } = await ask('work', 'Due giri di modifiche.', 'site');
+  const model = scripted([DELEGATE, { ...DELEGATE, arguments: { agent: 'coder', brief: 'Now add a second line.' } }, REPLY]);
+  assert.deepEqual(await drain(task.id, orchestrator({ model })), ['continued', 'continued', 'continued', 'continued', 'answered']);
+  const delegations = await loadDelegations(db().sql, task.id);
+  assert.deepEqual(
+    delegations.map((delegation) => [delegation.status, delegation.executor]),
+    [
+      ['ok', 'claude'],
+      ['ok', 'claude'],
+    ],
+  );
+  assert.notEqual(delegations[0]?.messageId, delegations[1]?.messageId);
+  const reports = await db().sql`SELECT 1 FROM messages WHERE task_id = ${task.id} AND agent = 'coder'`;
+  assert.equal(reports.length, 2);
+  assert.match(received().prompt, /Now add a second line\.$/);
+});

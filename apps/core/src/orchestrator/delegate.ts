@@ -283,9 +283,15 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   }
 
   // A crash after the report was stored, before the delegation was closed: the
-  // run is not launched again, the stored report is the result.
+  // run is not launched again, the stored report is the result. Only a report
+  // written after this delegation and taken by no other one: the report of an
+  // earlier delegation of the same task is never this one's.
   const [stored] = await sql<Pick<Message, 'id' | 'body' | 'label'>[]>`
-    SELECT id::text, body, label FROM messages WHERE task_id = ${task.id} AND agent = ${delegation.agent} ORDER BY id DESC LIMIT 1`;
+    SELECT m.id::text, m.body, m.label FROM messages m
+    WHERE m.task_id = ${task.id} AND m.agent = ${delegation.agent}
+      AND m.ts >= (SELECT created_at FROM task_delegations WHERE id = ${delegation.id})
+      AND NOT EXISTS (SELECT FROM task_delegations d WHERE d.task_id = ${task.id} AND d.message_id = m.id)
+    ORDER BY m.id DESC LIMIT 1`;
   if (stored !== undefined) {
     await updateDelegation(sql, delegation.id, { status: 'ok', result: stored.body, resultLabel: stored.label, messageId: stored.id });
     return { kind: 'continue', usage: { steps: 1 } };
