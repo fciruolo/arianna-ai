@@ -21,6 +21,7 @@ import {
   settingsFingerprint,
   type Settings,
 } from '@arianna/config';
+import { Secret } from '@arianna/vault';
 
 import { changedSections, createSettingsPage, SettingsError, type SettingsChange, type SettingsPage } from '../src/settings-page.ts';
 
@@ -230,6 +231,61 @@ describe('update (ordinary)', () => {
   it('refuses an empty change or unknown fields', () => {
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: {} }), refused('invalid', /nothing/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { roles: {} }, extra: 1 }), refused('invalid', /extra/));
+  });
+});
+
+describe('personas (D-107)', () => {
+  const coder = { tone: 'asciutto', address: 'lei', displayName: 'Dario', traits: 'Preciso e calmo.', specialization: 'Sviluppatore senior TypeScript.' };
+
+  it('are an ordinary section: written at once, read back, the event names the section only', () => {
+    const view = page.update({ fingerprint: fingerprint(), values: { personas: { arianna: { tone: 'caloroso', address: 'tu' }, coder } } });
+    assert.deepEqual(view.values?.personas, { arianna: { tone: 'caloroso', address: 'tu' }, coder });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).personas.coder, coder);
+    assert.deepEqual(changes, [{ sections: ['personas'], privacy: false }]);
+  });
+
+  it('null or empty texts are none; an empty table takes the section away', () => {
+    page.update({ fingerprint: fingerprint(), values: { personas: { coder: { tone: 'serio', address: 'tu', displayName: null, traits: '', specialization: null } } } });
+    assert.deepEqual(page.read().values?.personas, { coder: { tone: 'serio', address: 'tu' } });
+    page.update({ fingerprint: fingerprint(), values: { personas: {} } });
+    assert.deepEqual(page.read().values?.personas, {});
+    assert.equal(text(), renderSettings(START));
+  });
+
+  it("refuses what the persona refuses, and Arianna's display name, writing nothing", () => {
+    const cases: unknown[] = [
+      { arianna: { tone: 'sarcastico', address: 'tu' } },
+      { coder: { tone: 'serio', address: 'tu', traits: 'a'.repeat(501) } },
+      { coder: { tone: 'serio', address: 'tu', specialization: 'a'.repeat(501) } },
+      { coder: { tone: 'serio', address: 'tu', label: 'L1' } },
+      { coder: { tone: 'serio', address: 'tu', traits: 7 } },
+      { arianna: { tone: 'serio', address: 'tu', displayName: 'Ari' } },
+      { 'a = "x"\n[cloud]': { tone: 'serio', address: 'tu' } },
+      JSON.parse('{ "__proto__": { "tone": "serio", "address": "tu" } }'),
+    ];
+    for (const personas of cases) assert.throws(() => page.update({ fingerprint: fingerprint(), values: { personas } }), refused('invalid'), JSON.stringify(personas));
+    // Never together with a privacy section.
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { personas: { coder }, executors: ['claude', 'codex'] } }), refused('invalid', /unknown field/));
+    assert.equal(text(), renderSettings(START));
+    assert.deepEqual(changes, []);
+  });
+
+  it('refuses a text the scanner flags or that holds a value of the vault, naming the field and never the text', () => {
+    const iban = 'IT60X0542811101000000123456';
+    const value = new Secret('vault://persona-test', `segreto-${randomUUID()}`).reveal();
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ traits: `Paga sempre su ${iban}.` }, /personas\.coder\.traits .*iban/],
+      [{ specialization: `Usa la chiave ${value} per tutto.` }, /personas\.coder\.specialization holds a value of the vault/],
+      [{ displayName: 'Dario', traits: `token ghp_${'a'.repeat(36)}` }, /personas\.coder\.traits .*token/],
+      [{ displayName: value }, /personas\.coder\.displayName holds a value of the vault/],
+    ];
+    for (const [fields, pattern] of cases) {
+      assert.throws(
+        () => page.update({ fingerprint: fingerprint(), values: { personas: { coder: { tone: 'serio', address: 'tu', ...fields } } } }),
+        (error: unknown) => refused('invalid', pattern)(error) && !(error as Error).message.includes(iban) && !(error as Error).message.includes(value),
+      );
+    }
+    assert.equal(text(), renderSettings(START));
   });
 });
 

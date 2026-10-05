@@ -5,6 +5,7 @@
  * card at a time; privacy ones are prepared, shown, then confirmed.
  */
 import { EXECUTOR_TEXT } from './labels.ts';
+import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
 
 export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
@@ -37,6 +38,8 @@ export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: { models: Record<CloudModelAlias, boolean | string>; default: CloudModelAlias | null };
   characters: Record<string, string>;
+  /** Agent → persona (D-107); an agent without one has the defaults. */
+  personas: Record<string, PersonaValues>;
   voice: VoiceValues | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -98,7 +101,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas';
 export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints';
 export type Section = OrdinarySection | PrivacySection;
 
@@ -125,6 +128,7 @@ export const SECTION_TEXT: Record<string, string> = {
   roles: 'Modelli locali',
   cloudModels: 'Modelli cloud',
   characters: 'Personaggi',
+  personas: 'Personalità',
   voice: 'Voce',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
@@ -392,6 +396,8 @@ export function writeError(status: number, message: string): { text: string; rel
 
 /** A card is changed when what it would send differs; executors and chats are sets, their order is not a change. */
 export function sectionChanged(section: Section, form: unknown, base: unknown): boolean {
+  // An agent added with the defaults is no change: compared as sent.
+  if (section === 'personas') return !sameValue(personasBody(form as Record<string, PersonaForm>), personasBody(base as Record<string, PersonaForm>));
   if (section === 'executors') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
   if (section === 'telegram') {
     const sorted = (value: TelegramForm): TelegramForm => ({ enabled: value.enabled, chats: [...value.chats].sort((a, b) => a - b) });

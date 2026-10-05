@@ -16,6 +16,25 @@ import {
   type TrialModel,
 } from '../lib/api.ts';
 import { MODE_BADGE, MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
+import {
+  ADDRESSES,
+  characters as countCharacters,
+  costText,
+  DEFAULT_PERSONA_FORM,
+  FIXED_NAMES,
+  MAX_DISPLAY_NAME,
+  MAX_TEXT,
+  PERSONA_NOTICE,
+  PERSONA_WHERE,
+  personaCost,
+  personasBody,
+  personasForm,
+  personasProblem,
+  TONE_EXAMPLE,
+  TONE_TEXT,
+  TONES,
+  type PersonaForm,
+} from '../lib/persona.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import { SETTINGS_PATH } from '../lib/route.ts';
@@ -89,6 +108,7 @@ interface Forms {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: CloudModelsForm;
   characters: Record<string, string>;
+  personas: Record<string, PersonaForm>;
   voice: VoiceForm;
   executors: string[];
   telegram: TelegramForm;
@@ -101,6 +121,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues): Forms {
     roles: { ...values.roles },
     cloudModels: cloudModelsForm(values.cloudModels),
     characters: { ...values.characters },
+    personas: personasForm(values.personas),
     voice: voiceForm(values.voice, defaults),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
@@ -109,7 +130,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues): Forms {
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'cloudModels', 'characters', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'cloudModels', 'characters', 'personas', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -207,6 +228,7 @@ async function save(section: OrdinarySection): Promise<void> {
   if (section === 'cloudModels') values.cloudModels = cloudModelsBody(current.cloudModels);
   if (section === 'characters') values.characters = charactersBody(current.characters);
   if (section === 'voice') values.voice = voiceBody(current.voice);
+  if (section === 'personas') values.personas = personasBody(current.personas);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -361,6 +383,25 @@ function previewOf(agent: string): CharacterChoice | undefined {
   if (option !== undefined) return { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
   return value === '' ? characters.value?.agents[agent] : undefined;
 }
+
+// Personas (D-107): one form per agent; an agent without a persona gets the
+// defaults here, which are no change (compared as sent).
+watch(
+  // `forms` is replaced by a new view, its `personas` by a reset of the card.
+  [agentIds, forms, () => forms.value?.personas],
+  () => {
+    const personas = forms.value?.personas;
+    if (personas === undefined) return;
+    for (const agent of agentIds.value) if (!Object.hasOwn(personas, agent)) personas[agent] = { ...DEFAULT_PERSONA_FORM };
+  },
+  { immediate: true },
+);
+// Also an agent the file names but the characters do not: its card stays reachable.
+const personaAgents = computed(() => {
+  const named = Object.keys(forms.value?.personas ?? {}).filter((agent) => !agentIds.value.includes(agent));
+  return [...agentIds.value, ...named.sort()].filter((agent) => forms.value?.personas[agent] !== undefined);
+});
+const personasInvalid = computed(() => (forms.value === null ? undefined : personasProblem(forms.value.personas, agentName)));
 
 // Telegram chats and projects: added from a small row of fields.
 const newChat = ref('');
@@ -731,6 +772,65 @@ watch(active, () => {
                 </div>
               </div>
               <p class="text-xs text-muted">Un pacchetto nuovo si copia in <code class="font-mono">data/characters</code>, fuori da git; poi ricarica questa pagina.</p>
+            </SettingsCard>
+
+            <!-- Personas -->
+            <SettingsCard v-if="active === 'personas'" id="personas" title="Personalità" kind="now" :changed="changed('personas')" :saved="saved === 'personas'" :invalid="personasInvalid" :busy="busy === 'personas'" :error="errors.personas" @cancel="reset('personas')" @save="save('personas')">
+              <p class="text-xs text-muted">
+                Stile e ruolo di ogni agente. Strumenti, permessi, etichette e limiti non cambiano: restano nelle schede <code class="font-mono">agents/*.yaml</code>.
+              </p>
+              <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
+                <h3 class="hud-title">{{ agentName(agent) }}</h3>
+                <template v-if="forms.personas[agent]">
+                  <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
+                    <label class="flex flex-col gap-1 text-xs text-muted">
+                      Tono
+                      <select v-model="forms.personas[agent].tone" class="field px-2 py-1.5 text-[13px] text-ink">
+                        <option v-for="tone in TONES" :key="tone" :value="tone">{{ TONE_TEXT[tone] }}</option>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs text-muted">
+                      Ti dà del
+                      <select v-model="forms.personas[agent].address" class="field px-2 py-1.5 text-[13px] text-ink">
+                        <option v-for="address in ADDRESSES" :key="address" :value="address">{{ address }}</option>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs text-muted">
+                      Nome visualizzato
+                      <input
+                        v-model="forms.personas[agent].displayName"
+                        :maxlength="MAX_DISPLAY_NAME"
+                        :disabled="FIXED_NAMES.includes(agent)"
+                        :placeholder="FIXED_NAMES.includes(agent) ? 'non si cambia' : agentName(agent)"
+                        class="field px-2 py-1.5 text-[13px] text-ink disabled:opacity-60"
+                      />
+                    </label>
+                  </div>
+                  <p class="text-xs text-muted">Esempio: <span class="italic text-ink">«{{ TONE_EXAMPLE[forms.personas[agent].tone] }}»</span></p>
+                  <label class="flex flex-col gap-1 text-xs text-muted">
+                    <span class="flex justify-between gap-2"
+                      >Specializzazione: ruolo e competenze<span class="font-mono" :class="countCharacters(forms.personas[agent].specialization) > MAX_TEXT ? 'text-danger' : ''"
+                        >{{ countCharacters(forms.personas[agent].specialization) }}/{{ MAX_TEXT }}</span
+                      ></span
+                    >
+                    <textarea v-model="forms.personas[agent].specialization" rows="3" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Es. sviluppatore senior TypeScript, attento ai test e alla leggibilità." />
+                  </label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">
+                    <span class="flex justify-between gap-2"
+                      >Personalità: come parla<span class="font-mono" :class="countCharacters(forms.personas[agent].traits) > MAX_TEXT ? 'text-danger' : ''"
+                        >{{ countCharacters(forms.personas[agent].traits) }}/{{ MAX_TEXT }}</span
+                      ></span
+                    >
+                    <textarea v-model="forms.personas[agent].traits" rows="3" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Es. precisa e calma, con un debole per le metafore di cucina." />
+                  </label>
+                  <p class="flex items-start gap-2 text-xs text-warn"><Icon name="gateway" :size="14" class="mt-px" />{{ PERSONA_NOTICE }}</p>
+                  <p class="text-xs text-muted">{{ costText(personaCost(forms.personas[agent])) }}</p>
+                </template>
+              </div>
+              <p class="text-xs text-muted">
+                {{ PERSONA_WHERE }} La specializzazione si aggiunge al ruolo scritto nella scheda dell’agente, non lo sostituisce. Al salvataggio un testo con IBAN, codici fiscali,
+                carte, chiavi o valori del vault viene rifiutato.
+              </p>
             </SettingsCard>
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">

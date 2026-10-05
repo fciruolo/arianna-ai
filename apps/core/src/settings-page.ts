@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
+import { parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
@@ -30,6 +31,8 @@ import {
   type Settings,
   type VoiceConfig,
 } from '@arianna/config';
+import { scanText } from '@arianna/policy';
+import { knownSecrets } from '@arianna/vault';
 
 /**
  * The settings page of the web chat (D-071): reads arianna.toml with its
@@ -38,7 +41,9 @@ import {
  * file within a second (`watchConfig`), as after a change by hand.
  *
  * Two kinds of change. The ordinary ones (models by role, cloud models,
- * characters, `[voice]`) are written at once. The privacy ones (cloud
+ * characters, `[voice]`, personas) are written at once. The text of a
+ * persona is L1 by the user's declaration (D-107): it is saved only when the
+ * scanner finds nothing in it and it holds no value of the vault. The privacy ones (cloud
  * executors, Telegram, projects, local servers) take two steps: `prepare`
  * returns what changes and what may leave, with a confirmation id bound to
  * that exact file text; only `confirm` with that id, within a few minutes and
@@ -49,7 +54,7 @@ import {
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -83,6 +88,8 @@ export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: { models: Record<CloudModel, CloudModelValue>; default: CloudModel | null };
   characters: Record<string, string>;
+  /** Agent → persona (D-107), as `[personas]` holds it; an agent without one has the defaults. */
+  personas: Record<string, Persona>;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -172,7 +179,7 @@ export interface SettingsPageOptions {
 
 export interface SettingsPage {
   read(): SettingsView;
-  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice? } }`. */
+  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas? } }`. */
   update(body: Record<string, unknown>): SettingsView;
   /** `{ fingerprint, values: { executors?, telegram?, projects?, endpoints? } }`. */
   prepare(body: Record<string, unknown>): PrivacyProposal;
@@ -292,6 +299,53 @@ function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceC
   return next;
 }
 
+const PERSONA_FIELDS = ['tone', 'address', 'displayName', 'traits', 'specialization'] as const;
+const PERSONA_TEXTS = [
+  ['displayName', 'display_name'],
+  ['traits', 'traits'],
+  ['specialization', 'specialization'],
+] as const;
+
+/**
+ * `[personas]` from the page: agent → `{ tone, address, displayName?, traits?,
+ * specialization? }` (null or empty is none), checked by `parsePersona` as the
+ * file is. The user's text is L1 by declaration and reaches the cloud: a
+ * finding of the scanner or a value of the vault refuses it, naming the field
+ * and the kind, never the text.
+ */
+function personasFromBody(value: unknown): NonNullable<Settings['personas']> {
+  const table = record(value, 'personas');
+  const personas: NonNullable<Settings['personas']> = {};
+  for (const [agent, item] of Object.entries(table)) {
+    // AGENT_KEY already refuses `__proto__`; the key is text from the page, never repeated.
+    if (!AGENT_KEY.test(agent)) invalid('personas: an agent id is lowercase letters, digits, - and _');
+    const where = `personas.${agent}`;
+    const given = record(item, where);
+    only(given, PERSONA_FIELDS, where);
+    const raw: Record<string, unknown> = {};
+    if (given.tone !== undefined) raw.tone = given.tone;
+    if (given.address !== undefined) raw.address = given.address;
+    for (const [field, key] of PERSONA_TEXTS) {
+      const text = given[field];
+      if (text === undefined || text === null || text === '') continue;
+      if (typeof text === 'string') {
+        const kinds = [...new Set(scanText(text).map((finding) => finding.kind))];
+        if (kinds.length > 0) invalid(`${where}.${field} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
+        if (knownSecrets.find(text).length > 0) invalid(`${where}.${field} holds a value of the vault: not saved`);
+      }
+      raw[key] = text;
+    }
+    try {
+      personas[agent] = parsePersona(raw, where);
+    } catch (error) {
+      // The message names the field, never the text.
+      if (error instanceof PersonaError) invalid(error.message);
+      throw error;
+    }
+  }
+  return personas;
+}
+
 function executorsFromBody(value: unknown): Settings['cloud']['executors'] {
   const executors = strings(value, 'executors');
   for (const executor of executors) {
@@ -358,6 +412,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     roles: { ...settings.roles },
     cloudModels: cloudModelsOf(settings.cloud),
     characters: { ...settings.characters },
+    personas: structuredClone(settings.personas ?? {}),
     voice: voiceOf(settings.voice),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
@@ -377,6 +432,7 @@ function sectionOf(settings: Settings, section: Section): unknown {
     case 'server':
     case 'roles':
     case 'characters':
+    case 'personas':
     case 'voice':
     case 'telegram':
     case 'projects':
@@ -574,6 +630,11 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       if (given.roles !== undefined) next.roles = rolesFromBody(given.roles);
       if (given.cloudModels !== undefined) next.cloud = cloudModelsFromBody(given.cloudModels, settings.cloud);
       if (given.characters !== undefined) next.characters = stringRecord(given.characters, 'characters', AGENT_KEY);
+      if (given.personas !== undefined) {
+        const personas = personasFromBody(given.personas);
+        if (Object.keys(personas).length === 0) delete next.personas;
+        else next.personas = personas;
+      }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);
         if (voice === undefined) delete next.voice;
