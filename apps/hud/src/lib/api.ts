@@ -172,9 +172,41 @@ export async function loadCharacters(): Promise<CharacterListing> {
   return call<CharacterListing>('GET', '/api/characters');
 }
 
-/** Where the sheet of a character is served. */
-export function sheetUrl(choice: CharacterChoice): string {
-  return `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;
+/** Where the sheet of a character is served; `version` changes the address after a replacement (D-118). */
+export function sheetUrl(choice: CharacterChoice, version = 0): string {
+  const path = `/api/characters/${encodeURIComponent(choice.pack)}/${encodeURIComponent(choice.character)}`;
+  return version === 0 ? path : `${path}?v=${String(version)}`;
+}
+
+/** A sheet saved by the core in the pack `miei` (D-118). */
+export interface UploadedCharacter {
+  pack: string;
+  character: string;
+  name: string;
+  rows: 3 | 4;
+  replaced: boolean;
+}
+
+/**
+ * Uploads a sheet (`png` in base64) under `name`. A character of the same
+ * name is not replaced unless `replace`: the core answers with the one it
+ * has, and the page asks the user.
+ */
+export async function uploadCharacter(
+  name: string,
+  png: string,
+  replace = false,
+): Promise<{ saved: UploadedCharacter } | { existing: { id: string; name: string } }> {
+  const response = await fetch('/api/characters/upload', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(replace ? { name, png, replace } : { name, png }),
+  });
+  const data = (await response.json().catch(() => ({}))) as { character?: UploadedCharacter; existing?: { id: string; name: string }; error?: unknown };
+  if (response.status === 409 && data.existing !== undefined) return { existing: data.existing };
+  if (!response.ok || data.character === undefined) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  return { saved: data.character };
 }
 
 /** The trials of catalog models, newest first (D-081). */

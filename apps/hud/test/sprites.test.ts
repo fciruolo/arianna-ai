@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { conversationState, frameAt, poseFrames, poseOf, type Pose } from '../src/lib/sprites.ts';
+import { characterId, characterNameValid, conversationState, frameAt, poseFrames, poseOf, sheetAnimations, sheetRowsOf, type Pose } from '../src/lib/sprites.ts';
 import type { Activity, ActivityKind, Approval, Task, TaskStatus } from '../src/lib/types.ts';
 
 const POSES: Pose[] = ['idle', 'thinking', 'working', 'reading', 'waiting', 'paused'];
@@ -76,4 +76,31 @@ test('conversationState: "waiting" only with a real approval or question in this
   assert.equal(conversationState([settled], 'c', [approval('a2', 't2')]), 'waiting');
   assert.equal(conversationState([settled], 'c', [approval('a2', 'other')]), 'idle');
   assert.equal(conversationState([settled], 'c', [approval('a3', null)]), 'idle');
+});
+
+test('sheetRowsOf: 112×96 is three rows, 112×128 four, any other size none', () => {
+  assert.equal(sheetRowsOf(112, 96), 3);
+  assert.equal(sheetRowsOf(112, 128), 4);
+  for (const [width, height] of [[112, 64], [128, 96], [112, 160], [0, 0]] as const) assert.equal(sheetRowsOf(width, height), undefined, `${String(width)}×${String(height)}`);
+});
+
+test('sheetAnimations: every frame inside the sheet, the fourth row only on four-row sheets', () => {
+  const three = sheetAnimations(3);
+  const four = sheetAnimations(4);
+  assert.deepEqual(three.map(({ id }) => id), ['walk-down', 'walk-up', 'walk-right', 'walk-left', 'type', 'read']);
+  assert.deepEqual(four.map(({ id }) => id).slice(6), ['think', 'wait', 'pause', 'blink']);
+  for (const [rows, list] of [[3, three], [4, four]] as const) {
+    for (const animation of list) {
+      assert.ok(animation.frames.length > 1 && animation.ms > 0, animation.id);
+      for (const frame of animation.frames) assert.ok(frame.column >= 0 && frame.column < 7 && frame.row >= 0 && frame.row < rows, animation.id);
+    }
+  }
+  assert.equal(three.find(({ id }) => id === 'walk-left')?.mirror, true);
+});
+
+test('characterNameValid: the names the core accepts, with the same id', () => {
+  assert.equal(characterId('Robòt  Blu!'), 'robot-blu');
+  for (const name of ['Robot blu', ' Gatto ', 'x'.repeat(40), 'R2']) assert.equal(characterNameValid(name), true, name);
+  // Letters without an ascii form give no id: refused here as by the core.
+  for (const name of ['', '   ', '!!!', '日本', 'a\nb', 'a​b', 'x'.repeat(41)]) assert.equal(characterNameValid(name), false, JSON.stringify(name));
 });

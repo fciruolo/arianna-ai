@@ -10,8 +10,9 @@ import type { CharacterChoice } from '../lib/types.ts';
  * an integer scale so the pixels stay sharp. The top rows of a frame are
  * empty in most sheets: they are left out.
  */
-const props = withDefaults(defineProps<{ choice: CharacterChoice | undefined; pose: Pose; scale?: number; bubble?: boolean; label?: string | undefined }>(), {
+const props = withDefaults(defineProps<{ choice: CharacterChoice | undefined; pose: Pose; scale?: number; bubble?: boolean; label?: string | undefined; version?: number }>(), {
   scale: 2,
+  version: 0,
   bubble: false,
   label: undefined,
 });
@@ -70,10 +71,10 @@ function load(choice: CharacterChoice | undefined): void {
   next.onerror = () => {
     if (current === generation) failed.value = true;
   };
-  next.src = sheetUrl(choice);
+  next.src = sheetUrl(choice, props.version);
 }
 
-watch(() => props.choice && sheetUrl(props.choice), () => { load(props.choice); });
+watch(() => props.choice && sheetUrl(props.choice, props.version), () => { load(props.choice); });
 watch(() => props.pose, restart);
 onMounted(() => {
   load(props.choice);

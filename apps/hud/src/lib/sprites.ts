@@ -134,3 +134,59 @@ export function frameAt(pose: PoseFrames, elapsed: number, reduceMotion: boolean
   const index = reduceMotion ? 0 : Math.floor(Math.max(0, elapsed) / pose.ms) % pose.frames.length;
   return pose.frames[index] ?? at(1);
 }
+
+/** The rows of a sheet from its size (D-060): 112×96 or 112×128; undefined for any other size. */
+export function sheetRowsOf(width: number, height: number): 3 | 4 | undefined {
+  if (width !== FRAME_WIDTH * 7) return undefined;
+  return height === FRAME_HEIGHT * 3 ? 3 : height === FRAME_HEIGHT * 4 ? 4 : undefined;
+}
+
+/** One animation of the preview (D-118): `mirror` draws the frames flipped, as the office does for left. */
+export interface SheetAnimation {
+  id: string;
+  label: string;
+  frames: Frame[];
+  ms: number;
+  mirror: boolean;
+}
+
+const walk = (row: number): Frame[] => [at(0, row), at(1, row), at(2, row), at(1, row)];
+
+/** Every animation a sheet holds, in the order of the preview: the fourth row only when there is one. */
+export function sheetAnimations(rows: 3 | 4): SheetAnimation[] {
+  const list: SheetAnimation[] = [
+    { id: 'walk-down', label: 'Cammina giù', frames: walk(0), ms: 160, mirror: false },
+    { id: 'walk-up', label: 'Cammina su', frames: walk(1), ms: 160, mirror: false },
+    { id: 'walk-right', label: 'Cammina a destra', frames: walk(2), ms: 160, mirror: false },
+    { id: 'walk-left', label: 'Cammina a sinistra', frames: walk(2), ms: 160, mirror: true },
+    { id: 'type', label: 'Scrive', frames: [at(3), at(4)], ms: 180, mirror: false },
+    { id: 'read', label: 'Legge', frames: [at(5), at(6)], ms: 520, mirror: false },
+  ];
+  if (rows === 4) {
+    list.push(
+      { id: 'think', label: 'Pensa', frames: [at(0, 3), at(1, 3)], ms: 650, mirror: false },
+      { id: 'wait', label: 'Aspetta', frames: [at(2, 3), at(3, 3)], ms: 450, mirror: false },
+      { id: 'pause', label: 'Pausa', frames: [at(4, 3), at(5, 3)], ms: 1200, mirror: false },
+      { id: 'blink', label: 'Sbatte gli occhi', frames: [at(1), at(1), at(1), at(6, 3)], ms: 250, mirror: false },
+    );
+  }
+  return list;
+}
+
+/** The id the core makes from the name of an uploaded character (D-118): the same rule as `characterId` in apps/core. */
+export function characterId(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+}
+
+/** A name the core accepts: one line of 1-40 characters, no control or format characters, giving a non-empty id. */
+export function characterNameValid(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed !== '' && trimmed.length <= 40 && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(name) && characterId(name) !== '';
+}
