@@ -397,10 +397,14 @@ const organizer = createNoteOrganizer({
 // "Genera personaggio" (D-123): the model of [sprites], read at each request; the brief passes the gateway.
 const sprites = createSpriteGenerator({
   model: () => settings.current().sprites.model,
-  unavailable: () => spriteUnavailable(settings.current(), claude !== undefined),
+  unavailable: (model) => spriteUnavailable({ ...settings.current(), sprites: { model } }, claude !== undefined),
   claude,
   localModel,
-  persona: (name) => settings.current().personas[name],
+  // Own keys only: the name comes from the page (`constructor` is no persona).
+  persona: (name) => {
+    const personas = settings.current().personas;
+    return Object.hasOwn(personas, name) ? personas[name] : undefined;
+  },
   gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
   dataDir: config.paths.data,
 });

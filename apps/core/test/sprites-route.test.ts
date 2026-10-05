@@ -16,7 +16,7 @@ import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { decodePng } from '../src/png.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
-import { createSpriteGenerator, SPRITE_LOCAL_ALIAS } from '../src/sprites/generate.ts';
+import { createSpriteGenerator, SPRITE_LOCAL_ALIAS, SpriteError } from '../src/sprites/generate.ts';
 import { SPRITE_PROMPT } from '../src/sprites/prompt.ts';
 
 const REPO = resolveHome({});
@@ -185,6 +185,40 @@ describe('POST /api/characters/generate', () => {
     assert.equal(request.messages[0]?.content, SPRITE_PROMPT);
     assert.match(request.messages[1]?.content ?? '', /Agent name: grafico/);
     assert.equal(decisions[0]?.decision, 'allow');
+  });
+
+  it('one drawing at a time: a second request while the first runs is busy', async () => {
+    let release: () => void = () => undefined;
+    const slow: LocalModel = {
+      chat: () =>
+        new Promise((resolve) => {
+          release = () => {
+            resolve({ text: EXAMPLE, value: JSON.parse(EXAMPLE), finishReason: 'stop', endpoint: 'omlx', model: 'fake', durationMs: 1 });
+          };
+        }),
+    };
+    const service = createSpriteGenerator({
+      model: () => 'local',
+      unavailable: () => undefined,
+      localModel: () => slow,
+      persona: () => undefined,
+      gateway: (payload, context, target) => {
+        const decision = gatewayCheck(payload, context, target, secretMatcher([]));
+        if (decision.decision === 'allow') markLogged(decision);
+        return Promise.resolve(decision);
+      },
+      dataDir: root,
+    });
+    const first = service.generate(agent);
+    await new Promise((resolve) => setImmediate(resolve));
+    await assert.rejects(service.generate(agent), (error: unknown) => error instanceof SpriteError && error.code === 'busy');
+    release();
+    assert.equal((await first).model, 'local');
+    release = () => undefined;
+    const again = service.generate(agent);
+    await new Promise((resolve) => setImmediate(resolve));
+    release();
+    assert.equal((await again).rows, 4, 'free again once the first is done');
   });
 
   it('a drawing of the local model that breaks the rules is a 502', async () => {

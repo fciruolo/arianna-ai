@@ -1120,12 +1120,21 @@ function spriteRoutes(sprites: SpriteGenerator | undefined): Route[] {
     route('POST', '/api/characters/generate', async (request) => {
       const service = need();
       const body = await readJson(request);
+      // A page closed meanwhile stops the drawing: no quota spent for nobody, and the next one is not "busy".
+      const closed = new AbortController();
+      const abort = (): void => {
+        closed.abort();
+      };
+      request.socket.once('close', abort);
       try {
-        const drawn = await service.generate(body);
+        const drawn = await service.generate(body, closed.signal);
         return { body: { png: drawn.png.toString('base64'), rows: drawn.rows, model: drawn.model, label: drawn.label } };
       } catch (error) {
         if (!(error instanceof SpriteError)) throw error;
         return { status: SPRITE_STATUS[error.code], body: { error: error.message, code: error.code, resetsAt: error.resetsAt?.toISOString() ?? null } };
+      } finally {
+        // A kept-alive socket serves the next requests: no listener left behind.
+        request.socket.off('close', abort);
       }
     }),
   ];

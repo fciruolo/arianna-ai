@@ -137,7 +137,12 @@ export function createSpriteGenerator(options: SpriteGeneratorOptions): SpriteGe
     const claude = options.claude;
     if (claude === undefined) throw new SpriteError('unavailable', 'claude cannot run on this installation');
     const folder = { data: options.dataDir, runId: randomUUID() };
-    const workspace = await prepareEmptyWorkspace(folder);
+    let workspace;
+    try {
+      workspace = await prepareEmptyWorkspace(folder);
+    } catch {
+      throw new SpriteError('failed', 'the empty folder for claude could not be made');
+    }
     try {
       const launch = { workspace, model, tools: [], limits: { maxTurns: CLAUDE_MAX_TURNS, timeoutMs: CLAUDE_TIMEOUT_MS } };
       // Before the gateway: no allow is logged for a run that cannot start.

@@ -120,6 +120,12 @@ Una sola generazione alla volta: una seconda richiesta mentre la prima corre ris
 - **Scelta del modello**: `[sprites]` assente → sonnet; `opus`, `local`; valore sconosciuto o chiave in più rifiutati da `parseConfig`; la pagina delle impostazioni lo legge e lo scrive come impostazione ordinaria.
 - **Rotte con Claude finto** (`apps/core/test/sprites-route.test.ts`, binario finto in `apps/core/test/support/fake-claude-sprite.ts`): JSON valido → 200 con PNG; JSON rotto → 502; suggerimento con dato personale → 400 e il binario non parte; Claude non attivo → 409; campo in più → 400; modello locale finto (`fake-omlx`) → 200 con lo schema vincolato nella richiesta.
 
+## Scostamenti dalla riga D-123 (da riportare in DECISIONS)
+
+- **Uscita strutturata di Claude**: oggi è il JSON chiesto dal prompt fisso e validato dal codice, non il flag `--json-schema` (vedi sopra). Il modello locale usa invece lo schema vincolato.
+- **Eval di validità**: non c'è ancora un eval dei modelli; la validità è coperta dai test deterministici del validatore e delle rotte con Claude finto. Un eval `eval:live` che chieda un disegno vero e ne misuri la percentuale valida è il passo successivo.
+- **Il core importa due file della chat**: `apps/core/src/sprites/` importa `apps/hud/characters/compose.ts` e `art/arianna.ts` (codice puro, senza Vue). Finora la dipendenza andava solo dalla chat al core (il codificatore PNG è duplicato apposta); qui si è scelto di non duplicare la composizione delle pose. In alternativa si possono spostare in un pacchetto comune.
+
 ## Limiti noti
 
 - L'uso di Claude per i personaggi non passa dal router: niente scala dei modelli né attesa del quota; i limiti di frequenza che il binario riporta non entrano negli eventi del budget (non c'è un task a cui legarli).
