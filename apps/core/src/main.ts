@@ -17,6 +17,7 @@ import {
   VOICE_ALIAS,
   voicePaths,
   watchConfig,
+  type TelegramConfig,
 } from '@arianna/config';
 import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
@@ -104,6 +105,13 @@ if (status.pending.length + status.edited.length + status.missing.length > 0) {
 // Set once the core starts stopping: nothing new is opened after it.
 let stopping = false;
 
+// Telegram is off by the user's choice (D-110, question 12; the phone is task
+// 1.19): [telegram] is read as absent. The code stays, ready to turn back on.
+const TELEGRAM_ON: boolean = false;
+function telegramSection(): TelegramConfig | undefined {
+  return TELEGRAM_ON ? settings.current().telegram : undefined;
+}
+
 // Declared before the watcher, which may report a change of [telegram] while
 // the core still starts: the switch ignores changes until `begin`.
 const telegram = createTelegramSwitch({
@@ -186,7 +194,7 @@ const settings = watchConfig({
       memory.modelsChanged(servedEndpoints, next).catch(report);
       servedEndpoints = next;
     }
-    if (applied.includes('telegram')) telegram.sync(settings.current().telegram);
+    if (applied.includes('telegram')) telegram.sync(telegramSection());
     if (applied.includes('voice')) voice.sync(settings.current().voice);
     // Turning a cloud executor on or off is a privacy setting: it goes in the event log, like the projects.
     if (applied.includes('cloud.executors')) {
@@ -479,8 +487,9 @@ const ringer = createRinger({
 
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
-// anyway: the web chat does not depend on it.
-await telegram.begin(settings.current().telegram);
+// anyway: the web chat does not depend on it. Off by the user's choice (D-110,
+// question 12): the section is ignored until TELEGRAM_ON comes back.
+await telegram.begin(telegramSection());
 
 console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(dist) ? '' : ' (API only: run pnpm hud:build for the web chat)'}`);
 

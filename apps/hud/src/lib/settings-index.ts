@@ -58,7 +58,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
     group: 'Collegamenti',
     items: [
       { id: 'executors', slug: 'esecutori-cloud', title: 'Esecutori cloud', behaviour: 'confirm', privacy: true },
-      { id: 'telegram', slug: 'telegram', title: 'Telegram', behaviour: 'confirm', privacy: true },
+      // Telegram is off by the user's choice (D-110, question 12): its card stays in
+      // SettingsPage, unreachable until this entry comes back.
       { id: 'projects', slug: 'progetti', title: 'Progetti', behaviour: 'confirm', privacy: true },
       { id: 'servers', slug: 'server-locali', title: 'Server locali', behaviour: 'confirm', privacy: true },
     ],
@@ -107,7 +108,6 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   agents: ['characters', 'personas', 'agents'],
   voice: ['voice'],
   executors: ['executors'],
-  telegram: ['telegram'],
   projects: ['projects'],
   servers: ['endpoints'],
 };

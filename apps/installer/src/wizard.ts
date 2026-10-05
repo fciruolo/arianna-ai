@@ -40,6 +40,12 @@ export interface WizardContext {
   userHome: string;
   /** What is wrong with a project folder on disk (`folderProblem`), or `undefined`. */
   checkFolder: (absolute: string, name: string) => string | undefined;
+  /**
+   * Whether step 7 asks about Telegram. Off by default: the channel is off by
+   * the user's choice (D-110, question 12; the phone is task 1.19), and the
+   * wizard keeps the section as it is. The code stays, ready to turn back on.
+   */
+  telegram?: boolean;
 }
 
 /** Roles a model can be chosen for today; embedder and voice come with later phases. */
@@ -255,9 +261,13 @@ function stepSync(io: Prompter): void {
   io.say('Mai questa cartella sotto iCloud o altri cloud di terzi senza cifratura. Dettagli in docs/INSTALLER-PORTABILITY.md.');
 }
 
-async function stepChannels(io: Prompter, settings: Settings): Promise<void> {
+async function stepChannels(io: Prompter, settings: Settings, telegram: boolean): Promise<void> {
   io.say('\n7. Canali');
   io.say('La chat web è sempre attiva, solo su questa macchina.');
+  if (!telegram) {
+    io.say('Voce e telefono arrivano con le fasi successive.');
+    return;
+  }
   io.say('Telegram è un canale esterno: riceve al massimo L1, il resto arriva come rimando alla chat web.');
   if (await confirm(io, 'Attivare Telegram?', settings.telegram !== undefined)) {
     const chats = await chatIds(io, settings.telegram?.chats ?? []);
@@ -269,14 +279,14 @@ async function stepChannels(io: Prompter, settings: Settings): Promise<void> {
   io.say('Voce e telefono arrivano con le fasi successive.');
 }
 
-function summary(io: Prompter, settings: Settings): void {
+function summary(io: Prompter, settings: Settings, telegram: boolean): void {
   io.say('\n8. Riepilogo');
   const roles = WIZARD_ROLES.map(({ role, name }) => `${name} ${settings.roles[role] ?? 'nessuno'}`);
   io.say(`  Modelli: ${roles.join(', ')}`);
   io.say(`  Server locali: ${settings.endpoints.length === 0 ? 'nessuno' : settings.endpoints.map((endpoint) => `${endpoint.id} (${endpoint.url})`).join(', ')}`);
   io.say(`  Esecutori cloud: ${settings.cloud.executors.length === 0 ? 'nessuno' : settings.cloud.executors.map((executor) => EXECUTOR_LABELS[executor].name).join(', ')}`);
   io.say(`  Progetti: ${settings.projects.length === 0 ? 'nessuno' : settings.projects.map((project) => `${project.name} (${project.path}, ${project.label})`).join(', ')}`);
-  io.say(`  Telegram: ${settings.telegram === undefined ? 'spento' : `chat ${settings.telegram.chats.join(', ')}`}`);
+  if (telegram) io.say(`  Telegram: ${settings.telegram === undefined ? 'spento' : `chat ${settings.telegram.chats.join(', ')}`}`);
 }
 
 /** Asks every question; returns the new settings, or `undefined` if the user does not confirm. */
@@ -290,7 +300,7 @@ export async function runWizard(io: Prompter, context: WizardContext): Promise<S
   await stepProjects(io, context, settings);
   stepAutonomy(io);
   stepSync(io);
-  await stepChannels(io, settings);
-  summary(io, settings);
+  await stepChannels(io, settings, context.telegram === true);
+  summary(io, settings, context.telegram === true);
   return (await confirm(io, 'Scrivo config/arianna.toml?', true)) ? settings : undefined;
 }

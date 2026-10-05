@@ -73,6 +73,8 @@ function context(overrides: Partial<WizardContext> = {}): WizardContext {
     // A sibling of ARIANNA_HOME: a home that contained it would refuse every project of these tests.
     userHome: `${HOME}-user`,
     checkFolder: () => undefined,
+    // The Telegram step stays tested, ready to turn back on; off by default (D-110).
+    telegram: true,
     ...overrides,
   };
 }
@@ -110,6 +112,21 @@ test('choices: both roles, Claude and Codex with login hints, Telegram with chat
   assert.ok(io.said.some((line) => line.includes('pnpm vault:edit')));
   // The wizard never asks for a secret.
   assert.ok(!io.asked.some((question) => /token|password/i.test(question)));
+});
+
+test('Telegram off by default (D-110): no question, no summary line, the section kept as it is', async () => {
+  const current: Settings = { ...DEFAULT_SETTINGS, telegram: { token: 'vault://my-bot', chats: [7] } };
+  // Orchestrator, extractor, add oMLX, Claude, Codex, add a project, write.
+  const io = scripted(['', '', '', '', '', '', '']);
+  const settings = await runWizard(io, context({ settings: current, telegram: false }));
+  assert.ok(settings !== undefined);
+  assert.deepEqual(settings.telegram, current.telegram);
+  assert.ok(!io.asked.some((question) => /telegram/i.test(question)));
+  assert.deepEqual(io.said.filter((line) => /\bTelegram\b/.test(line)), []);
+  // Turned on, the step asks again.
+  const on = scripted(['', '', '', '', '', '', '', '']);
+  await runWizard(on, context());
+  assert.ok(on.asked.some((question) => /telegram/i.test(question)));
 });
 
 test('wrong answers are asked again; models that do not fit RAM or disk are flagged', async () => {
