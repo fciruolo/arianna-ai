@@ -14,6 +14,7 @@ import {
   loadConfig,
   loadLabelRules,
   userHomeOf,
+  VOICE_ALIAS,
   voicePaths,
   watchConfig,
 } from '@arianna/config';
@@ -30,6 +31,7 @@ import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
+import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
@@ -170,6 +172,12 @@ const settings = watchConfig({
   onChange: ({ applied, restart }) => {
     if (applied.length > 0) console.log(`arianna.toml: applied ${applied.join(', ')}`);
     if (applied.includes('local.endpoints')) localServers.sync(settings.current().local.endpoints).catch(report);
+    // D-107 E: a model no role serves any more leaves the memory of oMLX once idle.
+    if (applied.includes('roles') || applied.includes('local.models') || applied.includes('local.endpoints')) {
+      const next = settings.current().local.endpoints;
+      memory.modelsChanged(servedEndpoints, next).catch(report);
+      servedEndpoints = next;
+    }
     if (applied.includes('telegram')) telegram.sync(settings.current().telegram);
     if (applied.includes('voice')) voice.sync(settings.current().voice);
     // Turning a cloud executor on or off is a privacy setting: it goes in the event log, like the projects.
@@ -207,6 +215,8 @@ const localServers = createLocalServers({
   home: config.home,
   dataDir: config.paths.data,
   onEvent: (event) => {
+    // A server that started or exited holds no model: the memory account starts again.
+    if (event.type === 'spawn' || event.type === 'exit') memory.serverReset(event.endpoint);
     if (!loggedEvent(event)) return;
     // Codes only: `error` carries a system code or a class name, never data.
     const detail = event.type === 'state' ? event.state : event.type === 'error' ? `error ${event.message}` : event.type;
@@ -214,13 +224,40 @@ const localServers = createLocalServers({
     appendEvent(sql, { kind: 'local.server', label: 'L0', payload: { ...event } }).catch(report);
   },
 });
+// The memory policy of oMLX (D-107, stage E): the old model of a role is
+// unloaded, a load that would pass the ceiling unloads the idle models first
+// (or is refused with 507), swap and memory pressure are watched. Catalog ids
+// and numbers only: L0.
+let servedEndpoints = config.local.endpoints;
+// Set once the calls exist: while one is in progress, the model behind
+// `local-voice` is never evicted, not even idle between two turns.
+let callActive: () => boolean = () => false;
+const memory = createModelMemory({
+  catalog: () => loadCatalog(config.home),
+  endpoints: () => settings.current().local.endpoints,
+  isAvailable: (id) => localServers.isAvailable(id),
+  unload: (endpoint, name) => unloadModel(endpoint, name, (id) => localServers.isAvailable(id)),
+  pinned: (endpoint, name) => callActive() && settings.current().local.endpoints.find(({ id }) => id === endpoint)?.models[VOICE_ALIAS] === name,
+  onEvent: (event) => {
+    if (event.type === 'swap') console.log(`memory: swap ${event.level} (${String(event.usedGib)} GiB used)`);
+    else if (event.type === 'unloaded') console.log(`local ${event.endpoint}: unloaded ${event.model} (${event.reason})`);
+    else console.error(`local ${event.endpoint}: ${event.model} refused, about ${String(event.needGib)} GiB over a ceiling of ${event.budgetGib.toFixed(1)} GiB`);
+    appendEvent(sql, { kind: event.type === 'swap' ? 'memory.swap' : `local.memory.${event.type}`, label: 'L0', payload: { ...event } }).catch(report);
+  },
+  onError: report,
+});
 localServers.sync(config.local.endpoints).catch(report);
-const localModel = () =>
-  createLocalModel({
-    endpoints: settings.current().local.endpoints,
-    isAvailable: (id) => localServers.isAvailable(id),
-    onFailure: (id) => { localServers.onFailure(id); },
-  });
+const localModel = () => {
+  const endpoints = settings.current().local.endpoints;
+  return memory.wrap(
+    createLocalModel({
+      endpoints,
+      isAvailable: (id) => localServers.isAvailable(id),
+      onFailure: (id) => { localServers.onFailure(id); },
+    }),
+    endpoints,
+  );
+};
 
 // Task 1.10: the orchestrator on the local model, with the development
 // knowledge base in kb/ (the real one, data/kb, comes after Phase 1A), and
@@ -287,6 +324,7 @@ const calls = createCalls({
   coreUrl: `http://${host}:${String(config.server.port)}`,
   onError: report,
 });
+callActive = () => calls.active();
 const closed = await calls.closeLeftovers();
 if (closed > 0) console.log(`Calls: closed ${String(closed)} left open by the previous run`);
 // Before the API: with [voice] the routes never answer "voice off" at start.
@@ -320,11 +358,14 @@ const modelEvals = createModelEvals({
   },
   casesDir: join(config.home, 'evals', 'orchestrator'),
   createModel: (endpoints) =>
-    createLocalModel({
+    memory.wrap(
+      createLocalModel({
+        endpoints,
+        isAvailable: (id) => localServers.isAvailable(id),
+        onFailure: (id) => { localServers.onFailure(id); },
+      }),
       endpoints,
-      isAvailable: (id) => localServers.isAvailable(id),
-      onFailure: (id) => { localServers.onFailure(id); },
-    }),
+    ),
   onError: report,
 });
 // Captured notes organized by the local model in the background (D-086), one
@@ -370,6 +411,7 @@ const server = await startApiServer({
     status: () => localServers.status(),
     restart: (id) => localServers.restart(id),
     log: (id) => logTail(config.paths.data, id),
+    memory: () => memory.snapshot(),
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
   modelEvals,
@@ -422,6 +464,7 @@ async function shutdown(): Promise<void> {
   await modelEvals.stop();
   await organizer.stop();
   await worker.stop();
+  memory.stop();
   await localServers.stop();
   await live.close();
   await sql.end({ timeout: 5 });

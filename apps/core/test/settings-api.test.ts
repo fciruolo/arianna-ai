@@ -12,6 +12,7 @@ import { CATALOG_FILE, CONFIG_FILE, DATA_DIR, DEFAULT_SETTINGS, loadCatalog, par
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import type { LocalServerStatus } from '../src/local-servers.ts';
+import type { MemorySnapshot } from '../src/model-memory.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { createSettingsPage, type SettingsChange } from '../src/settings-page.ts';
 
@@ -63,6 +64,7 @@ before(async () => {
         return Promise.resolve(true);
       },
       log: (id) => `log of ${id}\n`,
+      memory: () => MEMORY,
     },
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
@@ -120,6 +122,14 @@ async function fingerprint(): Promise<string> {
   return reply.body.fingerprint as string;
 }
 
+const MEMORY: MemorySnapshot = {
+  memoryGib: 32,
+  budgets: [{ endpoint: 'omlx', gib: 24 }],
+  loaded: [{ endpoint: 'omlx', model: 'qwen3.8-27b-4bit', gib: 18, busy: false }],
+  estimatedGib: 18,
+  swap: { level: 'high', usedGib: 8.1, totalGib: 9, pressure: 2 },
+};
+
 describe('/api/settings', () => {
   it('GET: values, fingerprint, catalog, local servers', async () => {
     const reply = await call('GET', '/api/settings');
@@ -127,6 +137,8 @@ describe('/api/settings', () => {
     assert.match(reply.body.fingerprint as string, /^[0-9a-f]{64}$/);
     assert.deepEqual((reply.body.values as { executors: string[] }).executors, ['claude']);
     assert.deepEqual(reply.body.local, LOCAL);
+    // D-107 E: the account of the local models and the swap level, numbers and catalog ids only.
+    assert.deepEqual(reply.body.memory, MEMORY);
     assert.ok(Array.isArray(reply.body.catalog));
     assert.deepEqual(reply.body.privacy, ['executors', 'telegram', 'projects', 'endpoints']);
   });

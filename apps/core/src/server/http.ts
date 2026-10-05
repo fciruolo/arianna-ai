@@ -38,6 +38,7 @@ import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
+import type { MemorySnapshot } from '../model-memory.ts';
 import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
@@ -137,6 +138,8 @@ export interface LocalApi {
   restart(id: string): Promise<boolean>;
   /** The end of data/<id>.log: may hold prompts (L2), shown only in the web chat. */
   log(id: string): string;
+  /** The account of the local models and the swap level (D-107, stage E): catalog ids and numbers, L0. */
+  memory?(): MemorySnapshot;
 }
 
 export interface ApiServer {
@@ -425,7 +428,11 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
   };
   return [
     // Values, catalog, fingerprint, what applies now and what waits for a restart, local servers.
-    route('GET', '/api/settings', () => Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [] } })),
+    // With `memory`: the account of the local models and the swap level (D-107, stage E), L0.
+    route('GET', '/api/settings', () => {
+      const memory = local?.memory?.();
+      return Promise.resolve({ body: { ...need().read(), local: local?.status() ?? [], ...(memory === undefined ? {} : { memory }) } });
+    }),
     // Models, cloud models, characters, [voice]: written at once.
     route('POST', '/api/settings', async (request) => ({ body: need().update(await readJson(request)) })),
     // Cloud executors, Telegram, projects, local servers: shown first, written only on confirmation.

@@ -115,6 +115,8 @@ export interface Calls {
   closeLeftovers(): Promise<number>;
   /** At shutdown: the calls in progress end as `core-restart`. */
   close(): Promise<void>;
+  /** A read only: true while a call is in progress (D-107 E: its model stays in memory between turns). */
+  active(): boolean;
 }
 
 interface Session {
@@ -533,6 +535,7 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   return {
+    active: () => sessions.size > 0,
     async start(conversationId, offer) {
       checkOffer(offer);
       const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
