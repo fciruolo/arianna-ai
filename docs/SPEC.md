@@ -333,7 +333,7 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 - le approvazioni importanti richiedono un codice detto a voce o una conferma sulla chat, non un semplice "sì";
 - risponde solo al tuo numero, verificato, e ignora tutti gli altri.
 
-**Quando ti chiama.** Il canale predefinito è Telegram; la chiamata scatta solo in pochi casi: una scadenza vicina senza risposta, una carta in "Attende te" marcata urgente (finché le carte non hanno l'urgenza: un task che ti aspetta da più di mezz'ora), o un briefing che hai richiesto, programmato ("chiamami alle 18") o legato a un lavoro ("chiamami quando finisci"). Ci sono fasce orarie di silenzio, un massimo di chiamate al giorno e, se non rispondi, un messaggio scritto invece di insistere. Prima della telefonia la chiamata è via internet, dalla chat web ad `apps/voice` con WebRTC (D-066): se la chat è chiusa arriva una notifica senza contenuto ("Arianna ti chiama").
+**Quando ti chiama.** Arianna chiama nella chat web e, se la chat è chiusa, manda una notifica push senza contenuto ("Arianna ti chiama"; D-066: scelte 3 e 7; il link su Telegram è fra i "Non fatto"). La chiamata scatta solo in pochi casi: una scadenza vicina senza risposta, una carta in "Attende te" marcata urgente (finché le carte non hanno l'urgenza: un task che ti aspetta da più di mezz'ora), o un briefing che hai richiesto, programmato ("chiamami alle 18") o legato a un lavoro ("chiamami quando finisci"). Ci sono fasce orarie di silenzio, un massimo di chiamate al giorno e, se non rispondi, un messaggio scritto invece di insistere. Prima della telefonia la chiamata è via internet, dalla chat web ad `apps/voice` con WebRTC (D-066).
 
 ## Modulo apprendimento
 

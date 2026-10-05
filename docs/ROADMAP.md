@@ -46,6 +46,8 @@ Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 129-196 ore. L
 
 **Anticipato nella notte del 2026-10-05, fuori dall'ordine delle fasi:** nel perimetro della Fase 1A, chiamate ripetute fermate dal core (D-076, accettata); da confermare: storia dell'orchestratore ancorata con riassunti (D-077, Fase 1A), prova dei modelli del catalogo con gli eval dell'orchestratore (D-081: idea 8 dei "Prossimi passi" di `docs/HANDOFF.md`, vicina all'idea 16 di `OPEN-QUESTIONS.md` senza coincidere: là si confrontano i modelli, qui li si prova in background); importatore a sola lettura del catalogo "Agenzia" (D-079, prima parte). Solo proposti: Arianna sviluppata da dentro Arianna (D-078), pulsante "Aggiorna" fra sviluppo e produzione (D-088).
 
+**Altre eccezioni alla regola delle fasi, scelte dall'utente:** chiamate via internet dalla chat web e chiamate di Arianna (D-066, D-067: Fase 4, "servizio voce" e "policy chiamate in uscita", sul branch `p4-chiamate`); ufficio pixel giocabile, tappa 1 (D-106, 2026-10-05: Fase 3, "pixel-agents"). Solo proposte: routine con chiamata del mattino (D-110, vicino al "brief giornaliero" della Fase 5).
+
 **Fase 4 (50-90):** servizio voce Pipecat 12-20 · valutazione STT/TTS italiani locali 8-15 · delega e latenza 8-14 · telefonia SIP 14-26 · policy chiamate in uscita 8-15.
 
 **Fase 5 (25-45):** ingestione fonti 8-14 · agente Mentor e curriculum 8-14 · ripasso FSRS 5-9 · brief giornaliero 4-8.

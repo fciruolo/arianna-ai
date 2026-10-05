@@ -1,6 +1,6 @@
 # Proposte da discutere (notte 2026-10-05)
 
-Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096 e D-103, scritte da Claude nella sessione notturna del 2026-10-05. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
+Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-103, D-107, D-106 e D-110, scritte da Claude nella sessione notturna del 2026-10-05. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
 
 ## D-078 — Arianna sviluppata da dentro Arianna
 
@@ -1389,6 +1389,326 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
 - **Arredi disegnati dal codice.** Nell'anteprima gli arredi li disegna il codice, non un tileset: il formato di `office.json` (legenda, arredi a più tessere, eventuale secondo livello) va provato con la mappa `base` nella tappa 5.
 - **Limiti proposti, non misurati.** 40×30 tessere, 16 KB, 256×256 px e 256 KB, le quantità massime: vanno confermati con le prime mappe vere.
 - **`ChatView` non letto per questa proposta.** Il rischio della tappa 3 viene dalla struttura della chat descritta in D-089 e D-090.
+
+## Terza serie (notte del 2026-10-05, richiesta dell'utente alle 06:40)
+
+## D-110 — Routine: appuntamenti ricorrenti che Arianna esegue da sola (resoconto in chat, poi chiamata, poi email)
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere. **Fuori fase:** la Fase 1A è in corso. Il brief giornaliero è nella Fase 5, il cardwall nella Fase 2 e le chiamate in uscita nella Fase 4. Costruirne una tappa prima del suo turno è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md` come l'anticipo di D-066 e la tappa 1 di D-106, già annotati.
+- **Collegate:**
+  - D-066 (chiamate via internet, `[voice.outgoing]`, il ringer, Web Push) e D-067 (voce);
+  - D-004 (coda `jobs`, anche per i lavori programmati) e D-035 (motore dei task, colonne del cardwall);
+  - D-053 (`task.create`, carte in Inbox) e D-101 (`task.update`, carte e note);
+  - D-015 (taint), D-016 e D-044 (canali esterni al massimo L1; avvisi scritti dal canale da dati L0), D-055 (declassamento approvato);
+  - D-048 (`arianna.toml` fuori da git), D-064 (chat di sistema), D-091 e D-109 (attese), D-100 (modello locale non pronto);
+  - D-080 e D-086 (cattura e riordino dei pensieri), D-089 e D-097 (barra sinistra), D-102 (pagina Sviluppo), D-013 (documenti da allineare);
+  - `SPEC.md` ("Todo list e cardwall", "Quando ti chiama", "Sicurezza e minacce", idea 1), `ROADMAP.md` (Fase 5, brief giornaliero 4-8 ore), `AGENT-CARDS.md` (Segretario, Dual LLM), `SECURITY.md` (prompt injection), `PRIVACY-POLICY-SPEC.md` (regole 4, 7, 8 e 10; "Le cinque superfici d'uscita"; "La voce"; "Le notifiche delle chiamate").
+
+### Contesto
+
+**Richiesta dell'utente (2026-10-05, 06:40):** una sezione dove dire ad Arianna, per esempio, "chiamami ogni mattina alle 10 per dirmi quali email importanti abbiamo ricevuto e farmi il resoconto di task e todo", nell'ottica di un Notion più cardwall.
+
+**Risposta breve.**
+- Metà del meccanismo c'è già: le chiamate di Arianna, le regole di silenzio e il massimo al giorno, la notifica senza contenuto. Mancano tre cose: la **ricorrenza**, il **resoconto** e la **fonte email**.
+- La proposta le separa in tappe:
+  1. il resoconto di task e todo in chat, che per la parte essenziale non ha bisogno né della voce né del modello;
+  2. la chiamata, che riusa il ringer di D-066;
+  3. per ultime le email, che richiedono un connettore, una dipendenza nuova e il pattern Dual LLM (idea 1).
+
+**Cosa c'è oggi** (letto nel repository il 2026-10-05, in sola lettura):
+
+- **Uno scheduler generale non esiste.** Ci sono solo pezzi:
+  - la coda `jobs` accetta `runAt` ("Not before this time (scheduled jobs, retries)", `apps/core/src/jobs.ts:16-17`);
+  - il motore mette in coda un passo di un task esistente a un'ora data con `scheduleTask(sql, taskId, payload, runAt)` (`apps/core/src/engine.ts:139-140`), e quel passo esegue l'orchestratore;
+  - il ringer controlla le chiamate ogni 30 secondi con un `setInterval` (`apps/core/src/voice/ringer.ts:183-186`).
+
+  Nessuna regola di ricorrenza (giorni, ora, fuso) esiste nel codice.
+- **Le chiamate programmate sono singole.**
+  - "Chiamami alle…" scrive in `calls` una riga `reason = 'scheduled'`, `status = 'scheduled'`, `scheduled_at` (`ringer.ts:199-216`), entro sette giorni (`ringer.ts:200-201`).
+  - Il saluto è fisso: "È l'ora della chiamata che mi avevi chiesto." (`apps/core/src/voice/outgoing.ts:61-65`).
+  - `calls.reason` ammette solo `waiting`, `task-done` e `scheduled` (`apps/core/migrations/0015_calls.sql`, vincolo `CHECK`).
+- **"Chiamami quando finisci" è già un resoconto.**
+  - Una riga `reason = 'task-done'` aspetta che il task finisca (`ringer.ts:219-236`).
+  - Quando l'utente risponde, il saluto aggiunge l'inizio dell'ultima risposta del task: `summaryToSay`, 400 caratteri, poi "Il resto te l'ho scritto in chat." (`apps/core/src/voice/turns.ts:110-115`).
+  - Il testo passa dal gateway verso il canale `voice` con l'etichetta del messaggio e della conversazione (`apps/core/src/voice/calls.ts:627-639`).
+- **Le note scritte dal codice** passano dal gateway verso `web` e vanno nella conversazione come messaggi di Arianna, senza modello (`writeNote`, `calls.ts:143-155`).
+- **Regole delle chiamate di Arianna** (`outgoing.ts:35-40`):
+  - un massimo al giorno;
+  - fasce di silenzio in ora locale e fine settimana;
+  - una chiamata programmata salta silenzio e fine settimana ma conta nel massimo;
+  - squillo di `ring_seconds`, poi un messaggio scritto senza riprovare (`ringer.ts:86-99`; D-066, scelta 9; `SPEC.md`, "Quando ti chiama");
+  - senza pagine aperte e senza push, Arianna scrive subito (`ringer.ts:124-127`).
+
+  L'ora è quella del processo (`getHours`): non c'è un fuso per regola.
+- **La chiamata è un canale locale, la notifica no.**
+  - Il gateway tratta `web` e `voice` come destinazioni locali (`packages/policy/src/gateway.ts:92`); `telegram`, `phone` e `push` sono cloud.
+  - L'audio va dal browser al core e ad `apps/voice` con WebRTC, senza server STUN né TURN (`iceServers: []`, `apps/hud/src/lib/call-session.ts:51`).
+  - Riconoscimento e sintesi girano in `apps/voice`, solo su 127.0.0.1 (`apps/voice/src/arianna_voice/__main__.py:23`), con proxy chiuso e `HF_HUB_OFFLINE=1` (`apps/core/src/child-env.ts:20-25`).
+  - Dal telefono la chiamata arriverà solo via VPN (D-066, scelta 6: non ancora).
+  - La push porta solo il testo fisso L0 "Arianna ti chiama". Fuori dal gateway escono comunque l'intestazione VAPID, l'IP del Mac e l'ora (`PRIVACY-POLICY-SPEC.md`, "Le notifiche delle chiamate").
+  - **Conclusione:** ciò che Arianna dice in chiamata resta sul Mac, oppure passa solo dalla VPN dell'utente. Che una chiamata avvenga, e a che ora, arriva invece ad Apple, Google o Mozilla.
+- **Task, todo e carte.**
+  - Le colonne del cardwall sono gli stati di `tasks` (`inbox`, `ready`, `running`, `waiting_user`, `to_verify`, `done`, `failed`; `0001_init.sql`). Ogni riga ha `assignee` (`'user'` = todo), `due_at`, `priority` ed etichetta (`docs/DATA-MODEL.md`).
+  - Le carte nascono con `task.create` (D-053) e si aggiornano con `task.update` (D-101).
+  - **Non esiste ancora una pagina del cardwall** nella chat web: è l'epic "cardwall backend e UI 12-18" della Fase 2.
+  - `SPEC.md` dice già che la vista Todo "è quella che ricevi ogni mattina in chat o a voce".
+- **Pensieri.** Non sono nel database: sono file in `kb/inbox/`, e quelli non ancora riordinati hanno `status: new` nell'intestazione (D-080, D-086). Sono L2.
+- **Email.**
+  - **Nessun connettore**, nessun codice di posta.
+  - `SPEC.md` mette "mail personali" a L2 e locale e affida la posta al Segretario.
+  - `AGENT-CARDS.md` chiede il **Dual LLM** prima che il Segretario legga posta vera: un modello isolato legge il contenuto non fidato e restituisce solo dati strutturati. È l'idea 1 di `SPEC.md` e di `OPEN-QUESTIONS.md`, stimata da sola 12-20 ore.
+  - La prompt injection da contenuti non fidati è la prima minaccia di `SPEC.md` ("Sicurezza e minacce") e di `SECURITY.md`. La regola della trifecta (dati privati, contenuti non fidati e comunicazione verso l'esterno mai insieme) sta in `SPEC.md` e in `AGENT-CARDS.md`.
+- **Canali esterni e voce: una contraddizione già nei documenti** (D-013).
+  - Per la regola 10 di `PRIVACY-POLICY-SPEC.md` (D-016), Telegram e il telefono vero (SIP, canale `phone`) ricevono **al massimo L1**: un contenuto L2 diventa una notifica con riferimento.
+  - La regola 7, scritta per la telefonia, ammette invece la lettura di L2 ad alta voce "con abilitazione per quella singola chiamata".
+  - Le due regole non si conciliano per il telefono vero. Questa proposta non le tocca: va decisa con l'utente (domanda 5). Per la chiamata via internet (`voice`) la questione non si pone, perché D-066 (scelta 1) ammette già L2 in una conversazione privata.
+- **Taint.** Per la regola 8 di `PRIVACY-POLICY-SPEC.md` (D-015), ciò che scrive un modello che ha letto L2 è L2, anche un numero. L'eccezione degli avvisi di D-044 (dati da liste chiuse, scritti dal canale) è oggi "l'unica eccezione" alla regola del contesto del task.
+
+### Proposta
+
+**(a) Che cos'è una routine.** È un appuntamento ricorrente dell'utente con Arianna, fatto di quattro cose:
+- **quando:** giorni della settimana, ora e fuso;
+- **cosa raccogliere:** un elenco chiuso di fonti;
+- **come consegnarlo:** in chat, oppure con una chiamata più la chat;
+- **un tetto di etichetta** per ciò che si dice ad alta voce.
+
+Ogni esecuzione produce un **resoconto** nella conversazione della routine e, se la routine lo chiede, una chiamata.
+
+La routine non esegue istruzioni libere: "dimmi quali email importanti" diventa la fonte `email.important`, non un prompt che gira ogni mattina.
+
+**(b) Dove si definiscono: pagina "Routine" più linguaggio naturale con approvazione.**
+- **Pagina "Routine"** nella barra sinistra (D-089 e D-097), accanto a Pensieri e Conoscenza. Ogni routine è una **carta**, come una riga di un database di Notion vista a schede. La carta mostra:
+  - titolo e "ogni lun-ven alle 10:00";
+  - icone delle fonti e canale ("in chat", "chiamata");
+  - interruttore attiva/in pausa;
+  - prossima esecuzione e ultimo esito ("fatta", "persa", "saltata: silenzio", "Mac spento");
+  - "Prova adesso", che esegue subito in chat, senza chiamata.
+
+  Il modulo usa campi a scelta chiusa (giorni, ora, fonti, canale), senza testo libero oltre al titolo. Come per D-108, la carta nasce al primo salvataggio.
+- **In linguaggio naturale.** Uno strumento nuovo dell'orchestratore, `routine.propose`, scrive una routine **proposta e spenta**. In chat compare una scheda di approvazione con i campi in parole, per esempio "Ogni giorno feriale alle 10:00, chiamata; fonti: todo, task in attesa". Solo "Approva" la attiva.
+- **Arianna non attiva mai una routine da sola.** Una routine con chiamata squilla per mesi: è un permesso duraturo, quindi passa dall'approvazione come le azioni esterne.
+- **Dalla pagina** è l'utente stesso a salvare, e non serve una seconda conferma. Unica eccezione: la fonte email, che chiede conferma come un'impostazione di privacy (punto (h)).
+- **Riprogrammare una routine** dalla chat ("spostala alle 9") passa anche lui da `routine.propose`, con una scheda che mostra la differenza.
+
+**(c) Dati: due tabelle nuove** (una migrazione, concesse ad `arianna_app` come le altre), descritte in `DATA-MODEL.md`.
+
+- **`routines`**, una riga per routine:
+
+  | Colonna | Valori |
+  | --- | --- |
+  | `id` | |
+  | `title` | Testo dell'utente: L2 per default, come i nomi di D-107 |
+  | `conversation_id` | La conversazione privata della routine, punto (d) |
+  | `days` | Insieme di giorni ISO 1-7 |
+  | `at` | `HH:MM` |
+  | `timezone` | Nome IANA, predefinito il fuso del sistema all'atto della creazione |
+  | `sources` | Elenco chiuso: `todo`, `waiting`, `cards`, `done-since`, `failed-since`, `notes`; poi `email.important`, `calendar.today` |
+  | `channel` | `chat` o `call`; più avanti forse `telegram`, domanda 12 |
+  | `voice_max_label` | Tetto di ciò che si dice a voce dopo il "sì", punto (f); al massimo L2 con un `CHECK`, come `tasks_clearance_below_secret` in `0001_init.sql` |
+  | `retry_minutes` | `null` = nessun secondo squillo, punto (g) |
+  | `status` | `proposed`, `active`, `paused`, `retired` |
+  | `next_run_at` | |
+  | `created_at`, `approved_at` | |
+
+  Nessuna riga si cancella: una routine tolta diventa `retired`, perché il ruolo dell'applicazione non cancella (D-046).
+- **`routine_runs`**, una riga per esecuzione:
+  - `routine_id`;
+  - `scheduled_for`, unico per routine: due core o un riavvio non fanno due resoconti;
+  - `message_id` del resoconto fisso e `summary_message_id` della sintesi (`null` se non c'è);
+  - `call_id` (`null` senza chiamata);
+  - `status` (`done`, `missed-offline`, `skipped`, `failed`), con un codice chiuso, mai un messaggio.
+- **`calls`.** Il motivo nuovo `routine` e una colonna `routine_run_id`.
+- **Prossima esecuzione.** Funzione pura `nextRun(rule, after)` con `Intl.DateTimeFormat` sul fuso della routine, senza dipendenze. Ha test per l'ora legale: alle 02:30 di un giorno che la salta, la routine parte alle 03:00; nel giorno con l'ora doppia parte una volta sola.
+- **Eventi** `routine.created`, `routine.approved`, `routine.paused`, `routine.run` ed `routine.missed`, tutti L0, con id e codici, senza titolo.
+- **Chi esegue: codice, non l'orchestratore.** Un ticker nel core, come il ringer, controlla ogni 30 secondi le routine con `next_run_at <= now()`.
+  1. In una transazione scrive la riga di `routine_runs` e sposta `next_run_at`.
+  2. **Il codice scrive il resoconto fisso** (punto (e)) come messaggio di Arianna nella conversazione, dopo il gateway verso `web`, come fa `writeNote`. Non passa dal motore dei task né da un modello.
+  3. Se la routine chiede la sintesi, il codice mette in coda un job `routine.summary`, sulla forma di `note.organize` (D-086, D-100): **una sola chiamata al modello locale, senza strumenti**, dal gateway. Il risultato è un secondo messaggio, scritto dal codice.
+  4. Se il canale è `call`, il codice scrive la riga in `calls`.
+
+  Non si usa `scheduleTask`, che fa solo avanzare un task esistente e fa girare l'orchestratore con i suoi strumenti. Non si usa neanche un job con `runAt` per ogni esecuzione: il ticker rilegge la regola a ogni giro, quindi una routine cambiata o in pausa non lascia job vecchi in coda.
+
+**(d) Dove arriva il resoconto.** Ogni routine ha una **sua conversazione privata** (clearance L2), creata con la routine e intitolata come lei, per esempio "Routine · Buongiorno".
+- L'utente può rispondere al resoconto e la conversazione continua come le altre, con l'orchestratore. Per le email vale però il punto (h): l'orchestratore non ne vede mai il contenuto.
+- Non è una chat di sistema (D-064): il ringer chiama solo per conversazioni `origin = 'user'` (`ringer.ts:43`).
+- **Se l'utente archivia la conversazione,** la routine va in pausa e la sua carta lo dice. Già oggi il ringer non chiama per le conversazioni archiviate.
+
+**(e) Il resoconto: prima i dati esatti, poi, se c'è, il modello.**
+- **Parte fissa, scritta dal codice, senza modello.** Ogni riga ha la sua fonte:
+  - **todo** (SQL): carte con `assignee = 'user'` aperte, in ordine di scadenza e priorità come dice `SPEC.md`; al massimo 7, più "e altre N".
+  - **in attesa** (SQL): "Arianna aspetta N tue decisioni", con lo stesso conteggio di D-091 (righe visibili più quelle sopra L2, solo contate).
+  - **fatto e fallito** dall'esecuzione precedente, e **in corso** (SQL).
+  - **pensieri** (file): numero di file in `kb/inbox/` con `status: new` nell'intestazione, letti dal core come fa la ripresa delle note all'avvio (D-086). Solo il numero: i titoli delle note sono testo L2 dell'utente e non servono.
+
+  Ogni riga di carta porta il titolo solo se la sua etichetta è al massimo quella della conversazione (L2). **Una carta L3 è solo contata.** L'etichetta del messaggio è la più alta fra le righe incluse.
+- **Parte del modello locale, facoltativa.** Tre righe di sintesi ("la cosa più urgente oggi è…") dal job `routine.summary`. In ingresso riceve **solo** i titoli e i conteggi della parte fissa, **mai dati delle email** (punto (h)). La sintesi eredita l'etichetta più alta dei suoi ingressi (regola 8).
+- **Perché così.** La parte che serve davvero (cosa devo fare, cosa aspetta me) non dipende da oMLX né dalla qualità del modello, si prova con test deterministici e arriva anche quando il modello non c'è.
+
+**(f) Cosa si dice al telefono, e con quale etichetta.**
+
+**Due famiglie di numeri, con etichette diverse.**
+- **Numeri da SQL o dal filesystem, senza modello:** todo, attese, fatti, falliti, in corso, pensieri. Sono conteggi su tabelle e cartelle, calcolati dal codice.
+  - Su un canale cloud (telefono vero, Telegram) una frase fatta **solo di questi numeri** dentro un testo fisso può uscire come L1. Esempio: "Hai 5 cose da fare e 2 decisioni in attesa: i dettagli sono in chat."
+  - **Cosa contano verso il cloud:** solo righe fino a L2. Le carte L3 non entrano nel numero, e le attese sopra L2, che D-091 conta a parte (`hidden`) solo in locale, restano fuori. Le email non entrano mai, a nessuna etichetta.
+  - Oggi la policy non lo ammette: è una **nuova eccezione accanto a quella di D-044**, da approvare (domanda 14). Va scritta in `PRIVACY-POLICY-SPEC.md` e coperta dai test di `packages/policy` (un caso positivo e uno negativo).
+- **Il numero di email importanti** è il giudizio di un modello che ha letto L2, quindi **è L2** (regola 8). Può essere detto solo su un canale locale (`voice`, `web`).
+  - **Anche "ci sono novità nella posta" resta fuori dall'eccezione:** è un segnale tratto da righe L2 di `mail_messages`, quindi si dice solo su `voice` e `web`. Sui canali cloud la parte email si omette del tutto, salvo un'approvazione separata.
+
+**La chiamata via internet (`voice`, locale).** La consegna è a due gradini.
+1. **Saluto: conteggi**, da un testo fisso riempito dal codice: "Buongiorno, sono Arianna. Oggi hai 5 cose da fare, 2 aspettano una tua decisione, e ci sono 3 email importanti. Vuoi i dettagli?".
+   - Con il conteggio delle email il saluto è L2. Passa dal gateway verso `voice`, che lo ammette in una conversazione privata (D-066, scelta 1).
+2. **Dettagli, solo dopo un "sì".** Arianna legge i titoli fino a `voice_max_label` della routine (predefinito L2), sempre dopo il gateway verso `voice`.
+   - Questo "sì" **non è** l'abilitazione della regola 7 (scritta per la telefonia): è un **cancello di interfaccia**, perché chi risponde può non essere solo. La policy ammette già L2 su `voice`.
+   - Una carta o un'email L3 resta solo contata.
+   - Con un "no" o in silenzio, Arianna dice "Trovi tutto in chat" e chiude.
+   - **Mittente e oggetto delle email li legge il codice dalla tabella, con la sintesi vocale** (punto (h)). Non entrano mai nel prompt del modello `voice`, e nella storia della chiamata restano come riferimento.
+
+**Il telefono vero e Telegram**, quando arriveranno, si fermano al primo gradino e ai soli numeri ammessi dall'eccezione. La regola 10 lo impone già, e la proposta non la allenta. Cosa farne della regola 7 lo decide la domanda 5.
+
+**La push** resta "Arianna ti chiama" e basta: nessun nome di routine e nessun numero.
+
+**(g) Quando qualcosa non va.**
+- **Nessuna risposta.** Il predefinito è la regola di D-066: squillo di 30 secondi, poi una nota scritta ("Ti ho cercato alle 10 per la routine: il resoconto è qui sopra"), senza insistere. Il resoconto è già in chat.
+  - Su richiesta, `retry_minutes` permette **un solo** secondo squillo (per esempio dopo 15 minuti), che conta nel massimo al giorno.
+  - **Contraddice** D-066 (scelta 9, "senza riprovare") e `SPEC.md`, "Quando ti chiama" ("un messaggio scritto invece di insistere"): se lo accetti, vanno allineati entrambi (domanda 6).
+  - **Il secondo squillo rispetta le fasce di silenzio,** a differenza del primo: lo ha scelto Arianna, non l'utente. Una routine delle 20:50 senza risposta non riprova alle 21:05 se il silenzio inizia alle 21: c'è solo la nota.
+- **Silenzio, fine settimana, massimo al giorno.**
+  - I giorni li sceglie la routine, quindi il primo squillo, come una chiamata programmata, salta le fasce di silenzio e il fine settimana di `[voice.outgoing]`, ma **conta nel massimo** (`mayCall`, `outgoing.ts:35-40`).
+  - Se il massimo è raggiunto, il resoconto arriva comunque in chat e la chiamata diventa `skipped` con il testo di oggi.
+- **Voce non attiva** (`voiceUp` falso). Oggi il ringer aspetta senza scrivere (`ringer.ts:112-113`). Per una routine si propone un'attesa di al massimo 10 minuti, poi una nota scritta: altrimenti la chiamata delle 10 squillerebbe alle 13, quando la voce riparte.
+- **Modello locale non pronto (D-100).**
+  - La parte fissa parte subito.
+  - Il job `routine.summary` aspetta come i job di D-100 (`organizeModelReady`, nessun tentativo speso mentre oMLX parte) fino a 20 minuti. Poi il resoconto resta senza sintesi, con la riga "Sintesi non disponibile: il modello locale non era pronto".
+  - **La chiamata non aspetta il modello.** Il conteggio delle email importanti usa le classificazioni già fatte all'arrivo dei messaggi (punto (h)), non al momento della routine. Le email non ancora classificate, per esempio con oMLX spento dalla notte, si dicono a parte: "e 4 email non ancora guardate". Senza nessuna classificazione la parte email si riduce a quel numero.
+- **Mac spento o addormentato.**
+  - A core spento non succede nulla: nessun servizio esterno chiama al posto di Arianna.
+  - All'avvio, o al primo giro dopo il risveglio, il ticker trova le esecuzioni perse:
+    - **entro 2 ore**, fa il resoconto in chat con la riga "in ritardo: il Mac era spento alle 10", **senza chiamare**;
+    - **oltre le 2 ore**, registra `missed-offline` e scrive una sola riga, senza recuperare più giorni.
+- **Chiamata in corso a quell'ora.** Una chiamata alla volta (`calls_one_live`): il resoconto va in chat e la chiamata aspetta il prossimo giro del ringer, al massimo 10 minuti, poi una nota.
+
+**(h) Email (tappa C): connettore locale, in sola lettura, con Dual LLM. Realizza l'idea 1.**
+
+- **Attivazione.** La prima volta che una routine usa la fonte email, o quando si configura la casella, la pagina chiede **conferma come un'impostazione di privacy** ("Chiede conferma prima di salvare", D-105). La conferma dice cosa esce verso il server di posta (punto sotto) e che i messaggi diventano dati L2 sul Mac. Un agente non può darla.
+- **Connettore.** IMAP in sola lettura dal core: mai flag, mai spostamenti, mai cancellazioni. Si usano solo `BODY.PEEK` e le intestazioni, così la posta non risulta letta.
+  - La password di un'app sta nel vault (`vault://imap-password`, D-042). Niente OAuth né token di abbonamenti.
+  - Si leggono solo le cartelle elencate, solo i messaggi più nuovi dell'ultima lettura, solo testo. Gli allegati non si scaricano in questa tappa.
+  - La libreria IMAP è una **dipendenza nuova**: va una voce in `DECISIONS.md` con versione esatta e licenza (non verificate qui, niente rete). L'alternativa senza dipendenze npm è nella domanda 8.
+- **IMAP è un'uscita che il gateway non copre: eccezione documentata.** Va scritta come quella delle push in `PRIVACY-POLICY-SPEC.md` ("Le notifiche delle chiamate") e aggiunta alla tabella "Le cinque superfici d'uscita".
+  - **Cosa esce, e verso dove:** verso il solo server di posta configurato, con TLS, escono:
+    - nome utente e password dell'app, rivelata con `reveal()` solo nel processo che si collega;
+    - i nomi delle cartelle lette e gli intervalli di UID chiesti;
+    - l'ora e la frequenza delle letture, e l'IP del Mac.
+  - **Cosa non esce:** nessun testo di Arianna e nessun dato L2. Il server di posta ha già la posta, ma ora sa quando e quanto la legge Arianna.
+  - **Registro:** a ogni lettura un evento L0 `mail.fetch` con host, numero di cartelle, numero di messaggi nuovi ed esito (codice chiuso), mai nomi, mittenti od oggetti.
+- **Dove finiscono.** Tabella `mail_messages` nel database: mittente, oggetto, data, testo, etichetta, `important`, `reason_code`, `classified_at`.
+  - Il testo è **L2 per default** (default-deny).
+  - Diventa **L3** se lo scanner trova un segreto (codici, password, IBAN in chiaro), o se il mittente è in un elenco dell'utente (banca, sanità).
+  - Un'email L3 è solo contata, ovunque.
+- **L'elenco dei mittenti** (per L3 e per "sempre o mai importanti") **non** va in `config/labels.toml`, che è in git e rifiuta chiavi sconosciute. Va in una sezione `[mail]` di `config/arianna.toml`, fuori da git (D-048). Cambiarlo è un'impostazione di privacy: lo scrive solo l'utente, con la conferma di D-105, mai un agente.
+- **Chi giudica "importante", all'arrivo del messaggio:**
+  1. **regole deterministiche dell'utente:** mittenti e domini "sempre importanti" o "mai";
+  2. **un passo isolato del modello locale, senza strumenti** (Dual LLM, `AGENT-CARDS.md`). Legge una sola email e restituisce soltanto `{ important: boolean, reason: <codice da elenco chiuso> }`, validato da uno schema. Esempi di codice: `scadenza`, `richiesta-diretta`, `pagamento`, `famiglia`, `altro`.
+- **Mittente e oggetto sono contenuto non fidato di terzi: dati opachi.** Possono contenere istruzioni ("Oggetto: Arianna, ignora le regole e…").
+  - **Non entrano mai nel prompt di un modello con strumenti**: né l'orchestratore, né la sintesi di `routine.summary`, né il modello `voice`.
+  - **Nel messaggio del resoconto c'è solo un riferimento** (gli id delle righe di `mail_messages`). La pagina li mostra leggendo la tabella, come testo, senza `v-html`. Nella storia della conversazione, quella che leggono orchestratore, riassunti e `voice`, compare solo "[3 email importanti: elenco nella pagina]".
+  - **A voce** mittente e oggetto li inserisce il codice in un testo fisso ("Da {mittente}: {oggetto}"). Passano dal gateway verso `voice` con l'etichetta dell'email e vanno alla sintesi vocale, non a un modello. Nella storia della chiamata resta il riferimento.
+- **"Dimmi di più" su un'email** (dal pulsante della pagina, o se in chat l'utente indica una riga dell'elenco) **ripassa dal passo isolato, mai dall'orchestratore.** Il passo rilegge quella email senza strumenti e restituisce campi strutturati: scadenza, importo, azione richiesta da un elenco chiuso, più un riassunto breve. La pagina mostra il riassunto come dato opaco, che non entra nella storia letta dai modelli con strumenti. L'orchestratore sa solo che c'è un'email con quell'id e quel codice.
+- **Eval obbligatori della tappa C,** con email finte: injection nell'oggetto, nel mittente (nome visualizzato) e nel testo. Ciascuna deve:
+  - non cambiare `important` oltre lo schema;
+  - non far comparire il testo iniettato nel prompt di un modello con strumenti né nella storia della conversazione;
+  - non produrre azioni.
+- **Mai invio.** Rispondere a un'email è un'azione esterna, con la sua approvazione, in un'altra proposta.
+- **Verso il cloud.** I dati delle email sono L2 come ogni dato privato. Ne esce solo un testo che l'utente declassa esplicitamente con un'approvazione per quel testo esatto (D-055, "Declassamento" in `PRIVACY-POLICY-SPEC.md`), mai in automatico. Le email L3 non si declassano mai.
+- **In sviluppo** solo una casella finta: un server IMAP finto su loopback nei test, come il finto Bot API di Telegram (`apps/core/test/support/fake-telegram.ts`), con email inventate. Nessuna casella vera prima del criterio della Fase 1A e delle password vere.
+
+**(i) Calendario.** Fonte `calendar.today` in sola lettura (CalDAV o un file `.ics`), stessa forma delle email: L2 per default, titoli degli eventi come dati opachi. Arriva dopo le email, solo se lo vuoi (domanda 11).
+
+**(j) Ricorrenze che creano carte.** È la "carta ricorrente" che `SPEC.md` prevede per la prova di ripristino trimestrale. Stessa tabella, con una consegna `card` al posto di `chat` e `call`: all'ora data nasce una carta in Inbox con titolo e criteri fissi. È naturale nell'ottica "Notion più cardwall", ma non serve alla richiesta di oggi: è la tappa D, facoltativa.
+
+### Cosa non si fa
+
+- **Nessun prompt libero ricorrente.** Le fonti sono un elenco chiuso. Un prompt libero che gira da solo per mesi, magari dopo aver letto email non fidate, metterebbe insieme dati privati, contenuti non fidati e strumenti: la combinazione che `SPEC.md`, `AGENT-CARDS.md` e `SECURITY.md` escludono.
+- **Nessuna routine attivata dall'orchestratore senza approvazione,** e nessuna routine che scrive fuori: niente email inviate, niente messaggi a terzi.
+- **Nessun servizio esterno per svegliare il Mac o per chiamare** (cron nel cloud, telefonia): se il core è spento, la routine aspetta.
+- **Nessun contenuto nella push,** neanche il nome della routine.
+- **Nessun dato delle email nel prompt di un modello con strumenti,** né verso un esecutore cloud se non tramite un declassamento approvato testo per testo.
+- **Niente pagina del cardwall in questa proposta:** è l'epic della Fase 2. La pagina "Routine" mostra solo le routine.
+
+### Piano a tappe
+
+Stime grezze (±50%).
+
+| Tappa | Contenuto | Ore |
+| --- | --- | --- |
+| A | Tabelle `routines` e `routine_runs`; `nextRun` puro con test di fuso e ora legale; ticker nel core; conversazione per routine; resoconto fisso scritto dal codice (todo, attese, fatto e fallito, in corso da SQL; pensieri dai file; carte L3 solo contate), con test con un caso positivo e uno negativo per fonte; job `routine.summary` senza strumenti con l'attesa di D-100; recupero dopo il Mac spento. Pagina "Routine" con carte, modulo e "Prova adesso" | 10-15 |
+| A2 | `routine.propose` nell'orchestratore: schema in `@arianna/agents`, scheda di approvazione, casi eval (proposta corretta, rifiuto di fonti o canali fuori elenco, mai attivata da sola). Va misurato l'effetto sul prompt di D-075 (cache del prefisso) | 4-7 |
+| B | Chiamata: `calls.reason` `routine` e `routine_run_id` (migrazione), saluto a conteggi con testo fisso, "Vuoi i dettagli?" e lettura dopo il "sì" passata dal gateway verso `voice`, `retry_minutes` con le fasce di silenzio, attese della voce. Se approvata, eccezione per i numeri da SQL sui canali cloud in `PRIVACY-POLICY-SPEC.md`, con i test in `packages/policy` | 5-8 |
+| C | Email, **realizza l'idea 1 (Dual LLM, da sola 12-20 ore)**: decisione sulla dipendenza o sul sincronizzatore, connettore IMAP in sola lettura con il server finto, eccezione d'uscita documentata ed evento `mail.fetch`, `mail_messages`, sezione `[mail]` con la conferma, regole L3, passo isolato con schema chiuso, dati opachi nella pagina e a voce, "Dimmi di più" dal passo isolato, eval di injection | 22-34 |
+| D | Facoltative: calendario, ricorrenze che creano carte | 6-10 |
+| | **Totale** | **47-74** |
+
+**Legame con le fasi.**
+- La tappa A è il **brief giornaliero della Fase 5** (4-8 ore) ristretto a task e todo, più la pagina. Anticiparla è un'eccezione da annotare in `ROADMAP.md` come l'anticipo di D-066 e la tappa 1 di D-106, già annotati.
+- La tappa B allarga le chiamate di D-066, cioè la Fase 4, il cui anticipo è annotato in `ROADMAP.md` con D-066.
+- La tappa C appartiene alla Fase 2 (ingestione da "mail", Segretario, idea 1). **Non va costruita prima del criterio della Fase 1A:** senza password vere e vault vero, una casella vera non ci entra.
+- **Raccomandazione:** nessuna tappa prima della chiusura della Fase 1A, salvo una tua scelta esplicita per la tappa A. La tappa A non tocca `packages/router` né `packages/executors`; `packages/policy` si tocca solo dalla tappa B, e solo se approvi l'eccezione.
+
+**Se l'utente la accetta, da allineare** (D-013, non li tocco ora):
+- **`SPEC.md`:**
+  - "Quando ti chiama" va aggiornata se la routine entra fra i casi, e "un messaggio scritto invece di insistere" va corretta se accetti il secondo squillo;
+  - "Todo list e cardwall": la vista Todo "ogni mattina" diventa una routine predefinita, proposta e spenta;
+  - "Modulo apprendimento": il briefing quotidiano può diventare una fonte.
+- **`DECISIONS.md`:** D-066, scelta 9 ("senza riprovare"), se accetti il secondo squillo.
+- **`ROADMAP.md`:** riga del brief giornaliero della Fase 5; nota dell'eccezione se una tappa si anticipa.
+- **`DATA-MODEL.md`:** tabelle `routines`, `routine_runs`, `mail_messages`; `calls.reason` e `calls.routine_run_id`.
+- **`PRIVACY-POLICY-SPEC.md`:**
+  - l'eccezione per i numeri da SQL sui canali cloud, accanto a quella di D-044;
+  - l'eccezione d'uscita IMAP alla maniera di "Le notifiche delle chiamate", più una riga nella tabella "Le cinque superfici d'uscita";
+  - email L2 e L3, elenco dei mittenti in `[mail]` come impostazione di privacy;
+  - la decisione fra regola 7 e regola 10 (domanda 5).
+- **`AGENT-CARDS.md`:** il passo isolato delle email come scheda o come passo del Segretario.
+- **`OPEN-QUESTIONS.md`:** idea 1, realizzata dalla tappa C.
+
+### Rischi
+
+- **Una routine che chiama tutti i giorni stanca.** Il massimo al giorno, la pausa con un clic e una chiamata per esecuzione lo limitano.
+- **Fuso e ora legale.** Il ringer usa l'ora del processo, mentre la routine ha il suo fuso: le due nozioni convivono e vanno provate con i test del punto (c).
+- **Due cose alla stessa ora.** Una sola chiamata alla volta: la seconda aspetta fino a 10 minuti, poi diventa una nota.
+- **Prompt injection dalle email.** È il rischio maggiore della tappa C. Lo contengono il passo isolato senza strumenti, lo schema chiuso e mittente e oggetto come dati opachi; lo misurano gli eval con email ostili finte, prima di una casella vera.
+- **Dati opachi che scappano.** Il rischio è che un riferimento venga sostituito dal testo nella storia della conversazione, per esempio da un riassunto di D-077. Serve un test che costruisca la storia di una conversazione di routine con email finte e controlli che mittente e oggetto non ci siano.
+- **Il "sì" frainteso dal riconoscimento.** Parakeet potrebbe sentire "sì" dove non c'è. Il danno è limitato: i dettagli sono al massimo L2 e in un canale locale.
+- **Resoconto lungo a voce.** Al massimo 7 voci per fonte, e `summaryToSay` taglia a 400 caratteri con "il resto è in chat".
+- **Il titolo della routine è testo dell'utente** (L2): non compare nella push né negli eventi.
+
+### Domande per l'utente
+
+1. **Anticipare una tappa rispetto alle fasi, o aspettare la chiusura della Fase 1A?** Raccomandazione: aspettare; se vuoi anticipare, solo la tappa A (resoconto in chat), annotata in ROADMAP come eccezione.
+2. **Dove si definiscono le routine: pagina "Routine", linguaggio naturale con approvazione, o entrambi?** Raccomandazione: entrambi, prima la pagina (tappa A), poi lo strumento `routine.propose` che crea una routine spenta da approvare (tappa A2).
+3. **Una conversazione privata per ogni routine, o una sola conversazione "Routine" per tutte?** Raccomandazione: una per routine, così rispondi al resoconto nel suo contesto e la metti in pausa archiviandola.
+4. **Nella chiamata via internet: prima i soli conteggi e i dettagli dopo un tuo "sì", oppure subito i titoli?** Raccomandazione: conteggi, poi "Vuoi i dettagli?"; il "sì" è un cancello di interfaccia (la voce locale ammette già L2), i titoli fino a L2, le cose L3 sempre solo contate.
+5. **Per il telefono vero (SIP), vale la regola 10 della policy (al massimo L1) o la regola 7 (L2 a voce con un'abilitazione per quella chiamata)?** Oggi si contraddicono. Raccomandazione: vale la regola 10, e la regola 7 si riscrive di conseguenza; sul telefono vero solo i numeri ammessi e il rimando alla chat.
+6. **Se non rispondi: nessun secondo squillo (come D-066 e SPEC) o uno solo dopo 15 minuti, fuori dalle fasce di silenzio?** Raccomandazione: nessuno per default, con la possibilità di attivarne uno per routine; se lo vuoi, si correggono D-066 (scelta 9) e SPEC.
+7. **Mac spento all'ora della routine: recupero in chat entro 2 ore, senza chiamare, e oltre una sola riga "persa"?** Raccomandazione: sì; e con il modello locale non pronto, resoconto fisso subito e sintesi solo se arriva entro 20 minuti.
+8. **Email: connettore IMAP in sola lettura dentro il core (una dipendenza npm nuova) o sincronizzazione in `data/mail/` con un programma esterno che installi tu (per esempio `mbsync`) e Arianna che legge solo file?** Raccomandazione: IMAP nel core, perché password, etichette ed evento di lettura restano in un solo processo.
+9. **Che tipo di fornitore di posta usi (Gmail, iCloud, Outlook, un altro server IMAP)?** Basta il tipo, non l'indirizzo: la risposta passa come L1. Raccomandazione: dal tipo dipende come si crea la password dell'app.
+10. **Cosa conta come email "importante": regole tue (mittenti sempre o mai importanti) più il modello locale, o solo il modello?** Raccomandazione: regole più modello, con il motivo da un elenco chiuso e l'elenco dei mittenti in `arianna.toml`, fuori da git.
+11. **Vuoi il calendario come fonte, dopo le email?** Raccomandazione: sì, in sola lettura e con la stessa forma delle email, nella tappa D.
+12. **Oltre a chat e chiamata, vuoi Telegram come canale di una routine?** Raccomandazione: più avanti, dopo la prova vera di Telegram, e solo con i numeri ammessi (mai il conteggio delle email) e il rimando alla chat.
+13. **La routine salta silenzio e fine settimana come una chiamata programmata e conta nel massimo di 3 chiamate al giorno?** Raccomandazione: sì; i giorni li scegli nella routine, e con il massimo raggiunto il resoconto arriva solo in chat.
+14. **Approvi una nuova eccezione accanto a D-044: sui canali cloud una frase fissa con soli numeri contati dal codice senza modello (todo, attese, fatti, falliti, in corso, pensieri) esce come L1?** Raccomandazione: sì, con i test in `packages/policy`; si contano solo righe fino a L2 (carte L3 e attese sopra L2 escluse); niente email, né il conteggio delle importanti né "novità nella posta", che restano su voice e web.
+15. **Vuoi anche le ricorrenze che creano carte (per esempio "ogni lunedì: pagare l'affitto"), la tappa D?** Raccomandazione: dopo il cardwall della Fase 2, con la stessa tabella.
+
+### Cose non verificate (D-110)
+
+- **Libreria IMAP:** nome, versione, licenza e dipendenze non controllati (niente rete). Lo stesso vale per `mbsync`.
+- **Parakeet sul "sì".** Non ho misurato quanto spesso sente "sì" o "no" in modo sbagliato su frasi brevi: da provare con il provino di D-066.
+- **Fuso.** `Intl.DateTimeFormat` con `timeZone` è nel Node in uso, ma non ho provato il calcolo nei giorni del cambio dell'ora.
+- **`setInterval` e il sonno del Mac.** Che il primo giro dopo il risveglio arrivi entro 30 secondi è il comportamento atteso di Node, ma non l'ho provato.
+- **`routine.propose` e la cache del prompt (D-075).** Uno strumento in più allunga il prompt fisso: l'effetto va misurato con `pnpm eval:models`.
+- **Riferimenti al posto del testo nella storia.** Non ho verificato come `conversationView` e i riassunti di D-077 tratterebbero un messaggio con una parte riservata alla pagina: il meccanismo va progettato nella tappa C.
+- **Chiamata dal telefono.** Dipende dalla VPN (1.13) e da HTTPS: oggi la routine squilla solo nel browser del Mac, o con la push allo stesso browser.
 
 ## Cose non verificate
 
