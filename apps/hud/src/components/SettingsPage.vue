@@ -782,13 +782,20 @@ watch(active, () => {
               <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
                 <h3 class="hud-title">{{ agentName(agent) }}</h3>
                 <template v-if="forms.personas[agent]">
-                  <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
-                    <label class="flex flex-col gap-1 text-xs text-muted">
-                      Tono
-                      <select v-model="forms.personas[agent].tone" class="field px-2 py-1.5 text-[13px] text-ink">
-                        <option v-for="tone in TONES" :key="tone" :value="tone">{{ TONE_TEXT[tone] }}</option>
-                      </select>
-                    </label>
+                  <fieldset class="flex flex-col gap-1 text-xs text-muted">
+                    <legend class="mb-1">Tono</legend>
+                    <div class="flex flex-wrap gap-1.5">
+                      <label
+                        v-for="tone in TONES"
+                        :key="tone"
+                        class="cursor-pointer rounded-[9px] border px-2.5 py-1 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
+                        :class="forms.personas[agent].tone === tone ? 'border-accent bg-accent/15 text-ink' : 'border-line-strong text-muted hover:text-ink'"
+                      >
+                        <input v-model="forms.personas[agent].tone" type="radio" :name="`tone-${agent}`" :value="tone" class="sr-only" />{{ TONE_TEXT[tone] }}
+                      </label>
+                    </div>
+                  </fieldset>
+                  <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                     <label class="flex flex-col gap-1 text-xs text-muted">
                       Ti dà del
                       <select v-model="forms.personas[agent].address" class="field px-2 py-1.5 text-[13px] text-ink">
