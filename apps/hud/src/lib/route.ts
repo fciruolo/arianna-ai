@@ -26,6 +26,13 @@ export function isSettingsPath(pathname: string): boolean {
   return pathname === SETTINGS_PATH || pathname === `${SETTINGS_PATH}/`;
 }
 
+/** The knowledge page (D-087): the graph of kb/. */
+export const KNOWLEDGE_PATH = '/conoscenza';
+
+export function isKnowledgePath(pathname: string): boolean {
+  return pathname === KNOWLEDGE_PATH || pathname === `${KNOWLEDGE_PATH}/`;
+}
+
 /** The path of a conversation, or the root when none is open. */
 export function pathFor(conversationId: string | null): string {
   return conversationId === null ? '/' : `/c/${conversationId}`;

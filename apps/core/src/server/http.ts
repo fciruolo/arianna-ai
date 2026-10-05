@@ -34,6 +34,7 @@ import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
+import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import { loadStatus } from '../status.ts';
@@ -485,6 +486,30 @@ function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: un
       return { status: 201, body: { path: note.path, label: note.label, organizing } };
     }),
     ...noteRoutes(capture),
+    ...knowledgeRoutes(capture),
+  ];
+}
+
+/**
+ * The graph of kb/ for the "Conoscenza" page (D-087): nodes and edges up to
+ * L2, header fields only; the text of one page at a time, 404 for anything
+ * outside kb/, hidden or above L2.
+ */
+function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
+  const cache: GraphCache = new Map();
+  const need = (): NonNullable<ApiServerOptions['capture']> => {
+    if (capture === undefined) throw new HttpError(404, 'not found');
+    return capture;
+  };
+  return [
+    route('GET', '/api/knowledge/graph', () => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: buildKnowledgeGraph(home, rules, cache) });
+    }),
+    route('GET', '/api/knowledge/page', (_request, url) => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: { page: readKnowledgePage(home, rules, url.searchParams.get('path') ?? '') } });
+    }),
   ];
 }
 

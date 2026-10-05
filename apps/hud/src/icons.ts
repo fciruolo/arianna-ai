@@ -3,12 +3,14 @@ import {
   Archive,
   ArchiveRestore,
   ArrowUp,
+  BrainCircuit,
   Briefcase,
   Check,
   ChevronRight,
   Clock,
   Copy,
   FileText,
+  Focus,
   Folder,
   History,
   Inbox,
@@ -35,6 +37,7 @@ import {
   Plus,
   RotateCcw,
   Route,
+  Search,
   Send,
   Server,
   Settings,
@@ -95,6 +98,9 @@ export const ICONS = {
   history: History,
   copy: Copy,
   inbox: Inbox,
+  knowledge: BrainCircuit,
+  search: Search,
+  focus: Focus,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

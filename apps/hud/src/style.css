@@ -36,6 +36,13 @@
   --l2: #f2b34b;
   --l3: #e2614b;
   --grid: #4fd1c10a;
+  /* Folders of the knowledge graph (D-087). */
+  --graph-1: #4fd1c1;
+  --graph-2: #7cc796;
+  --graph-3: #7fb4f0;
+  --graph-4: #f2b34b;
+  --graph-5: #c08bf0;
+  --graph-6: #f07fa8;
   color-scheme: dark;
 }
 
@@ -62,6 +69,12 @@
     --l2: #b9801c;
     --l3: #c24a35;
     --grid: #23887c0d;
+    --graph-1: #1f8a7d;
+    --graph-2: #3f8a56;
+    --graph-3: #3a6cb0;
+    --graph-4: #b07612;
+    --graph-5: #8a52c4;
+    --graph-6: #c0447a;
     color-scheme: light;
   }
 }
@@ -88,6 +101,12 @@
   --l2: #b9801c;
   --l3: #c24a35;
   --grid: #23887c0d;
+  --graph-1: #1f8a7d;
+  --graph-2: #3f8a56;
+  --graph-3: #3a6cb0;
+  --graph-4: #b07612;
+  --graph-5: #8a52c4;
+  --graph-6: #c0447a;
   color-scheme: light;
 }
 
@@ -420,6 +439,20 @@ body {
     color: var(--accent);
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  /* A [[wikilink]] of a page on the knowledge page (D-087): jumps to its node. */
+  .md .md-wikilink {
+    display: inline;
+    padding: 0 0.15em;
+    border: 0;
+    border-bottom: 1px dashed var(--accent);
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+  }
+  .md .md-wikilink:hover {
+    background: var(--glow);
   }
   .md .md-host {
     margin-left: 0.35em;

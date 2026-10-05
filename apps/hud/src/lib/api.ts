@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { GraphData, KnowledgePage } from './graph.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -332,4 +333,14 @@ export async function listDelegations(limit = 10): Promise<RecentDelegation[]> {
 /** A file changed by a run, as it is now in the approved project. */
 export async function loadDelegationFile(delegationId: string, index: number): Promise<FilePreview> {
   return (await call<{ file: FilePreview }>('GET', `/api/delegations/${encodeURIComponent(delegationId)}/files/${String(index)}`)).file;
+}
+
+/** The graph of kb/ (D-087): pages up to L2 with their links and tags, never their text. */
+export async function loadKnowledgeGraph(): Promise<GraphData> {
+  return call<GraphData>('GET', '/api/knowledge/graph');
+}
+
+/** One page of kb/ with its text, up to L2; 404 for anything else. */
+export async function loadKnowledgePage(id: string): Promise<KnowledgePage> {
+  return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}`)).page;
 }

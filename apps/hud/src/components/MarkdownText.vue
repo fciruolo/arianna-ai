@@ -3,6 +3,7 @@ import { computed, defineComponent, h, onBeforeUnmount, ref, type PropType, type
 
 import { copyText, COPY_FEEDBACK_MS, type ClipboardLike, type CopyResult } from '../lib/clipboard.ts';
 import { COPY_TEXT } from '../lib/italian.ts';
+import { splitWikilinks } from '../lib/graph.ts';
 import { inlineText, parseMarkdown, safeHref, type Block, type Inline } from '../lib/markdown.ts';
 import Icon from './Icon.vue';
 
@@ -46,37 +47,50 @@ const CopyButton = defineComponent({
   },
 });
 
-function inline(node: Inline): VNodeChild {
+/** Called with the target of a `[[wikilink]]` clicked; without it wikilinks stay plain text. */
+type Wikilink = ((target: string) => void) | undefined;
+
+/** A text with its wikilinks as buttons (the knowledge page, D-087): never a link to an address. */
+function textWith(text: string, wikilink: Wikilink): VNodeChild {
+  if (wikilink === undefined || !text.includes('[[')) return text;
+  return splitWikilinks(text).map((piece) =>
+    piece.kind === 'text' ? piece.text : h('button', { type: 'button', class: 'md-wikilink', title: piece.target, onClick: () => wikilink(piece.target) }, piece.text),
+  );
+}
+
+function inline(node: Inline, wikilink: Wikilink): VNodeChild {
+  const each = (children: readonly Inline[]) => children.map((child) => inline(child, wikilink));
   switch (node.kind) {
     case 'text':
-      return node.text;
+      return textWith(node.text, wikilink);
     case 'break':
       return h('br');
     case 'code':
       return h('code', node.text);
     case 'strong':
-      return h('strong', node.children.map(inline));
+      return h('strong', each(node.children));
     case 'em':
-      return h('em', node.children.map(inline));
+      return h('em', each(node.children));
     case 'strike':
-      return h('s', node.children.map(inline));
+      return h('s', each(node.children));
     case 'link': {
       const url = new URL(node.href);
       const where = url.protocol === 'mailto:' ? url.pathname || node.href : url.host;
       // Compared normalized: a bare URL is its own label even when URL adds a slash or lowercases the host.
       const label = inlineText(node.children);
-      const anchor = h('a', { href: node.href, target: '_blank', rel: 'noopener noreferrer nofollow', referrerpolicy: 'no-referrer', title: node.href }, node.children.map(inline));
+      const anchor = h('a', { href: node.href, target: '_blank', rel: 'noopener noreferrer nofollow', referrerpolicy: 'no-referrer', title: node.href }, each(node.children));
       return safeHref(label) === node.href || label === where ? anchor : [anchor, h('span', { class: 'md-host' }, where)];
     }
   }
 }
 
-function block(node: Block, tail: VNode[] = []): VNode {
+function block(node: Block, tail: VNode[], wikilink: Wikilink): VNode {
+  const each = (children: readonly Inline[]) => children.map((child) => inline(child, wikilink));
   switch (node.kind) {
     case 'paragraph':
-      return h('p', [...node.inlines.map(inline), ...tail]);
+      return h('p', [...each(node.inlines), ...tail]);
     case 'heading':
-      return h(`h${node.level}`, [...node.inlines.map(inline), ...tail]);
+      return h(`h${node.level}`, [...each(node.inlines), ...tail]);
     case 'code':
       return h('div', { class: 'md-code' }, [
         h('pre', node.lang === null ? {} : { 'data-lang': node.lang }, [h('code', node.text), ...tail]),
@@ -86,18 +100,18 @@ function block(node: Block, tail: VNode[] = []): VNode {
       return h(
         node.ordered ? 'ol' : 'ul',
         node.ordered && node.start !== 1 ? { start: node.start } : {},
-        node.items.map((item, index) => h('li', blocks(item, index === node.items.length - 1 ? tail : []))),
+        node.items.map((item, index) => h('li', blocks(item, index === node.items.length - 1 ? tail : [], wikilink))),
       );
     case 'quote':
-      return h('blockquote', blocks(node.blocks, tail));
+      return h('blockquote', blocks(node.blocks, tail, wikilink));
     case 'rule':
       return tail.length === 0 ? h('hr') : h('div', [h('hr'), ...tail]);
     case 'table': {
       const style = (index: number): Record<string, string> => (node.align[index] === null ? {} : { textAlign: node.align[index] as string });
       return h('div', { class: 'md-table' }, [
         h('table', [
-          h('thead', h('tr', node.head.map((cell, index) => h('th', { style: style(index) }, cell.map(inline))))),
-          h('tbody', node.rows.map((row) => h('tr', row.map((cell, index) => h('td', { style: style(index) }, cell.map(inline)))))),
+          h('thead', h('tr', node.head.map((cell, index) => h('th', { style: style(index) }, each(cell))))),
+          h('tbody', node.rows.map((row) => h('tr', row.map((cell, index) => h('td', { style: style(index) }, each(cell)))))),
         ]),
         ...tail,
       ]);
@@ -106,9 +120,9 @@ function block(node: Block, tail: VNode[] = []): VNode {
 }
 
 /** The blocks, with `tail` (the cursor) inside the last one so it follows the text. */
-function blocks(nodes: readonly Block[], tail: VNode[]): VNode[] {
+function blocks(nodes: readonly Block[], tail: VNode[], wikilink: Wikilink): VNode[] {
   if (nodes.length === 0) return tail;
-  return nodes.map((node, index) => block(node, index === nodes.length - 1 ? tail : []));
+  return nodes.map((node, index) => block(node, index === nodes.length - 1 ? tail : [], wikilink));
 }
 
 export default defineComponent({
@@ -116,6 +130,7 @@ export default defineComponent({
   props: {
     source: { type: String, required: true },
     cursor: { type: Boolean, default: false },
+    wikilink: { type: Function as PropType<(target: string) => void>, default: undefined },
   },
   setup(props) {
     const tree = computed(() => parseMarkdown(props.source));
@@ -123,7 +138,7 @@ export default defineComponent({
       const tail = props.cursor
         ? [h('span', { class: 'animate-hud-blink ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 bg-accent', 'aria-hidden': 'true' })]
         : [];
-      return h('div', { class: 'md' }, blocks(tree.value, tail));
+      return h('div', { class: 'md' }, blocks(tree.value, tail, props.wikilink));
     };
   },
 });
