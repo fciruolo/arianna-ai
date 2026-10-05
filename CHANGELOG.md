@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.12.0] - 2026-10-05
+
+### Aggiunto
+- "Genera personaggio" in Nuovo agente e in Impostazioni → Agenti: descrivi il personaggio, un modello lo disegna, vedi l'anteprima nelle pose e con "Tieni" lo salvi nel pacchetto `miei` e lo assegni all'agente; "Rigenera" ne chiede un altro (D-123).
+- Impostazione `[sprites] model` (Claude Sonnet, predefinito; Claude Opus; modello locale), nella riga Personaggi di Impostazioni → Modelli locali per ruolo (D-123).
+
+### Sicurezza
+- La descrizione del personaggio passa dal gateway; Claude disegna senza strumenti in una cartella vuota e la risposta è validata dal codice (palette e pezzi a misura fissa) prima di comporre il PNG (D-123).
+
 ## [0.11.1] - 2026-10-05
 
 ### Aggiunto
