@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { approvalAnchor, clearFocus, FOCUS_WAIT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../src/lib/chat-focus.ts';
-import { pendingItems, pendingTotal, sortOldestFirst, type WaitingTask } from '../src/lib/pending.ts';
+import { dismissMode, dismissStep, pendingItems, pendingTotal, sortOldestFirst, type WaitingTask } from '../src/lib/pending.ts';
 import {
   hiddenText,
   PENDING_APPROVAL_ELSEWHERE,
@@ -10,6 +10,7 @@ import {
   PENDING_NO_CONVERSATION,
   PENDING_UNTITLED,
   pendingAskText,
+  pendingDismissLabel,
   pendingKind,
   pendingKindText,
   stoppedText,
@@ -309,4 +310,50 @@ test('routerReasonText: an unknown or empty reason gets the generic text', () =>
   assert.equal(routerReasonText(`${HEAD}; the moon is full`), ROUTER_REASON_UNKNOWN);
   assert.equal(routerReasonText(''), ROUTER_REASON_UNKNOWN);
   assert.equal(routerReasonText(null), ROUTER_REASON_UNKNOWN);
+});
+
+test('dismissMode: no task, none; a plain wait, direct; with an approval, confirm (D-109)', () => {
+  assert.equal(dismissMode(null, 'a1'), 'none');
+  assert.equal(dismissMode(null, null), 'none');
+  assert.equal(dismissMode('t1', null), 'direct');
+  assert.equal(dismissMode('t1', 'a1'), 'confirm');
+  // A confirm row arms on the first click and closes on the second; a direct row closes at once.
+  assert.equal(dismissStep('confirm', false), 'arm');
+  assert.equal(dismissStep('confirm', true), 'close');
+  assert.equal(dismissStep('direct', false), 'close');
+  assert.equal(dismissStep('none', true), 'ignore');
+});
+
+test('pendingItems: rows carry the task Chiudi closes; an approval without task cannot be closed here (D-109)', () => {
+  const waiting: WaitingTask[] = [
+    {
+      id: 't-stopped',
+      conversationId: 'c1',
+      conversationTitle: 'Saluti di prova',
+      mode: 'private',
+      archived: false,
+      title: 'Ciao',
+      since: '2026-10-03T10:00:00.000Z',
+      reason: 'other',
+      question: null,
+      approvalId: null,
+      messageId: '7',
+      waitingReason: 'the orchestrator is not available yet (task 1.10)',
+      label: 'L2',
+    },
+  ];
+  const items = pendingItems([approval('a-free'), approval('a-task', { taskId: 't-approval' })], {}, {}, waiting);
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  assert.equal(byKey.get('task-t-stopped')?.taskId, 't-stopped');
+  assert.equal(byKey.get('task-t-stopped')?.dismiss, 'direct');
+  assert.equal(byKey.get('approval-a-task')?.taskId, 't-approval');
+  assert.equal(byKey.get('approval-a-task')?.dismiss, 'confirm');
+  assert.equal(byKey.get('approval-a-free')?.taskId, null);
+  assert.equal(byKey.get('approval-a-free')?.dismiss, 'none');
+});
+
+test('pendingDismissLabel names the row and differs from the window close button (D-109)', () => {
+  assert.equal(pendingDismissLabel('Saluti di prova', false), 'Chiudi l’attesa: Saluti di prova');
+  assert.equal(pendingDismissLabel('Saluti di prova', true), 'Sicuro? Conferma la chiusura dell’attesa: Saluti di prova');
+  assert.notEqual(pendingDismissLabel('x', false), 'Chiudi');
 });

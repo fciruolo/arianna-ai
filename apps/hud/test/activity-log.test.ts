@@ -23,6 +23,16 @@ test('the steps button goes under the last answer of a settled task', () => {
   assert.deepEqual([...anchors], [['3', { taskId: 't1', count: 4 }]]);
 });
 
+test('a system line about a task (D-109) never takes the steps button', () => {
+  const messages = [
+    message('1', { taskId: 't1' }),
+    message('2', { role: 'assistant', taskId: 't1' }),
+    message('3', { role: 'system', taskId: 't1', label: 'L0' }),
+  ];
+  const anchors = stepsAnchors(messages, { t1: task('t1', 'done') }, { t1: 3 });
+  assert.deepEqual([...anchors], [['2', { taskId: 't1', count: 3 }]]);
+});
+
 test('a failed task without an answer gets the button under the question', () => {
   const anchors = stepsAnchors([message('1', { taskId: 't1' })], { t1: task('t1', 'failed') }, { t1: 2 });
   assert.deepEqual([...anchors], [['1', { taskId: 't1', count: 2 }]]);

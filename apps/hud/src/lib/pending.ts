@@ -47,6 +47,29 @@ export interface PendingItem {
   approvalId: string | null;
   /** The element the chat scrolls to (chat-focus.ts), or null. */
   anchor: string | null;
+  /** The task "Chiudi" closes (D-109); null for an approval without a task, which is decided in its card. */
+  taskId: string | null;
+  /** How "Chiudi" works on this row (D-109). */
+  dismiss: DismissMode;
+}
+
+/**
+ * "Chiudi" on a row of "Decisioni in attesa" (D-109): `none` without a task;
+ * `confirm` when an approval waits too (a second click, "Sicuro?", lets it
+ * expire); `direct` for a plain wait.
+ */
+export type DismissMode = 'none' | 'direct' | 'confirm';
+
+export function dismissMode(taskId: string | null, approvalId: string | null): DismissMode {
+  if (taskId === null) return 'none';
+  return approvalId === null ? 'direct' : 'confirm';
+}
+
+/** What a click on "Chiudi" does: the first click on a `confirm` row only arms it; the second, or any on a `direct` row, closes. */
+export function dismissStep(mode: DismissMode, armed: boolean): 'ignore' | 'arm' | 'close' {
+  if (mode === 'none') return 'ignore';
+  if (mode === 'confirm' && !armed) return 'arm';
+  return 'close';
 }
 
 function titleOf(conversationId: string | null, title: string | null | undefined): string {
@@ -85,6 +108,8 @@ export function pendingItems(
       since: approval.requestedAt,
       approvalId: approval.id,
       anchor: conversationId === null ? null : approvalAnchor(approval.id),
+      taskId: approval.taskId,
+      dismiss: dismissMode(approval.taskId, approval.id),
     };
   });
   const listedApprovals = new Set(pending.map((approval) => approval.id));
@@ -112,6 +137,8 @@ export function pendingItems(
       since: task.since,
       approvalId: task.approvalId,
       anchor,
+      taskId: task.id,
+      dismiss: dismissMode(task.id, task.approvalId),
     });
   }
   return sortOldestFirst(rows);

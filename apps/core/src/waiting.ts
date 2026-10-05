@@ -1,6 +1,8 @@
 import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
-import type { Queryable } from './db/client.ts';
+import type { Queryable, Sql } from './db/client.ts';
+import { appendEvent } from './events.ts';
+import { moveTask, TaskError, type Task } from './tasks.ts';
 
 /**
  * The tasks that wait for the user ("Attende te"), for the "Decisioni in
@@ -123,4 +125,87 @@ export async function listWaitingTasks(sql: Queryable): Promise<WaitingListing> 
     });
   }
   return { tasks, hidden };
+}
+
+/** The line the chat shows when a new message closes the waits of its conversation (D-109). */
+export const SUPERSEDED_TEXT = 'Attesa chiusa: la conversazione è andata avanti.';
+
+/**
+ * A closed wait is `done`, and the database wants evidence for a done task
+ * of an agent (tasks_done_needs_evidence): what closed it is added to what
+ * the task already had (always a list: tasks_evidence_is_list), never in
+ * place of it.
+ */
+function withClosure(evidence: Task['evidence'], closure: Task['evidence'][number]): Task['evidence'] {
+  return [...evidence, closure];
+}
+
+/**
+ * The user wrote again in a conversation (D-109): its tasks still waiting for
+ * the user without a pending approval (a question, a limit, an executor that
+ * stopped) are closed as `done`, cause `superseded`, and the chat gets one
+ * system line, L0, before the new message; the line is the evidence of the
+ * closure. The line carries the task it closed (the first, when several) in
+ * `task_id`: a system message with a task is for the user only, the model
+ * and the summaries never read it (conversationView). A task with a pending
+ * approval keeps waiting: only the approval decides it. Tasks of other
+ * conversations and cards without one (D-101) are never touched. Run it in
+ * the transaction that writes the message, with the conversation row locked;
+ * returns the ids it closed.
+ */
+export async function closeSupersededWaits(tx: Queryable, conversationId: string): Promise<string[]> {
+  const rows = await tx<{ id: string; evidence: Task['evidence'] }[]>`
+    SELECT t.id::text, t.evidence FROM tasks t
+    WHERE t.conversation_id = ${conversationId} AND t.status = 'waiting_user'
+      AND NOT EXISTS (SELECT FROM approvals a WHERE a.task_id = t.id AND a.state = 'pending')
+      -- The approval the task waits for, even if it were filed without the task's id.
+      AND NOT EXISTS (SELECT FROM approvals a WHERE a.id = t.waiting_approval_id AND a.state = 'pending')
+    ORDER BY t.created_at, t.id
+    FOR UPDATE OF t`;
+  const first = rows[0];
+  if (first === undefined) return [];
+  const [line] = await tx<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, channel, label, body, task_id)
+    VALUES (${conversationId}, 'system', 'web', 'L0'::privacy_label, ${SUPERSEDED_TEXT}, ${first.id})
+    RETURNING id::text`;
+  if (line === undefined) throw new Error('INSERT INTO messages returned no row');
+  await appendEvent(tx, { kind: 'message.created', taskId: first.id, label: 'L0', payload: { conversationId, messageId: line.id, role: 'system' } });
+  for (const row of rows) {
+    await moveTask(tx, row.id, 'done', { cause: 'superseded', evidence: withClosure(row.evidence, { kind: 'superseded', ref: line.id }) });
+  }
+  return rows.map((row) => row.id);
+}
+
+/**
+ * "Chiudi" in "Decisioni in attesa" (D-109): the user closes a waiting task
+ * by hand. It moves to `done`, cause `user`, with evidence `dismissed`:
+ * nothing failed, the user decided it no longer needs them (`failed` would
+ * show an error that never happened and offer to retry what was dropped).
+ * Its pending approvals expire, as a purge lets them expire. Refused for a
+ * task that is not waiting, or of a deleted conversation; allowed for an
+ * archived one. Locks the approvals first, then the task, in the order of
+ * recordDecisionIn and resumeTask: a decision arriving at the same time
+ * waits instead of deadlocking.
+ */
+export async function dismissWaitingTask(sql: Sql, taskId: string): Promise<Task> {
+  return sql.begin(async (tx) => {
+    const pending = await tx<{ id: string }[]>`
+      SELECT id::text FROM approvals WHERE task_id = ${taskId} AND state = 'pending' ORDER BY id FOR UPDATE`;
+    const [row] = await tx<{ status: string; purged: boolean | null; evidence: Task['evidence'] }[]>`
+      SELECT t.status, c.purged_at IS NOT NULL AS purged, t.evidence
+      FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+      WHERE t.id = ${taskId} FOR UPDATE OF t`;
+    if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
+    if (row.status !== 'waiting_user') throw new TaskError(`task ${taskId} is not waiting for the user`);
+    if (row.purged === true) throw new TaskError(`task ${taskId} belongs to a deleted conversation`);
+    const ids = pending.map((approval) => approval.id);
+    const expired = await tx<{ id: string }[]>`
+      UPDATE approvals SET state = 'expired', decided_at = now()
+      WHERE id::text = ANY(${tx.array(ids)}) AND state = 'pending'
+      RETURNING id::text`;
+    for (const approval of expired) {
+      await appendEvent(tx, { kind: 'approval.decided', taskId, label: 'L0', payload: { approvalId: approval.id, state: 'expired', via: null } });
+    }
+    return moveTask(tx, taskId, 'done', { cause: 'user', evidence: withClosure(row.evidence, { kind: 'dismissed', by: 'user' }) });
+  });
 }

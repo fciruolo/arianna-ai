@@ -154,7 +154,11 @@ export interface ConversationView {
 /**
  * The view of the conversation of `task`, up to the message that started it:
  * later messages, and pieces that cover them, belong to other tasks. Only
- * user, assistant and system messages not written by a delegated agent.
+ * user, assistant and system messages not written by a delegated agent. A
+ * system message with a task (`task_id` set: the line "Attesa chiusa" of
+ * D-109, about the wait it closed) is for the user only: neither the model
+ * nor the summaries read it. The system messages of a system chat (D-064)
+ * have no task and are read.
  */
 export async function conversationView(sql: Queryable, conversationId: string, taskId: string, maxText: number): Promise<ConversationView> {
   const [limit] = await sql<{ id: string | null }[]>`
@@ -169,6 +173,7 @@ export async function conversationView(sql: Queryable, conversationId: string, t
   const after = await sql<{ id: string; length: number }[]>`
     SELECT id::text, char_length(body) AS length FROM messages
     WHERE conversation_id = ${conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
+      AND NOT (role = 'system' AND task_id IS NOT NULL)
       AND id > ${base}::bigint AND id <= ${limit.id}::bigint
     ORDER BY messages.id`;
   const anchor = anchorIndex(
@@ -186,6 +191,7 @@ export async function conversationView(sql: Queryable, conversationId: string, t
       : await sql<HistoryRow[]>`
           SELECT id::text, role, body, label FROM messages
           WHERE conversation_id = ${conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
+            AND NOT (role = 'system' AND task_id IS NOT NULL)
             AND id >= ${first.id}::bigint AND id <= ${limit.id}::bigint
           ORDER BY messages.id`;
   return { pieces: allPieces.slice(shownFrom), messages: [...messages], missing: after.slice(0, anchor).map((row) => row.id) };
@@ -310,6 +316,7 @@ export async function writeMissingSummaries(
     const rows = await sql<HistoryRow[]>`
       SELECT id::text, role, body, label FROM messages
       WHERE conversation_id = ${conversationId} AND id = ANY (${view.missing}::bigint[])
+        AND NOT (role = 'system' AND task_id IS NOT NULL)
       ORDER BY messages.id`;
     const ranges = chunks(
       rows.map((row) => Math.min(row.body.length, MAX_INPUT_MESSAGE)),

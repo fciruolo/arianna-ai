@@ -51,3 +51,16 @@ export async function loadPending(): Promise<PendingData> {
   );
   return { approvals, waiting: waiting.tasks, hidden: waiting.hidden, tasks, titles };
 }
+
+/** POST /api/tasks/:id/dismiss (D-109): the waiting task closes as done, its pending approvals expire. */
+export async function dismissWaitingTask(taskId: string): Promise<void> {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/dismiss`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  if (response.ok) return;
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+}

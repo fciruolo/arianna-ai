@@ -100,3 +100,16 @@ export function hiddenText(count: number): string {
     ? 'Un altro task in attesa riguarda dati riservati (L3): non è mostrato qui.'
     : `Altri ${String(count)} task in attesa riguardano dati riservati (L3): non sono mostrati qui.`;
 }
+
+// "Chiudi" on a row (D-109).
+export const PENDING_DISMISS = 'Chiudi';
+export const PENDING_DISMISS_CONFIRM = 'Sicuro?';
+export const PENDING_DISMISS_HINT = 'Chiude questa attesa: il task passa a fatto.';
+export const PENDING_DISMISS_CONFIRM_HINT = 'C’è un’approvazione in attesa: chiudendo scade e il task passa a fatto. Serve un secondo clic per confermare.';
+export const PENDING_DISMISS_ARMED = 'Sicuro? Premi di nuovo Chiudi entro 5 secondi per confermare.';
+export const PENDING_DISMISSED = 'Attesa chiusa.';
+
+/** The accessible name of a row's "Chiudi", distinct from the window's own close button. */
+export function pendingDismissLabel(conversationTitle: string, armed: boolean): string {
+  return armed ? `Sicuro? Conferma la chiusura dell’attesa: ${conversationTitle}` : `Chiudi l’attesa: ${conversationTitle}`;
+}

@@ -5,6 +5,7 @@ import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
+import { closeSupersededWaits } from './waiting.ts';
 
 /**
  * Conversations and their messages (task 1.11, D-039). A conversation is
@@ -423,6 +424,9 @@ export async function writeUserMessage(
       throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
     }
   }
+
+  // The user went on: the waits of this conversation without a pending approval close (D-109).
+  await closeSupersededWaits(tx, conversationId);
 
   const label = labelForUserMessage(createContext(conversation.clearance));
   const task = await createTask(tx, {

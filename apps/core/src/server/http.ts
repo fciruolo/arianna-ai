@@ -47,7 +47,7 @@ import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
-import { listWaitingTasks } from '../waiting.ts';
+import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
 import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
 import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
 import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
@@ -854,6 +854,14 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       onlyFields(await readJson(request), []);
       if ((await loadTask(sql, id)) === undefined) throw new HttpError(404, 'not found');
       return { body: { task: await retryTask(sql, id) } };
+    }),
+
+    // "Chiudi" in "Decisioni in attesa" (D-109): a waiting task closes as done, its pending approvals expire.
+    route('POST', '/api/tasks/:id/dismiss', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if ((await loadTask(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      return { body: { task: await dismissWaitingTask(sql, id) } };
     }),
 
     // Opens the system chat of a failed task, or the one already open (D-064).

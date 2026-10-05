@@ -86,8 +86,11 @@ export async function loadTask(sql: Queryable, id: string): Promise<Task | undef
   return row;
 }
 
-/** Why a task moved, for the event log; the free-text reason stays in `tasks`. */
-export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error' | 'agent';
+/**
+ * Why a task moved, for the event log; the free-text reason stays in `tasks`.
+ * `superseded`: a wait closed because the user wrote again in its conversation (D-109).
+ */
+export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error' | 'agent' | 'superseded';
 
 export interface MoveOptions {
   /** Required for `waiting_user`: the one line the user reads. Stored in the task, not in events. */

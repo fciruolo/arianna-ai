@@ -34,7 +34,8 @@ export function stepsAnchors(
     if (message.taskId === null) continue;
     if (message.role === 'user') {
       if (!question.has(message.taskId)) question.set(message.taskId, message.id);
-    } else {
+    } else if (message.role === 'assistant') {
+      // A system line about a task (D-109, "Attesa chiusa") is not its answer.
       answer.set(message.taskId, message.id);
     }
   }
