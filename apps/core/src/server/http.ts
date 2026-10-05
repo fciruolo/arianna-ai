@@ -18,6 +18,7 @@ import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, U
 import {
   archiveConversation,
   ChatError,
+  CONVERSATION_AGENTS,
   createConversation,
   DIRECT_MODELS,
   isUuid,
@@ -766,15 +767,19 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
 
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'project']);
+      onlyFields(body, ['mode', 'project', 'agent']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
       if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
+      // Who answers in place of Arianna (D-111): only here, at creation; no route changes it later.
+      const agent = body.agent === undefined ? undefined : CONVERSATION_AGENTS.find((item) => item === body.agent);
+      if (body.agent !== undefined && agent === undefined) throw new HttpError(400, 'agent must be coder');
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
       const model = body.mode === 'work' ? defaultModel() : undefined;
       const conversation = await createConversation(sql, {
         mode: body.mode,
         ...(body.project === undefined ? {} : { project: body.project }),
+        ...(agent === undefined ? {} : { agent }),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });

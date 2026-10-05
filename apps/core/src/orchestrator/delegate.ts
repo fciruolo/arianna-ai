@@ -22,7 +22,7 @@ import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRul
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { runClaudeStep } from '../claude-step.ts';
-import { loadConversation, type Message } from '../conversations.ts';
+import { loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import type { RunUsage } from '../runs.ts';
@@ -162,6 +162,49 @@ async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<Ap
   return row;
 }
 
+/**
+ * The direct chat of a task (D-111): its conversation, when the delegated
+ * agent answers there in place of Arianna. Undefined otherwise.
+ */
+export async function directChatOf(sql: Sql, task: Task, agent: string): Promise<Conversation | undefined> {
+  if (task.conversationId === null) return undefined;
+  const conversation = await loadConversation(sql, task.conversationId);
+  return conversation?.agent === agent ? conversation : undefined;
+}
+
+/**
+ * What the user's consent covers in a direct chat (D-111, risposta 9): the
+ * files the agent changed in the earlier answers of the conversation (it does
+ * not commit, so the folder stays dirty of its own work) and the files of the
+ * consents the user already gave there. Any other dirty file is asked again.
+ */
+async function directChatCovered(sql: Sql, conversationId: string, agent: string): Promise<Set<string>> {
+  const rows = await sql<{ path: string }[]>`
+    SELECT f.value ->> 'path' AS path FROM task_delegations d
+      JOIN tasks t ON t.id = d.task_id, jsonb_array_elements(coalesce(d.files, '[]'::jsonb)) f
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${agent} AND d.status = 'ok'
+    UNION
+    SELECT f.value ->> 'from' FROM task_delegations d
+      JOIN tasks t ON t.id = d.task_id, jsonb_array_elements(coalesce(d.files, '[]'::jsonb)) f
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${agent} AND d.status = 'ok' AND f.value ? 'from'
+    UNION
+    SELECT jsonb_array_elements_text(a.detail -> 'files') FROM approvals a
+      JOIN tasks t ON t.id = a.task_id
+      WHERE t.conversation_id = ${conversationId} AND a.kind = 'workspace' AND a.state = 'approved' AND jsonb_typeof(a.detail -> 'files') = 'array'`;
+  return new Set(rows.map((row) => row.path).filter((path) => typeof path === 'string'));
+}
+
+/**
+ * What the Coder reads after its prompt in the direct chat (D-111): our fixed
+ * text, L0. An instruction to the model, not a control: scanner and gateway
+ * stay the nets.
+ */
+export const DIRECT_CHAT_TEXT = [
+  'You are in a direct chat with the user inside Arianna, without Arianna in between: each message of the user reaches you as it is, and your answer is shown to the user as it is.',
+  'Answer in the language of the user, as in a chat: say what you did and what is left, briefly.',
+  'Never ask the user for credentials, personal data, or commands to run outside the project.',
+].join(' ');
+
 /** What Arianna reads when no project is there for the Coder. */
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
 
@@ -248,13 +291,17 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     }
     // The consent covers the files it named: paths dirtied since are asked again.
     const covered = new Set(consent?.state === 'approved' && Array.isArray(consent.detail.files) ? consent.detail.files.map(String) : []);
+    // In the direct chat the consent is for the conversation (D-111).
+    const direct = await directChatOf(env.sql, task, delegation.agent);
+    if (direct !== undefined) for (const path of await directChatCovered(env.sql, direct.id, delegation.agent)) covered.add(path);
     if (dirty.some((path) => !covered.has(path))) return { kind: 'workspace', delegation, repo: folder.repo, files: dirty };
   }
 
-  // Every attempt is a cloud run of the task after the delegating step; the quota ones failed.
+  // Every attempt is a cloud run of the task from the delegating step on (the delegating step itself is
+  // local, except in the direct chat, where the first attempt runs at it, D-111); the quota ones failed.
   const [refusals] = await env.sql<{ count: number }[]>`
     SELECT count(*)::int AS count FROM runs
-    WHERE task_id = ${delegation.taskId} AND step > ${delegation.step} AND locality = 'cloud' AND status = 'failed'`;
+    WHERE task_id = ${delegation.taskId} AND step >= ${delegation.step} AND locality = 'cloud' AND status = 'failed'`;
   if ((refusals?.count ?? 0) >= MAX_QUOTA_RETRIES) {
     return closed('failed', `${String(MAX_QUOTA_RETRIES)} attempts refused by the executor: tell the user, or try again later`);
   }
@@ -405,9 +452,12 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // The Coder's own prompt, then the brief: both leave through the gateway.
   // At its first delegation in this conversation the agent also reads how to enter it (D-125): our fixed text, L0.
   const entry = await isEntryDelegation(sql, delegation.id);
+  // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
+  const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const brief = [
     promptPart(agent, delegation.agent),
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
+    ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     { text: delegation.brief, label, source: `task:${task.id}` },
   ];
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
