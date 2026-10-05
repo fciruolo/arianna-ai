@@ -198,6 +198,31 @@ describe('orchestrator cases', () => {
     }
   });
 
+  it('offer agents as the core does, and expect only an offered one', () => {
+    for (const evalCase of cases) {
+      const input = evalCase.input as Record<string, unknown>;
+      const raw: unknown = input.delegates;
+      let names = ['coder'];
+      if (raw !== undefined) {
+        assert.ok(Array.isArray(raw) && raw.length > 0, evalCase.id);
+        for (const target of raw as unknown[]) {
+          assert.ok(typeof target === 'object' && target !== null, evalCase.id);
+          const keys = Object.keys(target).sort();
+          assert.deepEqual(keys, ['description', 'name'], `${evalCase.id}: ${keys.join(', ')}`);
+          const { name, description } = target as Record<string, unknown>;
+          assert.ok(typeof name === 'string' && name !== '' && typeof description === 'string' && description !== '', evalCase.id);
+        }
+        names = (raw as { name: string }[]).map((target) => target.name);
+        assert.ok(names.includes('coder'), `${evalCase.id}: the core offers the Coder first`);
+      }
+      const expectation = evalCase.expect as OrchestratorExpectation;
+      for (const outcome of [...(expectation.accept ?? []), ...(expectation.forbid ?? [])]) {
+        const agent = outcome.args?.agent?.equals;
+        if (agent !== undefined) assert.ok(names.includes(agent), `${evalCase.id}: ${agent} is not offered`);
+      }
+    }
+  });
+
   // Only meaningful until a local model is configured: then the real run is `pnpm eval:models`.
   const configured = existsSync(join(resolveHome({}), CONFIG_FILE)) && loadConfig({}).local.endpoints.length > 0;
   it('fail clearly when no local endpoint is configured', { skip: configured }, async () => {
