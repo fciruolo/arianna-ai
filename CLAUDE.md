@@ -33,6 +33,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 - Commit piccoli, uno per task di `docs/PHASE-0-1-TASKS.md`; il messaggio cita l'id del task.
 - Documentazione in italiano; codice, nomi e commenti in inglese.
 - **Campi di testo nella chat web senza bordo colorato al focus** (richiesta dell'utente, 2026-10-05): niente anello o bordo verde quando si scrive in un input o textarea (basta il cursore); il contorno di focus resta solo sui pulsanti e i link raggiunti da tastiera (`:focus-visible`). Vale per ogni campo nuovo.
+- **Barre di scorrimento stile Claude Code** (richiesta dell'utente, 2026-10-05): sottili, senza frecce né binario, pollice arrotondato e tenue preso dai token di colore (`--muted`), visibile solo al passaggio del mouse sull'area. Le regole sono globali in `apps/hud/src/style.css` e valgono per ogni area scorrevole nuova: niente stili di barre per singolo componente.
 
 ## Comandi
 
