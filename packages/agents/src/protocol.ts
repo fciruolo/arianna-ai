@@ -16,7 +16,7 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
     'task_id',
     'status',
   ]),
-  'task.delegate': object({ agent: { type: 'string', enum: ['coder'] }, brief: text(2000) }, ['agent', 'brief']),
+  'task.delegate': delegateArgs(['coder']),
   'user.ask': object({ question: text(500) }, ['question']),
   'file.delete': object({ path: text(300) }, ['path']),
   'channel.send': object({ channel: { type: 'string', enum: ['telegram'] }, text: text(1000) }, ['channel', 'text']),
@@ -30,7 +30,7 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'kb.write': 'Write a knowledge base page; paths start with kb/.',
   'task.create': 'Create a card in the inbox.',
   'task.update': 'Update a card of this conversation: status and a note for the user. With an unknown id it answers with the list of open cards and their ids.',
-  'task.delegate': 'Hand a step to another agent with a self-contained brief.',
+  'task.delegate': 'Hand a step to another agent with a self-contained brief. "reason" is one short line for the user, in their language, on why you bring this agent in (the chat shows it when the agent joins).',
   'user.ask': 'Ask the user a question when the request is unclear or information is missing.',
   'file.delete': 'Delete a file (the user approves before it happens).',
   'channel.send': 'Send a message on Telegram (the user approves before it happens).',
@@ -54,7 +54,17 @@ export const CODER_ONLY: readonly DelegateTarget[] = [{ name: 'coder', descripti
 /** The arguments of `tool`; those of `task.delegate` name the agents of `delegates`. */
 function argsOf(tool: ToolId, delegates: readonly DelegateTarget[]): JsonSchema | undefined {
   if (tool !== 'task.delegate' || isCoderOnly(delegates)) return TOOL_ARGS[tool];
-  return object({ agent: { type: 'string', enum: delegates.map((target) => target.name) }, brief: text(2000) }, ['agent', 'brief']);
+  return delegateArgs(delegates.map((target) => target.name));
+}
+
+/**
+ * The arguments of `task.delegate`: the agent, the reason (D-125: one short
+ * line the chat shows when the agent joins the conversation) and the brief.
+ * The reason comes before the brief: the model writes it while the choice of
+ * the agent is fresh, and a long brief cannot crowd it out.
+ */
+function delegateArgs(agents: readonly string[]): JsonSchema {
+  return object({ agent: { type: 'string', enum: [...agents] }, reason: text(200), brief: text(2000) }, ['agent', 'reason', 'brief']);
 }
 
 function isCoderOnly(delegates: readonly DelegateTarget[]): boolean {

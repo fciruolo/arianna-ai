@@ -82,12 +82,28 @@ describe('orchestrator protocol', () => {
     const prompt = systemPrompt('A.', delegating, true, '', delegates);
     assert.match(prompt, /traduttore, "Traduce le note \\"di rilascio\\""/);
     assert.match(prompt, /"enum":\["coder","traduttore"\]/);
-    const call = (agent: string) => ({ thought: 't', action: 'call', tool: 'task.delegate', arguments: { agent, brief: 'Traduci.' } });
+    const call = (agent: string) => ({ thought: 't', action: 'call', tool: 'task.delegate', arguments: { agent, reason: 'Per la traduzione.', brief: 'Traduci.' } });
     assert.ok(readAnswer(call('traduttore'), delegating, true, delegates));
     assert.equal(readAnswer(call('traduttore'), delegating), undefined);
     assert.equal(readAnswer(call('ricercatore'), delegating, true, delegates), undefined);
     // Without the Coder, the Coder is not offered either.
     assert.equal(readAnswer(call('coder'), delegating, true, [{ name: 'traduttore', description: 'x' }]), undefined);
+  });
+
+  it('task.delegate asks for a short reason before the brief, with the Coder alone or with other agents (D-125)', () => {
+    const delegating: ToolId[] = ['task.delegate'];
+    const others = [...CODER_ONLY, { name: 'traduttore', description: 'Traduce' }];
+    const call = (args: Record<string, unknown>) => ({ thought: 't', action: 'call', tool: 'task.delegate', arguments: args });
+    for (const delegates of [CODER_ONLY, others]) {
+      assert.ok(readAnswer(call({ agent: 'coder', reason: 'Per la landing page.', brief: 'Scrivi la pagina.' }), delegating, true, delegates));
+      // Without the reason, with an empty one or a too long one: outside the schema.
+      assert.equal(readAnswer(call({ agent: 'coder', brief: 'Scrivi la pagina.' }), delegating, true, delegates), undefined);
+      assert.equal(readAnswer(call({ agent: 'coder', reason: '', brief: 'Scrivi la pagina.' }), delegating, true, delegates), undefined);
+      assert.equal(readAnswer(call({ agent: 'coder', reason: 'x'.repeat(201), brief: 'Scrivi la pagina.' }), delegating, true, delegates), undefined);
+      const prompt = systemPrompt('A.', delegating, true, '', delegates);
+      assert.match(prompt, /"reason" is one short line for the user/);
+      assert.match(prompt, /"required":\["agent","reason","brief"\]/);
+    }
   });
 
   it('offers only tools with an argument schema, all from the registry', () => {
