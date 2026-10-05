@@ -1,4 +1,4 @@
-import type { AgentCard, DelegateTarget, LoadedAgent, ToolId } from '@arianna/agents';
+import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
 import { projectNamed, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
@@ -345,9 +345,24 @@ async function closeFromStored(sql: Sql, task: Task, delegation: Delegation): Pr
   return true;
 }
 
-/** The prompt of an agent as the gateway reads it: one of agents/ is in git (L0), one written by the user is L1 by declaration (D-119). */
+/**
+ * The prompt of an agent as the gateway reads it: one of agents/ is in git
+ * (L0), one written by the user is L1 by declaration (D-119), also once
+ * promoted (`prompt_label`, tappa T3b).
+ */
 function promptPart(agent: LoadedAgent, name: string): { text: string; label: Label; source: string } {
-  return { text: agent.prompt, label: agent.origin === 'user' ? 'L1' : 'L0', source: `agent:${name}` };
+  return { text: agent.prompt, label: promptLabelOf(agent), source: `agent:${name}` };
+}
+
+/**
+ * The limits of a Claude run for an agent written from the Agents page (a
+ * card of data/agents, or promoted with its `prompt_label`): the steps and
+ * minutes the user chose (tappa T3b). The cards in git keep the executor's
+ * defaults, as before.
+ */
+export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?: number } {
+  if (agent.origin !== 'user' && agent.card.promptLabel === undefined) return {};
+  return { maxTurns: agent.card.limits.maxSteps, timeoutMs: agent.card.limits.maxMinutes * 60_000 };
 }
 
 /** The cloud step: the plan is `cloud`. */
@@ -391,12 +406,14 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
   const result = await runClaudeStep(sql, claude, ctx, {
-    // The run has read only the brief (docs/PRIVACY-POLICY-SPEC.md): a context of its own.
-    context: createContext(task.clearance, label),
+    // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
+    // at the higher of the two labels, as the local run (a prompt of the user is L1, tappa T3b).
+    context: createContext(task.clearance, maxLabel(label, promptLabelOf(agent))),
     brief,
     workspace,
     model: plan.model,
     tools: claudeToolsOf(agent.card.tools),
+    ...runLimitsOf(agent),
     summary: `delegated step for ${delegation.agent}`,
     onEvent: async (event) => {
       if (event.type === 'text') {

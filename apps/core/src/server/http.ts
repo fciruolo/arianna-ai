@@ -37,7 +37,7 @@ import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recor
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
-import { UserAgentError, type UserAgents } from '../user-agents.ts';
+import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
@@ -1033,11 +1033,18 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
   return [
     route('GET', '/api/agents', () => answer(() => ({ body: need().list() }))),
     route('GET', '/api/agents/sources', () => answer(() => ({ body: need().sources() }))),
+    // Tappa T3b: a card is written only as `prepare` showed it, with the confirmation id it returned.
+    route('POST', '/api/agents/prepare', async (request) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['name', 'description', 'prompt', 'permissions']);
+      return answer(() => ({ body: { proposal: service.prepareCreate(body as unknown as NewUserAgent) } }));
+    }),
     route('POST', '/api/agents', async (request) => {
       const service = need();
       const body = await readJson(request);
-      onlyFields(body, ['name', 'description', 'template', 'prompt']);
-      return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as NewUserAgent) } }));
+      onlyFields(body, ['name', 'description', 'prompt', 'permissions', 'confirmation']);
+      return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as ConfirmedNewUserAgent) } }));
     }),
     route('GET', '/api/agents/:id/permissions', (_request, _url, params) => answer(() => ({ body: { agent: need().permissions(name(params)) } }))),
     route('POST', '/api/agents/:id/activate', async (request, _url, params) => {
@@ -1059,10 +1066,16 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
     // Tappa T3: read and change the texts, delete a disabled agent (its name as confirmation), take back a promotion.
     // The prompt is the user's own text (L1 by declaration), served only to the local web chat like the personas.
     route('GET', '/api/agents/:id/prompt', (_request, _url, params) => answer(() => ({ body: { prompt: need().prompt(name(params)) } }))),
+    route('POST', '/api/agents/:id/prepare', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['description', 'prompt', 'permissions']);
+      return answer(() => ({ body: { proposal: service.prepareEdit(name(params), body) } }));
+    }),
     route('POST', '/api/agents/:id/edit', async (request, _url, params) => {
       const service = need();
       const body = await readJson(request);
-      onlyFields(body, ['description', 'prompt']);
+      onlyFields(body, ['description', 'prompt', 'permissions', 'confirmation']);
       return answer(() => ({ body: { agent: service.update(name(params), body) } }));
     }),
     route('POST', '/api/agents/:id/delete', async (request, _url, params) => {

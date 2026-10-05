@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { loadConfig } from '@arianna/config';
@@ -51,7 +52,9 @@ test('doctor, with the development passwords: database sound, not ready for real
   assert.equal(checks('database.owner').ok, true);
   assert.equal(checks('database.default-passwords').ok, false);
   assert.match(checks('database.default-passwords').detail, /still accepted for arianna, arianna_app/);
-  assert.deepEqual(checks('database.migrations'), { ok: true, detail: '24 applied' });
+  // Every migration of the folder: a new one does not need this test changed.
+  const migrations = readdirSync(new URL('../migrations', import.meta.url)).filter((file) => /^\d{4}_.*\.sql$/.test(file)).length;
+  assert.deepEqual(checks('database.migrations'), { ok: true, detail: `${String(migrations)} applied` });
   assert.equal(checks('database.app-role').ok, true, checks('database.app-role').detail);
   assert.equal(checks('events.chain').ok, true);
 });

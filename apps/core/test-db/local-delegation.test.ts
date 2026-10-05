@@ -9,7 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { loadAgent, userCard, type Answer, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, userCard, userPresets, type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
@@ -37,14 +37,20 @@ after(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-/** A user's agent written by the page from `template`, loaded as the core does. */
-function userAgent(name: string, template: string, prompt: string): LoadedAgent {
+/**
+ * A user's agent written by the page from a starting point (tappa T3b),
+ * loaded as the core does; `web` stands for a card with the web tools, which
+ * the page cannot make yet and no delegation runs.
+ */
+function userAgent(name: string, preset: 'code' | 'answer' | 'web', prompt: string): LoadedAgent {
   const dir = join(HOME, 'cards');
   mkdirSync(dir, { recursive: true });
-  const files = userCard({ name, description: `Agente ${name} di prova`, template, prompt });
+  const permissions = userPresets().find(({ id }) => id === (preset === 'web' ? 'answer' : preset))?.permissions;
+  const files = userCard({ name, description: `Agente ${name} di prova`, permissions, prompt });
   writeFileSync(join(dir, `${name}.yaml`), files.yaml);
   writeFileSync(join(dir, `${name}.md`), files.md);
-  return { ...loadAgent(dir, name), origin: 'user' };
+  const agent: LoadedAgent = { ...loadAgent(dir, name), origin: 'user' };
+  return preset === 'web' ? { ...agent, card: { ...agent.card, maxLabel: 'L0', tools: ['web.search', 'web.fetch'] } } : agent;
 }
 
 /**

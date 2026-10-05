@@ -10,7 +10,7 @@ export {
   type Difficulty,
   type ExecutorKind,
 } from './card.ts';
-export { AGENTS_DIR, loadAgent, loadAgents, type LoadedAgent } from './load.ts';
+export { AGENTS_DIR, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 export {
   APPROVAL_ACTIONS,
   isToolId,
@@ -58,6 +58,7 @@ export {
 } from './persona.ts';
 export { validate, type JsonSchema } from './schema.ts';
 export {
+  AGENCY_CARD_MARK,
   AGENCY_COPYRIGHT,
   AGENCY_REPOSITORY,
   AgencyError,
@@ -96,19 +97,29 @@ export {
 } from './agency-catalog.ts';
 export { CARD_TEMPLATES, templateFor, type CardTemplate } from './templates.ts';
 export {
+  ACTING_TOOLS,
   checkUserCeiling,
+  checkUserPermissions,
   loadUserAgents,
-  matchingTemplate,
   MAX_USER_PROMPT,
-  templateById,
+  parseUserPermissions,
   USER_AGENT_FOLDERS,
   USER_AGENT_NAME,
   USER_AGENT_STATES,
-  USER_CARD_MARK,
+  USER_EXECUTORS,
+  USER_LIMITS,
+  USER_TOOLS,
+  USER_TRIFECTA,
   userCard,
-  userLabelOf,
+  userCardOrigin,
+  userPresets,
   type NewUserAgent,
   type RefusedUserAgent,
   type UserAgentState,
   type UserCardFiles,
+  type UserCardOrigin,
+  type UserExecutor,
+  type UserPermissions,
+  type UserPreset,
 } from './user.ts';
+export { parseYamlText } from './yaml.ts';

@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { loadAgent, userCard, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, userCard, userPresets, type LoadedAgent } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { briefCeiling, delegateTargets, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
+import { briefCeiling, delegateTargets, delegationRoute, runLimitsOf, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
@@ -43,12 +43,18 @@ test('a card that does not list task.update never gets it, with cards or not', (
   assert.ok(!orchestratorTools(without, false, true).includes('task.update'));
 });
 
-/** A user's agent made by the page from `template` (D-119), loaded as the core does. */
-function made(name: string, template: string): LoadedAgent {
-  const files = userCard({ name, description: `Fa ${name}`, template, prompt: 'Istruzioni.' });
+/**
+ * A user's agent made by the page from a starting point (D-119, tappa T3b),
+ * loaded as the core does; `web` stands for a card with the web tools, which
+ * the page cannot make yet and no delegation runs.
+ */
+function made(name: string, preset: 'code' | 'answer' | 'web'): LoadedAgent {
+  const permissions = userPresets().find(({ id }) => id === (preset === 'web' ? 'answer' : preset))?.permissions;
+  const files = userCard({ name, description: `Fa ${name}`, permissions, prompt: 'Istruzioni.' });
   writeFileSync(join(cards, `${name}.yaml`), files.yaml);
   writeFileSync(join(cards, `${name}.md`), files.md);
-  return { ...loadAgent(cards, name), origin: 'user' };
+  const agent: LoadedAgent = { ...loadAgent(cards, name), origin: 'user' };
+  return preset === 'web' ? { ...agent, card: { ...agent.card, maxLabel: 'L0', tools: ['web.search', 'web.fetch'] } } : agent;
 }
 
 function envWith(agents: LoadedAgent[], claude: boolean, local = true): DelegateEnv {
@@ -93,4 +99,14 @@ test('where a delegated step runs, and the highest label of its brief without a 
   assert.equal(briefCeiling(made('trad', 'answer').card), 'L1');
   assert.equal(briefCeiling({ ...made('trad', 'answer').card, maxLabel: 'L0' }), 'L0');
   assert.equal(briefCeiling({ ...coder.card, cloudMaxLabel: 'L0' }), 'L0');
+});
+
+test('a delegated Claude run takes the limits of an agent written by the page, never of a card in git (D-119, tappa T3b)', () => {
+  const coder = official.get('coder');
+  assert.ok(coder !== undefined);
+  assert.deepEqual(runLimitsOf(coder), {});
+  const user = made('prog', 'code');
+  assert.deepEqual(runLimitsOf(user), { maxTurns: 50, timeoutMs: 45 * 60_000 });
+  // Promoted into agents/: no longer `user`, its prompt_label still says who wrote it.
+  assert.deepEqual(runLimitsOf({ card: { ...user.card, limits: { maxSteps: 7, maxMinutes: 3, maxCost: 0 } }, prompt: user.prompt }), { maxTurns: 7, timeoutMs: 180_000 });
 });

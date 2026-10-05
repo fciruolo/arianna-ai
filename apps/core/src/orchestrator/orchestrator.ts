@@ -2,6 +2,7 @@ import {
   answerText,
   chatMessages,
   offerable,
+  promptLabelOf,
   readAnswer,
   RESPONSE_SCHEMA_NAME,
   responseSchema,
@@ -369,7 +370,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (planned.kind === 'cloud') return { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label };
       if (planned.kind === 'local') {
         const agent = options.agents.get(planned.delegation.agent);
-        const prompt: Label = agent?.origin === 'user' ? 'L1' : 'L0';
+        // An agent gone meanwhile: never lower than a user's prompt (the delegation fails anyway).
+        const prompt: Label = agent === undefined ? 'L1' : promptLabelOf(agent);
         return { agent: planned.delegation.agent, executor: 'local', locality: 'local', model: planned.model, effectiveLabel: maxLabel(planned.label, prompt) };
       }
       return localSpec(task);

@@ -372,6 +372,9 @@ export interface CardProposal {
 
 const FORBIDDEN_TOOLS = ['task.delegate', 'channel.send'];
 
+/** The first line of a card proposed by the importer: such a card stays at L0, its prompt is a third party's (D-119, tappa T3b). */
+export const AGENCY_CARD_MARK = '# Proposed by pnpm agency:import (D-079)';
+
 /**
  * A disabled card proposed for a catalog entry. Everything that opens
  * something comes from `template`; from the entry only the slug (the card
@@ -403,9 +406,11 @@ export function proposeCard(entry: AgencyEntry, template: CardTemplate, origin: 
     limits: { max_steps: template.limits.maxSteps, max_minutes: template.limits.maxMinutes, max_cost: template.limits.maxCost },
     approvals: [],
     prompt: `${name}.md`,
+    // Third-party text, public: L0 also once the card is among the user's ones (D-119, tappa T3b).
+    prompt_label: 'L0',
   };
   const provenance = [
-    `Proposed by pnpm agency:import (D-079): not active until the user approves it.`,
+    `${AGENCY_CARD_MARK.slice(2)}: not active until the user approves it.`,
     `Source: ${origin.repository}, commit ${origin.commit}, file ${entry.path}`,
     `sha256 of the file: ${entry.sha256}`,
     `Template: ${template.id}. Tools, labels and autonomy come from the template, never from the file.`,

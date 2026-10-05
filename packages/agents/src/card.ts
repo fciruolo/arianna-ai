@@ -39,6 +39,12 @@ export interface AgentCard {
   approvals: ApprovalAction[];
   /** File name of the prompt, next to the card. */
   prompt: string;
+  /**
+   * The label of the prompt, when the card says it: L1 for a prompt written by
+   * the user and promoted into agents/ (D-119, tappa T3b). Without it a prompt
+   * of agents/ is L0, as the ones in git.
+   */
+  promptLabel?: Label;
 }
 
 export class AgentCardError extends Error {
@@ -61,6 +67,7 @@ const KEYS = [
   'limits',
   'approvals',
   'prompt',
+  'prompt_label',
 ];
 
 /**
@@ -70,7 +77,8 @@ const KEYS = [
  * - a card cleared for L2 reads private data, so it cannot claim that side removed;
  * - a cloud executor next to an L2 clearance needs `cloud_max_label` at most L1;
  * - every approval a tool needs is listed in `approvals`;
- * - autonomy above A1 needs the decision that granted it.
+ * - autonomy above A1 needs the decision that granted it;
+ * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance).
  */
 export function parseAgentCard(raw: unknown, name: string): AgentCard {
   const where = `agents/${name}.yaml`;
@@ -170,6 +178,12 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
 
   const prompt = text(card.prompt, `${where}: prompt`);
   if (prompt !== `${name}.md`) fail(`prompt must be "${name}.md"`);
+  let promptLabel: Label | undefined;
+  if (card.prompt_label !== undefined) {
+    promptLabel = oneOf(card.prompt_label, LABELS, `${where}: prompt_label`);
+    if (!isAtMost(promptLabel, 'L1')) fail('prompt_label must be L0 or L1: a prompt never holds private data');
+    if (!isAtMost(promptLabel, maxLabel)) fail(`prompt_label ${promptLabel} is above max_label ${maxLabel}`);
+  }
 
   const result: AgentCard = {
     name,
@@ -186,6 +200,7 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
   };
   if (cloudMaxLabel !== undefined) result.cloudMaxLabel = cloudMaxLabel;
   if (autonomyDecision !== undefined) result.autonomyDecision = autonomyDecision;
+  if (promptLabel !== undefined) result.promptLabel = promptLabel;
   return result;
 }
 

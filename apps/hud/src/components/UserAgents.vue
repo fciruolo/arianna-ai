@@ -3,8 +3,9 @@
  * The agents the user creates (D-119): the list with activation,
  * deactivation and promotion to official (tappa T2); description and prompt
  * changed in place, deletion of a disabled agent (its name typed as the
- * confirmation) and a promotion taken back (tappa T3). A new agent is made
- * on a page of its own, "Nuovo agente".
+ * confirmation) and a promotion taken back (tappa T3); permissions changed
+ * within the list, saved only after the confirmation of what changes
+ * (tappa T3b). A new agent is made on a page of its own, "Nuovo agente".
  */
 import { onMounted, ref } from 'vue';
 
@@ -16,15 +17,24 @@ import {
   demoteUserAgent,
   editUserAgent,
   listUserAgents,
+  loadSources,
   loadUserAgentPrompt,
   MAX_USER_PROMPT,
   permissionLines,
+  prepareUserAgentEdit,
   promoteUserAgent,
+  UserAgentApiError,
   userAgentErrorText,
   workText,
+  type AgentProposal,
+  type UserAgentEdit,
   type UserAgentListing,
+  type UserAgentSources,
   type UserAgentView,
+  type UserPermissions,
 } from '../lib/user-agents.ts';
+import PermissionConfirm from './PermissionConfirm.vue';
+import PermissionsPicker from './PermissionsPicker.vue';
 
 /** `newAgent`: open the page "Nuovo agente"; `changed`: an agent changed state, the rest of the page reads again. */
 const emit = defineEmits<{ changed: []; newAgent: [] }>();
@@ -38,8 +48,11 @@ const promoting = ref<UserAgentView | null>(null);
 const demoting = ref<UserAgentView | null>(null);
 /** The agent to delete; `typed` must be its name. */
 const deleting = ref<{ name: string; typed: string } | null>(null);
-/** The agent whose texts are being changed, with the prompt as the core has it. */
-const editing = ref<{ name: string; description: string; prompt: string; loaded: boolean } | null>(null);
+/** The agent being changed: texts with the prompt as the core has it, and its permissions (tappa T3b). */
+const editing = ref<{ name: string; description: string; prompt: string; loaded: boolean; permissions: UserPermissions | null } | null>(null);
+/** The change of permissions shown before it is saved. */
+const confirming = ref<{ name: string; edit: UserAgentEdit; proposal: AgentProposal } | null>(null);
+const sources = ref<UserAgentSources | null>(null);
 const notice = ref('');
 
 const STATE_TEXT = { active: 'attivo', disabled: 'disattivato', official: 'ufficiale' } as const;
@@ -54,7 +67,14 @@ async function load(): Promise<void> {
     loadError.value = userAgentErrorText(cause);
   }
 }
-onMounted(() => void load());
+onMounted(async () => {
+  await load();
+  try {
+    sources.value = await loadSources();
+  } catch {
+    // Without the list the texts can still be changed; the permissions are not shown.
+  }
+});
 
 async function run(name: string, action: () => Promise<unknown>): Promise<boolean> {
   busy.value = name;
@@ -100,7 +120,7 @@ async function remove(): Promise<void> {
 
 /** Opens the texts of `agent`: the prompt is read from the core's file, never kept by the list. */
 async function startEdit(agent: UserAgentView): Promise<void> {
-  editing.value = { name: agent.name, description: agent.description, prompt: '', loaded: false };
+  editing.value = { name: agent.name, description: agent.description, prompt: '', loaded: false, permissions: agent.permissions === null ? null : { ...agent.permissions, tools: [...agent.permissions.tools] } };
   error.value = '';
   try {
     const prompt = await loadUserAgentPrompt(agent.name);
@@ -112,12 +132,71 @@ async function startEdit(agent: UserAgentView): Promise<void> {
   }
 }
 
+/** Saves the texts at once; a change of permissions or labels first shows what changes (tappa T3b). */
 async function saveEdit(): Promise<void> {
   const draft = editing.value;
-  if (draft === null || !draft.loaded) return;
-  if (await run(draft.name, () => editUserAgent(draft.name, { description: draft.description.trim(), prompt: draft.prompt }))) {
-    editing.value = null;
-    notice.value = `Salvato: ${draft.name} usa i testi nuovi dal prossimo lavoro.`;
+  if (draft === null || !draft.loaded || busy.value !== '') return;
+  const edit: UserAgentEdit = { description: draft.description.trim(), prompt: draft.prompt, ...(draft.permissions === null ? {} : { permissions: draft.permissions }) };
+  busy.value = draft.name;
+  error.value = '';
+  let proposal: AgentProposal;
+  try {
+    proposal = await prepareUserAgentEdit(draft.name, edit);
+  } catch (cause) {
+    error.value = userAgentErrorText(cause);
+    busy.value = '';
+    return;
+  }
+  busy.value = '';
+  if (proposal.confirmation === null) await save(draft.name, edit, null);
+  else confirming.value = { name: draft.name, edit, proposal };
+}
+
+/** Writes the edit; returns the error of the core, or null when it is saved. */
+async function save(name: string, edit: UserAgentEdit, confirmation: string | null): Promise<unknown> {
+  const changedPermissions = confirmation !== null;
+  busy.value = name;
+  error.value = '';
+  notice.value = '';
+  try {
+    await editUserAgent(name, edit, confirmation);
+  } catch (cause) {
+    error.value = userAgentErrorText(cause);
+    busy.value = '';
+    return cause;
+  }
+  editing.value = null;
+  confirming.value = null;
+  notice.value = changedPermissions ? `Salvato: ${name} usa i permessi e i testi nuovi dal prossimo lavoro.` : `Salvato: ${name} usa i testi nuovi dal prossimo lavoro.`;
+  try {
+    await load();
+    emit('changed');
+  } finally {
+    busy.value = '';
+  }
+  return null;
+}
+
+async function confirmEdit(): Promise<void> {
+  const shown = confirming.value;
+  if (shown === null || busy.value !== '') return;
+  const failure = await save(shown.name, shown.edit, shown.proposal.confirmation);
+  if (failure === null) return;
+  // Any other error: the window closes, the error stays on the page.
+  if (!(failure instanceof UserAgentApiError && failure.status === 409 && /prepare the change again/.test(failure.message))) {
+    confirming.value = null;
+    return;
+  }
+  // Expired or changed meanwhile: shown again with a new confirmation, busy until it is there (the old id is spent).
+  busy.value = shown.name;
+  try {
+    const again = await prepareUserAgentEdit(shown.name, shown.edit);
+    confirming.value = { ...shown, proposal: again };
+  } catch (cause) {
+    error.value = userAgentErrorText(cause);
+    confirming.value = null;
+  } finally {
+    busy.value = '';
   }
 }
 </script>
@@ -131,11 +210,11 @@ async function saveEdit(): Promise<void> {
     <div class="flex flex-col gap-3 p-4">
       <p class="text-xs text-muted">
         Un agente creato qui nasce disattivato, in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (L1) e agisce solo nella sandbox (A1),
-        qualunque cosa dica la sua scheda. Strumenti e permessi vengono dal modello scelto: una scheda modificata a mano oltre il suo modello non si carica. Da attivo, Arianna gli passa i
-        lavori adatti a lui.
+        qualunque cosa dica la sua scheda. Strumenti e permessi si scelgono dentro l’elenco ammesso, con «Modifica»: una scheda cambiata a mano oltre l’elenco non si carica. Da attivo,
+        Arianna gli passa i lavori adatti a lui.
       </p>
       <p v-if="loadError" class="text-xs text-danger" role="alert">{{ loadError }}</p>
-      <p v-if="error && !promoting && !demoting && !deleting" class="text-xs text-danger" role="alert">{{ error }}</p>
+      <p v-if="error && !promoting && !demoting && !deleting && !confirming" class="text-xs text-danger" role="alert">{{ error }}</p>
       <p v-if="notice" class="text-xs text-ok" role="status">{{ notice }}</p>
 
       <!-- The user's agents -->
@@ -170,6 +249,10 @@ async function saveEdit(): Promise<void> {
               <span class="flex">Prompt <span class="ml-auto font-mono">{{ editing.prompt.length }}/{{ MAX_USER_PROMPT }}</span></span>
               <textarea v-model="editing.prompt" rows="8" class="field px-2 py-1.5 text-[13px] text-ink" :maxlength="MAX_USER_PROMPT" />
             </label>
+            <div v-if="sources && editing.permissions" class="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+              <p class="text-xs text-muted">Permessi (un cambio ti mostra prima cosa cambia e si salva solo con la tua conferma)</p>
+              <PermissionsPicker v-model="editing.permissions" :sources="sources" :id-prefix="`edit-${agent.name}`" />
+            </div>
             <p class="text-xs text-muted">
               {{ agent.state === 'active' ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano L1 per tua
               dichiarazione, possono arrivare a un esecutore cloud (non scriverci dati personali) e passano dagli stessi controlli della creazione.
@@ -232,7 +315,7 @@ async function saveEdit(): Promise<void> {
           <li>torna il tetto L1 e A1;</li>
           <li>se i file di <code class="font-mono">agents/{{ demoting.name }}</code> erano già in un commit, git li vedrà come tolti: il prossimo commit lo registra.</li>
         </ul>
-        <p class="text-xs text-muted">Una scheda cambiata a mano oltre il suo modello non può tornare: resta ufficiale.</p>
+        <p class="text-xs text-muted">Una scheda cambiata a mano oltre i permessi ammessi non può tornare: resta ufficiale.</p>
         <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
         <div class="flex justify-end gap-2">
           <button type="button" class="btn px-2.5 py-1 text-xs" @click="demoting = null; error = ''">Annulla</button>
@@ -240,6 +323,17 @@ async function saveEdit(): Promise<void> {
         </div>
       </div>
     </div>
+
+    <!-- A change of permissions: what changes, then the user's click -->
+    <PermissionConfirm
+      v-if="confirming"
+      :proposal="confirming.proposal"
+      :busy="busy !== ''"
+      :error="error"
+      action="Conferma e salva"
+      @confirm="confirmEdit"
+      @cancel="confirming = null; error = ''"
+    />
 
     <!-- Deletion: the name typed by the user -->
     <div v-if="deleting" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-title">

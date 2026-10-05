@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AgentCardError, labelCeiling, parseAgentCard, TOOLS } from '@arianna/agents';
+import { AgentCardError, labelCeiling, parseAgentCard, promptLabelOf, TOOLS } from '@arianna/agents';
 
 /** A valid card; each test changes one thing. */
 function base(): Record<string, unknown> {
@@ -246,5 +246,41 @@ describe('parseAgentCard', () => {
       rejects(['name'], /mapping/);
       rejects(null, /mapping/);
     });
+  });
+
+  // D-119, tappa T3b: the label of the prompt of a promoted user's card.
+  describe('prompt_label', () => {
+    it('accepts L0 and L1 within max_label', () => {
+      assert.equal(parseAgentCard(card((c) => (c.prompt_label = 'L1')), 'archivista').promptLabel, 'L1');
+      assert.equal(parseAgentCard(card((c) => (c.prompt_label = 'L0')), 'archivista').promptLabel, 'L0');
+      assert.equal(parseAgentCard(base(), 'archivista').promptLabel, undefined);
+    });
+    it('refuses L2 and above, a label above max_label and an unknown value', () => {
+      rejects(card((c) => (c.prompt_label = 'L2')), /prompt_label must be L0 or L1/);
+      rejects(
+        card((c) => {
+          c.max_label = 'L0';
+          c.trifecta = { private_data: false, untrusted_content: false, external_comms: false };
+          c.tools = [];
+          c.approvals = [];
+          c.prompt_label = 'L1';
+        }),
+        /prompt_label L1 is above max_label L0/,
+      );
+      rejects(card((c) => (c.prompt_label = 'public')), /prompt_label/);
+    });
+  });
+});
+
+describe('promptLabelOf', () => {
+  const parsed = (label?: string) => parseAgentCard(card((c) => (label === undefined ? undefined : (c.prompt_label = label))), 'archivista');
+  it('reads L0 for a card of agents/ without prompt_label, L1 for a user card', () => {
+    assert.equal(promptLabelOf({ card: parsed(), prompt: 'x' }), 'L0');
+    assert.equal(promptLabelOf({ card: parsed(), prompt: 'x', origin: 'user' }), 'L1');
+  });
+  it('reads the card when it says the label, also for a user card', () => {
+    assert.equal(promptLabelOf({ card: parsed('L1'), prompt: 'x' }), 'L1');
+    // A third-party prompt among the user's cards stays L0.
+    assert.equal(promptLabelOf({ card: parsed('L0'), prompt: 'x', origin: 'user' }), 'L0');
   });
 });

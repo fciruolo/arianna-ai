@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
  * "Nuovo agente" (D-119, tappa T3): a page of its own, in three steps. What
- * the agent does (the template: its permissions and the work Arianna can
- * hand to it), who it is (name, description and prompt, with an example),
- * how it looks (a character, or a PNG uploaded here); then "Crea
- * disattivato". The core checks everything again. The character goes into
- * [characters] of arianna.toml right after the card: if that fails, the
- * agent exists anyway and the page says where to choose it.
+ * the agent does (its permissions, chosen within the list from a starting
+ * point, tappa T3b), who it is (name, description and prompt, with an
+ * example), how it looks (a character, or a PNG uploaded here); then "Crea
+ * disattivato", which shows what the card will allow and writes it only on
+ * the user's confirmation. The core checks everything again. The character
+ * goes into [characters] of arianna.toml right after the card: if that
+ * fails, the agent exists anyway and the page says where to choose it.
  */
 import { computed, onMounted, ref } from 'vue';
 
@@ -15,20 +16,26 @@ import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
 import {
   activateUserAgent,
   createUserAgent,
-  loadTemplates,
+  loadSources,
   MAX_USER_PROMPT,
-  permissionLines,
-  TEMPLATE_ORDER,
-  TEMPLATE_TEXT,
+  prepareUserAgent,
+  PRESET_ORDER,
+  PRESET_TEXT,
+  samePermissionsOf,
   USER_AGENT_NAME,
   UserAgentApiError,
   userAgentErrorText,
   workText,
-  type TemplateSource,
+  type AgentProposal,
+  type NewUserAgent,
+  type UserAgentSources,
   type UserAgentView,
+  type UserPermissions,
 } from '../lib/user-agents.ts';
 import CharacterUpload from './CharacterUpload.vue';
 import Icon from './Icon.vue';
+import PermissionConfirm from './PermissionConfirm.vue';
+import PermissionsPicker from './PermissionsPicker.vue';
 import PixelAgent from './PixelAgent.vue';
 
 /** `done`: back to the Agents section; `changed`: an agent was created or activated. */
@@ -36,11 +43,15 @@ const emit = defineEmits<{ done: []; changed: [] }>();
 
 const STEPS = ['Cosa fa', 'Chi è', 'Aspetto'] as const;
 const step = ref(0);
-const templates = ref<TemplateSource[]>([]);
+const sources = ref<UserAgentSources | null>(null);
 const characters = ref<CharacterListing | null>(null);
 const loadError = ref('');
-const empty = () => ({ template: 'answer', name: '', description: '', prompt: '', character: '' });
+const LOCAL: UserPermissions = { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 };
+const presetPermissions = (id: string): UserPermissions => sources.value?.presets.find((preset) => preset.id === id)?.permissions ?? LOCAL;
+const empty = () => ({ preset: 'answer', permissions: presetPermissions('answer'), name: '', description: '', prompt: '', character: '' });
 const form = ref(empty());
+/** What the core will write, shown before it does (tappa T3b). */
+const proposal = ref<AgentProposal | null>(null);
 const busy = ref(false);
 const error = ref('');
 const created = ref<UserAgentView | null>(null);
@@ -58,17 +69,23 @@ async function readCharacters(): Promise<void> {
 
 onMounted(async () => {
   try {
-    const list = await loadTemplates();
-    // The known ones in the page's order, then any other the core offers.
-    templates.value = [...TEMPLATE_ORDER.flatMap((id) => list.filter((template) => template.id === id)), ...list.filter((template) => !TEMPLATE_ORDER.includes(template.id))];
+    sources.value = await loadSources();
+    form.value.permissions = presetPermissions(form.value.preset);
   } catch (cause) {
     loadError.value = userAgentErrorText(cause);
   }
   await readCharacters();
 });
 
-const chosen = computed(() => templates.value.find((template) => template.id === form.value.template));
-const text = computed(() => TEMPLATE_TEXT[form.value.template]);
+/** The starting points the core offers, in the page's order. */
+const presets = computed(() => PRESET_ORDER.filter((id) => sources.value?.presets.some((preset) => preset.id === id)));
+const text = computed(() => PRESET_TEXT[form.value.preset]);
+/** The starting point still as it was: the permissions not changed by hand. */
+const asPreset = computed(() => samePermissionsOf(form.value.permissions, presetPermissions(form.value.preset)));
+function choosePreset(id: string): void {
+  form.value.preset = id;
+  form.value.permissions = presetPermissions(id);
+}
 
 const nameProblem = computed(() => (USER_AGENT_NAME.test(form.value.name) ? '' : 'Nome: da 2 a 40 caratteri, minuscole, cifre e trattini, e comincia con una lettera.'));
 const descriptionProblem = computed(() => {
@@ -82,7 +99,7 @@ const promptProblem = computed(() => {
 });
 /** What keeps the user on a step; empty when the step is complete. */
 function problemOf(index: number): string {
-  if (index === 0) return chosen.value === undefined ? 'Scegli un modello.' : '';
+  if (index === 0) return sources.value === null ? 'Leggo i permessi ammessi…' : '';
   if (index === 1) return nameProblem.value || descriptionProblem.value || promptProblem.value;
   return '';
 }
@@ -124,21 +141,59 @@ function go(index: number): void {
   }
 }
 
-async function create(): Promise<void> {
+const input = (): NewUserAgent => ({ name: form.value.name, description: form.value.description.trim(), prompt: form.value.prompt, permissions: form.value.permissions });
+
+/** Back where a refused field can be changed: the permissions on the first step, the texts on the second. */
+function stepOf(cause: unknown): number {
+  const message = cause instanceof UserAgentApiError ? cause.message : '';
+  return /^permissions|not allowed|max_?(steps|minutes|Steps|Minutes)/.test(message) ? 0 : 1;
+}
+
+/** "Crea disattivato": the core says what the card will be; nothing is written yet. */
+async function prepare(): Promise<void> {
   if (!reachable(STEPS.length) || busy.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    proposal.value = await prepareUserAgent(input());
+  } catch (cause) {
+    error.value = userAgentErrorText(cause);
+    if (cause instanceof UserAgentApiError && (cause.status === 409 || cause.status === 400)) step.value = stepOf(cause);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function create(): Promise<void> {
+  const shown = proposal.value;
+  if (shown === null || busy.value) return;
   busy.value = true;
   error.value = '';
   characterNote.value = '';
   let agent: UserAgentView;
   try {
-    agent = await createUserAgent({ name: form.value.name, description: form.value.description.trim(), template: form.value.template, prompt: form.value.prompt });
+    agent = await createUserAgent(input(), shown.confirmation);
   } catch (cause) {
     error.value = userAgentErrorText(cause);
-    // The name taken or a text refused: back where it can be changed.
-    if (cause instanceof UserAgentApiError && (cause.status === 409 || cause.status === 400)) step.value = 1;
+    // Expired or changed: the core shows the card again, with a new confirmation; still busy meanwhile, the old id is spent.
+    if (cause instanceof UserAgentApiError && cause.status === 409 && /prepare the change again/.test(cause.message)) {
+      try {
+        proposal.value = await prepareUserAgent(input());
+      } catch (again) {
+        proposal.value = null;
+        error.value = userAgentErrorText(again);
+      } finally {
+        busy.value = false;
+      }
+      return;
+    }
     busy.value = false;
+    proposal.value = null;
+    // The name taken or a field refused: back where it can be changed.
+    if (cause instanceof UserAgentApiError && (cause.status === 409 || cause.status === 400)) step.value = stepOf(cause);
     return;
   }
+  proposal.value = null;
   created.value = agent;
   emit('changed');
   if (form.value.character !== '') {
@@ -170,6 +225,7 @@ async function activate(): Promise<void> {
 
 function another(): void {
   form.value = empty();
+  proposal.value = null;
   created.value = null;
   characterNote.value = '';
   error.value = '';
@@ -231,34 +287,35 @@ function another(): void {
           </ol>
         </nav>
 
-        <!-- 1. What it does: the template -->
-        <section v-if="step === 0" class="hud-card flex flex-col gap-3 p-4" aria-labelledby="step-template">
-          <h2 id="step-template" class="hud-title">Cosa fa</h2>
-          <p class="text-xs text-muted">Il modello decide strumenti, permessi ed esecutore: non si cambiano dopo. Da te vengono solo nome, descrizione e prompt.</p>
-          <fieldset class="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-            <legend class="sr-only">Modello di scheda</legend>
+        <!-- 1. What it does: a starting point, then the permissions within the list (tappa T3b) -->
+        <section v-if="step === 0" class="hud-card flex flex-col gap-3 p-4" aria-labelledby="step-permissions">
+          <h2 id="step-permissions" class="hud-title">Cosa fa</h2>
+          <p class="text-xs text-muted">
+            Parti da un modello e cambia ciò che vuoi, dentro l’elenco ammesso per gli agenti nuovi. Prima di creare l’agente la pagina ti mostra cosa potrà fare, e la scheda si scrive solo con la
+            tua conferma.
+          </p>
+          <fieldset class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <legend class="sr-only">Punto di partenza</legend>
             <label
-              v-for="template in templates"
-              :key="template.id"
-              class="flex cursor-pointer flex-col gap-2 rounded-[10px] border p-3 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
-              :class="form.template === template.id ? 'border-accent bg-accent/10' : 'border-line bg-surface-2 hover:border-line-strong'"
+              v-for="id in presets"
+              :key="id"
+              class="flex cursor-pointer flex-col gap-1.5 rounded-[10px] border p-3 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
+              :class="form.preset === id ? 'border-accent bg-accent/10' : 'border-line bg-surface-2 hover:border-line-strong'"
             >
-              <input v-model="form.template" type="radio" name="template" :value="template.id" class="sr-only" />
-              <span class="font-semibold">{{ TEMPLATE_TEXT[template.id]?.title ?? template.id }}</span>
-              <span class="text-xs text-muted">{{ TEMPLATE_TEXT[template.id]?.text }}</span>
-              <span class="text-xs" :class="template.id === 'web' ? 'text-warn' : 'text-ink'">{{ TEMPLATE_TEXT[template.id]?.work }}</span>
-              <ul class="list-disc pl-4 text-[11.5px] text-muted">
-                <li v-for="line in permissionLines(template)" :key="line">{{ line }}</li>
-              </ul>
+              <input type="radio" name="preset" :value="id" :checked="form.preset === id" class="sr-only" @change="choosePreset(id)" />
+              <span class="font-semibold">{{ PRESET_TEXT[id]?.title ?? id }}<span v-if="form.preset === id && !asPreset" class="ml-1.5 text-xs font-normal text-muted">(cambiato)</span></span>
+              <span class="text-xs text-muted">{{ PRESET_TEXT[id]?.text }}</span>
             </label>
           </fieldset>
+          <PermissionsPicker v-if="sources" v-model="form.permissions" :sources="sources" id-prefix="new-agent" />
+          <p class="text-xs text-muted">Dati che legge: al massimo dati di lavoro (L1), come il prompt che gli scrivi. Mai deleghe ad altri agenti, canali esterni o azioni che chiedono approvazione.</p>
         </section>
 
         <!-- 2. Who it is: name, description, prompt -->
         <section v-else-if="step === 1" class="hud-card flex flex-col gap-3 p-4" aria-labelledby="step-who">
           <div class="flex flex-wrap items-center gap-2">
             <h2 id="step-who" class="hud-title">Chi è</h2>
-            <span class="chip">{{ text?.title ?? form.template }}</span>
+            <span class="chip">{{ form.permissions.executor === 'claude' ? 'Claude Code' : 'modello locale' }}</span>
             <button v-if="text && exampleUseful" type="button" class="btn ml-auto px-2.5 py-1 text-xs" @click="useExample">Completa con l’esempio</button>
           </div>
           <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
@@ -307,8 +364,8 @@ function another(): void {
 
           <div class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
             <p class="text-xs text-muted">Cosa verrà creato</p>
-            <p><span class="font-mono">{{ form.name }}</span> · {{ text?.title ?? form.template }} · {{ form.description.trim() }}</p>
-            <p class="text-xs text-muted">{{ text?.work }}</p>
+            <p><span class="font-mono">{{ form.name }}</span> · {{ form.description.trim() }}</p>
+            <p class="text-xs text-muted">«Crea disattivato» ti mostra prima i permessi, la trifecta e cosa esce verso il cloud.</p>
             <p class="line-clamp-3 text-xs whitespace-pre-line text-muted">{{ form.prompt.trim() }}</p>
           </div>
         </section>
@@ -319,8 +376,9 @@ function another(): void {
           <button type="button" class="btn px-2.5 py-1 text-xs" @click="emit('done')">Annulla</button>
           <button v-if="step > 0" type="button" class="btn px-2.5 py-1 text-xs" @click="go(step - 1)">Indietro</button>
           <button v-if="step < STEPS.length - 1" type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="problemOf(step) !== ''" @click="go(step + 1)">Avanti</button>
-          <button v-else type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy || !reachable(STEPS.length)" @click="create">Crea disattivato</button>
+          <button v-else type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy || !reachable(STEPS.length)" @click="prepare">Crea disattivato</button>
         </div>
+        <PermissionConfirm v-if="proposal" :proposal="proposal" :busy="busy" :error="error" action="Conferma e crea" @confirm="create" @cancel="proposal = null; error = ''" />
       </template>
     </div>
   </div>

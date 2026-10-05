@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { AGENTS_DIR, AgentCardError, labelCeiling, loadAgent, loadAgents } from '@arianna/agents';
+import { AGENTS_DIR, AgentCardError, labelCeiling, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
 const HOME = resolveHome({});
@@ -144,5 +145,21 @@ describe('agents folder', () => {
     rmSync(join(prompt, 'coder.md'));
     symlinkSync(join(COMMITTED, 'coder.md'), join(prompt, 'coder.md'));
     assert.throws(() => loadAgent(prompt, 'coder'), /not a regular file/);
+  });
+});
+
+describe('a card promoted from the Agents page before tappa T3b (D-119)', () => {
+  it('reads its prompt as L1 by the mark on its first line; a card in git without it stays L0', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arianna-promoted-'));
+    try {
+      const card = ['name: vecchio', 'description: x', 'max_label: L1', 'executors: [local]', 'tools: []', 'trifecta: { private_data: false, untrusted_content: true, external_comms: false }', 'autonomy: A0', 'difficulty: normal', 'limits: { max_steps: 1, max_minutes: 1, max_cost: 0 }', 'approvals: []', 'prompt: vecchio.md'].join('\n');
+      writeFileSync(join(dir, 'vecchio.yaml'), `${USER_CARD_MARK}, template answer.\n${card}\n`);
+      writeFileSync(join(dir, 'vecchio.md'), 'x');
+      assert.equal(promptLabelOf(loadAgent(dir, 'vecchio')), 'L1');
+      writeFileSync(join(dir, 'vecchio.yaml'), `${card}\n`);
+      assert.equal(promptLabelOf(loadAgent(dir, 'vecchio')), 'L0');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
