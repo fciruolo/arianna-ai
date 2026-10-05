@@ -172,7 +172,7 @@ async function saveEdit(): Promise<void> {
             </label>
             <p class="text-xs text-muted">
               {{ agent.state === 'active' ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano L1 per tua
-              dichiarazione e passano dagli stessi controlli della creazione.
+              dichiarazione, possono arrivare a un esecutore cloud (non scriverci dati personali) e passano dagli stessi controlli della creazione.
             </p>
             <div class="flex justify-end gap-2">
               <button type="button" class="btn px-2.5 py-1 text-xs" @click="editing = null; error = ''">Annulla</button>

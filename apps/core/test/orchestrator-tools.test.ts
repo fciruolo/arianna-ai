@@ -84,9 +84,10 @@ test('where a delegated step runs, and the highest label of its brief without a 
   assert.equal(delegationRoute(made('trad', 'answer').card), 'local');
   assert.equal(delegationRoute(made('cerca', 'web').card), undefined);
   assert.equal(delegationRoute(arianna.card), undefined);
-  // The Coder in the cloud: L1 (its cloud ceiling), as before T3; an answering agent: its own clearance.
+  // The Coder in the cloud: L1 (its cloud ceiling), as before T3; an answering agent: its own clearance, L1 when made by the page.
   assert.equal(briefCeiling(coder.card), 'L1');
   assert.equal(briefCeiling(made('prog', 'code').card), 'L1');
-  assert.equal(briefCeiling(made('trad', 'answer').card), 'L0');
+  assert.equal(briefCeiling(made('trad', 'answer').card), 'L1');
+  assert.equal(briefCeiling({ ...made('trad', 'answer').card, maxLabel: 'L0' }), 'L0');
   assert.equal(briefCeiling({ ...coder.card, cloudMaxLabel: 'L0' }), 'L0');
 });

@@ -431,7 +431,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // This step already completed before a crash or a lost lock: give the
       // same outcome again, without calling the model.
       const done = turns.find((turn) => turn.step === step);
-      if (done !== undefined) return replay(task, done, delegations, turns);
+      if (done !== undefined) {
+        const ceilingOf = (name: string): Label => {
+          const card = options.agents.get(name)?.card;
+          return card === undefined ? 'L1' : briefCeiling(card);
+        };
+        return replay(task, done, delegations, turns, ceilingOf);
+      }
 
       // The anchor jumped (D-077): at the first step of the task the local
       // model summarizes what it left behind, before the answer; the later
@@ -627,7 +633,8 @@ function undelivered(reason: string): string {
 }
 
 /** The outcome a completed step had, from its turn. */
-function replay(task: Task, turn: Turn, delegations: readonly Delegation[], turns: readonly Turn[]): StepOutcome {
+/** `ceilingOf`: what a brief to that agent may carry without a declassification (`briefCeiling`); L1 for an agent no longer there. */
+function replay(task: Task, turn: Turn, delegations: readonly Delegation[], turns: readonly Turn[], ceilingOf: (agent: string) => Label): StepOutcome {
   if (turn.messageId !== null) return { kind: 'answered', messageId: turn.messageId, usage: { steps: 0 } };
   if (stoppedRepeats(turns).some((stopped) => stopped.step === turn.step && stopped.waits)) {
     return { kind: 'wait-user', reason: REPEATING, usage: { steps: 0 } };
@@ -641,8 +648,9 @@ function replay(task: Task, turn: Turn, delegations: readonly Delegation[], turn
   if (turn.answer.action === 'call' && turn.answer.tool === DELEGATE && turn.result === null) {
     // The declassification was asked and not yet decided: ask it again.
     const delegation = delegations.find((candidate) => candidate.step === turn.step);
-    if (delegation?.status === 'pending' && !isAtMost(delegation.label, 'L1')) {
-      return { kind: 'declassify', text: delegation.brief, from: delegation.label, to: 'L1', usage: { steps: 0 } };
+    const ceiling = delegation === undefined ? 'L1' : ceilingOf(delegation.agent);
+    if (delegation?.status === 'pending' && !isAtMost(delegation.label, ceiling)) {
+      return { kind: 'declassify', text: delegation.brief, from: delegation.label, to: ceiling, usage: { steps: 0 } };
     }
   }
   return { kind: 'continue', usage: { steps: 0 } };

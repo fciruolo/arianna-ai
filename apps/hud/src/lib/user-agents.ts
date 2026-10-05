@@ -103,8 +103,8 @@ export interface TemplateText {
 export const TEMPLATE_TEXT: Record<string, TemplateText> = {
   answer: {
     title: 'Solo risposte',
-    text: 'Nessuno strumento: risponde con quello che sa, su dati pubblici.',
-    work: 'Arianna gli passa un testo da trattare (tradurre, riassumere, riscrivere) e lui risponde sul modello locale. Un testo che non è pubblico parte solo con la tua approvazione.',
+    text: 'Nessuno strumento: risponde con quello che sa, sul modello locale. Legge fino ai dati di lavoro (L1), come il prompt che gli scrivi.',
+    work: 'Arianna gli passa un testo da trattare (tradurre, riassumere, riscrivere) e lui risponde sul modello locale. Un testo di una conversazione privata (L2) parte solo con la tua approvazione.',
     example: {
       name: 'traduttore',
       description: 'Traduce testi tra italiano e inglese mantenendo il tono',

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { AgentCardError, checkUserCeiling, loadUserAgents, matchingTemplate, userCard, type AgentCard } from '@arianna/agents';
+import { AgentCardError, CARD_TEMPLATES, checkUserCeiling, loadUserAgents, matchingTemplate, userCard, userLabelOf, type AgentCard } from '@arianna/agents';
 
 const base = mkdtempSync(join(tmpdir(), 'arianna-user-agents-'));
 after(() => {
@@ -66,6 +66,11 @@ describe('checkUserCeiling', () => {
 describe('matchingTemplate', () => {
   it('finds the template of a card and none for a card changed beyond it', () => {
     assert.equal(matchingTemplate(card({ maxLabel: 'L0', autonomy: 'A0' }))?.id, 'answer');
+    // A user's answering card reads up to L1 (tappa T3); a web card never rises.
+    assert.equal(matchingTemplate(card({ maxLabel: 'L1', autonomy: 'A0' }))?.id, 'answer');
+    assert.equal(matchingTemplate(card({ maxLabel: 'L2', autonomy: 'A0' })), undefined);
+    const label = Object.fromEntries(CARD_TEMPLATES.map((template) => [template.id, userLabelOf(template)]));
+    assert.deepEqual(label, { code: 'L1', web: 'L0', answer: 'L1' });
     assert.equal(matchingTemplate(card({ maxLabel: 'L0', autonomy: 'A0', tools: ['kb.search'] })), undefined);
     assert.equal(matchingTemplate(card({ maxLabel: 'L0', autonomy: 'A0', executors: ['local', 'claude'] })), undefined);
     assert.equal(matchingTemplate(card({ maxLabel: 'L0', autonomy: 'A1' })), undefined);
@@ -104,7 +109,7 @@ describe('loadUserAgents', () => {
     writeFileSync(join(dir, 'traduttore.yaml'), good.yaml);
     writeFileSync(join(dir, 'traduttore.md'), good.md);
     // Edited by hand above the ceiling.
-    const raised = userCard({ ...input, name: 'alzato' }).yaml.replace('max_label: L0', 'max_label: L2').replace('private_data: false', 'private_data: true').replace('untrusted_content: true', 'untrusted_content: false');
+    const raised = userCard({ ...input, name: 'alzato' }).yaml.replace('max_label: L1', 'max_label: L2').replace('private_data: false', 'private_data: true').replace('untrusted_content: true', 'untrusted_content: false');
     writeFileSync(join(dir, 'alzato.yaml'), raised);
     writeFileSync(join(dir, 'alzato.md'), 'x');
     // The name of an official agent.

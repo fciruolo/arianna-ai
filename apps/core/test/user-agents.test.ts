@@ -47,7 +47,8 @@ describe('user agents', () => {
   it('a new agent is disabled and not running', () => {
     const created = service.create(input);
     assert.equal(created.state, 'disabled');
-    assert.equal(created.card.maxLabel, 'L0');
+    // Its prompt is the user's own (L1): an answering agent of the page reads up to L1 (tappa T3).
+    assert.equal(created.card.maxLabel, 'L1');
     assert.ok(existsSync(join(home, 'data', 'agents', 'disattivati', 'traduttore.yaml')));
     assert.equal(agents.has('traduttore'), false);
   });
@@ -270,7 +271,7 @@ describe('user agents, tappa T3 (D-119)', () => {
     service.update('traduttore', { prompt: 'Short.' });
     assert.equal(service.permissions('traduttore').description, 'Translates everything');
     // The card is still the template's: nothing else changed.
-    assert.equal(service.permissions('traduttore').card.maxLabel, 'L0');
+    assert.equal(service.permissions('traduttore').card.maxLabel, 'L1');
     const card = readFileSync(join(home, 'data', 'agents', 'attivi', 'traduttore.yaml'), 'utf8');
     assert.match(card, /^# Created from the Agents page \(D-119\), template answer\./);
   });
@@ -338,7 +339,7 @@ describe('user agents, tappa T3 (D-119)', () => {
     service.create(input);
     service.promote('traduttore', true);
     const card = join(home, 'agents', 'traduttore.yaml');
-    writeFileSync(card, readFileSync(card, 'utf8').replace('max_label: L0', 'max_label: L2'));
+    writeFileSync(card, readFileSync(card, 'utf8').replace('max_label: L1', 'max_label: L2'));
     assert.equal(code(() => service.demote('traduttore', true)), 'invalid');
     assert.ok(existsSync(card));
   });

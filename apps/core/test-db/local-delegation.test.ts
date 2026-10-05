@@ -1,8 +1,8 @@
 // A step delegated to an agent of the user that only answers (D-119, tappa
 // T3): one call to the local model with the agent's prompt and the brief,
 // after the user's declassification when the brief is above what the agent
-// may read. The report comes back as the agent's message and as the result
-// of the call.
+// may read (L1: its prompt is the user's own). The report comes back as the
+// agent's message and as the result of the call.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,6 +14,7 @@ import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Proj
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
+import { createDelegation, updateDelegation } from '../src/orchestrator/delegations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { LOCAL_FRAME, LOCAL_REPORT_SCHEMA_NAME } from '../src/orchestrator/delegate.ts';
@@ -95,8 +96,10 @@ async function drain(taskId: string, executor: StepExecutor): Promise<string[]> 
   throw new Error('drain did not end');
 }
 
-async function ask(body: string): Promise<{ task: Task }> {
-  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'] });
+/** A work conversation (L1) by default; a private one (L2) when asked. */
+async function ask(body: string, mode: 'work' | 'private' = 'work'): Promise<{ task: Task }> {
+  const conversation =
+    mode === 'work' ? await createConversation(db().sql, { mode, project: 'site', projects: ['site'] }) : await createConversation(db().sql, { mode });
   return postUserMessage(db().sql, conversation.id, body);
 }
 
@@ -126,21 +129,15 @@ test('Arianna offers the agents that can work now: an answering agent without Cl
   assert.doesNotMatch(nobody.requests[0]?.messages[0]?.content ?? '', /^- task\.delegate:/m);
 });
 
-test('an L1 brief waits for the declassification to L0, then the agent answers on the local model', async () => {
+test('an L1 brief goes to the agent at once, and it answers on the local model', async () => {
   const { task } = await ask('Traduci: buongiorno a tutti.');
   const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
   const executor = orchestrator(model, [translator()]);
-  assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
-  const approval = await waitingFor(task.id);
-  const [asked] = await db().sql<{ kind: string; detail: { to: string } }[]>`SELECT kind, detail FROM approvals WHERE id = ${approval}`;
-  assert.deepEqual([asked?.kind, asked?.detail.to], ['declassify', 'L0']);
-
-  await recordDecision(db().sql, approval, 'approved', 'web');
-  assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+  assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.deepEqual(
     [delegation?.status, delegation?.executor, delegation?.model, delegation?.label, delegation?.result, delegation?.resultLabel, delegation?.repo],
-    ['ok', 'local', 'local-large', 'L0', 'Good morning everyone.', 'L1', null],
+    ['ok', 'local', 'local-large', 'L1', 'Good morning everyone.', 'L1', null],
   );
 
   // The agent read the frame, its own prompt and the brief; nothing else of the chat.
@@ -175,8 +172,54 @@ test('an L1 brief waits for the declassification to L0, then the agent answers o
   assert.deepEqual(decision, { executor: 'local', step: 2 });
 });
 
+test('an L2 brief from a private conversation waits for the declassification to L1', async () => {
+  const { task } = await ask('Traduci: ciao.', 'private');
+  const model = scripted([DELEGATE, REPLY], [{ report: 'Hi.' }]);
+  const executor = orchestrator(model, [translator()]);
+  assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+  const approval = await waitingFor(task.id);
+  const [asked] = await db().sql<{ kind: string; detail: { to: string } }[]>`SELECT kind, detail FROM approvals WHERE id = ${approval}`;
+  assert.deepEqual([asked?.kind, asked?.detail.to], ['declassify', 'L1']);
+  await recordDecision(db().sql, approval, 'approved', 'web');
+  assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([delegation?.status, delegation?.label, delegation?.resultLabel], ['ok', 'L1', 'L1']);
+});
+
+test('after a crash, the declassification asked again is to the agent\'s ceiling', async () => {
+  const { task } = await ask('Traduci: ciao.', 'private');
+  const executor = orchestrator(scripted([DELEGATE, REPLY], []), [translator()]);
+  assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+  // The step that wrote the call runs again, as after a crash before its outcome was recorded.
+  const loaded = await loadTask(db().sql, task.id);
+  assert.ok(loaded !== undefined);
+  const again = await executor.run({ task: loaded, step: 1, runId: randomUUID(), signal: new AbortController().signal } as never);
+  assert.deepEqual(again, { kind: 'declassify', text: 'Traduci: buongiorno a tutti.', from: 'L2', to: 'L1', usage: { steps: 0 } });
+});
+
+test('the guard of task_delegations: a local run only for executor local, a cloud run for the others (migration 0025)', async () => {
+  const { task } = await ask('Vincolo.');
+  const sql = db().sql;
+  const run = async (step: number, locality: 'local' | 'cloud') => {
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO runs (task_id, step, agent, executor, model, locality, effective_label, status, ended_at)
+      VALUES (${task.id}, ${step}, 'traduttore', ${locality === 'local' ? 'local' : 'claude'}, 'm', ${locality}, 'L1', 'ok', now()) RETURNING id::text`;
+    assert.ok(row !== undefined);
+    return row.id;
+  };
+  const delegation = async (step: number) => sql.begin((tx) => createDelegation(tx, { taskId: task.id, step, agent: 'traduttore', brief: 'x', label: 'L1' }));
+  const local = await run(2, 'local');
+  const cloud = await run(3, 'cloud');
+  const first = await delegation(1);
+  const second = await delegation(4);
+  await assert.rejects(updateDelegation(sql, first.id, { executor: 'claude', runId: local }), /is not a cloud run/);
+  await assert.rejects(updateDelegation(sql, second.id, { executor: 'local', runId: cloud }), /is not a local run/);
+  await updateDelegation(sql, first.id, { executor: 'local', runId: local });
+  await updateDelegation(sql, second.id, { executor: 'claude', runId: cloud });
+});
+
 test('a rejected declassification, an empty report or a deactivated agent: the delegation fails, the task goes on', async () => {
-  const rejected = await ask('Traduci: ciao.');
+  const rejected = await ask('Traduci: ciao.', 'private');
   const first = scripted([DELEGATE, REPLY], []);
   const executor = orchestrator(first, [translator()]);
   assert.deepEqual(await drain(rejected.task.id, executor), ['waiting-approval']);
@@ -189,14 +232,12 @@ test('a rejected declassification, an empty report or a deactivated agent: the d
   const empty = await ask('Traduci: ciao.');
   const second = scripted([DELEGATE, REPLY], [{ report: '   ' }]);
   const run = orchestrator(second, [translator()]);
-  assert.deepEqual(await drain(empty.task.id, run), ['waiting-approval']);
-  await recordDecision(db().sql, await waitingFor(empty.task.id), 'approved', 'web');
-  assert.deepEqual(await drain(empty.task.id, run), ['continued', 'answered']);
+  assert.deepEqual(await drain(empty.task.id, run), ['continued', 'continued', 'answered']);
   const [failed] = await loadDelegations(db().sql, empty.task.id);
   assert.deepEqual([failed?.status, failed?.result], ['failed', 'error: task.delegate: traduttore gave no report']);
 
   // Taken off between the call and its step: the next step reads why.
-  const gone = await ask('Traduci: ciao.');
+  const gone = await ask('Traduci: ciao.', 'private');
   const third = scripted([DELEGATE, REPLY], [{ report: 'Hi.' }]);
   const agents = [translator()];
   const before = orchestrator(third, agents);

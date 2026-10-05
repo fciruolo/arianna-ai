@@ -106,6 +106,7 @@ export {
   USER_AGENT_STATES,
   USER_CARD_MARK,
   userCard,
+  userLabelOf,
   type NewUserAgent,
   type RefusedUserAgent,
   type UserAgentState,

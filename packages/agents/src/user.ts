@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync } from 'node:fs';
 
-import { isAtMost } from '@arianna/policy';
+import { isAtMost, type Label } from '@arianna/policy';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { AgentCardError, parseAgentCard, type AgentCard } from './card.ts';
@@ -30,6 +30,19 @@ const MAX_DESCRIPTION = 200;
 export const MAX_USER_PROMPT = 4000;
 const CEILING_TOOLS: readonly ToolId[] = ['task.delegate', 'channel.send'];
 
+/**
+ * The label of a user's card made from `template`: the template's, except
+ * that a template without tools (`answer`) rises to L1. Its prompt is the
+ * user's own text, L1 by declaration, and an agent never reads above its
+ * clearance (PRIVACY-POLICY-SPEC, as for personas). A template with tools
+ * keeps its label: `web` stays L0, its exits are on the public web. A card of
+ * agency-agents keeps the template's label too: its prompt is a third
+ * party's (D-119, tappa T3).
+ */
+export function userLabelOf(template: CardTemplate): Label {
+  return template.tools.length === 0 && isAtMost(template.maxLabel, 'L1') ? 'L1' : template.maxLabel;
+}
+
 /** Throws unless the card stays under the ceiling of the user's cards. */
 export function checkUserCeiling(card: AgentCard): void {
   const fail = (message: string): never => {
@@ -55,7 +68,8 @@ export function matchingTemplate(card: AgentCard): CardTemplate | undefined {
     (template) =>
       sameSet(card.tools, template.tools) &&
       sameSet(card.executors, template.executors) &&
-      card.maxLabel === template.maxLabel &&
+      // The template's label, or the one a user's card gets from it (a card made before tappa T3 kept the template's).
+      (card.maxLabel === template.maxLabel || card.maxLabel === userLabelOf(template)) &&
       card.cloudMaxLabel === undefined &&
       (Object.keys(template.trifecta) as (keyof CardTemplate['trifecta'])[]).every((side) => card.trifecta[side] === template.trifecta[side]) &&
       (card.autonomy === 'A0' || card.autonomy === template.autonomy) &&
@@ -111,7 +125,7 @@ export function userCard(input: NewUserAgent): UserCardFiles {
   const card = {
     name,
     description,
-    max_label: template.maxLabel,
+    max_label: userLabelOf(template),
     executors: [...template.executors],
     tools: [...template.tools],
     trifecta: { ...template.trifecta },

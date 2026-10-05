@@ -12,6 +12,7 @@ import {
   USER_AGENT_NAME,
   USER_CARD_MARK,
   userCard,
+  userLabelOf,
   type AgentCard,
   type LoadedAgent,
   type NewUserAgent,
@@ -144,6 +145,14 @@ function writeWhole(path: string, dir: string, name: string, text: string): void
   }
 }
 
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 /** A rename, or a copy when `data/` is on another volume than `agents/` (promotion). */
 function moveFile(from: string, to: string): void {
   try {
@@ -250,7 +259,8 @@ export function createUserAgents(options: {
       // The proposals of agency-agents join in tappa T4, after the review.
       const templates = CARD_TEMPLATES.map((template) => ({
         id: template.id,
-        maxLabel: template.maxLabel,
+        // What a card made from it gets: an answering agent reads up to L1 (tappa T3).
+        maxLabel: userLabelOf(template),
         executors: [...template.executors],
         tools: [...template.tools],
         trifecta: { ...template.trifecta },
@@ -334,7 +344,8 @@ export function createUserAgents(options: {
       checkText(edit.prompt, 'the prompt');
       let files;
       try {
-        // Rewritten from its template, as at the creation: nothing but the two texts changes.
+        // Rewritten from its template, as at the creation: tools, labels and executors stay the template's;
+        // autonomy and limits lowered by hand go back to the template's values.
         files = userCard({
           name,
           template: template.id,
@@ -368,7 +379,11 @@ export function createUserAgents(options: {
       const to = join(bin, folder);
       mkdirSync(to, { mode: 0o700 });
       for (const file of [`${name}.md`, `${name}.yaml`]) {
-        if (existsSync(join(dirOf('disabled'), file))) moveFile(join(dirOf('disabled'), file), join(to, file));
+        const from = join(dirOf('disabled'), file);
+        if (!existsSync(from) && !isLink(from)) continue;
+        // A link is moved as a link (rename), never copied through to what it points at.
+        if (isLink(from)) renameSync(from, join(to, file));
+        else moveFile(from, join(to, file));
       }
       return { name, folder: `data/agents/eliminati/${folder}` };
     },
