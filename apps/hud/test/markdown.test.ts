@@ -140,6 +140,9 @@ test('what is not a lazy quote line ends the quote', () => {
   assert.deepEqual(parseMarkdown('> ```\n> codice\nfuori'), [quote({ kind: 'code', lang: null, text: 'codice' }), paragraph(text('fuori'))]);
   assert.deepEqual(parseMarkdown('> ```\n> codice\n> ```\nfuori'), [quote({ kind: 'code', lang: null, text: 'codice' }), paragraph(text('fuori'))]);
   assert.deepEqual(parseMarkdown('> \nfuori'), [quote(), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> -\nfuori'), [quote({ kind: 'list', ordered: false, start: 1, items: [[]] }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> >\nfuori'), [quote(quote()), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> > # Titolo\nfuori'), [quote(quote({ kind: 'heading', level: 1, inlines: [text('Titolo')] })), paragraph(text('fuori'))]);
 });
 
 test('lists: bullets, numbers with their start, nesting, a list right after a paragraph', () => {

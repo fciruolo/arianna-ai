@@ -199,6 +199,18 @@ function closesFence(line: string, open: string): boolean {
 }
 
 /**
+ * Whether a quoted line leaves text a lazy line can continue: not blank, a
+ * heading, a rule, a fence or an empty list item, also behind nested `>`.
+ */
+function opensParagraph(content: string): boolean {
+  let inner = content;
+  for (let nested = QUOTE.exec(inner); nested !== null; nested = QUOTE.exec(inner)) inner = group(nested, 1);
+  if (blank(inner) || HEADING.test(inner) || RULE.test(inner) || fenceOpening(inner) !== null) return false;
+  const item = ITEM.exec(inner);
+  return item === null || !blank(group(item, 3));
+}
+
+/**
  * A quote: its lines with `>`, and the lazy ones after them (CommonMark). A
  * line without `>` still belongs to the quote when it continues a paragraph
  * there: the line before has text and is not a heading, a rule or in fenced
@@ -232,7 +244,7 @@ function parseQuote(lines: readonly string[], from: number, depth: number): [Blo
     // An underline after an open paragraph turns it into a heading, which takes no lazy line.
     const underlines: boolean = open && SETEXT.test(content);
     fence = fenceOpening(content);
-    open = fence === null && !underlines && !blank(content) && !HEADING.test(content) && !RULE.test(content);
+    open = fence === null && !underlines && opensParagraph(content);
   }
   return [{ kind: 'quote', blocks: parseLines(body, depth + 1) }, i];
 }
