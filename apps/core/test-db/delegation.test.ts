@@ -20,7 +20,7 @@ import { archiveConversation, createConversation, postUserMessage, setConversati
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
-import { openReply } from '../src/reply.ts';
+import { activitiesSaved, openReply } from '../src/reply.ts';
 import { MAX_QUOTA_RETRIES } from '../src/orchestrator/delegate.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
@@ -675,6 +675,43 @@ function restoreRepo(): void {
   execFileSync('git', ['-C', REPO, 'checkout', '--quiet', '--', 'README.md'], { env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
   rmSync(join(REPO, 'docs'), { recursive: true, force: true });
 }
+
+test('the changes of a run reach the chat live as diffs, only inside the project and never stored (D-117)', async () => {
+  const live = await startLiveFeed(db().sql);
+  const seen: LiveMessage[] = [];
+  const stop = await live.subscribe({ send: (message) => seen.push(message) });
+  try {
+    const { task } = await ask('work', 'Modifiche dal vivo.', 'site');
+    const executor = orchestrator({ model: scripted([DELEGATE, REPLY]), coderPrompt: 'scenario: live-edits\nYou are the Coder.' });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    const pieces = seen.flatMap((m) => (m.type === 'edit' && m.taskId === task.id ? [m] : []));
+    const byEdit = new Map<string, typeof pieces>();
+    for (const piece of pieces) byEdit.set(piece.editId, [...(byEdit.get(piece.editId) ?? []), piece]);
+    const edits = [...byEdit.values()].map((list) => {
+      const sorted = [...list].sort((a, b) => a.seq - b.seq);
+      const first = sorted[0];
+      assert.ok(first !== undefined && sorted.length === first.total);
+      return { path: first.path, tool: first.tool, label: first.label, added: first.added, removed: first.removed, text: sorted.map((item) => item.text).join('') };
+    });
+    // The file outside the project and the hook under .git are not shown at all.
+    assert.deepEqual(edits, [
+      { path: 'README.md', tool: 'Edit', label: 'L1', added: 1, removed: 0, text: ' # Fake site\n+Hello.' },
+      { path: 'docs/new.md', tool: 'Write', label: 'L1', added: 1, removed: 0, text: '+# New' },
+    ]);
+    assert.ok(!JSON.stringify(seen).includes('outside'));
+    assert.ok(!JSON.stringify(seen).includes('echo hook'));
+    // Live only: no saved activity line, event or message holds the text of a change.
+    await activitiesSaved();
+    const [stored] = await db().sql<{ count: number }[]>`
+      SELECT ((SELECT count(*) FROM task_activities WHERE task_id = ${task.id} AND detail LIKE '%Hello.%')
+        + (SELECT count(*) FROM events WHERE task_id = ${task.id} AND payload::text LIKE '%Hello.%')
+        + (SELECT count(*) FROM messages WHERE task_id = ${task.id} AND body LIKE '%Hello.%'))::int AS count`;
+    assert.equal(stored?.count, 0);
+  } finally {
+    stop();
+    await live.close();
+  }
+});
 
 test('the files a run changed are saved with the delegation, credited under the report, and shown read only', async () => {
   try {

@@ -14,6 +14,7 @@ import {
   claudeArgs,
   claudeEnv,
   ClaudeStream,
+  fileEditOf,
   claudeSettings,
   createClaudeExecutor,
   nodeToolchain,
@@ -191,6 +192,47 @@ describe('claude stream', () => {
     garbage.feed(realInit('/w'));
     garbage.feed('{"type":');
     assert.equal(garbage.result?.failure, 'bad-output');
+  });
+
+  it('reports the changes to files of Edit, MultiEdit and Write after their tool name (D-117)', () => {
+    const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+    stream.feed(realInit('/w'));
+    const assistant = JSON.parse(recorded[1] ?? '') as { message: Record<string, unknown> };
+    const use = (name: string, input: unknown, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ ...assistant, ...extra, message: { ...assistant.message, id: `msg_${name}`, content: [{ type: 'tool_use', id: 't', name, input }] } });
+    const events = [
+      use('Edit', { file_path: '/w/a.ts', old_string: 'a', new_string: 'b' }),
+      use('MultiEdit', { file_path: 'b.ts', edits: [{ old_string: '1', new_string: '2' }, { old_string: '3', new_string: '' }] }),
+      use('Write', { file_path: '/w/c.md', content: '# C\n' }),
+    ].flatMap((line) => stream.feed(line).filter((event) => event.type !== 'usage'));
+    assert.deepEqual(events, [
+      { type: 'tool', name: 'Edit' },
+      { type: 'edit', tool: 'Edit', filePath: '/w/a.ts', parts: [{ before: 'a', after: 'b' }] },
+      { type: 'tool', name: 'MultiEdit' },
+      { type: 'edit', tool: 'MultiEdit', filePath: 'b.ts', parts: [{ before: '1', after: '2' }, { before: '3', after: '' }] },
+      { type: 'tool', name: 'Write' },
+      { type: 'edit', tool: 'Write', filePath: '/w/c.md', parts: [{ before: '', after: '# C\n' }] },
+    ]);
+  });
+
+  it('reports no change for other tools, unexpected inputs and subagents', () => {
+    assert.equal(fileEditOf('Read', { file_path: '/w/a.ts' }), undefined);
+    assert.equal(fileEditOf('Bash', { command: 'ls', file_path: '/w/a.ts', content: 'x' }), undefined);
+    assert.equal(fileEditOf('Edit', { file_path: '/w/a.ts', old_string: 'a' }), undefined);
+    assert.equal(fileEditOf('Edit', { file_path: '', old_string: 'a', new_string: 'b' }), undefined);
+    assert.equal(fileEditOf('Write', { file_path: '/w/a.ts', content: 3 }), undefined);
+    assert.equal(fileEditOf('MultiEdit', { file_path: '/w/a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c' }] }), undefined);
+    assert.equal(fileEditOf('MultiEdit', { file_path: '/w/a.ts', edits: [] }), undefined);
+    assert.equal(fileEditOf('Edit', 'not an object'), undefined);
+    const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+    stream.feed(realInit('/w'));
+    const assistant = JSON.parse(recorded[1] ?? '') as { message: Record<string, unknown> };
+    const sub = JSON.stringify({
+      ...assistant,
+      parent_tool_use_id: 'toolu_1',
+      message: { ...assistant.message, content: [{ type: 'tool_use', id: 't', name: 'Edit', input: { file_path: '/w/a.ts', old_string: 'a', new_string: 'b' } }] },
+    });
+    assert.deepEqual(stream.feed(sub), []);
   });
 
   it('a model response split in several messages counts once', () => {

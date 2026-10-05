@@ -2,7 +2,7 @@ import { ApiError } from './api.ts';
 import type { CopyResult } from './clipboard.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
-import type { Activity, FileChangeKind, FileDiffError, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
+import type { Activity, EditTool, FileChangeKind, FileDiffError, LiveEditError, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
 
 /**
  * The page is in Italian; the core writes its reasons and errors in English,
@@ -336,6 +336,19 @@ export function baseCommitText(commit: string): string {
 export function diffCountText(added: number, removed: number): string {
   return `+${String(added)} −${String(removed)}`;
 }
+
+/** What a live change of the Coder is (D-117, second stage). */
+export const EDIT_TOOL_TEXT: Record<EditTool, string> = {
+  Edit: 'modifica',
+  MultiEdit: 'più modifiche',
+  Write: 'scritto per intero',
+};
+
+/** Why the lines of a live change are not shown. */
+export const LIVE_EDIT_ERROR_TEXT: Record<LiveEditError, string> = {
+  'too-large': 'Modifica troppo grande da mostrare qui: il diff completo arriva a fine lavoro.',
+  refused: 'Modifica non mostrata: contiene un valore del vault.',
+};
 
 /** Why the diff of a changed file is not shown (D-117). */
 export const DIFF_ERROR_TEXT: Record<FileDiffError, string> = {

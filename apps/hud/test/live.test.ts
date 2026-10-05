@@ -111,3 +111,12 @@ test('an activity notice is parsed, and one with an unknown kind is dropped', ()
   assert.equal(parseServerMessage(JSON.stringify({ ...notice, kind: 'shell' })), undefined);
   assert.equal(parseServerMessage(JSON.stringify({ ...notice, step: 1.5 })), undefined);
 });
+
+test('a piece of a live change is parsed; one above L1, of an unknown tool or out of its total is dropped (D-117)', () => {
+  const good = { type: 'edit', editId: 'e', conversationId: 'c', taskId: 't', step: 2, path: 'a.ts', tool: 'Write', label: 'L1', added: 1, removed: 0, seq: 0, total: 1, text: '+x' };
+  assert.deepEqual(parseServerMessage(JSON.stringify(good)), good);
+  assert.deepEqual(parseServerMessage(JSON.stringify({ ...good, error: 'too-large', text: '' })), { ...good, error: 'too-large', text: '' });
+  for (const bad of [{ label: 'L2' }, { tool: 'Bash' }, { seq: 1 }, { path: '' }, { error: 'x' }, { added: -1 }, { text: 3 }]) {
+    assert.equal(parseServerMessage(JSON.stringify({ ...good, ...bad })), undefined, JSON.stringify(bad));
+  }
+});

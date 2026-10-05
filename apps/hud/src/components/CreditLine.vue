@@ -169,7 +169,7 @@ async function showWhole(index: number): Promise<void> {
                       <td class="pr-3 whitespace-pre">
                         <span v-if="row.kind === 'added'" class="sr-only">aggiunta: </span>
                         <span v-else-if="row.kind === 'removed'" class="sr-only">tolta: </span>
-                        {{ row.text }}
+                        <span>{{ row.text }}</span>
                       </td>
                     </tr>
                   </tbody>

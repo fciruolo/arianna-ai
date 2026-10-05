@@ -16,7 +16,7 @@ import {
   type FileChange,
   type OpenedRepository,
 } from '@arianna/executors';
-import { createContext, isAtMost, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { runClaudeStep } from '../claude-step.ts';
@@ -24,6 +24,7 @@ import { loadConversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { applyDeclassifyIn } from '../gateway.ts';
+import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
@@ -117,7 +118,7 @@ async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<Ap
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
 
 /** Opens the project folder of a delegation, or says why the step cannot run there. */
-async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository; repo: string } | { error: string }> {
+async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository; repo: string; label: Label } | { error: string }> {
   const repo = delegation.repo;
   if (repo === null) return { error: NO_PROJECT };
   const config = env.settings();
@@ -135,7 +136,7 @@ async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ ope
     const kinds = opened.decision.decision === 'block' ? [...new Set(opened.decision.findings.map((finding) => finding.kind))].join(', ') : '';
     return { error: `the repository ${repo} cannot go to the cloud (${opened.decision.reason}${kinds === '' ? '' : `: ${kinds}`})` };
   }
-  return { opened, repo };
+  return { opened, repo, label: project.label };
 }
 
 /** The latest budget approval asked for this delegation. */
@@ -294,6 +295,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   if ('error' in folder) return failed(folder.error);
   const workspace = folder.opened;
   const { repo } = folder;
+  // What the live changes of the run carry (D-117): the project's label, or the brief's when higher.
+  const editLabel = maxLabel(folder.label, label);
   const before = new Set(workspace.dirty ?? []);
   const path = workspace.path ?? '';
   // The files the user had already changed: the ones the run changes again are told too (D-117).
@@ -325,6 +328,15 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         // One block per model message: separated, so that the chat reads them as paragraphs.
         await reply?.delta(`${streamed === 0 ? '' : '\n\n'}${event.text}`);
         streamed += 1;
+      } else if (event.type === 'edit') {
+        // A change to a file, as a small diff in the activity card (D-117): live only, never stored.
+        const edit = path === '' ? undefined : liveEditOf(event, { root: path, label: editLabel });
+        if (task.conversationId !== null && edit !== undefined && isAtMost(edit.label, task.clearance)) {
+          await postLiveEdit(sql, { conversationId: task.conversationId, taskId: task.id, step }, edit).catch((error: unknown) => {
+            // The run goes on; the log says only the kind of error, never the text of a file.
+            console.error(liveEditFailure(error));
+          });
+        }
       } else {
         await show(sql, task, step, 'tool', event.name);
       }

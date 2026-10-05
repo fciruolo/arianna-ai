@@ -212,6 +212,18 @@ switch (scenario) {
     out({ ...result, result: 'done' });
     break;
   }
+  case 'live-edits': {
+    // Calls to the file tools (D-117): one in the project, one outside it, one under .git; the files are left as they are.
+    const use = (id: string, name: string, input: unknown) => ({ ...assistant, message: { ...assistant.message, id, content: [{ type: 'tool_use', id, name, input }] } });
+    out(init);
+    out(use('msg_1', 'Edit', { file_path: join(process.cwd(), 'README.md'), old_string: '# Fake site\n', new_string: '# Fake site\nHello.\n' }));
+    out(use('msg_2', 'Write', { file_path: '/etc/outside.txt', content: 'outside\n' }));
+    out(use('msg_3', 'Write', { file_path: join(process.cwd(), '.git', 'hooks', 'pre-commit'), content: 'echo hook\n' }));
+    out(use('msg_4', 'Write', { file_path: 'docs/new.md', content: '# New\n' }));
+    out(answer('done', 'msg_5'));
+    out({ ...result, num_turns: 5, result: 'done' });
+    break;
+  }
   default:
     process.exitCode = 2;
 }

@@ -1,5 +1,8 @@
+import { FILE_EDIT_TOOLS } from '@arianna/executors';
+
 import type { Sql } from './db/client.ts';
 import { readEvents, type StoredEvent } from './events.ts';
+import { editChannel, type EditNotice } from './live-edit.ts';
 import { ACTIVITY_KINDS, activityChannel, deltaChannel, type ActivityNotice, type DeltaNotice } from './reply.ts';
 
 /**
@@ -13,7 +16,9 @@ export type PublicEvent = Omit<StoredEvent, 'prevHash' | 'hash'>;
 export type LiveMessage =
   | { type: 'event'; event: PublicEvent }
   | ({ type: 'delta' } & DeltaNotice)
-  | ({ type: 'activity' } & ActivityNotice);
+  | ({ type: 'activity' } & ActivityNotice)
+  /** A piece of a live change of the Coder (D-117): web chat only. */
+  | ({ type: 'edit' } & EditNotice);
 
 export interface Subscriber {
   send(message: LiveMessage): void;
@@ -70,6 +75,39 @@ function parseActivity(payload: string): ActivityNotice | undefined {
       typeof value.detail === 'string'
     ) {
       return { conversationId: value.conversationId, taskId: value.taskId, step: value.step, kind: value.kind as ActivityNotice['kind'], detail: value.detail };
+    }
+  } catch {
+    // Not ours: ignored.
+  }
+  return undefined;
+}
+
+const EDIT_TOOLS: readonly string[] = FILE_EDIT_TOOLS;
+const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+export function parseEdit(payload: string): EditNotice | undefined {
+  try {
+    const value = JSON.parse(payload) as Partial<EditNotice> | null;
+    if (
+      value !== null &&
+      typeof value.editId === 'string' &&
+      typeof value.conversationId === 'string' &&
+      typeof value.taskId === 'string' &&
+      count(value.step) &&
+      typeof value.path === 'string' &&
+      typeof value.tool === 'string' &&
+      EDIT_TOOLS.includes(value.tool) &&
+      (value.label === 'L0' || value.label === 'L1') &&
+      count(value.added) &&
+      count(value.removed) &&
+      [undefined, 'too-large', 'refused'].includes(value.error) &&
+      count(value.seq) &&
+      count(value.total) &&
+      value.seq < value.total &&
+      typeof value.text === 'string'
+    ) {
+      const { editId, conversationId, taskId, step, path, tool, label, added, removed, error, seq, total, text } = value;
+      return { editId, conversationId, taskId, step, path, tool, label, added, removed, ...(error === undefined ? {} : { error }), seq, total, text };
     }
   } catch {
     // Not ours: ignored.
@@ -150,6 +188,12 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
     for (const entry of entries) entry.subscriber.send({ type: 'activity', ...notice });
   });
 
+  const edits = await sql.listen(editChannel(schema), (payload) => {
+    const notice = parseEdit(payload);
+    if (notice === undefined) return;
+    for (const entry of entries) entry.subscriber.send({ type: 'edit', ...notice });
+  });
+
   return {
     async subscribe(subscriber, afterId) {
       // An id from the future would silence the subscriber until the log caught up.
@@ -180,6 +224,7 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
       await events.unlisten();
       await deltas.unlisten();
       await activity.unlisten();
+      await edits.unlisten();
       await reading;
     },
   };

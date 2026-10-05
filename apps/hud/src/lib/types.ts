@@ -129,6 +129,31 @@ export interface Activity {
   detail: string;
 }
 
+export type EditTool = 'Edit' | 'MultiEdit' | 'Write';
+export type LiveEditError = 'too-large' | 'refused';
+
+/**
+ * A piece of a change the Coder is making to a file (D-117, second stage),
+ * live over the WebSocket only: the lines come in `total` pieces, joined by
+ * `seq`. Never stored.
+ */
+export interface EditPiece {
+  editId: string;
+  conversationId: string;
+  taskId: string;
+  step: number;
+  /** Relative to the project. */
+  path: string;
+  tool: EditTool;
+  label: 'L0' | 'L1';
+  added: number;
+  removed: number;
+  error?: LiveEditError;
+  seq: number;
+  total: number;
+  text: string;
+}
+
 /** A line a task saved (D-083), from GET /api/tasks/:id/activities; "thinking" is never saved. */
 export interface SavedActivity {
   id: string;

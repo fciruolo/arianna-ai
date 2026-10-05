@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { activityLines, applyActivity, applyDelta, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds } from '../src/lib/chat-state.ts';
+import { activityLines, applyActivity, applyDelta, applyEdit, emptyChat, liveEditRows, liveEdits, mergeMessages, restoreActivity, settleReply, taskIds } from '../src/lib/chat-state.ts';
 import { activityText } from '../src/lib/italian.ts';
-import type { Activity, Delta, Message, SavedActivity } from '../src/lib/types.ts';
+import type { Activity, Delta, EditPiece, Message, SavedActivity } from '../src/lib/types.ts';
 
 const CONVERSATION = 'c1';
 
@@ -119,4 +119,52 @@ test('the card of a task: its lines while queued or running, a waiting line befo
   assert.deepEqual(waiting.map(activityText), ['Sto lavorando…']);
   assert.deepEqual(activityLines(emptyChat('c1'), 't1', 'ready').map(activityText), ['In coda…']);
   assert.deepEqual(activityLines(emptyChat('c1'), 't1', undefined), [], 'task not loaded yet: nothing invented');
+});
+
+function piece(seq: number, total: number, text: string, extra: Partial<EditPiece> = {}): EditPiece {
+  return { editId: 'e1', conversationId: CONVERSATION, taskId: 't1', step: 2, path: 'src/a.ts', tool: 'Edit', label: 'L1', added: 1, removed: 1, seq, total, text, ...extra };
+}
+
+test('the rows of a live change: removed, added, context and gaps (D-117)', () => {
+  assert.deepEqual(liveEditRows(' a\n-b\n+c\n@\n+'), [
+    { kind: 'context', text: 'a' },
+    { kind: 'removed', text: 'b' },
+    { kind: 'added', text: 'c' },
+    { kind: 'gap', text: '' },
+    { kind: 'added', text: '' },
+  ]);
+  assert.deepEqual(liveEditRows(''), []);
+});
+
+test('a live change shows once all its pieces arrived, in any order, only while its task works', () => {
+  let state = applyEdit(emptyChat(CONVERSATION), piece(1, 2, 'c'));
+  assert.deepEqual(liveEdits(state, 't1', 'running'), []);
+  state = applyEdit(state, piece(0, 2, '-b\n+'));
+  const [edit] = liveEdits(state, 't1', 'running');
+  assert.deepEqual(edit?.rows, [
+    { kind: 'removed', text: 'b' },
+    { kind: 'added', text: 'c' },
+  ]);
+  assert.equal(edit.path, 'src/a.ts');
+  // A repeated piece changes nothing; a stopped task shows no live change.
+  assert.equal(applyEdit(state, piece(0, 2, '-b\n+')), state);
+  assert.deepEqual(liveEdits(state, 't1', 'done'), []);
+  assert.deepEqual(liveEdits(state, 't1', 'failed'), []);
+});
+
+test('a live change of another conversation, or with too many pieces, is dropped; an error shows no rows', () => {
+  const empty = emptyChat(CONVERSATION);
+  assert.equal(applyEdit(empty, piece(0, 1, '+x', { conversationId: 'other' })), empty);
+  assert.equal(applyEdit(empty, piece(0, 1000, '+x')), empty);
+  const refused = applyEdit(empty, piece(0, 1, '', { error: 'refused' }));
+  assert.deepEqual(liveEdits(refused, 't1', 'running').map((edit) => [edit.error, edit.rows]), [['refused', []]]);
+});
+
+test('at most ten live changes per task are kept, the latest', () => {
+  let state = emptyChat(CONVERSATION);
+  for (let index = 0; index < 12; index += 1) state = applyEdit(state, piece(0, 1, '+x', { editId: `e${String(index)}` }));
+  assert.deepEqual(
+    liveEdits(state, 't1', 'running').map((edit) => edit.editId),
+    ['e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8', 'e9', 'e10', 'e11'],
+  );
 });
