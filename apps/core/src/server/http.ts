@@ -34,6 +34,7 @@ import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
+import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -87,8 +88,13 @@ export interface ApiServerOptions {
   settings?: SettingsPage;
   /** The local servers the core watches (D-071): state, restart, end of the log. */
   local?: LocalApi;
-  /** Capture into kb/inbox (D-080): the home whose kb/ receives the notes, and the folder rules. */
-  capture?: { home: string; rules: LabelRules };
+  /**
+   * Capture into kb/inbox (D-080): the home whose kb/ receives the notes, and
+   * the folder rules; the notes of kb/inbox are read with the same (D-086).
+   * `organize` queues the organizing of a note by the local model; without it
+   * notes are saved and read, not organized.
+   */
+  capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean> };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /**
@@ -435,7 +441,7 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
  */
 const CAPTURE_BODY_BYTES = 2 * MAX_CAPTURE_BYTES + 4096;
 
-function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
+function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   return [
     route('POST', '/api/capture', async (request) => {
       if (capture === undefined) throw new HttpError(404, 'not found');
@@ -466,7 +472,51 @@ function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
         ...(title === undefined ? {} : { title }),
         ...(from === undefined ? {} : { from }),
       });
-      return { status: 201, body: { path: note.path, label: note.label } };
+      // Organized in the background (D-086): the note is already saved, a failed queue leaves it new.
+      let organizing = false;
+      if (capture.organize !== undefined) {
+        try {
+          await capture.organize(note.path);
+          organizing = true;
+        } catch (error) {
+          onError(error);
+        }
+      }
+      return { status: 201, body: { path: note.path, label: note.label, organizing } };
+    }),
+    ...noteRoutes(capture),
+  ];
+}
+
+/**
+ * The notes of kb/inbox (D-086): listed by their header (never the body),
+ * read one at a time up to L2, organized again on request.
+ */
+function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
+  const need = (): NonNullable<ApiServerOptions['capture']> => {
+    if (capture === undefined) throw new HttpError(404, 'not found');
+    return capture;
+  };
+  return [
+    route('GET', '/api/notes', (_request, url) => {
+      const { home, rules } = need();
+      const status = url.searchParams.get('status');
+      if (status !== null && !isNoteStatus(status)) throw new HttpError(400, 'status must be new or organized');
+      const limit = limitParam(url);
+      return Promise.resolve({ body: listNotes(home, rules, { limit, ...(status === null ? {} : { status }) }) });
+    }),
+    route('GET', '/api/notes/:name', (_request, _url, params) => {
+      const { home, rules } = need();
+      return Promise.resolve({ body: { note: readNote(home, rules, params.name ?? '') } });
+    }),
+    route('POST', '/api/notes/:name/organize', async (request, _url, params) => {
+      const { home, rules, organize } = need();
+      onlyFields(await readJson(request), []);
+      const note = readNote(home, rules, params.name ?? '');
+      if (note.status !== 'new') throw new HttpError(409, 'the note is already organized');
+      if (organize === undefined) throw new HttpError(503, 'notes cannot be organized now');
+      await organize(note.path);
+      return { status: 202, body: { path: note.path, organizing: true } };
     }),
   ];
 }
@@ -545,7 +595,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     ...delegationRoutes(sql, approvedProjects),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
-    ...captureRoutes(capture),
+    ...captureRoutes(capture, onError),
     ...settingsRoutes(settings, local, onError),
     ...callRoutes(sql, voice, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
@@ -837,6 +887,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof CaptureError) {
     const status = { invalid: 400, 'too-large': 413, 'not-allowed': 403, unavailable: 503 }[error.code];
+    return { status, message: error.message };
+  }
+  if (error instanceof NoteError) {
+    const status = { invalid: 400, 'not-found': 404, 'above-clearance': 403, conflict: 409, changed: 409, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
   if (error instanceof DelegationFileError) {

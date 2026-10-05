@@ -32,6 +32,7 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { createNoteOrganizer } from './organize.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
@@ -240,10 +241,11 @@ try {
   report(error);
   if (config.cloud.executors.includes('claude')) console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
 }
+const kb = createKb({ home: config.home, rules });
 const orchestrator = createOrchestrator({
   sql,
   agents,
-  kb: createKb({ home: config.home, rules }),
+  kb,
   model: localModel,
   settings: () => settings.current(),
   rules,
@@ -324,6 +326,9 @@ const modelEvals = createModelEvals({
     }),
   onError: report,
 });
+// Captured notes organized by the local model in the background (D-086), one
+// at a time, giving way to calls and task steps; the raw note is saved first.
+const organizer = createNoteOrganizer({ sql, home: config.home, rules, kb, model: localModel, onError: report });
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const approvedProjects = () => settings.current().projects;
 const server = await startApiServer({
@@ -351,7 +356,7 @@ const server = await startApiServer({
     restart: (id) => localServers.restart(id),
     log: (id) => logTail(config.paths.data, id),
   },
-  capture: { home: config.home, rules },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
   modelEvals,
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
@@ -359,6 +364,9 @@ const server = await startApiServer({
 await worker.start();
 // Trials left running by the previous run are closed as `interrupted`, never resumed.
 await modelEvals.start();
+// New notes left by pnpm kb:capture or by a previous run: queued again, at most MAX_RESUMED.
+const { resumed } = await organizer.start();
+if (resumed > 0) console.log(`Notes: ${String(resumed)} queued to be organized`);
 
 // The calls Arianna makes (D-066): checked every 30 s under [voice.outgoing];
 // with the voice off nothing rings.
@@ -393,6 +401,7 @@ async function shutdown(): Promise<void> {
   await calls.close();
   await voice.close();
   await modelEvals.stop();
+  await organizer.stop();
   await worker.stop();
   await localServers.stop();
   await live.close();

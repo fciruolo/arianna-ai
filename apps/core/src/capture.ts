@@ -133,7 +133,7 @@ function errorCode(error: unknown): unknown {
 }
 
 /** kb/ must be a real folder; kb/inbox is created if missing, and must be a real folder too. */
-function inboxDir(home: string): string {
+export function inboxDir(home: string): string {
   let dir = home;
   for (const [index, segment] of KB_INBOX.split('/').entries()) {
     dir = join(dir, segment);
@@ -162,7 +162,7 @@ function inboxDir(home: string): string {
 }
 
 /** The folder still is home/kb/inbox, with no link swapped in since it was checked. */
-function sameInbox(home: string, dir: string): boolean {
+export function sameInbox(home: string, dir: string): boolean {
   try {
     return realpathSync(dir) === join(realpathSync(home), ...KB_INBOX.split('/'));
   } catch {

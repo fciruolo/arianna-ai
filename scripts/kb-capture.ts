@@ -73,7 +73,8 @@ try {
     ...(values.url === undefined ? {} : { url: values.url }),
     ...(values.title === undefined ? {} : { title: values.title }),
   });
-  console.log(`Nota salvata in ${note.path} (${note.label})`);
+  // Without the core, no model: the core organizes it when it starts or is already running (D-086).
+  console.log(`Nota salvata in ${note.path} (${note.label}): si riordinerà quando il core la vede`);
 } catch (error) {
   if (!(error instanceof CaptureError)) throw error;
   console.error(`Nota non salvata: ${ITALIAN[error.message] ?? CODES[error.code]}`);
