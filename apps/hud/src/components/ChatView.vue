@@ -11,8 +11,9 @@ import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
+import { executorText, isEventLine, participantPose, removeText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
@@ -40,6 +41,9 @@ const props = defineProps<{
   status: StatusSnapshot | null;
   /** The calls of this conversation (D-066), shown as receipts among the messages. */
   calls: readonly CallInfo[];
+  /** The agents in this conversation besides Arianna and the user (D-125), with the characters they wear. */
+  participants: readonly Participant[];
+  characters: Record<string, CharacterChoice> | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
@@ -56,6 +60,8 @@ const emit = defineEmits<{
   /** "Chiamami quando finisci" on a task at work (D-066). */
   callWhenDone: [taskId: string];
   cancelCall: [callId: string];
+  /** The user takes an agent out of the conversation (D-125). */
+  removeParticipant: [agent: string];
   /** A "/" command the page carries out (D-090): open a page, a new conversation. */
   command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
 }>();
@@ -375,6 +381,25 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
         </section>
 
+        <!-- Who else is here (D-125): the agents Arianna brought in, each can be taken out -->
+        <section v-if="participants.length > 0" class="flex flex-wrap items-center gap-2" aria-label="Partecipanti della conversazione">
+          <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-muted uppercase">Con te e Arianna</span>
+          <div v-for="participant in participants" :key="participant.agent" class="hud-card flex items-center gap-2 py-1 pr-1 pl-2">
+            <PixelAgent :choice="characters?.[participant.agent]" :pose="participantPose(participant.agent, status?.agents)" :scale="1" :label="agentName(participant.agent)" />
+            <div class="min-w-0 leading-tight">
+              <div class="text-[13px] font-medium">{{ agentName(participant.agent) }}</div>
+              <div class="font-mono text-[10.5px] text-muted">{{ executorText(participant) }}</div>
+            </div>
+            <button
+              type="button"
+              class="grid size-6 place-items-center rounded-md text-muted hover:text-ink"
+              :aria-label="removeText(participant)"
+              :title="removeText(participant)"
+              @click="emit('removeParticipant', participant.agent)"
+            ><Icon name="close" :size="14" /></button>
+          </div>
+        </section>
+
         <!-- The model selector on small screens -->
         <label v-if="conversation.mode === 'work'" class="flex items-center gap-2 text-xs text-muted sm:hidden">
           {{ answersDirect ? 'Risponde' : 'Coder su' }}
@@ -469,6 +494,12 @@ onBeforeUnmount(() => clearInterval(clock));
               </template>
             </div>
           </div>
+
+          <!-- A line of the system about a task: who joined, who left, a wait closed (D-125, D-109) -->
+          <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[12px] text-muted">
+            <span class="break-words">{{ message.body }}</span>
+            <MessageTime class="font-mono text-[10.5px]" :ts="message.ts" :now="now" />
+          </p>
 
           <!-- A report of the agent Arianna delegated to -->
           <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">

@@ -62,7 +62,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -723,7 +723,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :arianna="{ choice: characters?.agents.arianna, pose: ariannaHere }"
         :status="status"
         :calls="calls"
+        :participants="participants"
+        :characters="characters?.agents"
         @send="store.send"
+        @remove-participant="store.removeParticipant"
         @call-when-done="store.callWhenDone"
         @cancel-call="store.cancelScheduled"
         @choose-model="store.chooseModel"

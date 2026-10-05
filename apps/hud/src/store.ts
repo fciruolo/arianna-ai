@@ -14,7 +14,8 @@ import { connectLive, type LiveConnection, type LiveState, type SocketLike } fro
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import { withoutParticipant } from './lib/participants.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -41,6 +42,8 @@ export function createChatStore() {
   /** Saved activity lines per task of the open conversation (D-083). */
   const activityCounts = ref<Record<string, number>>({});
   const approvals = ref<Approval[]>([]);
+  /** The agents in the open conversation besides Arianna and the user (D-125). */
+  const participants = ref<Participant[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
   const models = ref<CloudModel[]>([]);
   /** The approved projects (D-058); the list changes without a restart, so it is read again when needed. */
@@ -169,6 +172,27 @@ export function createChatStore() {
   }
 
   /** Pins a conversation at the top of the list, or unpins it (D-089). */
+  async function refreshParticipants(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return;
+    const listed = await api.listParticipants(id);
+    if (chat.value?.conversationId === id) participants.value = listed;
+  }
+
+  /** The user takes an agent out of the open conversation (D-125): the bar updates at once, the feed confirms it. */
+  async function removeParticipant(agent: string): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id === undefined) return;
+    error.value = null;
+    try {
+      await api.removeParticipant(id, agent);
+      if (chat.value?.conversationId === id) participants.value = withoutParticipant(participants.value, agent);
+    } catch (cause) {
+      fail(cause);
+      await refreshParticipants().catch(() => undefined);
+    }
+  }
+
   async function pin(id: string, value: boolean): Promise<void> {
     error.value = null;
     try {
@@ -274,8 +298,9 @@ export function createChatStore() {
     credits.value = new Map();
     activityCounts.value = {};
     calls.value = [];
+    participants.value = [];
     try {
-      await Promise.all([refreshMessages(), refreshCalls()]);
+      await Promise.all([refreshMessages(), refreshCalls(), refreshParticipants()]);
     } catch (cause) {
       fail(cause);
     }
@@ -675,6 +700,10 @@ export function createChatStore() {
         }
         break;
       }
+      case 'participant.added':
+      case 'participant.removed':
+        if (conversationId !== undefined && conversationId === chat.value?.conversationId) work.push(refreshParticipants());
+        break;
       case 'call.ringing': {
         const callId = payloadString(event, 'callId');
         const reason = payloadString(event, 'reason');
@@ -773,7 +802,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

@@ -322,3 +322,13 @@ export interface Changelog {
   /** Lines the core did not understand. */
   skipped: number;
 }
+
+/** An agent that joined the conversation as a colleague (D-125), from GET /api/conversations/:id/participants. */
+export interface Participant {
+  agent: string;
+  addedBy: 'arianna' | 'user';
+  /** ISO time. */
+  addedAt: string;
+  /** 'claude' or 'local'; null for an agent no longer active. */
+  executor: string | null;
+}
