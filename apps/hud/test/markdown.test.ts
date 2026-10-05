@@ -87,6 +87,61 @@ test('headings, rules and quotes', () => {
   assert.deepEqual(parseMarkdown('#hashtag'), [paragraph(text('#hashtag'))]);
 });
 
+test('setext headings: a paragraph underlined with === or ---', () => {
+  const heading = (level: number, ...inlines: Inline[]): Block => ({ kind: 'heading', level, inlines });
+  assert.deepEqual(parseMarkdown('Titolo\n==='), [heading(1, text('Titolo'))]);
+  assert.deepEqual(parseMarkdown('Sotto **titolo**\n---\ntesto'), [
+    heading(2, text('Sotto '), { kind: 'strong', children: [text('titolo')] }),
+    paragraph(text('testo')),
+  ]);
+  assert.deepEqual(parseMarkdown('Due\nrighe\n  =  '), [heading(1, text('Due'), { kind: 'break' }, text('righe'))]);
+  assert.deepEqual(parseMarkdown('- voce\n  ---'), [{ kind: 'list', ordered: false, start: 1, items: [[heading(2, text('voce'))]] }]);
+  assert.deepEqual(parseMarkdown('> citato\n> ==='), [{ kind: 'quote', blocks: [heading(1, text('citato'))] }]);
+});
+
+test('--- stays a rule when it does not follow a paragraph; spaced or other marks never underline', () => {
+  assert.deepEqual(parseMarkdown('---'), [{ kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('Testo\n\n---'), [paragraph(text('Testo')), { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('# Titolo\n---'), [{ kind: 'heading', level: 1, inlines: [text('Titolo')] }, { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('- voce\n---'), [{ kind: 'list', ordered: false, start: 1, items: [[paragraph(text('voce'))]] }, { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('```\nx\n```\n---'), [{ kind: 'code', lang: null, text: 'x' }, { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('Testo\n- - -'), [paragraph(text('Testo')), { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('Testo\n***'), [paragraph(text('Testo')), { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('Testo\n= ='), [paragraph(text('Testo'), { kind: 'break' }, text('= ='))]);
+  assert.deepEqual(parseMarkdown('Testo\n    ==='), [paragraph(text('Testo'), { kind: 'break' }, text('==='))]);
+  assert.deepEqual(parseMarkdown('a | b\n--- | ---\n1 | 2')[0]?.kind, 'table');
+  assert.deepEqual(parseMarkdown('===\nTesto'), [paragraph(text('==='), { kind: 'break' }, text('Testo'))]);
+});
+
+test('lazy quote lines: a line without > continues the paragraph of the quote', () => {
+  const quote = (...blocks: Block[]): Block => ({ kind: 'quote', blocks });
+  const br: Inline = { kind: 'break' };
+  assert.deepEqual(parseMarkdown('> prima\nseconda\nterza'), [quote(paragraph(text('prima'), br, text('seconda'), br, text('terza')))]);
+  assert.deepEqual(parseMarkdown('> > dentro\nancora'), [quote(quote(paragraph(text('dentro'), br, text('ancora'))))]);
+  assert.deepEqual(parseMarkdown('> - voce\ncontinua'), [
+    quote({ kind: 'list', ordered: false, start: 1, items: [[paragraph(text('voce'), br, text('continua'))]] }),
+  ]);
+  // A lazy underline stays text: it cannot make the quoted paragraph a heading.
+  assert.deepEqual(parseMarkdown('> citato\n==='), [quote(paragraph(text('citato'), br, text('===')))]);
+});
+
+test('what is not a lazy quote line ends the quote', () => {
+  const quote = (...blocks: Block[]): Block => ({ kind: 'quote', blocks });
+  assert.deepEqual(parseMarkdown('> citato\n\nfuori'), [quote(paragraph(text('citato'))), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> citato\n---'), [quote(paragraph(text('citato'))), { kind: 'rule' }]);
+  assert.deepEqual(parseMarkdown('> citato\n- voce'), [
+    quote(paragraph(text('citato'))),
+    { kind: 'list', ordered: false, start: 1, items: [[paragraph(text('voce'))]] },
+  ]);
+  assert.deepEqual(parseMarkdown('> citato\n# Titolo'), [quote(paragraph(text('citato'))), { kind: 'heading', level: 1, inlines: [text('Titolo')] }]);
+  assert.deepEqual(parseMarkdown('> # Titolo\nfuori'), [quote({ kind: 'heading', level: 1, inlines: [text('Titolo')] }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> ---\nfuori'), [quote({ kind: 'rule' }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> Titolo\n> ===\nfuori'), [quote({ kind: 'heading', level: 1, inlines: [text('Titolo')] }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> ```\n> codice\nfuori'), [quote({ kind: 'code', lang: null, text: 'codice' }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> ```\n> codice\n> ```\nfuori'), [quote({ kind: 'code', lang: null, text: 'codice' }), paragraph(text('fuori'))]);
+  assert.deepEqual(parseMarkdown('> \nfuori'), [quote(), paragraph(text('fuori'))]);
+});
+
 test('lists: bullets, numbers with their start, nesting, a list right after a paragraph', () => {
   assert.deepEqual(parseMarkdown('Passi:\n1. uno\n2. **due**'), [
     paragraph(text('Passi:')),
@@ -144,7 +199,9 @@ test('pipe tables with alignment; rows padded to the header', () => {
       ],
     },
   ]);
-  assert.deepEqual(parseMarkdown('a | b\n---'), [paragraph(text('a | b')), { kind: 'rule' }]);
+  // Not a table (the separator has one cell for two in the header): as in GFM, a setext heading.
+  assert.deepEqual(parseMarkdown('a | b\n---'), [{ kind: 'heading', level: 2, inlines: [text('a | b')] }]);
+  assert.deepEqual(parseMarkdown('a | b\n\n---'), [paragraph(text('a | b')), { kind: 'rule' }]);
 });
 
 test('deep nesting is cut to text instead of recursing without end', () => {
@@ -180,6 +237,10 @@ test('crafted or degenerate input does not stall the page', () => {
     (n) => '[a]('.repeat(n / 4),
     (n) => '[a](<'.repeat(n / 5),
     (n) => '[a](b "'.repeat(n / 7),
+    (n) => 'a\n'.repeat(n / 4) + '='.repeat(n / 2),
+    (n) => '> a\n' + 'b\n'.repeat(n / 2),
+    (n) => '> a\n'.repeat(n / 8) + '===\n'.repeat(n / 8),
+    (n) => '> ```\n' + '> x\n'.repeat(n / 4),
   ];
   const small = 16_000;
   const large = 8 * small;

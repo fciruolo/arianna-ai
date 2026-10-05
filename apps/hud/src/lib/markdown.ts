@@ -3,9 +3,10 @@
  * never HTML, so a reply cannot put markup in the page. What is not listed
  * here stays text: raw HTML, images (an image would be fetched from someone
  * else's server, carrying data out), links that are not http, https or
- * mailto. Covers what models write: paragraphs, headings, fenced code,
- * lists (nested), quotes, rules, pipe tables; bold, italic, strikethrough,
- * inline code, links and bare URLs.
+ * mailto. Covers what models write: paragraphs, headings (also setext,
+ * underlined with `===` or `---`), fenced code, lists (nested), quotes (also
+ * with lazy lines, as CommonMark), rules, pipe tables; bold, italic,
+ * strikethrough, inline code, links and bare URLs.
  */
 export type Inline =
   | { kind: 'text'; text: string }
@@ -36,6 +37,10 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t]|$)/;
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
+/** The underline of a setext heading: only `=` (level 1) or only `-` (level 2), no spaces between. */
+const SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
+/** The closing line of a fence, whatever its run (checked against the opening one). */
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 const ITEM = /^( *)([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?$/;
 const SEP_CELL = /^:?-+:?$/;
 
@@ -180,6 +185,58 @@ function parseTable(lines: readonly string[], from: number): [Block, number] {
   return [{ kind: 'table', align, head: head.map((cell) => parseInline(cell)), rows }, i];
 }
 
+/** A fence's opening run (backticks or tildes), or null when the line opens no fence. */
+function fenceOpening(line: string): string | null {
+  const fence = FENCE.exec(line);
+  if (fence === null || (group(fence, 1).startsWith('`') && group(fence, 2).includes('`'))) return null;
+  return group(fence, 1);
+}
+
+/** Whether `line` closes the fence opened by `open`: same character, a run at least as long. */
+function closesFence(line: string, open: string): boolean {
+  const close = FENCE_CLOSE.exec(line);
+  return close !== null && group(close, 1).charAt(0) === open.charAt(0) && group(close, 1).length >= open.length;
+}
+
+/**
+ * A quote: its lines with `>`, and the lazy ones after them (CommonMark). A
+ * line without `>` still belongs to the quote when it continues a paragraph
+ * there: the line before has text and is not a heading, a rule or in fenced
+ * code, and the line itself starts no block. A lazy `===` stays text,
+ * escaped, so it cannot underline the paragraph it continues.
+ */
+function parseQuote(lines: readonly string[], from: number, depth: number): [Block, number] {
+  const body: string[] = [];
+  /** The opening run of the fence the quote is inside, or null. */
+  let fence: string | null = null;
+  /** Whether the last line of the quote leaves a paragraph open. */
+  let open = false;
+  let i = from;
+  while (i < lines.length) {
+    const line = lineAt(lines, i);
+    const quoted = QUOTE.exec(line);
+    if (quoted === null) {
+      if (!open || blank(line) || startsBlock(lines, i)) break;
+      body.push(SETEXT.test(line) ? `\\${line.trim()}` : line);
+      i++;
+      continue;
+    }
+    const content = group(quoted, 1);
+    body.push(content);
+    i++;
+    if (fence !== null) {
+      if (closesFence(content, fence)) fence = null;
+      open = false;
+      continue;
+    }
+    // An underline after an open paragraph turns it into a heading, which takes no lazy line.
+    const underlines: boolean = open && SETEXT.test(content);
+    fence = fenceOpening(content);
+    open = fence === null && !underlines && !blank(content) && !HEADING.test(content) && !RULE.test(content);
+  }
+  return [{ kind: 'quote', blocks: parseLines(body, depth + 1) }, i];
+}
+
 function parseLines(lines: readonly string[], depth: number): Block[] {
   if (depth > MAX_DEPTH) {
     const text = lines.join('\n').trim();
@@ -193,15 +250,14 @@ function parseLines(lines: readonly string[], depth: number): Block[] {
       i++;
       continue;
     }
-    const fence = FENCE.exec(line);
-    if (fence !== null && !(group(fence, 1).startsWith('`') && group(fence, 2).includes('`'))) {
-      const char = group(fence, 1).charAt(0);
-      const close = new RegExp(`^ {0,3}\\${char}{${String(group(fence, 1).length)},}[ \\t]*$`);
+    const opening = fenceOpening(line);
+    if (opening !== null) {
       const body: string[] = [];
       i++;
-      while (i < lines.length && !close.test(lineAt(lines, i))) body.push(lineAt(lines, i++));
+      while (i < lines.length && !closesFence(lineAt(lines, i), opening)) body.push(lineAt(lines, i++));
       i++;
-      const lang = group(fence, 2).trim().split(/\s+/)[0] ?? '';
+      const info = line.trimStart().slice(opening.length);
+      const lang = info.trim().split(/\s+/)[0] ?? '';
       blocks.push({ kind: 'code', lang: lang === '' ? null : lang, text: body.join('\n') });
       continue;
     }
@@ -217,9 +273,9 @@ function parseLines(lines: readonly string[], depth: number): Block[] {
       continue;
     }
     if (QUOTE.test(line)) {
-      const body: string[] = [];
-      while (i < lines.length && QUOTE.test(lineAt(lines, i))) body.push(group(QUOTE.exec(lineAt(lines, i++)) as RegExpExecArray, 1));
-      blocks.push({ kind: 'quote', blocks: parseLines(body, depth + 1) });
+      const [quote, next] = parseQuote(lines, i, depth);
+      blocks.push(quote);
+      i = next;
       continue;
     }
     if (ITEM.test(line)) {
@@ -236,8 +292,20 @@ function parseLines(lines: readonly string[], depth: number): Block[] {
     }
     const body = [line.trim()];
     i++;
-    while (i < lines.length && !blank(lineAt(lines, i)) && !startsBlock(lines, i)) body.push(lineAt(lines, i++).trim());
-    blocks.push({ kind: 'paragraph', inlines: parseInline(body.join('\n')) });
+    let level = 0;
+    while (i < lines.length && !blank(lineAt(lines, i))) {
+      const underline = SETEXT.exec(lineAt(lines, i));
+      if (underline !== null) {
+        // Checked before startsBlock: under a paragraph `---` is an underline, not a rule.
+        level = group(underline, 1).startsWith('=') ? 1 : 2;
+        i++;
+        break;
+      }
+      if (startsBlock(lines, i)) break;
+      body.push(lineAt(lines, i++).trim());
+    }
+    const inlines = parseInline(body.join('\n'));
+    blocks.push(level === 0 ? { kind: 'paragraph', inlines } : { kind: 'heading', level, inlines });
   }
   return blocks;
 }
