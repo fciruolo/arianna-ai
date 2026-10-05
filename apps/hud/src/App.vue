@@ -193,7 +193,7 @@ function poseFor(id: string): Pose {
 }
 
 /** Arianna in the header of the open conversation: its tasks only, not the whole core. */
-const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(tasks.value)), activeLine.value));
+const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(tasks.value), chat.value?.conversationId, approvals.value), activeLine.value));
 
 /** Approvals of the open conversation's tasks are shown in the chat; the others in the panel. */
 const inChat = computed(() => approvals.value.filter((approval) => approval.taskId !== null && approval.taskId in tasks.value));
@@ -466,6 +466,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :status="status"
         :calls="calls"
         @send="store.send"
+        @save-to-inbox="store.saveToInbox"
         @call-when-done="store.callWhenDone"
         @cancel-call="store.cancelScheduled"
         @choose-model="store.chooseModel"

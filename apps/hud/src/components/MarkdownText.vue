@@ -1,7 +1,10 @@
 <script lang="ts">
-import { computed, defineComponent, h, type VNode, type VNodeChild } from 'vue';
+import { computed, defineComponent, h, onBeforeUnmount, ref, type PropType, type VNode, type VNodeChild } from 'vue';
 
+import { copyText, COPY_FEEDBACK_MS, type ClipboardLike, type CopyResult } from '../lib/clipboard.ts';
+import { COPY_TEXT } from '../lib/italian.ts';
 import { inlineText, parseMarkdown, safeHref, type Block, type Inline } from '../lib/markdown.ts';
+import Icon from './Icon.vue';
 
 /**
  * A reply's Markdown as Vue nodes (D-065): the tree of lib/markdown.ts, never
@@ -9,6 +12,40 @@ import { inlineText, parseMarkdown, safeHref, type Block, type Inline } from '..
  * address, the address's host is shown next to it, so a link cannot hide
  * where it goes. `cursor` adds the blinking cursor of a reply still arriving.
  */
+/**
+ * "Copia" in the top right corner of a code block (D-084): the exact text of
+ * the block, then "Copiato" for two seconds, or "Copia non disponibile" when
+ * the page has no clipboard (plain HTTP from the phone).
+ */
+const CopyButton = defineComponent({
+  name: 'CopyButton',
+  props: {
+    text: { type: String, required: true },
+    lang: { type: String as PropType<string | null>, default: null },
+  },
+  setup(props) {
+    const state = ref<'idle' | CopyResult>('idle');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function copy(): Promise<void> {
+      // navigator.clipboard is undefined outside a secure context, whatever the types say.
+      const clipboard = (navigator as { clipboard?: ClipboardLike }).clipboard;
+      state.value = await copyText(props.text, clipboard);
+      clearTimeout(timer);
+      timer = setTimeout(() => (state.value = 'idle'), COPY_FEEDBACK_MS);
+    }
+    onBeforeUnmount(() => clearTimeout(timer));
+    return () =>
+      h('div', { class: 'md-code-bar' }, [
+        props.lang === null ? null : h('span', { class: 'md-code-lang' }, props.lang),
+        h(
+          'button',
+          { type: 'button', class: ['md-copy', { 'md-copy-off': state.value === 'unavailable' }], onClick: () => void copy() },
+          [h(Icon, { name: state.value === 'copied' ? 'saved' : 'copy', size: 12 }), h('span', { 'aria-live': 'polite' }, COPY_TEXT[state.value])],
+        ),
+      ]);
+  },
+});
+
 function inline(node: Inline): VNodeChild {
   switch (node.kind) {
     case 'text':
@@ -41,7 +78,10 @@ function block(node: Block, tail: VNode[] = []): VNode {
     case 'heading':
       return h(`h${node.level}`, [...node.inlines.map(inline), ...tail]);
     case 'code':
-      return h('pre', node.lang === null ? {} : { 'data-lang': node.lang }, [h('code', node.text), ...tail]);
+      return h('div', { class: 'md-code' }, [
+        h('pre', node.lang === null ? {} : { 'data-lang': node.lang }, [h('code', node.text), ...tail]),
+        h(CopyButton, { text: node.text, lang: node.lang }),
+      ]);
     case 'list':
       return h(
         node.ordered ? 'ol' : 'ul',

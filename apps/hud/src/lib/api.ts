@@ -1,7 +1,7 @@
 import type { CallInfo } from './calls.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
-import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -109,8 +109,8 @@ export async function sendMessage(conversationId: string, body: string): Promise
   return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body });
 }
 
-/** "/nota" (D-080): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
-export async function captureNote(note: { text: string; kind: 'note' | 'link'; url?: string }): Promise<{ path: string; label: string }> {
+/** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
+export async function captureNote(note: { text: string; kind: 'note' | 'link'; url?: string; title?: string; from?: Label }): Promise<{ path: string; label: string }> {
   return call('POST', '/api/capture', note);
 }
 

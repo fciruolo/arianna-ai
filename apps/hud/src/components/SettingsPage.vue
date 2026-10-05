@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import {
   ApiError,
@@ -17,6 +17,7 @@ import {
 } from '../lib/api.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import { activeSection, type HeadingPosition } from '../lib/settings-index.ts';
 import {
   charactersBody,
   chatId,
@@ -444,9 +445,40 @@ const INDEX: { group: string; items: { id: string; title: string; privacy?: bool
   { group: 'Solo lettura', items: [{ id: 'labels', title: 'Etichette' }] },
 ];
 const scroller = ref<HTMLElement | null>(null);
+/** The lit entry of the index (D-084) and the one clicked, kept until the user scrolls by hand. */
+const lit = ref<string | undefined>(undefined);
+let pinned: string | undefined;
+let frame = 0;
+function measure(): void {
+  frame = 0;
+  const box = scroller.value;
+  if (box === null) return;
+  const zone = box.getBoundingClientRect();
+  const headings: HeadingPosition[] = [];
+  for (const item of INDEX.flatMap((group) => group.items)) {
+    const element = box.querySelector(`#${item.id}`);
+    if (element !== null) headings.push({ id: item.id, top: element.getBoundingClientRect().top });
+  }
+  lit.value = activeSection({ headings, zoneTop: zone.top, zoneBottom: zone.bottom, pinned });
+}
+function onScroll(): void {
+  if (frame === 0) frame = window.requestAnimationFrame(measure);
+}
+/** Wheel, touch or keys in the page: the user scrolls by hand, the click no longer decides. */
+function unpin(): void {
+  pinned = undefined;
+}
 function go(id: string): void {
+  pinned = id;
+  lit.value = id;
   scroller.value?.querySelector(`#${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+watch(view, () => void nextTick(measure));
+onMounted(() => window.addEventListener('resize', onScroll));
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onScroll);
+  if (frame !== 0) window.cancelAnimationFrame(frame);
+});
 </script>
 
 <template>
@@ -458,7 +490,9 @@ function go(id: string): void {
           v-for="item in group.items"
           :key="item.id"
           :href="`#${item.id}`"
-          class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-muted hover:bg-surface-2 hover:text-ink"
+          class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-surface-2 hover:text-ink"
+          :class="lit === item.id ? 'bg-surface-2 font-medium text-ink' : 'text-muted'"
+          :aria-current="lit === item.id ? 'location' : undefined"
           @click.prevent="go(item.id)"
         >
           <Icon v-if="item.privacy" name="gateway" :size="15" class="text-warn" />
@@ -467,7 +501,15 @@ function go(id: string): void {
       </template>
     </nav>
 
-    <div ref="scroller" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+    <div
+      ref="scroller"
+      :inert="proposal !== null"
+      class="min-h-0 min-w-0 flex-1 overflow-y-auto"
+      @scroll.passive="onScroll"
+      @wheel.passive="unpin"
+      @touchstart.passive="unpin"
+      @keydown="unpin"
+    >
       <div class="mx-auto flex max-w-[860px] flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
         <header>
           <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">Impostazioni</h1>

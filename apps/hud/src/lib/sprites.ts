@@ -1,4 +1,4 @@
-import type { Activity, AgentState, Task } from './types.ts';
+import type { Activity, AgentState, Approval, Task } from './types.ts';
 
 /**
  * Which frames of a character sheet (D-060, the format of pixel-agents) a
@@ -108,10 +108,24 @@ export function poseOf(state: AgentState | undefined, activity: Activity | undef
  * What Arianna is doing for the open conversation, from its tasks only: the
  * status of the core is about every conversation, so a task running or
  * waiting elsewhere would show here too. A task at work wins over one waiting.
+ * "Waiting" needs a real reason in this conversation (D-084): a pending
+ * approval of one of its tasks, or a task waiting for the user whose approval,
+ * if it has one, is still pending (one decided elsewhere no longer counts). A
+ * task of another conversation (a system chat points at the failed task of
+ * its source conversation) never counts.
  */
-export function conversationState(tasks: readonly Pick<Task, 'status'>[]): AgentState {
-  if (tasks.some((task) => task.status === 'running' || task.status === 'ready' || task.status === 'inbox')) return 'thinking';
-  if (tasks.some((task) => task.status === 'waiting_user')) return 'waiting';
+export function conversationState(
+  tasks: readonly Pick<Task, 'id' | 'conversationId' | 'status' | 'waitingApprovalId'>[],
+  conversationId: string | undefined,
+  approvals: readonly Pick<Approval, 'id' | 'taskId' | 'state'>[] = [],
+): AgentState {
+  const own = tasks.filter((task) => conversationId !== undefined && task.conversationId === conversationId);
+  if (own.some((task) => task.status === 'running' || task.status === 'ready' || task.status === 'inbox')) return 'thinking';
+  const pending = approvals.filter((approval) => approval.state === 'pending');
+  const ownIds = new Set(own.map((task) => task.id));
+  const pendingIds = new Set(pending.map((approval) => approval.id));
+  if (pending.some((approval) => approval.taskId !== null && ownIds.has(approval.taskId))) return 'waiting';
+  if (own.some((task) => task.status === 'waiting_user' && (task.waitingApprovalId === null || pendingIds.has(task.waitingApprovalId)))) return 'waiting';
   return 'idle';
 }
 

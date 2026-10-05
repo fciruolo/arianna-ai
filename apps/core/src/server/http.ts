@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { CharacterChoices, Project } from '@arianna/config';
-import type { LabelRules } from '@arianna/policy';
+import { isLabel, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -447,13 +447,15 @@ function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
         if (error instanceof HttpError && error.status === 413) throw new HttpError(413, `text is longer than ${String(MAX_CAPTURE_BYTES / 1024)} KiB`);
         throw error;
       }
-      onlyFields(body, ['text', 'kind', 'url', 'title']);
-      const { text, kind, url, title } = body;
+      onlyFields(body, ['text', 'kind', 'url', 'title', 'from']);
+      const { text, kind, url, title, from } = body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
       if (!isCaptureKind(chosen)) throw new HttpError(400, 'kind must be thought, link or note');
       if (url !== undefined && typeof url !== 'string') throw new HttpError(400, 'url must be a string');
       if (title !== undefined && typeof title !== 'string') throw new HttpError(400, 'title must be a string');
+      // The label of the message saved (D-084): it can only raise the note, and above L2 nothing is written.
+      if (from !== undefined && !isLabel(from)) throw new HttpError(400, 'from must be a label');
       const note = captureNote({
         home: capture.home,
         rules: capture.rules,
@@ -462,6 +464,7 @@ function captureRoutes(capture: ApiServerOptions['capture']): Route[] {
         source: { channel: 'hud', id: randomUUID() },
         ...(url === undefined ? {} : { url }),
         ...(title === undefined ? {} : { title }),
+        ...(from === undefined ? {} : { from }),
       });
       return { status: 201, body: { path: note.path, label: note.label } };
     }),

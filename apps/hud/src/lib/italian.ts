@@ -1,4 +1,5 @@
 import { ApiError } from './api.ts';
+import type { CopyResult } from './clipboard.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
 import type { Activity, FileChangeKind, MessageCredit, RecentDelegation, SavedActivity } from './types.ts';
@@ -346,3 +347,17 @@ export function relativeTimeText(at: string, now: Date): string {
   const days = Math.floor(hours / 24);
   return days === 1 ? 'ieri' : `${String(days)} giorni fa`;
 }
+
+/** The button on a code block (D-084): before the click, then for two seconds after it. */
+export const COPY_TEXT: Record<'idle' | CopyResult, string> = {
+  idle: 'Copia',
+  copied: 'Copiato',
+  unavailable: 'Copia non disponibile',
+};
+
+/** "Salva in inbox" under a message (D-084). */
+export const SAVE_TO_INBOX_TEXT = 'Salva in inbox';
+export const SAVE_TO_INBOX_HINT = 'Salva il testo di questo messaggio come nota in kb/inbox, senza modello';
+export const MESSAGE_TOO_LARGE_TEXT = 'Il messaggio è più lungo di 64 KiB: troppo per una nota, non l’ho salvato.';
+export const MESSAGE_ABOVE_L2_TEXT = 'Il messaggio è L3: kb/inbox arriva fino a L2, non l’ho salvato.';
+export const MESSAGE_EMPTY_TEXT = 'Il messaggio è vuoto: non c’è niente da salvare.';

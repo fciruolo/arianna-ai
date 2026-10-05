@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { conversationState, frameAt, poseFrames, poseOf, type Pose } from '../src/lib/sprites.ts';
-import type { Activity, ActivityKind } from '../src/lib/types.ts';
+import type { Activity, ActivityKind, Approval, Task, TaskStatus } from '../src/lib/types.ts';
 
 const POSES: Pose[] = ['idle', 'thinking', 'working', 'reading', 'waiting', 'paused'];
 
@@ -50,10 +50,30 @@ test('poseOf: the line of activity wins over the status; without either the agen
 });
 
 test('conversationState: only the tasks of the open conversation count; at work wins over waiting', () => {
-  assert.equal(conversationState([]), 'idle');
-  assert.equal(conversationState([{ status: 'done' }, { status: 'failed' }, { status: 'to_verify' }]), 'idle');
-  assert.equal(conversationState([{ status: 'done' }, { status: 'waiting_user' }]), 'waiting');
+  const task = (status: TaskStatus) => ({ id: `t-${status}`, conversationId: 'c', waitingApprovalId: null, status });
+  assert.equal(conversationState([], 'c'), 'idle');
+  assert.equal(conversationState([task('done'), task('failed'), task('to_verify')], 'c'), 'idle');
+  assert.equal(conversationState([task('done'), task('waiting_user')], 'c'), 'waiting');
   for (const status of ['inbox', 'ready', 'running'] as const) {
-    assert.equal(conversationState([{ status: 'waiting_user' }, { status }]), 'thinking');
+    assert.equal(conversationState([task('waiting_user'), task(status)], 'c'), 'thinking');
   }
+});
+
+test('conversationState: "waiting" only with a real approval or question in this conversation (D-084)', () => {
+  type Row = Pick<Task, 'id' | 'conversationId' | 'status' | 'waitingApprovalId'>;
+  const approval = (id: string, taskId: string | null, state: Approval['state'] = 'pending') => ({ id, taskId, state });
+  // A system chat: the failed task of its source conversation is not one of its tasks.
+  const elsewhere: Row = { id: 'src', conversationId: 'source', status: 'waiting_user', waitingApprovalId: 'a1' };
+  assert.equal(conversationState([elsewhere], 'system', [approval('a1', 'src')]), 'idle');
+  assert.equal(conversationState([elsewhere], undefined, [approval('a1', 'src')]), 'idle');
+  // Waiting for an approval still pending: waiting; decided elsewhere (or no longer listed): not.
+  const waiting: Row = { id: 't1', conversationId: 'c', status: 'waiting_user', waitingApprovalId: 'a1' };
+  assert.equal(conversationState([waiting], 'c', [approval('a1', 't1')]), 'waiting');
+  assert.equal(conversationState([waiting], 'c', [approval('a1', 't1', 'approved')]), 'idle');
+  assert.equal(conversationState([waiting], 'c', []), 'idle');
+  // A pending approval of a task of this conversation counts even before the task says it waits.
+  const settled: Row = { id: 't2', conversationId: 'c', status: 'to_verify', waitingApprovalId: null };
+  assert.equal(conversationState([settled], 'c', [approval('a2', 't2')]), 'waiting');
+  assert.equal(conversationState([settled], 'c', [approval('a2', 'other')]), 'idle');
+  assert.equal(conversationState([settled], 'c', [approval('a3', null)]), 'idle');
 });

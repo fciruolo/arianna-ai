@@ -2,14 +2,14 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { stepsAnchors } from '../lib/activity-log.ts';
-import { commandError } from '../lib/capture.ts';
+import { canSaveToInbox, commandError } from '../lib/capture.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
-import { activityText, agentName, reasonText } from '../lib/italian.ts';
+import { activityText, agentName, reasonText, SAVE_TO_INBOX_HINT, SAVE_TO_INBOX_TEXT } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Label, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
@@ -50,6 +50,8 @@ const emit = defineEmits<{
   /** "Chiamami quando finisci" on a task at work (D-066). */
   callWhenDone: [taskId: string];
   cancelCall: [callId: string];
+  /** "Salva in inbox" (D-084): the message's text as a note in kb/inbox. */
+  saveToInbox: [text: string, label: Label];
 }>();
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
@@ -309,6 +311,15 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
+              <button
+                v-if="canSaveToInbox(message.label)"
+                type="button"
+                class="inline-flex items-center gap-1 hover:text-ink"
+                :title="SAVE_TO_INBOX_HINT"
+                @click="emit('saveToInbox', message.body, message.label)"
+              >
+                <Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}
+              </button>
               <template v-if="taskOf(message) !== undefined">
                 <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
                 <button
@@ -337,6 +348,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
+              <button
+                v-if="canSaveToInbox(message.label)"
+                type="button"
+                class="inline-flex items-center gap-1 font-mono text-[10.5px] text-muted hover:text-ink"
+                :title="SAVE_TO_INBOX_HINT"
+                @click="emit('saveToInbox', message.body, message.label)"
+              ><Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}</button>
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
@@ -356,6 +374,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info"
                 title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
               ><Icon name="telegram" :size="12" />Telegram</span>
+              <button
+                v-if="message.role !== 'system' && canSaveToInbox(message.label)"
+                type="button"
+                class="ml-auto inline-flex items-center gap-1 font-mono text-[10.5px] text-muted hover:text-ink"
+                :title="SAVE_TO_INBOX_HINT"
+                @click="emit('saveToInbox', message.body, message.label)"
+              ><Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}</button>
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
             <MarkdownText v-else :source="message.body" />

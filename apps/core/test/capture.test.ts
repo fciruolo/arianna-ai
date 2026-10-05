@@ -247,6 +247,20 @@ describe('POST /api/capture', () => {
     assert.match(page.header.source ?? '', /^capture:hud:[0-9a-f-]{36}$/);
   });
 
+  it('takes the label of the message saved (D-084): it only raises the note, L3 is refused', async () => {
+    const work = await post({ text: 'Dal Coder', kind: 'note', title: 'Dal Coder', from: 'L1' });
+    assert.equal(work.status, 201);
+    const saved = (await work.json()) as { path: string; label: string };
+    assert.equal(saved.label, 'L2');
+    assert.deepEqual(parsePage(readFileSync(join(dir, saved.path), 'utf8')).header.labels, ['L2']);
+    const before = readdirSync(join(dir, 'kb', 'inbox')).length;
+    const secret = await post({ text: 'Molto riservato', kind: 'note', from: 'L3' });
+    assert.equal(secret.status, 403);
+    assert.doesNotMatch(await secret.text(), /riservato/);
+    for (const from of ['L9', 3, null]) assert.equal((await post({ text: 'x', from })).status, 400, String(from));
+    assert.equal(readdirSync(join(dir, 'kb', 'inbox')).length, before);
+  });
+
   it('saves a link with its url', async () => {
     const response = await post({ text: 'https://example.org/', kind: 'link', url: 'https://example.org/' });
     assert.equal(response.status, 201);

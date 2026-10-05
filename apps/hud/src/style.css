@@ -345,15 +345,43 @@ body {
     background: var(--surface-2);
     font: 12.5px/1.55 var(--font-mono);
   }
-  .md pre[data-lang]::before {
-    content: attr(data-lang);
+  /* Language and "Copia" over the top right corner of a code block (D-084) */
+  .md-code {
+    position: relative;
+  }
+  .md-code pre {
+    padding-top: 28px;
+  }
+  .md-code-bar {
     position: absolute;
     top: 5px;
-    right: 9px;
+    right: 7px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: var(--muted);
-    font-size: 10px;
+    font: 10px/1 var(--font-mono);
+  }
+  .md-code-lang {
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  .md-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .md-copy:hover {
+    color: var(--ink);
+  }
+  .md-copy-off {
+    color: var(--warn);
   }
   .md pre code {
     padding: 0;

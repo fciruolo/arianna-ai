@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { commandError, parseNoteCommand, savedText } from '../src/lib/capture.ts';
-import { errorText } from '../src/lib/italian.ts';
+import { canSaveToInbox, commandError, MAX_NOTE_BYTES, MAX_NOTE_TITLE, messageNote, noteTitle, parseNoteCommand, savedText } from '../src/lib/capture.ts';
+import { errorText, MESSAGE_ABOVE_L2_TEXT, MESSAGE_EMPTY_TEXT, MESSAGE_TOO_LARGE_TEXT } from '../src/lib/italian.ts';
 
 test('a draft starting with /nota becomes a note', () => {
   assert.deepEqual(parseNoteCommand('/nota comprare il pane'), { text: 'comprare il pane', kind: 'note' });
@@ -54,4 +54,32 @@ test('the refusals of the capture are shown in Italian, unknown ones generically
   assert.equal(errorText(new ApiError(403, 'kb/inbox is labeled L3: captures stop at L2')), 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.');
   assert.equal(errorText(new ApiError(503, 'there is no kb/ folder')), 'Manca la cartella kb/: la nota non è stata salvata.');
   assert.equal(errorText(new ApiError(400, 'something else')), 'Richiesta non valida.');
+});
+
+test('noteTitle: the first line with text, one line, no control characters, at most 80 characters', () => {
+  assert.equal(noteTitle('Comprare il pane\nseconda riga'), 'Comprare il pane');
+  assert.equal(noteTitle('\n\n   \r\n  Titolo  vero \t qui\naltro'), 'Titolo vero qui');
+  assert.equal(noteTitle('a\u0000b\u202Ec\u0007d'), 'a b c d');
+  assert.equal(noteTitle('prima\u2028seconda'), 'prima');
+  assert.equal(noteTitle('   \n\t'), undefined);
+  const long = noteTitle('parola '.repeat(30));
+  assert.ok(long !== undefined && Array.from(long).length <= MAX_NOTE_TITLE && long.endsWith('…'));
+  // Cut by characters, not UTF-16 units: an emoji is never split.
+  assert.equal(noteTitle('😀'.repeat(100)), `${'😀'.repeat(79)}…`);
+  assert.equal(noteTitle('x'.repeat(80)), 'x'.repeat(80));
+});
+
+test('messageNote: the text as it is, kind note, a title and the label; over 64 KiB an Italian error and nothing to send', () => {
+  assert.deepEqual(messageNote('## Riunione\n\ndettagli', 'L2'), { note: { text: '## Riunione\n\ndettagli', kind: 'note', title: '## Riunione', from: 'L2' } });
+  const full = 'è'.repeat(MAX_NOTE_BYTES / 2);
+  assert.deepEqual(messageNote(full, 'L1'), { note: { text: full, kind: 'note', title: `${'è'.repeat(79)}…`, from: 'L1' } });
+  // 'è' is two bytes in UTF-8: one more character goes over the limit.
+  assert.deepEqual(messageNote(`${full}è`, 'L2'), { error: MESSAGE_TOO_LARGE_TEXT });
+  assert.deepEqual(messageNote('  \n ', 'L2'), { error: MESSAGE_EMPTY_TEXT });
+});
+
+test('an L3 message is not saved in the inbox: no button, and an Italian error if asked anyway', () => {
+  for (const label of ['L0', 'L1', 'L2'] as const) assert.equal(canSaveToInbox(label), true, label);
+  assert.equal(canSaveToInbox('L3'), false);
+  assert.deepEqual(messageNote('Codice del conto', 'L3'), { error: MESSAGE_ABOVE_L2_TEXT });
 });

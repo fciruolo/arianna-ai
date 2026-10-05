@@ -4,14 +4,14 @@ import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
-import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
+import { commandError, messageNote, parseNoteCommand, savedText } from './lib/capture.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, Label, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -403,6 +403,25 @@ export function createChatStore() {
   }
 
   /**
+   * "Salva in inbox" under a message (D-084): its text as a note in kb/inbox,
+   * like "/nota", without a model; the same notice once saved.
+   */
+  async function saveToInbox(text: string, label: Label): Promise<void> {
+    error.value = null;
+    notice.value = null;
+    const checked = messageNote(text, label);
+    if ('error' in checked) {
+      error.value = checked.error;
+      return;
+    }
+    try {
+      notice.value = savedText(await api.captureNote(checked.note));
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
+  /**
    * Opens the error window of a failed task (D-064) and reads why it failed.
    * `openFailure()` reads the window again after the await: the user may have
    * closed it meanwhile, which the type narrowed by the assignment above hides.
@@ -663,7 +682,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, saveToInbox, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
