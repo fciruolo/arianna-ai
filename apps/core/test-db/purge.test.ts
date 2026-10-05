@@ -44,9 +44,13 @@ async function busyConversation(): Promise<{ conversationId: string; taskId: str
   await owner`UPDATE runs SET status = 'ok', ended_at = now() WHERE id = ${run?.id ?? ''}`;
   await owner`
     INSERT INTO task_activities (task_id, step, kind, detail, label) VALUES (${task.id}, 1, 'search', ${`cerca ${MARK}`}, 'L2')`;
-  await owner`
+  const [delegation] = await owner<{ id: string }[]>`
     INSERT INTO task_delegations (task_id, step, agent, brief, label, status, result, result_label, ended_at)
-    VALUES (${task.id}, 2, 'coder', ${`brief ${MARK}`}, 'L1', 'ok', ${`rapporto ${MARK}`}, 'L1', now())`;
+    VALUES (${task.id}, 2, 'coder', ${`brief ${MARK}`}, 'L1', 'ok', ${`rapporto ${MARK}`}, 'L1', now()) RETURNING id::text`;
+  // The Coder joined with that delegation (D-125).
+  await owner`
+    INSERT INTO conversation_participants (conversation_id, agent, added_by, task_id, delegation_id)
+    VALUES (${conversation.id}, 'coder', 'arianna', ${task.id}, ${delegation?.id ?? ''})`;
   const text = `testo da declassare ${MARK}`;
   const [declassify] = await owner<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label, state, decided_at, decided_via)
@@ -88,6 +92,7 @@ async function leftovers(conversationId: string, ...taskIds: string[]): Promise<
     UNION ALL SELECT 'task_turns' FROM task_turns tt WHERE tt.task_id::text = ANY (${taskIds})
     UNION ALL SELECT 'task_delegations' FROM task_delegations d WHERE d.task_id::text = ANY (${taskIds})
     UNION ALL SELECT 'task_activities' FROM task_activities ta WHERE ta.task_id::text = ANY (${taskIds})
+    UNION ALL SELECT 'conversation_participants' FROM conversation_participants p WHERE p.conversation_id = ${conversationId}
     UNION ALL SELECT 'approvals' FROM approvals a WHERE a.task_id::text = ANY (${taskIds}) AND a::text LIKE ${mark}
     UNION ALL SELECT 'jobs' FROM jobs j WHERE j.key = ANY (${keys}) AND j::text LIKE ${mark}
     UNION ALL SELECT 'events' FROM events e
