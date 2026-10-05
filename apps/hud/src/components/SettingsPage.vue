@@ -448,6 +448,19 @@ async function onUploaded(agent: string, saved: UploadedCharacter): Promise<void
   }
   if (forms.value !== null) forms.value.characters[agent] = `${saved.pack}/${saved.character}`;
 }
+function resetCharacter(agent: string): void {
+  if (forms.value !== null) delete forms.value.characters[agent];
+}
+/** The chosen character's name; without a choice, the default one. */
+function characterLabel(agent: string): string {
+  const value = forms.value?.characters[agent];
+  if (value === undefined) {
+    const fallback = characters.value?.agents[agent];
+    const name = characterOptions.value.find((option) => option.value === `${fallback?.pack}/${fallback?.character}`)?.character.name;
+    return name === undefined ? 'predefinito' : `predefinito (${name})`;
+  }
+  return characterOptions.value.find((option) => option.value === value)?.label ?? `${value} (non disponibile)`;
+}
 function previewOf(agent: string): CharacterChoice | undefined {
   const value = forms.value?.characters[agent] ?? '';
   const option = characterOptions.value.find((item) => item.value === value);
@@ -905,16 +918,14 @@ watch(active, () => {
                 />
                 <CharacterUpload :agent-label="agentName(agent)" @uploaded="(saved) => onUploaded(agent, saved)" />
                 <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
-                  <label class="flex flex-col gap-1 text-xs text-muted">
+                  <!-- The character comes from Carica PNG or Genera personaggio; a chosen one can go back to the default. -->
+                  <div class="flex flex-col gap-1 text-xs text-muted">
                     Personaggio
-                    <select v-model="forms.characters[agent]" class="field px-2 py-1.5 text-[13px] text-ink">
-                      <option :value="undefined">predefinito</option>
-                      <option v-for="option in characterOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                      <option v-if="forms.characters[agent] !== undefined && !characterOptions.some((option) => option.value === forms?.characters[agent])" :value="forms.characters[agent]">
-                        {{ forms.characters[agent] }} (non disponibile)
-                      </option>
-                    </select>
-                  </label>
+                    <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
+                      {{ characterLabel(agent) }}
+                      <button v-if="forms.characters[agent] !== undefined" type="button" class="text-xs text-accent hover:underline" @click="resetCharacter(agent)">Torna al predefinito</button>
+                    </p>
+                  </div>
                   <!-- Arianna: the orchestrator of Modelli locali, one place to set it, local only. -->
                   <div v-if="agent === 'arianna'" class="flex flex-col gap-1 text-xs text-muted">
                     Modello

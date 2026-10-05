@@ -2422,7 +2422,7 @@ Tappe (stime grezze): **T1** personaggi PNG 9-12 h; **T2** schede utente 10-14 h
 Pagina "Nuovo agente" "migliore e più ampia". Restano il tetto L1/A1 delle schede utente e strumenti ed esecutori presi solo dal modello di scheda.
 
 - **Forma: pagina a sé, a passi** (`/impostazioni/agenti/nuovo`): 1) modello e permessi in italiano, 2) nome, descrizione e prompt con esempi, 3) personaggio e anteprima, poi "Crea disattivato".
-- **Personaggio scelto o caricato nel modulo**: elenco con anteprime più "Carica PNG" (lo stesso di T1, pacchetto `miei`); niente più Coder per default.
+- **Personaggio scelto o caricato nel modulo**: elenco con anteprime più "Carica PNG" (lo stesso di T1, pacchetto `miei`); niente più Coder per default. (Superata il 2026-10-05 da D-123: il menu è tolto, il personaggio si genera o si carica.)
 - **Deleghe: Arianna delega agli agenti attivi.** L'elenco di `task.delegate` diventa dinamico (Coder più agenti utente attivi, con la loro descrizione) e l'orchestratore sceglie. Servono test ed eval per protocollo e delega; il prompt dell'agente resta L1 e il gateway controlla ogni uscita.
 - **Modifica sempre, eliminazione solo da disattivato**: descrizione e prompt modificabili anche con l'agente attivo (valgono dalla delega successiva, passano da scanner e vault come alla creazione); eliminazione con conferma che ripete il nome, file spostati in `data/agents/eliminati` (recuperabili a mano).
 - **"Riporta fra i miei"**: annulla una promozione con conferma, la scheda torna disattivata in `data/agents` con il tetto L1/A1; la conferma avvisa se git vedrà un file tolto da `agents/`. Mai per Arianna o il Coder.

@@ -3,11 +3,11 @@
  * "Nuovo agente" (D-119, tappa T3): a page of its own, in three steps. What
  * the agent does (its permissions, chosen within the list from a starting
  * point, tappa T3b), who it is (name, description and prompt, with an
- * example), how it looks (a character, or a PNG uploaded here); then "Crea
+ * example), how it looks (a character generated or a PNG uploaded here); then "Crea
  * disattivato", which shows what the card will allow and writes it only on
  * the user's confirmation. The core checks everything again. The character
  * goes into [characters] of arianna.toml right after the card: if that
- * fails, the agent exists anyway and the page says where to choose it.
+ * fails, the agent exists anyway and the page says where to add it again.
  */
 import { computed, onMounted, ref } from 'vue';
 
@@ -129,6 +129,10 @@ const preview = computed((): CharacterChoice | undefined => {
   return option === undefined ? undefined : { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
 });
 
+/** The chosen character's name, the Coder's without a choice. */
+const characterLabel = computed(() =>
+  form.value.character === '' ? 'predefinito (quello del Coder)' : (characterOptions.value.find((option) => option.value === form.value.character)?.label ?? form.value.character),
+);
 async function onUploaded(saved: UploadedCharacter): Promise<void> {
   sheetVersion.value += 1;
   await readCharacters();
@@ -203,7 +207,7 @@ async function create(): Promise<void> {
       if (view.values === null || view.fingerprint === null) throw new Error('arianna.toml cannot be read');
       await saveSettings(view.fingerprint, { characters: { ...view.values.characters, [agent.name]: form.value.character } });
     } catch {
-      characterNote.value = 'L’agente c’è, ma il personaggio non è stato salvato: sceglilo nella sua scheda, nella pagina Agenti.';
+      characterNote.value = 'L’agente c’è, ma il personaggio non è stato salvato: generalo o caricalo di nuovo nella sua scheda, nella pagina Agenti.';
     }
   }
   busy.value = false;
@@ -353,13 +357,14 @@ function another(): void {
               <PixelAgent :choice="preview" pose="idle" :scale="2" :version="sheetVersion" />
               <PixelAgent :choice="preview" pose="working" :scale="2" :version="sheetVersion" />
             </div>
-            <label class="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-muted">
+            <!-- The character comes from Genera personaggio or Carica PNG below; a chosen one can go back to the default. -->
+            <div class="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-muted">
               Personaggio
-              <select v-model="form.character" class="field px-2 py-1.5 text-[13px] text-ink">
-                <option value="">predefinito (quello del Coder)</option>
-                <option v-for="option in characterOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
-            </label>
+              <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
+                {{ characterLabel }}
+                <button v-if="form.character !== ''" type="button" class="text-xs text-accent hover:underline" @click="form.character = ''">Torna al predefinito</button>
+              </p>
+            </div>
           </div>
           <CharacterGenerate
             :agent-label="form.name || 'il nuovo agente'"
