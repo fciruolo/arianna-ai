@@ -10,6 +10,7 @@ import {
   officeSnapshot,
   placeKey,
   placeOfRepo,
+  WANDER_MS,
   type OfficeAgent,
   type OfficeInput,
   type OfficeSnapshot,
@@ -141,6 +142,78 @@ test('the snapshot: Arianna at Privata, the Coder at the island of his repositor
   assert.equal(arianna.locality, 'local');
 });
 
+type Run = NonNullable<OfficeInput['agents'][number]['run']>;
+const run = (repo: string | null, mode: Run['mode'] | undefined, executor = 'local'): Run => ({ executor, model: null, startedAt: '', repo, ...(mode === undefined ? {} : { mode }) });
+
+test('Arianna works at the island of the project of her work conversation (D-124)', () => {
+  const snapshot = officeSnapshot(input({ agents: [{ id: 'arianna', state: 'thinking', run: run('demo', 'work') }] }));
+  assert.deepEqual(agentOf(snapshot, 'arianna').place, { kind: 'island', slot: 0 });
+  // A conversation born before D-058 names a path: the same island.
+  const byPath = officeSnapshot(input({ agents: [{ id: 'arianna', state: 'thinking', run: run('/repos/arianna-ai', 'work') }] }));
+  assert.deepEqual(agentOf(byPath, 'arianna').place, { kind: 'island', slot: 1 });
+});
+
+test('Arianna running in a private conversation, or outside any, stays at Privata; a repository there does not move her', () => {
+  for (const mode of ['private', null, undefined] as const) {
+    const snapshot = officeSnapshot(input({ agents: [{ id: 'arianna', state: 'thinking', run: run('demo', mode) }] }));
+    assert.deepEqual(agentOf(snapshot, 'arianna').place, { kind: 'private' }, String(mode));
+  }
+});
+
+test('Arianna on a project without an island, or on work without a project, goes to the archive like the Coder', () => {
+  const projects = Array.from({ length: 6 }, (_, index) => ({ name: `p${String(index)}`, path: `/r/p${String(index)}`, label: 'L1' }));
+  const full = officeSnapshot(input({ projects, agents: [{ id: 'arianna', state: 'thinking', run: run('p5', 'work') }] }));
+  assert.deepEqual(agentOf(full, 'arianna').place, { kind: 'archive' });
+  const none = officeSnapshot(input({ agents: [{ id: 'arianna', state: 'thinking', run: run(null, 'work') }] }));
+  assert.deepEqual(agentOf(none, 'arianna').place, { kind: 'archive' });
+});
+
+test('Arianna and the Coder on the same island or at the archive: the Coder keeps his chair, Arianna sits beside', () => {
+  const together = officeSnapshot(
+    input({
+      agents: [
+        { id: 'arianna', state: 'thinking', run: run('demo', 'work') },
+        { id: 'coder', state: 'working', run: run('demo', 'work', 'claude') },
+      ],
+    }),
+  );
+  assert.deepEqual(agentOf(together, 'coder').place, { kind: 'island', slot: 0 });
+  assert.deepEqual(agentOf(together, 'arianna').place, { kind: 'island', slot: 0, seat: 1 });
+  assert.notEqual(placeKey(agentOf(together, 'coder').place), placeKey(agentOf(together, 'arianna').place));
+  const archived = officeSnapshot(
+    input({
+      agents: [
+        { id: 'arianna', state: 'thinking', run: run('elsewhere', 'work') },
+        { id: 'coder', state: 'working', run: run('elsewhere', 'work', 'claude') },
+      ],
+    }),
+  );
+  assert.deepEqual(agentOf(archived, 'coder').place, { kind: 'archive' });
+  assert.deepEqual(agentOf(archived, 'arianna').place, { kind: 'archive', seat: 1 });
+  assert.equal(placeKey({ kind: 'island', slot: 0, seat: 1 }), 'island-0-1');
+  assert.equal(placeKey({ kind: 'archive', seat: 1 }), 'archive-1');
+});
+
+test('Arianna free or waiting wanders between Privata and the pause by the clock; still with reduced motion', () => {
+  const at = (now: number, state: 'idle' | 'waiting' = 'idle', still = false) =>
+    agentOf(officeSnapshot(input({ now, still, agents: [{ id: 'arianna', state, run: null }, { id: 'coder', state: 'idle', run: null }] })), 'arianna').place;
+  const even = Math.floor(NOW / WANDER_MS) * WANDER_MS;
+  assert.equal(Math.floor(even / WANDER_MS) % 2, 0);
+  assert.deepEqual(at(even), { kind: 'private' });
+  assert.deepEqual(at(even + WANDER_MS - 1), { kind: 'private' });
+  // The idle Coder has the first pause seat: Arianna takes the next one.
+  assert.deepEqual(at(even + WANDER_MS), { kind: 'pause', seat: 1 });
+  assert.deepEqual(at(even + 2 * WANDER_MS), { kind: 'private' });
+  assert.deepEqual(at(even + WANDER_MS, 'waiting'), { kind: 'pause', seat: 1 });
+  assert.deepEqual(at(even, 'waiting'), { kind: 'private' });
+  // Same clock, same place: deterministic.
+  assert.deepEqual(at(even + 3 * WANDER_MS + 5), at(even + 3 * WANDER_MS + 5));
+  assert.deepEqual(at(even + WANDER_MS, 'idle', true), { kind: 'private' });
+  // The Coder never moves for her.
+  const coder = agentOf(officeSnapshot(input({ now: even + WANDER_MS })), 'coder');
+  assert.deepEqual(coder.place, { kind: 'pause', seat: 0 });
+});
+
 test('waiting: the folder requests are the Coder\'s, the rest Arianna\'s; the total is the panel\'s', () => {
   const coderOnly = officeSnapshot(input({ pending: { total: 1, hidden: 0, coder: 1 } }));
   assert.equal(coderOnly.agents.find((agent) => agent.id === 'coder')?.pose, 'waiting');
@@ -177,7 +250,7 @@ test('privacy: the photograph has only the closed list of fields, and no free te
   const snapshot = officeSnapshot(
     input({
       agents: [
-        { id: 'arianna', state: 'thinking', run: { executor: 'local', model: secrets[0] ?? '', startedAt: secrets[1] ?? '', repo: null } },
+        { id: 'arianna', state: 'thinking', run: { executor: 'local', model: secrets[0] ?? '', startedAt: secrets[1] ?? '', repo: secrets[1] ?? '', mode: 'work' } },
         { id: 'coder', state: 'working', run: { executor: secrets[2] ?? '', model: null, startedAt: '', repo: secrets[3] ?? '' } },
       ],
       projects: [...PROJECTS, { name: secrets[0] ?? '', path: secrets[1] ?? '', label: 'L1' }],

@@ -1,4 +1,4 @@
-import { isWalkable, seatFace, seatPoint, tileCenter, type OfficeMap, type Point } from './map.ts';
+import { archiveTiles, deskTiles, isWalkable, seatFace, seatPoint, tileCenter, type OfficeMap, type Point, type Room } from './map.ts';
 import { findPath, tileOf } from './path.ts';
 import type { OfficePlace } from './snapshot.ts';
 import { placeKey } from './snapshot.ts';
@@ -22,16 +22,45 @@ export interface Actor {
   seat: Point;
 }
 
+/**
+ * The chair beside a seat (D-124), for the second agent at the same island or
+ * archive: the floor tiles along the same furniture (above a desk, below the
+ * cabinet), nearest first and right before left; past those, the floor of
+ * the room nearest the seat; with nothing free, the seat itself.
+ */
+export function besideSeat(map: OfficeMap, main: Point, furniture: readonly Point[], side: -1 | 1, room: Room, index: number): Point {
+  if (index <= 0) return main;
+  const distance = (at: Point): number => Math.abs(at[0] - main[0]) + Math.abs(at[1] - main[1]);
+  const order = (a: Point, b: Point): number => distance(a) - distance(b) || b[0] - a[0] || a[1] - b[1];
+  const same = (a: Point, b: Point): boolean => a[0] === b[0] && a[1] === b[1];
+  const along = furniture
+    .map(([c, r]): Point => [c, r + side])
+    .filter((at) => !same(at, main) && isWalkable(map, at[0], at[1]))
+    .sort(order);
+  const floor: Point[] = [];
+  for (let r = room[1]; r <= room[3]; r++) {
+    for (let c = room[0]; c <= room[2]; c++) {
+      const at: Point = [c, r];
+      if (isWalkable(map, c, r) && !same(at, main) && !along.some((item) => same(item, at))) floor.push(at);
+    }
+  }
+  return [...along, ...floor.sort(order)][index - 1] ?? main;
+}
+
 /** The seat of a place on this map; a slot beyond the map's islands is the archive, a pause seat beyond its seats the last one. */
 export function seatOf(map: OfficeMap, place: OfficePlace): Point {
   const { anchors } = map;
+  const archive = (index: number): Point => besideSeat(map, anchors.archive.seat, archiveTiles(map), 1, anchors.archive.room, index);
   switch (place.kind) {
     case 'private':
       return anchors.private.seat;
-    case 'island':
-      return anchors.islands[place.slot]?.seat ?? anchors.archive.seat;
+    case 'island': {
+      const island = anchors.islands[place.slot];
+      if (island === undefined) return archive(place.seat ?? 0);
+      return besideSeat(map, island.seat, deskTiles(island.desk), -1, island.room, place.seat ?? 0);
+    }
     case 'archive':
-      return anchors.archive.seat;
+      return archive(place.seat ?? 0);
     case 'pause':
       return anchors.pause.seats[Math.min(place.seat, anchors.pause.seats.length - 1)] ?? anchors.entrance;
   }

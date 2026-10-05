@@ -71,16 +71,24 @@ async function readWork(): Promise<void> {
 }
 watch(() => props.status, () => void readWork(), { immediate: true });
 
-// A tick for the freshness of activity lines and the end of a pause.
+// A tick for the freshness of activity lines, the end of a pause and Arianna's wandering (D-124).
 const now = ref(Date.now());
 let tick: number | undefined;
+// With reduced motion Arianna, free, stays at Privata: no jumps every half minute.
+const motionQuery = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-reduced-motion: reduce)');
+const still = ref(motionQuery?.matches ?? false);
+function motionChanged(event: MediaQueryListEvent): void {
+  still.value = event.matches;
+}
 onMounted(() => {
   tick = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);
+  motionQuery?.addEventListener('change', motionChanged);
 });
 onBeforeUnmount(() => {
   window.clearInterval(tick);
+  motionQuery?.removeEventListener('change', motionChanged);
 });
 
 const snapshot = computed<OfficeSnapshot>(() =>
@@ -96,6 +104,7 @@ const snapshot = computed<OfficeSnapshot>(() =>
     pending: pending.value,
     quota: props.signals.quota,
     now: now.value,
+    still: still.value,
   }),
 );
 

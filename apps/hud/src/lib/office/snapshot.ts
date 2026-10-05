@@ -11,10 +11,15 @@ import type { ActivityKind, AgentStatus, Label } from '../types.ts';
  */
 export type OfficePose = Pose;
 
+/**
+ * Where an agent sits. On an island or at the archive a second agent sits
+ * beside the first (D-124): `seat` 1, 2… is the chair next to the main one,
+ * absent for the main one.
+ */
 export type OfficePlace =
   | { kind: 'private' }
-  | { kind: 'island'; slot: number }
-  | { kind: 'archive' }
+  | { kind: 'island'; slot: number; seat?: number }
+  | { kind: 'archive'; seat?: number }
   | { kind: 'pause'; seat: number };
 
 export interface OfficeAgent {
@@ -63,6 +68,8 @@ export interface OfficeInput {
   /** Agent → until when (ms) it is paused by a quota of its executor. */
   quota: Readonly<Record<string, number>>;
   now: number;
+  /** Reduced motion: Arianna, free, stays at Privata instead of wandering (D-124). */
+  still?: boolean;
 }
 
 /** A project name may become an island's name: the names of approved projects (D-058). */
@@ -71,6 +78,13 @@ export const PROJECT_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 export const ACTIVITY_FRESH_MS = 20_000;
 /** A quota without its reset time pauses for an hour. */
 export const QUOTA_PAUSE_MS = 60 * 60 * 1000;
+
+/**
+ * Arianna free or waiting for the user wanders between her office and the
+ * pause (D-124): this long at each, by the clock, so the same time gives the
+ * same place (the tests inject the clock).
+ */
+export const WANDER_MS = 30_000;
 
 /** The name of an agent the chat does not know: never its raw id. */
 export const UNKNOWN_AGENT = 'Agente';
@@ -113,6 +127,38 @@ export function placeOfRepo(repo: string | null, projects: OfficeInput['projects
   return { kind: 'archive' };
 }
 
+/**
+ * Arianna's place (D-124): running in a work conversation, the island of its
+ * project (the archive without one); running elsewhere, Privata; free or
+ * waiting, Privata and the pause in turn by the clock, or Privata when still.
+ */
+export function ariannaPlace(
+  run: AgentStatus['run'],
+  running: boolean,
+  projects: OfficeInput['projects'],
+  islands: readonly OfficeIsland[],
+  now: number,
+  still: boolean,
+  pauseSeat: () => number,
+): OfficePlace {
+  if (running) return run?.mode === 'work' ? placeOfRepo(run.repo, projects, islands) : { kind: 'private' };
+  if (still || Math.floor(now / WANDER_MS) % 2 === 0) return { kind: 'private' };
+  return { kind: 'pause', seat: pauseSeat() };
+}
+
+/** Same island or archive, second comer: the chair beside (Arianna is always the one who comes second). */
+function shareSeats(places: Map<string, OfficePlace>, order: readonly string[]): void {
+  const taken = new Map<string, number>();
+  for (const id of order) {
+    const place = places.get(id);
+    if (place === undefined || (place.kind !== 'island' && place.kind !== 'archive')) continue;
+    const key = placeKey(place);
+    const count = taken.get(key) ?? 0;
+    taken.set(key, count + 1);
+    if (count > 0) places.set(id, { ...place, seat: count });
+  }
+}
+
 function latest(signals: readonly ActivitySignal[], now: number, keep: (signal: ActivitySignal) => boolean): ActivitySignal | undefined {
   let found: ActivitySignal | undefined;
   for (const signal of signals) {
@@ -151,23 +197,29 @@ export function officeSnapshot(input: OfficeInput): OfficeSnapshot {
   const { islands, archived, unnamed } = assignIslands(input.projects, input.slots);
   const coderSet = new Set(input.coderConversations);
   const ordered = [...input.agents].sort((a, b) => (a.id === 'arianna' ? -1 : b.id === 'arianna' ? 1 : a.id.localeCompare(b.id)));
+  // Places: the other agents first, so that Arianna takes the pause seat and
+  // the island chair left free and nobody moves when she comes.
+  const placing = [...ordered.filter((agent) => agent.id !== 'arianna'), ...ordered.filter((agent) => agent.id === 'arianna')];
   let pauseSeat = 0;
+  const places = new Map<string, OfficePlace>();
+  for (const agent of placing) {
+    const running = agent.state === 'thinking' || agent.state === 'working';
+    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => pauseSeat++));
+    else if (running) places.set(agent.id, placeOfRepo(agent.run?.repo ?? null, input.projects, islands));
+    else places.set(agent.id, { kind: 'pause', seat: pauseSeat++ });
+  }
+  shareSeats(places, placing.map((agent) => agent.id));
   const agents = ordered.map((agent): OfficeAgent => {
     const arianna = agent.id === 'arianna';
     const activity = latest(input.activity, input.now, (signal) => (arianna ? !coderSet.has(signal.conversationId) : coderSet.has(signal.conversationId)));
     const others = input.pending.total - input.pending.coder;
     const waits = arianna ? others > 0 : agent.id === 'coder' && input.pending.coder > 0;
     const pose = agentPose(agent.state, activity, waits, input.quota[agent.id], input.now);
-    const running = agent.state === 'thinking' || agent.state === 'working';
-    let place: OfficePlace;
-    if (arianna) place = { kind: 'private' };
-    else if (running) place = placeOfRepo(agent.run?.repo ?? null, input.projects, islands);
-    else place = { kind: 'pause', seat: pauseSeat++ };
     return {
       id: agent.id,
       name: knownAgentName(agent.id) ?? UNKNOWN_AGENT,
       pose,
-      place,
+      place: places.get(agent.id) ?? { kind: 'private' },
       locality: agent.state === 'thinking' ? 'local' : agent.state === 'working' ? 'cloud' : null,
     };
   });
@@ -206,7 +258,9 @@ export const POSE_SHORT: Record<OfficePose | 'walking', string> = {
 export function placeKey(place: OfficePlace): string {
   switch (place.kind) {
     case 'island':
-      return `island-${String(place.slot)}`;
+      return place.seat === undefined ? `island-${String(place.slot)}` : `island-${String(place.slot)}-${String(place.seat)}`;
+    case 'archive':
+      return place.seat === undefined ? 'archive' : `archive-${String(place.seat)}`;
     case 'pause':
       return `pause-${String(place.seat)}`;
     default:

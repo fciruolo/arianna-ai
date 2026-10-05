@@ -133,3 +133,36 @@ test('a path is followed by distance, and the walk frames cycle unless motion is
   assert.equal(walkFrame('down', 260, true).column, 1);
   assert.deepEqual(tileOf(10 * 16 + 8, 7 * 16 + 11), [10, 7]);
 });
+
+test('two agents on one island or at the archive never share a chair: the second sits beside, behind the same desk (D-124)', () => {
+  for (let slot = 0; slot < MAP.anchors.islands.length; slot++) {
+    const main = seatOf(MAP, { kind: 'island', slot });
+    const beside = seatOf(MAP, { kind: 'island', slot, seat: 1 });
+    assert.notDeepEqual(beside, main, `island ${String(slot)}`);
+    // Behind the desk too: drawn seated, facing down, and reached from the entrance.
+    assert.equal(MAP.tiles[(beside[1] + 1) * MAP.width + beside[0]], 'desk');
+    assert.notEqual(findPath(MAP, MAP.anchors.entrance, [beside]), null);
+    assert.notDeepEqual(seatOf(MAP, { kind: 'island', slot, seat: 2 }), beside);
+  }
+  assert.deepEqual(seatOf(MAP, { kind: 'island', slot: 0, seat: 1 }), [11, 3]);
+  const archive = seatOf(MAP, { kind: 'archive', seat: 1 });
+  assert.notDeepEqual(archive, MAP.anchors.archive.seat);
+  assert.equal(MAP.tiles[(archive[1] - 1) * MAP.width + archive[0]], 'cabinet');
+  // The chair beside is another goal: an agent walks there, then sits.
+  let actor = retarget(seated(MAP, { kind: 'private' }), MAP, { kind: 'island', slot: 0, seat: 1 }, false);
+  assert.equal(actor.goal, 'island-0-1');
+  for (let index = 0; index < 2000 && actor.walking; index++) actor = advance(actor, MAP, 3);
+  assert.deepEqual([actor.x, actor.y], seatPoint(MAP, [11, 3]));
+  assert.equal(actor.facing, 'down');
+});
+
+test('Arianna wandering walks from Privata to the pause and back along a path (D-124)', () => {
+  let actor = retarget(seated(MAP, { kind: 'private' }), MAP, { kind: 'pause', seat: 1 }, false);
+  assert.equal(actor.walking, true);
+  for (let index = 0; index < 4000 && actor.walking; index++) actor = advance(actor, MAP, 3);
+  assert.deepEqual(actor.seat, MAP.anchors.pause.seats[1]);
+  actor = retarget(actor, MAP, { kind: 'private' }, false);
+  assert.equal(actor.walking, true);
+  for (let index = 0; index < 4000 && actor.walking; index++) actor = advance(actor, MAP, 3);
+  assert.deepEqual([actor.x, actor.y], seatPoint(MAP, MAP.anchors.private.seat));
+});
