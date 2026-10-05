@@ -235,6 +235,33 @@ export interface RecentDelegation {
   files: number | null;
 }
 
+/** A line of a diff (D-117). */
+export interface DiffLine {
+  kind: 'context' | 'added' | 'removed';
+  text: string;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+/** Why the diff of a file is not shown: the preview's reasons, plus `too-many`, `no-base` and `unreadable`. */
+export type FileDiffError = 'not-found' | 'deleted' | 'not-approved' | 'refused' | 'too-large' | 'binary' | 'archived' | 'busy' | 'too-many' | 'no-base' | 'unreadable';
+
+/** The diff of one file of a delegation, or why it is not shown. */
+export type FileDiff = DelegationFile & { index: number } & ({ added: number; removed: number; hunks: DiffHunk[] } | { error: FileDiffError });
+
+/** What the run changed, file by file, against the commit its files were listed against. */
+export interface DelegationDiff {
+  repo: string;
+  baseCommit: string | null;
+  files: FileDiff[];
+}
+
 /** A changed file as it is now, read only. */
 export interface FilePreview {
   path: string;

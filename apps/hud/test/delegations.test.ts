@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { canPreview, codeFence, creditsByMessage, hasCredit, languageOf } from '../src/lib/delegations.ts';
-import { CHANGE_TEXT, costText, creditText, durationText, filesTitle, previewErrorText, runnerText } from '../src/lib/italian.ts';
+import { canPreview, codeFence, creditsByMessage, diffRows, diffTotals, hasCredit, languageOf } from '../src/lib/delegations.ts';
+import { CHANGE_TEXT, costText, creditText, diffCountText, DIFF_ERROR_TEXT, durationText, filesTitle, previewErrorText, runnerText } from '../src/lib/italian.ts';
 import { parseMarkdown } from '../src/lib/markdown.ts';
-import type { MessageCredit } from '../src/lib/types.ts';
+import type { FileDiff, MessageCredit } from '../src/lib/types.ts';
 
 const CODER: MessageCredit = {
   messageId: '12',
@@ -88,4 +88,56 @@ test('why a preview is not shown, in Italian', () => {
   assert.match(previewErrorText(new ApiError(404, 'no such file')), /non è fra quelli della delega/);
   assert.match(previewErrorText(new ApiError(409, 'the conversation is archived: restore it to see the files')), /ripristinala/);
   assert.match(previewErrorText(new TypeError('fetch failed')), /non risponde/);
+});
+
+test('diffRows numbers each line on its side and puts a gap between hunks (D-117)', () => {
+  const rows = diffRows([
+    {
+      oldStart: 1,
+      oldLines: 2,
+      newStart: 1,
+      newLines: 2,
+      lines: [
+        { kind: 'context', text: 'a' },
+        { kind: 'removed', text: 'b' },
+        { kind: 'added', text: 'B' },
+      ],
+    },
+    {
+      oldStart: 10,
+      oldLines: 1,
+      newStart: 10,
+      newLines: 2,
+      lines: [
+        { kind: 'context', text: 'j' },
+        { kind: 'added', text: 'k' },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    rows.map((row) => [row.kind, row.oldLine, row.newLine, row.text]),
+    [
+      ['context', 1, 1, 'a'],
+      ['removed', 2, null, 'b'],
+      ['added', null, 2, 'B'],
+      ['gap', null, null, ''],
+      ['context', 10, 10, 'j'],
+      ['added', null, 11, 'k'],
+    ],
+  );
+  // A first hunk that starts after line 1 is preceded by a gap; none for an empty diff.
+  assert.equal(diffRows([{ oldStart: 5, oldLines: 1, newStart: 5, newLines: 1, lines: [{ kind: 'context', text: 'e' }] }])[0]?.kind, 'gap');
+  assert.deepEqual(diffRows([]), []);
+});
+
+test('diffTotals adds up the files with a diff, not the ones with an error', () => {
+  const files: FileDiff[] = [
+    { index: 0, path: 'a.ts', change: 'modified', added: 3, removed: 1, hunks: [] },
+    { index: 1, path: 'b.ts', change: 'added', added: 10, removed: 0, hunks: [] },
+    { index: 2, path: 'c.bin', change: 'added', error: 'binary' },
+  ];
+  assert.deepEqual(diffTotals(files), { added: 13, removed: 1 });
+  assert.deepEqual(diffTotals([]), { added: 0, removed: 0 });
+  assert.equal(diffCountText(13, 1), '+13 −1');
+  assert.match(DIFF_ERROR_TEXT['no-base'], /versione di partenza/);
 });

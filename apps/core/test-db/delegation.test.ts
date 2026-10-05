@@ -49,6 +49,15 @@ const claude = createClaudeExecutor({
 });
 const loaded = loadAgents(join(ROOT, AGENTS_DIR));
 
+/** Git in a test repository, without the user's configuration. */
+function gitIn(repo: string, ...args: string[]): string {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-C', repo, ...args], {
+    env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+    encoding: 'utf8',
+  });
+}
+
 before(() => {
   const repo = join(HOME, 'repos', 'site');
   mkdirSync(repo, { recursive: true });
@@ -56,11 +65,7 @@ before(() => {
   // What the fake binary writes is ignored: it is not a change of the user's.
   writeFileSync(join(repo, '.gitignore'), '.fake-claude.json\n.env\n');
   writeFileSync(join(repo, '.env'), 'TOKEN=fake-ignored-secret-0123456789abcdef\n');
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-  const git = (...args: string[]) =>
-    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-C', repo, ...args], {
-      env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
-    });
+  const git = (...args: string[]) => gitIn(repo, ...args);
   git('init', '--quiet', '--initial-branch=main');
   git('add', '--all');
   git('commit', '--quiet', '--message', 'fixture');
@@ -697,12 +702,37 @@ test('the files a run changed are saved with the delegation, credited under the 
       assert.equal((await get(port, `/api/delegations/${delegation.id}/files/2`)).status, 404);
       assert.equal((await get(port, `/api/delegations/${delegation.id}/files/x`)).status, 404);
       assert.equal((await get(port, `/api/delegations/0/files/0`)).status, 404);
+
+      // D-117: the diff of each file against the commit the changes were listed against.
+      assert.equal(delegation.baseCommit, gitIn(REPO, 'rev-parse', 'HEAD').trim());
+      const diffReply = await get(port, `/api/delegations/${delegation.id}/diff`);
+      assert.equal(diffReply.status, 200);
+      const diff = diffReply.body.diff as { repo: string; baseCommit: string; files: Record<string, unknown>[] };
+      assert.deepEqual([diff.repo, diff.baseCommit], ['site', delegation.baseCommit]);
+      const [readme, hello] = diff.files;
+      assert.deepEqual([readme?.index, readme?.path, readme?.change, readme?.added, readme?.removed], [0, 'README.md', 'modified', 1, 0]);
+      assert.deepEqual(readme?.hunks, [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 2,
+          lines: [
+            { kind: 'context', text: '# Fake site' },
+            { kind: 'added', text: 'Hello.' },
+          ],
+        },
+      ]);
+      assert.deepEqual([hello?.path, hello?.change, hello?.added, hello?.removed], ['docs/hello.md', 'added', 3, 0]);
+      assert.equal((await get(port, `/api/delegations/0/diff`)).status, 404);
+      assert.equal((await get(port, `/api/delegations/${delegation.id}/diff`, { origin: 'http://evil.example' })).status, 403);
     });
     // The project taken off the list: no preview.
     await withApi(() => [], async (port) => {
       const refused = await get(port, `/api/delegations/${delegation.id}/files/0`);
       assert.equal(refused.status, 403);
       assert.match(String(refused.body.error), /no longer among the approved projects/);
+      assert.equal((await get(port, `/api/delegations/${delegation.id}/diff`)).status, 403);
     });
   } finally {
     restoreRepo();
@@ -710,16 +740,139 @@ test('the files a run changed are saved with the delegation, credited under the 
 });
 
 /** A delegation of a run on `site` whose files are written as given (the run itself is not needed here). */
-async function delegationWith(files: unknown): Promise<string> {
+async function delegationWith(files: unknown, baseCommit: string | null = null): Promise<string> {
   const { task } = await ask('work', 'File preparati.', 'site');
   const delegation = await createDelegation(db().sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
   const [run] = await db().sql<{ id: string }[]>`
     INSERT INTO runs (task_id, step, agent, executor, model, locality, effective_label) VALUES (${task.id}, 2, 'coder', 'claude', 'sonnet', 'cloud', 'L1') RETURNING id::text`;
   assert.ok(run !== undefined);
   await updateDelegation(db().sql, delegation.id, { runId: run.id, executor: 'claude', model: 'sonnet' });
-  await db().sql`UPDATE task_delegations SET files = ${JSON.stringify(files)}::text::jsonb WHERE id = ${delegation.id}::bigint`;
+  await db().sql`UPDATE task_delegations SET files = ${JSON.stringify(files)}::text::jsonb, base_commit = ${baseCommit} WHERE id = ${delegation.id}::bigint`;
   return delegation.id;
 }
+
+test('the diff: deleted and renamed files from the base commit, the others said why (D-117)', async () => {
+  const head = gitIn(REPO, 'rev-parse', 'HEAD').trim();
+  // The run, as the fake binary would leave it: README renamed and changed, .gitignore deleted, a binary added.
+  gitIn(REPO, 'mv', 'README.md', 'INDEX.md');
+  writeFileSync(join(REPO, 'INDEX.md'), '# Fake site, renamed\n');
+  rmSync(join(REPO, '.gitignore'));
+  writeFileSync(join(REPO, 'bin.dat'), Buffer.from([0x41, 0x00, 0x42]));
+  try {
+    const files = [
+      { path: '.gitignore', change: 'deleted' },
+      { path: 'INDEX.md', change: 'renamed', from: 'README.md' },
+      { path: 'bin.dat', change: 'added' },
+      { path: 'never.md', change: 'modified' },
+    ];
+    const id = await delegationWith(files, head);
+    // From before D-117: no base commit, only added files have a diff.
+    const old = await delegationWith(files);
+    await withApi(() => [SITE], async (port) => {
+      const diff = (await get(port, `/api/delegations/${id}/diff`)).body.diff as { files: Record<string, unknown>[] };
+      const [gone, renamed, binary, never] = diff.files;
+      assert.deepEqual([gone?.change, gone?.added, gone?.removed], ['deleted', 0, 2]);
+      assert.deepEqual([renamed?.from, renamed?.added, renamed?.removed], ['README.md', 1, 1]);
+      assert.deepEqual(
+        (renamed?.hunks as { lines: unknown[] }[] | undefined)?.[0]?.lines,
+        [
+          { kind: 'removed', text: '# Fake site' },
+          { kind: 'added', text: '# Fake site, renamed' },
+        ],
+      );
+      assert.deepEqual([binary?.path, binary?.error, binary?.hunks], ['bin.dat', 'binary', undefined]);
+      assert.deepEqual([never?.path, never?.error], ['never.md', 'no-base']);
+      const before = (await get(port, `/api/delegations/${old}/diff`)).body.diff as { baseCommit: unknown; files: Record<string, unknown>[] };
+      assert.equal(before.baseCommit, null);
+      assert.deepEqual(
+        before.files.map((file) => file.error ?? 'ok'),
+        ['no-base', 'no-base', 'binary', 'no-base'],
+      );
+    });
+  } finally {
+    gitIn(REPO, 'reset', '--quiet', '--hard', head);
+    rmSync(join(REPO, 'bin.dat'), { force: true });
+  }
+});
+
+test('the diff refuses an old version with a vault value or too large, stops at 100 files, waits for a running Coder and an archived chat (D-117)', async () => {
+  const origin = gitIn(REPO, 'rev-parse', 'HEAD').trim();
+  const secret = new Secret('vault://test-diff', 'fake-vault-value-diff-0123456789abcdef');
+  writeFileSync(join(REPO, 'leak-old.txt'), `token: ${secret.reveal()}\n`);
+  writeFileSync(join(REPO, 'big-old.txt'), 'x'.repeat(256 * 1024 + 1));
+  gitIn(REPO, 'add', 'leak-old.txt', 'big-old.txt');
+  gitIn(REPO, 'commit', '--quiet', '--message', 'old versions');
+  const base = gitIn(REPO, 'rev-parse', 'HEAD').trim();
+  // The run made both clean and small: only the old side is refused.
+  writeFileSync(join(REPO, 'leak-old.txt'), 'token: gone\n');
+  writeFileSync(join(REPO, 'big-old.txt'), 'small\n');
+  try {
+    const id = await delegationWith(
+      [
+        { path: 'leak-old.txt', change: 'modified' },
+        { path: 'big-old.txt', change: 'modified' },
+      ],
+      base,
+    );
+    const many = await delegationWith(
+      Array.from({ length: 101 }, (_value, index) => ({ path: `many/${String(index)}.md`, change: 'added' })),
+      base,
+    );
+    await withApi(() => [SITE], async (port) => {
+      const diff = (await get(port, `/api/delegations/${id}/diff`)).body.diff as { files: Record<string, unknown>[] };
+      assert.deepEqual(
+        diff.files.map((file) => file.error),
+        ['refused', 'too-large'],
+      );
+      assert.doesNotMatch(JSON.stringify(diff), /fake-vault-value-diff/);
+      const listed = (await get(port, `/api/delegations/${many}/diff`)).body.diff as { files: Record<string, unknown>[] };
+      assert.equal(listed.files.length, 101);
+      assert.equal(listed.files[99]?.error, 'deleted');
+      assert.equal(listed.files[100]?.error, 'too-many');
+
+      // A Coder at work on the same project: git is not run there until it ends.
+      const { task } = await ask('work', 'Al lavoro.', 'site');
+      const running = await createDelegation(db().sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
+      await updateDelegation(db().sql, running.id, { status: 'running' });
+      const busy = await get(port, `/api/delegations/${id}/diff`);
+      assert.equal(busy.status, 409);
+      assert.match(String(busy.body.error), /is working on site/);
+      await updateDelegation(db().sql, running.id, { status: 'failed', result: 'error', resultLabel: 'L1' });
+      assert.equal((await get(port, `/api/delegations/${id}/diff`)).status, 200);
+    });
+    const [row] = await db().sql<{ conversationId: string }[]>`
+      SELECT t.conversation_id::text AS "conversationId" FROM task_delegations d JOIN tasks t ON t.id = d.task_id WHERE d.id = ${id}::bigint`;
+    assert.ok(row !== undefined);
+    await archiveConversation(db().sql, row.conversationId, true);
+    await withApi(() => [SITE], async (port) => {
+      assert.equal((await get(port, `/api/delegations/${id}/diff`)).status, 409);
+    });
+  } finally {
+    gitIn(REPO, 'reset', '--quiet', '--hard', origin);
+  }
+});
+
+test('task_delegations.base_commit: a commit id, written once with the files (migration 0024)', async () => {
+  const { sql } = db();
+  const commit = 'a'.repeat(40);
+  await assert.rejects(delegationWith([], 'HEAD'), /task_delegations_base_commit/);
+  await assert.rejects(delegationWith([], 'A'.repeat(40)), /task_delegations_base_commit/);
+  const id = await delegationWith([], commit);
+  assert.equal((await sql<{ base: string }[]>`SELECT base_commit AS base FROM task_delegations WHERE id = ${id}::bigint`)[0]?.base, commit);
+  await assert.rejects(sql`UPDATE task_delegations SET base_commit = ${'b'.repeat(40)} WHERE id = ${id}::bigint`, /written once, with the files/);
+  await assert.rejects(sql`UPDATE task_delegations SET base_commit = NULL WHERE id = ${id}::bigint`, /written once, with the files/);
+  // Files already written without a commit: it cannot be added afterwards.
+  const later = await delegationWith([]);
+  await assert.rejects(sql`UPDATE task_delegations SET base_commit = ${commit} WHERE id = ${later}::bigint`, /written once, with the files/);
+  // Not without the files, nor on a new row.
+  const { task } = await ask('work', 'Commit senza file.', 'site');
+  const plain = await createDelegation(sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
+  await assert.rejects(sql`UPDATE task_delegations SET base_commit = ${commit} WHERE id = ${plain.id}::bigint`, /written once, with the files/);
+  await assert.rejects(
+    sql`INSERT INTO task_delegations (task_id, step, agent, brief, label, base_commit) VALUES (${task.id}, 2, 'coder', 'x', 'L1', ${commit})`,
+    /not with the delegation/,
+  );
+});
 
 test('the preview refuses links out of the project, .git, large, binary and deleted files', async () => {
   const outside = join(HOME, 'outside-secret.txt');
@@ -869,6 +1022,7 @@ test('a delegation above L1: no preview, and its credit shows neither project no
   assert.deepEqual([credit?.delegationId, credit?.repo, credit?.files], [delegation.id, null, null]);
   await withApi(() => [SITE], async (port) => {
     assert.equal((await get(port, `/api/delegations/${delegation.id}/files/0`)).status, 404);
+    assert.equal((await get(port, `/api/delegations/${delegation.id}/diff`)).status, 404);
     const rows = (await get(port, '/api/delegations?limit=200')).body.delegations as { id: string }[];
     assert.equal(rows.some((item) => item.id === delegation.id), false);
   });

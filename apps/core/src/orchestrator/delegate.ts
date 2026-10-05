@@ -6,6 +6,7 @@ import {
   gitConfigFingerprint,
   openRepository,
   repositoryChanges,
+  repositoryHead,
   toolConfigFiles,
   WorkspaceError,
   type ClaudeExecutor,
@@ -335,10 +336,12 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         return { kind: 'continue', usage: result.usage };
       }
       // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
+      // The commit the changes are against (D-117): the chat diffs each file from it later.
+      const head = await repositoryHead(path).catch(() => undefined);
       const after = await repositoryChanges(path).catch(() => undefined);
       const changed = (after ?? []).filter((item) => !before.has(item.path));
       // Saved before the report (D-082): the chat lists them under it as soon as it appears.
-      if (after !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed) });
+      if (after !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed), ...(typeof head === 'string' ? { baseCommit: head } : {}) });
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
       const toolChanges = changedToolConfig(tools, await toolConfigFiles(path).catch(() => new Map([['(unreadable)', '']])));
       const text = [

@@ -1,6 +1,6 @@
 # Modello dati (bozza PostgreSQL)
 
-`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`); `calls` da D-066 (`0015_calls.sql`); `push_subscriptions` dalla terza parte di D-066 (`0016_push.sql`); `calls.rang_at` dalla sua revisione (`0017_calls_rang.sql`); `conversation_summaries` da D-077 (`0018_conversation_summaries.sql`); `model_evals` da D-081 (`0019_model_evals.sql`); `task_delegations.files` da D-082 (`0020_delegation_files.sql`); `task_activities` da D-083 (`0021_task_activities.sql`); `conversations.pinned_at` da D-089 (`0022_conversation_pins.sql`); `tasks.note` da `task.update` del task 1.10 (`0023_task_notes.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
+`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`); `calls` da D-066 (`0015_calls.sql`); `push_subscriptions` dalla terza parte di D-066 (`0016_push.sql`); `calls.rang_at` dalla sua revisione (`0017_calls_rang.sql`); `conversation_summaries` da D-077 (`0018_conversation_summaries.sql`); `model_evals` da D-081 (`0019_model_evals.sql`); `task_delegations.files` da D-082 (`0020_delegation_files.sql`); `task_activities` da D-083 (`0021_task_activities.sql`); `conversations.pinned_at` da D-089 (`0022_conversation_pins.sql`); `tasks.note` da `task.update` del task 1.10 (`0023_task_notes.sql`); `task_delegations.base_commit` da D-117 (`0024_delegation_base_commit.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
 
 ```sql
 CREATE TYPE privacy_label AS ENUM ('L0','L1','L2','L3');
@@ -246,6 +246,7 @@ CREATE TABLE task_delegations (
   result        text, result_label privacy_label,           -- rapporto dell'agente o errore, come lo legge il passo locale successivo
   message_id    bigint REFERENCES messages(id),             -- rapporto salvato in chat (messages.agent = coder)
   files         jsonb,                                      -- D-082: [{path, change, from?}] dei file cambiati dal run; NULL = non registrati, [] = nessuno
+  base_commit   text,                                       -- D-117: HEAD del progetto quando sono stati elencati i file; NULL = non registrato o repository senza commit
   created_at    timestamptz NOT NULL DEFAULT now(), ended_at timestamptz,
   UNIQUE (task_id, step)
 );
@@ -258,6 +259,11 @@ CREATE TABLE task_delegations (
 -- renamed), al massimo 500 voci, mai contenuti; scritta una volta sola, solo con run_id e repo, mai
 -- all'inserimento. Confronto con l'ultimo commit, senza i file che l'utente aveva già cambiato prima del
 -- run. Sparisce con la delega in purge_conversation. I permessi di tabella di 0009 la coprono.
+-- base_commit (D-117, vincolo task_delegations_base_commit e trigger task_delegations_base_commit_frozen):
+-- solo un id di commit (40 o 64 cifre esadecimali minuscole), mai contenuti; scritto nello stesso UPDATE
+-- che scrive files, mai all'inserimento, poi immutabile. Serve al diff della chat (GET
+-- /api/delegations/:id/diff), calcolato a richiesta: versione vecchia dal commit con git cat-file, senza
+-- filtri; versione attuale dalla cartella con i controlli di D-082.
 
 -- Riassunto della storia che l'orchestratore non legge più messaggio per messaggio (D-077):
 -- un pezzo per ogni salto dell'ancora, aggiunto in coda e mai riscritto. Append-only.

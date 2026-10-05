@@ -1,4 +1,4 @@
-import type { DelegationFile, MessageCredit } from './types.ts';
+import type { DelegationFile, DiffHunk, DiffLine, FileDiff, MessageCredit } from './types.ts';
 
 /**
  * "Who did what" and "Files changed" under the answers written in the cloud
@@ -70,4 +70,48 @@ export function codeFence(text: string, path: string): string {
   const fence = '`'.repeat(Math.max(3, longest + 1));
   const body = text.endsWith('\n') ? text : `${text}\n`;
   return `${fence}${languageOf(path)}\n${body}${fence}\n`;
+}
+
+/** A line of a diff as the chat draws it: its numbers in the old and new file, and its sign. */
+export interface DiffRow {
+  kind: DiffLine['kind'] | 'gap';
+  oldLine: number | null;
+  newLine: number | null;
+  text: string;
+}
+
+/** The rows of a file's diff (D-117): each hunk's lines with their numbers, a gap row between hunks. */
+export function diffRows(hunks: readonly DiffHunk[]): DiffRow[] {
+  const rows: DiffRow[] = [];
+  for (const [at, hunk] of hunks.entries()) {
+    if (at > 0 || hunk.oldStart > 1 || hunk.newStart > 1) rows.push({ kind: 'gap', oldLine: null, newLine: null, text: '' });
+    let oldLine = hunk.oldStart;
+    let newLine = hunk.newStart;
+    for (const line of hunk.lines) {
+      if (line.kind === 'added') {
+        rows.push({ kind: 'added', oldLine: null, newLine, text: line.text });
+        newLine += 1;
+      } else if (line.kind === 'removed') {
+        rows.push({ kind: 'removed', oldLine, newLine: null, text: line.text });
+        oldLine += 1;
+      } else {
+        rows.push({ kind: 'context', oldLine, newLine, text: line.text });
+        oldLine += 1;
+        newLine += 1;
+      }
+    }
+  }
+  return rows;
+}
+
+/** Lines added and removed over the files whose diff is shown. */
+export function diffTotals(files: readonly FileDiff[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const file of files) {
+    if ('error' in file) continue;
+    added += file.added;
+    removed += file.removed;
+  }
+  return { added, removed };
 }

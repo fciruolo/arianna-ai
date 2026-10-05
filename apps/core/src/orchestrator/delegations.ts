@@ -36,6 +36,8 @@ export interface Delegation {
    * paths and kinds only. Null when not recorded, [] when nothing changed.
    */
   files: FileChange[] | null;
+  /** HEAD of the project when the files were listed (D-117, migration 0024); null without commits or not recorded. */
+  baseCommit: string | null;
 }
 
 export interface NewDelegation {
@@ -61,11 +63,13 @@ export interface DelegationPatch {
   messageId?: string;
   /** Written once (database guard): the changes of the run, from `repositoryChanges`. */
   files?: readonly FileChange[];
+  /** Only together with `files` (database guard): the commit they are compared against. */
+  baseCommit?: string;
 }
 
 const COLUMNS = `id::text, task_id::text AS "taskId", step, agent, brief, label, repo, status, executor, model,
   run_id::text AS "runId", workspace_run::text AS "workspaceRun", session_ref AS "sessionRef", result,
-  result_label AS "resultLabel", message_id::text AS "messageId", files`;
+  result_label AS "resultLabel", message_id::text AS "messageId", files, base_commit AS "baseCommit"`;
 
 export async function createDelegation(sql: Queryable, delegation: NewDelegation): Promise<Delegation> {
   const [row] = await sql.unsafe<Delegation[]>(
@@ -108,6 +112,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
        result_label = coalesce($10::privacy_label, result_label),
        message_id = coalesce($11::bigint, message_id),
        files = coalesce($13::text::jsonb, files),
+       base_commit = coalesce($14, base_commit),
        ended_at = CASE WHEN $12 THEN now() ELSE ended_at END
      WHERE id = $1::bigint
      RETURNING ${COLUMNS}`,
@@ -125,6 +130,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
       patch.messageId ?? null,
       ended,
       patch.files === undefined ? null : JSON.stringify(patch.files),
+      patch.baseCommit ?? null,
     ],
   );
   if (row === undefined) throw new Error(`delegation ${id} does not exist`);
