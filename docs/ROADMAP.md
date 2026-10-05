@@ -38,9 +38,13 @@ Fasi 0+1A con margine: 98-148 ore. Fasi 0+1 complete con margine: 129-196 ore. L
 
 ## Epic per fase (ore)
 
-**Fase 2 (64-96), in ordine di valore:** fatture da XML FatturaPA e scadenziario in Postgres, poi OCR per la carta 14-20 · cardwall backend e UI 12-18 · archivio e ingestione 8-12 · KB markdown con frontmatter 6-9 · ricerca ibrida Qdrant 10-15 · memoria agenti Mem0 6-9 · agenti Archivista/Segretario 4-7 · export/import cifrati 4-6.
+**Fase 2 (64-96), in ordine di valore:** fatture da XML FatturaPA e scadenziario in Postgres, poi OCR per la carta 14-20 · cardwall backend e UI 12-18 · archivio e ingestione 8-12 (in parte anticipati: cattura in `kb/inbox/` D-080, riordino col modello locale D-086; mancano archivio cifrato, link, PDF, vocali e video) · KB markdown con frontmatter 6-9 · ricerca ibrida Qdrant 10-15 · memoria agenti Mem0 6-9 · agenti Archivista/Segretario 4-7 · export/import cifrati 4-6.
 
-**Fase 3 (43-69):** layout HUD e WebSocket 10-15 · flusso eventi → UI 5-8 · pixel-agents con `HookProvider` proprio 12-18 · approvazioni in UI 8-14 · pagina Impostazioni 8-14.
+**Fase 3 (43-69):** layout HUD e WebSocket 10-15 · flusso eventi → UI 5-8 (in parte anticipato: righe di attività salvate D-083, crediti e file modificati delle deleghe D-082) · pixel-agents con `HookProvider` proprio 12-18 · approvazioni in UI 8-14 · pagina Impostazioni 8-14 (anticipata: D-071; prove dei modelli in background D-081).
+
+**Richieste nuove dell'utente (2026-10-05, ore da stimare).** Vicino a "archivio e ingestione" della Fase 2: pagina "Pensieri" con campo libero e microfono sopra la cattura di D-080 e D-086; vista "Conoscenza" a grafo (fatta, D-087), poi archi per vicinanza di significato. Nella Fase 3, dentro "layout HUD": barra sinistra come quella di Claude Code e barra destra "Agenti", entrambe collassabili; ricerca su tutto il sistema; menu dei comandi "/" in chat; azioni del messaggio al passaggio del mouse; finestra delle decisioni in attesa. Tutto questo è in corso nella chat web, prima della Fase 3.
+
+**Anticipato nella notte del 2026-10-05, fuori dall'ordine delle fasi:** nel perimetro della Fase 1A, chiamate ripetute fermate dal core (D-076, accettata); da confermare: storia dell'orchestratore ancorata con riassunti (D-077, Fase 1A), prova dei modelli del catalogo con gli eval dell'orchestratore (D-081: idea 8 dei "Prossimi passi" di `docs/HANDOFF.md`, vicina all'idea 16 di `OPEN-QUESTIONS.md` senza coincidere: là si confrontano i modelli, qui li si prova in background); importatore a sola lettura del catalogo "Agenzia" (D-079, prima parte). Solo proposti: Arianna sviluppata da dentro Arianna (D-078), pulsante "Aggiorna" fra sviluppo e produzione (D-088).
 
 **Fase 4 (50-90):** servizio voce Pipecat 12-20 · valutazione STT/TTS italiani locali 8-15 · delega e latenza 8-14 · telefonia SIP 14-26 · policy chiamate in uscita 8-15.
 

@@ -22,6 +22,36 @@
 | Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
 | Licenza degli sprite di pixel-agents (JIK-A-4, Metro City) | Uso personale ok; sostituire con asset a licenza chiara prima di condividere la cartella | Fase 3 |
 | Skill nel formato agentskills.io | Verificare compatibilità con Hermes, Claude Code e Codex (idea 7) | Task 1.9 |
+| Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087) | Rileggerle in `DECISIONS.md`: sono applicate ma da confermare | Prossima sessione con l'utente |
+
+### Domande delle proposte della notte del 2026-10-05
+
+Testo, alternative e raccomandazioni in `docs/PROPOSTE.md`; qui solo l'elenco.
+
+| Proposta | Domanda | Stato |
+| --- | --- | --- |
+| D-078 Sviluppo da dentro Arianna | 1. Clone separato del repository sotto la home come progetto L1, con le modifiche portate solo con `git pull`? | Aperta |
+| D-078 | 2. Una sola memoria di sviluppo (tutto nel clone) o un file distinto per la scheda? | Aperta |
+| D-078 | 3. Scheda nuova `developer` o il `coder` con una regola in più? | Aperta |
+| D-078 | 4. Chi fa il commit nel clone? | Aperta |
+| D-078 | 5. Una sola delega attiva sul progetto di sviluppo? | Aperta |
+| D-078 | 6. Quando cominciare? | Aperta |
+| D-078 | 7. Chi lancia `pnpm check` completo dopo un run? | Aperta |
+| D-079 Catalogo "Agenzia" | 1. Catalogo come proposto (clone fissato, importatore, schede attive solo con approvazione)? | Prima parte applicata, da confermare |
+| D-079 | 2. Chi fa il clone e quando? | Aperta |
+| D-079 | 3. Tetto delle schede adottate: L1 o L0? | Aperta |
+| D-079 | 4. Autonomia delle schede adottate: A0 o A1? | Aperta |
+| D-079 | 5. Schede approvate in `agents/` o fuori da git? | Aperta |
+| D-079 | 6. Quali divisioni servono? | Aperta |
+| D-079 | 7. Pagina "Agenzia" nelle Impostazioni o in chat? | Aperta |
+| D-080 Second brain | 1. Tutto nasce L2 in `kb/inbox/` e si abbassa solo con approvazione? | Applicata così, da confermare |
+| D-080 | 2. L'Archivista propone e l'utente approva, o sposta da solo? | Aperta |
+| D-080 | 3. Primo ingresso da costruire? | Scelto "/nota" da Claude, da confermare; l'utente vuole come ingresso principale la pagina "Pensieri" |
+| D-080 | 4. Declassificazione a L0 per singolo URL prima di scaricare un link? | Aperta |
+| D-080 | 5. `pdfjs-dist` in un processo figlio per i PDF? | Aperta |
+| D-080 | 6. Vocali e video: entrypoint in `apps/voice` o app Python a sé? | Aperta |
+| D-080 | 7. Video di piattaforme solo come link, titolo e riassunto? | Aperta |
+| D-088 Pulsante "Aggiorna" | Come si porta il codice nuovo dallo sviluppo all'installazione? | Proposta, da discutere |
 
 ## Idee dalla ricerca — da decidere
 

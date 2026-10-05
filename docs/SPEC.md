@@ -29,7 +29,7 @@ Il sistema deve coprire sette aree, costruite in cinque fasi in modo che ogni fa
 | Area | Requisito | Fase |
 | --- | --- | --- |
 | Chat | Chat web e Telegram con lo stesso agente, stesso storico, risposte in streaming | 1 (web in 1A, Telegram in 1B) |
-| Coding | Agenti che lanciano Claude Code e Codex sui repository, ciascuno in un worktree git isolato | 1 |
+| Coding | Agenti che lanciano Claude Code e Codex sui repository, nella cartella del progetto approvato (D-056, D-058) | 1 |
 | Router | Scelta automatica del modello per compito, livello di privacy, costo e difficoltà | 1 |
 | Privacy | Classificazione di ogni dato e documento; i dati privati arrivano solo a modelli locali | 1 |
 | Approvazioni | Le azioni irreversibili (invio mail, pagamenti, push, cancellazioni) aspettano il tuo ok | 1 |
@@ -177,7 +177,9 @@ L'orchestrazione si divide in tre livelli e solo uno dipende dal modello: il con
 - Il modello propone e il codice decide: le azioni passano da uno schema JSON vincolato e da un elenco chiuso di strumenti.
 - Piani corti e sessioni brevi, con riavvio automatico del server locale, perché con oMLX hai visto crolli dopo molta attività.
 - Un "advisor" cloud può aiutare a pianificare i casi difficili solo su compiti L0 e L1, senza dati privati.
-- Il modello orchestratore si sceglie con un test di accettazione nella suite di valutazione: precisione delle chiamate agli strumenti, rispetto dello schema, recupero dopo un errore e rifiuto di azioni fuori elenco.
+- Il modello orchestratore si sceglie con un test di accettazione nella suite di valutazione: precisione delle chiamate agli strumenti, rispetto dello schema, recupero dopo un errore e rifiuto di azioni fuori elenco. Un modello del catalogo si può provare con questi eval anche dalla pagina Impostazioni: la prova gira in background dentro il core, lascia passare prima chiamate e task e salva uno storico per modello e pesi; la promozione nel catalogo resta a mano (D-081, da confermare).
+- Una chiamata a uno strumento locale identica a una già fatta nello stesso task non si riesegue: il core la ferma e, alla terza ripetizione, mette il task in attesa dell'utente; per `kb.read` e `kb.search` la ripetizione conta solo dopo l'ultimo `kb.write` riuscito, e il conteggio riparte quando l'utente riprende il task (D-076, accettata).
+- **Storia della conversazione.** Il modello legge i messaggi da un'ancora che resta ferma finché la parte dopo non supera 30 messaggi o 24.000 caratteri; poi l'ancora salta in avanti e i messaggi lasciati indietro diventano un riassunto fatto dal modello locale, che cresce solo in coda. Così il prompt resta uguale fra un passo e l'altro e la cache del prefisso di oMLX funziona anche nelle conversazioni lunghe. Il riassunto ha l'etichetta dei messaggi che riassume (D-077, da confermare).
 
 ## Memoria e knowledge base
 
@@ -199,7 +201,9 @@ La conoscenza vive in file markdown che puoi aprire con qualsiasi editor, e un i
 4. Creazione della pagina nella KB, collegamento alle entità (cliente, immobile, progetto) e aggiornamento dello scadenziario.
 5. Se la classificazione è incerta, il documento resta L2 e finisce in una coda di revisione per te.
 
-**Editor e viste.** Si parte con la cartella di markdown aperta in un editor che già usi (per esempio Obsidian) più una vista web in sola lettura per i database; in una fase successiva si costruisce un editor a blocchi integrato con cardwall e agenti. Così la KB è utile dal primo giorno e non dipende dal tuo editor.
+**Cattura e pensieri (anticipato dalla Fase 2).** Tutto ciò che vuoi ricordare entra da un ingresso unico: una nota nuova in `kb/inbox/`, sempre L2, anche da una conversazione di lavoro; si abbassa solo con la tua approvazione. La cattura è istantanea e senza modello: "Salva in inbox" sotto i messaggi della chat, la scorciatoia "/nota", `POST /api/capture` e `pnpm kb:capture` (D-080, D-084). Subito dopo, in background, il modello locale riordina la nota: titolo, riassunto, contesto, tag e collegamenti alle note vicine, con il **testo originale sotto il riassunto**; le note dell'inbox si possono sfogliare e leggere dalle API (D-086). Questo riordino lo fa il core, non ancora la scheda dell'Archivista. Proposti e non ancora fatti: link scaricati solo dopo una declassificazione per singolo URL, PDF, vocali e video (D-080, domande in `docs/PROPOSTE.md`). In corso, su richiesta dell'utente: una pagina "Pensieri" nella chat con campo libero e microfono, e un messaggio già salvato che non si risalva.
+
+**Editor e viste.** Si parte con la cartella di markdown aperta in un editor che già usi (per esempio Obsidian) più una vista web in sola lettura per i database; in una fase successiva si costruisce un editor a blocchi integrato con cardwall e agenti. Così la KB è utile dal primo giorno e non dipende dal tuo editor. La chat web ha già una vista "Conoscenza": un grafo a forze delle pagine di `kb/`, disegnato da noi su canvas, con archi dai wikilink e dai tag comuni; mostra solo pagine fino a L2, mai il corpo nel grafo, e un clic apre la pagina (D-087, da confermare). Un terzo tipo di arco, la vicinanza di significato con gli embedding, è solo un passo possibile.
 
 **Backup.** Repository git cifrato, snapshot giornalieri dell'archivio e una copia fuori sede, con un ripristino provato almeno una volta.
 
@@ -211,7 +215,7 @@ Per Arianna servono un RAG ibrido, tabelle SQL per i dati estratti e un harness 
 | --- | --- | --- |
 | RAG ibrido (testo, vettori, riordino) | Sì, Fase 2 | Risponde a domande come "cosa dice il contratto su disdetta e rinnovo"; gira tutto in locale ed è la base della KB |
 | Dati strutturati in Postgres (fatture, scadenze, contratti) | Sì, Fase 2, prima di qualsiasi grafo | Le domande su importi, date e totali hanno una risposta esatta con SQL, mentre un RAG sui numeri sbaglia più facilmente |
-| Collegamenti tra pagine (wikilink e proprietà) | Sì, Fase 2 | È un grafo "povero" a costo zero: persone, immobili, clienti e progetti collegati nell'intestazione delle pagine; la ricerca può allargarsi di un passo lungo i collegamenti |
+| Collegamenti tra pagine (wikilink e proprietà) | Sì, Fase 2 (la vista "Conoscenza" li mostra già, D-087) | È un grafo "povero" a costo zero: persone, immobili, clienti e progetti collegati nell'intestazione delle pagine; la ricerca può allargarsi di un passo lungo i collegamenti |
 | Riordino dei risultati con un modello locale | Sì, Fase 2 | Migliora la precisione a basso costo |
 | Output strutturato vincolato (schema JSON) | Sì, Fase 1 | Rende affidabile l'estrazione dei campi dalle fatture anche con modelli locali piccoli |
 | GraphRAG o grafo estratto da un modello | Rinviare | L'indicizzazione richiede molte chiamate al modello, e quello locale è lento; serve per domande globali ("come sono cambiate le spese della casa in tre anni"), che si provano prima con SQL e riassunti per cartella |
@@ -282,6 +286,14 @@ Todo e cardwall sono la stessa lista di task vista in due modi, con un campo "as
 Sono tre viste sugli stessi dati e sugli stessi eventi: la chat per parlare, l'HUD per controllare, l'ufficio pixel-art per vedere gli agenti lavorare.
 
 **Chat (Fase 1).** Una chat web con risposte in streaming e un bot Telegram che parlano con la stessa Arianna e lo stesso storico. Le richieste di approvazione compaiono come schede con pulsanti "approva" e "rifiuta", e l'allegato con le prove. Ogni conversazione è "di lavoro" (L1, può usare il cloud) o "privata" (L2, solo locale). I messaggi dei bot passano dai server di Telegram, quindi lì arrivano solo contenuti L0 e L1: una risposta L2 diventa "apri la chat web".
+
+Cosa mostra già la chat web, oltre alle risposte (tutto "applicato, da confermare"):
+
+- sotto le risposte del Coder e di Claude, chi ha lavorato (esecutore, modello, durata, costo) e i file che il Coder ha toccato, solo come percorsi e tipo di modifica; nel pannello di stato le deleghe recenti (D-082);
+- a task fermo, il pulsante "Mostra i passi" con le righe di attività salvate: cosa Arianna ha cercato, letto, scritto o delegato, con la stessa etichetta del task (D-083);
+- "Copia" sui blocchi di codice e "Salva in inbox" sotto i messaggi (D-084).
+
+In corso, su richiesta dell'utente del 2026-10-05: barra sinistra rifatta come quella di Claude Code (collassabile; Cerca su tutto il sistema; Nuovo, Pensieri, Conoscenza, Chiama, Impostazioni, tema; poi agenti e conversazioni con "Fissa"); barra destra "Agenti" collassabile con la stessa logica; menu dei comandi che si apre scrivendo "/"; azioni del messaggio al passaggio del mouse; una finestra con tutte le decisioni in attesa.
 
 **HUD Arianna (Fase 3).** Un pannello scuro in stile Jarvis, pensato per essere letto, non solo bello:
 
@@ -419,6 +431,8 @@ Si scrivono le parti che contengono le tue regole (privacy, router, task, regist
 ## Installazione e portabilità
 
 Tutto sta in una cartella (`ARIANNA_HOME`) e si sposta o replica su un altro Mac o server, anche tramite Synology Drive. Un installer (`arianna install`) controlla i prerequisiti, scarica i modelli locali (i Qwen che usi già) leggendo un catalogo con dimensione e checksum, avvia Postgres e Qdrant in Docker con i volumi dentro `data/` e lancia una diagnosi (`arianna doctor`). I pesi dei modelli non si sincronizzano: viaggia il catalogo e si riscaricano dove servono. I database non si sincronizzano mai dal vivo, solo come dump cifrati (`arianna export` e `arianna import`). Al primo avvio un wizard (`arianna init`) guida la configurazione; poi tutto è modificabile dal file `arianna.toml` o dalla pagina Impostazioni. I modelli si scelgono da un catalogo corto deciso da te, che conterrà solo il Qwen già provato (oggi è vuoto: le voci vere arrivano con oMLX sul Mac Studio); un modello nuovo entra come sperimentale e diventa verificato solo dopo gli eval. Dettagli e stime (28-44 ore, già incluse nei totali) in `docs/INSTALLER-PORTABILITY.md`.
+
+**Sviluppo e produzione.** Sono due installazioni separate, non due modi della stessa: la cartella di sviluppo (codice e dati finti, l'unica in cui lavorano Claude Code e Codex) e l'installazione con i dati veri (D-030, da applicare a fine Fase 1A). Su richiesta dell'utente ciascuna dovrà mostrare un'etichetta che dice quale è (da fare). Un pulsante "Aggiorna" che porti nell'installazione il codice nuovo è solo proposto (D-088).
 
 ## Roadmap
 
