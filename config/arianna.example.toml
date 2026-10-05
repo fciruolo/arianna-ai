@@ -127,6 +127,16 @@ codex = true
 # [agents.coder]
 # model = "sonnet"
 
+# Characters drawn by a model (D-123): `model` is the one that draws the
+# character of an agent from its name, description, prompt and persona:
+# sonnet (default), opus or local (the orchestrator of [roles]). Claude
+# draws only while it is on in [cloud] executors and [cloud.models]; what
+# leaves is L1 by your declaration and passes the gateway. Not a privacy
+# setting: it never turns an executor on. Applies without a restart.
+#
+# [sprites]
+# model = "sonnet"
+
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).

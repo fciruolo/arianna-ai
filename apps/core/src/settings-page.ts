@@ -8,6 +8,7 @@ import {
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
   CONFIG_FILE,
+  DEFAULT_SPRITE_MODEL,
   DEFAULT_VOICE,
   diffConfig,
   LABELS_FILE,
@@ -16,6 +17,7 @@ import {
   parseConfig,
   readSettings,
   renderSettings,
+  SPRITE_MODELS,
   settingsFingerprint,
   StaleSettingsError,
   TELEGRAM_TOKEN_REF,
@@ -29,6 +31,7 @@ import {
   type ModelRole,
   type ProjectSettings,
   type Settings,
+  type SpriteModel,
   type VoiceConfig,
 } from '@arianna/config';
 import { scanText } from '@arianna/policy';
@@ -56,7 +59,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -94,6 +97,8 @@ export interface SettingsValues {
   personas: Record<string, Persona>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModel }>;
+  /** The model that draws a character (D-123): sonnet when the file has no [sprites]. */
+  sprites: SpriteModel;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -187,7 +192,7 @@ export interface SettingsPageOptions {
 
 export interface SettingsPage {
   read(): SettingsView;
-  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas?, agents? } }`. */
+  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas?, agents?, sprites? } }`. */
   update(body: Record<string, unknown>): SettingsView;
   /** `{ fingerprint, values: { executors?, telegram?, projects?, endpoints? } }`. */
   prepare(body: Record<string, unknown>): PrivacyProposal;
@@ -457,6 +462,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
     agents: agentsOf(settings),
+    sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     voice: voiceOf(settings.voice),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
@@ -472,6 +478,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return cloudModelsOf(settings.cloud);
     case 'agents':
       return agentsOf(settings);
+    case 'sprites':
+      return settings.sprites ?? DEFAULT_SPRITE_MODEL;
     case 'executors':
       return settings.cloud.executors;
     case 'database':
@@ -686,6 +694,10 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         const agents = agentsFromBody(given.agents, options.agentModels(), settings.agents);
         if (Object.keys(agents).length === 0) delete next.agents;
         else next.agents = agents;
+      }
+      if (given.sprites !== undefined) {
+        if (typeof given.sprites !== 'string' || !(SPRITE_MODELS as readonly string[]).includes(given.sprites)) invalid(`sprites: one of ${SPRITE_MODELS.join(', ')}`);
+        next.sprites = given.sprites as SpriteModel;
       }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);

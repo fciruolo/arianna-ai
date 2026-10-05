@@ -13,6 +13,7 @@ import { parseLocal, type LocalConfig } from './local.ts';
 import { parsePersonas, type Personas } from './personas.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
+import { parseSprites, type SpritesConfig } from './sprites.ts';
 import { parseTelegram, type TelegramConfig } from './telegram.ts';
 import { asInteger, asString, asTable, asVaultRef, ConfigError, onlyKeys } from './validate.ts';
 import { parseVoice, type VoiceConfig } from './voice.ts';
@@ -70,6 +71,8 @@ export interface AriannaConfig {
   personas: Personas;
   /** Agent → its default model (D-116); applied without a restart. */
   agents: AgentsSettings;
+  /** The model that draws a character (D-123); applied without a restart. */
+  sprites: SpritesConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
@@ -98,7 +101,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -137,6 +140,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     characters: parseCharacters(root.characters),
     personas: parsePersonas(root.personas),
     agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),
+    sprites: parseSprites(root.sprites),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
     ...(installation === undefined ? {} : { installation }),

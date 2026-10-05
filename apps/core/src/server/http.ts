@@ -37,6 +37,7 @@ import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recor
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
+import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
@@ -130,6 +131,8 @@ export interface ApiServerOptions {
    * longer active. Without it every agent reads as gone (executor null, L1).
    */
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
+  /** "Genera personaggio" (D-123); without it the routes answer 404. */
+  sprites?: SpriteGenerator;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -1100,6 +1103,34 @@ function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
   ];
 }
 
+const SPRITE_STATUS: Record<SpriteError['code'], number> = { invalid: 400, unavailable: 409, busy: 409, blocked: 403, quota: 429, failed: 502, 'bad-reply': 502 };
+
+/**
+ * A character drawn by the model of `[sprites]` (D-123): what draws and what
+ * leaves (GET), and one drawing (POST), returned as a PNG in base64 and never
+ * saved here: "Tieni" sends it to /api/characters/upload (D-118).
+ */
+function spriteRoutes(sprites: SpriteGenerator | undefined): Route[] {
+  const need = (): SpriteGenerator => {
+    if (sprites === undefined) throw new HttpError(404, 'not found');
+    return sprites;
+  };
+  return [
+    route('GET', '/api/characters/generate', () => Promise.resolve({ body: need().info() })),
+    route('POST', '/api/characters/generate', async (request) => {
+      const service = need();
+      const body = await readJson(request);
+      try {
+        const drawn = await service.generate(body);
+        return { body: { png: drawn.png.toString('base64'), rows: drawn.rows, model: drawn.model, label: drawn.label } };
+      } catch (error) {
+        if (!(error instanceof SpriteError)) throw error;
+        return { status: SPRITE_STATUS[error.code], body: { error: error.message, code: error.code, resetsAt: error.resetsAt?.toISOString() ?? null } };
+      }
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1256,6 +1287,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...changelogRoutes(options.changelog));
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
+  table.push(...spriteRoutes(options.sprites));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

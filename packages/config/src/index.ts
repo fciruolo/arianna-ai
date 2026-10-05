@@ -17,6 +17,7 @@ export {
 export { LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, parseAgents, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';
+export { DEFAULT_SPRITE_MODEL, parseSprites, SPRITE_MODELS, type SpriteModel, type SpritesConfig } from './sprites.ts';
 export {
   CLOUD_EXECUTORS,
   CLOUD_MODEL_NAME,

@@ -84,6 +84,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('characters') ? ['characters'] : []),
       ...(changed('agents') ? ['agents'] : []),
       ...(changed('personas') ? ['personas'] : []),
+      ...(changed('sprites') ? ['sprites'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),

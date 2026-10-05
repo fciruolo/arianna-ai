@@ -12,6 +12,7 @@ import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './
 import type { Personas } from './personas.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
+import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
 import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
 
@@ -54,6 +55,8 @@ export interface Settings {
   personas?: Personas;
   /** `[agents.<id>]` (D-116); absent or empty, the router chooses for every agent. */
   agents?: AgentsSettings;
+  /** `[sprites] model` (D-123); absent, Claude Sonnet draws the characters. */
+  sprites?: SpriteModel;
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -114,6 +117,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
     // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
     ...(Object.keys(config.agents).length === 0 ? {} : { agents: structuredClone(config.agents) }),
+    // Absent when the file has no [sprites]: the default is not written in.
+    ...(raw.sprites === undefined ? {} : { sprites: config.sprites.model }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -367,6 +372,14 @@ export function renderSettings(settings: Settings): string {
     '# whose model is the orchestrator of [roles], local only. Not a privacy',
     '# setting: it never turns an executor on. Applies without a restart.',
     ...agentsSection(settings.agents),
+    '',
+    '# Characters drawn by a model (D-123): `model` is the one that draws the',
+    '# character of an agent from its name, description, prompt and persona:',
+    '# sonnet (default), opus or local (the orchestrator of [roles]). Claude',
+    '# draws only while it is on in [cloud] executors and [cloud.models]; what',
+    '# leaves is L1 by your declaration and passes the gateway. Not a privacy',
+    '# setting: it never turns an executor on. Applies without a restart.',
+    ...(settings.sprites === undefined ? ['#', '# [sprites]', `# model = ${str(DEFAULT_SPRITE_MODEL)}`] : ['[sprites]', `model = ${str(settings.sprites)}`]),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

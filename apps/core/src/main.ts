@@ -28,6 +28,7 @@ import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { createUserAgents } from './user-agents.ts';
+import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { passGateway } from './gateway.ts';
 import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
@@ -393,6 +394,16 @@ const organizer = createNoteOrganizer({
     ),
   onError: report,
 });
+// "Genera personaggio" (D-123): the model of [sprites], read at each request; the brief passes the gateway.
+const sprites = createSpriteGenerator({
+  model: () => settings.current().sprites.model,
+  unavailable: () => spriteUnavailable(settings.current(), claude !== undefined),
+  claude,
+  localModel,
+  persona: (name) => settings.current().personas[name],
+  gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
+  dataDir: config.paths.data,
+});
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const approvedProjects = () => settings.current().projects;
 const server = await startApiServer({
@@ -421,6 +432,7 @@ const server = await startApiServer({
   pusher: () => voice.pusher(),
   settings: settingsPage,
   userAgents,
+  sprites,
   local: {
     status: () => localServers.status(),
     restart: (id) => localServers.restart(id),
