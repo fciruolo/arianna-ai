@@ -131,7 +131,7 @@ const preview = computed((): CharacterChoice | undefined => {
 
 /** The chosen character's name, the Coder's without a choice. */
 const characterLabel = computed(() =>
-  form.value.character === '' ? 'predefinito (quello del Coder)' : (characterOptions.value.find((option) => option.value === form.value.character)?.label ?? form.value.character),
+  form.value.character === '' ? 'predefinito (quello del Coder)' : (characterOptions.value.find((option) => option.value === form.value.character)?.label ?? `${form.value.character} (non disponibile)`),
 );
 async function onUploaded(saved: UploadedCharacter): Promise<void> {
   sheetVersion.value += 1;

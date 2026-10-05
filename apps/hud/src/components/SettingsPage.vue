@@ -451,19 +451,23 @@ async function onUploaded(agent: string, saved: UploadedCharacter): Promise<void
 function resetCharacter(agent: string): void {
   if (forms.value !== null) delete forms.value.characters[agent];
 }
+/** The character without a choice, as the core picks it: the original of the same name, otherwise the Coder's. */
+function defaultOption(agent: string) {
+  const originals = characterOptions.value.filter((option) => option.pack.original);
+  return originals.find((option) => option.character.id === agent) ?? originals.find((option) => option.character.id === 'coder');
+}
 /** The chosen character's name; without a choice, the default one. */
 function characterLabel(agent: string): string {
   const value = forms.value?.characters[agent];
   if (value === undefined) {
-    const fallback = characters.value?.agents[agent];
-    const name = characterOptions.value.find((option) => option.value === `${fallback?.pack}/${fallback?.character}`)?.character.name;
-    return name === undefined ? 'predefinito' : `predefinito (${name})`;
+    const fallback = defaultOption(agent);
+    return fallback === undefined ? 'predefinito' : `predefinito (${fallback.character.name})`;
   }
   return characterOptions.value.find((option) => option.value === value)?.label ?? `${value} (non disponibile)`;
 }
 function previewOf(agent: string): CharacterChoice | undefined {
   const value = forms.value?.characters[agent] ?? '';
-  const option = characterOptions.value.find((item) => item.value === value);
+  const option = value === '' ? defaultOption(agent) : characterOptions.value.find((item) => item.value === value);
   if (option !== undefined) return { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
   return value === '' ? characters.value?.agents[agent] : undefined;
 }
