@@ -2478,8 +2478,8 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | --- | --- | --- | --- | --- | --- |
 | I-2 | I pulsanti "Copia" e "Salva in inbox" spostano lo stato del messaggio | difetto | fatto | — | ramo `task/fix-azioni-messaggio`, da far vedere all'utente |
 | I-1 | Notifica quando una chat risponde, anche se non è aperta | funzione | 4-6 h | Web Push di D-066 | da decidere (domanda N1) |
-| I-4 | Modalità incognita: una conversazione che non salva niente | funzione di privacy | 8-12 h | decisione D- | da decidere (domande N2, N3) |
-| I-3 | Migliorare la gestione dei modelli | da chiarire | — | — | da chiarire con l'utente (domanda N4) |
+| I-4 | Modalità incognita: una conversazione che non salva niente | funzione di privacy | 13-17 h | decisione D- | proposta `docs/I-4-incognito.md` (ramo `task/i4-incognito-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
+| I-3 | Una pagina "Modelli" sola, locali e cloud, con le schede | funzione | 28-41 h (tappe M1-M6) | task 1.16 per M6 | proposta `docs/I-3-modelli.md` (ramo `task/i3-modelli-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |
 | I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
 
@@ -2512,6 +2512,12 @@ Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre un
 - **I-1 notifiche:** browser e telefono, con scelta dei tipi (risposte, approvazioni in attesa, lavori falliti) e ore di silenzio; mai testo né titolo nella notifica.
 - **I-4 incognito:** "come una chat normale": stessi strumenti e agenti, ma niente salvato in Arianna. Da progettare cosa fare delle tracce che non stanno in Arianna (file cambiati da una delega nei progetti, righe di run e del gateway, ciò che riceve il fornitore cloud): proposta di Claude da scrivere come decisione, con la scheda che dice chiaramente cosa resta fuori.
 - **I-3 modelli:** "troppe pagine sparse, mancano le informazioni dei singoli modelli, di Opus per esempio; manca tutto ChatGPT". Quindi: una pagina "Modelli" sola con locali e cloud insieme, una scheda per modello (fornitore, famiglia, contesto, punti di forza, costo in quota, ruoli, prove), e i modelli di ChatGPT/Codex (dipende dal task 1.16, l'adattatore di `codex`).
+
+### I-3 e I-4, scelte dell'utente sulle proposte (2026-10-05, sera)
+
+Tutte e otto sulle opzioni consigliate dei documenti di proposta.
+- **I-3 modelli:** una voce sola "Modelli" (le tre vecchie spariscono e rimandano alla nuova); dati delle schede cloud in `config/cloud-models.catalog.yaml` scritto a mano con fonti e date, più i numeri misurati; prima la pagina (Codex "non collegato"), poi il task 1.16 con un solo alias `codex`; "Togli dal disco" sposta nel cestino `data/models/eliminati`, con conferma scrivendo il nome e "Svuota il cestino".
+- **I-4 incognito:** come una chat normale (privata o di lavoro, il Coder su Claude con la scheda di ciò che resta presso il fornitore, sessioni di Claude Code non salvate); cancellazione alla chiusura senza cifratura (aggiungibile dopo); strumenti che salvano spenti (`kb.write`, `task.create`, "Salva in inbox", /nota; "Copia" resta); chiusura con "Termina", dopo 10 minuti senza pagina aperta o al riavvio, fermando il lavoro in corso.
 
 ### I-5, sintesi della ricerca su GOD (2026-10-05)
 
