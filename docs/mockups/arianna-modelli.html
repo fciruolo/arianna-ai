@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arianna Modelli</title>
+<!-- Mockup of the single "Modelli" page (idea I-3, docs/I-3-modelli.md). Static, one file, no external resources. Example data only: numbers, names and percentages are invented. -->
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #7f9b98; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c133;
+  --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0;
+  --l0: #7cc796; --l1: #4fd1c1; --l2: #f2b34b; --l3: #e2614b; --grid: #4fd1c10a;
+  --font-hud: "Chakra Petch", "Arial Narrow", sans-serif; --font-body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 9px; --r-md: 14px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+    --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+  --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+  --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.55 var(--font-body);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 28px 28px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+input:focus, select:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus-visible, select:focus-visible { outline: none; }
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
+
+.app { display: grid; grid-template-columns: 56px minmax(0, 1fr); height: 100%; }
+.rail { border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-block: 14px; background: var(--surface); }
+.rail .logo { font: 600 24px/1 var(--font-hud); color: var(--accent); width: 36px; height: 36px; display: grid; place-items: center; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.top { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding-inline: 22px; border-bottom: 1px solid var(--line); }
+.crumb { font-size: 12.5px; color: var(--muted); flex: 1; }
+.crumb b { color: var(--ink); font-weight: 500; }
+.body { flex: 1; min-height: 0; display: flex; }
+.index { width: 210px; flex: none; border-right: 1px solid var(--line); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.index a { padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13px; border: 1px solid transparent; }
+.index a.on { background: var(--surface-2); color: var(--ink); border-color: var(--line-strong); }
+.index a.gone { text-decoration: line-through; opacity: .55; font-size: 12px; padding-left: 22px; }
+.index .grp { font: 600 10px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 14px 10px 6px; }
+.index .grp:first-child { margin-top: 0; }
+.scroll { flex: 1; overflow-y: auto; min-width: 0; }
+.col { max-width: 1180px; margin-inline: auto; padding: 22px 22px 80px; display: flex; flex-direction: column; gap: 16px; }
+
+h1 { margin: 0; font: 600 20px/1.1 var(--font-hud); letter-spacing: .05em; }
+.lead { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.notice { padding: 9px 13px; border-radius: 10px; font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+.muted { color: var(--muted); }
+
+.hud { position: relative; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); }
+.hud::before, .hud::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--accent); pointer-events: none; }
+.hud::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: var(--r-md); }
+.hud::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: var(--r-md); }
+.hud-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.hud-h h2 { margin: 0; font: 600 12px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; flex: 1; }
+.hud-b { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* Summary strip */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stat { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.stat .k { font: 600 10px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font: 500 18px/1.1 var(--font-hud); }
+.stat .s { font-size: 12px; color: var(--muted); }
+.bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.bar i.w { background: var(--warn); }
+
+/* Filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; }
+.seg button { background: none; border: 0; padding: 6px 12px; font-size: 13px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button.on { background: var(--surface-2); color: var(--ink); }
+.field { border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 8px; padding: 6px 9px; min-width: 0; font-size: 13px; }
+.search { flex: 1; min-width: 160px; }
+
+/* List + card */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; }
+.list { display: flex; flex-direction: column; }
+.item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 11px 14px; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; width: 100%; }
+.item:first-child { border-top: 0; }
+.item:hover { background: var(--surface-2); }
+.item.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.badge { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font: 600 12px/1 var(--font-hud); border: 1px solid var(--line-strong); background: var(--surface-2); }
+.badge.local { color: var(--ok); } .badge.anth { color: var(--accent); } .badge.oai { color: var(--info); }
+.item .nm { font-weight: 500; display: block; }
+.item .sub { font-size: 12px; color: var(--muted); display: block; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.chip { font: 500 10.5px/1 var(--font-mono); padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.chip.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 50%, transparent); }
+.chip.acc { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+
+.card .title { display: flex; gap: 12px; align-items: center; }
+.card .title .badge { width: 42px; height: 42px; font-size: 14px; }
+.card h3 { margin: 0; font: 600 17px/1.15 var(--font-hud); letter-spacing: .03em; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.facts div { background: var(--surface); padding: 8px 11px; display: flex; flex-direction: column; gap: 2px; }
+.facts dt { font: 600 9.5px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.facts dd { margin: 0; font-size: 13px; }
+.sec { font: 600 10.5px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 4px 0 -4px; }
+ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.priv { font-size: 12.5px; padding: 8px 11px; border-radius: 9px; border: 1px dashed var(--line-strong); }
+.priv b.l2 { color: var(--l2); } .priv b.l1 { color: var(--l1); }
+table.ev { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.ev th { text-align: left; font: 600 9.5px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 0 6px 6px 0; }
+table.ev td { border-top: 1px solid var(--line); padding: 6px 6px 6px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+.btn { padding: 6px 12px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); font-weight: 500; font-size: 13px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.src { font-size: 11.5px; color: var(--muted); }
+.src a { color: var(--muted); }
+[hidden] { display: none !important; }
+
+@media (max-width: 1100px) { .split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail, .index { display: none; }
+  .top { padding-inline: 16px; }
+  .col { padding: 16px 16px 60px; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .item { grid-template-columns: 34px minmax(0, 1fr); }
+  .item .chips { grid-column: 2; justify-content: flex-start; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail" aria-label="Barra laterale"><div class="logo">A</div></nav>
+  <div class="main">
+    <header class="top">
+      <div class="crumb">Impostazioni › <b>Modelli</b></div>
+      <span class="chip warn">anteprima · dati di esempio</span>
+    </header>
+    <div class="body">
+      <nav class="index" aria-label="Indice delle impostazioni">
+        <div class="grp">Modelli</div>
+        <a href="#" class="on">Modelli</a>
+        <a href="#" class="gone" title="Assorbita in Modelli">Modelli locali</a>
+        <a href="#" class="gone" title="Assorbita in Modelli">Prove dei modelli</a>
+        <a href="#" class="gone" title="Assorbita in Modelli">Modelli cloud</a>
+        <div class="grp">Agenti e voce</div>
+        <a href="#">Agenti</a><a href="#">Voce</a><a href="#">Provino della voce</a>
+        <div class="grp">Collegamenti</div>
+        <a href="#">Esecutori cloud</a><a href="#">Telegram</a><a href="#">Progetti</a><a href="#">Server locali</a>
+        <div class="grp">Sistema</div>
+        <a href="#">Etichette</a><a href="#">Installazione</a>
+      </nav>
+
+      <main class="scroll">
+        <div class="col">
+          <div>
+            <h1>Modelli</h1>
+            <p class="lead">Locali e cloud in un posto solo: cosa sono, chi li usa, quanto costano e come sono andati alle prove.</p>
+          </div>
+          <div class="notice">Anteprima statica dell'idea I-3 (<span class="mono">docs/I-3-modelli.md</span>). Tutti i numeri, le percentuali, le date e i nomi esatti sono <b>dati di esempio inventati</b>, non misure né dati dei fornitori.</div>
+
+          <!-- Summary -->
+          <div class="stats">
+            <div class="hud stat">
+              <span class="k">Memoria dei modelli locali</span>
+              <span class="v">21 di 24 GiB</span>
+              <div class="bar"><i class="w" style="width: 87%"></i></div>
+              <span class="s">In memoria: qwen3.8-27b-4bit, qwen3-4b-instruct</span>
+            </div>
+            <div class="hud stat">
+              <span class="k">Quota Claude</span>
+              <span class="v">34% · 5 ore</span>
+              <div class="bar"><i style="width: 34%"></i></div>
+              <span class="s">Settimana 52% · torna alle 18:40</span>
+            </div>
+            <div class="hud stat">
+              <span class="k">Quota ChatGPT (Codex)</span>
+              <span class="v">non collegato</span>
+              <div class="bar"><i style="width: 0%"></i></div>
+              <span class="s">Manca l'adattatore (task 1.16)</span>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="filters" role="search">
+            <div class="seg" role="group" aria-label="Dove gira">
+              <button type="button" class="on" data-where="all">Tutti</button>
+              <button type="button" data-where="local">Locali</button>
+              <button type="button" data-where="cloud">Cloud</button>
+            </div>
+            <select class="field" aria-label="Fornitore" id="prov">
+              <option value="all">Tutti i fornitori</option>
+              <option value="Anthropic">Anthropic</option>
+              <option value="OpenAI">OpenAI</option>
+              <option value="Qwen">Qwen</option>
+            </select>
+            <select class="field" aria-label="Ruolo">
+              <option>Tutti i ruoli</option><option>Orchestratore</option><option>Estrattore</option><option>Voce</option><option>Coding</option><option>Revisione</option>
+            </select>
+            <label class="muted" style="font-size: 13px; display: inline-flex; gap: 6px; align-items: center;"><input type="checkbox" id="inuse"> solo in uso</label>
+            <input class="field search" id="q" placeholder="Cerca un modello" aria-label="Cerca un modello">
+          </div>
+
+          <div class="split">
+            <!-- List -->
+            <section class="hud" aria-label="Elenco dei modelli">
+              <div class="hud-h"><h2>Elenco</h2><span class="muted" style="font-size: 12px;" id="count">4 modelli</span></div>
+              <div class="list" id="list">
+                <button type="button" class="item on" data-id="opus" data-where="cloud" data-prov="Anthropic" data-use="1">
+                  <span class="badge anth">Op</span>
+                  <span><span class="nm">Claude Opus</span><span class="sub">Anthropic · cloud · alias opus</span></span>
+                  <span class="chips"><span class="chip ok">acceso</span><span class="chip">coding difficile</span></span>
+                </button>
+                <button type="button" class="item" data-id="sonnet" data-where="cloud" data-prov="Anthropic" data-use="1">
+                  <span class="badge anth">So</span>
+                  <span><span class="nm">Claude Sonnet</span><span class="sub">Anthropic · cloud · alias sonnet</span></span>
+                  <span class="chips"><span class="chip ok">acceso</span><span class="chip acc">Coder</span></span>
+                </button>
+                <button type="button" class="item" data-id="qwen" data-where="local" data-prov="Qwen" data-use="1">
+                  <span class="badge local">Qw</span>
+                  <span><span class="nm">Qwen3.8 27B (4 bit)</span><span class="sub">Qwen · Mac · qwen3.8-27b-4bit</span></span>
+                  <span class="chips"><span class="chip ok">in memoria</span><span class="chip acc">orchestratore</span></span>
+                </button>
+                <button type="button" class="item" data-id="codex" data-where="cloud" data-prov="OpenAI" data-use="0">
+                  <span class="badge oai">Cx</span>
+                  <span><span class="nm">Codex (ChatGPT)</span><span class="sub">OpenAI · cloud · alias codex</span></span>
+                  <span class="chips"><span class="chip warn">non collegato</span></span>
+                </button>
+              </div>
+            </section>
+
+            <!-- Cards -->
+            <div>
+              <!-- Opus -->
+              <section class="hud card" data-card="opus" aria-label="Scheda di Claude Opus">
+                <div class="hud-b">
+                  <div class="title"><span class="badge anth">Op</span><div><h3>Claude Opus</h3><span class="muted" style="font-size: 12.5px;">Anthropic · famiglia Claude Opus · esecutore <span class="mono">claude</span></span></div></div>
+                  <dl class="facts">
+                    <div><dt>Contesto</dt><dd>200k token; 1M con <span class="mono">opus[1m]</span></dd></div>
+                    <div><dt>Nome passato a --model</dt><dd class="mono">claude-opus-5-5</dd></div>
+                    <div><dt>Ultimo modello dichiarato</dt><dd class="mono">claude-opus-5-5 · ieri 22:14</dd></div>
+                    <div><dt>Approvazione di budget</dt><dd>no</dd></div>
+                    <div><dt>Costo in quota (misurato)</dt><dd>≈ 4% della finestra di 5 ore per lavoro di coding (mediana di 12 run)</dd></div>
+                    <div><dt>Rispetto a Sonnet</dt><dd>consuma di più (rapporto dalla fonte del catalogo)</dd></div>
+                  </dl>
+                  <p class="sec">Punti di forza</p>
+                  <ul class="plain"><li>Ragionamento lungo, architettura, bug difficili</li><li>Migrazioni ampie su molti file</li><li>Revisione approfondita di un diff</li></ul>
+                  <p class="sec">Uso tipico in Arianna</p>
+                  <ul class="plain"><li>Coding: secondo gradino della scala (dopo Sonnet, insieme a Codex)</li><li>Revisione: terzo gradino</li><li>Chat di sistema: si sceglie dal selettore</li><li>Agenti che partono con Opus: nessuno</li></ul>
+                  <div class="priv">Esce verso il cloud: riceve solo <b class="l1">L0 e L1</b>, sempre attraverso il gateway.</div>
+                  <p class="src">Fonti del catalogo cloud: pagina dei modelli Anthropic, letta il 2026-10-05 (esempio).</p>
+                  <div class="actions">
+                    <label style="display: inline-flex; gap: 8px; align-items: center; font-size: 13px;"><input type="checkbox" checked> Acceso</label>
+                    <input class="field mono" value="claude-opus-5-5" aria-label="Nome esatto" style="width: 180px;">
+                    <button type="button" class="btn">Salva</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Sonnet -->
+              <section class="hud card" data-card="sonnet" aria-label="Scheda di Claude Sonnet" hidden>
+                <div class="hud-b">
+                  <div class="title"><span class="badge anth">So</span><div><h3>Claude Sonnet</h3><span class="muted" style="font-size: 12.5px;">Anthropic · famiglia Claude Sonnet · esecutore <span class="mono">claude</span></span></div></div>
+                  <dl class="facts">
+                    <div><dt>Contesto</dt><dd>200k token</dd></div>
+                    <div><dt>Nome passato a --model</dt><dd class="muted">il più recente (alias)</dd></div>
+                    <div><dt>Ultimo modello dichiarato</dt><dd class="mono">claude-sonnet-… · oggi 10:02</dd></div>
+                    <div><dt>Approvazione di budget</dt><dd>no</dd></div>
+                    <div><dt>Costo in quota (misurato)</dt><dd>≈ 1,5% della finestra di 5 ore per lavoro (mediana di 41 run)</dd></div>
+                    <div><dt>Token medi per lavoro</dt><dd>38k in · 6k out</dd></div>
+                  </dl>
+                  <p class="sec">Punti di forza</p>
+                  <ul class="plain"><li>Coding quotidiano veloce e affidabile</li><li>Buon rapporto fra qualità e quota</li><li>Revisione rapida</li></ul>
+                  <p class="sec">Uso tipico in Arianna</p>
+                  <ul class="plain"><li>Coding: primo gradino della scala</li><li>Revisione: primo gradino, insieme a Codex</li><li>Chat di sistema nuova: parte da Sonnet</li><li>Agenti che partono con Sonnet: <b>Coder</b>, <b>Ricercatore</b></li></ul>
+                  <div class="priv">Esce verso il cloud: riceve solo <b class="l1">L0 e L1</b>, sempre attraverso il gateway.</div>
+                  <p class="src">Fonti del catalogo cloud: pagina dei modelli Anthropic, letta il 2026-10-05 (esempio).</p>
+                  <div class="actions">
+                    <label style="display: inline-flex; gap: 8px; align-items: center; font-size: 13px;"><input type="checkbox" checked> Acceso</label>
+                    <input class="field mono" placeholder="il più recente" aria-label="Nome esatto" style="width: 180px;">
+                    <button type="button" class="btn">Salva</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Qwen 27B -->
+              <section class="hud card" data-card="qwen" aria-label="Scheda di Qwen3.8 27B" hidden>
+                <div class="hud-b">
+                  <div class="title"><span class="badge local">Qw</span><div><h3>Qwen3.8 27B (4 bit)</h3><span class="muted" style="font-size: 12.5px;">Qwen (Alibaba) · famiglia qwen3.8 · runtime MLX su oMLX · <span class="mono">qwen3.8-27b-4bit</span></span></div></div>
+                  <dl class="facts">
+                    <div><dt>Peso su disco</dt><dd>16,1 GB (13 file)</dd></div>
+                    <div><dt>RAM minima</dt><dd>18 GiB</dd></div>
+                    <div><dt>Contesto servito</dt><dd>32k token (esempio)</dd></div>
+                    <div><dt>Stato del catalogo</dt><dd><span class="chip warn">sperimentale</span></dd></div>
+                    <div><dt>File</dt><dd><span class="chip ok">presenti</span> verificati il 2026-10-03</dd></div>
+                    <div><dt>In memoria (oMLX)</dt><dd><span class="chip ok">caricato da Arianna</span> ultimo uso 2 min fa</dd></div>
+                    <div><dt>Licenza</dt><dd>Apache-2.0 (esempio)</dd></div>
+                    <div><dt>Costo</dt><dd>nessuna quota: gira sul Mac</dd></div>
+                  </dl>
+                  <p class="sec">Punti di forza</p>
+                  <ul class="plain"><li>Italiano buono, segue bene gli strumenti</li><li>Abbastanza forte da pianificare e giudicare</li><li>Tutto in locale: può leggere i dati più riservati</li></ul>
+                  <p class="sec">Ruoli e uso in Arianna</p>
+                  <ul class="plain"><li>Ruolo <b>orchestratore</b> (alias <span class="mono">local-large</span>): Arianna, pianificazione, giudizio</li><li>Coding e revisione quando il cloud non è ammesso</li></ul>
+                  <p class="sec">Prove (D-081)</p>
+                  <table class="ev">
+                    <thead><tr><th>Data</th><th>Esito</th><th>Punteggio</th><th>Mediana</th><th>Pesi</th></tr></thead>
+                    <tbody>
+                      <tr><td>2026-10-04</td><td><span class="chip ok">superata</span></td><td>27/30</td><td>4,1 s</td><td class="mono">a1b2c3d4</td></tr>
+                      <tr><td>2026-10-01</td><td><span class="chip warn">sotto soglia</span></td><td>22/30</td><td>5,3 s</td><td class="mono">a1b2c3d4</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="src">Soglie superate: la promozione a "verificato" si fa a mano nel catalogo.</p>
+                  <div class="priv">Gira sul Mac: può leggere dati <b class="l2">L2 e L3</b>; niente esce.</div>
+                  <div class="actions">
+                    <select class="field" aria-label="Assegna a un ruolo"><option>Orchestratore (assegnato)</option><option>Estrattore</option></select>
+                    <button type="button" class="btn primary">Prova</button>
+                    <button type="button" class="btn">Verifica i file</button>
+                    <button type="button" class="btn">Scarica dalla memoria</button>
+                    <button type="button" class="btn danger" disabled title="Un ruolo lo usa: prima assegna un altro modello">Togli dal disco…</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Codex -->
+              <section class="hud card" data-card="codex" aria-label="Scheda di Codex" hidden>
+                <div class="hud-b">
+                  <div class="title"><span class="badge oai">Cx</span><div><h3>Codex (ChatGPT)</h3><span class="muted" style="font-size: 12.5px;">OpenAI · modelli di Codex · esecutore <span class="mono">codex</span></span></div></div>
+                  <div class="notice">Non collegato. Servono: il binario <span class="mono">codex</span> con il tuo accesso ChatGPT (lo fai tu nel terminale), l'adattatore del task 1.16 e l'esecutore acceso in <b>Esecutori cloud</b>.</div>
+                  <dl class="facts">
+                    <div><dt>Binario</dt><dd><span class="chip warn">non trovato</span></dd></div>
+                    <div><dt>Adattatore (1.16)</dt><dd><span class="chip warn">da fare</span></dd></div>
+                    <div><dt>Contesto</dt><dd>dal catalogo cloud, con fonte (esempio: 400k)</dd></div>
+                    <div><dt>Nome passato a --model</dt><dd class="muted">il predefinito del binario</dd></div>
+                    <div><dt>Costo in quota</dt><dd class="muted">si misura dopo il collegamento</dd></div>
+                    <div><dt>Approvazione di budget</dt><dd>no</dd></div>
+                  </dl>
+                  <p class="sec">Punti di forza</p>
+                  <ul class="plain"><li>Coding e revisione con un fornitore diverso da Claude</li><li>Un secondo parere: chi scrive e chi rivede non sono lo stesso modello</li></ul>
+                  <p class="sec">Uso tipico in Arianna (dopo 1.16)</p>
+                  <ul class="plain"><li>Revisione: primo gradino della scala, insieme a Sonnet</li><li>Coding: secondo gradino, insieme a Opus</li><li>Quando la quota Claude è finita, il router può passare a Codex</li></ul>
+                  <div class="priv">Esce verso il cloud: riceverà solo <b class="l1">L0 e L1</b>, sempre attraverso il gateway, con lo stesso confinamento di Claude.</div>
+                  <p class="src">Fonti del catalogo cloud: documentazione di Codex CLI, letta il 2026-10-05 (esempio).</p>
+                  <div class="actions">
+                    <label style="display: inline-flex; gap: 8px; align-items: center; font-size: 13px;"><input type="checkbox" checked> Acceso (vale con l'adattatore)</label>
+                    <input class="field mono" placeholder="il predefinito" aria-label="Nome esatto" style="width: 180px;">
+                    <button type="button" class="btn">Salva</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const items = [...document.querySelectorAll('.item')];
+  const cards = [...document.querySelectorAll('[data-card]')];
+  let where = 'all';
+  function show(id) {
+    items.forEach((el) => el.classList.toggle('on', el.dataset.id === id));
+    cards.forEach((el) => { el.hidden = el.dataset.card !== id; });
+  }
+  function filter() {
+    const prov = document.getElementById('prov').value;
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const inUse = document.getElementById('inuse').checked;
+    let n = 0;
+    items.forEach((el) => {
+      const ok = (where === 'all' || el.dataset.where === where)
+        && (prov === 'all' || el.dataset.prov === prov)
+        && (!inUse || el.dataset.use === '1')
+        && (q === '' || el.textContent.toLowerCase().includes(q));
+      el.hidden = !ok;
+      if (ok) n += 1;
+    });
+    document.getElementById('count').textContent = n === 1 ? '1 modello' : `${n} modelli`;
+  }
+  items.forEach((el) => el.addEventListener('click', () => show(el.dataset.id)));
+  document.querySelectorAll('.seg [data-where]').forEach((b) => {
+    b.addEventListener('click', () => {
+      where = b.dataset.where;
+      document.querySelectorAll('.seg button').forEach((x) => x.classList.toggle('on', x === b));
+      filter();
+    });
+  });
+  ['prov', 'q', 'inuse'].forEach((id) => document.getElementById(id).addEventListener('input', filter));
+})();
+</script>
+</body>
+</html>
