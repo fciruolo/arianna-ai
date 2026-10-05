@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { LocalEndpointConfig } from '@arianna/config';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForKbPage, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
@@ -25,6 +26,14 @@ import { KB_DIR, parsePage, type Kb, type KbHit } from './orchestrator/kb.ts';
  * notes the model was given, and the exact text of the user under them. When
  * anything fails the note stays `status: new`, an L0 event says why, and the
  * user may try again.
+ *
+ * A model not ready yet (oMLX still loading at start, D-100) or gone for a
+ * while is not a failure of the note: no job is claimed while the endpoints
+ * of `local-large` are on their way up and none is up, and a call that finds
+ * no server answering puts the job back with a growing delay, up to
+ * ORGANIZE_MAX_ATTEMPTS times. Every
+ * other failure ends the job at once, as before: trying again would only
+ * spend the model on the same answer.
  */
 export const ORGANIZE_QUEUE = 'note.organize';
 export const ORGANIZE_MODEL = 'local-large';
@@ -48,6 +57,46 @@ export const ORGANIZE_TIMEOUT_MS = 120_000;
 const ORGANIZE_MAX_TOKENS = 1_200;
 /** New notes left by a previous run (or by pnpm kb:capture) queued at start at most. */
 export const MAX_RESUMED = 20;
+/** Attempts of a note whose model was not answering; any other failure ends the job at the first. */
+export const ORGANIZE_MAX_ATTEMPTS = 8;
+/** Delay before the second attempt; it doubles each time up to ORGANIZE_RETRY_MAX_MS. */
+export const ORGANIZE_RETRY_BASE_MS = 30_000;
+export const ORGANIZE_RETRY_MAX_MS = 600_000;
+
+/** How long a note waits after its `attempts`-th try found no model (30 s, 1 min, 2 min, … up to 10 min). */
+export function organizeRetryDelayMs(attempts: number): number {
+  const exponent = Math.min(Math.max(attempts, 1) - 1, 20);
+  return Math.min(ORGANIZE_RETRY_BASE_MS * 2 ** exponent, ORGANIZE_RETRY_MAX_MS);
+}
+
+/**
+ * Whether a note may start: some endpoint serving `local-large` is up, or
+ * none of them is on its way up (watchdog idle, starting, restarting). A
+ * server settled on down or failed is not waited for: the call finds it
+ * gone, the note is tried again with the backoff and ends failed with its
+ * event, so the queue never stops in silence. With no endpoint serving the
+ * model there is nothing to wait for either: the call fails and says so.
+ */
+export function organizeModelReady(
+  endpoints: readonly Pick<LocalEndpointConfig, 'id' | 'models'>[],
+  isAvailable: (id: string) => boolean,
+  isSettling: (id: string) => boolean,
+): boolean {
+  const serving = endpoints.filter((endpoint) => endpoint.models[ORGANIZE_MODEL] !== undefined);
+  return serving.some((endpoint) => isAvailable(endpoint.id)) || !serving.some((endpoint) => isSettling(endpoint.id));
+}
+
+/**
+ * A model error worth another attempt later: no server answered (down,
+ * starting, still loading the model: 502, 503). A 500, a 504 (a proxy
+ * that waited for an answer: the model was at work), a timeout, a missing
+ * endpoint or a bad answer are not.
+ */
+export function modelUnavailable(error: unknown): boolean {
+  if (!(error instanceof LocalModelError)) return false;
+  if (error.kind === 'unavailable') return true;
+  return error.kind === 'http' && (error.status === 502 || error.status === 503);
+}
 
 /** Why a note was not organized, as the event `note.organize_failed` carries it: a closed list, never a text. */
 export type OrganizeFailure =
@@ -55,6 +104,8 @@ export type OrganizeFailure =
   | 'above-clearance'
   | 'blocked'
   | 'model-error'
+  /** No server answered: tried again later (see ORGANIZE_MAX_ATTEMPTS). */
+  | 'unavailable'
   | 'timeout'
   | 'truncated'
   | 'bad-response'
@@ -322,6 +373,7 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
     if (signal.aborted) return { ok: false, reason: 'interrupted' };
     if (timeout.aborted || (error instanceof LocalModelError && error.kind === 'timeout')) return { ok: false, reason: 'timeout' };
     if (error instanceof LocalModelError && error.kind === 'bad-response') return { ok: false, reason: 'bad-response' };
+    if (modelUnavailable(error)) return { ok: false, reason: 'unavailable' };
     return { ok: false, reason: 'model-error' };
   }
   if ('reason' in read) return { ok: false, reason: read.reason };
@@ -347,13 +399,15 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
 /** Queues the organizing of a note; false when it is already queued or running (still true for the caller: it will be organized). */
 export async function enqueueOrganize(sql: Sql, path: string): Promise<boolean> {
   checkNotePath(path);
-  const id = await enqueueJob(sql, ORGANIZE_QUEUE, { path }, { key: `note-organize:${path}`, maxAttempts: 1 });
+  const id = await enqueueJob(sql, ORGANIZE_QUEUE, { path }, { key: `note-organize:${path}`, maxAttempts: ORGANIZE_MAX_ATTEMPTS });
   return id !== undefined;
 }
 
 export interface NoteOrganizerOptions extends OrganizeEnv {
   /** Default: a call in progress or a task step at work or ready (the machine belongs to the user). */
   busy?: () => Promise<boolean>;
+  /** Whether the model can take a note now (see organizeModelReady); no job is claimed until it can. Default: always. */
+  modelReady?: () => boolean;
   workerId?: string;
   /** A job not refreshed for this long belongs to a dead worker. Default 60 s, like the task worker. */
   lockTimeoutMs?: number;
@@ -396,6 +450,7 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
   const lockTimeoutMs = options.lockTimeoutMs ?? 60_000;
   const pollMs = options.pollMs ?? 2_000;
   const busy = options.busy ?? (() => machineBusy(sql));
+  const modelReady = options.modelReady ?? (() => true);
   const onError = options.onError ?? (() => undefined);
   const controller = new AbortController();
   let loop: Promise<void> | undefined;
@@ -448,9 +503,16 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
       } else if (outcome.reason === 'not-new') {
         await completeJob(tx, job.id, worker);
       } else {
+        // No model answering: back to the queue later, while attempts are left. Anything else ends the job.
+        const result = await failJob(tx, job.id, worker, outcome.reason, outcome.reason === 'unavailable' ? organizeRetryDelayMs(job.attempts) : null);
+        // Lost to another worker meanwhile: the note is that worker's, so is the event.
+        if (result === 'lost') return;
         // The path names the note, whose slug comes from its text: not in an L0 event.
-        await failJob(tx, job.id, worker, outcome.reason, 0);
-        await appendEvent(tx, { kind: 'note.organize_failed', label: 'L0', payload: { jobId: job.id, reason: outcome.reason } });
+        await appendEvent(tx, {
+          kind: 'note.organize_failed',
+          label: 'L0',
+          payload: { jobId: job.id, reason: outcome.reason, ...(result === 'retry' ? { retry: true } : {}) },
+        });
       }
     });
   }
@@ -459,7 +521,8 @@ export function createNoteOrganizer(options: NoteOrganizerOptions): NoteOrganize
     while (!controller.signal.aborted) {
       try {
         // The model belongs to the user first: no note starts while a call or a task step is at work.
-        if (await busy()) {
+        // Nor while the model is not up (oMLX still loading at start): the note waits in the queue.
+        if (!modelReady() || (await busy())) {
           await sleep(pollMs, controller.signal);
           continue;
         }

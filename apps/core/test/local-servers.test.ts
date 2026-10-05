@@ -150,7 +150,26 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     assert.equal(servers.isAvailable('spare'), false);
     // An endpoint the core does not know is not held back.
     assert.equal(servers.isAvailable('other'), true);
+    // Settled on down: nothing to wait for (D-100).
+    assert.equal(servers.isSettling('spare'), false);
+    assert.equal(servers.isSettling('other'), false);
     assert.deepEqual(spawns(), []);
+  });
+
+  it('isSettling: true while a server is on its way up, false once it is up (D-100)', async () => {
+    const port = await freePort();
+    create();
+    const pending = servers.sync([endpoint('omlx', port)]);
+    let seen = false;
+    for (let tick = 0; tick < 1_000 && !seen; tick += 1) {
+      seen = servers.isSettling('omlx');
+      if (!seen) await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.equal(seen, true);
+    assert.equal(servers.isAvailable('omlx'), false);
+    await pending;
+    assert.equal(servers.isSettling('omlx'), false);
+    assert.equal(servers.isAvailable('omlx'), true);
   });
 
   it('restarts a server whose command changed, stops a removed one, keeps one whose model names changed', async () => {

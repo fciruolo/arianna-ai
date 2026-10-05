@@ -32,7 +32,7 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
-import { createNoteOrganizer } from './organize.ts';
+import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
 import { startApiServer } from './server/http.ts';
@@ -329,7 +329,21 @@ const modelEvals = createModelEvals({
 });
 // Captured notes organized by the local model in the background (D-086), one
 // at a time, giving way to calls and task steps; the raw note is saved first.
-const organizer = createNoteOrganizer({ sql, home: config.home, rules, kb, model: localModel, onError: report });
+// No note starts while oMLX is on its way up: at start it loads for minutes (D-100).
+const organizer = createNoteOrganizer({
+  sql,
+  home: config.home,
+  rules,
+  kb,
+  model: localModel,
+  modelReady: () =>
+    organizeModelReady(
+      settings.current().local.endpoints,
+      (id) => localServers.isAvailable(id),
+      (id) => localServers.isSettling(id),
+    ),
+  onError: report,
+});
 const dist = join(config.home, 'apps', 'hud', 'dist');
 const approvedProjects = () => settings.current().projects;
 const server = await startApiServer({

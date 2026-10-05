@@ -66,11 +66,20 @@ export interface LocalServers {
   restart(id: string): Promise<boolean>;
   /** For createLocalModel: an endpoint without a watchdog counts as available. */
   isAvailable(id: string): boolean;
+  /**
+   * True while the server of `id` is on its way up (D-100): not checked yet,
+   * starting or loading its model, restarting, or being replaced by "Riavvia
+   * oMLX". False when it is up, settled on down or failed, or not supervised.
+   */
+  isSettling(id: string): boolean;
   /** For createLocalModel: an unreachable or stuck endpoint is checked at once. */
   onFailure(id: string): void;
   /** Stops every watchdog at once, even one still starting; later syncs are refused. */
   stop(): Promise<void>;
 }
+
+/** Watchdog states on the way up; `stopped` is seen only during a restart, since stop() drops the entry. */
+const SETTLING: readonly WatchdogState[] = ['idle', 'starting', 'restarting', 'stopped'];
 
 /** oMLX keeps its settings under HOME. */
 export function localServerEnv(from: NodeJS.ProcessEnv): Record<string, string> {
@@ -294,6 +303,11 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
       });
       queue = next.then(() => undefined, () => undefined);
       return next;
+    },
+
+    isSettling(id) {
+      const state = supervised.get(id)?.watchdog.state;
+      return state !== undefined && SETTLING.includes(state);
     },
 
     isAvailable(id) {

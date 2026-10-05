@@ -33,8 +33,11 @@ export interface JobQueue {
   /** False when the worker no longer holds the job. */
   heartbeat(jobId: string, worker: string): Promise<boolean>;
   complete(jobId: string, worker: string): Promise<boolean>;
-  /** Back to the queue after `retryAfterMs`, or `failed` once the attempts are used up. */
-  fail(jobId: string, worker: string, error: string, retryAfterMs: number): Promise<'retry' | 'failed' | 'lost'>;
+  /**
+   * Back to the queue after `retryAfterMs`, or `failed` once the attempts are
+   * used up; `null` fails it at once, whatever attempts are left.
+   */
+  fail(jobId: string, worker: string, error: string, retryAfterMs: number | null): Promise<'retry' | 'failed' | 'lost'>;
   /** Back to the queue at once, without spending the attempt (worker shutdown). */
   release(jobId: string, worker: string): Promise<boolean>;
   /** Jobs locked longer than `staleMs`: back to the queue, or `failed` without attempts left. */
@@ -134,18 +137,23 @@ export async function completeJob(sql: Queryable, jobId: string, worker: string)
   return rows.length === 1;
 }
 
-/** `fail` inside a caller's transaction. `error` must be a code (see errorCode), not a message. */
+/**
+ * `fail` inside a caller's transaction. `error` must be a code (see
+ * errorCode), not a message. `retryAfterMs: null` fails the job at once, for
+ * an error that trying again would not mend.
+ */
 export async function failJob(
   sql: Queryable,
   jobId: string,
   worker: string,
   error: string,
-  retryAfterMs: number,
+  retryAfterMs: number | null,
 ): Promise<'retry' | 'failed' | 'lost'> {
+  const retry = retryAfterMs !== null;
   const [row] = await sql<{ status: 'queued' | 'failed' }[]>`
     UPDATE jobs SET
-      status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
-      run_at = CASE WHEN attempts < max_attempts THEN now() + ${retryAfterMs} * interval '1 millisecond' ELSE run_at END,
+      status = CASE WHEN ${retry}::boolean AND attempts < max_attempts THEN 'queued' ELSE 'failed' END,
+      run_at = CASE WHEN ${retry}::boolean AND attempts < max_attempts THEN now() + ${retryAfterMs ?? 0} * interval '1 millisecond' ELSE run_at END,
       locked_at = NULL, locked_by = NULL, last_error = ${error.slice(0, 100)}
     WHERE id = ${jobId}::bigint AND status = 'running' AND locked_by = ${worker}
     RETURNING status`;

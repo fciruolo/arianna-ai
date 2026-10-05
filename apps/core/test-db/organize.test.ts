@@ -13,7 +13,17 @@ import { Secret } from '@arianna/vault';
 
 import { captureNote } from '../src/capture.ts';
 import { createKb, parsePage } from '../src/orchestrator/kb.ts';
-import { createNoteOrganizer, enqueueOrganize, ORGANIZE_QUEUE, ORGANIZE_SCHEMA_NAME, organizeNote, ORIGINAL_HEADING, type NoteOrganizer } from '../src/organize.ts';
+import {
+  createNoteOrganizer,
+  enqueueOrganize,
+  ORGANIZE_MAX_ATTEMPTS,
+  ORGANIZE_QUEUE,
+  ORGANIZE_RETRY_BASE_MS,
+  ORGANIZE_SCHEMA_NAME,
+  organizeNote,
+  ORIGINAL_HEADING,
+  type NoteOrganizer,
+} from '../src/organize.ts';
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -106,7 +116,9 @@ test('organizes a note through the gateway: related notes as data, never L3, lin
 
 test('a failing, truncated, malformed or slow model leaves the note new and unchanged', async () => {
   const cases: [Reply, string][] = [
-    [new LocalModelError('http', 'stub: 500', { endpoint: 'stub' }), 'model-error'],
+    [new LocalModelError('http', 'stub: 500', { endpoint: 'stub', status: 500 }), 'model-error'],
+    [new LocalModelError('unavailable', 'stub: down', { endpoint: 'stub' }), 'unavailable'],
+    [new LocalModelError('http', 'stub: loading', { endpoint: 'stub', status: 503 }), 'unavailable'],
     [new LocalModelError('bad-response', 'stub: not JSON', { endpoint: 'stub' }), 'bad-response'],
     [{ value: GOOD, finishReason: 'length' }, 'truncated'],
     [{ ...GOOD, kind: 'segreto' }, 'bad-response'],
@@ -133,7 +145,7 @@ test('the worker organizes queued notes, records L0 events without the path, and
   const { home, path, raw } = setup('Promemoria: chiamare il tecnico della caldaia');
   const requests: ChatRequest[] = [];
   const organizer: NoteOrganizer = createNoteOrganizer({
-    ...env(home, fakeModel([new LocalModelError('unavailable', 'stub: down', { endpoint: 'stub' })], requests)),
+    ...env(home, fakeModel([new LocalModelError('http', 'stub: 500', { endpoint: 'stub', status: 500 })], requests)),
     busy: () => Promise.resolve(false),
     pollMs: 20,
   });
@@ -294,6 +306,84 @@ test('a call or a task arriving during a note comes first: the job goes back to 
       events.map((event) => event.kind),
       ['note.organized'],
     );
+  } finally {
+    await organizer.stop();
+  }
+});
+
+test('a model not answering puts the note back with a delay, an L0 event says it will be tried again, and the next attempt organizes it', async () => {
+  const { sql } = db();
+  const { home, path, raw } = setup('Promemoria: portare la bici dal meccanico');
+  const requests: ChatRequest[] = [];
+  const organizer = createNoteOrganizer({
+    ...env(home, fakeModel([new LocalModelError('unavailable', 'stub: down', { endpoint: 'stub' })], requests)),
+    busy: () => Promise.resolve(false),
+    pollMs: 20,
+  });
+  try {
+    await organizer.start();
+    await waitFor(async () => (await jobOf(path)).lastError === 'unavailable');
+    const job = await jobOf(path);
+    assert.deepEqual([job.status, job.attempts], ['queued', 1]);
+    const [delay] = await sql<{ seconds: number }[]>`SELECT extract(epoch FROM run_at - now())::float AS seconds FROM jobs WHERE id = ${job.id}::bigint`;
+    assert.ok(delay !== undefined && delay.seconds > ORGANIZE_RETRY_BASE_MS / 1000 - 5, String(delay?.seconds));
+    assert.deepEqual(await eventsOf(job.id), [{ kind: 'note.organize_failed', label: 'L0', payload: { jobId: job.id, reason: 'unavailable', retry: true } }]);
+    assert.equal(readFileSync(join(home, path), 'utf8'), raw);
+    // Still queued: asking again is a no-op, the waiting job will organize it.
+    assert.equal(await organizer.enqueue(path), false);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(requests.length, 1);
+
+    await sql`UPDATE jobs SET run_at = now() WHERE id = ${job.id}::bigint`;
+    await waitFor(async () => (await jobOf(path)).status === 'done');
+    assert.equal(requests.length, 2);
+    assert.match(readFileSync(join(home, path), 'utf8'), /\nstatus: organized\n/);
+  } finally {
+    await organizer.stop();
+  }
+});
+
+test('a model that never comes back ends the job after the last attempt', async () => {
+  const { home, path, raw } = setup('Pensiero: il modello non torna');
+  await enqueueOrganize(db().sql, path);
+  const before = await jobOf(path);
+  await db().sql`UPDATE jobs SET attempts = ${ORGANIZE_MAX_ATTEMPTS - 1} WHERE id = ${before.id}::bigint`;
+  const down = new LocalModelError('unavailable', 'stub: down', { endpoint: 'stub' });
+  const organizer = createNoteOrganizer({ ...env(home, fakeModel([down], [])), busy: () => Promise.resolve(false), pollMs: 20 });
+  try {
+    await organizer.start();
+    await waitFor(async () => (await jobOf(path)).status === 'failed');
+    const job = await jobOf(path);
+    assert.equal(job.id, before.id);
+    assert.deepEqual([job.attempts, job.lastError], [ORGANIZE_MAX_ATTEMPTS, 'unavailable']);
+    assert.deepEqual(await eventsOf(job.id), [{ kind: 'note.organize_failed', label: 'L0', payload: { jobId: job.id, reason: 'unavailable' } }]);
+    assert.equal(readFileSync(join(home, path), 'utf8'), raw);
+  } finally {
+    await organizer.stop();
+  }
+});
+
+test('no note starts while the model is not ready: notes resumed at start and new captures wait, then are organized', async () => {
+  const { home, path: resumedPath } = setup('Idea: aspettare che il modello sia pronto');
+  const requests: ChatRequest[] = [];
+  let ready = false;
+  const organizer = createNoteOrganizer({ ...env(home, fakeModel([], requests)), busy: () => Promise.resolve(false), modelReady: () => ready, pollMs: 20 });
+  try {
+    const { resumed } = await organizer.start();
+    assert.equal(resumed, 1);
+    const captured = captureNote({ home, rules: RULES, text: 'Appunto: catturato con il modello giù', kind: 'note', source: { channel: 'hud', id: 'test' }, now: new Date(2026, 9, 5, 9, 0, 0) });
+    assert.equal(await organizer.enqueue(captured.path), true);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(requests.length, 0);
+    for (const path of [resumedPath, captured.path]) {
+      const job = await jobOf(path);
+      assert.deepEqual([job.status, job.attempts], ['queued', 0]);
+    }
+
+    ready = true;
+    await waitFor(async () => (await jobOf(resumedPath)).status === 'done' && (await jobOf(captured.path)).status === 'done');
+    assert.equal(requests.length, 2);
+    assert.match(readFileSync(join(home, captured.path), 'utf8'), /\nstatus: organized\n/);
   } finally {
     await organizer.stop();
   }

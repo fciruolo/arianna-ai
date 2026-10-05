@@ -66,6 +66,17 @@ test('a failed job retries after the delay, then fails for good', async () => {
   assert.ok(row.last_error.length <= 500);
 });
 
+test('a failure without a delay ends the job at once, attempts left or not', async () => {
+  const queue = createJobQueue(db().sql);
+  await queue.enqueue('q5b', {}, { maxAttempts: 5 });
+  const job = await queue.claim('q5b', 'w');
+  assert.ok(job !== undefined);
+  assert.equal(await queue.fail(job.id, 'w', 'boom', null), 'failed');
+  assert.equal(await queue.claim('q5b', 'w'), undefined);
+  const [row] = await db().sql<{ status: string; last_error: string }[]>`SELECT status, last_error FROM jobs WHERE id = ${job.id}::bigint`;
+  assert.deepEqual({ ...row }, { status: 'failed', last_error: 'boom' });
+});
+
 test('a retry is not claimed before its delay', async () => {
   const queue = createJobQueue(db().sql);
   await queue.enqueue('q6', {});
