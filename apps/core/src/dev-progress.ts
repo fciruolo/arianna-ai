@@ -36,6 +36,10 @@ const MAX_DOC_BYTES = 2 * 1024 * 1024;
 const MAX_TITLE = 110;
 const MAX_QUESTION = 400;
 const MAX_DETAIL = 600;
+const MAX_EXPLAIN = 800;
+const MAX_OPTION_LABEL = 80;
+const MAX_OPTION_EFFECT = 300;
+const MAX_OPTIONS = 6;
 
 export interface ProgressItem {
   /** D-081, 1.10, F2.3, Idea 4, Coda 2. */
@@ -50,6 +54,26 @@ export interface ProgressItem {
   source: DocName;
 }
 
+/** A choice of a question: the label goes in the answer when the user clicks it. */
+export interface QuestionOption {
+  label: string;
+  /** What happens if the user chooses it ('' when the document does not say). */
+  effect: string;
+  recommended: boolean;
+}
+
+/**
+ * The explanation of a question (D-122): what is being decided and why, the
+ * options with their consequences (the recommended ones first), an example.
+ * Written in the documents as "Contesto:", "Opzione consigliata:", "Opzione:"
+ * and "Esempio:" lines; null for a question written without them.
+ */
+export interface Explanation {
+  context: string | null;
+  options: QuestionOption[];
+  example: string | null;
+}
+
 export interface OpenQuestion {
   /** Stable while the document does not change the question: D-078#3, conf-D-081, oq-..., ho-.... */
   key: string;
@@ -61,6 +85,8 @@ export interface OpenQuestion {
   text: string;
   /** Recommendation or note of the document, shortened. */
   detail: string | null;
+  /** Context, options and example, when the document writes them (D-122). */
+  explain: Explanation | null;
   source: DocName;
   /** The latest answer in docs/RISPOSTE.md: new until Claude marks it as applied. */
   answer: { state: AnswerState; at: string } | null;
@@ -181,11 +207,94 @@ export function parseDecisions(text: string): Parsed<DecisionRow> {
   return { values, skipped };
 }
 
+export type ExplainField = 'context' | 'option' | 'recommended' | 'example';
+
+const FIELD_NAMES: Record<string, ExplainField> = { contesto: 'context', 'opzione consigliata': 'recommended', opzione: 'option', esempio: 'example' };
+
+/**
+ * A line of an explanation (D-122): "Contesto: ...", "Opzione consigliata: ...",
+ * "Opzione: ...", "Esempio: ...", with or without a list mark, bold or
+ * indentation; undefined for any other line. The text may be '' (the caller
+ * counts it as skipped).
+ */
+export function explainField(line: string): { field: ExplainField; text: string } | undefined {
+  const flat = plain(line.replace(/^\s*[-*]\s+/, ''));
+  const match = /^(Contesto|Opzione consigliata|Opzione|Esempio)\s*:\s*(.*)$/i.exec(flat);
+  if (match === null) return undefined;
+  const field = FIELD_NAMES[(match[1] ?? '').toLowerCase()];
+  return field === undefined ? undefined : { field, text: (match[2] ?? '').trim() };
+}
+
+/**
+ * "Label — what happens": the first long or en dash with spaces splits the
+ * two; without one, the first " - ". Undefined for an option without a
+ * separator whose label is too long to be a label (the caller skips it).
+ */
+export function parseOption(text: string, recommended: boolean): QuestionOption | undefined {
+  const match = /^(.+?)\s+[—–]\s+(.+)$/.exec(text) ?? /^(.+?)\s+-\s+(.+)$/.exec(text);
+  const label = (match?.[1] ?? text).trim().replace(/[.:;,]+$/, '');
+  if (match === null && label.length > MAX_OPTION_LABEL) return undefined;
+  return { label: shorten(label, MAX_OPTION_LABEL), effect: shorten((match?.[2] ?? '').trim(), MAX_OPTION_EFFECT), recommended };
+}
+
+/** Collects the fields of one question; `done` gives null when there were none. */
+export class ExplanationBuilder {
+  private context: string[] = [];
+  private example: string[] = [];
+  /** Raw text of the options: a continuation line may still add to the last one. */
+  private options: { text: string; recommended: boolean }[] = [];
+  /** The field the next continuation line belongs to. */
+  private last: string[] | { text: string } | undefined;
+  /** Fields with no text, options beyond MAX_OPTIONS or without a label. */
+  skipped = 0;
+
+  add(field: ExplainField, text: string): void {
+    this.last = undefined;
+    if (text === '') {
+      this.skipped += 1;
+      return;
+    }
+    if (field === 'context' || field === 'example') {
+      this.last = field === 'context' ? this.context : this.example;
+      this.last.push(text);
+    } else if (this.options.length >= MAX_OPTIONS) {
+      this.skipped += 1;
+    } else {
+      const option = { text, recommended: field === 'recommended' };
+      this.options.push(option);
+      this.last = option;
+    }
+  }
+
+  /** A line that continues the field above it: false when no field is open. */
+  continueField(text: string): boolean {
+    if (this.last === undefined || text === '') return false;
+    if (Array.isArray(this.last)) this.last.push(text);
+    else this.last.text = `${this.last.text} ${text}`;
+    return true;
+  }
+
+  done(): Explanation | null {
+    const parsed: QuestionOption[] = [];
+    for (const option of this.options) {
+      const value = parseOption(option.text, option.recommended);
+      if (value === undefined) this.skipped += 1;
+      else parsed.push(value);
+    }
+    if (this.context.length === 0 && this.example.length === 0 && parsed.length === 0) return null;
+    const join = (parts: string[]): string | null => (parts.length === 0 ? null : shorten(parts.join(' '), MAX_EXPLAIN));
+    // The recommended options first, as the rule of the questions asks; the order of the document otherwise.
+    const options = [...parsed.filter((option) => option.recommended), ...parsed.filter((option) => !option.recommended)];
+    return { context: join(this.context), options, example: join(this.example) };
+  }
+}
+
 export interface ProposalQuestion {
   id: string;
   number: number;
   text: string;
   detail: string | null;
+  explain: Explanation | null;
 }
 
 export interface Proposals {
@@ -229,12 +338,14 @@ export function parseProposals(text: string): Proposals {
   let skipped = 0;
   let current: string | undefined;
   let inQuestions = false;
-  let open: { number: number; lines: string[] } | undefined;
+  let open: { number: number; lines: string[]; explain: ExplanationBuilder } | undefined;
   const close = (): void => {
     if (open !== undefined && current !== undefined) {
       const { text: question, detail } = splitQuestion(open.lines.join(' '));
+      const explain = open.explain.done();
+      skipped += open.explain.skipped;
       if (question === '') skipped += 1;
-      else questions.push({ id: current, number: open.number, text: question, detail });
+      else questions.push({ id: current, number: open.number, text: question, detail, explain });
     }
     open = undefined;
   };
@@ -274,11 +385,15 @@ export function parseProposals(text: string): Proposals {
     const item = /^(\d+)\.\s+(.*)$/.exec(line);
     if (item !== null) {
       close();
-      open = { number: Number(item[1]), lines: [item[2] ?? ''] };
+      open = { number: Number(item[1]), lines: [item[2] ?? ''], explain: new ExplanationBuilder() };
     } else if (line.trim() === '' || line.trim() === '---') {
       close();
     } else if (open !== undefined) {
-      open.lines.push(line.trim());
+      // "Contesto:", "Opzione:", "Esempio:" under the question explain it (D-122); any other line continues it.
+      const field = explainField(line);
+      // An indented line after a field continues that field.
+      if (field !== undefined) open.explain.add(field.field, field.text);
+      else if (!(/^\s/.test(line) && open.explain.continueField(plain(line)))) open.lines.push(line.trim());
     } else {
       skipped += 1;
     }
@@ -410,6 +525,7 @@ export function parseOpenQuestions(text: string, coveredProposals: ReadonlySet<s
           topic: '',
           text: shorten(plain(row[0] ?? ''), MAX_QUESTION),
           detail: detail === '' ? null : shorten(detail, MAX_DETAIL),
+          explain: null,
           source: 'OPEN-QUESTIONS.md',
           answer: null,
         });
@@ -433,6 +549,7 @@ export function parseOpenQuestions(text: string, coveredProposals: ReadonlySet<s
         topic: proposal.topic,
         text: shorten(question, MAX_QUESTION),
         detail: plain(row[2] ?? '') === '' ? null : shorten(plain(row[2] ?? ''), MAX_DETAIL),
+        explain: null,
         source: 'OPEN-QUESTIONS.md',
         answer: null,
       });
@@ -454,6 +571,65 @@ export function parseOpenQuestions(text: string, coveredProposals: ReadonlySet<s
     }
   }
   return { questions, ideas, skipped };
+}
+
+export interface ExplanationsDoc {
+  /** By the key of the question: D-078#3, conf-D-081, oq-..., ho-.... */
+  explanations: Map<string, Explanation>;
+  skipped: number;
+}
+
+/**
+ * The "## Spiegazioni delle domande" section of docs/OPEN-QUESTIONS.md (D-122):
+ * a "### <key>" heading per question, then its "Contesto:", "Opzione…:" and
+ * "Esempio:" lines. For the questions that have no room under them: rows of a
+ * table, confirmations of decisions, rows of HANDOFF.md.
+ */
+export function parseExplanations(text: string): ExplanationsDoc {
+  const explanations = new Map<string, Explanation>();
+  let skipped = 0;
+  let inSection = false;
+  let current: { key: string; builder: ExplanationBuilder } | undefined;
+  const close = (): void => {
+    if (current !== undefined) {
+      const explain = current.builder.done();
+      skipped += current.builder.skipped;
+      // No fields, or a second block for the same key (the first one stays).
+      if (explain === null || explanations.has(current.key)) skipped += 1;
+      else explanations.set(current.key, explain);
+    }
+    current = undefined;
+  };
+  let fenced = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    if (/^#{1,2}\s/.test(line)) {
+      close();
+      inSection = /^##\s+Spiegazioni delle domande/i.test(line);
+      continue;
+    }
+    if (!inSection) continue;
+    if (/^###\s/.test(line)) {
+      close();
+      const key = plain(line.replace(/^###\s+/, ''));
+      if (/^\S+$/.test(key)) current = { key, builder: new ExplanationBuilder() };
+      else skipped += 1;
+      continue;
+    }
+    if (line.trim() === '') continue;
+    const field = explainField(line);
+    // Prose before the first key introduces the section.
+    if (current === undefined) continue;
+    if (field !== undefined) current.builder.add(field.field, field.text);
+    // An indented line after a field continues that field; any other line is not understood.
+    else if (!(/^\s/.test(line) && current.builder.continueField(plain(line)))) skipped += 1;
+  }
+  close();
+  return { explanations, skipped };
 }
 
 export interface HandoffDoc {
@@ -526,6 +702,7 @@ export function parseHandoff(text: string): HandoffDoc {
       topic: '',
       text: shorten(what, MAX_QUESTION),
       detail: note === '' ? null : shorten(note, MAX_DETAIL),
+      explain: null,
       source: 'HANDOFF.md',
       answer: null,
     });
@@ -612,6 +789,7 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
       topic: proposals.titles.get(question.id) ?? '',
       text: question.text,
       detail: question.detail,
+      explain: question.explain,
       source: 'PROPOSTE.md',
       // Answered in conversation and written in the document: already applied.
       answer: answered?.numbers.has(question.number) === true ? { state: 'done', at: answered.at } : null,
@@ -627,19 +805,28 @@ export function buildProgress(docs: DocTexts, answers: string | undefined): Prog
       topic,
       text: `Confermi ${row.id}: ${topic}?`,
       detail: `Stato in DECISIONS.md: ${row.status}`,
+      explain: null,
       source: 'DECISIONS.md',
       answer: null,
     });
   }
   questions.push(...open.questions, ...handoff.waiting);
 
+  const explained = parseExplanations(docs['OPEN-QUESTIONS.md'] ?? '');
+  count('OPEN-QUESTIONS.md', explained.skipped);
   const latest = new Map<string, AnswerEntry>();
   for (const entry of parseAnswers(answers ?? '')) latest.set(entry.key, entry);
+  // unique() renames a repeated key to key-2, key-3: a block of the section reaches it only under that name.
   const withAnswers = unique(questions).map((question) => {
     const entry = latest.get(question.key);
+    // The lines under the question win over the section of OPEN-QUESTIONS.md.
+    const explain = question.explain ?? explained.explanations.get(question.key) ?? null;
     // An answer sent from the page wins over the section of PROPOSTE.md.
-    return entry === undefined ? question : { ...question, answer: { state: entry.state, at: entry.at } };
+    return { ...question, explain, ...(entry === undefined ? {} : { answer: { state: entry.state, at: entry.at } }) };
   });
+  // An explanation whose question is gone (answered, struck through, its row changed): a line to clean up.
+  const keys = new Set(withAnswers.map((question) => question.key));
+  count('OPEN-QUESTIONS.md', [...explained.explanations.keys()].filter((key) => !keys.has(key)).length);
 
   const counts: Record<ItemState, number> = { done: 0, doing: 0, todo: 0 };
   for (const item of items) counts[item.state] += 1;

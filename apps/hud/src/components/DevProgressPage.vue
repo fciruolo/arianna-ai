@@ -11,9 +11,11 @@ import {
   filterQuestions,
   groupItems,
   groupQuestions,
+  isPicked,
   markAnswered,
   percentDone,
   phases,
+  pickOption,
   phaseText,
   QUESTION_FILTERS,
   skippedText,
@@ -74,7 +76,7 @@ const skipped = computed(() => (progress.value === null ? null : skippedText(pro
 
 const BAR_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent', todo: 'bg-line-strong' };
 const DOT_CLASS: Record<ItemState, string> = { done: 'bg-ok', doing: 'bg-accent shadow-[0_0_6px_var(--accent)]', todo: 'bg-line-strong' };
-const TEXT_CLASS: Record<ItemState, string> = { done: 'text-ok', doing: 'text-accent', todo: 'text-muted' };
+const TEXT_CLASS: Record<ItemState, string> = { done: 'text-ink', doing: 'text-ink', todo: 'text-muted' };
 const KINDS: (ItemKind | 'all')[] = ['all', 'decision', 'task', 'epic', 'idea', 'request'];
 
 async function refresh(): Promise<void> {
@@ -116,6 +118,12 @@ async function send(question: OpenQuestion): Promise<void> {
   } finally {
     sending.value = null;
   }
+}
+
+/** A click on an option writes its label in the answer (D-122); the user can still change it or add to it. */
+function choose(question: OpenQuestion, label: string): void {
+  const labels = question.explain?.options.map((option) => option.label) ?? [];
+  drafts.value = { ...drafts.value, [question.key]: pickOption(drafts.value[question.key] ?? '', labels, label) };
 }
 
 function onKey(event: KeyboardEvent, question: OpenQuestion): void {
@@ -187,7 +195,7 @@ onMounted(refresh);
               role="radio"
               :aria-checked="questionFilter === item.value"
               class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
-              :class="questionFilter === item.value ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink'"
+              :class="questionFilter === item.value ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
               @click="questionFilter = item.value"
             >
               {{ item.text }} <span class="text-muted">{{ questionCounts[item.value] }}</span>
@@ -207,10 +215,41 @@ onMounted(refresh);
           </summary>
           <ul class="flex flex-col gap-3 border-t border-line px-4 py-3">
             <li v-for="question in group.questions" :key="question.key" class="flex flex-col gap-1.5">
-              <p class="text-[14px] leading-snug">{{ question.text }}</p>
-              <p v-if="question.detail !== null" class="text-xs leading-relaxed text-muted">{{ question.detail }}</p>
+              <p class="text-[14px] leading-snug font-medium">{{ question.text }}</p>
+              <template v-if="question.explain !== null">
+                <p v-if="question.explain.context !== null" class="text-[13px] leading-relaxed">
+                  <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">Cosa si decide · </span>{{ question.explain.context }}
+                </p>
+                <div v-if="question.explain.options.length > 0" class="flex flex-col gap-1.5" role="group" :aria-label="`Opzioni per: ${question.text}`">
+                  <button
+                    v-for="(option, index) in question.explain.options"
+                    :key="index"
+                    type="button"
+                    class="flex w-full flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left disabled:cursor-default"
+                    :class="isPicked(drafts[question.key], option.label) ? 'border-accent bg-surface-2' : 'border-line-strong hover:border-muted'"
+                    :aria-pressed="isPicked(drafts[question.key], option.label)"
+                    :disabled="!canAnswer(question)"
+                    :title="canAnswer(question) ? 'Scegli: la risposta si riempie, poi puoi aggiungere qualcosa' : 'Hai già risposto: «Aggiungi qualcosa» per scrivere ancora'"
+                    @click="choose(question, option.label)"
+                  >
+                    <span class="flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink">
+                      {{ option.label }}
+                      <span v-if="option.recommended" class="rounded-full border border-ok px-1.5 font-mono text-[10px] tracking-[0.04em] text-ink">CONSIGLIATA</span>
+                    </span>
+                    <span v-if="option.effect !== ''" class="text-xs leading-relaxed text-muted">{{ option.effect }}</span>
+                  </button>
+                </div>
+                <p v-if="question.explain.example !== null" class="rounded-lg bg-surface-2 px-3 py-2 text-xs leading-relaxed">
+                  <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">Esempio · </span>{{ question.explain.example }}
+                </p>
+                <details v-if="question.detail !== null" class="text-xs text-muted">
+                  <summary class="cursor-pointer select-none">Nota del documento</summary>
+                  <p class="mt-1 leading-relaxed">{{ question.detail }}</p>
+                </details>
+              </template>
+              <p v-else-if="question.detail !== null" class="text-xs leading-relaxed text-muted">{{ question.detail }}</p>
               <p class="font-mono text-[10.5px] text-muted">{{ question.key }} · docs/{{ question.source }}</p>
-              <p v-if="answerStatus(question) !== null" role="status" class="flex flex-wrap items-center gap-2 font-mono text-xs" :class="question.answer?.state === 'new' ? 'text-accent' : 'text-ok'">
+              <p v-if="answerStatus(question) !== null" role="status" class="flex flex-wrap items-center gap-2 font-mono text-xs" :class="question.answer?.state === 'new' ? 'text-info' : 'text-ink'">
                 <Icon name="saved" :size="13" />{{ answerStatus(question) }}
                 <span v-if="unlogged[question.key]" class="text-warn">· salvata, evento non registrato</span>
                 <button
@@ -229,7 +268,7 @@ onMounted(refresh);
                   v-model="drafts[question.key]"
                   rows="2"
                   :maxlength="maxAnswer"
-                  placeholder="La tua risposta…"
+                  :placeholder="question.explain !== null && question.explain.options.length > 0 ? 'Scegli un’opzione sopra o scrivi la tua risposta…' : 'La tua risposta…'"
                   class="block min-h-[56px] w-full resize-y rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm leading-relaxed text-ink outline-none placeholder:text-muted"
                   @keydown="onKey($event, question)"
                 />
@@ -262,7 +301,7 @@ onMounted(refresh);
               role="radio"
               :aria-checked="stateFilter === state"
               class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
-              :class="stateFilter === state ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink'"
+              :class="stateFilter === state ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
               @click="stateFilter = state"
             >
               {{ state === 'all' ? 'Tutte' : STATE_TEXT[state] }} <span class="text-muted">{{ stateCounts[state] }}</span>
