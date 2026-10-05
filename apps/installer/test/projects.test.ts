@@ -19,10 +19,21 @@ after(() => {
   rmSync(USER, { recursive: true, force: true });
 });
 
+/**
+ * Git without the user's configuration and without the GIT_* variables of a
+ * pre-commit hook: with GIT_DIR inherited, `git init` would initialize the
+ * repository being committed (in a worktree it writes core.bare = true in
+ * the shared configuration) instead of the test folder.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+}
+
 function repo(name: string): string {
   const dir = join(USER, 'Projects', name);
   mkdirSync(dir, { recursive: true });
-  execFileSync('git', ['init', '--quiet', dir], { env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
+  execFileSync('git', ['init', '--quiet', dir], { env: gitEnv() });
   return dir;
 }
 
@@ -48,7 +59,7 @@ test('folderProblem: a real folder at the top of a git repository is fine; missi
 test('folderProblem: the folder of Arianna, folders around it, and inside it anything but repos/<name>', () => {
   mkdirSync(join(HOME, 'repos', 'demo'), { recursive: true });
   mkdirSync(join(HOME, 'data'), { recursive: true });
-  execFileSync('git', ['init', '--quiet', join(HOME, 'repos', 'demo')], { env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
+  execFileSync('git', ['init', '--quiet', join(HOME, 'repos', 'demo')], { env: gitEnv() });
   assert.equal(folderProblem(join(HOME, 'repos', 'demo'), HOME, 'demo'), undefined);
   assert.match(folderProblem(join(HOME, 'repos', 'demo'), HOME, 'other') ?? '', /dentro Arianna/);
   assert.match(folderProblem(join(HOME, 'data'), HOME, 'data') ?? '', /dentro Arianna/);
