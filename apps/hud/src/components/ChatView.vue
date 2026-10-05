@@ -7,6 +7,8 @@ import { canSaveToInbox } from '../lib/capture.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
+import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
+import { longMessageStep } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
@@ -81,8 +83,17 @@ function onModel(event: Event): void {
 
 /** In a work system chat the selector chooses who answers, not the Coder's model. */
 const answersDirect = computed(() => props.conversation.origin === 'system' && props.conversation.mode === 'work');
+/** The direct chat with the Coder (D-111): it answers in place of Arianna, always on Claude. */
+const coder = computed(() => props.conversation.agent === 'coder');
+const coderPose = computed<Pose>(() => participantPose('coder', props.status?.agents));
+const meter = computed(() => contextMeter(props.conversation.contextTokens));
+const meterClass = { ok: 'bg-accent', warn: 'bg-warn', full: 'bg-danger' } as const;
 const selectable = computed(() =>
-  answersDirect.value ? props.models.filter((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model)) : props.models,
+  answersDirect.value
+    ? props.models.filter((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model))
+    : coder.value
+      ? props.models.filter((entry) => entry.executor === 'claude')
+      : props.models,
 );
 const selectorName = computed(() => (answersDirect.value ? 'Chi risponde in questa chat' : 'Modello per i passi delegati'));
 const autoText = computed(() => (answersDirect.value ? 'Arianna (locale)' : 'automatico (router)'));
@@ -106,7 +117,12 @@ const offModel = computed(() => {
 /** The selector's value: in a system chat, what actually answers, or the model turned off. */
 const selected = computed(() => (answersDirect.value ? (directModel.value ?? offModel.value ?? AUTO) : (props.conversation.model ?? AUTO)));
 /** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
-const answerModel = computed(() => (directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value)));
+const answerModel = computed(() => {
+  if (coder.value) return props.conversation.model === null ? 'Claude (router)' : (MODEL_TEXT[props.conversation.model] ?? props.conversation.model);
+  return directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value);
+});
+/** A long message of the direct chat waits for "Invia comunque" (D-111, risposta 5). */
+const confirmLong = ref(false);
 
 // D-099: the messages of this conversation already saved in kb/inbox ("Salvato" after a reload).
 const saved = ref<SavedNotes>(new Map());
@@ -217,7 +233,14 @@ function choose(command: ChatCommand, how: 'enter' | 'tab'): void {
   else run(command);
 }
 
-function submit(): void {
+// A changed text, or another conversation, asks again when it is still long.
+watch([draft, () => props.chat.conversationId], () => {
+  confirmLong.value = false;
+});
+const confirmButton = ref<HTMLButtonElement | null>(null);
+
+/** `confirmed`: only from "Invia comunque" (D-111). */
+function submit(confirmed = false): void {
   const body = draft.value;
   if (body.trim() === '' || props.sending) return;
   commandHint.value = null;
@@ -226,6 +249,14 @@ function submit(): void {
     run(meaning.command);
     return;
   }
+  const step = longMessageStep(props.conversation.agent, body, meaning.kind === 'message', { asking: confirmLong.value, confirmed });
+  if (step === 'wait') return;
+  if (step === 'ask') {
+    confirmLong.value = true;
+    void nextTick(() => confirmButton.value?.focus());
+    return;
+  }
+  confirmLong.value = false;
   emit('send', body);
   // An unknown command is not sent (D-080): the draft stays, to be corrected.
   if (meaning.kind === 'error') return;
@@ -256,7 +287,8 @@ function onKey(event: KeyboardEvent): void {
   }
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
-    submit();
+    // A held key never sends again.
+    if (!event.repeat) submit();
   }
 }
 
@@ -347,26 +379,46 @@ onBeforeUnmount(() => clearInterval(clock));
               </g>
               <circle cx="37" cy="37" r="28" fill="none" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
             </svg>
-            <PixelAgent :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble label="Arianna" />
+            <PixelAgent v-if="coder" :choice="characters?.coder" :pose="coderPose" :scale="2" bubble label="Coder" />
+            <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble label="Arianna" />
           </div>
           <div class="min-w-0">
-            <h2 class="font-hud text-lg leading-tight font-semibold tracking-[0.05em]">Arianna</h2>
+            <h2 class="flex flex-wrap items-center gap-2 font-hud text-lg leading-tight font-semibold tracking-[0.05em]">
+              {{ coder ? 'Coder' : 'Arianna' }}
+              <span
+                v-if="coder"
+                class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-l1"
+                title="Ogni messaggio va così com'è a Claude (Anthropic): Arianna non lo filtra."
+              ><Icon name="coder" :size="11" />va a Claude</span>
+            </h2>
             <p class="mt-1 flex items-center gap-2 text-[12.5px] text-muted">
-              <span v-if="arianna.pose === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
+              <span v-if="(coder ? coderPose : arianna.pose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
                 <i v-for="dot in 3" :key="dot" class="animate-hud-bob size-[5px] rounded-full bg-accent" :style="{ animationDelay: `${String((dot - 1) * 0.15)}s` }" />
               </span>
-              {{ POSE_TEXT[arianna.pose] }}
+              {{ POSE_TEXT[coder ? coderPose : arianna.pose] }}
             </p>
-            <p class="mt-1 text-xs text-muted sm:hidden">{{ MODE_HINT[conversation.mode] }}</p>
+            <p class="mt-1 text-xs text-muted sm:hidden">{{ coder ? 'Senza Arianna: parli con Claude Code sul progetto.' : MODE_HINT[conversation.mode] }}</p>
+            <div v-if="coder" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
+              <span>CONTESTO</span>
+              <span
+                class="relative h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"
+                role="meter"
+                :aria-valuenow="meter.percent"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-label="contextTitle(meter)"
+              ><span class="absolute inset-y-0 left-0 rounded-full" :class="meterClass[meter.level]" :style="{ width: `${String(meter.percent)}%` }" /></span>
+              <b class="font-medium text-ink">{{ meter.text }}</b>
+            </div>
           </div>
           <div class="ml-auto hidden text-right font-mono text-[10.5px] leading-[1.7] text-muted sm:block">
             <div>
-              CONVERSAZIONE <b class="font-medium text-ink">{{ MODE_TEXT[conversation.mode].toLowerCase() }}<template v-if="conversation.workspace"> · {{ conversation.workspace.split('/').at(-1) }}</template></b>
+              CONVERSAZIONE <b class="font-medium text-ink">{{ coder ? 'con il coder' : MODE_TEXT[conversation.mode].toLowerCase() }}<template v-if="conversation.workspace"> · {{ conversation.workspace.split('/').at(-1) }}</template></b>
             </div>
             <div>MODELLO <b class="font-medium" :class="answerModel === 'locale' ? 'text-ink' : 'text-l1'">{{ answerModel }}</b></div>
             <div v-if="conversation.mode === 'work'">
               <label class="inline-flex items-center gap-1">
-                {{ answersDirect ? 'RISPONDE →' : 'CODER →' }}
+                {{ answersDirect ? 'RISPONDE →' : coder ? 'MODELLO →' : 'CODER →' }}
                 <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[10.5px]" :aria-label="selectorName" @change="onModel">
                   <option :value="AUTO">{{ autoText }}</option>
                   <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
@@ -402,7 +454,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <!-- The model selector on small screens -->
         <label v-if="conversation.mode === 'work'" class="flex items-center gap-2 text-xs text-muted sm:hidden">
-          {{ answersDirect ? 'Risponde' : 'Coder su' }}
+          {{ answersDirect ? 'Risponde' : coder ? 'Modello' : 'Coder su' }}
           <select :value="selected" class="field px-2 py-1 text-xs" :aria-label="selectorName" @change="onModel">
             <option :value="AUTO">{{ autoText }}</option>
             <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
@@ -617,7 +669,7 @@ onBeforeUnmount(() => clearInterval(clock));
         </div>
         <form
           class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
-          @submit.prevent="submit"
+          @submit.prevent="submit()"
         >
           <label for="composer" class="sr-only">Messaggio</label>
           <textarea
@@ -626,7 +678,7 @@ onBeforeUnmount(() => clearInterval(clock));
             v-model="draft"
             rows="1"
             maxlength="16000"
-            placeholder="Scrivi ad Arianna… (/ per i comandi)"
+            :placeholder="coder ? 'Scrivi al Coder… (/ per i comandi)' : 'Scrivi ad Arianna… (/ per i comandi)'"
             class="max-h-48 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 text-ink outline-none placeholder:text-muted focus-visible:outline-none"
             role="combobox"
             aria-multiline="true"
@@ -647,10 +699,17 @@ onBeforeUnmount(() => clearInterval(clock));
           </button>
         </form>
       </div>
+      <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+        <span class="min-w-0 flex-1">
+          Va davvero a Claude? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
+        </span>
+        <button ref="confirmButton" type="button" class="btn px-2.5 py-1 text-xs" @click="submit(true)">Invia comunque</button>
+        <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
+      </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (L2), senza Arianna</span>
-        <span>Etichetta <b class="font-medium" :class="labelClass[conversation.clearance]">{{ conversation.clearance }}</b>: {{ MODE_HINT[conversation.mode] }}</span>
+        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (L2), {{ coder ? 'senza il Coder' : 'senza Arianna' }}</span>
+        <span>Etichetta <b class="font-medium" :class="labelClass[conversation.clearance]">{{ conversation.clearance }}</b>: {{ coder ? 'fino a L1, ogni messaggio va così com\'è a Claude, senza Arianna. Niente dati privati.' : MODE_HINT[conversation.mode] }}</span>
       </p>
     </div>
   </section>

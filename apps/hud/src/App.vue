@@ -26,7 +26,7 @@ import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
-import { draftFromAddress, draftPath, draftProjectProblem } from './lib/draft.ts';
+import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
@@ -184,11 +184,11 @@ function focusComposer(): void {
   window.setTimeout(look, 0);
 }
 /** "Nuovo" and "/nuova" (D-108): a draft only in the page; the conversation is created with the first message. */
-function openDraft(mode: 'work' | 'private', project?: string, replace = false): void {
+function openDraft(choice: DraftChoice, replace = false): void {
   showSidebar.value = false;
   page.value = 'chat';
-  store.openDraft(mode, project);
-  const path = draftPath(mode, project);
+  store.openDraft(choice);
+  const path = draftPath(choice);
   if (`${window.location.pathname}${window.location.search}` !== path) {
     if (replace) window.history.replaceState(null, '', path);
     // A conversation born from a draft takes the place of the draft in the history: "back" does not reopen an empty draft.
@@ -353,7 +353,9 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): 
       error.value = 'Il progetto di questa conversazione non è più fra quelli approvati: apri la nuova conversazione dal pulsante e scegli il progetto.';
       return;
     }
-    openDraft(conversation.mode, conversation.mode === 'work' ? project : undefined);
+    openDraft(
+      conversation.mode === 'work' ? { mode: 'work', project, ...(conversation.agent !== null && project !== undefined ? { agent: conversation.agent } : {}) } : { mode: conversation.mode },
+    );
     return;
   }
   if (action.page === 'thoughts') openThoughts();
@@ -415,8 +417,8 @@ function followAddress(): void {
   const asked = draftFromAddress(window.location.pathname, window.location.search);
   if (asked !== undefined) {
     // From the address: the same entry of the history, written in its normal form (`/nuova` → `/nuova?tipo=privata`).
-    if (draft.value === null || draft.value.mode !== asked.mode || draft.value.project !== asked.project) openDraft(asked.mode, asked.project, true);
-    else if (`${window.location.pathname}${window.location.search}` !== draftPath(asked.mode, asked.project)) window.history.replaceState(null, '', draftPath(asked.mode, asked.project));
+    if (draft.value === null || !sameChoice(draft.value, asked)) openDraft(asked, true);
+    else if (`${window.location.pathname}${window.location.search}` !== draftPath(asked)) window.history.replaceState(null, '', draftPath(asked));
     return;
   }
   const id = conversationFromPath(window.location.pathname);
@@ -697,7 +699,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :characters="characters"
         :signals="officeSignals"
         @open="openConversation"
-        @draft="(mode, project) => openDraft(mode, project)"
+        @draft="(mode, project) => openDraft({ mode, project })"
       />
       <DraftChat
         v-else-if="draft !== null"
@@ -707,6 +709,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :sending="sending"
         :send="store.sendDraft"
         :arianna="characters?.agents.arianna"
+        :coder="characters?.agents.coder"
       />
       <ChatView
         v-else-if="chat !== null && current !== undefined"

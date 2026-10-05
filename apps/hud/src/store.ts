@@ -6,7 +6,7 @@ import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
-import { draftStep, firstMessageProblem, type Draft } from './lib/draft.ts';
+import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
@@ -432,10 +432,12 @@ export function createChatStore() {
   }
 
   /** "Nuovo" (D-108): a draft only in the page; the core creates the conversation with the first message. */
-  function openDraft(mode: ConversationMode, project?: string): void {
+  function openDraft(choice: DraftChoice): void {
     close();
     draftKey += 1;
-    draft.value = { key: draftKey, mode, project, conversationId: null };
+    // The Coder only with a project (D-111): without one the draft is a plain conversation of its mode.
+    const agent = choiceAgent(choice);
+    draft.value = { key: draftKey, mode: choice.mode, project: choice.project, ...(agent === undefined ? {} : { agent }), conversationId: null };
   }
 
   /**
@@ -447,7 +449,7 @@ export function createChatStore() {
     const start = draft.value;
     if (start === null || sending.value) return false;
     error.value = null;
-    const problem = firstMessageProblem(body, goesToArianna);
+    const problem = firstMessageProblem(body, goesToArianna, start.agent);
     if (problem !== undefined) {
       error.value = problem;
       return false;
@@ -458,7 +460,7 @@ export function createChatStore() {
       let created: Conversation | undefined;
       let id: string;
       if (step.kind === 'create') {
-        created = await api.createConversation(start.mode, start.project);
+        created = await api.createConversation(start.mode, start.project, start.agent);
         id = created.id;
         // The user left the draft while it was created: nothing is sent, the text stays where it was written.
         if (draft.value?.key !== start.key) return false;
@@ -738,6 +740,8 @@ export function createChatStore() {
         if (event.kind.startsWith('task.') && known && event.taskId !== null) work.push(refreshTask(event.taskId));
         // A task that settles has saved its last activity lines: "Mostra i passi (N)" follows (D-083).
         if (event.kind === 'task.status' && known) work.push(refreshActivityCounts());
+        // The direct chat (D-111): the context of the Coder's session is saved after its answer, the indicator follows.
+        if (event.kind === 'task.status' && known && current.value?.agent === 'coder') work.push(refreshConversations());
         // The source task of the open system chat: its "Riprova" follows the task's status.
         if (event.kind.startsWith('task.') && event.taskId !== null && event.taskId === current.value?.sourceTaskId) work.push(refreshConversations());
     }

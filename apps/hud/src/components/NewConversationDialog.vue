@@ -2,19 +2,20 @@
 import { ref } from 'vue';
 
 import { useModal } from '../lib/modal.ts';
-import type { ConversationMode, ProjectInfo } from '../lib/types.ts';
+import type { DraftChoice } from '../lib/draft.ts';
+import type { ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import NewConversation from './NewConversation.vue';
 
-/** "+ Nuovo" of the left bar (D-097): private or work, and the project of a work conversation. */
+/** "+ Nuovo" of the left bar (D-097): private, work or with the Coder (D-111), and the project. */
 defineProps<{ projects: ProjectInfo[] }>();
-const emit = defineEmits<{ close: []; create: [mode: ConversationMode, project?: string]; refresh: [] }>();
+const emit = defineEmits<{ close: []; create: [choice: DraftChoice]; refresh: [] }>();
 
 const dialog = ref<HTMLElement | null>(null);
 useModal(dialog, () => emit('close'));
 
-function create(mode: ConversationMode, project?: string): void {
-  emit('create', mode, project);
+function create(choice: DraftChoice): void {
+  emit('create', choice);
   emit('close');
 }
 </script>
