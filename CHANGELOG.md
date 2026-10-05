@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.10.0] - 2026-10-05
+
+### Cambiato
+- Nell'ufficio Arianna siede all'isola del progetto della conversazione di lavoro su cui lavora (all'archivio senza isola), resta in Privata nelle conversazioni private e, da libera o in attesa, va avanti e indietro fra Privata e la zona relax (D-124).
+- Sulla stessa isola del Coder Arianna siede alla sedia accanto (D-124).
+
 ## [0.9.1] - 2026-10-05
 
 ### Cambiato

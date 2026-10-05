@@ -1619,11 +1619,7 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
    - Opzione consigliata: Motore nostro (B) — D-011 sostituita in parte; nessuna dipendenza nuova, stesso codice Vue della chat, l'avatar che cammina e parla si scrive insieme al resto; resta vero che l'ufficio è una vista dentro la chat.
    - Opzione: pixel-agents incorporato (A) — D-011 com'è; si riusano motore ed editor, ma servono React, un secondo server e un fork dell'interfaccia per avere l'avatar (8-12 ore in più).
    - Esempio: Con B l'ufficio usa gli stessi colori del tema, gli stessi personaggi e mostra solo nome e stato ("Coder · legge"); con A sarebbe una pagina diversa in un riquadro, con un'altra grafica.
-5. **Arianna:** resta alla scrivania "Privata" o siede all'isola della conversazione che sta orchestrando (punto 5)?
-   - Contesto: Arianna orchestra le conversazioni. Si decide se nell'ufficio resta sempre alla sua scrivania "Privata" o si sposta all'isola della conversazione che sta seguendo.
-   - Opzione consigliata: Siede all'isola della conversazione — vedi a colpo d'occhio su quale progetto sta lavorando; quando ha finito resta dove ha lavorato per ultimo.
-   - Opzione: Resta sempre alla scrivania "Privata" — più semplice da trovare, ma non dice su cosa sta lavorando.
-   - Esempio: Chiedi ad Arianna di coordinare il Coder sul progetto "repos/demo"; lei si alza e siede all'isola "repos/demo" accanto al Coder.
+5. **Arianna:** chiusa da D-124 (siede all'isola del progetto su cui lavora; da libera vaga fra Privata e la zona relax).
 6. **Agenti liberi:** restano seduti o passeggiano come in pixel-agents?
    - Contesto: Quando un agente non ha lavoro, può restare seduto o passeggiare per l'ufficio come fanno i personaggi di pixel-agents. È una scelta di gusto: il documento non raccomanda, l'opzione più semplice è restare seduti.
    - Opzione consigliata: Restano seduti — l'ufficio è calmo, distrae meno e consuma meno.
