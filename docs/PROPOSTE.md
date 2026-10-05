@@ -2478,3 +2478,40 @@ Pagina "Nuovo agente" "migliore e più ampia". Restano il tetto L1/A1 delle sche
 - Open Design: che i CLI siano lanciati "senza sandbox oltre la cartella di lavoro" viene dal riassunto del README; non è stato letto il codice di spawn.
 - Che gli eventi `stream-json` di `claude -p` contengano l'uscita dei comandi `Bash` in forma utilizzabile per la tappa 1 di D-095: da verificare sul binario installato prima di scrivere il codice.
 - Il CLI `container` di Apple non è installato: requisiti e stato da verificare quando si arriva alla tappa 3.
+
+## Idee dell'utente del 2026-10-05 sera, ordinate
+
+Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipendenza e dimensione, con la proposta di Claude per ciascuna. Le domande aperte sono in fondo e vanno chieste con le domande a opzioni.
+
+| # | Idea | Tipo | Stima | Dipende da | Stato |
+| --- | --- | --- | --- | --- | --- |
+| I-2 | I pulsanti "Copia" e "Salva in inbox" spostano lo stato del messaggio | difetto | fatto | — | ramo `task/fix-azioni-messaggio`, da far vedere all'utente |
+| I-1 | Notifica quando una chat risponde, anche se non è aperta | funzione | 4-6 h | Web Push di D-066 | da decidere (domanda N1) |
+| I-4 | Modalità incognita: una conversazione che non salva niente | funzione di privacy | 8-12 h | decisione D- | da decidere (domande N2, N3) |
+| I-3 | Migliorare la gestione dei modelli | da chiarire | — | — | da chiarire con l'utente (domanda N4) |
+| I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |
+| I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
+
+### I-1, notifiche delle risposte
+
+- Due livelli: con la chat aperta in un'altra scheda, notifica del browser (`Notification`) quando arriva la risposta di un task; con la chat chiusa, Web Push come per le chiamate (D-066: chiavi VAPID, iscrizione già presente nella pagina della voce).
+- **Privacy:** la notifica non porta mai il testo né il titolo della conversazione (possono essere L2), solo "Arianna ha risposto" e un link alla conversazione; Telegram resta com'è (già riceve i messaggi finali con le sue regole).
+- Impostazione per tipo: risposte, approvazioni in attesa, lavori falliti; ore di silenzio.
+
+### I-4, modalità incognita
+
+- Una conversazione "incognita" vive solo in memoria (core e pagina): nessuna riga in `messages`, nessun task salvato, niente riassunti, niente note in `kb/inbox`, niente memoria, niente log con contenuto; chiusa la scheda o riavviato il core, sparisce.
+- Resta il registro di sicurezza: un evento L0 "sessione incognita aperta/chiusa" senza contenuto (la catena degli eventi non si interrompe), e il `gateway_log` delle uscite verso il cloud senza testi, se il cloud è ammesso.
+- Da decidere: se l'incognito può usare il cloud (un testo L1 che esce lascia traccia presso il fornitore, quindi "non salva niente da nessuna parte" vale davvero solo in locale) e se gli agenti e gli strumenti (KB, deleghe) sono ammessi.
+
+### I-3, gestione dei modelli
+
+Oggi i modelli stanno in più posti: catalogo `config/models.catalog.yaml`, ruoli nel wizard e in Impostazioni → Modelli locali, `pnpm arianna:models`, prove dei modelli (D-081), oMLX avviato dal core (D-071), modelli cloud (`[cloud.models]`). Proposta: una pagina "Modelli" sola, con l'elenco dei modelli presenti e scaricabili (peso, RAM, ruoli), scarico e verifica dalla pagina, risultati delle prove accanto a ogni modello, memoria usata da oMLX e "scarica dalla memoria". Prima va chiesto all'utente cosa gli dà fastidio oggi.
+
+### I-5, GOD
+
+L'utente vuole capire prima di tutto **se è possibile e se conviene** sviluppare Arianna da dentro Arianna (D-120), con un agente dedicato "GOD": chat sua sopra "Pensieri", un ufficio suo nell'ufficio pixel, personaggio pixel art, modello scelto di volta in volta, sempre sotto controllo; davanti un instradatore (Claude Code o Codex) che capisce la richiesta, la divide ("uno e trino") e lancia più Claude Code/Codex in parallelo; pulizia del contesto, perché dopo due ore di sviluppo una chat brucia il contesto in un messaggio; spunti da ciò che esiste online, "una cosa enterprise". Una ricerca sui sistemi esistenti è in corso; la proposta arriva con le sue domande. Lezione già imparata il 2026-10-05: più worktree in parallelo che lanciano `docker compose` con lo stesso nome di progetto ricreano il database principale su una cartella vuota (i dati non si perdono, ma il core resta su un database vuoto): GOD deve isolare anche i servizi, non solo il codice.
+
+### I-6, chat dal registro delle versioni
+
+Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre una chat con il contesto caricato: testo della voce, decisione D-NNN, commit e file toccati (L0/L1, è codice di Arianna). Dipende da I-5.
