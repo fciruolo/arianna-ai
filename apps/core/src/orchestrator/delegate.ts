@@ -2,6 +2,7 @@ import type { LoadedAgent, ToolId } from '@arianna/agents';
 import { projectNamed, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
+  fileFingerprints,
   CLAUDE_MODELS,
   gitConfigFingerprint,
   openRepository,
@@ -295,6 +296,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const { repo } = folder;
   const before = new Set(workspace.dirty ?? []);
   const path = workspace.path ?? '';
+  // The files the user had already changed: the ones the run changes again are told too (D-117).
+  const dirtyPrints = await fileFingerprints(path, [...before]).catch(() => new Map<string, string>());
   // Taken before the run: a run that rewrote .git/config, hooks or .gitattributes is caught after it.
   const fingerprint = await gitConfigFingerprint(path);
   // Tool configuration (.claude/, .envrc, .vscode/...), ignored by git or not: what changed is told to the user.
@@ -339,7 +342,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       // The commit the changes are against (D-117): the chat diffs each file from it later.
       const head = await repositoryHead(path).catch(() => undefined);
       const after = await repositoryChanges(path).catch(() => undefined);
-      const changed = (after ?? []).filter((item) => !before.has(item.path));
+      const again = await fileFingerprints(path, [...before]).catch(() => new Map<string, string>());
+      const changed = (after ?? []).filter((item) => !before.has(item.path) || dirtyPrints.get(item.path) !== again.get(item.path));
       // Saved before the report (D-082): the chat lists them under it as soon as it appears.
       if (after !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed), ...(typeof head === 'string' ? { baseCommit: head } : {}) });
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;

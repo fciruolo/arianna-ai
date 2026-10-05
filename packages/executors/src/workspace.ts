@@ -563,6 +563,35 @@ export async function toolConfigFiles(path: string): Promise<Map<string, string>
   return files;
 }
 
+/**
+ * A fingerprint for each of `paths` in the folder (D-117): sha256 of a
+ * regular file, the target of a link, `missing` or `other`. Taken on the
+ * files the user had already changed before a run, and again after it, to
+ * tell which of them the run changed once more. Read straight from the
+ * folder, never through git; a path out of the folder is `other`.
+ */
+export async function fileFingerprints(path: string, paths: readonly string[]): Promise<Map<string, string>> {
+  const prints = new Map<string, string>();
+  for (const rel of paths) {
+    if (!safeTreePath(rel)) {
+      prints.set(rel, 'other');
+      continue;
+    }
+    const absolute = join(path, ...rel.split('/'));
+    let stats;
+    try {
+      stats = await lstat(absolute);
+    } catch {
+      prints.set(rel, 'missing');
+      continue;
+    }
+    if (stats.isSymbolicLink()) prints.set(rel, `link:${await readlink(absolute)}`);
+    else if (stats.isFile()) prints.set(rel, createHash('sha256').update(await readFile(absolute)).digest('hex'));
+    else prints.set(rel, 'other');
+  }
+  return prints;
+}
+
 /** The paths whose tool configuration differs between two `toolConfigFiles`. */
 export function changedToolConfig(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): string[] {
   const paths = new Set([...before.keys(), ...after.keys()]);

@@ -9,6 +9,7 @@ import { after, describe, it } from 'node:test';
 import { resolveHome } from '@arianna/config';
 import {
   committedFiles,
+  fileFingerprints,
   gitConfigFingerprint,
   openRepository,
   prepareEmptyWorkspace,
@@ -422,6 +423,17 @@ describe('openRepository (D-056)', () => {
     await assert.rejects(committedFiles(dir, '--output=x', ['a.ts'], 32), WorkspaceError);
     // An unknown commit is an error of git, not a missing file.
     await assert.rejects(committedFiles(dir, '0'.repeat(40), ['a.ts'], 32));
+  });
+
+  it('fileFingerprints tells a file changed again from one left as it was (D-117)', async () => {
+    const repo = makeRepo('inplace-prints', { 'a.ts': 'x\n', 'b.ts': 'y\n' }, { 'l.ts': 'a.ts' });
+    const dir = join(HOME, repo);
+    const before = await fileFingerprints(dir, ['a.ts', 'b.ts', 'l.ts', 'gone.ts', 'a/../b.ts']);
+    assert.deepEqual([before.get('gone.ts'), before.get('l.ts'), before.get('a/../b.ts')], ['missing', 'link:a.ts', 'other']);
+    write(dir, { 'a.ts': 'changed\n' });
+    const after = await fileFingerprints(dir, ['a.ts', 'b.ts']);
+    assert.notEqual(after.get('a.ts'), before.get('a.ts'));
+    assert.equal(after.get('b.ts'), before.get('b.ts'));
   });
 
   it('repositoryHead is null without commits, and refuses a subfolder', async () => {
