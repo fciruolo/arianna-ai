@@ -21,6 +21,13 @@ export interface VoiceValues {
   push: { publicKey: string; subject: string } | null;
 }
 
+export interface NotificationsValues {
+  replies: boolean;
+  approvals: boolean;
+  failures: boolean;
+  quiet: string | null;
+}
+
 export interface ProjectValues {
   name: string;
   path: string;
@@ -45,6 +52,8 @@ export interface SettingsValues {
   /** The model that draws a character (D-123): `[sprites] model`, sonnet when absent. */
   sprites: 'sonnet' | 'opus' | 'local';
   voice: VoiceValues | null;
+  /** `[notifications]` (I-1); `quiet` "HH:MM-HH:MM" or null. */
+  notifications: NotificationsValues;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectValues[];
@@ -107,7 +116,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'notifications';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -141,6 +150,7 @@ export const SECTION_TEXT: Record<string, string> = {
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
   voice: 'Voce',
+  notifications: 'Notifiche',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
   projects: 'Progetti',
@@ -263,6 +273,44 @@ export function voiceForm(voice: VoiceValues | null, defaults: VoiceValues): Voi
 export function voiceBody(form: VoiceForm): VoiceValues | null {
   if (!form.enabled) return null;
   return { ...copy(form.values), push: form.push ? { publicKey: form.publicKey.trim(), subject: form.subject.trim() } : null };
+}
+
+/** The Notifiche card (I-1): the three kinds and the quiet hours as two times. */
+export interface NotificationsForm {
+  replies: boolean;
+  approvals: boolean;
+  failures: boolean;
+  quiet: boolean;
+  quietFrom: string;
+  quietTo: string;
+}
+
+const DEFAULT_QUIET = { from: '22:00', to: '07:00' };
+const QUIET = /^(\d{2}:\d{2})-(\d{2}:\d{2})$/;
+
+export function notificationsForm(values: NotificationsValues): NotificationsForm {
+  const match = values.quiet === null ? null : QUIET.exec(values.quiet);
+  return {
+    replies: values.replies,
+    approvals: values.approvals,
+    failures: values.failures,
+    quiet: match !== null,
+    quietFrom: match?.[1] ?? DEFAULT_QUIET.from,
+    quietTo: match?.[2] ?? DEFAULT_QUIET.to,
+  };
+}
+
+export function notificationsBody(form: NotificationsForm): NotificationsValues {
+  return { replies: form.replies, approvals: form.approvals, failures: form.failures, quiet: form.quiet ? `${form.quietFrom}-${form.quietTo}` : null };
+}
+
+/** Why the Notifiche card cannot be saved: quiet hours without two different times. */
+export function notificationsProblem(form: NotificationsForm): string | undefined {
+  if (!form.quiet) return undefined;
+  const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!clock.test(form.quietFrom) || !clock.test(form.quietTo)) return 'Scrivi le due ore del silenzio.';
+  if (form.quietFrom === form.quietTo) return 'Le ore di silenzio devono iniziare e finire a ore diverse.';
+  return undefined;
 }
 
 export interface TelegramForm {

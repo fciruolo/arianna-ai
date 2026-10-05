@@ -12,6 +12,7 @@ import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { permissionNow, shouldShow, showNotice } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
@@ -646,7 +647,14 @@ export function createChatStore() {
 
   function onLive(message: ServerMessage): void {
     if (message.type === 'ready') {
+      connection?.sendVisibility(pageInView());
       void refreshAll().catch(fail);
+      return;
+    }
+    if (message.type === 'notice') {
+      // I-1: a fixed sentence and the link, only when the user is not looking at it already.
+      const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
+      if (shouldShow(message.conversationId, view)) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
       return;
     }
     if (message.type === 'delta') {
@@ -744,7 +752,21 @@ export function createChatStore() {
     void Promise.all(work).catch(fail);
   }
 
+  /** The page is in view (I-1): the core pushes nothing while one is. */
+  function pageInView(): boolean {
+    return document.visibilityState === 'visible';
+  }
+
+  /** A click on a notice of this page: the address changes and App.vue follows it as after Back. */
+  function followLink(path: string): void {
+    if (window.location.pathname !== path) window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   function start(): void {
+    document.addEventListener('visibilitychange', () => {
+      connection?.sendVisibility(pageInView());
+    });
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);
@@ -771,6 +793,9 @@ export function createChatStore() {
           onerror: null,
           close: () => {
             ws.close();
+          },
+          send: (data) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(data);
           },
         };
         ws.onmessage = (event: MessageEvent) => socket.onmessage?.({ data: event.data });

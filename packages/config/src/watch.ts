@@ -26,7 +26,7 @@ export interface ConfigChange {
   /**
    * Applied: `current()` returns the new values (`roles`, `local.models`,
    * `local.endpoints`, `cloud.executors`, `cloud.models`, `projects`,
-   * `telegram`, `voice`, `characters`, `personas`).
+   * `telegram`, `voice`, `characters`, `personas`, `notifications`).
    */
   applied: string[];
   /**
@@ -85,6 +85,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('agents') ? ['agents'] : []),
       ...(changed('personas') ? ['personas'] : []),
       ...(changed('sprites') ? ['sprites'] : []),
+      ...(changed('notifications') ? ['notifications'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),

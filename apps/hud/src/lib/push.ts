@@ -4,7 +4,8 @@ import { loadPushKey, subscribePush } from './api.ts';
  * Web Push for the calls of Arianna (D-066): the browser asks its push
  * service (Apple, Google, Mozilla) for an address and gives it to the core.
  * The notification carries no content; the service worker (public/sw.js)
- * always writes "Arianna ti chiama".
+ * asks the core what it was about (a call, a reply, an approval, a failed
+ * task, I-1) and writes a fixed sentence.
  */
 export type PushState = 'off' | 'unsupported' | 'denied' | 'available' | 'on';
 

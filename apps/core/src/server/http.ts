@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import type { NewUserAgent } from '@arianna/agents';
 import type { CharacterChoices, Project } from '@arianna/config';
@@ -55,6 +55,7 @@ import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
 import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
+import type { Notice, NoticeBoard, NoticeKind } from '../notifications.ts';
 import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
 import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
@@ -99,6 +100,8 @@ export interface ApiServerOptions {
   calls?: Calls;
   /** Web Push for the calls of Arianna (D-066), read at each request: undefined without [voice.push]. */
   pusher?: () => Pusher | undefined;
+  /** The last notice pushed (I-1), which the service worker asks for: kind and conversation only. */
+  notices?: NoticeBoard;
   /** The settings page (D-071): arianna.toml read and written with its fingerprint. */
   settings?: SettingsPage;
   /** The local servers the core watches (D-071): state, restart, end of the log. */
@@ -164,6 +167,10 @@ export interface ApiServer {
   readonly port: number;
   /** Pages holding the live feed now: with none, a call of Arianna rings by Web Push (D-066). */
   clients(): number;
+  /** Pages that said they are in view (I-1): with none, a notice goes by Web Push. */
+  visiblePages(): number;
+  /** A notice (I-1) to every open page: a kind and a conversation id, never text. */
+  broadcast(notice: Notice & { kind: NoticeKind }): void;
   close(): Promise<void>;
 }
 
@@ -1273,6 +1280,21 @@ function participantRoutes(sql: Sql, agentOf: NonNullable<ApiServerOptions['part
   ];
 }
 
+/** `{"type":"visibility","visible":true|false}`, the only frame a page may send; undefined for anything else. */
+export function visibilityOf(frame: string): boolean | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(frame);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
+  const { type, visible } = value as { type?: unknown; visible?: unknown };
+  if (keys.length !== 2 || type !== 'visibility' || typeof visible !== 'boolean') return undefined;
+  return visible;
+}
+
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
   const table = routes(sql, {
@@ -1293,11 +1315,15 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     onError: options.onError ?? (() => undefined),
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
+  // The service worker asks what an empty push was about (I-1); null when nothing recent.
+  table.push(route('GET', '/api/notifications/latest', () => Promise.resolve({ body: { notice: options.notices?.latest() ?? null } })));
   table.push(...changelogRoutes(options.changelog));
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
   const sockets = new Set<WebSocket>();
+  /** The pages that last said they are in view (I-1). */
+  const visible = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -1396,14 +1422,22 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       alive = false;
       ws.ping();
     }, PING_MS);
-    // Nothing is accepted from the client: actions go through HTTP.
-    ws.on('message', () => {
-      ws.close(1008, 'read-only socket');
+    // Nothing is accepted from the client but whether the page is in view
+    // (I-1): actions go through HTTP.
+    ws.on('message', (data: RawData, isBinary: boolean) => {
+      const shown = isBinary || !Buffer.isBuffer(data) ? undefined : visibilityOf(data.toString('utf8'));
+      if (shown === undefined) {
+        ws.close(1008, 'read-only socket');
+        return;
+      }
+      if (shown) visible.add(ws);
+      else visible.delete(ws);
     });
     let stop: (() => void) | undefined;
     ws.on('close', () => {
       clearInterval(ping);
       sockets.delete(ws);
+      visible.delete(ws);
       stop?.();
     });
     const send = (message: LiveMessage | { type: 'ready' }): void => {
@@ -1438,6 +1472,11 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   return {
     port,
     clients: () => sockets.size,
+    visiblePages: () => visible.size,
+    broadcast(notice) {
+      const frame = JSON.stringify({ type: 'notice', kind: notice.kind, conversationId: notice.conversationId });
+      for (const ws of sockets) if (ws.readyState === ws.OPEN && ws.bufferedAmount <= MAX_BUFFERED_BYTES) ws.send(frame);
+    },
     async close() {
       for (const ws of sockets) ws.terminate();
       wss.close();

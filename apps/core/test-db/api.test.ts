@@ -404,6 +404,33 @@ test('the socket accepts nothing from the client', async () => {
   assert.equal(await closed, 1008);
 });
 
+test('notifications (I-1): a page says whether it is in view, notices reach every page, nothing else is accepted', async () => {
+  const socket = await openSocket('/api/ws');
+  try {
+    await socket.until((message) => message.type === 'ready');
+    assert.equal(server.visiblePages(), 0);
+    socket.ws.send('{"type":"visibility","visible":true}');
+    const deadline = Date.now() + 5_000;
+    while (server.visiblePages() !== 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(server.visiblePages(), 1);
+    server.broadcast({ kind: 'reply', conversationId: '11111111-2222-4333-8444-555555555555' });
+    const notice = await socket.until((message) => message.type === 'notice');
+    assert.deepEqual(notice, { type: 'notice', kind: 'reply', conversationId: '11111111-2222-4333-8444-555555555555' });
+    socket.ws.send('{"type":"visibility","visible":false}');
+    while (server.visiblePages() !== 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(server.visiblePages(), 0);
+    const closed = new Promise<number>((resolve) => socket.ws.on('close', (code) => { resolve(code); }));
+    socket.ws.send('{"type":"visibility","visible":true,"text":"x"}');
+    assert.equal(await closed, 1008);
+    assert.equal(server.visiblePages(), 0);
+  } finally {
+    socket.ws.close();
+  }
+  // Without a board: nothing recent to tell the service worker.
+  const response = await fetch(`${origin}/api/notifications/latest`);
+  assert.deepEqual(await response.json(), { notice: null });
+});
+
 /** A step executor for the declassification path: ask, then use the decided approval. */
 function declassifier(): StepExecutor & { seen: StepContext[] } {
   const seen: StepContext[] = [];

@@ -434,3 +434,38 @@ describe('prepare and confirm (privacy)', () => {
     assert.equal(text(), renderSettings(START));
   });
 });
+
+describe('notifications (I-1)', () => {
+  it('without the section the page sees the defaults; a save writes [notifications] and reads back', () => {
+    assert.deepEqual(page.read().values?.notifications, { replies: true, approvals: true, failures: true, quiet: null });
+    assert.doesNotMatch(text(), /^\[notifications\]$/m);
+    const view = page.update({ fingerprint: fingerprint(), values: { notifications: { replies: false, approvals: true, failures: false, quiet: '22:00-07:00' } } });
+    assert.deepEqual(view.values?.notifications, { replies: false, approvals: true, failures: false, quiet: '22:00-07:00' });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).notifications, { replies: false, approvals: true, failures: false, quiet: { from: '22:00', to: '07:00' } });
+    assert.deepEqual(changes, [{ sections: ['notifications'], privacy: false }]);
+    page.update({ fingerprint: fingerprint(), values: { notifications: { replies: false, approvals: true, failures: false, quiet: null } } });
+    assert.equal(page.read().values?.notifications.quiet, null);
+    assert.doesNotMatch(text(), /^quiet = /m);
+  });
+
+  it('saving another section does not add [notifications]', () => {
+    page.update({ fingerprint: fingerprint(), values: { characters: { coder: 'originali/coder' } } });
+    assert.doesNotMatch(text(), /^\[notifications\]$/m);
+  });
+
+  it('refuses switches that are not booleans, malformed or empty quiet hours and unknown fields, writing nothing', () => {
+    const before = text();
+    const bad = [
+      { replies: 'yes', approvals: true, failures: true, quiet: null },
+      { approvals: true, failures: true, quiet: null },
+      { replies: true, approvals: true, failures: true, quiet: '22:00' },
+      { replies: true, approvals: true, failures: true, quiet: '23:00-23:00' },
+      { replies: true, approvals: true, failures: true, quiet: '25:00-07:00' },
+      { replies: true, approvals: true, failures: true, quiet: null, sound: true },
+      'on',
+    ];
+    for (const notifications of bad) assert.throws(() => page.update({ fingerprint: fingerprint(), values: { notifications } }), refused('invalid'), JSON.stringify(notifications));
+    assert.equal(text(), before);
+    assert.deepEqual(changes, []);
+  });
+});

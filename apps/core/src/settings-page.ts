@@ -9,12 +9,15 @@ import {
   CLOUD_MODELS,
   CONFIG_FILE,
   DEFAULT_SPRITE_MODEL,
+  DEFAULT_NOTIFICATIONS,
   DEFAULT_VOICE,
   diffConfig,
   LABELS_FILE,
   loadCatalog,
   MODEL_ROLES,
   parseConfig,
+  parseQuiet,
+  quietText,
   readSettings,
   renderSettings,
   SPRITE_MODELS,
@@ -29,6 +32,7 @@ import {
   type EndpointSettings,
   type ModelCatalog,
   type ModelRole,
+  type NotificationsConfig,
   type ProjectSettings,
   type Settings,
   type SpriteModel,
@@ -44,7 +48,7 @@ import { knownSecrets } from '@arianna/vault';
  * file within a second (`watchConfig`), as after a change by hand.
  *
  * Two kinds of change. The ordinary ones (models by role, cloud models,
- * characters, `[voice]`, personas, the agents' models) are written at once.
+ * characters, `[voice]`, personas, the agents' models, `[notifications]`) are written at once.
  * An agent's model must be one its card allows (D-116): never a cloud model
  * for Arianna or for an agent without that cloud executor. The text of a
  * persona is L1 by the user's declaration (D-107): it is saved only when the
@@ -59,7 +63,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'notifications'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -88,6 +92,13 @@ export class SettingsError extends Error {
 /** An alias of `[cloud.models]` as in the file: on, off, or the exact name (on). */
 type CloudModelValue = boolean | string;
 
+export interface NotificationsValues {
+  replies: boolean;
+  approvals: boolean;
+  failures: boolean;
+  quiet: string | null;
+}
+
 /** The settings as the page sees them: no database, server or vault reference. */
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
@@ -100,6 +111,8 @@ export interface SettingsValues {
   /** The model that draws a character (D-123): sonnet when the file has no [sprites]. */
   sprites: SpriteModel;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
+  /** `[notifications]` (I-1); `quiet` as "HH:MM-HH:MM", null for none. The defaults when the file has no section. */
+  notifications: NotificationsValues;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectSettings[];
@@ -192,7 +205,7 @@ export interface SettingsPageOptions {
 
 export interface SettingsPage {
   read(): SettingsView;
-  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas?, agents?, sprites? } }`. */
+  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas?, agents?, sprites?, notifications? } }`. */
   update(body: Record<string, unknown>): SettingsView;
   /** `{ fingerprint, values: { executors?, telegram?, projects?, endpoints? } }`. */
   prepare(body: Record<string, unknown>): PrivacyProposal;
@@ -340,6 +353,29 @@ function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceC
   return next;
 }
 
+/** `[notifications]` from the page: three switches and the quiet hours, "HH:MM-HH:MM" or null. */
+function notificationsFromBody(value: unknown): NotificationsConfig {
+  const table = record(value, 'notifications');
+  only(table, ['replies', 'approvals', 'failures', 'quiet'], 'notifications');
+  const flag = (key: 'replies' | 'approvals' | 'failures'): boolean => {
+    const item = table[key];
+    if (typeof item !== 'boolean') invalid(`notifications.${key} must be true or false`);
+    return item;
+  };
+  const next: NotificationsConfig = { replies: flag('replies'), approvals: flag('approvals'), failures: flag('failures') };
+  if (table.quiet !== null && table.quiet !== undefined) {
+    const quiet = parseQuiet(text(table.quiet, 'notifications.quiet'));
+    if (quiet === undefined) invalid('notifications.quiet must be "HH:MM-HH:MM" with two different times, or null');
+    next.quiet = quiet;
+  }
+  return next;
+}
+
+function notificationsOf(notifications: NotificationsConfig | undefined): NotificationsValues {
+  const { replies, approvals, failures, quiet } = notifications ?? DEFAULT_NOTIFICATIONS;
+  return { replies, approvals, failures, quiet: quiet === undefined ? null : quietText(quiet) };
+}
+
 const PERSONA_FIELDS = ['tone', 'address', 'displayName', 'traits', 'specialization'] as const;
 const PERSONA_TEXTS = [
   ['displayName', 'display_name'],
@@ -464,6 +500,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     agents: agentsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     voice: voiceOf(settings.voice),
+    notifications: notificationsOf(settings.notifications),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
     projects: settings.projects.map((project) => ({ ...project })),
@@ -480,6 +517,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return agentsOf(settings);
     case 'sprites':
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
+    case 'notifications':
+      return settings.notifications;
     case 'executors':
       return settings.cloud.executors;
     case 'database':
@@ -704,6 +743,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         if (voice === undefined) delete next.voice;
         else next.voice = voice;
       }
+      if (given.notifications !== undefined) next.notifications = notificationsFromBody(given.notifications);
       const sections = check(settings, next, catalog, ORDINARY_SECTIONS);
       if (sections.length > 0) {
         write(next, catalog, fingerprint);

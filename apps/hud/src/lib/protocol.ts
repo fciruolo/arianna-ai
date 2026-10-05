@@ -6,7 +6,12 @@ export type ServerMessage =
   | ({ type: 'delta' } & Delta)
   | ({ type: 'activity' } & Activity)
   | ({ type: 'edit' } & EditPiece)
+  /** A notification (I-1): a kind and a conversation, never text; the page decides whether to show it. */
+  | { type: 'notice'; kind: NoticeKind; conversationId: string | null }
   | { type: 'ready' };
+
+export type NoticeKind = 'reply' | 'approval' | 'failure';
+const NOTICE_KINDS: readonly NoticeKind[] = ['reply', 'approval', 'failure'];
 
 const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'];
 
@@ -15,6 +20,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const DIGITS = /^\d{1,19}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // The same list as FILE_EDIT_TOOLS of @arianna/executors, repeated: the page does not import the core's packages.
 const EDIT_TOOLS: readonly EditTool[] =['Edit', 'MultiEdit', 'Write'];
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -89,6 +95,12 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
     }
     case 'edit':
       return parseEdit(value);
+    case 'notice': {
+      const kind = NOTICE_KINDS.find((item) => item === value.kind);
+      const { conversationId } = value;
+      if (kind === undefined || (conversationId !== null && (typeof conversationId !== 'string' || !UUID.test(conversationId)))) return undefined;
+      return { type: 'notice', kind, conversationId };
+    }
     case 'event': {
       const event = value.event;
       if (!isRecord(event) || typeof event.id !== 'string' || !DIGITS.test(event.id) || typeof event.kind !== 'string') return undefined;

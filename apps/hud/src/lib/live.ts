@@ -13,6 +13,8 @@ export interface SocketLike {
   onclose: (() => void) | null;
   onerror: (() => void) | null;
   close(): void;
+  /** The only frame the page sends: whether it is in view (I-1). */
+  send?(data: string): void;
 }
 
 export interface LiveOptions {
@@ -30,6 +32,8 @@ export interface LiveOptions {
 export interface LiveConnection {
   /** Id of the last event received, sent back on reconnection. */
   lastEventId(): string | undefined;
+  /** Tells the core whether the page is in view (I-1); dropped while the socket is not open. */
+  sendVisibility(visible: boolean): void;
   close(): void;
 }
 
@@ -48,12 +52,15 @@ export function connectLive(options: LiveOptions): LiveConnection {
   let socket: SocketLike | undefined;
   let timer: unknown;
   let stopped = false;
+  /** The current socket has said `ready`. */
+  let ready = false;
 
   function open(): void {
     options.onState('connecting');
     const url = lastId === undefined ? options.url : `${options.url}?after=${lastId}`;
     const current = options.createSocket(url);
     socket = current;
+    ready = false;
     current.onmessage = (event) => {
       if (typeof event.data !== 'string') return;
       const message = parseServerMessage(event.data);
@@ -61,6 +68,7 @@ export function connectLive(options: LiveOptions): LiveConnection {
       if (message.type === 'event') lastId = laterId(lastId, message.event.id);
       if (message.type === 'ready') {
         attempt = 0;
+        ready = true;
         options.onState('open');
       }
       options.onMessage(message);
@@ -81,6 +89,11 @@ export function connectLive(options: LiveOptions): LiveConnection {
   open();
   return {
     lastEventId: () => lastId,
+    sendVisibility(visible) {
+      // Sent once the backlog is out; until then the page counts as not in view.
+      if (!ready) return;
+      socket?.send?.(JSON.stringify({ type: 'visibility', visible }));
+    },
     close() {
       stopped = true;
       options.clearTimer(timer);

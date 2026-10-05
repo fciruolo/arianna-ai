@@ -52,6 +52,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       { id: 'agents', slug: 'agenti', title: 'Agenti', behaviour: 'now' },
       { id: 'voice', slug: 'voce', title: 'Voce', behaviour: 'now' },
       { id: 'voice-trial', slug: 'provino-della-voce', title: 'Provino della voce', behaviour: 'now', page: VOICE_TRIAL_PATH },
+      { id: 'notifications', slug: 'notifiche', title: 'Notifiche', behaviour: 'now' },
     ],
   },
   {
@@ -107,6 +108,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   'cloud-models': ['cloudModels'],
   agents: ['characters', 'personas', 'agents'],
   voice: ['voice'],
+  notifications: ['notifications'],
   executors: ['executors'],
   projects: ['projects'],
   servers: ['endpoints'],
