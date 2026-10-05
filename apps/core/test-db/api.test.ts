@@ -166,7 +166,7 @@ test('a work conversation chooses a cloud model among those of the installation;
   assert.equal((await call('POST', `/api/conversations/${priv}/model`, { body: { model: 'sonnet' } })).status, 400);
 });
 
-test('a new work conversation starts with the default model of [cloud.models] while it is offered (D-071)', async () => {
+test('a new work conversation starts with the model of its agent while it is offered (D-071, D-116)', async () => {
   const modelOf = async (mode: 'work' | 'private') =>
     field<{ model: string | null }>(await call('GET', `/api/conversations/${await newConversation(mode)}`), 'conversation').model;
   try {

@@ -14,6 +14,7 @@ export {
   type ModelRuntime,
   type ModelStatus,
 } from './catalog.ts';
+export { LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, parseAgents, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';
 export {

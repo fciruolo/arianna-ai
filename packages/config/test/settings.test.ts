@@ -46,13 +46,13 @@ const FULL: Settings = {
   cloud: {
     executors: ['claude', 'codex'],
     models: { sonnet: { enabled: true }, opus: { enabled: true, name: 'claude-opus-5-5[1m]' }, fable: { enabled: false }, codex: { enabled: true } },
-    defaultModel: 'opus',
   },
   projects: [
     { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
     { name: 'demo', path: 'repos/demo', label: 'L0' },
   ],
   characters: { arianna: 'originali/arianna', coder: 'my-pack/robot_2' },
+  agents: { coder: { model: 'opus' }, writer: { model: 'fable' } },
   telegram: { token: 'vault://telegram-bot-token', chats: [12345, 67890] },
 };
 
@@ -79,13 +79,25 @@ test('the rendered file is what loadConfig reads: roles become the names of the 
   assert.deepEqual(config.local.endpoints[1]?.models, { 'local-large': 'Qwen "large"' });
   assert.deepEqual(config.cloud.executors, ['claude', 'codex']);
   assert.equal(config.cloud.models.opus.name, 'claude-opus-5-5[1m]');
-  assert.equal(config.cloud.defaultModel, 'opus');
+  assert.deepEqual(config.agents, { coder: { model: 'opus' }, writer: { model: 'fable' } });
 });
 
-test('[cloud.models] is written with every alias, and the default commented out when the router chooses', () => {
+test('[cloud.models] is written with every alias, the agents\' models in [agents] (D-116)', () => {
   const text = renderSettings(DEFAULT_SETTINGS);
-  assert.match(text, /^\[cloud\.models\]\nsonnet = true\nopus = true\nfable = true\ncodex = true\n# default = "sonnet"$/m);
-  assert.match(renderSettings(FULL), /^opus = "claude-opus-5-5\[1m\]"\nfable = false\ncodex = true\ndefault = "opus"$/m);
+  assert.match(text, /^\[cloud\.models\]\nsonnet = true\nopus = true\nfable = true\ncodex = true\n$/m);
+  assert.match(text, /^# \[agents\.coder\]\n# model = "sonnet"$/m, 'no model: commented out, the router chooses');
+  assert.match(renderSettings(FULL), /^\[agents\.coder\]\nmodel = "opus"\n\n\[agents\.writer\]\nmodel = "fable"$/m);
+  // An agent without a model is not written.
+  assert.doesNotMatch(renderSettings({ ...DEFAULT_SETTINGS, agents: { coder: {} } }), /^\[agents/m);
+});
+
+test('a file with default of [cloud.models] is written back in the new form', () => {
+  const old = renderSettings(DEFAULT_SETTINGS).replace(/^codex = true$/m, 'codex = true\ndefault = "opus"');
+  const settings = readSettings(old, HOME, CATALOG);
+  assert.deepEqual(settings.agents, { coder: { model: 'opus' } });
+  const text = renderSettings(settings);
+  assert.doesNotMatch(text, /^default =/m);
+  assert.match(text, /^\[agents\.coder\]\nmodel = "opus"$/m);
 });
 
 test('reading validates: an invalid file is not turned into settings', () => {

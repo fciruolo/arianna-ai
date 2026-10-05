@@ -60,7 +60,7 @@ function servers(config: AriannaConfig): unknown {
 
 /** `[cloud.models]`. */
 function cloudModels(config: AriannaConfig): unknown {
-  return { models: config.cloud.models, defaultModel: config.cloud.defaultModel };
+  return config.cloud.models;
 }
 
 /** Which sections differ between two configurations. */
@@ -78,6 +78,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('voice') ? ['voice'] : []),
       ...(changed('characters') ? ['characters'] : []),
+      ...(changed('agents') ? ['agents'] : []),
       ...(changed('personas') ? ['personas'] : []),
       ...(changed('installation') ? ['installation'] : []),
     ],

@@ -91,13 +91,19 @@ test('every section but paths, database and server applies live; an invalid file
 
     // The cloud models (D-071).
     const models = { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true, name: 'claude-fable-5-1' }, codex: { enabled: true } };
-    write({ ...SECOND, cloud: { executors: ['claude'], models, defaultModel: 'sonnet' } });
+    write({ ...SECOND, cloud: { executors: ['claude'], models } });
     assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: [] });
-    assert.deepEqual(watcher.current().cloud, { executors: ['claude'], models, defaultModel: 'sonnet' });
+    assert.deepEqual(watcher.current().cloud, { executors: ['claude'], models });
     write({ ...SECOND, cloud: { executors: ['claude'] } });
     assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: [] });
-    assert.equal(watcher.current().cloud.defaultModel, undefined);
     assert.equal(watcher.current().cloud.models.opus.enabled, true);
+
+    // The agents' models (D-116).
+    write({ ...SECOND, cloud: { executors: ['claude'] }, agents: { coder: { model: 'opus' } } });
+    assert.deepEqual(await next(seen), { applied: ['agents'], restart: [] });
+    assert.deepEqual(watcher.current().agents, { coder: { model: 'opus' } });
+    write({ ...SECOND, cloud: { executors: ['claude'] } });
+    assert.deepEqual(await next(seen), { applied: ['agents'], restart: [] });
 
     // An approved project applies at once (D-058), Telegram too.
     write({ ...SECOND, cloud: { executors: ['claude'] }, projects: DEMO, telegram: TELEGRAM });

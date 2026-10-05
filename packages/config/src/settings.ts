@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { parse as parseToml } from 'smol-toml';
 
+import type { AgentsSettings } from './agents.ts';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
@@ -44,7 +45,6 @@ export interface Settings {
     executors: CloudExecutor[];
     /** `[cloud.models]` (D-071); absent, every alias on under its own name. */
     models?: Record<CloudModel, CloudModelSetting>;
-    defaultModel?: CloudModel;
   };
   /** As written in the file: `path` keeps its form. */
   projects: ProjectSettings[];
@@ -52,6 +52,8 @@ export interface Settings {
   characters: Record<string, string>;
   /** `[personas.<agent>]` (D-107); absent or empty, every agent has the defaults. */
   personas?: Personas;
+  /** `[agents.<id>]` (D-116); absent or empty, the router chooses for every agent. */
+  agents?: AgentsSettings;
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -106,11 +108,12 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       executors: [...config.cloud.executors],
       // Absent means every alias on under its own name: kept absent, as written.
       ...(isDeepStrictEqual(config.cloud.models, defaultCloudModels()) ? {} : { models: structuredClone(config.cloud.models) }),
-      ...(config.cloud.defaultModel === undefined ? {} : { defaultModel: config.cloud.defaultModel }),
     },
     projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
     characters: { ...config.characters },
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
+    // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
+    ...(Object.keys(config.agents).length === 0 ? {} : { agents: structuredClone(config.agents) }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -153,7 +156,6 @@ function cloudModelsSection(cloud: Settings['cloud']): string[] {
   return [
     '[cloud.models]',
     ...CLOUD_MODELS.map((model) => `${model} = ${value(models[model])}`),
-    cloud.defaultModel === undefined ? '# default = "sonnet"' : `default = ${str(cloud.defaultModel)}`,
   ];
 }
 
@@ -179,6 +181,13 @@ function personasSection(personas: Personas | undefined): string[] {
     ...(persona.traits === undefined ? [] : [`traits = ${str(persona.traits)}`]),
     ...(persona.specialization === undefined ? [] : [`specialization = ${str(persona.specialization)}`]),
   ]);
+}
+
+/** `[agents.<id>]`: only the agents with a model. */
+function agentsSection(agents: AgentsSettings | undefined): string[] {
+  const chosen = Object.entries(agents ?? {}).filter((entry): entry is [string, Required<AgentsSettings[string]>] => entry[1].model !== undefined);
+  if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"'];
+  return chosen.flatMap(([agent, { model }], index) => [...(index === 0 ? [] : ['']), `[agents.${agent}]`, `model = ${str(model)}`]);
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -306,10 +315,10 @@ export function renderSettings(settings: Settings): string {
     '# Cloud models (D-071): which model of an enabled executor runs. Per alias',
     '# true (on), false (off: never chosen by the router nor offered by the chat)',
     '# or the exact name to pass to --model (on), e.g. opus = "claude-opus-5-5";',
-    '# true means the alias, the newest model for the binary. `default` is the',
-    '# model of a new work conversation; without it the router chooses. Not a',
-    '# privacy setting: it never turns an executor on. Codex applies with its',
-    '# adapter (task 1.16). Applies without a restart.',
+    '# true means the alias, the newest model for the binary. Which model an',
+    '# agent starts with is in [agents]. Not a privacy setting: it never turns',
+    '# an executor on. Codex applies with its adapter (task 1.16). Applies',
+    '# without a restart.',
     ...cloudModelsSection(cloud),
     '',
     '# Projects (D-058): the folders a cloud executor may work on, as the user',
@@ -350,6 +359,14 @@ export function renderSettings(settings: Settings): string {
     '# the defaults: its prompt does not change. Applies without a restart; an',
     '# invalid file drops the text and keeps tone and address.',
     ...personasSection(settings.personas),
+    '',
+    '# Agents (D-116): `model` is the cloud model (sonnet, opus, fable, codex) a',
+    '# new conversation with the agent starts with; the chat selector can change',
+    '# it, and without it the router chooses. Offered only while the model is on',
+    '# and the card in agents/<id>.yaml allows the cloud: never for arianna,',
+    '# whose model is the orchestrator of [roles], local only. Not a privacy',
+    '# setting: it never turns an executor on. Applies without a restart.',
+    ...agentsSection(settings.agents),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

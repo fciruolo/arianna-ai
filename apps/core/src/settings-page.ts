@@ -41,7 +41,9 @@ import { knownSecrets } from '@arianna/vault';
  * file within a second (`watchConfig`), as after a change by hand.
  *
  * Two kinds of change. The ordinary ones (models by role, cloud models,
- * characters, `[voice]`, personas) are written at once. The text of a
+ * characters, `[voice]`, personas, the agents' models) are written at once.
+ * An agent's model must be one its card allows (D-116): never a cloud model
+ * for Arianna or for an agent without that cloud executor. The text of a
  * persona is L1 by the user's declaration (D-107): it is saved only when the
  * scanner finds nothing in it and it holds no value of the vault. The privacy ones (cloud
  * executors, Telegram, projects, local servers) take two steps: `prepare`
@@ -54,7 +56,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -86,10 +88,12 @@ type CloudModelValue = boolean | string;
 /** The settings as the page sees them: no database, server or vault reference. */
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
-  cloudModels: { models: Record<CloudModel, CloudModelValue>; default: CloudModel | null };
+  cloudModels: { models: Record<CloudModel, CloudModelValue> };
   characters: Record<string, string>;
   /** Agent → persona (D-107), as `[personas]` holds it; an agent without one has the defaults. */
   personas: Record<string, Persona>;
+  /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
+  agents: Record<string, { model: CloudModel }>;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -125,6 +129,8 @@ export interface SettingsView {
   labels: string | null;
   /** What `[voice]` holds when the page turns it on. */
   voiceDefaults: NonNullable<SettingsValues['voice']>;
+  /** Agent → the cloud models its card allows as its model, on or off (D-116); empty for Arianna. */
+  agentModels: Record<string, CloudModel[]>;
 }
 
 /** What a privacy change would change, section by section. */
@@ -171,6 +177,8 @@ export interface SettingsPageOptions {
   dataDir: string;
   /** The configuration in use (`settings.current()`). */
   running: () => AriannaConfig;
+  /** Agent → the cloud models its card allows (D-116): `[agents]` names only these agents and models. */
+  agentModels: () => Record<string, readonly CloudModel[]>;
   /** After each write, for the event log. */
   onChanged?: (change: SettingsChange) => void;
   now?: () => number;
@@ -179,7 +187,7 @@ export interface SettingsPageOptions {
 
 export interface SettingsPage {
   read(): SettingsView;
-  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas? } }`. */
+  /** `{ fingerprint, values: { roles?, cloudModels?, characters?, voice?, personas?, agents? } }`. */
   update(body: Record<string, unknown>): SettingsView;
   /** `{ fingerprint, values: { executors?, telegram?, projects?, endpoints? } }`. */
   prepare(body: Record<string, unknown>): PrivacyProposal;
@@ -241,7 +249,7 @@ function rolesFromBody(value: unknown): Settings['roles'] {
 
 function cloudModelsFromBody(value: unknown, cloud: Settings['cloud']): Settings['cloud'] {
   const table = record(value, 'cloudModels');
-  only(table, ['models', 'default'], 'cloudModels');
+  only(table, ['models'], 'cloudModels');
   const given = record(table.models, 'cloudModels.models');
   only(given, CLOUD_MODELS, 'cloudModels.models');
   const models = Object.fromEntries(
@@ -252,11 +260,39 @@ function cloudModelsFromBody(value: unknown, cloud: Settings['cloud']): Settings
       return [model, { enabled: true, name: text(item, `cloudModels.models.${model}`) }];
     }),
   ) as Record<CloudModel, CloudModelSetting>;
-  const fallback = table.default ?? null;
-  if (fallback !== null && !CLOUD_MODELS.includes(fallback as CloudModel)) invalid(`cloudModels.default must be one of ${CLOUD_MODELS.join(', ')} or null`);
-  const next: Settings['cloud'] = { executors: cloud.executors, models };
-  if (fallback !== null) next.defaultModel = fallback as CloudModel;
-  return next;
+  return { executors: cloud.executors, models };
+}
+
+/**
+ * `[agents]` from the page: agent → `{ model }`, `null` for "the router
+ * chooses". Only an agent with a card, and only a model the card allows:
+ * Arianna, whose model is the orchestrator of `roles`, allows none. The
+ * agents the page does not offer (no card) keep what the file says, and so
+ * does a model the card no longer allows while it is sent back unchanged:
+ * the core ignores it (agentDefaultModel), and saving the look of an agent
+ * must not fail on it.
+ */
+function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudModel[]>, current: Settings['agents']): NonNullable<Settings['agents']> {
+  const table = record(value, 'agents');
+  const agents: NonNullable<Settings['agents']> = {};
+  for (const [agent, settings] of Object.entries(current ?? {})) {
+    if (!Object.hasOwn(allowed, agent) && settings.model !== undefined) agents[agent] = { model: settings.model };
+  }
+  for (const [agent, raw] of Object.entries(table)) {
+    if (!AGENT_KEY.test(agent)) invalid('agents: an agent id is lowercase letters, digits, - and _');
+    const where = `agents.${agent}`;
+    const models = Object.hasOwn(allowed, agent) ? allowed[agent] : undefined;
+    if (models === undefined) invalid(`${where}: no such agent`);
+    const item = record(raw, where);
+    only(item, ['model'], where);
+    if (item.model === null || item.model === undefined) continue;
+    const unchanged = current !== undefined && Object.hasOwn(current, agent) && current[agent]?.model === item.model;
+    if (!unchanged && !models.includes(item.model as CloudModel)) {
+      invalid(models.length === 0 ? `${where}.model: this agent runs on local models only` : `${where}.model must be one of ${models.join(', ')} or null`);
+    }
+    agents[agent] = { model: item.model as CloudModel };
+  }
+  return agents;
 }
 
 function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceConfig | undefined {
@@ -398,7 +434,14 @@ function cloudModelsOf(cloud: Settings['cloud']): SettingsValues['cloudModels'] 
       return [model, !setting.enabled ? false : (setting.name ?? true)];
     }),
   ) as Record<CloudModel, CloudModelValue>;
-  return { models, default: cloud.defaultModel ?? null };
+  return { models };
+}
+
+/** The agents with a model, as compared and shown. */
+function agentsOf(settings: Settings): SettingsValues['agents'] {
+  const agents: SettingsValues['agents'] = {};
+  for (const [agent, { model }] of Object.entries(settings.agents ?? {})) if (model !== undefined) agents[agent] = { model };
+  return agents;
 }
 
 function voiceOf(voice: VoiceConfig | undefined): SettingsValues['voice'] {
@@ -413,6 +456,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     cloudModels: cloudModelsOf(settings.cloud),
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
+    agents: agentsOf(settings),
     voice: voiceOf(settings.voice),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
@@ -426,6 +470,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
   switch (section) {
     case 'cloudModels':
       return cloudModelsOf(settings.cloud);
+    case 'agents':
+      return agentsOf(settings);
     case 'executors':
       return settings.cloud.executors;
     case 'database':
@@ -592,6 +638,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       privacy: PRIVACY_SECTIONS,
       restartOnly: RESTART_SECTIONS,
       voiceDefaults: { ...structuredClone(DEFAULT_VOICE), push: null },
+      agentModels: Object.fromEntries(Object.entries(options.agentModels()).map(([agent, models]) => [agent, [...models]])),
     };
     let labels: string | null;
     try {
@@ -634,6 +681,11 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         const personas = personasFromBody(given.personas);
         if (Object.keys(personas).length === 0) delete next.personas;
         else next.personas = personas;
+      }
+      if (given.agents !== undefined) {
+        const agents = agentsFromBody(given.agents, options.agentModels(), settings.agents);
+        if (Object.keys(agents).length === 0) delete next.agents;
+        else next.agents = agents;
       }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);

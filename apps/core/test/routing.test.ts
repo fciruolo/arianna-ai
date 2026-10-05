@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
-import { CLOUD_MODEL_NAME, parseConfig } from '@arianna/config';
+import { AGENTS_DIR, loadAgents, type AgentCard } from '@arianna/agents';
+import { CLOUD_MODEL_NAME, parseConfig, resolveHome } from '@arianna/config';
 import { MODEL_NAME } from '@arianna/executors';
 import { candidateKey } from '@arianna/router';
 
-import { defaultConversationModel, routerConfigOf, selectableModels } from '../src/orchestrator/routing.ts';
+import { agentDefaultModel, agentModels, routerConfigOf, selectableModels } from '../src/orchestrator/routing.ts';
 
 const BASE = `
 [paths]
@@ -62,12 +63,33 @@ test('a cloud model turned off in [cloud.models] is not a candidate; one with an
   assert.deepEqual(keys('[cloud]\nexecutors = []\n\n[cloud.models]\nopus = true\n'), [], 'turning a model on never turns its executor on');
 });
 
-test('a new work conversation starts with the default model only while it is selectable', () => {
+const AGENTS = loadAgents(join(resolveHome({}), AGENTS_DIR));
+const card = (id: string): AgentCard => {
+  const agent = AGENTS.get(id);
+  assert.ok(agent !== undefined, `agents/${id}.yaml`);
+  return agent.card;
+};
+
+test("an agent's models are the cloud executors of its card, none for Arianna (D-116)", () => {
+  assert.deepEqual(agentModels('coder', card('coder')), ['sonnet', 'opus', 'fable', 'codex']);
+  assert.deepEqual(agentModels('arianna', card('arianna')), [], 'local only: her model is the orchestrator of [roles]');
+  assert.deepEqual(agentModels('arianna', card('coder')), [], 'by id, whatever the card says');
+  assert.deepEqual(agentModels('writer', { ...card('coder'), executors: ['local'] }), [], 'a card without the cloud');
+  assert.deepEqual(agentModels('writer', { ...card('coder'), executors: ['claude', 'local'] }), ['sonnet', 'opus', 'fable']);
+});
+
+test('a new conversation with an agent starts with its model only while the card allows it and it is selectable (D-116)', () => {
   const config = (text: string) => parseConfig(`${BASE}${text}`, HOME);
-  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\ndefault = "opus"\n')), 'opus');
-  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude"]\n')), undefined, 'no default: the router chooses');
-  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = []\n\n[cloud.models]\ndefault = "opus"\n')), undefined, 'claude is off');
-  assert.equal(defaultConversationModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[cloud.models]\ndefault = "codex"\n')), undefined, 'codex has no adapter yet');
+  const coder = card('coder');
+  const opus = '[cloud]\nexecutors = ["claude"]\n\n[agents.coder]\nmodel = "opus"\n';
+  assert.equal(agentDefaultModel(config(opus), 'coder', coder), 'opus');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\ndefault = "opus"\n'), 'coder', coder), 'opus', 'the default from before D-116');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n'), 'coder', coder), undefined, 'no model: the router chooses');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = []\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder), undefined, 'claude is off');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nopus = false\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder), undefined, 'opus is off');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder), undefined, 'codex has no adapter yet');
+  assert.equal(agentDefaultModel(config(opus), 'coder', { ...coder, executors: ['local'] }), undefined, 'a card without the cloud');
+  assert.equal(agentDefaultModel(config(opus), 'coder', undefined), undefined, 'no card');
 });
 
 test('the configuration and the Claude adapter check exact model names with the same rule', () => {

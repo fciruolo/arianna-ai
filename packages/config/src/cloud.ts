@@ -46,8 +46,6 @@ export interface CloudConfig {
    * privacy setting: it never turns an executor on.
    */
   models: Record<CloudModel, CloudModelSetting>;
-  /** The model of a new work conversation; absent, the router chooses. Always an enabled alias. */
-  defaultModel?: CloudModel;
 }
 
 /** Every alias on, under its own name: the models before `[cloud.models]`. */
@@ -67,12 +65,12 @@ export function cloudModelName(cloud: Pick<CloudConfig, 'models'>, model: CloudM
 
 /**
  * `[cloud.models]`: per alias `true` (on), `false` (off) or the exact name to
- * pass to `--model` (on); a missing alias is on. `default` is the model of a
- * new work conversation and must be on.
+ * pass to `--model` (on); a missing alias is on. `default` is from before
+ * D-116: see legacyDefaultModel.
  */
-function parseModels(value: unknown): Pick<CloudConfig, 'models' | 'defaultModel'> {
+function parseModels(value: unknown): CloudConfig['models'] {
   const models = defaultCloudModels();
-  if (value === undefined) return { models };
+  if (value === undefined) return models;
   const table = asTable(value, 'cloud.models');
   onlyKeys(table, [...CLOUD_MODELS, 'default'], 'cloud.models');
   for (const model of CLOUD_MODELS) {
@@ -85,10 +83,20 @@ function parseModels(value: unknown): Pick<CloudConfig, 'models' | 'defaultModel
       models[model] = { enabled: true, name: given };
     } else throw new ConfigError(`${where}: expected true, false or a model name (letters, digits, . - _ [ ], starting with a letter or a digit)`);
   }
-  if (table.default === undefined) return { models };
-  const defaultModel = asOneOf(table.default, CLOUD_MODELS, 'cloud.models.default');
-  if (!models[defaultModel].enabled) throw new ConfigError(`cloud.models.default: ${defaultModel} is turned off`);
-  return { models, defaultModel };
+  return models;
+}
+
+/**
+ * `default` of `[cloud.models]`, the model of a new work conversation before
+ * D-116: now the Coder's model in `[agents.coder]`, which the page writes in
+ * its place. Read here, after parseCloud checked the table.
+ */
+export function legacyDefaultModel(value: unknown): CloudModel | undefined {
+  if (value === undefined) return undefined;
+  const models = asTable(value, 'cloud').models;
+  if (models === undefined) return undefined;
+  const given = asTable(models, 'cloud.models').default;
+  return given === undefined ? undefined : asOneOf(given, CLOUD_MODELS, 'cloud.models.default');
 }
 
 /**
@@ -108,5 +116,5 @@ export function parseCloud(value: unknown): CloudConfig {
     asOneOf(item, CLOUD_EXECUTORS, `cloud.executors[${String(index)}]`),
   );
   if (new Set(executors).size !== executors.length) throw new ConfigError('cloud.executors: an executor is listed twice');
-  return { executors, ...parseModels(cloud.models) };
+  return { executors, models: parseModels(cloud.models) };
 }

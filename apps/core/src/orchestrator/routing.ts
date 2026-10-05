@@ -1,6 +1,7 @@
-import { aliasesOf, type AriannaConfig } from '@arianna/config';
+import type { AgentCard } from '@arianna/agents';
+import { aliasesOf, CLOUD_MODELS, LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, type AriannaConfig, type CloudModel } from '@arianna/config';
 import { CLAUDE_MODELS } from '@arianna/executors';
-import { createRouterConfig, MODEL_ALIASES, type Budget, type BudgetBlock, type Candidate, type ModelAlias, type RouterConfig } from '@arianna/router';
+import { createRouterConfig, executorOf, MODEL_ALIASES, type Budget, type BudgetBlock, type Candidate, type ModelAlias, type RouterConfig } from '@arianna/router';
 
 import type { Queryable } from '../db/client.ts';
 
@@ -32,13 +33,36 @@ export function selectableModels(config: AriannaConfig): { executor: string; mod
 }
 
 /**
- * The model a new work conversation starts with (D-071): `default` of
- * `[cloud.models]` while it is selectable here, otherwise none (the router
- * chooses).
+ * The agent a work conversation delegates to until "+ Nuovo" lets the user
+ * choose one (D-111, stage B): its model is the one a new work conversation
+ * starts with, and the one the old `default` of `[cloud.models]` becomes.
+ * Until then the model of any other agent is saved but not used.
  */
-export function defaultConversationModel(config: AriannaConfig): ModelAlias | undefined {
-  const chosen = config.cloud.defaultModel;
-  return chosen !== undefined && selectableModels(config).some((entry) => entry.model === chosen) ? chosen : undefined;
+export const WORK_AGENT = LEGACY_DEFAULT_AGENT;
+
+/**
+ * The cloud models an agent may have as its model (D-116): those of the
+ * cloud executors on its card, never one for Arianna, whose model is the
+ * orchestrator of `[roles]`, local only. The card already keeps L2 out of
+ * the cloud (cloud_max_label), and the router checks again at every step.
+ */
+export function agentModels(agent: string, card: AgentCard): CloudModel[] {
+  if (agent === ORCHESTRATOR_AGENT) return [];
+  return CLOUD_MODELS.filter((model) => {
+    const executor = executorOf(model);
+    return executor !== undefined && card.executors.includes(executor);
+  });
+}
+
+/**
+ * The model a new conversation with `agent` starts with (D-116): its
+ * `[agents.<id>] model` while its card allows it and this installation offers
+ * it, otherwise none (the router chooses). It never turns an executor on.
+ */
+export function agentDefaultModel(config: AriannaConfig, agent: string, card: AgentCard | undefined): ModelAlias | undefined {
+  const chosen = config.agents[agent]?.model;
+  if (chosen === undefined || card === undefined || !agentModels(agent, card).includes(chosen)) return undefined;
+  return selectableModels(config).some((entry) => entry.model === chosen) ? chosen : undefined;
 }
 
 /** How long a quota refusal without a reset time keeps an executor blocked. */

@@ -35,7 +35,7 @@ import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
-import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
+import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
@@ -194,7 +194,7 @@ const settings = watchConfig({
     // The selector of the web chat reads the cloud models again (D-071): names only, nothing private.
     if (applied.includes('cloud.models')) {
       const { cloud } = settings.current();
-      const payload = { enabled: enabledCloudModels(cloud), names: Object.fromEntries(CLOUD_MODELS.map((model) => [model, cloudModelName(cloud, model)])), default: cloud.defaultModel ?? null };
+      const payload = { enabled: enabledCloudModels(cloud), names: Object.fromEntries(CLOUD_MODELS.map((model) => [model, cloudModelName(cloud, model)])) };
       appendEvent(sql, { kind: 'settings.cloud-models', label: 'L0', payload }).catch(report);
     }
     if (restart.length > 0) console.log(`arianna.toml: ${restart.join(', ')} changed, applied at the next restart`);
@@ -337,6 +337,7 @@ const settingsPage = createSettingsPage({
   userHome: userHomeOf(),
   dataDir: config.paths.data,
   running: () => settings.current(),
+  agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
@@ -397,7 +398,7 @@ const server = await startApiServer({
   approvedProjects,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
-  defaultModel: () => (claude === undefined ? undefined : defaultConversationModel(settings.current())),
+  defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
   agents: () => [...agents.keys()],
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },

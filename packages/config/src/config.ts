@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import { parse as parseToml, TomlError } from 'smol-toml';
 
+import { parseAgents, type AgentsSettings } from './agents.ts';
 import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
 import { parseCharacters, type CharacterChoices } from './characters.ts';
-import { parseCloud, type CloudConfig } from './cloud.ts';
+import { legacyDefaultModel, parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { parsePersonas, type Personas } from './personas.ts';
@@ -67,6 +68,8 @@ export interface AriannaConfig {
   characters: CharacterChoices;
   /** Agent → persona (D-107); an agent without one has the defaults. Applied without a restart. */
   personas: Personas;
+  /** Agent → its default model (D-116); applied without a restart. */
+  agents: AgentsSettings;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
@@ -95,7 +98,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -121,6 +124,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
   if (voice !== undefined && voice.port === parseServer(root.server).port) throw new ConfigError('voice.port: must differ from server.port');
   const roles = parseRoles(root.roles, catalog);
   const installation = parseInstallation(root.installation);
+  const cloud = parseCloud(root.cloud);
   return {
     home,
     paths: { data },
@@ -128,10 +132,11 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     server: parseServer(root.server),
     roles,
     local: parseLocal(root.local, roles),
-    cloud: parseCloud(root.cloud),
+    cloud,
     projects: parseProjects(root.project, home, userHome, data),
     characters: parseCharacters(root.characters),
     personas: parsePersonas(root.personas),
+    agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
     ...(installation === undefined ? {} : { installation }),

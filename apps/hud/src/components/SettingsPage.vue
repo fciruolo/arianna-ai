@@ -37,9 +37,11 @@ import {
 } from '../lib/persona.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
-import { SETTINGS_PATH } from '../lib/route.ts';
-import { BEHAVIOUR_TEXT, EDITED_BY, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
+import { SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
+import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, sectionDirty, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
 import {
+  agentsBody,
+  agentsForm,
   charactersBody,
   chatId,
   CLOUD_EXECUTORS,
@@ -54,6 +56,7 @@ import {
   roleOptions,
   rolesBody,
   keptSections,
+  modelBlocker,
   pollAction,
   SECTION_TEXT,
   sectionChanged,
@@ -64,8 +67,9 @@ import {
   voiceForm,
   voiceProblem,
   writeError,
+  type AgentsForm,
+  type CloudModelAlias,
   type CatalogModel,
-  type CloudModelRow,
   type CloudModelsForm,
   type EndpointForm,
   type LocalServerStatus,
@@ -75,6 +79,7 @@ import {
   type PrivacySection,
   type ProjectValues,
   type Section,
+  type SettingsBody,
   type SettingsValues,
   type SettingsView,
   type TelegramForm,
@@ -109,6 +114,7 @@ interface Forms {
   cloudModels: CloudModelsForm;
   characters: Record<string, string>;
   personas: Record<string, PersonaForm>;
+  agents: AgentsForm;
   voice: VoiceForm;
   executors: string[];
   telegram: TelegramForm;
@@ -116,12 +122,13 @@ interface Forms {
   endpoints: EndpointForm[];
 }
 
-function formsOf(values: SettingsValues, defaults: VoiceValues): Forms {
+function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: SettingsView['agentModels']): Forms {
   return {
     roles: { ...values.roles },
     cloudModels: cloudModelsForm(values.cloudModels),
     characters: { ...values.characters },
     personas: personasForm(values.personas),
+    agents: agentsForm(values.agents, agentModels),
     voice: voiceForm(values.voice, defaults),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
@@ -130,7 +137,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues): Forms {
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'cloudModels', 'characters', 'personas', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -148,7 +155,7 @@ const confirmSpent = ref(false);
 /** Counts writes and applies: a read started before one of them is older than the page. */
 let generation = 0;
 
-const base = computed(() => (view.value?.values === null || view.value === null ? null : formsOf(view.value.values, view.value.voiceDefaults)));
+const base = computed(() => (view.value?.values === null || view.value === null ? null : formsOf(view.value.values, view.value.voiceDefaults, view.value.agentModels)));
 
 function changed(section: Section): boolean {
   return forms.value !== null && base.value !== null && sectionChanged(section, forms.value[section], base.value[section]);
@@ -172,7 +179,7 @@ function apply(next: SettingsView, keep: readonly Section[] = []): void {
     forms.value = null;
     return;
   }
-  const fresh = formsOf(next.values, next.voiceDefaults);
+  const fresh = formsOf(next.values, next.voiceDefaults, next.agentModels);
   if (old !== null) for (const section of kept) (fresh as unknown as Record<Section, unknown>)[section] = old[section];
   forms.value = fresh;
 }
@@ -204,8 +211,8 @@ function fail(section: Section, error: unknown): void {
   }
 }
 
-function others(section: Section): Section[] {
-  return SECTIONS.filter((item) => item !== section);
+function others(parts: readonly Section[]): Section[] {
+  return SECTIONS.filter((item) => !parts.includes(item));
 }
 
 // The card saved last says "Salvato" for a few seconds: without it a save looked like nothing happened.
@@ -219,24 +226,29 @@ function markSaved(section: Section): void {
   }, 4000);
 }
 
-async function save(section: OrdinarySection): Promise<void> {
+/** The parts the Agenti card saves together, in one write (D-116); it is known by `agents`. */
+const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents'];
+
+/** Saves `parts` (by default the section alone) in one write; the card is known by `section`. */
+async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<void> {
   const current = forms.value;
   const fingerprint = view.value?.fingerprint;
   if (current === null || fingerprint === null || fingerprint === undefined) return;
-  const values: Partial<Pick<SettingsValues, OrdinarySection>> = {};
-  if (section === 'roles') values.roles = rolesBody(current.roles);
-  if (section === 'cloudModels') values.cloudModels = cloudModelsBody(current.cloudModels);
-  if (section === 'characters') values.characters = charactersBody(current.characters);
-  if (section === 'voice') values.voice = voiceBody(current.voice);
-  if (section === 'personas') values.personas = personasBody(current.personas);
+  const values: SettingsBody = {};
+  if (parts.includes('roles')) values.roles = rolesBody(current.roles);
+  if (parts.includes('cloudModels')) values.cloudModels = cloudModelsBody(current.cloudModels);
+  if (parts.includes('characters')) values.characters = charactersBody(current.characters);
+  if (parts.includes('voice')) values.voice = voiceBody(current.voice);
+  if (parts.includes('personas')) values.personas = personasBody(current.personas);
+  if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
   notice.value = null;
   try {
-    apply(await saveSettings(fingerprint, values), others(section));
+    apply(await saveSettings(fingerprint, values), others(parts));
     markSaved(section);
-    emit('changed', [section]);
+    emit('changed', [...parts]);
   } catch (error) {
     fail(section, error);
   } finally {
@@ -275,7 +287,7 @@ async function confirm(): Promise<void> {
   busy.value = open.section;
   confirmError.value = null;
   try {
-    apply(await confirmPrivacy(open.value.id), others(open.section));
+    apply(await confirmPrivacy(open.value.id), others([open.section]));
     proposal.value = null;
     markSaved(open.section);
     emit('changed', [open.section]);
@@ -354,10 +366,6 @@ onBeforeUnmount(() => {
 });
 
 const catalog = computed(() => view.value?.catalog ?? []);
-/** A model turned off cannot stay the default one. */
-function modelToggled(row: CloudModelRow): void {
-  if (!row.enabled && forms.value?.cloudModels.default === row.alias) forms.value.cloudModels.default = null;
-}
 function chosenModel(role: ModelRole): CatalogModel | undefined {
   const id = forms.value?.roles[role];
   return catalog.value.find((model) => model.id === id);
@@ -371,7 +379,7 @@ const voiceChoices = computed(() => {
 });
 
 const agentIds = computed(() => {
-  const ids = new Set([...Object.keys(characters.value?.agents ?? {}), ...Object.keys(view.value?.values?.characters ?? {})]);
+  const ids = new Set([...Object.keys(characters.value?.agents ?? {}), ...Object.keys(view.value?.values?.characters ?? {}), ...Object.keys(view.value?.agentModels ?? {})]);
   return [...ids].sort((a, b) => (a === 'arianna' ? -1 : b === 'arianna' ? 1 : a.localeCompare(b)));
 });
 const characterOptions = computed(() =>
@@ -402,6 +410,25 @@ const personaAgents = computed(() => {
   return [...agentIds.value, ...named.sort()].filter((agent) => forms.value?.personas[agent] !== undefined);
 });
 const personasInvalid = computed(() => (forms.value === null ? undefined : personasProblem(forms.value.personas, agentName)));
+
+// The Agenti card (D-116): look, persona and model of each agent, saved together.
+const agentsChanged = computed(() => AGENT_PARTS.some(changed));
+function resetAgents(): void {
+  for (const part of AGENT_PARTS) reset(part);
+  delete errors.value.agents;
+}
+/** The cloud models the card of an agent allows; none: local only. */
+function modelsOf(agent: string): CloudModelAlias[] {
+  return view.value?.agentModels[agent] ?? [];
+}
+/** Why a model would not start a conversation now, from the saved settings. */
+function blockerOf(model: CloudModelAlias): string | undefined {
+  const values = view.value?.values;
+  return values === null || values === undefined ? undefined : modelBlocker(model, values);
+}
+function openSection(slug: string): void {
+  emit('section', slug);
+}
 
 // Telegram chats and projects: added from a small row of fields.
 const newChat = ref('');
@@ -481,8 +508,7 @@ const chosen = computed(() => resolveSection(props.section));
 const active = computed(() => chosen.value.item.id);
 const pending = computed(() => pendingTitles(active.value, (section) => changed(section as Section)));
 function dirty(item: IndexItem): boolean {
-  const section = EDITED_BY[item.id];
-  return section !== undefined && changed(section as Section);
+  return sectionDirty(item.id, (section) => changed(section as Section));
 }
 /** Every section holding edits not saved. */
 const unsaved = computed(() => pendingTitles('', (section) => changed(section as Section)));
@@ -517,6 +543,8 @@ watch(
   () => props.section,
   (slug) => {
     if (slug !== undefined && !chosen.value.explicit) window.history.replaceState(window.history.state, '', SETTINGS_PATH);
+    // An old address (Personaggi, Personalità) shows its new section under the new address.
+    else if (slug !== undefined && slug !== chosen.value.item.slug) window.history.replaceState(window.history.state, '', settingsPathFor(chosen.value.item.slug));
   },
   { immediate: true },
 );
@@ -658,8 +686,7 @@ watch(active, () => {
                     <tr class="hud-title text-left">
                       <th class="pr-2 pb-2 font-semibold">Acceso</th>
                       <th class="px-2 pb-2 font-semibold">Modello</th>
-                      <th class="px-2 pb-2 font-semibold">Nome esatto (facoltativo)</th>
-                      <th class="pb-2 pl-2 font-semibold">Predefinito</th>
+                      <th class="pb-2 pl-2 font-semibold">Nome esatto (facoltativo)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -671,15 +698,11 @@ watch(active, () => {
                           role="switch"
                           class="switch"
                           :aria-label="`${MODEL_TEXT[row.alias] ?? row.alias} acceso`"
-                          @change="modelToggled(row)"
                         />
                       </td>
                       <td class="px-2 py-2 whitespace-nowrap">{{ MODEL_TEXT[row.alias] ?? row.alias }}</td>
-                      <td class="px-2 py-2">
+                      <td class="py-2 pl-2">
                         <input v-model="row.name" class="field w-full min-w-[150px] px-2 py-1 font-mono text-xs" :disabled="!row.enabled" placeholder="il più recente" :aria-label="`Nome esatto di ${row.alias}`" />
-                      </td>
-                      <td class="py-2 pl-2 text-center">
-                        <input v-model="forms.cloudModels.default" type="radio" name="default-model" :value="row.alias" :disabled="!row.enabled" :aria-label="`${row.alias} predefinito`" />
                       </td>
                     </tr>
                   </tbody>
@@ -687,8 +710,8 @@ watch(active, () => {
               </div>
               <p class="text-xs text-muted">
                 Un modello spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia del modello (es.
-                <code class="font-mono">opus[1m]</code>, <code class="font-mono">claude-opus-5-5</code>); vuoto è il più recente. Il predefinito vale per le conversazioni nuove. Per
-                Codex la scelta si salva e vale con il suo adattatore.
+                <code class="font-mono">opus[1m]</code>, <code class="font-mono">claude-opus-5-5</code>); vuoto è il più recente. Per Codex la scelta si salva e vale con il suo adattatore.
+                Il modello con cui parte ogni agente si sceglie in <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="openSection('agenti')">Agenti</a>.
               </p>
             </SettingsCard>
 
@@ -754,14 +777,20 @@ watch(active, () => {
               <p v-else class="text-sm text-muted">Le chiamate sono spente: accendile per scegliere voce, limiti e orari.</p>
             </SettingsCard>
 
-            <!-- Characters -->
-            <SettingsCard v-if="active === 'characters'" id="characters" title="Personaggi" kind="now" :changed="changed('characters')" :saved="saved === 'characters'" :busy="busy === 'characters'" :error="errors.characters" @cancel="reset('characters')" @save="save('characters')">
-              <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                <div v-for="agent in agentIds" :key="agent" class="flex items-center gap-3 rounded-[10px] border border-line bg-surface-2 p-2.5">
+            <!-- Agents (D-116): look, persona and model of each agent, saved together -->
+            <SettingsCard v-if="active === 'agents'" id="agents" title="Agenti" kind="now" :changed="agentsChanged" :saved="saved === 'agents'" :invalid="personasInvalid" :busy="busy === 'agents'" :error="errors.agents" @cancel="resetAgents" @save="save('agents', AGENT_PARTS)">
+              <p class="text-xs text-muted">
+                Aspetto, modello e stile di ogni agente. Strumenti, permessi, etichette e limiti non cambiano: restano nelle schede <code class="font-mono">agents/*.yaml</code>.
+              </p>
+              <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
+                <div class="flex items-center gap-3">
                   <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" />
-                  <label class="flex min-w-0 flex-1 flex-col gap-1 text-[13px] font-medium">
-                    {{ agentName(agent) }}
-                    <select v-model="forms.characters[agent]" class="field px-2 py-1 text-xs font-normal">
+                  <h3 class="hud-title">{{ agentName(agent) }}</h3>
+                </div>
+                <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
+                  <label class="flex flex-col gap-1 text-xs text-muted">
+                    Personaggio
+                    <select v-model="forms.characters[agent]" class="field px-2 py-1.5 text-[13px] text-ink">
                       <option :value="undefined">predefinito</option>
                       <option v-for="option in characterOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                       <option v-if="forms.characters[agent] !== undefined && !characterOptions.some((option) => option.value === forms?.characters[agent])" :value="forms.characters[agent]">
@@ -769,18 +798,30 @@ watch(active, () => {
                       </option>
                     </select>
                   </label>
+                  <!-- Arianna: the orchestrator of Modelli locali, one place to set it, local only. -->
+                  <div v-if="agent === 'arianna'" class="flex flex-col gap-1 text-xs text-muted">
+                    Modello
+                    <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
+                      <span class="font-mono text-xs">{{ view.values?.roles.orchestrator ?? 'nessuno' }}</span><span class="chip">locale</span>
+                      <a href="/impostazioni/modelli-locali" class="text-xs text-accent hover:underline" @click.prevent="openSection('modelli-locali')">Si cambia in Modelli locali</a>
+                    </p>
+                  </div>
+                  <label v-else-if="forms.agents[agent] !== undefined && modelsOf(agent).length > 0" class="flex flex-col gap-1 text-xs text-muted">
+                    Modello delle conversazioni nuove
+                    <select v-model="forms.agents[agent]" class="field px-2 py-1.5 text-[13px] text-ink">
+                      <option value="">automatico (sceglie il router)</option>
+                      <option v-for="model in modelsOf(agent)" :key="model" :value="model">{{ MODEL_TEXT[model] ?? model }}{{ blockerOf(model) === undefined ? '' : ` (${blockerOf(model)})` }}</option>
+                      <!-- A model of the file the card no longer allows stays visible: it is kept, and ignored. -->
+                      <option v-if="forms.agents[agent] !== '' && !modelsOf(agent).includes(forms.agents[agent] as CloudModelAlias)" :value="forms.agents[agent]">
+                        {{ MODEL_TEXT[forms.agents[agent] ?? ''] ?? forms.agents[agent] }} (non consentito dalla scheda)
+                      </option>
+                    </select>
+                  </label>
+                  <div v-else class="flex flex-col gap-1 text-xs text-muted">
+                    Modello
+                    <p class="py-1.5 text-[13px] text-ink">solo modelli locali: sceglie il router</p>
+                  </div>
                 </div>
-              </div>
-              <p class="text-xs text-muted">Un pacchetto nuovo si copia in <code class="font-mono">data/characters</code>, fuori da git; poi ricarica questa pagina.</p>
-            </SettingsCard>
-
-            <!-- Personas -->
-            <SettingsCard v-if="active === 'personas'" id="personas" title="Personalità" kind="now" :changed="changed('personas')" :saved="saved === 'personas'" :invalid="personasInvalid" :busy="busy === 'personas'" :error="errors.personas" @cancel="reset('personas')" @save="save('personas')">
-              <p class="text-xs text-muted">
-                Stile e ruolo di ogni agente. Strumenti, permessi, etichette e limiti non cambiano: restano nelle schede <code class="font-mono">agents/*.yaml</code>.
-              </p>
-              <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
-                <h3 class="hud-title">{{ agentName(agent) }}</h3>
                 <template v-if="forms.personas[agent]">
                   <fieldset class="flex flex-col gap-1 text-xs text-muted">
                     <legend class="mb-1">Tono</legend>
@@ -835,8 +876,14 @@ watch(active, () => {
                 </template>
               </div>
               <p class="text-xs text-muted">
+                Il modello vale per le conversazioni nuove (per ora quelle di lavoro, con il Coder; gli altri agenti quando si potranno scegliere in «+ Nuovo»): il selettore della chat
+                lo cambia per una conversazione, e il router lo usa finché nessuna regola lo esclude. Un
+                modello spento o con l’esecutore spento si può scegliere, ma vale solo quando è acceso; non accende mai un esecutore. Per Arianna solo modelli locali.
+              </p>
+              <p class="text-xs text-muted">
                 {{ PERSONA_WHERE }} La specializzazione si aggiunge al ruolo scritto nella scheda dell’agente, non lo sostituisce. Al salvataggio un testo con IBAN, codici fiscali,
-                carte, chiavi o valori del vault viene rifiutato.
+                carte, chiavi o valori del vault viene rifiutato. Un pacchetto di personaggi nuovo si copia in <code class="font-mono">data/characters</code>, fuori da git; poi
+                ricarica questa pagina.
               </p>
             </SettingsCard>
 

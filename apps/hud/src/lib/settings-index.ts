@@ -47,12 +47,11 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
     ],
   },
   {
-    group: 'Voce e aspetto',
+    group: 'Agenti e voce',
     items: [
+      { id: 'agents', slug: 'agenti', title: 'Agenti', behaviour: 'now' },
       { id: 'voice', slug: 'voce', title: 'Voce', behaviour: 'now' },
       { id: 'voice-trial', slug: 'provino-della-voce', title: 'Provino della voce', behaviour: 'now', page: VOICE_TRIAL_PATH },
-      { id: 'characters', slug: 'personaggi', title: 'Personaggi', behaviour: 'now' },
-      { id: 'personas', slug: 'personalita', title: 'Personalità', behaviour: 'now' },
     ],
   },
   {
@@ -83,9 +82,13 @@ export interface ChosenSection {
   explicit: boolean;
 }
 
+/** Addresses of sections that became part of another (D-116): Personaggi and Personalità are in Agenti. */
+const MOVED: Record<string, string> = { personaggi: 'agenti', personalita: 'agenti' };
+
 /** The section of a slug; none, unknown or a page of its own gives the first section. */
 export function resolveSection(slug: string | undefined): ChosenSection {
-  const found = slug === undefined ? undefined : SECTIONS.find((item) => item.slug === slug);
+  const moved = slug !== undefined && Object.hasOwn(MOVED, slug) ? MOVED[slug] : slug;
+  const found = moved === undefined ? undefined : SECTIONS.find((item) => item.slug === moved);
   const first = SECTIONS[0];
   if (first === undefined) throw new Error('the settings index has no section');
   return found === undefined ? { item: first, explicit: false } : { item: found, explicit: true };
@@ -96,20 +99,24 @@ export function hrefOf(item: IndexItem): string {
   return item.page ?? `${SETTINGS_PATH}/${item.slug}`;
 }
 
-/** The card of a section that holds edits (the `Section` of lib/settings.ts), if any. */
-export const EDITED_BY: Record<string, string> = {
-  roles: 'roles',
-  'cloud-models': 'cloudModels',
-  voice: 'voice',
-  characters: 'characters',
-  personas: 'personas',
-  executors: 'executors',
-  telegram: 'telegram',
-  projects: 'projects',
-  servers: 'endpoints',
+/** The parts of the settings (the `Section`s of lib/settings.ts) a section edits, if any. */
+export const EDITED_BY: Record<string, readonly string[]> = {
+  roles: ['roles'],
+  'cloud-models': ['cloudModels'],
+  agents: ['characters', 'personas', 'agents'],
+  voice: ['voice'],
+  executors: ['executors'],
+  telegram: ['telegram'],
+  projects: ['projects'],
+  servers: ['endpoints'],
 };
+
+/** A section holds edits not saved in any of its parts. */
+export function sectionDirty(id: string, isChanged: (section: string) => boolean): boolean {
+  return (EDITED_BY[id] ?? []).some(isChanged);
+}
 
 /** The titles of the sections left with unsaved edits, for the notice shown elsewhere. */
 export function pendingTitles(current: string, isChanged: (section: string) => boolean): string[] {
-  return SECTIONS.filter((item) => item.id !== current && EDITED_BY[item.id] !== undefined && isChanged(EDITED_BY[item.id] ?? '')).map((item) => item.title);
+  return SECTIONS.filter((item) => item.id !== current && sectionDirty(item.id, isChanged)).map((item) => item.title);
 }

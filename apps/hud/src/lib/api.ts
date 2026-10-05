@@ -4,7 +4,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
-import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
+import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -316,7 +316,7 @@ export async function loadSettings(): Promise<SettingsView> {
 }
 
 /** Models, cloud models, characters, [voice]: written at once over the file the page read. */
-export async function saveSettings(fingerprint: string, values: Partial<Pick<SettingsValues, OrdinarySection>>): Promise<SettingsView> {
+export async function saveSettings(fingerprint: string, values: SettingsBody): Promise<SettingsView> {
   return call<SettingsView>('POST', '/api/settings', { fingerprint, values });
 }
 

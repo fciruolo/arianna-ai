@@ -36,10 +36,12 @@ export interface EndpointValues {
 
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
-  cloudModels: { models: Record<CloudModelAlias, boolean | string>; default: CloudModelAlias | null };
+  cloudModels: { models: Record<CloudModelAlias, boolean | string> };
   characters: Record<string, string>;
   /** Agent → persona (D-107); an agent without one has the defaults. */
   personas: Record<string, PersonaValues>;
+  /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
+  agents: Record<string, { model: CloudModelAlias }>;
   voice: VoiceValues | null;
   executors: string[];
   telegram: { chats: number[] } | null;
@@ -75,6 +77,8 @@ export interface SettingsView {
   catalog: CatalogModel[];
   labels: string | null;
   voiceDefaults: VoiceValues;
+  /** Agent → the cloud models its card allows (D-116); empty for Arianna, whose model is the orchestrator. */
+  agentModels: Record<string, CloudModelAlias[]>;
   /** Only from GET: a write answers without it. */
   local?: LocalServerStatus[];
 }
@@ -101,7 +105,10 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents';
+
+/** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
+export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
 export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints';
 export type Section = OrdinarySection | PrivacySection;
 
@@ -129,6 +136,7 @@ export const SECTION_TEXT: Record<string, string> = {
   cloudModels: 'Modelli cloud',
   characters: 'Personaggi',
   personas: 'Personalità',
+  agents: 'Modelli degli agenti',
   voice: 'Voce',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
@@ -177,7 +185,6 @@ export interface CloudModelRow {
 
 export interface CloudModelsForm {
   rows: CloudModelRow[];
-  default: CloudModelAlias | null;
 }
 
 export function cloudModelsForm(values: SettingsValues['cloudModels']): CloudModelsForm {
@@ -186,7 +193,6 @@ export function cloudModelsForm(values: SettingsValues['cloudModels']): CloudMod
       const value = values.models[alias];
       return { alias, enabled: value !== false, name: typeof value === 'string' ? value : '' };
     }),
-    default: values.default,
   };
 }
 
@@ -195,7 +201,36 @@ export function cloudModelsBody(form: CloudModelsForm): SettingsValues['cloudMod
     CloudModelAlias,
     boolean | string
   >;
-  return { models, default: form.default };
+  return { models };
+}
+
+/** Agent → its model in the form (D-116): `''` is "the router chooses". Every agent with a card, none else. */
+export type AgentsForm = Record<string, CloudModelAlias | ''>;
+
+export function agentsForm(values: SettingsValues['agents'], allowed: SettingsView['agentModels']): AgentsForm {
+  return Object.fromEntries(Object.keys(allowed).map((agent) => [agent, Object.hasOwn(values, agent) ? (values[agent]?.model ?? '') : '']));
+}
+
+/** Every agent of the form, `null` for "the router chooses": the core writes exactly this table. */
+export function agentsBody(form: AgentsForm): Record<string, { model: CloudModelAlias | null }> {
+  return Object.fromEntries(Object.entries(form).map(([agent, model]) => [agent, { model: model === '' ? null : model }]));
+}
+
+/** The executor of a cloud model, as `executorOf` of packages/router/src/config.ts has it: a new alias goes in both. */
+function executorOfModel(model: CloudModelAlias): string {
+  return model === 'codex' ? 'codex' : 'claude';
+}
+
+/**
+ * Why a model the card allows would not start a new conversation now
+ * (D-116): turned off, its executor off, or Codex before its adapter. It can
+ * still be chosen: it applies once the cause is gone.
+ */
+export function modelBlocker(model: CloudModelAlias, values: Pick<SettingsValues, 'cloudModels' | 'executors'>): string | undefined {
+  if (values.cloudModels.models[model] === false) return 'spento in Modelli cloud';
+  if (!values.executors.includes(executorOfModel(model))) return 'esecutore spento';
+  if (model === 'codex') return 'vale con il suo adattatore';
+  return undefined;
 }
 
 /** Roles with no model are left out of `[roles]`. */

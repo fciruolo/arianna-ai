@@ -32,6 +32,8 @@ const START: Settings = {
   cloud: { executors: ['claude'] },
 };
 
+const AGENT_MODELS = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'codex'] } as const;
+
 const LOCAL: LocalServerStatus[] = [
   { id: 'omlx', url: 'http://127.0.0.1:7001/v1', managed: true, adopted: false, state: 'up' },
   { id: 'spare', url: 'http://127.0.0.1:7002/v1', managed: false, adopted: false, state: 'down' },
@@ -49,7 +51,7 @@ before(async () => {
   mkdirSync(userHome, { recursive: true });
   copyFileSync(join(REPO, CATALOG_FILE), join(home, CATALOG_FILE));
   const config = parseConfig(renderSettings(START), home, loadCatalog(home), userHome);
-  const settings = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running: () => config, onChanged: (change) => changes.push(change), now: () => clock });
+  const settings = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running: () => config, agentModels: () => AGENT_MODELS, onChanged: (change) => changes.push(change), now: () => clock });
   server = await startApiServer({
     // Unused by these routes.
     sql: undefined as unknown as Sql,

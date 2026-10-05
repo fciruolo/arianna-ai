@@ -42,6 +42,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     projects: [],
     characters: {},
     personas: {},
+    agents: {},
   });
 });
 
@@ -375,21 +376,53 @@ test('an endpoint with neither models nor roles is rejected', () => {
 test('[cloud.models]: every alias on by default, off with false, on under an exact name with a string (D-071)', () => {
   const cloud = (models: string) => parseConfig(`${VALID}\n[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\n${models}\n`, HOME).cloud;
   assert.deepEqual(parseConfig(VALID, HOME).cloud.models, defaultCloudModels());
-  assert.equal(parseConfig(VALID, HOME).cloud.defaultModel, undefined, 'without a default the router chooses');
-  const given = cloud('sonnet = true\nopus = "claude-opus-5-5[1m]"\nfable = false\ndefault = "opus"');
+  const given = cloud('sonnet = true\nopus = "claude-opus-5-5[1m]"\nfable = false');
   assert.deepEqual(given.models, {
     sonnet: { enabled: true },
     opus: { enabled: true, name: 'claude-opus-5-5[1m]' },
     fable: { enabled: false },
     codex: { enabled: true },
   });
-  assert.equal(given.defaultModel, 'opus');
   assert.deepEqual(enabledCloudModels(given), ['sonnet', 'opus', 'codex']);
   assert.equal(cloudModelName(given, 'opus'), 'claude-opus-5-5[1m]');
   assert.equal(cloudModelName(given, 'sonnet'), 'sonnet', 'no name: the alias, the newest model for the binary');
 });
 
-test('[cloud.models] refuses unknown aliases, odd names and a default turned off', () => {
+test('[agents.<id>] model: a cloud model per agent, never for arianna (D-116)', () => {
+  const agents = (text: string) => parseConfig(`${VALID}\n${text}\n`, HOME).agents;
+  assert.deepEqual(parseConfig(VALID, HOME).agents, {}, 'without a model the router chooses');
+  assert.deepEqual(agents('[agents.coder]\nmodel = "opus"\n\n[agents.writer]'), { coder: { model: 'opus' }, writer: {} });
+  // A model turned off stays written: the core offers it only while it is on.
+  assert.deepEqual(agents('[cloud.models]\nfable = false\n\n[agents.coder]\nmodel = "fable"'), { coder: { model: 'fable' } });
+  const rejects = (text: string, pattern: RegExp): void => {
+    assert.throws(
+      () => parseConfig(`${VALID}\n${text}\n`, HOME),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+    );
+  };
+  rejects('[agents.arianna]\nmodel = "sonnet"', /agents\.arianna\.model: Arianna's model is the orchestrator/);
+  rejects('[agents.coder]\nmodel = "haiku"', /agents\.coder\.model/);
+  rejects('[agents.coder]\nmodel = "local-large"', /agents\.coder\.model/);
+  rejects('[agents.coder]\ntools = ["repo.write"]', /unknown key/);
+  rejects('[agents.Coder]\nmodel = "opus"', /an agent id/);
+  rejects('[agents]\ncoder = "opus"', /agents\.coder/);
+});
+
+test('default of [cloud.models] from before D-116 is read as the Coder model', () => {
+  const agents = (text: string) => parseConfig(`${VALID}\n[cloud.models]\n${text}\n`, HOME).agents;
+  assert.deepEqual(agents('default = "opus"'), { coder: { model: 'opus' } });
+  assert.deepEqual(agents('fable = false\ndefault = "fable"'), { coder: { model: 'fable' } }, 'off: kept, not offered');
+  assert.deepEqual(agents('default = "opus"\n\n[agents.coder]\nmodel = "sonnet"'), { coder: { model: 'sonnet' } }, '[agents] wins');
+  assert.deepEqual(agents('default = "opus"\n\n[agents.coder]'), { coder: { model: 'opus' } });
+  for (const bad of ['"haiku"', '"local-large"', 'true']) {
+    assert.throws(
+      () => agents(`default = ${bad}`),
+      (error: unknown) => error instanceof ConfigError && /cloud\.models\.default/.test(error.message),
+    );
+  }
+});
+
+test('[cloud.models] refuses unknown aliases and odd names', () => {
   const rejects = (models: string, pattern: RegExp): void => {
     assert.throws(
       () => parseConfig(`${VALID}\n[cloud.models]\n${models}\n`, HOME),
@@ -407,7 +440,6 @@ test('[cloud.models] refuses unknown aliases, odd names and a default turned off
   rejects('sonnet = "fable"', /of the sonnet family/);
   rejects('opus = "opusx"', /of the opus family/);
   rejects('default = "haiku"', /cloud\.models\.default/);
-  rejects('fable = false\ndefault = "fable"', /fable is turned off/);
   rejects('default = true', /cloud\.models\.default/);
 });
 

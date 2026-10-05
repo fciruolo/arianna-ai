@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { DEV_PATH, isSettingsPath, settingsPathFor, settingsSlug, VOICE_TRIAL_PATH } from '../src/lib/route.ts';
-import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, resolveSection, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
+import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, resolveSection, sectionDirty, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
 
 const items = SETTINGS_INDEX.flatMap((group) => group.items);
 function byId(id: string) {
@@ -14,7 +14,7 @@ function byId(id: string) {
 test('groups by subject, no group named after how a section takes effect', () => {
   assert.deepEqual(
     SETTINGS_INDEX.map((group) => group.group),
-    ['Modelli', 'Voce e aspetto', 'Collegamenti', 'Sistema'],
+    ['Modelli', 'Agenti e voce', 'Collegamenti', 'Sistema'],
   );
   // Every entry that lets data out is in Collegamenti and asks for confirmation.
   for (const item of items.filter((entry) => entry.privacy === true)) assert.equal(item.behaviour, 'confirm');
@@ -37,6 +37,17 @@ test('the address names the section; none or an unknown one falls back to the fi
   // A page of its own is not a section of this page.
   assert.equal(resolveSection('provino-della-voce').item.id, 'roles');
   assert.equal(resolveSection('sviluppo').explicit, false);
+});
+
+test('Personaggi and Personalità are in Agenti (D-116): their old addresses open it', () => {
+  assert.deepEqual(resolveSection('agenti'), { item: byId('agents'), explicit: true });
+  assert.deepEqual(resolveSection('personaggi'), { item: byId('agents'), explicit: true });
+  assert.deepEqual(resolveSection('personalita'), { item: byId('agents'), explicit: true });
+  assert.ok(!items.some((entry) => entry.id === 'characters' || entry.id === 'personas'));
+  // Its card edits three parts: any of them makes it dirty.
+  assert.equal(sectionDirty('agents', (section) => section === 'personas'), true);
+  assert.equal(sectionDirty('agents', (section) => section === 'roles'), false);
+  assert.deepEqual(pendingTitles('roles', (section) => section === 'agents'), ['Agenti']);
 });
 
 test('the entries lead to their section, or to their own page', () => {
