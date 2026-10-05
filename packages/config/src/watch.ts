@@ -29,7 +29,11 @@ export interface ConfigChange {
    * `telegram`, `voice`, `characters`, `personas`).
    */
   applied: string[];
-  /** Changed in the file but still the old values until the core restarts. */
+  /**
+   * Changed in the file by this reload and still the old values until the
+   * core restarts; reported once per change (the settings page lists all
+   * of them as `restartPending`).
+   */
   restart: string[];
 }
 
@@ -132,10 +136,16 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
     closed = false;
     // Reported once per change of the file, not at every check.
     if (empty(diffConfig(read, next)) && !reopened) return;
+    const previous = read;
     read = next;
     const before = current;
     current = applicable(current, next);
-    const change = { applied: diffConfig(before, current).applied, restart: diffConfig(current, next).restart };
+    // A section waiting for a restart is reported once, when the file changes
+    // it, not again at every later reload; one put back as the core runs it is
+    // not reported.
+    const pending = diffConfig(current, next).restart;
+    const restart = diffConfig(previous, next).restart.filter((section) => pending.includes(section));
+    const change = { applied: diffConfig(before, current).applied, restart };
     // A file put back as it was changes nothing.
     if (!empty(change)) options.onChange(change);
   };

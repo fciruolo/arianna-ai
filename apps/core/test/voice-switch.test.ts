@@ -11,7 +11,7 @@ const PUSH: PushConfig = { publicKey: `B${'a'.repeat(86)}`, privateKey: 'vault:/
 const ON: VoiceConfig = structuredClone(DEFAULT_VOICE);
 
 /** A switch on fake services and pushers: `log` lists what happened, in order. */
-function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boolean; failStop?: boolean } = {}) {
+function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boolean; failStop?: boolean; onApplied?: (config: VoiceConfig | undefined) => void } = {}) {
   const log: string[] = [];
   const errors: unknown[] = [];
   const voice = createVoiceSwitch({
@@ -42,6 +42,7 @@ function fake(options: { busy?: () => boolean | Promise<boolean>; failPush?: boo
     },
     busy: async () => (await options.busy?.()) ?? false,
     onChange: (config) => log.push(`event ${config === undefined ? 'off' : String(config.port)}`),
+    ...(options.onApplied === undefined ? {} : { onApplied: options.onApplied }),
     onError: (error) => errors.push(error),
     retryMs: 20,
   });
@@ -127,6 +128,36 @@ test('negative: with no call at begin nothing waits; with a call, a change put b
   busy = false;
   await settle(60);
   assert.deepEqual(log, ['create 7421', 'start 7421', 'event 7500', 'event 7421']);
+  await voice.close();
+});
+
+test('the log line of a change is written once: not at each retry while a call goes on (D-071)', async () => {
+  let busy = false;
+  const applied: string[] = [];
+  const { voice, log } = fake({ busy: () => busy, onApplied: (config) => applied.push(config === undefined ? 'off' : String(config.port)) });
+  await voice.begin(ON);
+  busy = true;
+  voice.sync({ ...ON, port: 7500 });
+  // The same section read again while the restart waits, as a reload of the file does.
+  voice.sync({ ...ON, port: 7500 });
+  await settle(100);
+  assert.deepEqual(applied, ['7421']);
+  busy = false;
+  await settle(60);
+  assert.deepEqual(applied, ['7421', '7500']);
+  assert.deepEqual(log.filter((line) => line.startsWith('event')), ['event 7500']);
+  await voice.close();
+});
+
+test('negative: the same [voice] synced again logs nothing and restarts nothing', async () => {
+  const applied: string[] = [];
+  const { voice, log } = fake({ onApplied: (config) => applied.push(config === undefined ? 'off' : String(config.port)) });
+  await voice.begin(ON);
+  voice.sync(structuredClone(ON));
+  voice.sync(structuredClone(ON));
+  await settle(60);
+  assert.deepEqual(applied, ['7421']);
+  assert.deepEqual(log, ['create 7421', 'start 7421']);
   await voice.close();
 });
 

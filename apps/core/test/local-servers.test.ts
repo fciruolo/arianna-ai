@@ -269,6 +269,41 @@ describe('createLocalServers', { timeout: 60_000 }, () => {
     assert.equal(servers.status()[0]?.state, 'up');
   });
 
+  it('syncs waiting behind a long start are merged: the last configuration wins, the one in between never starts', async () => {
+    const [a, b, c] = [await freePort(), await freePort(), await freePort()];
+    create();
+    const slow = { ...endpoint('omlx', a), command: [process.execPath, FAKE, String(a), 'slow'] };
+    const first = servers.sync([slow]);
+    const deadline = Date.now() + 5_000;
+    while (spawns().length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(spawns().length, 1);
+    // Both arrive while the first is still loading: the second is replaced by the third.
+    const second = servers.sync([endpoint('omlx', b)]);
+    const third = servers.sync([endpoint('omlx', c)]);
+    await Promise.all([first, second, third]);
+    assert.equal(spawns().length, 2);
+    assert.deepEqual(servers.status().map(({ url, state }) => [url, state]), [[`http://127.0.0.1:${String(c)}/v1`, 'up']]);
+    assert.equal(await answers(b), false);
+  });
+
+  it('a sync arriving during a long start does not cut it short: the running one ends, then the new one applies', async () => {
+    const [a, b] = [await freePort(), await freePort()];
+    create();
+    const slow = { ...endpoint('omlx', a), command: [process.execPath, FAKE, String(a), 'slow'] };
+    const first = servers.sync([slow]);
+    const deadline = Date.now() + 5_000;
+    while (spawns().length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    const second = servers.sync([endpoint('omlx', b)]);
+    await Promise.all([first, second]);
+    // The first settled on its own server, up, before the second was started.
+    const firstUp = events.findIndex((event) => event.type === 'state' && event.state === 'up');
+    const secondSpawn = events.findLastIndex((event) => event.type === 'spawn');
+    assert.ok(firstUp !== -1 && firstUp < secondSpawn);
+    assert.equal(spawns().length, 2);
+    assert.deepEqual(servers.status().map(({ url, state }) => [url, state]), [[`http://127.0.0.1:${String(b)}/v1`, 'up']]);
+    assert.equal(await answers(a), false);
+  });
+
   it('a command that does not exist ends in failed with spawn-error', async () => {
     const port = await freePort();
     create();

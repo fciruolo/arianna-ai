@@ -53,7 +53,9 @@ export interface LocalServers {
   /**
    * Brings the watchdogs in line with `endpoints`: new ones start, removed
    * ones stop, one whose `url` or `command` changed is stopped and started
-   * again. Resolves once every new watchdog has settled.
+   * again. Resolves once every new watchdog has settled. A sync still
+   * waiting behind another (a long start of oMLX) is replaced by the next
+   * one: only the last configuration is applied, and both resolve with it.
    */
   sync(endpoints: readonly LocalEndpointConfig[]): Promise<void>;
   status(): LocalServerStatus[];
@@ -187,6 +189,8 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
   const supervised = new Map<string, Supervised>();
   let order: string[] = [];
   let queue: Promise<void> = Promise.resolve();
+  /** The sync queued and not started yet: a later one replaces its endpoints. */
+  let pending: { endpoints: readonly LocalEndpointConfig[]; done: Promise<void> } | undefined;
   let closed = false;
   /** Read through a function: stop() may flip the flag while a sync awaits. */
   const isClosed = (): boolean => closed;
@@ -269,9 +273,20 @@ export function createLocalServers(options: LocalServersOptions): LocalServers {
     sync(endpoints) {
       if (closed) return Promise.reject(new Error('local servers stopped'));
       // One change at a time: a second sync waits for the first to settle.
-      const next = queue.then(() => apply(endpoints));
-      queue = next.catch(() => undefined);
-      return next;
+      // Syncs waiting behind a long start are merged: the last configuration
+      // wins, and every caller resolves when it is applied.
+      if (pending !== undefined) {
+        pending.endpoints = endpoints;
+        return pending.done;
+      }
+      const waiting: { endpoints: readonly LocalEndpointConfig[]; done: Promise<void> } = { endpoints, done: Promise.resolve() };
+      waiting.done = queue.then(() => {
+        pending = undefined;
+        return apply(waiting.endpoints);
+      });
+      pending = waiting;
+      queue = waiting.done.catch(() => undefined);
+      return waiting.done;
     },
 
     status() {

@@ -139,6 +139,19 @@ test('every section but paths, database and server applies live; an invalid file
     assert.deepEqual(await next(seen), { applied: [], restart: ['server'] });
     assert.equal(watcher.current().server.port, 7420);
 
+    // Reported once: a later change of another section does not name the server again.
+    write({ ...SECOND, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }], server: { host: '127.0.0.1', port: 7999 }, characters: { coder: 'p/robot' } });
+    assert.deepEqual(await next(seen), { applied: ['characters'], restart: [] });
+    // Changed again: reported again.
+    write({ ...SECOND, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }], server: { host: '127.0.0.1', port: 7998 }, characters: { coder: 'p/robot' } });
+    assert.deepEqual(await next(seen), { applied: [], restart: ['server'] });
+    // Not after an invalid file either, once it is valid again with the same server.
+    write('[paths]\ndata = "/elsewhere"\n');
+    assert.ok((await next(seen)) instanceof Error);
+    write({ ...SECOND, endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:9999/v1', command: ['other'] }], server: { host: '127.0.0.1', port: 7998 } });
+    assert.deepEqual(await next(seen), { applied: ['characters'], restart: [] });
+    assert.equal(watcher.current().server.port, 7420);
+
     // [voice] applies live too (D-071): on, changed, off.
     write({ ...SECOND, voice: structuredClone(DEFAULT_VOICE) });
     assert.deepEqual(await next(seen), { applied: ['local.endpoints', 'voice'], restart: [] });
