@@ -4,21 +4,24 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { AGENTS_DIR, loadAgents, type Answer } from '@arianna/agents';
+import { AGENTS_DIR, loadAgents, type Answer, type Autonomy } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
+import { createContext } from '@arianna/policy';
 import { LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
-import { processStepJob, resumeTask, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
+import { processStepJob, resumeTask, scheduleTask, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
+import { hasOpenCards, updateCard } from '../src/orchestrator/cards.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { recordFailure } from '../src/failures.ts';
 import { createOrchestrator, SYSTEM_MESSAGE_MARK } from '../src/orchestrator/orchestrator.ts';
 import { openFailureChat } from '../src/system-chats.ts';
 import { loadTurns } from '../src/orchestrator/turns.ts';
 import { openReply } from '../src/reply.ts';
-import { loadTask } from '../src/tasks.ts';
+import { loadTask, moveTask, type Task } from '../src/tasks.ts';
+import { listWaitingTasks } from '../src/waiting.ts';
 import { useTestDatabase } from './support/database.ts';
 
 const db = useTestDatabase();
@@ -448,4 +451,213 @@ test('in a system chat the model reads the messages of the system, marked, befor
   assert.equal(messages.at(-1), system);
   assert.ok(system.content.endsWith('\n\nCosa è successo?'));
   assert.ok(messages.slice(1).every((message, index, all) => index === 0 || message.role !== all[index - 1]?.role), 'user and assistant alternate');
+});
+
+// task.update (task 1.10, D-101): the orchestrator moves a card of the conversation and writes a note on it.
+
+/** The tools a request offered, from its response schema. */
+function offered(request: ChatRequest | undefined): string[] {
+  const found = JSON.stringify(request?.schema?.schema ?? {}).match(/"(kb|task|user)\.[a-z]+"/g) ?? [];
+  return [...new Set(found.map((name) => name.slice(1, -1)))].sort();
+}
+
+/** A card made by the first task of a new conversation, and that conversation. */
+async function cardIn(mode: 'work' | 'private', title: string): Promise<{ cardId: string; conversationId: string; parentId: string }> {
+  const { task } = await ask(mode, `Ricordami: ${title}`);
+  const model = scripted([
+    { action: 'call', tool: 'task.create', arguments: { title } },
+    { action: 'reply', text: 'Carta creata.' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
+  // No card when the task started: not offered, not even after the card exists (fixed for the task).
+  assert.ok(model.requests.every((request) => !offered(request).includes('task.update')));
+  const [card] = await db().sql<{ id: string }[]>`SELECT id::text FROM tasks WHERE parent_id = ${task.id}`;
+  assert.ok(card !== undefined && task.conversationId !== null);
+  return { cardId: card.id, conversationId: task.conversationId, parentId: task.id };
+}
+
+/** `task.update` run directly, as the orchestrator runs it, in its own transaction. */
+async function update(task: Task, args: Record<string, unknown>, autonomy: Autonomy = 'A1', context = createContext(task.clearance, task.clearance)) {
+  return db().sql.begin((tx) => updateCard(args, { sql: tx, task, context, autonomy }));
+}
+
+async function taskOf(id: string): Promise<Task> {
+  const task = await loadTask(db().sql, id);
+  assert.ok(task !== undefined);
+  return task;
+}
+
+test('task.update: the model finds the card in the list, puts it on hold with a note, and later back in ready', async () => {
+  const { cardId, conversationId } = await cardIn('work', 'Chiedere il preventivo al fabbro');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Il fabbro non risponde: segnala che aspetto la sua chiamata.');
+  const model = scripted([
+    // The model has never seen the id: it tries a name, reads the open cards, takes the right one.
+    { action: 'call', tool: 'task.update', arguments: { task_id: 'preventivo-fabbro', status: 'waiting_user', note: 'Aspetto la chiamata del fabbro.' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: cardId.slice(0, 8), status: 'waiting_user', note: 'Aspetto la chiamata del fabbro.' } },
+    { action: 'reply', text: 'Segnata in attesa.' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'continued', 'answered']);
+  assert.ok(model.requests.every((request) => offered(request).includes('task.update')));
+  assert.equal(
+    model.requests[1]?.messages.at(-1)?.content,
+    `<tool_result>\nerror: task.update: no open card 'preventivo-fabbro' in this conversation. Open cards:\n- ${cardId} (inbox): Chiedere il preventivo al fabbro\n</tool_result>`,
+  );
+  assert.match(model.requests[2]?.messages.at(-1)?.content ?? '', new RegExp(`updated card ${cardId}: inbox → waiting_user, note saved`));
+  // The offer is decided once per task, in the log.
+  const offers = await db().sql<{ payload: unknown }[]>`SELECT payload FROM events WHERE task_id = ${task.id} AND kind = 'task.offer'`;
+  assert.deepEqual(offers.map((row) => row.payload), [{ update: true }]);
+
+  const card = await taskOf(cardId);
+  assert.deepEqual(
+    [card.status, card.waitingReason, card.note, card.label, card.effectiveLabel],
+    ['waiting_user', 'Aspetto la chiamata del fabbro.', 'Aspetto la chiamata del fabbro.', 'L1', 'L1'],
+  );
+  // In the chain: the move, with its cause, and the update, without the note's text.
+  const events = await db().sql<{ kind: string; label: string; payload: Record<string, unknown> }[]>`
+    SELECT kind, label, payload FROM events WHERE task_id = ${cardId} AND kind IN ('task.status', 'task.updated') ORDER BY id`;
+  assert.deepEqual(
+    events.map((event) => [event.kind, event.label, event.payload]),
+    [
+      ['task.status', 'L2', { from: 'inbox', to: 'waiting_user', cause: 'agent' }],
+      ['task.updated', 'L1', { by: task.id, from: 'inbox', to: 'waiting_user', note: true }],
+    ],
+  );
+  assert.ok(events.every((event) => !JSON.stringify(event.payload).includes('fabbro')));
+
+  // It shows in the "Decisioni in attesa" window (D-091), with the note as the reason.
+  const waiting = (await listWaitingTasks(db().sql)).tasks.find((entry) => entry.id === cardId);
+  assert.deepEqual([waiting?.conversationId, waiting?.reason, waiting?.waitingReason], [null, 'other', 'Aspetto la chiamata del fabbro.']);
+
+  // A1 closes a wait it opened itself.
+  const { task: next } = await postUserMessage(db().sql, conversationId, 'Il fabbro ha chiamato, rimettila tra i pronti.');
+  const back = scripted([
+    { action: 'call', tool: 'task.update', arguments: { task_id: cardId, status: 'ready' } },
+    { action: 'reply', text: 'Fatto.' },
+  ]);
+  assert.deepEqual(await drain(next.id, back), ['continued', 'answered']);
+  const ready = await taskOf(cardId);
+  // The note stays; the waiting reason goes with the wait. No job: a card in Pronti does not run by itself.
+  assert.deepEqual([ready.status, ready.waitingReason, ready.note], ['ready', null, 'Aspetto la chiamata del fabbro.']);
+  assert.equal((await db().sql`SELECT FROM jobs WHERE key = ${`task:${cardId}`}`).length, 0);
+  assert.equal((await listWaitingTasks(db().sql)).tasks.find((entry) => entry.id === cardId), undefined);
+});
+
+test('task.update refuses what it may not do, as results the model reads', async () => {
+  const { cardId, conversationId } = await cardIn('private', 'Rinnovare la carta d’identità');
+  const other = await cardIn('private', 'Pagare il bollo');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Aggiorna le carte.');
+  const model = scripted([
+    // A card of another conversation reads as one that does not exist, with the open cards listed.
+    { action: 'call', tool: 'task.update', arguments: { task_id: other.cardId, status: 'waiting_user', note: 'x' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: '00000000-0000-0000-0000-000000000000', status: 'ready' } },
+    // With autonomy A1 a card goes to Pronti only through the user.
+    { action: 'call', tool: 'task.update', arguments: { task_id: cardId, status: 'ready' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: cardId, status: 'to_verify' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: cardId, status: 'waiting_user' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: task.id, status: 'waiting_user', note: 'Attendo.' } },
+    { action: 'call', tool: 'task.update', arguments: { task_id: task.id.slice(0, 8), status: 'waiting_user', note: 'Attendo.' } },
+    { action: 'reply', text: 'Non posso.' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), [...Array<string>(7).fill('continued'), 'answered']);
+  const results = model.requests.slice(1).map((request) => request.messages.at(-1)?.content ?? '');
+  const notFound = (id: string) =>
+    `<tool_result>\nerror: task.update: no open card '${id}' in this conversation. Open cards:\n- ${cardId} (inbox): Rinnovare la carta d’identità\n</tool_result>`;
+  assert.equal(results[0], notFound(other.cardId));
+  assert.equal(results[1], notFound('00000000-0000-0000-0000-000000000000'));
+  assert.match(results[2] ?? '', /error: task\.update: with autonomy A1 a card goes to ready only through the user/);
+  assert.match(results[3] ?? '', /error: task\.update: a card goes to to_verify only from work, and this one is inbox/);
+  assert.match(results[4] ?? '', /error: task\.update: waiting_user needs a note/);
+  assert.match(results[5] ?? '', /error: task\.update: that is the task you are working on/);
+  assert.match(results[6] ?? '', /error: task\.update: that is the task you are working on/);
+  // Nothing moved, here or in the other conversation.
+  assert.equal((await taskOf(cardId)).status, 'inbox');
+  assert.equal((await taskOf(other.cardId)).status, 'inbox');
+  assert.equal((await taskOf(task.id)).status, 'done');
+});
+
+test('task.update and autonomy: A0 moves nothing, A1 never closes a wait it did not open, A2 triages', async () => {
+  const { cardId, conversationId } = await cardIn('work', 'Prenotare la revisione dell’auto');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Aggiorna la carta.');
+  assert.match((await update(task, { task_id: cardId, status: 'waiting_user', note: 'Attendo.' }, 'A0')).text, /with autonomy A0 an agent only proposes/);
+  // A wait the user opened stays the user's.
+  await db().sql.begin((tx) => moveTask(tx, cardId, 'waiting_user', { reason: 'Decido io.', cause: 'user' }));
+  assert.match((await update(task, { task_id: cardId, status: 'ready' })).text, /only the user moves it back to ready/);
+  // The same status with a new note: only the note changes.
+  assert.match((await update(task, { task_id: cardId, status: 'waiting_user', note: 'Chiamare l’officina.' })).text, /still waiting_user, note saved/);
+  const noted = await taskOf(cardId);
+  assert.deepEqual([noted.status, noted.waitingReason, noted.note], ['waiting_user', 'Chiamare l’officina.', 'Chiamare l’officina.']);
+  // A2 may triage: from the inbox to Pronti.
+  const second = await cardIn('work', 'Cambiare le gomme');
+  const { task: other } = await postUserMessage(db().sql, second.conversationId, 'Aggiorna la carta.');
+  assert.match((await update(other, { task_id: second.cardId, status: 'ready' }, 'A2')).text, /inbox → ready/);
+  assert.equal((await taskOf(second.cardId)).status, 'ready');
+});
+
+test('task.update: cards in work, waiting for an approval, closed, or named by a short or ambiguous prefix', async () => {
+  const { cardId, conversationId, parentId } = await cardIn('work', 'Rinnovare il dominio');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Aggiorna la carta.');
+  const args = (id: string) => ({ task_id: id, status: 'waiting_user', note: 'Attendo.' });
+
+  // In work: a step job is active.
+  await scheduleTask(db().sql, cardId);
+  assert.equal(await hasOpenCards(db().sql, task), false);
+  assert.match((await update(task, args(cardId))).text, /is being worked on/);
+  await db().sql`UPDATE jobs SET status = 'done' WHERE key = ${`task:${cardId}`} AND status = 'queued'`;
+  assert.equal(await hasOpenCards(db().sql, task), true);
+
+  // Waiting for an approval: the user decides it, and the card is not listed.
+  const [approval] = await db().sql<{ id: string }[]>`
+    INSERT INTO approvals (task_id, kind, action, detail) VALUES (${cardId}, 'action', 'delete', '{}') RETURNING id::text`;
+  await db().sql`UPDATE tasks SET status = 'waiting_user', waiting_reason = 'approval', waiting_approval_id = ${approval?.id ?? null}::uuid WHERE id = ${cardId}`;
+  assert.equal(await hasOpenCards(db().sql, task), false);
+  assert.match((await update(task, args(cardId))).text, /waits for an approval: the user decides it/);
+  assert.equal((await update(task, args('ffffffff'))).text, "error: task.update: no open card 'ffffffff' in this conversation; there is no open card in this conversation");
+  await db().sql`UPDATE tasks SET status = 'inbox', waiting_reason = NULL, waiting_approval_id = NULL WHERE id = ${cardId}`;
+
+  // A prefix shorter than 8 characters names nothing; one that names two cards names none.
+  assert.match((await update(task, args(cardId.slice(0, 7)))).text, /no open card/);
+  const twin = `${cardId.slice(0, 9)}${cardId.slice(9, 10) === 'a' ? 'b' : 'a'}${cardId.slice(10)}`;
+  await db().sql`INSERT INTO tasks (id, title, parent_id, label, clearance, effective_label, status) VALUES (${twin}, 'Gemella', ${parentId}, 'L1', 'L1', 'L1', 'inbox')`;
+  assert.match((await update(task, args(cardId.slice(0, 8)))).text, /'[0-9a-f]{8}' names more than one card\. Open cards:/);
+  assert.match((await update(task, args(cardId))).text, /updated card/);
+
+  // Closed cards are not open: failed and done.
+  await db().sql.begin((tx) => moveTask(tx, twin, 'failed', { cause: 'user' }));
+  assert.match((await update(task, { task_id: twin, status: 'ready' })).text, /no open card/);
+  await db().sql`UPDATE tasks SET status = 'done' WHERE id = ${twin}`;
+  assert.match((await update(task, { task_id: twin, status: 'ready' })).text, /no open card/);
+});
+
+test('task.update: the note carries the step’s label, within the card’s clearance', async () => {
+  const { conversationId, parentId } = await cardIn('work', 'Chiamare il commercialista');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Aggiorna la carta.');
+  // A card labeled L0: the note, written from an L1 context, raises it.
+  const [low] = await db().sql<{ id: string }[]>`
+    INSERT INTO tasks (title, parent_id, label, clearance, effective_label, status) VALUES ('Pubblica', ${parentId}, 'L0', 'L1', 'L0', 'inbox') RETURNING id::text`;
+  assert.ok(low !== undefined);
+  assert.match((await update(task, { task_id: low.id, status: 'waiting_user', note: 'Attendo il commercialista.' }, 'A1', createContext('L1', 'L1'))).text, /note saved/);
+  const raised = await taskOf(low.id);
+  assert.deepEqual([raised.label, raised.effectiveLabel], ['L1', 'L1']);
+  // A context above the card (L1): only a forged one gets here, the conversation stops at L1.
+  const result = await update(task, { task_id: low.id, status: 'waiting_user', note: 'Segreto.' }, 'A1', createContext('L2', 'L2'));
+  assert.equal(result.text, `error: task.update: the note is above what card ${low.id} may hold`);
+  assert.equal((await taskOf(low.id)).note, 'Attendo il commercialista.');
+});
+
+test('tasks.note: on cards only, from 1 to 500 characters', async () => {
+  const { cardId, conversationId } = await cardIn('work', 'Leggere il contratto');
+  const { task } = await postUserMessage(db().sql, conversationId, 'Ciao.');
+  await assert.rejects(db().sql`UPDATE tasks SET note = 'x' WHERE id = ${task.id}`, /tasks_note_only_cards/);
+  await assert.rejects(db().sql`UPDATE tasks SET note = '' WHERE id = ${cardId}`, /tasks_note_length/);
+  await assert.rejects(db().sql`UPDATE tasks SET note = ${'x'.repeat(501)} WHERE id = ${cardId}`, /tasks_note_length/);
+  await db().sql`UPDATE tasks SET note = ${'è'.repeat(500)} WHERE id = ${cardId}`;
+  assert.equal((await taskOf(cardId)).note?.length, 500);
+});
+
+test('task.update in a task without a conversation: its own cards only, and an error that says so', async () => {
+  const task = await submitTask(db().sql, { title: 'Riordina le carte', assignee: 'arianna', label: 'L1', clearance: 'L1', effectiveLabel: 'L1' });
+  assert.equal(
+    (await update(task, { task_id: 'abcdefab', status: 'ready' })).text,
+    "error: task.update: no open card 'abcdefab' among the cards of this task; there is no open card among the cards of this task",
+  );
 });

@@ -27,7 +27,7 @@ export const TOOLS = {
   'kb.search': { description: 'Search the knowledge base within the clearance', opens: [] },
   'kb.write': { description: 'Write a knowledge base page (A1: inbox only)', opens: [] },
   'task.create': { description: 'Create a card (A1: inbox only)', opens: [] },
-  'task.update': { description: 'Update a card the agent is working on', opens: [] },
+  'task.update': { description: 'Update a card of this conversation (status and note), never the task in progress', opens: [] },
   // Not external communication for the delegating agent, because the delegated
   // step runs in a separate per-task context that has read only the brief: the
   // delegator's private context never reaches the other side. The gateway alone

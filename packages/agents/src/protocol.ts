@@ -29,7 +29,7 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'kb.read': 'Read a knowledge base page by path.',
   'kb.write': 'Write a knowledge base page; paths start with kb/.',
   'task.create': 'Create a card in the inbox.',
-  'task.update': 'Update a card: status and a note.',
+  'task.update': 'Update a card of this conversation: status and a note for the user. With an unknown id it answers with the list of open cards and their ids.',
   'task.delegate': 'Hand a step to another agent with a self-contained brief.',
   'user.ask': 'Ask the user a question when the request is unclear or information is missing.',
   'file.delete': 'Delete a file (the user approves before it happens).',

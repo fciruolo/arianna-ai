@@ -258,3 +258,18 @@ test('the core reaches the texts only through purge_conversation', async () => {
            has_function_privilege('arianna_app', 'purge_conversation(uuid)', 'EXECUTE') AS app`;
   assert.deepEqual(grants, { public: false, app: true });
 });
+
+test('a card outlives the purge with its note, as with its title (D-101, to be confirmed)', async () => {
+  const { sql, owner } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  const { task } = await postUserMessage(sql, conversation.id, `Ricordami ${MARK}`);
+  await owner`UPDATE tasks SET status = 'done', evidence = '[{"kind":"message","ref":"1"}]' WHERE id = ${task.id}`;
+  await owner`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
+  const [card] = await owner<{ id: string }[]>`
+    INSERT INTO tasks (title, parent_id, label, clearance, effective_label, status, note)
+    VALUES ('Carta della conversazione', ${task.id}, 'L2', 'L2', 'L2', 'inbox', 'Nota della carta') RETURNING id::text`;
+  await archiveConversation(sql, conversation.id, true);
+  await purgeConversation(sql, conversation.id);
+  const [left] = await owner<{ title: string; note: string | null }[]>`SELECT title, note FROM tasks WHERE id = ${card?.id ?? ''}`;
+  assert.deepEqual({ ...left }, { title: 'Carta della conversazione', note: 'Nota della carta' });
+});

@@ -24,6 +24,7 @@ import { recordRouteDecision } from '../router-log.ts';
 import type { Task } from '../tasks.ts';
 import { canAnswerDirectly, directModelOf, runDirect } from './claude-direct.ts';
 import { canDelegate, NO_PROJECT, planDelegation, repoFor, runDelegation, type DelegateEnv, type DelegationPlan } from './delegate.ts';
+import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
@@ -58,6 +59,7 @@ export const ORCHESTRATOR_MODEL = 'local-large';
 /** Tools that end the step with a message in the chat instead of running. */
 const CHAT_TOOLS: readonly ToolId[] = ['user.ask'];
 const DELEGATE: ToolId = 'task.delegate';
+const UPDATE: ToolId = 'task.update';
 /** Longest message, tool result or turn shown to the model. */
 const MAX_TEXT = 8_000;
 
@@ -81,9 +83,17 @@ export interface OrchestratorOptions {
   maxTokens?: number;
 }
 
-/** The tools of a card the orchestrator can offer now; `task.delegate` only when a cloud executor can take the step. */
-export function orchestratorTools(agent: LoadedAgent, delegation = false): ToolId[] {
-  return offerable(agent.card.tools).filter((tool) => isLocalTool(tool) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE));
+/**
+ * The tools of a card the orchestrator can offer now: `task.delegate` only
+ * when a cloud executor can take the step, `task.update` only when the
+ * conversation had an open card to update when the task started (cards.ts,
+ * fixed for the whole task). Without one the tool has no valid target, and a
+ * local model would reach for it to move its own task instead of asking.
+ */
+export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false): ToolId[] {
+  return offerable(agent.card.tools).filter(
+    (tool) => (isLocalTool(tool) && (tool !== UPDATE || cards)) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE),
+  );
 }
 
 /** How a message of the system starts when the model reads it. */
@@ -425,7 +435,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         (part) => part.value,
       );
 
-      const tools = orchestratorTools(agent, canDelegate(env));
+      const tools = orchestratorTools(agent, canDelegate(env), await updateOffered(sql, task));
       await show(task, step, 'thinking');
       let asked;
       try {
@@ -488,7 +498,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
-        const ran = await runTool(tool, answer.arguments, { sql: tx, kb: options.kb, task, context });
+        const ran = await runTool(tool, answer.arguments, { sql: tx, kb: options.kb, task, context, autonomy: agent.card.autonomy });
         await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
         return ran;
       });
@@ -504,10 +514,12 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'kb.read': 'read',
   'kb.write': 'write',
   'task.create': 'card',
+  'task.update': 'card',
 };
 
-/** The argument that tells what the tool did: the query, the path, the card title. */
+/** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
+  if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' ? 'title' : 'path';
   return String(args[field]);
 }
@@ -526,14 +538,30 @@ function repeatedResult(tool: ToolId, step: number, waits: boolean): string {
  * The step of an earlier call of this task to `tool` with the same arguments,
  * in any key order (a default written out, like `limit`, makes another call:
  * a step more, never a call lost). A page written in the task can change what
- * a search or a read returns: those look only after the last write.
+ * a search or a read returns: those look only after the last write. An
+ * update of a card looks only after the last update of the same card that
+ * went through with other arguments (waiting, ready, waiting again); failed
+ * updates never restart the count.
  */
 export function earlierCall(turns: readonly Turn[], tool: ToolId, args: Record<string, unknown>): number | undefined {
   const key = canonical(args);
-  const lastWrite = tool === 'kb.read' || tool === 'kb.search' ? turns.findLastIndex(wrotePage) : -1;
+  const lastWrite =
+    tool === 'kb.read' || tool === 'kb.search'
+      ? turns.findLastIndex(wrotePage)
+      : tool === UPDATE
+        ? turns.findLastIndex((past) => canonical(past.answer.action === 'call' ? past.answer.arguments : null) !== key && updatedCard(past, args))
+        : -1;
   return turns
     .slice(lastWrite + 1)
     .find((past) => past.answer.action === 'call' && past.answer.tool === tool && canonical(past.answer.arguments) === key)?.step;
+}
+
+/** Whether `turn` is a `task.update` that went through on the card `args` names (its id or a prefix of it). */
+function updatedCard(turn: Turn, args: Record<string, unknown>): boolean {
+  if (turn.answer.action !== 'call' || turn.answer.tool !== UPDATE || turn.result?.startsWith(`${UPDATED} `) !== true) return false;
+  const card = turn.result.slice(UPDATED.length + 1).split(':')[0] ?? '';
+  const named = String(args.task_id).trim().toLowerCase();
+  return named !== '' && card.startsWith(named);
 }
 
 function wrotePage(turn: Turn): boolean {

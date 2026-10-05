@@ -53,3 +53,31 @@ test('stopped repeats are read from the turns, and every third one waits', () =>
   ]);
   assert.deepEqual(stoppedRepeats(turns), []);
 });
+
+const CARD = '3f2a9c1e-7b4d-4e8a-9c21-5d6f7a8b9c0d';
+const wait = { action: 'call', tool: 'task.update', arguments: { task_id: CARD, status: 'waiting_user', note: 'Attendo.' } } as const;
+const ready = { action: 'call', tool: 'task.update', arguments: { task_id: CARD.slice(0, 8), status: 'ready' } } as const;
+const updated = (to: string) => `updated card ${CARD}: x → ${to}`;
+
+test('the same card update is a repeat until an update of the same card goes through with other arguments', () => {
+  assert.equal(earlierCall([turn(1, wait, updated('waiting_user'))], 'task.update', wait.arguments), 1);
+  // Waiting, ready (named by a prefix), waiting again: the third call is a new one.
+  const moved = [turn(1, wait, updated('waiting_user')), turn(2, ready, updated('ready'))];
+  assert.equal(earlierCall(moved, 'task.update', wait.arguments), undefined);
+  assert.equal(earlierCall(moved, 'task.update', ready.arguments), 2);
+  // An update of another card does not restart the count.
+  const other = { action: 'call', tool: 'task.update', arguments: { task_id: '8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f', status: 'ready' } } as const;
+  const elsewhere = [turn(1, wait, updated('waiting_user')), turn(2, other, 'updated card 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f: x → ready')];
+  assert.equal(earlierCall(elsewhere, 'task.update', wait.arguments), 1);
+});
+
+test('failed updates never restart the count: A, B, A, B are two repeats', () => {
+  const failed = [turn(1, wait, 'error: task.update: no open card'), turn(2, ready, 'error: task.update: no open card')];
+  assert.equal(earlierCall(failed, 'task.update', wait.arguments), 1);
+  assert.equal(earlierCall([...failed, turn(3, wait, 'error: task.update: the same call')], 'task.update', ready.arguments), 2);
+  const steps = [...failed, turn(3, wait, 'x'), turn(4, ready, 'x')];
+  assert.deepEqual(stoppedRepeats(steps), [
+    { step: 3, waits: false },
+    { step: 4, waits: false },
+  ]);
+});

@@ -1,8 +1,9 @@
-import type { ToolId } from '@arianna/agents';
+import type { Autonomy, ToolId } from '@arianna/agents';
 import { maxLabel, type Context, type Label } from '@arianna/policy';
 
 import type { Queryable } from '../db/client.ts';
 import { createTask, type Task } from '../tasks.ts';
+import { updateCard } from './cards.ts';
 import { KbError, type Kb } from './kb.ts';
 
 /**
@@ -12,10 +13,10 @@ import { KbError, type Kb } from './kb.ts';
  * that the model can recover (docs/EVALS.md, recovery).
  *
  * `user.ask` is not here: like a reply, it ends the step with a message in
- * the chat. `task.delegate` and `task.update` arrive with the second part of
- * the task.
+ * the chat. Neither is `task.delegate`, whose next step runs elsewhere
+ * (delegate.ts). `task.update` moves a card of the conversation (cards.ts).
  */
-export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create'] as const satisfies readonly ToolId[];
+export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update'] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
 export function isLocalTool(tool: ToolId): tool is LocalTool {
@@ -29,6 +30,8 @@ export interface ToolEnv {
   task: Task;
   /** The step's context: clearance of the task, effective label of everything read so far. */
   context: Context;
+  /** Autonomy of the agent's card: with A0 and A1 a card leaves the inbox only through the user. */
+  autonomy: Autonomy;
 }
 
 export interface ToolResult {
@@ -54,6 +57,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return write(args, env);
       case 'task.create':
         return await card(args, env);
+      case 'task.update':
+        return await updateCard(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };

@@ -26,6 +26,8 @@ export interface Task {
   waitingReason: string | null;
   /** The approval a waiting task waits for. */
   waitingApprovalId: string | null;
+  /** The last note an agent wrote on a card with `task.update`; only cards hold one (migration 0023). */
+  note: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,7 +58,7 @@ function columns(table = ''): string {
   const t = table === '' ? '' : `${table}.`;
   return `${t}id::text, ${t}parent_id::text AS "parentId", ${t}conversation_id::text AS "conversationId", ${t}title, ${t}goal, ${t}done_criteria AS "doneCriteria",
   ${t}status, ${t}label, ${t}clearance, ${t}effective_label AS "effectiveLabel", ${t}assignee, ${t}limits, ${t}evidence,
-  ${t}waiting_reason AS "waitingReason", ${t}waiting_approval_id::text AS "waitingApprovalId", ${t}created_at AS "createdAt", ${t}updated_at AS "updatedAt"`;
+  ${t}waiting_reason AS "waitingReason", ${t}waiting_approval_id::text AS "waitingApprovalId", ${t}note, ${t}created_at AS "createdAt", ${t}updated_at AS "updatedAt"`;
 }
 const COLUMNS = columns();
 
@@ -85,7 +87,7 @@ export async function loadTask(sql: Queryable, id: string): Promise<Task | undef
 }
 
 /** Why a task moved, for the event log; the free-text reason stays in `tasks`. */
-export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error';
+export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error' | 'agent';
 
 export interface MoveOptions {
   /** Required for `waiting_user`: the one line the user reads. Stored in the task, not in events. */
