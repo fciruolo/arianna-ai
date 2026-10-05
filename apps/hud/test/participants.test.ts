@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { executorText, isEventLine, participantPose, removeText, withoutParticipant } from '../src/lib/participants.ts';
+import { executorText, isAddingLine, isEventLine, participantPose, removeText, withoutParticipant } from '../src/lib/participants.ts';
 import type { Participant } from '../src/lib/types.ts';
 
 const coder: Participant = { agent: 'coder', addedBy: 'arianna', addedAt: '2026-10-05T10:00:00.000Z', executor: 'claude' };
@@ -12,6 +12,15 @@ test('a system line with its task is an event of the chat; a system message with
   assert.equal(isEventLine({ role: 'system', taskId: null }), false);
   assert.equal(isEventLine({ role: 'assistant', taskId: 'a1' }), false);
   assert.equal(isEventLine({ role: 'user', taskId: 'a1' }), false);
+});
+
+test('only the line of Arianna bringing an agent in stands out among the events', () => {
+  assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Arianna aggiunge traduttore: Traduzione richiesta' }), true);
+  assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Arianna aggiunge Coder' }), true);
+  assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'traduttore è stato aggiunto' }), false);
+  assert.equal(isAddingLine({ role: 'system', taskId: 'a1', body: 'Hai tolto traduttore' }), false);
+  assert.equal(isAddingLine({ role: 'system', taskId: null, body: 'Arianna aggiunge Coder' }), false);
+  assert.equal(isAddingLine({ role: 'assistant', taskId: 'a1', body: 'Arianna aggiunge Coder' }), false);
 });
 
 test('the bar says where each agent works, and when it is no longer active', () => {

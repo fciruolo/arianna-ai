@@ -5,8 +5,15 @@ import { test } from 'node:test';
 
 import type { LoadedAgent } from '@arianna/agents';
 
+import { ADDING_PREFIX } from '../../hud/src/lib/adding-line.ts';
 import { LOCAL_FRAME, localSystem } from '../src/orchestrator/delegate.ts';
 import { addedLine, addingLine, ENTRY_TEXT, nameLabelOf, participantName, participantsNote, removedLine } from '../src/participants.ts';
+
+test('the chat recognises the line of Arianna bringing an agent in by its start', () => {
+  assert.ok(addingLine('traduttore', 'Traduzione').startsWith(ADDING_PREFIX));
+  assert.ok(addingLine('coder', undefined).startsWith(ADDING_PREFIX));
+  assert.ok(!addedLine('coder').startsWith(ADDING_PREFIX));
+});
 
 test('the lines of the chat name the agent, the Coder with its capital', () => {
   assert.equal(addingLine('coder', 'per sviluppare la landing page'), 'Arianna aggiunge Coder: per sviluppare la landing page');
