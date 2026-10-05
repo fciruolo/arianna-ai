@@ -129,10 +129,6 @@ const preview = computed((): CharacterChoice | undefined => {
   return option === undefined ? undefined : { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
 });
 
-/** The chosen character's name, the Coder's without a choice. */
-const characterLabel = computed(() =>
-  form.value.character === '' ? 'predefinito (quello del Coder)' : (characterOptions.value.find((option) => option.value === form.value.character)?.label ?? `${form.value.character} (non disponibile)`),
-);
 async function onUploaded(saved: UploadedCharacter): Promise<void> {
   sheetVersion.value += 1;
   await readCharacters();
@@ -358,13 +354,7 @@ function another(): void {
               <PixelAgent :choice="preview" pose="working" :scale="2" :version="sheetVersion" />
             </div>
             <!-- The character comes from Genera personaggio or Carica PNG below; a chosen one can go back to the default. -->
-            <div class="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-muted">
-              Personaggio
-              <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
-                {{ characterLabel }}
-                <button v-if="form.character !== ''" type="button" class="text-xs text-accent hover:underline" @click="form.character = ''">Torna al predefinito</button>
-              </p>
-            </div>
+            <button v-if="form.character !== ''" type="button" class="btn px-2.5 py-1 text-xs" @click="form.character = ''">Torna al predefinito</button>
           </div>
           <CharacterGenerate
             :agent-label="form.name || 'il nuovo agente'"

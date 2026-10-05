@@ -4,6 +4,9 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Rimosso
+- La riga "Personaggio" con il nome del personaggio in Impostazioni → Agenti e in Nuovo agente: resta solo l'anteprima, e "Torna al predefinito" compare accanto ad Animazioni solo quando un personaggio è stato scelto (scelta dell'utente, D-123).
+
 ## [0.12.3] - 2026-10-05
 
 ### Cambiato
