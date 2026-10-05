@@ -413,6 +413,7 @@ function toggleAnimations(agent: string): void {
 }
 /** An agent activated, deactivated or promoted (D-119): its card, character and model show up at once. */
 async function onAgentsChanged(): Promise<void> {
+  emit('changed', ['userAgents', 'characters']);
   await reload();
   try {
     characters.value = await loadCharacters();

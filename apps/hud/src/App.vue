@@ -353,11 +353,13 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): 
   else openSettings();
 }
 
-/** A save of the settings page: the chat shows the new characters and projects (models follow the live feed). */
+/** A save of the settings page: the chat shows the new characters, projects and agents (models follow the live feed). */
 function settingsChanged(sections: string[]): void {
   if (sections.includes('characters')) void store.refreshCharacters();
   if (sections.includes('projects')) void store.refreshProjects();
   if (sections.includes('voice')) void store.refreshVoice();
+  // An agent activated or deactivated from the Agents page (D-119): the status panel lists the running ones.
+  if (sections.includes('userAgents')) store.refreshStatus().catch(() => undefined);
 }
 
 // The address follows the open conversation (/c/<id>), so a reload comes back to it.
