@@ -327,6 +327,11 @@ export function filesTitle(count: number): string {
   return count === 1 ? 'File modificato (1)' : `File modificati (${String(count)})`;
 }
 
+/** Above a diff: what it is compared against (D-117); the Coder may have changed files already changed before. */
+export function baseCommitText(commit: string): string {
+  return `Rispetto all’ultimo commit (${commit.slice(0, 7)}): se il file era già modificato prima del lavoro del Coder, si vedono anche quelle modifiche.`;
+}
+
 /** "+12 −3": lines added and removed (D-117). */
 export function diffCountText(added: number, removed: number): string {
   return `+${String(added)} −${String(removed)}`;

@@ -439,6 +439,30 @@ test('uncommitted changes in the folder: the user approves first; the changed fi
   }
 });
 
+test('a file the user had already changed and the Coder changes again is listed, with its diff from the last commit (D-117)', async () => {
+  writeFileSync(join(REPO, 'README.md'), '# Fake site\nMine.\n');
+  try {
+    const { task } = await ask('work', 'Ancora sul README.', 'site');
+    const executor = orchestrator({ model: scripted([DELEGATE, REPLY]), coderPrompt: 'scenario: edit-files\nYou are the Coder.' });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
+    await recordDecision(db().sql, (await waitingFor(task.id)).waitingApprovalId, 'approved', 'web');
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.deepEqual(delegation.files, [
+      { path: 'README.md', change: 'modified' },
+      { path: 'docs/hello.md', change: 'added' },
+    ]);
+    await withApi(() => [SITE], async (port) => {
+      const diff = (await get(port, `/api/delegations/${delegation.id}/diff`)).body.diff as { files: Record<string, unknown>[] };
+      // Against the last commit: the user's line and the Coder's.
+      assert.deepEqual([diff.files[0]?.added, diff.files[0]?.removed], [2, 0]);
+    });
+  } finally {
+    restoreRepo();
+  }
+});
+
 test('uncommitted changes refused: the delegation ends and Arianna hears it', async () => {
   writeFileSync(join(REPO, 'notes.txt'), 'work in progress\n');
   try {

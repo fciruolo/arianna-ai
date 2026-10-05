@@ -50,6 +50,7 @@ export {
   preparedPath,
   changedToolConfig,
   committedFiles,
+  fileFingerprints,
   gitConfigFingerprint,
   openRepository,
   removeWorkspace,

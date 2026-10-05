@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 
 import { loadDelegationDiff, loadDelegationFile } from '../lib/api.ts';
 import { canPreview, codeFence, diffRows, diffTotals } from '../lib/delegations.ts';
-import { CHANGE_TEXT, DIFF_ERROR_TEXT, creditText, diffCountText, filesTitle, previewErrorText } from '../lib/italian.ts';
+import { baseCommitText, CHANGE_TEXT, DIFF_ERROR_TEXT, creditText, diffCountText, filesTitle, previewErrorText } from '../lib/italian.ts';
 import type { DelegationDiff, DelegationFile, FileDiff, FileDiffError, FilePreview, MessageCredit } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -145,7 +145,11 @@ async function showWhole(index: number): Promise<void> {
               <p v-else-if="diffOf(index) === undefined" class="text-xs text-muted">Modifiche non disponibili: apri la versione intera.</p>
               <p v-else-if="diffError(index) !== undefined" class="text-xs text-warn">{{ DIFF_ERROR_TEXT[diffError(index) ?? 'not-found'] }}</p>
               <p v-else-if="(shownDiff(index)?.hunks.length ?? 0) === 0" class="text-xs text-muted">Nessuna riga cambiata.</p>
-              <div v-else class="max-h-[420px] overflow-auto rounded border border-line bg-surface font-mono text-[11.5px] leading-[1.45]">
+              <div v-else>
+                <p v-if="diff?.baseCommit" class="mb-1.5 flex items-center gap-2 text-[11px] text-muted">
+                  <Icon name="info" :size="12" />{{ baseCommitText(diff.baseCommit) }}
+                </p>
+                <div class="max-h-[420px] overflow-auto rounded border border-line bg-surface font-mono text-[11.5px] leading-[1.45]">
                 <table class="w-full border-collapse">
                   <tbody>
                     <tr
@@ -170,6 +174,7 @@ async function showWhole(index: number): Promise<void> {
                     </tr>
                   </tbody>
                 </table>
+                </div>
               </div>
             </template>
             <template v-else>
