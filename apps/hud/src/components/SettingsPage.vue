@@ -1020,7 +1020,7 @@ watch(active, () => {
               <p class="text-xs text-muted">Un esecutore acceso può ricevere testi L0-L1 passati dal gateway e lavorare nei progetti qui sotto. Una delega già partita finisce con i valori di prima.</p>
             </SettingsCard>
 
-            <!-- Telegram -->
+            <!-- Telegram: off by the user's choice (D-110, question 12), not in the settings index, so unreachable; kept to turn back on -->
             <SettingsCard v-if="active === 'telegram'" id="telegram" title="Telegram" kind="privacy" :changed="changed('telegram')" :saved="saved === 'telegram'" :busy="busy === 'telegram'" :error="errors.telegram" @cancel="reset('telegram')" @save="prepare('telegram')">
               <template #header>
                 <label class="flex items-center gap-2 text-xs text-muted">
