@@ -11,8 +11,12 @@ export type AgentState = 'idle' | 'thinking' | 'working' | 'waiting';
 export interface AgentStatus {
   id: string;
   state: AgentState;
-  /** The run in progress, when there is one. */
-  run: { executor: string; model: string | null; startedAt: string; repo: string | null } | null;
+  /**
+   * The run in progress, when there is one. `repo` is the repository of its
+   * delegation or, without one, the workspace of its work conversation (D-124);
+   * `mode` the kind of its conversation, null for a task outside any.
+   */
+  run: { executor: string; model: string | null; startedAt: string; repo: string | null; mode: 'work' | 'private' | null } | null;
 }
 
 export interface RouterStatus {
@@ -54,14 +58,20 @@ interface RunRow {
   locality: string;
   started_at: Date;
   repo: string | null;
+  mode: 'work' | 'private' | null;
 }
 
 export async function loadStatus(sql: Queryable, agents: readonly string[]): Promise<StatusSnapshot> {
   const runs = await sql<RunRow[]>`
     SELECT * FROM (
-      SELECT DISTINCT ON (r.id) r.agent, r.executor, r.model, r.locality, r.started_at, d.repo
+      -- A run without a delegation (Arianna in a work conversation) is at the
+      -- workspace of its conversation; a private conversation has none (D-124).
+      SELECT DISTINCT ON (r.id) r.agent, r.executor, r.model, r.locality, r.started_at,
+        COALESCE(d.repo, CASE WHEN c.mode = 'work' THEN c.workspace END) AS repo, c.mode
       FROM runs r
       LEFT JOIN task_delegations d ON d.run_id = r.id
+      LEFT JOIN tasks t ON t.id = r.task_id
+      LEFT JOIN conversations c ON c.id = t.conversation_id
       WHERE r.status = 'running'
       ORDER BY r.id, d.id DESC
     ) AS running
@@ -76,7 +86,7 @@ export async function loadStatus(sql: Queryable, agents: readonly string[]): Pro
         id,
         // The orchestrator on the local model thinks; an agent running an executor works.
         state: run.locality === 'local' ? 'thinking' : 'working',
-        run: { executor: run.executor, model: run.model, startedAt: run.started_at.toISOString(), repo: run.repo },
+        run: { executor: run.executor, model: run.model, startedAt: run.started_at.toISOString(), repo: run.repo, mode: run.mode === 'work' || run.mode === 'private' ? run.mode : null },
       };
     }
     // Arianna is the one the user answers to: a task waiting for the user waits on her.

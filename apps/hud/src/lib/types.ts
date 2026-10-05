@@ -171,7 +171,8 @@ export type AgentState = 'idle' | 'thinking' | 'working' | 'waiting';
 export interface AgentStatus {
   id: string;
   state: AgentState;
-  run: { executor: string; model: string | null; startedAt: string; repo: string | null } | null;
+  /** `mode`: the kind of the run's conversation (D-124); absent from an older core. */
+  run: { executor: string; model: string | null; startedAt: string; repo: string | null; mode?: 'work' | 'private' | null } | null;
 }
 
 /** The status panel (D-060): counts and labels only, never content. */

@@ -111,6 +111,53 @@ test('runs, a waiting task, the last router decision and the gateway today are c
   assert.deepEqual(JSON.parse(reply.body.toString('utf8')), JSON.parse(JSON.stringify(status)));
 });
 
+test('where a run works (D-124): its delegation, else the workspace of its work conversation; private and loose runs name none; the latest run wins', async () => {
+  const { sql } = db();
+  // The runs of the tests above end here: only these count.
+  await sql`UPDATE runs SET status = 'ok', ended_at = now() WHERE status = 'running'`;
+  const conversation = async (mode: 'work' | 'private', workspace: string | null): Promise<string> => {
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO conversations (mode, clearance, workspace) VALUES (${mode}, ${mode === 'work' ? 'L1' : 'L2'}::privacy_label, ${workspace}) RETURNING id::text`;
+    if (row === undefined) throw new Error('no conversation');
+    return row.id;
+  };
+  const run = async (taskId: string, agent: string, locality: 'local' | 'cloud', ago: string): Promise<string> => {
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO runs (task_id, step, agent, executor, locality, effective_label, started_at)
+      VALUES (${taskId}, 1, ${agent}, ${locality === 'local' ? 'local' : 'claude'}, ${locality}, 'L1', now() - ${ago}::interval) RETURNING id::text`;
+    if (row === undefined) throw new Error('no run');
+    return row.id;
+  };
+  const work = await conversation('work', 'demo');
+  const private_ = await conversation('private', null);
+  const workTask = await createTask(sql, { title: 'Lavoro segreto', assignee: 'arianna', status: 'ready', conversationId: work, label: 'L1', clearance: 'L1' });
+  const privateTask = await createTask(sql, { title: 'Privato segreto', assignee: 'arianna', status: 'ready', conversationId: private_ });
+  await run(workTask.id, 'arianna', 'local', '2 minutes');
+  const privateRun = await run(privateTask.id, 'arianna', 'local', '1 minute');
+
+  // The Coder's delegation names its repository, over the conversation's.
+  const coderTask = await createTask(sql, { title: 'Delega segreta', assignee: 'arianna', status: 'ready', conversationId: work, label: 'L1', clearance: 'L1' });
+  const coderRun = await run(coderTask.id, 'coder', 'cloud', '30 seconds');
+  await sql`INSERT INTO task_delegations (task_id, step, agent, brief, label, repo, status, run_id)
+    VALUES (${coderTask.id}, 1, 'coder', 'Brief segreto', 'L1', 'repos/site', 'running', ${coderRun})`;
+  // A task outside any conversation.
+  const loose = await createTask(sql, { title: 'Sciolto segreto', assignee: 'helper', status: 'ready' });
+  await run(loose.id, 'helper', 'local', '10 seconds');
+
+  const where = async () =>
+    (await loadStatus(sql, ['arianna', 'coder', 'helper'])).agents.map(({ id, run: item }) => [id, item?.repo, item?.mode]);
+  // Two runs of Arianna: the latest, in the private conversation, says where she is.
+  assert.deepEqual(await where(), [
+    ['arianna', null, 'private'],
+    ['coder', 'repos/site', 'work'],
+    ['helper', null, null],
+  ]);
+  await sql`UPDATE runs SET status = 'ok', ended_at = now() WHERE id = ${privateRun}`;
+  assert.deepEqual((await where())[0], ['arianna', 'demo', 'work']);
+  const status = await loadStatus(sql, ['arianna', 'coder', 'helper']);
+  assert.doesNotMatch(JSON.stringify(status), /segret/);
+});
+
 test('GET /api/characters lists the originals and falls back when a pack is gone; sheets are served as PNG', async () => {
   const listing = await get('/api/characters');
   assert.equal(listing.status, 200);
