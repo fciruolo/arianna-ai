@@ -1,12 +1,21 @@
 // Runs `docker compose` with the values of config/arianna.toml, so that ports and
 // paths have a single source of truth.
 // Usage: node scripts/compose.ts up -d --wait
-import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
 
 import { loadConfig } from '@arianna/config';
 
+import { composeGuard } from './compose-guard.ts';
+
 const config = loadConfig();
+
+const git = (flag: string): string => resolve(config.home, execFileSync('git', ['rev-parse', flag], { cwd: config.home, encoding: 'utf8' }).trim());
+const guard = composeGuard(git('--git-dir'), git('--git-common-dir'), process.argv.slice(2));
+if (!guard.run) {
+  console.error(guard.message);
+  process.exit(guard.exitCode);
+}
 
 const result = spawnSync(
   'docker',
