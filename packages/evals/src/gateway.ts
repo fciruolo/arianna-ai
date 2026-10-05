@@ -3,13 +3,11 @@ import {
   checkProject,
   checkWorkspace,
   contentHash,
-  createContext,
   createLabelRules,
   declassify,
   derive,
   gatewayCheck,
   secretMatcher,
-  type Context,
   type DeclassifyApproval,
   type Label,
   type Labeled,
@@ -17,6 +15,8 @@ import {
   type WorkspaceDecision,
   type WorkspaceEntry,
 } from '@arianna/policy';
+
+import { contextOf, type ContextInput } from './context-input.ts';
 
 /**
  * A payload fragment. `derivedFrom` lists the labels of the inputs a model read
@@ -28,12 +28,6 @@ interface FragmentInput {
   derivedFrom?: unknown[];
 }
 
-/** `forged: true` passes a look-alike object instead of a context made by the policy. */
-interface ContextInput {
-  clearance: Label;
-  effective?: Label;
-  forged?: boolean;
-}
 
 /**
  * `{ payload, context, target }` checks the payload. With `declassify`, the
@@ -75,9 +69,10 @@ const WORKSPACE_RULES = [
   { path: 'repos/site/private', label: 'L2' as const },
 ];
 
+/** `deniedReads` is present only when some read of `context.reads` was denied. */
 export type GatewayOutcome =
-  | { decision: 'allow'; rule: string }
-  | { decision: 'block'; rule: string; next: string; findings?: string[] }
+  | { decision: 'allow'; rule: string; deniedReads?: number }
+  | { decision: 'block'; rule: string; next: string; findings?: string[]; deniedReads?: number }
   | { declassify: 'refused' };
 
 /** What a workspace case returns: the rule and the kinds of findings, never the paths. */
@@ -90,11 +85,6 @@ function toFragment(input: FragmentInput): Labeled<unknown> {
     ? derive(input.derivedFrom.map((from) => ({ value: null, label: from as Label, source: 'eval' })))
     : (input.label as Label);
   return { value: input.value, label, source: 'eval' };
-}
-
-function toContext(input: ContextInput): Context {
-  if (input.forged === true) return { clearance: input.clearance, effective: input.effective ?? 'L0' };
-  return createContext(input.clearance, input.effective);
 }
 
 function outcomeOf(decision: WorkspaceDecision): WorkspaceOutcome {
@@ -136,11 +126,13 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
     }
   }
 
+  const { context, deniedReads } = contextOf(input.context);
+  const denied = deniedReads === 0 ? {} : { deniedReads };
   const secrets = secretMatcher(input.secrets ?? []);
-  const decision = gatewayCheck(payload, toContext(input.context), input.target, secrets);
-  if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule };
+  const decision = gatewayCheck(payload, context, input.target, secrets);
+  if (decision.decision === 'allow') return { decision: 'allow', rule: decision.rule, ...denied };
   const outcome = { decision: 'block' as const, rule: decision.rule, next: decision.next };
   return decision.findings === undefined
-    ? outcome
-    : { ...outcome, findings: [...new Set(decision.findings.map((finding) => finding.kind))] };
+    ? { ...outcome, ...denied }
+    : { ...outcome, findings: [...new Set(decision.findings.map((finding) => finding.kind))], ...denied };
 }

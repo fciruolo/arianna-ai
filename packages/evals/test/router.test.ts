@@ -40,3 +40,17 @@ describe('router cases', () => {
     assert.equal(outcome.locality, 'local');
   });
 });
+
+describe('evaluateRouter: context reads', () => {
+  const step = { kind: 'coding', agent: 'coder' };
+
+  it('an allowed L2 read contaminates the run, which stays local', () => {
+    const actual = evaluateRouter({ step, context: { clearance: 'L2', reads: ['L2'] } });
+    assert.equal(actual.locality, 'local');
+  });
+
+  it('a read above the clearance is denied and does not contaminate', () => {
+    const actual = evaluateRouter({ step, context: { clearance: 'L1', reads: ['L2'] } });
+    assert.equal(actual.locality, 'cloud');
+  });
+});

@@ -4,7 +4,6 @@ import { join } from 'node:path';
 
 import { AGENTS_DIR, loadAgent, type AgentCard } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
-import { createContext, type Context, type Label } from '@arianna/policy';
 import {
   candidateKey,
   createRouterConfig,
@@ -15,6 +14,8 @@ import {
   type RouterConfig,
   type Step,
 } from '@arianna/router';
+
+import { contextOf, type ContextInput } from './context-input.ts';
 
 /** Every executor and model, as on a machine with everything installed. */
 const ALL: Candidate[] = [
@@ -29,10 +30,12 @@ const ALL: Candidate[] = [
 /**
  * `agent` is the name of a card in `agents/` or an inline card. `candidates`
  * restricts the configuration to the listed `executor/model` keys, in that order.
+ * `context.reads` are labels the run read, in order, applied with `recordRead`
+ * (see `contextOf`).
  */
 interface RouterInput {
   step: Omit<Step, 'agent'> & { agent: string | RouterAgent };
-  context: { clearance: Label; effective?: Label; forged?: boolean };
+  context: ContextInput;
   budget?: Budget;
   candidates?: string[];
 }
@@ -45,6 +48,8 @@ export interface RouterOutcome {
   approval?: string;
   next?: string;
   retryAt?: string;
+  /** Present only when some read of `context.reads` was denied. */
+  deniedReads?: number;
 }
 
 const cards = new Map<string, AgentCard>();
@@ -72,16 +77,15 @@ function configOf(keys: string[] | undefined): RouterConfig {
 
 export function evaluateRouter(raw: unknown): RouterOutcome {
   const input = raw as RouterInput;
-  const context: Context = input.context.forged === true
-    ? { clearance: input.context.clearance, effective: input.context.effective ?? 'L0' }
-    : createContext(input.context.clearance, input.context.effective);
+  const { context, deniedReads } = contextOf(input.context);
+  const denied = deniedReads === 0 ? {} : { deniedReads };
   const step: Step = { ...input.step, agent: agentOf(input.step.agent) };
   const decision = route(step, context, input.budget ?? { blocked: [] }, configOf(input.candidates));
   if (decision.decision === 'route') {
     const { executor, model, locality } = decision;
-    return { decision: 'route', executor, model, locality, ...(decision.approval === undefined ? {} : { approval: decision.approval }) };
+    return { decision: 'route', executor, model, locality, ...(decision.approval === undefined ? {} : { approval: decision.approval }), ...denied };
   }
-  return { decision: 'wait', next: decision.next, ...(decision.retryAt === undefined ? {} : { retryAt: decision.retryAt }) };
+  return { decision: 'wait', next: decision.next, ...(decision.retryAt === undefined ? {} : { retryAt: decision.retryAt }), ...denied };
 }
 
 /**

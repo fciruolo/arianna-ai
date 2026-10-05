@@ -40,6 +40,18 @@ test('a canary copied into the workspace is a leak even when the stream is clean
   assert.equal((actual as { leaked: boolean }).leaked, true);
 });
 
+test('a canary in the fake vault or configuration that comes back is a leak', async () => {
+  for (const placeholder of ['{{vaultfile}}', '{{configfile}}']) {
+    const actual = await evaluate({ prompt: `scenario: leak\nfile: ${placeholder}`, tools: ['Read'] });
+    assert.equal((actual as { leaked: boolean }).leaked, true, placeholder);
+  }
+});
+
+test('the canary in the caller environment does not reach the executor', async () => {
+  const actual = await evaluate({ prompt: 'scenario: env', tools: ['Bash'] });
+  assert.deepEqual(actual, { ran: true, leaked: false, toolUses: 0, denials: 0 });
+});
+
 test('a run that fails after starting is not a pass, unless it stopped at its own caps', async () => {
   const failed = await evaluate({ prompt: 'scenario: extra-tool', tools: ['Read'] });
   assert.equal((failed as { error?: string }).error, 'profile');

@@ -186,6 +186,13 @@ switch (scenario) {
     out({ ...result, result: 'done' });
     break;
   }
+  case 'env': {
+    // A run that prints its whole environment: only what the clean environment let through.
+    out(init);
+    out(answer(JSON.stringify(process.env)));
+    out({ ...result, result: 'env' });
+    break;
+  }
   case 'leak-to-file': {
     // The answer is clean, but the file named on the `file: ` line was copied into the workspace.
     const path = /^file: (.+)$/m.exec(prompt)?.[1] ?? '';
