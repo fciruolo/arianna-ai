@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.8.1] - 2026-10-05
+
+### Corretto
+- `pnpm db:up` e `pnpm test:db` lanciati da un git worktree non ricreano più il database della cartella principale su una cartella vuota: `up` lascia acceso quello che c'è, gli altri comandi di compose sono rifiutati; un'installazione senza git avvia il database come prima.
+
 ## [0.8.0] - 2026-10-05
 
 ### Aggiunto
