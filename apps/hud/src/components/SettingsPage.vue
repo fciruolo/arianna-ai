@@ -15,9 +15,11 @@ import {
   type CopiedVoice,
   type TrialModel,
 } from '../lib/api.ts';
+import { MODE_BADGE, MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
-import { activeSection, type HeadingPosition } from '../lib/settings-index.ts';
+import { SETTINGS_PATH } from '../lib/route.ts';
+import { BEHAVIOUR_TEXT, EDITED_BY, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
 import {
   charactersBody,
   chatId,
@@ -74,7 +76,14 @@ import SettingsCard from './SettingsCard.vue';
  * only on Conferma. Every write carries the fingerprint of the file the page
  * read: a 409 means someone else wrote it, and the page reloads the values.
  */
-const emit = defineEmits<{ changed: [sections: string[]] }>();
+/**
+ * `installation`: what this installation is (D-098), shown as a read-only row; undefined while unknown.
+ * `section`: the slug of the address (D-105), `/impostazioni/<slug>`; the page shows that section only.
+ */
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined }>();
+/** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
+/** `dirty`: some section holds edits not saved, for the back button of the browser (App.vue). */
+const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
 
 interface Forms {
   roles: Partial<Record<ModelRole, string>>;
@@ -422,111 +431,114 @@ const STATE_CLASS: Record<string, string> = {
   stopped: 'bg-muted',
 };
 
-const INDEX: { group: string; items: { id: string; title: string; privacy?: boolean }[] }[] = [
-  {
-    group: 'Valgono subito',
-    items: [
-      { id: 'roles', title: 'Modelli locali' },
-      { id: 'model-evals', title: 'Prove dei modelli' },
-      { id: 'cloud-models', title: 'Modelli cloud' },
-      { id: 'voice', title: 'Voce' },
-      { id: 'characters', title: 'Personaggi' },
-    ],
-  },
-  {
-    group: 'Uscite · con conferma',
-    items: [
-      { id: 'executors', title: 'Esecutori cloud', privacy: true },
-      { id: 'telegram', title: 'Telegram', privacy: true },
-      { id: 'projects', title: 'Progetti', privacy: true },
-      { id: 'servers', title: 'Server locali', privacy: true },
-    ],
-  },
-  { group: 'Solo lettura', items: [{ id: 'labels', title: 'Etichette' }] },
-];
-const scroller = ref<HTMLElement | null>(null);
-/** The lit entry of the index (D-084) and the one clicked, kept until the user scrolls by hand. */
-const lit = ref<string | undefined>(undefined);
-let pinned: string | undefined;
-let frame = 0;
-function measure(): void {
-  frame = 0;
-  const box = scroller.value;
-  if (box === null) return;
-  const zone = box.getBoundingClientRect();
-  const headings: HeadingPosition[] = [];
-  for (const item of INDEX.flatMap((group) => group.items)) {
-    const element = box.querySelector(`#${item.id}`);
-    if (element !== null) headings.push({ id: item.id, top: element.getBoundingClientRect().top });
+/**
+ * One section at a time (D-105): the index on the left, the chosen section on
+ * the right, chosen by the address. Edits of a section left behind stay in the
+ * page (the forms are one object) and are listed until saved or cancelled.
+ */
+const chosen = computed(() => resolveSection(props.section));
+const active = computed(() => chosen.value.item.id);
+const pending = computed(() => pendingTitles(active.value, (section) => changed(section as Section)));
+function dirty(item: IndexItem): boolean {
+  const section = EDITED_BY[item.id];
+  return section !== undefined && changed(section as Section);
+}
+/** Every section holding edits not saved. */
+const unsaved = computed(() => pendingTitles('', (section) => changed(section as Section)));
+watch(unsaved, (titles) => emit('dirty', titles.length > 0), { immediate: true });
+/** Leaving the settings loses the edits not saved: ask first. */
+function leave(to: 'voiceTrial' | 'devProgress'): void {
+  const left = unsaved.value;
+  if (left.length > 0 && !window.confirm(`Ci sono modifiche non salvate in: ${left.join(', ')}. Uscendo dalle Impostazioni si perdono. Vuoi uscire?`)) return;
+  if (to === 'devProgress') emit('devProgress');
+  else emit('voiceTrial');
+}
+/** A section opened from the index shown alone (narrow screen): "‹ Impostazioni" goes back in the history. */
+let fromIndex = false;
+function open(item: IndexItem): void {
+  if (item.page !== undefined) {
+    leave(item.id === 'dev-progress' ? 'devProgress' : 'voiceTrial');
+    return;
   }
-  lit.value = activeSection({ headings, zoneTop: zone.top, zoneBottom: zone.bottom, pinned });
+  fromIndex = !chosen.value.explicit;
+  emit('section', item.slug);
 }
-function onScroll(): void {
-  if (frame === 0) frame = window.requestAnimationFrame(measure);
+function backToIndex(): void {
+  if (fromIndex) {
+    fromIndex = false;
+    window.history.back();
+    return;
+  }
+  emit('section', undefined);
 }
-/** Wheel, touch or keys in the page: the user scrolls by hand, the click no longer decides. */
-function unpin(): void {
-  pinned = undefined;
+// An unknown section in the address: the first one is shown, and the address says so.
+watch(
+  () => props.section,
+  (slug) => {
+    if (slug !== undefined && !chosen.value.explicit) window.history.replaceState(window.history.state, '', SETTINGS_PATH);
+  },
+  { immediate: true },
+);
+/** Closing or reloading the tab with edits not saved: the browser asks. */
+function beforeUnload(event: BeforeUnloadEvent): void {
+  if (unsaved.value.length === 0) return;
+  event.preventDefault();
+  event.returnValue = '';
 }
-function go(id: string): void {
-  pinned = id;
-  lit.value = id;
-  scroller.value?.querySelector(`#${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-watch(view, () => void nextTick(measure));
-onMounted(() => window.addEventListener('resize', onScroll));
+onMounted(() => window.addEventListener('beforeunload', beforeUnload));
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', onScroll);
-  if (frame !== 0) window.cancelAnimationFrame(frame);
+  window.removeEventListener('beforeunload', beforeUnload);
+  emit('dirty', false);
+});
+const pane = ref<HTMLElement | null>(null);
+watch(active, () => {
+  if (pane.value !== null) pane.value.scrollTop = 0;
 });
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1">
-    <nav :inert="proposal !== null" class="hidden w-[210px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line px-3 py-5 lg:flex" aria-label="Indice delle impostazioni">
-      <template v-for="group in INDEX" :key="group.group">
+    <!-- The index (D-105): always on wide screens; on narrow ones it is the page until a section is chosen. -->
+    <nav
+      :inert="proposal !== null"
+      class="min-h-0 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-5 lg:flex lg:w-[230px] lg:border-r lg:border-line"
+      :class="chosen.explicit ? 'hidden' : 'flex w-full'"
+      aria-label="Indice delle impostazioni"
+    >
+      <h1 class="mx-2.5 mb-2 font-hud text-xl font-semibold tracking-[0.05em] lg:hidden">Impostazioni</h1>
+      <template v-for="group in SETTINGS_INDEX" :key="group.group">
         <h2 class="hud-title mx-2.5 mt-3.5 mb-1.5 first:mt-0">{{ group.group }}</h2>
         <a
           v-for="item in group.items"
           :key="item.id"
-          :href="`#${item.id}`"
-          class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-surface-2 hover:text-ink"
-          :class="lit === item.id ? 'bg-surface-2 font-medium text-ink' : 'text-muted'"
-          :aria-current="lit === item.id ? 'location' : undefined"
-          @click.prevent="go(item.id)"
+          :href="hrefOf(item)"
+          class="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] hover:bg-surface-2 hover:text-ink lg:py-1.5"
+          :class="active === item.id ? 'text-muted lg:bg-surface-2 lg:font-medium lg:text-ink' : 'text-muted'"
+          :aria-current="active === item.id ? 'page' : undefined"
+          @click.prevent="open(item)"
         >
-          <Icon v-if="item.privacy" name="gateway" :size="15" class="text-warn" />
-          {{ item.title }}
+          <span class="min-w-0 flex-1">{{ item.title }}</span>
+          <span v-if="dirty(item)" role="img" class="size-[7px] rounded-full bg-warn" title="Modifiche non salvate" aria-label="modifiche non salvate" />
+          <span v-if="item.privacy" role="img" class="inline-flex text-warn" :title="PRIVACY_HINT" :aria-label="PRIVACY_HINT"><Icon name="gateway" :size="14" /></span>
+          <span v-if="item.page !== undefined" class="inline-flex -rotate-90 opacity-60" aria-hidden="true"><Icon name="expand" :size="13" /></span>
         </a>
       </template>
     </nav>
 
-    <div
-      ref="scroller"
-      :inert="proposal !== null"
-      class="min-h-0 min-w-0 flex-1 overflow-y-auto"
-      @scroll.passive="onScroll"
-      @wheel.passive="unpin"
-      @touchstart.passive="unpin"
-      @keydown="unpin"
-    >
+    <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
       <div class="mx-auto flex max-w-[860px] flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
         <header>
-          <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">Impostazioni</h1>
-          <p class="mt-1 text-sm text-muted">Ogni modifica vale subito, senza riavviare Arianna. Le uscite verso il cloud, Telegram e i server locali chiedono una conferma.</p>
+          <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex">‹ Impostazioni</button>
+          <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">{{ chosen.item.title }}</h1>
+          <p class="mt-1 flex items-center gap-1.5 text-xs text-muted">
+            <span v-if="chosen.item.privacy" class="inline-flex text-warn"><Icon name="gateway" :size="13" /></span>{{ BEHAVIOUR_TEXT[chosen.item.behaviour] }}
+          </p>
         </header>
 
-        <!-- On narrow screens the index is a row of links. -->
-        <nav class="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:hidden" aria-label="Indice delle impostazioni">
-          <a
-            v-for="item in INDEX.flatMap((group) => group.items)"
-            :key="item.id"
-            :href="`#${item.id}`"
-            class="shrink-0 rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-xs whitespace-nowrap"
-            :class="item.privacy ? 'text-warn' : 'text-muted'"
-            @click.prevent="go(item.id)"
-          >{{ item.title }}</a>
-        </nav>
+        <p v-if="pending.length > 0" role="status" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+          <Icon name="warning" :size="16" class="mt-0.5 text-warn" />
+          <span>Modifiche non salvate in: {{ pending.join(', ') }}. Restano lì finché non le salvi o le annulli; uscendo dalle Impostazioni si perdono.</span>
+        </p>
 
         <p v-if="loadError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
           Non riesco a leggere le impostazioni: {{ loadError }}
@@ -534,7 +546,7 @@ onBeforeUnmount(() => {
         <p v-if="view === null && loadError === null" class="text-muted">Leggo le impostazioni…</p>
 
         <template v-if="view !== null">
-          <p class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3.5 py-2.5 text-[13px]">
+          <p v-if="chosen.item.behaviour === 'now' || chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3.5 py-2.5 text-[13px]">
             <Icon name="info" :size="16" class="mt-0.5 text-info" />
             <span>
               Salvare da qui riscrive <code class="font-mono text-xs">config/arianna.toml</code>: i commenti scritti a mano nel file si perdono, come con
@@ -564,7 +576,7 @@ onBeforeUnmount(() => {
 
           <template v-if="forms !== null">
             <!-- Models by role -->
-            <SettingsCard id="roles" title="Modelli locali per ruolo" kind="now" :changed="changed('roles')" :saved="saved === 'roles'" :busy="busy === 'roles'" :error="errors.roles" @cancel="reset('roles')" @save="save('roles')">
+            <SettingsCard v-if="active === 'roles'" id="roles" title="Modelli locali per ruolo" kind="now" :changed="changed('roles')" :saved="saved === 'roles'" :busy="busy === 'roles'" :error="errors.roles" @cancel="reset('roles')" @save="save('roles')">
               <div class="flex flex-col">
                 <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1.5 border-t border-line py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[140px_minmax(0,1fr)] md:grid-cols-[140px_minmax(0,1fr)_auto] md:gap-3">
                   <label :for="`role-${role}`" class="font-medium">
@@ -595,10 +607,10 @@ onBeforeUnmount(() => {
             </SettingsCard>
 
             <!-- Trials of the catalog models (D-081) -->
-            <ModelEvals :catalog="catalog" :current="view.values?.roles.orchestrator" />
+            <ModelEvals v-if="active === 'model-evals'" :catalog="catalog" :current="view.values?.roles.orchestrator" />
 
             <!-- Cloud models -->
-            <SettingsCard id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :saved="saved === 'cloudModels'" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">
+            <SettingsCard v-if="active === 'cloud-models'" id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :saved="saved === 'cloudModels'" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">
               <div class="overflow-x-auto">
                 <table class="w-full border-collapse text-[13px]">
                   <thead>
@@ -640,13 +652,17 @@ onBeforeUnmount(() => {
             </SettingsCard>
 
             <!-- Voice -->
-            <SettingsCard id="voice" title="Voce e chiamate" kind="now" :changed="changed('voice')" :saved="saved === 'voice'" :invalid="voiceProblem(forms.voice)" :busy="busy === 'voice'" :error="errors.voice" @cancel="reset('voice')" @save="save('voice')">
+            <SettingsCard v-if="active === 'voice'" id="voice" title="Voce e chiamate" kind="now" :changed="changed('voice')" :saved="saved === 'voice'" :invalid="voiceProblem(forms.voice)" :busy="busy === 'voice'" :error="errors.voice" @cancel="reset('voice')" @save="save('voice')">
               <template #header>
                 <label class="flex items-center gap-2 text-xs text-muted">
                   {{ forms.voice.enabled ? 'accese' : 'spente' }}
                   <input v-model="forms.voice.enabled" type="checkbox" role="switch" class="switch" aria-label="Chiamate accese" />
                 </label>
               </template>
+              <p class="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span class="min-w-0 flex-1">Scegli a orecchio chi ascolta e chi parla nelle chiamate.</span>
+                <button type="button" class="btn px-2.5 py-1 text-xs" @click="leave('voiceTrial')"><Icon name="mic" :size="14" />Provino della voce</button>
+              </p>
               <template v-if="forms.voice.enabled">
                 <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                   <label class="flex flex-col gap-1 text-xs text-muted">
@@ -698,7 +714,7 @@ onBeforeUnmount(() => {
             </SettingsCard>
 
             <!-- Characters -->
-            <SettingsCard id="characters" title="Personaggi" kind="now" :changed="changed('characters')" :saved="saved === 'characters'" :busy="busy === 'characters'" :error="errors.characters" @cancel="reset('characters')" @save="save('characters')">
+            <SettingsCard v-if="active === 'characters'" id="characters" title="Personaggi" kind="now" :changed="changed('characters')" :saved="saved === 'characters'" :busy="busy === 'characters'" :error="errors.characters" @cancel="reset('characters')" @save="save('characters')">
               <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <div v-for="agent in agentIds" :key="agent" class="flex items-center gap-3 rounded-[10px] border border-line bg-surface-2 p-2.5">
                   <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" />
@@ -717,13 +733,13 @@ onBeforeUnmount(() => {
               <p class="text-xs text-muted">Un pacchetto nuovo si copia in <code class="font-mono">data/characters</code>, fuori da git; poi ricarica questa pagina.</p>
             </SettingsCard>
 
-            <p class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+            <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />
-              <span>Le sezioni che seguono decidono cosa può uscire da questo computer. Una modifica si applica solo dopo che hai visto e confermato la scheda con le uscite.</span>
+              <span>Questa sezione decide cosa può uscire da questo computer. Una modifica si applica solo dopo che hai visto e confermato la scheda con le uscite.</span>
             </p>
 
             <!-- Cloud executors -->
-            <SettingsCard id="executors" title="Esecutori cloud" kind="privacy" :changed="changed('executors')" :saved="saved === 'executors'" :busy="busy === 'executors'" :error="errors.executors" @cancel="reset('executors')" @save="prepare('executors')">
+            <SettingsCard v-if="active === 'executors'" id="executors" title="Esecutori cloud" kind="privacy" :changed="changed('executors')" :saved="saved === 'executors'" :busy="busy === 'executors'" :error="errors.executors" @cancel="reset('executors')" @save="prepare('executors')">
               <div class="flex flex-wrap gap-5">
                 <label v-for="executor in CLOUD_EXECUTORS" :key="executor" class="flex items-center gap-2">
                   <input v-model="forms.executors" type="checkbox" :value="executor" />{{ EXECUTOR_TEXT[executor] ?? executor }}
@@ -733,7 +749,7 @@ onBeforeUnmount(() => {
             </SettingsCard>
 
             <!-- Telegram -->
-            <SettingsCard id="telegram" title="Telegram" kind="privacy" :changed="changed('telegram')" :saved="saved === 'telegram'" :busy="busy === 'telegram'" :error="errors.telegram" @cancel="reset('telegram')" @save="prepare('telegram')">
+            <SettingsCard v-if="active === 'telegram'" id="telegram" title="Telegram" kind="privacy" :changed="changed('telegram')" :saved="saved === 'telegram'" :busy="busy === 'telegram'" :error="errors.telegram" @cancel="reset('telegram')" @save="prepare('telegram')">
               <template #header>
                 <label class="flex items-center gap-2 text-xs text-muted">
                   {{ forms.telegram.enabled ? 'acceso' : 'spento' }}
@@ -757,7 +773,7 @@ onBeforeUnmount(() => {
             </SettingsCard>
 
             <!-- Projects -->
-            <SettingsCard id="projects" title="Progetti" kind="privacy" :changed="changed('projects')" :saved="saved === 'projects'" :busy="busy === 'projects'" :error="errors.projects" @cancel="reset('projects')" @save="prepare('projects')">
+            <SettingsCard v-if="active === 'projects'" id="projects" title="Progetti" kind="privacy" :changed="changed('projects')" :saved="saved === 'projects'" :busy="busy === 'projects'" :error="errors.projects" @cancel="reset('projects')" @save="prepare('projects')">
               <ul class="flex flex-col gap-2">
                 <li v-for="(project, index) in forms.projects" :key="project.name" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2">
                   <Icon name="project" :size="16" class="text-muted" />
@@ -788,6 +804,7 @@ onBeforeUnmount(() => {
 
           <!-- Local servers: state and log even with an invalid file. -->
           <SettingsCard
+            v-if="active === 'servers'"
             id="servers"
             title="Server locali"
             :kind="forms !== null ? 'privacy' : 'read'"
@@ -852,12 +869,37 @@ onBeforeUnmount(() => {
           </SettingsCard>
 
           <!-- Label rules: only the file changes them. -->
-          <SettingsCard id="labels" title="Regole di etichetta" kind="read">
+          <SettingsCard v-if="active === 'labels'" id="labels" title="Regole di etichetta" kind="read">
             <p class="text-xs text-muted">Le regole di etichetta e il gateway si cambiano solo a mano, nel file <code class="font-mono">config/labels.toml</code>.</p>
             <pre v-if="view.labels !== null" class="max-h-[320px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap">{{ view.labels }}</pre>
             <p v-else class="text-sm text-danger">Il file delle etichette non si legge: senza regole tutto è L2.</p>
           </SettingsCard>
         </template>
+
+        <!-- What this installation is (D-098): read from the core, even when the settings do not load. -->
+        <SettingsCard v-if="active === 'installation'" id="installation" title="Installazione" kind="read">
+          <template v-if="installation !== undefined">
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+              <span class="text-muted">Tipo</span>
+              <span class="flex flex-wrap items-center gap-2">
+                <span
+                  class="rounded-[5px] border px-1.5 py-1 font-mono text-[10px] leading-none font-semibold tracking-[0.1em]"
+                  :class="installation.mode === 'development' ? 'border-warn/70 bg-warn/10 text-warn' : 'border-ok/60 text-ok'"
+                >{{ MODE_BADGE[installation.mode] }}</span>
+                <span class="text-xs text-muted">{{ MODE_HINT[installation.mode] }}</span>
+              </span>
+              <span class="text-muted">Cartella</span>
+              <span class="font-mono text-xs">{{ installation.home }}</span>
+              <span class="text-muted">Versione</span>
+              <span class="font-mono text-xs">{{ installation.version ?? 'non letta' }}</span>
+            </div>
+            <p class="text-xs text-muted">
+              È di sviluppo con le password di sviluppo o con <code class="font-mono">[installation] mode = "development"</code> in
+              <code class="font-mono">arianna.toml</code>; altrimenti è di produzione.
+            </p>
+          </template>
+          <p v-else class="text-sm text-muted">Il nucleo non dice che installazione è.</p>
+        </SettingsCard>
       </div>
     </div>
 

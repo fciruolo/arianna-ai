@@ -5,23 +5,34 @@ import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
 import IncomingCall from './components/IncomingCall.vue';
 import KnowledgePage from './components/KnowledgePage.vue';
-import ConversationList from './components/ConversationList.vue';
+import DraftChat from './components/DraftChat.vue';
 import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
-import NewConversation from './components/NewConversation.vue';
+import InstallationBadge from './components/InstallationBadge.vue';
+import NewConversationDialog from './components/NewConversationDialog.vue';
 import PixelAgent from './components/PixelAgent.vue';
+import SearchDialog from './components/SearchDialog.vue';
+import DevProgressPage from './components/DevProgressPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
+import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
+import { loadInstallation } from './lib/api.ts';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
+import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
-import { agentName } from './lib/italian.ts';
+import { draftFromAddress, draftPath, draftProjectProblem } from './lib/draft.ts';
+import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
+import type { SearchTarget } from './lib/search.ts';
+import { callTarget } from './lib/sidebar.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
 import {
   conversationFromPath,
+  DEV_PATH,
   documentTitle,
+  isDevPath,
   isKnowledgePath,
   isSettingsPath,
   isThoughtsPath,
@@ -30,17 +41,18 @@ import {
   knowledgeFocus,
   knowledgePathFor,
   pathFor,
-  SETTINGS_PATH,
+  settingsPathFor,
+  settingsSlug,
   THOUGHTS_PATH,
   VOICE_TRIAL_PATH,
 } from './lib/route.ts';
-import { conversationState, poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
-import { loadTheme, nextTheme, saveTheme, THEME_TEXT, themeAttribute, type Theme } from './lib/theme.ts';
+import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
+import { loadTheme, saveTheme, themeAttribute, type Theme } from './lib/theme.ts';
 import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, systemChats, failure, chat, current, tasks, credits, activityCounts, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -56,17 +68,161 @@ async function confirmSchedule(): Promise<void> {
   if (await store.scheduleCall(at)) showSchedule.value = false;
 }
 
-// Calls (D-066): the phone in the top bar calls Arianna from the open conversation.
-const callBlocked = computed(() =>
-  current.value === undefined ? 'Apri una conversazione' : callBlocker(voiceState.value, current.value.archivedAt !== null, callSession.value !== null),
-);
+// Calls (D-066): "Chiama" of the left bar (D-097) calls Arianna in the open private conversation, or in a new private one.
+const callBlocked = computed(() => callBlocker(voiceState.value, false, callSession.value !== null));
 
-// Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser.
+/** True from the click on "Chiama" until the call started or failed: a second click does nothing. */
+const calling = ref(false);
+
+async function callArianna(): Promise<void> {
+  if (callBlocked.value !== undefined || calling.value || callStarting.value) return;
+  calling.value = true;
+  try {
+    const target = callTarget(current.value, page.value === 'chat');
+    if (target === 'new') {
+      const before = chat.value?.conversationId;
+      await createConversation('private');
+      // The core refused the new conversation: no call in the one that was open.
+      if (chat.value === null || chat.value.conversationId === before) return;
+    } else if (chat.value?.conversationId !== target.here) {
+      return;
+    }
+    showSidebar.value = false;
+    await store.startCall();
+  } finally {
+    calling.value = false;
+  }
+}
+
+// Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser (D-097).
 const showSidebar = ref(false);
 const showPanel = ref(false);
-const storage = typeof window === 'undefined' ? undefined : window.localStorage;
+let storage: Storage | undefined;
+try {
+  storage = typeof window === 'undefined' ? undefined : window.localStorage;
+} catch {
+  // Blocked storage: the bars open at every load.
+  storage = undefined;
+}
 const layout = ref(loadLayout(storage));
 watch(layout, (value) => saveLayout(storage, value), { deep: true });
+
+/** Wide enough for the bar to be a column (Tailwind md, xl) rather than a drawer. */
+function wide(rem: number): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(`(min-width: ${String(rem)}rem)`).matches;
+}
+/** Followed live: a closed drawer is inert (out of Tab and of screen readers), a column never. */
+const wideSidebar = ref(wide(48));
+const widePanel = ref(wide(80));
+function measureWidth(): void {
+  wideSidebar.value = wide(48);
+  widePanel.value = wide(80);
+}
+
+/** The fold button of the left bar: a thin column on wide screens, the drawer closes on narrow ones. */
+function foldSidebar(): void {
+  if (wide(48)) layout.value.sidebar = true;
+  showSidebar.value = false;
+}
+
+/** The right bar: a column from xl, a drawer below. */
+function openPanel(): void {
+  showSidebar.value = false;
+  if (wide(80)) layout.value.panel = false;
+  else showPanel.value = true;
+}
+function closePanel(): void {
+  if (wide(80)) layout.value.panel = true;
+  showPanel.value = false;
+}
+
+// "Cerca" (D-097) and "+ Nuovo": windows in the middle of the page.
+const showSearch = ref(false);
+const showNew = ref(false);
+function openSearch(): void {
+  showSidebar.value = false;
+  showSearch.value = true;
+}
+function openNew(): void {
+  showSidebar.value = false;
+  void store.refreshProjects();
+  showNew.value = true;
+}
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+/** ⌘K on the Mac, Ctrl+K elsewhere, opens "Cerca"; never over another window or during a call. */
+function onShortcut(event: KeyboardEvent): void {
+  const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
+  if (showSearch.value || showNew.value || callSession.value !== null || incoming.value !== null) return;
+  if (document.querySelector('[aria-modal="true"]') !== null) return;
+  event.preventDefault();
+  openSearch();
+}
+/** After a choice in "Cerca" or "Nuovo": the focus goes to the field of the chat, once it is on the page. */
+function focusComposer(): void {
+  let tries = 0;
+  const look = (): void => {
+    const field = document.getElementById('composer');
+    if (field instanceof HTMLTextAreaElement && !field.disabled) {
+      field.focus();
+      return;
+    }
+    if (++tries < 20) window.setTimeout(look, 100);
+    // No field after 2 s (a page without one, an archived conversation): the main area takes the focus.
+    else document.getElementById('main')?.focus();
+  };
+  window.setTimeout(look, 0);
+}
+/** "Nuovo" and "/nuova" (D-108): a draft only in the page; the conversation is created with the first message. */
+function openDraft(mode: 'work' | 'private', project?: string, replace = false): void {
+  showSidebar.value = false;
+  page.value = 'chat';
+  store.openDraft(mode, project);
+  const path = draftPath(mode, project);
+  if (`${window.location.pathname}${window.location.search}` !== path) {
+    if (replace) window.history.replaceState(null, '', path);
+    // A conversation born from a draft takes the place of the draft in the history: "back" does not reopen an empty draft.
+    else if (draftFromAddress(window.location.pathname, window.location.search) !== undefined) window.history.replaceState(null, '', path);
+    else window.history.pushState(null, '', path);
+  }
+  setTitle('Nuova conversazione');
+  focusComposer();
+}
+/** A result of "Cerca": a conversation (and the message in it) or a node of the knowledge graph. */
+function goTo(target: SearchTarget): void {
+  if ('graph' in target) {
+    openKnowledge(target.graph);
+    return;
+  }
+  if (target.message !== undefined) {
+    requestFocus(target.conversation, messageAnchor(target.message));
+    window.dispatchEvent(new Event(FOCUS_EVENT));
+  }
+  void openConversation(target.conversation).then(() => {
+    // A message to bring into view keeps the scroll of the chat: the field still takes the focus.
+    focusComposer();
+  });
+}
+
+// What this installation is (D-098): SVILUPPO or PRODUZIONE in the top bar, "[DEV]" in the tab.
+const installation = ref<InstallationInfo | undefined>(undefined);
+let titleBase: string | null | undefined;
+function setTitle(title: string | null | undefined): void {
+  titleBase = title;
+  document.title = markTitle(documentTitle(title), installation.value?.mode);
+}
+watch(installation, () => setTitle(titleBase));
+function readInstallation(): void {
+  loadInstallation()
+    .then((info) => {
+      installation.value = info;
+    })
+    .catch(() => undefined);
+}
+// The core may not have answered at the start (restarting): read again when the link is back.
+watch(live, (state) => {
+  if (state === 'open' && installation.value === undefined) readInstallation();
+});
 
 // Theme: the user's choice in this browser, or the system's.
 const theme = ref<Theme>(loadTheme(storage));
@@ -80,7 +236,6 @@ watch(
   },
   { immediate: true },
 );
-const themeIcon = computed(() => (theme.value === 'dark' ? 'theme-dark' : theme.value === 'light' ? 'theme-light' : 'theme-system'));
 
 // The clock of the top bar, as on the mockup.
 const now = ref(new Date());
@@ -94,22 +249,33 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
-  if (chat.value !== null) store.close();
+  if (chat.value !== null || draft.value !== null) store.close();
   if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState(null, '', path);
-  document.title = documentTitle(title);
+  setTitle(title);
 }
 
 function openVoiceTrial(): void {
   openPage('voice-trial', VOICE_TRIAL_PATH, 'Provino della voce');
 }
 
-function openSettings(): void {
-  openPage('settings', SETTINGS_PATH, 'Impostazioni');
+/** "Sviluppo di Arianna" (D-102), reached from the settings. */
+function openDevProgress(): void {
+  openPage('dev', DEV_PATH, 'Sviluppo di Arianna');
+}
+
+/** The section of the settings in the address (D-105): `/impostazioni/<slug>`; undefined is the first one. */
+const settingsSection = ref<string | undefined>(undefined);
+/** The settings hold edits not saved (D-105): the back button of the browser asks before leaving them. */
+const settingsDirty = ref(false);
+
+function openSettings(slug?: string): void {
+  settingsSection.value = slug;
+  openPage('settings', settingsPathFor(slug), 'Impostazioni');
 }
 
 /** The node the knowledge page selects when it opens (D-090: "Apri nel grafo"). */
@@ -127,7 +293,11 @@ function openThoughts(): void {
 }
 
 /** A "/" command of the chat (D-090). */
-function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' | 'search' }>): void {
+function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): void {
+  if (action.kind === 'search') {
+    openSearch();
+    return;
+  }
   if (action.kind === 'new-conversation') {
     const conversation = current.value;
     if (conversation === undefined) return;
@@ -137,7 +307,7 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' | 'se
       error.value = 'Il progetto di questa conversazione non è più fra quelli approvati: apri la nuova conversazione dal pulsante e scegli il progetto.';
       return;
     }
-    void createConversation(conversation.mode, conversation.mode === 'work' ? project : undefined);
+    openDraft(conversation.mode, conversation.mode === 'work' ? project : undefined);
     return;
   }
   if (action.page === 'thoughts') openThoughts();
@@ -154,16 +324,27 @@ function settingsChanged(sections: string[]): void {
 
 // The address follows the open conversation (/c/<id>), so a reload comes back to it.
 function followAddress(): void {
+  // Back out of the settings with edits not saved (D-105): ask, and stay when the user says no.
+  if (page.value === 'settings' && settingsDirty.value && !isSettingsPath(window.location.pathname)) {
+    if (!window.confirm('Ci sono modifiche non salvate nelle Impostazioni: uscendo si perdono. Vuoi uscire?')) {
+      window.history.pushState(null, '', settingsPathFor(settingsSection.value));
+      return;
+    }
+  }
   if (isVoiceTrialPath(window.location.pathname)) {
     openVoiceTrial();
     return;
   }
   if (isSettingsPath(window.location.pathname)) {
-    openSettings();
+    openSettings(settingsSlug(window.location.pathname));
     return;
   }
   if (isKnowledgePath(window.location.pathname)) {
     openKnowledge(knowledgeFocus(window.location.search));
+    return;
+  }
+  if (isDevPath(window.location.pathname)) {
+    openDevProgress();
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
@@ -171,9 +352,16 @@ function followAddress(): void {
     return;
   }
   page.value = 'chat';
+  const asked = draftFromAddress(window.location.pathname, window.location.search);
+  if (asked !== undefined) {
+    // From the address: the same entry of the history, written in its normal form (`/nuova` → `/nuova?tipo=privata`).
+    if (draft.value === null || draft.value.mode !== asked.mode || draft.value.project !== asked.project) openDraft(asked.mode, asked.project, true);
+    else if (`${window.location.pathname}${window.location.search}` !== draftPath(asked.mode, asked.project)) window.history.replaceState(null, '', draftPath(asked.mode, asked.project));
+    return;
+  }
   const id = conversationFromPath(window.location.pathname);
   if (id === undefined) {
-    if (chat.value !== null) store.close();
+    if (chat.value !== null || draft.value !== null) store.close();
     if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
   } else if (chat.value?.conversationId !== id) {
     void store.open(id);
@@ -184,6 +372,8 @@ watch(
   (id) => {
     if (id !== null) page.value = 'chat';
     else if (page.value !== 'chat') return;
+    // A draft has its own address (/nuova?tipo=…): the root would lose it.
+    if (id === null && draft.value !== null) return;
     const path = pathFor(id);
     if (window.location.pathname === path) return;
     if (id === null) window.history.replaceState(null, '', path);
@@ -193,7 +383,7 @@ watch(
 watch(
   () => current.value?.title,
   (title) => {
-    if (page.value === 'chat') document.title = documentTitle(title);
+    if (page.value === 'chat') setTitle(draft.value !== null ? 'Nuova conversazione' : title);
   },
   { immediate: true },
 );
@@ -201,13 +391,18 @@ watch(
 onMounted(() => {
   followAddress();
   window.addEventListener('popstate', followAddress);
+  window.addEventListener('keydown', onShortcut);
+  window.addEventListener('resize', measureWidth);
   store.start();
+  readInstallation();
   clock = window.setInterval(() => {
     now.value = new Date();
   }, 15_000);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', followAddress);
+  window.removeEventListener('keydown', onShortcut);
+  window.removeEventListener('resize', measureWidth);
   store.stop();
   window.clearInterval(clock);
 });
@@ -225,10 +420,11 @@ async function createConversation(mode: 'work' | 'private', project?: string): P
 }
 
 function openChat(): void {
-  if (page.value === 'chat') return;
+  if (page.value === 'chat' && draft.value === null) return;
+  if (draft.value !== null) store.close();
   page.value = 'chat';
   window.history.pushState(null, '', '/');
-  document.title = documentTitle(undefined);
+  setTitle(undefined);
 }
 
 /** The last line of activity of a running task of the open conversation: it says what Arianna is doing. */
@@ -269,153 +465,44 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
 <template>
   <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
-    <!-- Icon rail -->
-    <nav class="hidden flex-col items-center gap-1.5 border-r border-line bg-surface py-3.5 md:flex" aria-label="Sezioni">
-      <!-- The logo: the A of the name, as in the sidebar; it also folds the sidebar away. -->
-      <button
-        type="button"
-        class="mb-2.5 grid size-9 place-items-center rounded-[9px] font-hud text-[24px] leading-none font-semibold text-accent hover:bg-surface-2"
-        :aria-label="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
-        :title="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
-        :aria-expanded="!layout.sidebar"
-        @click="layout.sidebar = !layout.sidebar"
-      >
-        A
-      </button>
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border"
-        :class="page === 'chat' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
-        aria-label="Chat"
-        title="Chat"
-        :aria-current="page === 'chat' ? 'page' : undefined"
-        @click="openChat"
-      >
-        <Icon name="chat" />
-      </button>
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border"
-        :class="page === 'knowledge' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
-        aria-label="Conoscenza"
-        title="Conoscenza"
-        :aria-current="page === 'knowledge' ? 'page' : undefined"
-        @click="openKnowledge()"
-      >
-        <Icon name="knowledge" />
-      </button>
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border"
-        :class="page === 'thoughts' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
-        aria-label="Pensieri"
-        title="Pensieri"
-        :aria-current="page === 'thoughts' ? 'page' : undefined"
-        @click="openThoughts"
-      >
-        <Icon name="thoughts" />
-      </button>
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border"
-        :class="page === 'voice-trial' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
-        aria-label="Provino della voce"
-        title="Provino della voce"
-        :aria-current="page === 'voice-trial' ? 'page' : undefined"
-        @click="openVoiceTrial"
-      >
-        <Icon name="mic" />
-      </button>
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border"
-        :class="page === 'settings' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
-        aria-label="Impostazioni"
-        title="Impostazioni"
-        :aria-current="page === 'settings' ? 'page' : undefined"
-        @click="openSettings"
-      >
-        <Icon name="settings" />
-      </button>
-      <div class="flex-1" />
-      <button
-        type="button"
-        class="grid size-[38px] place-items-center rounded-[9px] border border-transparent text-muted hover:bg-surface-2 hover:text-ink"
-        :aria-label="`${THEME_TEXT[theme]}: cambia tema`"
-        :title="THEME_TEXT[theme]"
-        @click="theme = nextTheme(theme)"
-      >
-        <Icon :name="themeIcon" />
-      </button>
-    </nav>
-
-    <!-- Sidebar: brand, new conversation, agents, conversations -->
-    <aside
-      class="fixed inset-y-0 left-0 z-30 flex w-[min(290px,86vw)] flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3.5 py-4 transition-transform md:static md:z-auto md:w-auto md:translate-x-0"
+    <!-- Left bar (D-097): a column on wide screens, a drawer otherwise. -->
+    <SideBar
+      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:static md:z-auto md:w-auto md:translate-x-0"
       :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
-      aria-label="Conversazioni e agenti"
-    >
-      <div class="flex items-baseline gap-2 px-1.5">
-        <span class="font-hud text-[19px] leading-none font-semibold tracking-[0.06em] uppercase">Arianna</span>
-        <span class="font-mono text-[10px] tracking-[0.12em] text-muted">LOCALE</span>
-        <span class="ml-auto inline-flex items-center gap-1.5 font-mono text-[10px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
-          <span class="size-[7px] rounded-full" :class="live === 'open' ? 'bg-ok shadow-[0_0_8px_var(--ok)]' : 'animate-hud-blink bg-warn'" />
-          {{ live === 'open' ? 'IN LINEA' : 'RICONN.' }}
-        </span>
-        <button type="button" class="ml-1 rounded-md p-1 text-muted hover:text-ink md:hidden" aria-label="Chiudi il menu" @click="showSidebar = false">
-          <Icon name="close" />
-        </button>
-      </div>
-
-      <NewConversation :projects="projects" @create="createConversation" @refresh="store.refreshProjects" />
-      <!-- On narrow screens the icon rail is hidden: the voice trial is reached from here. -->
-      <button type="button" class="btn md:hidden" @click="openKnowledge()"><Icon name="knowledge" :size="16" />Conoscenza</button>
-      <button type="button" class="btn md:hidden" @click="openThoughts"><Icon name="thoughts" :size="16" />Pensieri</button>
-      <button type="button" class="btn md:hidden" @click="openVoiceTrial"><Icon name="mic" :size="16" />Provino della voce</button>
-      <button type="button" class="btn md:hidden" @click="openSettings"><Icon name="settings" :size="16" />Impostazioni</button>
-
-      <section>
-        <h2 class="hud-title mx-1.5 mb-1.5">Agenti</h2>
-        <ul class="flex flex-col gap-0.5">
-          <li v-for="id in agentIds" :key="id" class="flex items-center gap-2.5 rounded-lg px-2 py-1">
-            <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="1" />
-            <span class="min-w-0 flex-1 truncate">{{ agentName(id) }}</span>
-            <span
-              class="size-[7px] shrink-0 rounded-full"
-              :class="
-                poseFor(id) === 'waiting'
-                  ? 'bg-warn shadow-[0_0_8px_var(--warn)]'
-                  : poseFor(id) === 'idle'
-                    ? 'bg-muted'
-                    : 'bg-accent shadow-[0_0_8px_var(--accent)]'
-              "
-              :title="POSE_TEXT[poseFor(id)]"
-            />
-          </li>
-        </ul>
-      </section>
-
-      <ConversationList
-        :conversations="conversations"
-        :archived="archived"
-        :system="systemChats"
-        :selected="chat?.conversationId ?? null"
-        :rename="store.rename"
-        @open="openConversation"
-        @archive="store.archive"
-        @purge="store.purge"
-      />
-
-      <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
-        Gateway attivo ·
-        <template v-if="status.gateway.privateOut === 0">nessun dato L2/L3 è uscito oggi</template>
-        <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite L2/L3 oggi: controlla il registro</span>
-      </p>
-    </aside>
+      :inert="!showSidebar && !wideSidebar"
+      :live="live"
+      :page="page === 'dev' ? 'settings' : page"
+      :theme="theme"
+      :conversations="conversations"
+      :archived="archived"
+      :system-chats="systemChats"
+      :selected="chat?.conversationId ?? null"
+      :rename="store.rename"
+      :agent-ids="agentIds"
+      :characters="characters"
+      :pose-for="poseFor"
+      :status="status"
+      :call-blocked="callBlocked"
+      :call-starting="callStarting || calling"
+      @fold="foldSidebar"
+      @home="openChat(); showSidebar = false"
+      @search="openSearch"
+      @create="openNew"
+      @thoughts="openThoughts"
+      @knowledge="openKnowledge()"
+      @call="callArianna"
+      @settings="openSettings"
+      @theme="(value) => (theme = value)"
+      @agents="openPanel"
+      @open="openConversation"
+      @archive="store.archive"
+      @pin="store.pin"
+      @purge="store.purge"
+    />
     <div v-if="showSidebar" class="fixed inset-0 z-20 bg-black/50 md:hidden" aria-hidden="true" @click="showSidebar = false" />
 
     <!-- Main -->
-    <main class="flex min-h-0 min-w-0 flex-col">
+    <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">
       <header class="flex h-[60px] shrink-0 items-center gap-3.5 border-b border-line bg-bg/85 px-4 backdrop-blur-sm md:px-5.5">
         <button
           type="button"
@@ -425,45 +512,37 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <Icon name="menu" />
         </button>
+        <!-- Left bar folded (D-097): only its icon, here in the top bar; the page takes the whole width. -->
         <button
+          v-if="layout.sidebar"
           type="button"
-          class="hidden size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink md:grid"
-          :aria-label="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
-          :title="layout.sidebar ? 'Mostra le conversazioni' : 'Nascondi le conversazioni'"
-          :aria-expanded="!layout.sidebar"
-          @click="layout.sidebar = !layout.sidebar"
+          class="-ml-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink md:grid"
+          aria-label="Apri la barra"
+          title="Apri la barra"
+          @click="layout.sidebar = false"
         >
-          <Icon :name="layout.sidebar ? 'sidebar-expand' : 'sidebar-collapse'" />
+          <Icon name="sidebar-expand" />
         </button>
         <p class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
           <template v-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
-          <template v-else-if="page === 'voice-trial'">Voce / <b class="font-medium text-ink">Provino</b></template>
+          <template v-else-if="page === 'voice-trial'">Impostazioni / <b class="font-medium text-ink">Provino della voce</b></template>
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
+          <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
+          <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
         </p>
         <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
           {{ current.clearance }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
         </span>
-        <button
-          v-if="current !== undefined && page === 'chat'"
-          type="button"
-          class="grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-accent disabled:text-muted disabled:opacity-60"
-          :disabled="callBlocked !== undefined || callStarting"
-          :aria-label="callBlocked ?? 'Chiama Arianna'"
-          :title="callBlocked ?? 'Chiama Arianna'"
-          @click="store.startCall"
-        >
-          <Icon name="phone" />
-        </button>
         <div v-if="current !== undefined && page === 'chat'" class="relative">
           <button
             type="button"
-            class="grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink disabled:opacity-60"
+            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink disabled:opacity-60"
             :disabled="voiceState === 'off' || current.archivedAt !== null"
             aria-label="Fatti chiamare da Arianna più tardi"
             title="Fatti chiamare da Arianna più tardi"
@@ -484,11 +563,12 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             </div>
           </form>
         </div>
+        <InstallationBadge v-if="installation !== undefined" :info="installation" />
         <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <button
           type="button"
           class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 xl:hidden"
-          :aria-label="showPanel ? 'Chiudi il pannello di stato' : 'Apri il pannello di stato'"
+          :aria-label="showPanel ? 'Chiudi la barra degli agenti' : 'Apri la barra degli agenti'"
           @click="showPanel = !showPanel"
         >
           <Icon name="panel" />
@@ -497,18 +577,19 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
+        <!-- Right bar folded (D-097): only its icon, with what waits elsewhere as a badge. -->
         <button
+          v-if="layout.panel"
           type="button"
-          class="relative hidden size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink xl:grid"
-          :aria-label="layout.panel ? 'Mostra il pannello di stato' : 'Nascondi il pannello di stato'"
-          :title="layout.panel ? 'Mostra il pannello di stato' : 'Nascondi il pannello di stato'"
-          :aria-expanded="!layout.panel"
-          @click="layout.panel = !layout.panel"
+          class="relative -mr-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink xl:grid"
+          aria-label="Apri la barra degli agenti"
+          title="Apri la barra degli agenti"
+          @click="layout.panel = false"
         >
-          <Icon :name="layout.panel ? 'panel-expand' : 'panel-collapse'" />
+          <Icon name="panel-expand" />
           <span
-            v-if="layout.panel && elsewhere.length > 0"
-            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+            v-if="elsewhere.length > 0"
+            class="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
       </header>
@@ -533,9 +614,19 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" @changed="settingsChanged" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" />
+      <DevProgressPage v-else-if="page === 'dev'" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
+      <DraftChat
+        v-else-if="draft !== null"
+        :key="draft.key"
+        :draft="draft"
+        :project-problem="draftProjectProblem(draft, projects.length > 0 ? projects.map((entry) => entry.name) : undefined)"
+        :sending="sending"
+        :send="store.sendDraft"
+        :arianna="characters?.agents.arianna"
+      />
       <ChatView
         v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"
@@ -552,7 +643,6 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :status="status"
         :calls="calls"
         @send="store.send"
-        @save-to-inbox="store.saveToInbox"
         @call-when-done="store.callWhenDone"
         @cancel-call="store.cancelScheduled"
         @choose-model="store.chooseModel"
@@ -579,6 +669,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <StatusPanel
       class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform xl:static xl:z-auto xl:w-auto xl:translate-x-0"
       :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { 'xl:hidden': layout.panel }]"
+      :inert="!showPanel && !widePanel"
       :status="status"
       :characters="characters"
       :agent-ids="agentIds"
@@ -588,10 +679,19 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :decide="store.decide"
       @dismiss="store.dismissDecision"
       @refresh-characters="store.refreshCharacters"
-      @close="showPanel = false"
+      @close="closePanel"
       @open="(id) => { showPanel = false; void openConversation(id); }"
     />
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
+
+    <SearchDialog v-if="showSearch" @close="showSearch = false" @go="goTo" />
+    <NewConversationDialog
+      v-if="showNew"
+      :projects="projects"
+      @close="showNew = false"
+      @create="openDraft"
+      @refresh="store.refreshProjects"
+    />
 
     <IncomingCall
       v-if="incoming !== null && callSession === null"

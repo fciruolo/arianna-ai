@@ -1,6 +1,9 @@
 import type { CallInfo } from './calls.ts';
+import type { Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
+import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
+import type { SearchResult } from './search.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -78,6 +81,26 @@ export async function renameConversation(conversationId: string, title: string):
 export async function archiveConversation(conversationId: string, archived: boolean): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/archive`, { archived }))
     .conversation;
+}
+
+/** Pins a conversation at the top of the list, or unpins it (D-089): no limit of number. */
+export async function pinConversation(conversationId: string, pinned: boolean): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/${pinned ? 'pin' : 'unpin'}`, {}))
+    .conversation;
+}
+
+/** "Cerca" (D-089): conversations, messages, notes and pages up to L2; the query never goes to a log. */
+export async function search(query: string, limit: number, signal?: AbortSignal): Promise<SearchResult> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(`/api/search?${params.toString()}`, { credentials: 'same-origin', ...(signal === undefined ? {} : { signal }) });
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  return data as unknown as SearchResult;
+}
+
+/** What this installation is (D-089, D-098); undefined when the core does not say. */
+export async function loadInstallation(): Promise<InstallationInfo | undefined> {
+  return parseInstallation(await call<unknown>('GET', '/api/installation'));
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
@@ -365,4 +388,15 @@ export async function loadNote(name: string): Promise<Note> {
 /** Queues a new note to be organized again by the local model. */
 export async function organizeNote(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/organize`, {});
+}
+
+/** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */
+export async function loadDevProgress(): Promise<{ progress: DevProgress; maxAnswer: number }> {
+  return call<{ progress: DevProgress; maxAnswer: number }>('GET', '/api/dev/progress');
+}
+
+/** Appends an answer to docs/RISPOSTE.md for Claude Code; the question is named by its key only. */
+/** `logged` false: the answer is saved but its event did not reach the chain. */
+export async function sendDevAnswer(key: string, text: string): Promise<{ key: string; at: string; logged: boolean }> {
+  return call<{ key: string; at: string; logged: boolean }>('POST', '/api/dev/answers', { key, text });
 }

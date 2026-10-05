@@ -28,6 +28,8 @@ export interface Conversation {
   sourceTaskStatus: TaskStatus | null;
   createdAt: string;
   lastMessageAt: string | null;
+  /** When the user pinned it at the top of the list (D-089); null when not pinned, always null while archived. */
+  pinnedAt: string | null;
 }
 
 /** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */

@@ -4,15 +4,16 @@ import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
 import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
-import { commandError, messageNote, parseNoteCommand, savedText } from './lib/capture.ts';
+import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
+import { draftStep, firstMessageProblem, type Draft } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, Label, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -30,6 +31,9 @@ export function createChatStore() {
   /** The open conversation when it is in neither list (an archived one beyond the first page). */
   const detached = ref<Conversation | undefined>(undefined);
   const chat = shallowRef<ChatState | null>(null);
+  /** A new conversation not yet in the core (D-108): it is created with the first message. */
+  const draft = ref<Draft | null>(null);
+  let draftKey = 0;
   const tasks = ref<Record<string, Task>>({});
   /** Who wrote the cloud answers of the open conversation, and the files of each run (D-082). */
   const credits = ref<Map<string, MessageCredit>>(new Map());
@@ -156,6 +160,17 @@ export function createChatStore() {
     }
   }
 
+  /** Pins a conversation at the top of the list, or unpins it (D-089). */
+  async function pin(id: string, value: boolean): Promise<void> {
+    error.value = null;
+    try {
+      await api.pinConversation(id, value);
+      await refreshConversations();
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
   async function refreshModels(): Promise<void> {
     models.value = await api.listModels();
   }
@@ -224,6 +239,7 @@ export function createChatStore() {
 
   async function open(id: string): Promise<void> {
     error.value = null;
+    draft.value = null;
     chat.value = emptyChat(id);
     detached.value = undefined;
     tasks.value = {};
@@ -355,10 +371,62 @@ export function createChatStore() {
   /** Back to no open conversation (the browser went back to the root). */
   function close(): void {
     error.value = null;
+    draft.value = null;
     calls.value = [];
     chat.value = null;
     detached.value = undefined;
     tasks.value = {};
+  }
+
+  /** "Nuovo" (D-108): a draft only in the page; the core creates the conversation with the first message. */
+  function openDraft(mode: ConversationMode, project?: string): void {
+    close();
+    draftKey += 1;
+    draft.value = { key: draftKey, mode, project, conversationId: null };
+  }
+
+  /**
+   * The first message of the draft: creates the conversation (once, even when
+   * the message must be sent again), sends the message, then opens the
+   * conversation. False keeps the text in the field.
+   */
+  async function sendDraft(body: string): Promise<boolean> {
+    const start = draft.value;
+    if (start === null || sending.value) return false;
+    error.value = null;
+    const problem = firstMessageProblem(body, goesToArianna);
+    if (problem !== undefined) {
+      error.value = problem;
+      return false;
+    }
+    sending.value = true;
+    try {
+      const step = draftStep(start);
+      let created: Conversation | undefined;
+      let id: string;
+      if (step.kind === 'create') {
+        created = await api.createConversation(start.mode, start.project);
+        id = created.id;
+        // The user left the draft while it was created: nothing is sent, the text stays where it was written.
+        if (draft.value?.key !== start.key) return false;
+        draft.value = { ...start, conversationId: id };
+      } else {
+        id = step.conversationId;
+      }
+      await api.sendMessage(id, body);
+      // The user left the draft meanwhile: the message is in, the page stays where the user went.
+      if (draft.value?.key !== start.key) return true;
+      if (created !== undefined) conversations.value = [created, ...conversations.value.filter((item) => item.id !== id)];
+      await open(id);
+      // The list with the title the core gave; a failure here leaves the open conversation as it is.
+      void refreshConversations().catch(() => undefined);
+      return true;
+    } catch (cause) {
+      fail(cause);
+      return false;
+    } finally {
+      sending.value = false;
+    }
   }
 
   async function create(mode: ConversationMode, project?: string): Promise<void> {
@@ -405,25 +473,6 @@ export function createChatStore() {
       return false;
     } finally {
       sending.value = false;
-    }
-  }
-
-  /**
-   * "Salva in inbox" under a message (D-084): its text as a note in kb/inbox,
-   * like "/nota", without a model; the same notice once saved.
-   */
-  async function saveToInbox(text: string, label: Label): Promise<void> {
-    error.value = null;
-    notice.value = null;
-    const checked = messageNote(text, label);
-    if ('error' in checked) {
-      error.value = checked.error;
-      return;
-    }
-    try {
-      notice.value = savedText(await api.captureNote(checked.note));
-    } catch (cause) {
-      fail(cause);
     }
   }
 
@@ -562,6 +611,7 @@ export function createChatStore() {
     const work: Promise<unknown>[] = [];
     switch (event.kind) {
       case 'conversation.model':
+      case 'conversation.pinned':
         work.push(refreshConversations());
         break;
       // [cloud.models] or [cloud] executors changed (D-071): the selector offers what the core offers now.
@@ -688,7 +738,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, saveToInbox, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

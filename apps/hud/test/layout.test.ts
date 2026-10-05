@@ -30,9 +30,9 @@ test('a broken storage or an unexpected value means both bars open, never an err
   }
 });
 
-test('the grid drops the column of each collapsed bar', () => {
-  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[56px_248px_minmax(0,1fr)] xl:grid-cols-[56px_248px_minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[56px_248px_minmax(0,1fr)] xl:grid-cols-[56px_248px_minmax(0,1fr)]');
-  assert.equal(gridColumns({ sidebar: true, panel: true }), 'md:grid-cols-[56px_minmax(0,1fr)] xl:grid-cols-[56px_minmax(0,1fr)]');
+test('a collapsed bar takes no column: the page takes the whole width', () => {
+  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_300px]');
+  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_300px]');
+  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)]');
+  assert.equal(gridColumns({ sidebar: true, panel: true }), 'md:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)]');
 });

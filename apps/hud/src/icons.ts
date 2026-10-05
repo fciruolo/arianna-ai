@@ -32,6 +32,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Phone,
+  Pin,
+  PinOff,
   PhoneOff,
   Paperclip,
   Pencil,
@@ -103,6 +105,8 @@ export const ICONS = {
   thoughts: Lightbulb,
   search: Search,
   focus: Focus,
+  pin: Pin,
+  unpin: PinOff,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

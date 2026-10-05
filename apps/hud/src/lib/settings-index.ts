@@ -1,47 +1,113 @@
 /**
- * Which entry of the settings index is lit (D-084): the section whose
- * heading is nearest the top of the zone that scrolls, under any fixed
- * header. Pure: the page measures, this decides.
+ * The index of the settings page (D-105): entries grouped by subject, one
+ * section shown at a time on the right, chosen by the address
+ * (`/impostazioni/<slug>`) so that a reload and the back button keep it.
+ * Pure: the page and the address use it, it decides.
  */
-export interface HeadingPosition {
+import { DEV_PATH, SETTINGS_PATH, VOICE_TRIAL_PATH } from './route.ts';
+
+/** How a section takes effect, as checked in the code of the core (settings-page.ts, D-071). */
+export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action';
+
+export const BEHAVIOUR_TEXT: Record<SectionBehaviour, string> = {
+  now: 'Vale subito',
+  restart: 'Vale dopo il riavvio del nucleo',
+  confirm: 'Chiede conferma prima di salvare',
+  read: 'Solo lettura',
+  action: 'Non cambia le impostazioni: avvia prove in background',
+};
+
+export interface IndexItem {
+  /** The id of the card in the page. */
   id: string;
-  /** Distance of the heading from the top of the viewport, in pixels. */
-  top: number;
+  /** The last part of the address. */
+  slug: string;
+  title: string;
+  behaviour: SectionBehaviour;
+  /** Lets data out of this computer: the index shows a lock. */
+  privacy?: boolean;
+  /** A page of its own instead of a section: its address. */
+  page?: string;
 }
 
-export interface IndexView {
-  /** In page order. */
-  headings: readonly HeadingPosition[];
-  /** Top of the zone that scrolls, below the fixed header, from the top of the viewport. */
-  zoneTop: number;
-  /** Bottom of the zone that scrolls. */
-  zoneBottom: number;
-  /**
-   * The entry the user clicked last, until they scroll by hand: the last
-   * sections are too short to reach the top, and the click must still light
-   * the one asked for while it is in view.
-   */
-  pinned?: string | undefined;
+export interface IndexGroup {
+  group: string;
+  items: IndexItem[];
 }
 
-/**
- * How far below the top a heading still counts as at the top: a card
- * brought into view stops 16 px below it (scroll-mt-4), and rounding of
- * smooth scrolling leaves a pixel or two.
- */
-export const TOP_SLACK = 24;
+export const PRIVACY_HINT = 'Fa uscire dati: chiede conferma';
 
-export function activeSection(view: IndexView): string | undefined {
-  const { headings, zoneTop, zoneBottom, pinned } = view;
-  if (pinned !== undefined) {
-    const heading = headings.find((item) => item.id === pinned);
-    if (heading !== undefined && heading.top >= zoneTop - TOP_SLACK && heading.top < zoneBottom) return pinned;
-  }
-  // The last heading at or above the top line owns the top of the zone; before the first one, the first.
-  let active: string | undefined = headings[0]?.id;
-  for (const heading of headings) {
-    if (heading.top <= zoneTop + TOP_SLACK) active = heading.id;
-    else break;
-  }
-  return active;
+export const SETTINGS_INDEX: readonly IndexGroup[] = [
+  {
+    group: 'Modelli',
+    items: [
+      { id: 'roles', slug: 'modelli-locali', title: 'Modelli locali', behaviour: 'now' },
+      { id: 'model-evals', slug: 'prove-dei-modelli', title: 'Prove dei modelli', behaviour: 'action' },
+      { id: 'cloud-models', slug: 'modelli-cloud', title: 'Modelli cloud', behaviour: 'now' },
+    ],
+  },
+  {
+    group: 'Voce e aspetto',
+    items: [
+      { id: 'voice', slug: 'voce', title: 'Voce', behaviour: 'now' },
+      { id: 'voice-trial', slug: 'provino-della-voce', title: 'Provino della voce', behaviour: 'now', page: VOICE_TRIAL_PATH },
+      { id: 'characters', slug: 'personaggi', title: 'Personaggi', behaviour: 'now' },
+    ],
+  },
+  {
+    group: 'Collegamenti',
+    items: [
+      { id: 'executors', slug: 'esecutori-cloud', title: 'Esecutori cloud', behaviour: 'confirm', privacy: true },
+      { id: 'telegram', slug: 'telegram', title: 'Telegram', behaviour: 'confirm', privacy: true },
+      { id: 'projects', slug: 'progetti', title: 'Progetti', behaviour: 'confirm', privacy: true },
+      { id: 'servers', slug: 'server-locali', title: 'Server locali', behaviour: 'confirm', privacy: true },
+    ],
+  },
+  {
+    group: 'Sistema',
+    items: [
+      { id: 'labels', slug: 'etichette', title: 'Etichette', behaviour: 'read' },
+      { id: 'installation', slug: 'installazione', title: 'Installazione', behaviour: 'read' },
+      { id: 'dev-progress', slug: 'sviluppo', title: 'Sviluppo di Arianna', behaviour: 'read', page: DEV_PATH },
+    ],
+  },
+];
+
+const ITEMS = SETTINGS_INDEX.flatMap((group) => group.items);
+const SECTIONS = ITEMS.filter((item) => item.page === undefined);
+
+export interface ChosenSection {
+  item: IndexItem;
+  /** The address named it: on a narrow screen the section opens instead of the index. */
+  explicit: boolean;
+}
+
+/** The section of a slug; none, unknown or a page of its own gives the first section. */
+export function resolveSection(slug: string | undefined): ChosenSection {
+  const found = slug === undefined ? undefined : SECTIONS.find((item) => item.slug === slug);
+  const first = SECTIONS[0];
+  if (first === undefined) throw new Error('the settings index has no section');
+  return found === undefined ? { item: first, explicit: false } : { item: found, explicit: true };
+}
+
+/** Where an entry of the index leads: its section, or its own page. */
+export function hrefOf(item: IndexItem): string {
+  return item.page ?? `${SETTINGS_PATH}/${item.slug}`;
+}
+
+/** The card of a section that holds edits (the `Section` of lib/settings.ts), if any. */
+export const EDITED_BY: Record<string, string> = {
+  roles: 'roles',
+  'cloud-models': 'cloudModels',
+  voice: 'voice',
+  characters: 'characters',
+  executors: 'executors',
+  telegram: 'telegram',
+  projects: 'projects',
+  servers: 'endpoints',
+};
+
+/** The titles of the sections left with unsaved edits, for the notice shown elsewhere. */
+export function pendingTitles(current: string, isChanged: (section: string) => boolean): string[] {
+  return SECTIONS.filter((item) => item.id !== current && EDITED_BY[item.id] !== undefined && isChanged(EDITED_BY[item.id] ?? '')).map((item) => item.title);
 }

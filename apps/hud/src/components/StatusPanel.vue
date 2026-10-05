@@ -8,6 +8,7 @@ import { loadPending } from '../lib/pending-api.ts';
 import { PENDING_OPEN } from '../lib/pending-text.ts';
 import type { RemoteDecision } from '../lib/remote-decisions.ts';
 import { routerReasonText } from '../lib/router-reasons.ts';
+import { activeText } from '../lib/sidebar.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Approval, CharacterChoice, CharacterListing, StatusSnapshot } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
@@ -89,10 +90,41 @@ function wornBy(packId: string): string[] {
 
 <template>
   <aside class="flex min-w-0 flex-col gap-4 overflow-y-auto border-l border-line bg-surface px-4 py-[18px]" aria-label="Pannello di stato">
-    <div class="flex items-center xl:hidden">
-      <span class="hud-title flex-1">Pannello di stato</span>
-      <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi il pannello" @click="emit('close')"><Icon name="close" /></button>
+    <!-- On top, as in the left bar (D-097): the agents, how many are at work, and the button that folds the bar. -->
+    <div class="flex items-center gap-2">
+      <h2 class="font-hud text-[15px] leading-none font-semibold tracking-[0.12em] uppercase">Agenti</h2>
+      <small class="flex-1 font-mono text-[10.5px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
+      <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
+        <span class="hidden xl:inline"><Icon name="panel-collapse" /></span><span class="xl:hidden"><Icon name="close" /></span>
+      </button>
     </div>
+
+    <section aria-label="Agenti">
+      <div class="flex flex-col gap-2">
+        <div v-for="id in agentIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-3 rounded-[14px] border border-line bg-surface-2 p-2.5">
+          <div class="grid h-16 w-14 place-items-end justify-center rounded-[10px] bg-[radial-gradient(circle_at_50%_85%,var(--glow),transparent_70%)] pb-1">
+            <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="2" bubble />
+          </div>
+          <div class="min-w-0">
+            <b class="block font-semibold">{{ agentName(id) }}</b>
+            <button
+              v-if="poseFor(id) === 'waiting'"
+              type="button"
+              class="text-left text-xs text-warn underline decoration-dotted underline-offset-2 hover:text-ink"
+              aria-haspopup="dialog"
+              @click="showPending = true"
+            >{{ POSE_TEXT[poseFor(id)] }}</button>
+            <div v-else class="text-xs text-muted">{{ POSE_TEXT[poseFor(id)] }}</div>
+            <div class="mt-0.5 truncate font-mono text-[10.5px] text-muted">
+              <template v-if="runOf(id) !== null">
+                {{ EXECUTOR_TEXT[runOf(id)!.executor] ?? runOf(id)!.executor }}<template v-if="runOf(id)!.model"> · {{ MODEL_TEXT[runOf(id)!.model!] ?? runOf(id)!.model }}</template><template v-if="runOf(id)!.repo"> · {{ runOf(id)!.repo }}</template>
+              </template>
+              <template v-else>{{ ROLE_TEXT[id] ?? 'agente' }}</template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <button
       v-if="somethingWaits"
@@ -127,36 +159,6 @@ function wornBy(packId: string): string[] {
           </button>
         </li>
       </ul>
-    </section>
-
-    <section>
-      <h3 class="hud-title mb-2.5 flex items-center justify-between">
-        Agenti <small class="font-mono text-[10px] tracking-[0.06em] normal-case">{{ active }} {{ active === 1 ? 'attivo' : 'attivi' }}</small>
-      </h3>
-      <div class="flex flex-col gap-2">
-        <div v-for="id in agentIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-3 rounded-[14px] border border-line bg-surface-2 p-2.5">
-          <div class="grid h-16 w-14 place-items-end justify-center rounded-[10px] bg-[radial-gradient(circle_at_50%_85%,var(--glow),transparent_70%)] pb-1">
-            <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="2" bubble />
-          </div>
-          <div class="min-w-0">
-            <b class="block font-semibold">{{ agentName(id) }}</b>
-            <button
-              v-if="poseFor(id) === 'waiting'"
-              type="button"
-              class="text-left text-xs text-warn underline decoration-dotted underline-offset-2 hover:text-ink"
-              aria-haspopup="dialog"
-              @click="showPending = true"
-            >{{ POSE_TEXT[poseFor(id)] }}</button>
-            <div v-else class="text-xs text-muted">{{ POSE_TEXT[poseFor(id)] }}</div>
-            <div class="mt-0.5 truncate font-mono text-[10.5px] text-muted">
-              <template v-if="runOf(id) !== null">
-                {{ EXECUTOR_TEXT[runOf(id)!.executor] ?? runOf(id)!.executor }}<template v-if="runOf(id)!.model"> · {{ MODEL_TEXT[runOf(id)!.model!] ?? runOf(id)!.model }}</template><template v-if="runOf(id)!.repo"> · {{ runOf(id)!.repo }}</template>
-              </template>
-              <template v-else>{{ ROLE_TEXT[id] ?? 'agente' }}</template>
-            </div>
-          </div>
-        </div>
-      </div>
     </section>
 
     <section>

@@ -1,0 +1,191 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+
+import type { IconName } from '../icons.ts';
+import type { LiveState } from '../lib/live.ts';
+import { activeText } from '../lib/sidebar.ts';
+import type { Pose } from '../lib/sprites.ts';
+import type { Theme } from '../lib/theme.ts';
+import type { CharacterListing, Conversation, StatusSnapshot } from '../lib/types.ts';
+import ConversationList from './ConversationList.vue';
+import Icon from './Icon.vue';
+import PixelAgent from './PixelAgent.vue';
+
+/**
+ * The left bar (D-097), as in Claude Code, from the top: fold button, the
+ * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
+ * Pensieri, Conoscenza, Chiama, Impostazioni) and the theme; one compact row
+ * of the agents that opens the right bar; the conversations, pinned first.
+ */
+const props = defineProps<{
+  live: LiveState;
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts';
+  theme: Theme;
+  conversations: Conversation[];
+  archived: Conversation[];
+  systemChats: Conversation[];
+  selected: string | null;
+  rename: (id: string, title: string) => Promise<boolean>;
+  agentIds: string[];
+  characters: CharacterListing | null;
+  poseFor: (id: string) => Pose;
+  status: StatusSnapshot | null;
+  /** Why "Chiama" cannot call now, or undefined. */
+  callBlocked: string | undefined;
+  callStarting: boolean;
+}>();
+const emit = defineEmits<{
+  fold: [];
+  home: [];
+  search: [];
+  create: [];
+  thoughts: [];
+  knowledge: [];
+  call: [];
+  settings: [];
+  theme: [theme: Theme];
+  agents: [];
+  open: [id: string];
+  archive: [id: string, archived: boolean];
+  pin: [id: string, pinned: boolean];
+  purge: [id: string];
+}>();
+
+const active = computed(() => props.agentIds.filter((id) => props.poseFor(id) !== 'idle').length);
+const callOff = computed(() => props.callBlocked !== undefined || props.callStarting);
+function call(): void {
+  if (!callOff.value) emit('call');
+}
+const waiting = computed(() => props.agentIds.some((id) => props.poseFor(id) === 'waiting'));
+
+const THEMES: { value: Theme; text: string; icon: IconName }[] = [
+  { value: 'light', text: 'Chiaro', icon: 'theme-light' },
+  { value: 'dark', text: 'Scuro', icon: 'theme-dark' },
+  { value: 'system', text: 'Auto', icon: 'theme-system' },
+];
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const shortcut = isMac ? '⌘K' : 'Ctrl K';
+
+function itemClass(on: boolean): string {
+  return on ? 'bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:bg-surface-2 hover:text-ink';
+}
+</script>
+
+<template>
+  <aside class="flex min-h-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface px-3 py-3.5" aria-label="Barra di Arianna">
+    <!-- Fold, logo and name, light of the core. -->
+    <div class="flex items-center gap-1.5">
+      <button
+        type="button"
+        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+        aria-label="Chiudi la barra"
+        title="Chiudi la barra"
+        @click="emit('fold')"
+      >
+        <span class="hidden md:inline"><Icon name="sidebar-collapse" /></span><span class="md:hidden"><Icon name="close" /></span>
+      </button>
+      <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-surface-2" title="Torna alla chat" @click="emit('home')">
+        <span class="font-hud text-[17px] leading-none font-semibold tracking-[0.08em] uppercase">Arianna</span>
+      </button>
+      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[10px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
+        <span class="size-[7px] rounded-full" :class="live === 'open' ? 'bg-ok shadow-[0_0_8px_var(--ok)]' : 'animate-hud-blink bg-warn'" />
+        {{ live === 'open' ? 'IN LINEA' : 'RICONN.' }}
+      </span>
+    </div>
+
+    <!-- Cerca: a window in the middle of the page. -->
+    <button
+      type="button"
+      class="field flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-muted hover:border-line-strong"
+      aria-haspopup="dialog"
+      @click="emit('search')"
+    >
+      <Icon name="search" :size="15" />
+      <span class="flex-1">Cerca</span>
+      <kbd class="font-mono text-[10px] tracking-[0.04em]">{{ shortcut }}</kbd>
+    </button>
+
+    <!-- Areas -->
+    <nav aria-label="Aree" class="flex flex-col gap-0.5 text-[13.5px]">
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted hover:bg-surface-2 hover:text-ink" aria-haspopup="dialog" @click="emit('create')">
+        <span class="text-accent"><Icon name="new" :size="16" /></span>Nuovo
+      </button>
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'thoughts')" :aria-current="page === 'thoughts' ? 'page' : undefined" @click="emit('thoughts')">
+        <Icon name="thoughts" :size="16" />Pensieri
+      </button>
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'knowledge')" :aria-current="page === 'knowledge' ? 'page' : undefined" @click="emit('knowledge')">
+        <Icon name="knowledge" :size="16" />Conoscenza
+      </button>
+      <!-- Not `disabled`: it stays reachable with Tab and says why it cannot call. -->
+      <button
+        type="button"
+        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-55 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
+        :aria-disabled="callOff ? 'true' : undefined"
+        :aria-describedby="callBlocked !== undefined ? 'call-why' : undefined"
+        :title="callBlocked === undefined ? 'Chiama Arianna nella conversazione privata aperta, o in una privata nuova' : undefined"
+        @click="call"
+      >
+        <Icon name="phone" :size="16" />Chiama
+        <span v-if="callStarting" class="ml-auto font-mono text-[10px]">chiamo…</span>
+      </button>
+      <span v-if="callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
+      <button
+        type="button"
+        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+        :class="itemClass(page === 'settings' || page === 'voice-trial')"
+        :aria-current="page === 'settings' || page === 'voice-trial' ? 'page' : undefined"
+        @click="emit('settings')"
+      >
+        <Icon name="settings" :size="16" />Impostazioni
+      </button>
+    </nav>
+
+    <div class="grid grid-cols-3 gap-0.5 rounded-[9px] border border-line bg-surface-2 p-0.5" role="group" aria-label="Tema">
+      <button
+        v-for="option in THEMES"
+        :key="option.value"
+        type="button"
+        :aria-pressed="theme === option.value"
+        class="inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11.5px] font-medium"
+        :class="theme === option.value ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
+        @click="emit('theme', option.value)"
+      >
+        <Icon :name="option.icon" :size="13" />{{ option.text }}
+      </button>
+    </div>
+
+    <!-- Agents: one compact row; the right bar has the details. -->
+    <button
+      type="button"
+      class="flex items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-2.5 py-1.5 text-left hover:border-line-strong"
+      title="Apri la barra degli agenti"
+      @click="emit('agents')"
+    >
+      <span class="flex shrink-0 items-end -space-x-1">
+        <PixelAgent v-for="id in agentIds.slice(0, 4)" :key="id" :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="1" />
+      </span>
+      <span class="hud-title">Agenti</span>
+      <span class="min-w-0 flex-1 truncate text-right font-mono text-[10.5px]" :class="waiting ? 'text-warn' : 'text-muted'">{{ waiting ? 'aspetta te' : activeText(active) }}</span>
+      <span class="text-muted"><Icon name="expand" :size="14" /></span>
+    </button>
+
+    <ConversationList
+      :conversations="conversations"
+      :archived="archived"
+      :system="systemChats"
+      :selected="selected"
+      :rename="rename"
+      @open="(id) => emit('open', id)"
+      @archive="(id, value) => emit('archive', id, value)"
+      @pin="(id, value) => emit('pin', id, value)"
+      @purge="(id) => emit('purge', id)"
+    />
+
+    <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
+      Gateway attivo ·
+      <template v-if="status.gateway.privateOut === 0">nessun dato L2/L3 è uscito oggi</template>
+      <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite L2/L3 oggi: controlla il registro</span>
+    </p>
+  </aside>
+</template>

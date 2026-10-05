@@ -23,6 +23,7 @@ function conversation(id: string, lastMessageAt: Date | null, createdAt = new Da
     sourceTaskStatus: null,
     createdAt: createdAt.toISOString(),
     lastMessageAt: lastMessageAt?.toISOString() ?? null,
+    pinnedAt: null,
   };
 }
 

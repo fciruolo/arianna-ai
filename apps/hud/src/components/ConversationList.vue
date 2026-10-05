@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue';
 
 import { groupByDay } from '../lib/day-groups.ts';
 import { LABEL_TEXT, MODE_TEXT } from '../lib/labels.ts';
+import { splitPinned } from '../lib/sidebar.ts';
 import type { Conversation } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
@@ -14,9 +15,13 @@ const props = defineProps<{
   selected: string | null;
   rename: (id: string, title: string) => Promise<boolean>;
 }>();
-const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; purge: [id: string] }>();
+const emit = defineEmits<{ open: [id: string]; archive: [id: string, archived: boolean]; pin: [id: string, pinned: boolean]; purge: [id: string] }>();
 
-const groups = computed(() => groupByDay(props.conversations, new Date()));
+/** "Fissate" on top (D-089, no limit of number), then the others by day. */
+const groups = computed(() => {
+  const { pinned, others } = splitPinned(props.conversations);
+  return [...(pinned.length > 0 ? [{ title: 'Fissate', conversations: pinned }] : []), ...groupByDay(others, new Date())];
+});
 const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function titleOf(conversation: Conversation): string {
@@ -111,7 +116,7 @@ function confirmArchive(id: string): void {
           <template v-else>
             <button
               type="button"
-              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-16 text-left md:pr-2 md:group-focus-within:pr-16 md:group-hover:pr-16"
+              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-[5.5rem] text-left md:pr-2 md:group-focus-within:pr-[5.5rem] md:group-hover:pr-[5.5rem]"
               :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
               :aria-current="conversation.id === selected ? 'true' : undefined"
               @click="emit('open', conversation.id)"
@@ -125,6 +130,17 @@ function confirmArchive(id: string): void {
               </span>
             </button>
             <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+              <button
+                type="button"
+                class="rounded-md p-1 hover:text-ink"
+                :class="conversation.pinnedAt === null ? 'text-muted' : 'text-accent'"
+                :aria-label="conversation.pinnedAt === null ? `Fissa ${titleOf(conversation)} in alto` : `Togli ${titleOf(conversation)} dalle fissate`"
+                :title="conversation.pinnedAt === null ? 'Fissa in alto' : 'Togli dalle fissate'"
+                :aria-pressed="conversation.pinnedAt !== null"
+                @click="emit('pin', conversation.id, conversation.pinnedAt === null)"
+              >
+                <Icon :name="conversation.pinnedAt === null ? 'pin' : 'unpin'" :size="15" />
+              </button>
               <button
                 type="button"
                 class="rounded-md p-1 text-muted hover:text-ink"

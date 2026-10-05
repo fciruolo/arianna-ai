@@ -22,8 +22,26 @@ export function isVoiceTrialPath(pathname: string): boolean {
 /** The settings page (D-071). */
 export const SETTINGS_PATH = '/impostazioni';
 
+/** `/impostazioni`, or one of its sections (D-105): `/impostazioni/<slug>`. */
 export function isSettingsPath(pathname: string): boolean {
-  return pathname === SETTINGS_PATH || pathname === `${SETTINGS_PATH}/`;
+  return /^\/impostazioni(?:\/[a-z0-9-]+)?\/?$/.test(pathname);
+}
+
+/** The section the address names (D-105), or undefined for the page alone. */
+export function settingsSlug(pathname: string): string | undefined {
+  return /^\/impostazioni\/([a-z0-9-]+)\/?$/.exec(pathname)?.[1];
+}
+
+/** The address of a section of the settings, or of the page alone. */
+export function settingsPathFor(slug: string | undefined): string {
+  return slug === undefined ? SETTINGS_PATH : `${SETTINGS_PATH}/${slug}`;
+}
+
+/** "Sviluppo di Arianna" (D-102): progress of the development and the open questions, reached from the settings. */
+export const DEV_PATH = '/sviluppo';
+
+export function isDevPath(pathname: string): boolean {
+  return pathname === DEV_PATH || pathname === `${DEV_PATH}/`;
 }
 
 /** The knowledge page (D-087): the graph of kb/. */

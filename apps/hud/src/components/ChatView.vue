@@ -8,15 +8,17 @@ import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usa
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
-import { activityText, agentName, reasonText, SAVE_TO_INBOX_HINT, SAVE_TO_INBOX_TEXT, SEARCH_LATER_TEXT } from '../lib/italian.ts';
+import { activityText, agentName, reasonText } from '../lib/italian.ts';
+import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Label, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
+import MessageActions from './MessageActions.vue';
 import PixelAgent from './PixelAgent.vue';
 
 const props = defineProps<{
@@ -52,10 +54,8 @@ const emit = defineEmits<{
   /** "Chiamami quando finisci" on a task at work (D-066). */
   callWhenDone: [taskId: string];
   cancelCall: [callId: string];
-  /** "Salva in inbox" (D-084): the message's text as a note in kb/inbox. */
-  saveToInbox: [text: string, label: Label];
   /** A "/" command the page carries out (D-090): open a page, a new conversation. */
-  command: [action: Exclude<CommandAction, { kind: 'note' | 'help' | 'search' }>];
+  command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
 }>();
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
@@ -99,6 +99,21 @@ const offModel = computed(() => {
 const selected = computed(() => (answersDirect.value ? (directModel.value ?? offModel.value ?? AUTO) : (props.conversation.model ?? AUTO)));
 /** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
 const answerModel = computed(() => (directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value)));
+
+// D-099: the messages of this conversation already saved in kb/inbox ("Salvato" after a reload).
+const saved = ref<SavedNotes>(new Map());
+watch(
+  () => props.chat.conversationId,
+  async (conversationId) => {
+    saved.value = new Map();
+    const ids = await loadSavedIds(conversationId);
+    saved.value = mergeSavedIds(saved.value, ids, conversationId, props.chat.conversationId);
+  },
+  { immediate: true },
+);
+function markSaved(messageId: string, note: string | null): void {
+  saved.value = withSaved(saved.value, messageId, note);
+}
 
 const draft = ref('');
 const list = ref<HTMLElement | null>(null);
@@ -176,10 +191,6 @@ function run(command: ChatCommand): void {
       return;
     case 'help':
       setDraft('/');
-      return;
-    case 'search':
-      commandHint.value = SEARCH_LATER_TEXT;
-      setDraft('');
       return;
     default:
       setDraft('');
@@ -415,7 +426,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
           <!-- User -->
-          <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="flex flex-col items-end gap-1">
+          <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
               {{ message.body }}
             </div>
@@ -423,15 +434,6 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
-              <button
-                v-if="canSaveToInbox(message.label)"
-                type="button"
-                class="inline-flex items-center gap-1 hover:text-ink"
-                :title="SAVE_TO_INBOX_HINT"
-                @click="emit('saveToInbox', message.body, message.label)"
-              >
-                <Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}
-              </button>
               <template v-if="taskOf(message) !== undefined">
                 <span :class="statusClass[taskOf(message)!.status]">{{ STATUS_TEXT[taskOf(message)!.status] }}</span>
                 <button
@@ -451,29 +453,24 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                   @click="emit('callWhenDone', taskOf(message)!.id)"
                 ><Icon name="phone" :size="12" />chiamami quando finisci</button>
               </template>
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
             </div>
           </div>
 
           <!-- A report of the agent Arianna delegated to -->
-          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
+          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
-              <button
-                v-if="canSaveToInbox(message.label)"
-                type="button"
-                class="inline-flex items-center gap-1 font-mono text-[10.5px] text-muted hover:text-ink"
-                :title="SAVE_TO_INBOX_HINT"
-                @click="emit('saveToInbox', message.body, message.label)"
-              ><Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}</button>
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
           </article>
 
           <!-- Arianna (or a system note) -->
-          <div v-else :id="messageAnchor(message.id)" class="max-w-[92%]">
+          <div v-else :id="messageAnchor(message.id)" class="msg-row max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
@@ -486,13 +483,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info"
                 title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
               ><Icon name="telegram" :size="12" />Telegram</span>
-              <button
-                v-if="message.role !== 'system' && canSaveToInbox(message.label)"
-                type="button"
-                class="ml-auto inline-flex items-center gap-1 font-mono text-[10.5px] text-muted hover:text-ink"
-                :title="SAVE_TO_INBOX_HINT"
-                @click="emit('saveToInbox', message.body, message.label)"
-              ><Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}</button>
+              <MessageActions
+                class="ml-auto"
+                :message="message"
+                :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
+                :can-save="message.role !== 'system' && canSaveToInbox(message.label)"
+                @saved="markSaved"
+              />
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
             <MarkdownText v-else :source="message.body" />
@@ -611,3 +608,11 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     </div>
   </section>
 </template>
+
+<style scoped>
+/* D-099: the actions of a message (MessageActions.vue) appear with the pointer on the message or the focus in it. */
+.msg-row:hover .msg-actions,
+.msg-row:focus-within .msg-actions {
+  opacity: 1;
+}
+</style>

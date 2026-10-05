@@ -385,4 +385,3 @@ export const THOUGHT_STATE_HINT: Record<'organizing' | 'stuck' | 'organized', st
   stuck: 'Il riordino non è arrivato: puoi chiederlo di nuovo',
   organized: 'Titolo, riassunto, collegamenti e tag scritti dal modello locale; il testo originale è in fondo',
 };
-export const SEARCH_LATER_TEXT = 'La ricerca su tutto il sistema arriva con la barra nuova.';

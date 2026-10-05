@@ -28,8 +28,8 @@ test('the menu opens on a slash and one word, and closes at the first space', ()
 test('the filter: all for an empty query, then exact, prefix, inside the name, inside the description', () => {
   assert.equal(filterCommands('').length, COMMANDS.length);
   assert.deepEqual(names(filterCommands('n')), ['nota', 'nuova', 'pensieri', 'conoscenza', 'impostazioni']);
-  assert.deepEqual(names(filterCommands('pen')), ['pensieri', 'nota']);
-  assert.deepEqual(names(filterCommands('PEN')), ['pensieri', 'nota']);
+  assert.deepEqual(names(filterCommands('pen')), ['pensieri', 'nota', 'cerca']);
+  assert.deepEqual(names(filterCommands('PEN')), ['pensieri', 'nota', 'cerca']);
   assert.deepEqual(names(filterCommands('grafo')), ['conoscenza']);
   assert.deepEqual(names(filterCommands('g')), ['conoscenza']);
   assert.deepEqual(names(filterCommands('el')), []);

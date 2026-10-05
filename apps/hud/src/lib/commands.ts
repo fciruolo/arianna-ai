@@ -31,7 +31,7 @@ export const COMMANDS: readonly ChatCommand[] = [
   { name: 'conoscenza', alias: 'g', description: 'Apre il grafo della conoscenza', takesArgument: false, action: { kind: 'open', page: 'knowledge' } },
   { name: 'nuova', description: 'Apre una nuova conversazione dello stesso tipo', takesArgument: false, action: { kind: 'new-conversation' } },
   { name: 'impostazioni', alias: 'i', description: 'Apre le impostazioni', takesArgument: false, action: { kind: 'open', page: 'settings' } },
-  { name: 'cerca', description: 'Cerca in tutto il sistema (arriva con la barra nuova)', takesArgument: false, action: { kind: 'search' } },
+  { name: 'cerca', description: 'Cerca in conversazioni, messaggi, pensieri e pagine', takesArgument: false, action: { kind: 'search' } },
   { name: 'aiuto', alias: 'a', description: 'Mostra l’elenco dei comandi', takesArgument: false, action: { kind: 'help' } },
 ];
 

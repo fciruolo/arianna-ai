@@ -46,7 +46,9 @@ function model(id: string, roles: CatalogModel['roles'], present: boolean): Cata
 test('the settings page has its own address', () => {
   assert.equal(isSettingsPath(SETTINGS_PATH), true);
   assert.equal(isSettingsPath(`${SETTINGS_PATH}/`), true);
-  assert.equal(isSettingsPath('/impostazioni/x'), false);
+  // A section of the page (D-105) is the settings page too; a deeper path is not.
+  assert.equal(isSettingsPath('/impostazioni/x'), true);
+  assert.equal(isSettingsPath('/impostazioni/x/y'), false);
   assert.equal(isSettingsPath('/'), false);
 });
 

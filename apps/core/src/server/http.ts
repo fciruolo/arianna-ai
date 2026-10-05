@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { CharacterChoices, Project } from '@arianna/config';
-import { isLabel, maxLabel, type LabelRules } from '@arianna/policy';
+import { createContext, isLabel, maxLabel, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -31,6 +31,8 @@ import {
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import { DelegationFileError, listCredits, listRecentDelegations, readDelegationFile } from '../delegation-view.ts';
+import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
@@ -111,6 +113,8 @@ export interface ApiServerOptions {
    * where the preview of a file changed by the Coder is read (D-082).
    */
   approvedProjects?: () => readonly Project[];
+  /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
+  devProgress?: DevProgressApi;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -895,6 +899,63 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
   ];
 }
 
+/** What the routes of "Sviluppo di Arianna" need (D-102). */
+export interface DevProgressApi {
+  /** ARIANNA_HOME: the documents are `docs/*.md` under it, the answers `data/dev/RISPOSTE.md`. */
+  home: string;
+  /** Tests only: the gateway and the event, which otherwise use the database of the core. */
+  gate?: AnswerGate;
+  recorded?: (saved: { key: string; question: OpenQuestion }) => Promise<void>;
+}
+
+/**
+ * "Sviluppo di Arianna" (D-102): progress read from the documents, and the
+ * answers to the open questions appended to data/dev/RISPOSTE.md for Claude
+ * Code. The client names a question by its key only: the path is fixed and the
+ * question's text comes from the documents. Claude Code is a cloud reader:
+ * every answer passes the gateway as L1 towards it, logged in gateway_log, and
+ * only the text it allows is written.
+ */
+function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: unknown) => void): Route[] {
+  const need = (): DevProgressApi => {
+    if (dev === undefined) throw new HttpError(404, 'not found');
+    return dev;
+  };
+  const viaGateway: AnswerGate = async (answer, key) => {
+    const decision = await passGateway(sql, [{ value: answer, label: 'L1', source: 'dev:answer' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, { summary: key });
+    if (decision.decision !== 'allow') return { allow: false, reason: decision.rule };
+    const [text] = decision.texts;
+    return text === undefined ? { allow: false, reason: 'empty' } : { allow: true, text };
+  };
+  return [
+    route('GET', '/api/dev/progress', () => Promise.resolve({ body: { progress: loadProgress(need().home), maxAnswer: MAX_ANSWER_CHARS } })),
+    route('POST', '/api/dev/answers', async (request) => {
+      const { home, gate = viaGateway, recorded = (saved) => recordAnswer(sql, saved) } = need();
+      const body = await readJson(request, 64 * 1024);
+      onlyFields(body, ['key', 'text']);
+      const { key, text } = body;
+      if (typeof key !== 'string' || !/^[A-Za-z0-9#-]{1,80}$/.test(key)) throw new HttpError(400, 'key must be the key of a question');
+      if (typeof text !== 'string') throw new HttpError(400, 'text is required');
+      let saved;
+      try {
+        saved = await saveAnswer(home, key, text, gate);
+      } catch (error) {
+        if (!(error instanceof DevAnswerError)) throw error;
+        throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
+      }
+      // The answer is in the file: an event that fails is reported, and the answer is not sent twice.
+      let logged = true;
+      try {
+        await recorded(saved);
+      } catch (error) {
+        logged = false;
+        onError(error);
+      }
+      return { status: 201, body: { key: saved.key, at: saved.at, logged } };
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1021,6 +1082,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
   });
+  table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

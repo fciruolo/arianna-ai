@@ -1,35 +1,72 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { activeSection, TOP_SLACK } from '../src/lib/settings-index.ts';
+import { DEV_PATH, isSettingsPath, settingsPathFor, settingsSlug, VOICE_TRIAL_PATH } from '../src/lib/route.ts';
+import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, resolveSection, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
 
-const at = (...tops: number[]) => tops.map((top, index) => ({ id: `s${String(index)}`, top }));
-const view = (tops: number[], extra: { pinned?: string } = {}) => ({ headings: at(...tops), zoneTop: 100, zoneBottom: 900, ...extra });
+const items = SETTINGS_INDEX.flatMap((group) => group.items);
+function byId(id: string) {
+  const item = items.find((entry) => entry.id === id);
+  if (item === undefined) throw new Error(`no entry ${id}`);
+  return item;
+}
 
-test('the lit entry is the last section whose heading reached the top of the zone', () => {
-  assert.equal(activeSection(view([120, 600, 1400])), 's0');
-  // Brought into view by a click: it stops 16 px under the top (scroll-mt-4), still the top one.
-  assert.equal(activeSection(view([-500, 116, 700])), 's1');
-  // A long section scrolled past its heading keeps the top until the next heading arrives.
-  assert.equal(activeSection(view([-900, -300, 100 + TOP_SLACK + 1])), 's1');
-  assert.equal(activeSection(view([-900, -300, 100 + TOP_SLACK])), 's2');
+test('groups by subject, no group named after how a section takes effect', () => {
+  assert.deepEqual(
+    SETTINGS_INDEX.map((group) => group.group),
+    ['Modelli', 'Voce e aspetto', 'Collegamenti', 'Sistema'],
+  );
+  // Every entry that lets data out is in Collegamenti and asks for confirmation.
+  for (const item of items.filter((entry) => entry.privacy === true)) assert.equal(item.behaviour, 'confirm');
+  assert.deepEqual(
+    items.filter((entry) => entry.privacy === true).map((entry) => entry.title),
+    ['Esecutori cloud', 'Telegram', 'Progetti', 'Server locali'],
+  );
+  assert.equal(BEHAVIOUR_TEXT.confirm, 'Chiede conferma prima di salvare');
+  // Ids and slugs are unique.
+  assert.equal(new Set(items.map((entry) => entry.id)).size, items.length);
+  assert.equal(new Set(items.map((entry) => entry.slug)).size, items.length);
 });
 
-test('before the first heading the first section is lit; nothing without sections', () => {
-  assert.equal(activeSection(view([400, 900])), 's0');
-  assert.equal(activeSection(view([])), undefined);
+test('the address names the section; none or an unknown one falls back to the first', () => {
+  assert.deepEqual(resolveSection('telegram'), { item: byId('telegram'), explicit: true });
+  assert.equal(resolveSection(undefined).item.id, 'roles');
+  assert.equal(resolveSection(undefined).explicit, false);
+  assert.equal(resolveSection('non-esiste').item.id, 'roles');
+  assert.equal(resolveSection('non-esiste').explicit, false);
+  // A page of its own is not a section of this page.
+  assert.equal(resolveSection('provino-della-voce').item.id, 'roles');
+  assert.equal(resolveSection('sviluppo').explicit, false);
 });
 
-test('a section is not lit just because its heading is the nearest below the top', () => {
-  // s1's heading is in view and s0's is above, yet s0 still fills the top of the zone.
-  assert.equal(activeSection(view([-50, 200])), 's0');
+test('the entries lead to their section, or to their own page', () => {
+  assert.equal(hrefOf(byId('servers')), '/impostazioni/server-locali');
+  assert.equal(hrefOf(byId('voice-trial')), VOICE_TRIAL_PATH);
+  assert.equal(hrefOf(byId('dev-progress')), DEV_PATH);
 });
 
-test('the clicked entry stays lit while its section is in view, even when it cannot reach the top', () => {
-  // At the bottom of the page the last short sections stop lower down.
-  assert.equal(activeSection(view([-800, 300, 600], { pinned: 's2' })), 's2');
-  // Out of view: the position decides again.
-  assert.equal(activeSection(view([-800, -400, -100], { pinned: 's0' })), 's2');
-  assert.equal(activeSection(view([-800, 300, 950], { pinned: 's2' })), 's0');
-  assert.equal(activeSection(view([120, 600], { pinned: 'missing' })), 's0');
+test('the address of a section is read and written back', () => {
+  assert.equal(isSettingsPath('/impostazioni'), true);
+  assert.equal(isSettingsPath('/impostazioni/'), true);
+  assert.equal(isSettingsPath('/impostazioni/modelli-locali'), true);
+  assert.equal(isSettingsPath('/impostazioni/modelli-locali/'), true);
+  assert.equal(isSettingsPath('/impostazioni/a/b'), false);
+  assert.equal(isSettingsPath('/impostazioni/../c'), false);
+  assert.equal(isSettingsPath('/impostazionix'), false);
+  assert.equal(settingsSlug('/impostazioni/voce'), 'voce');
+  assert.equal(settingsSlug('/impostazioni'), undefined);
+  assert.equal(settingsPathFor('voce'), '/impostazioni/voce');
+  assert.equal(settingsPathFor(undefined), '/impostazioni');
+});
+
+test('sections left with unsaved edits are named, the open one and read-only ones never', () => {
+  const changed = new Set(['voice', 'endpoints', 'roles']);
+  assert.deepEqual(
+    pendingTitles('roles', (section) => changed.has(section)),
+    ['Voce', 'Server locali'],
+  );
+  assert.deepEqual(
+    pendingTitles('labels', () => false),
+    [],
+  );
 });
