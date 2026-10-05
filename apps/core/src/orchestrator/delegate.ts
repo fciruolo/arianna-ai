@@ -263,12 +263,13 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const { sql } = env;
   const claude = env.claude;
   if (claude === undefined) throw new Error('claude is not available');
-  const agent = env.agents.get(delegation.agent);
-  if (agent === undefined) throw new Error(`no agent card for ${delegation.agent}`);
   const failed = async (result: string): Promise<StepOutcome> => {
     await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result}`);
     return { kind: 'continue', usage: { steps: 1 } };
   };
+  const agent = env.agents.get(delegation.agent);
+  // A user agent deactivated between the plan and the run (D-119): the delegation fails, the task goes on.
+  if (agent === undefined) return failed(`${delegation.agent} is no longer active`);
 
   // The declassification, once: the lowered label is written with its label_changes row.
   let label = delegation.label;
@@ -310,7 +311,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
   const brief = [
-    { text: agent.prompt, label: 'L0' as const, source: `agent:${delegation.agent}` },
+    // A prompt of agents/ is in git (L0); one written by the user is L1 by declaration (D-119).
+    { text: agent.prompt, label: agent.origin === 'user' ? ('L1' as const) : ('L0' as const), source: `agent:${delegation.agent}` },
     { text: delegation.brief, label, source: `task:${task.id}` },
   ];
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });

@@ -27,6 +27,7 @@ import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
+import { createUserAgents } from './user-agents.ts';
 import { passGateway } from './gateway.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
@@ -70,6 +71,10 @@ function endpointPort(url: string | undefined): number | undefined {
 
 const config = loadConfig();
 const agents = loadAgents(join(config.home, AGENTS_DIR));
+// The user's agents (D-119): the active ones join the map, under the L1/A1 ceiling.
+const userAgents = createUserAgents({ home: config.home, dataDir: config.paths.data, agents, official: new Set(agents.keys()) });
+// Only the name: the reason may quote a line of a card edited by hand; the Agents page shows it.
+for (const { name } of userAgents.load()) console.error(`user agent ${name} not loaded (see Impostazioni → Agenti)`);
 const app = await resolveLogin(config, 'app');
 
 // The core works as the application role (D-046). With the development
@@ -408,6 +413,7 @@ const server = await startApiServer({
   calls,
   pusher: () => voice.pusher(),
   settings: settingsPage,
+  userAgents,
   local: {
     status: () => localServers.status(),
     restart: (id) => localServers.restart(id),

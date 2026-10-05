@@ -10,6 +10,11 @@ export interface LoadedAgent {
   card: AgentCard;
   /** The prompt text, from `agents/<name>.md`. */
   prompt: string;
+  /**
+   * `user` for a card of `data/agents` (D-119): its prompt is the user's text,
+   * L1 by declaration, while the prompts of `agents/` are L0 (in git).
+   */
+  origin?: 'user';
 }
 
 /** Reads a regular file of the folder; a symbolic link could point anywhere. */

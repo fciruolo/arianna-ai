@@ -6,6 +6,7 @@ import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import type { NewUserAgent } from '@arianna/agents';
 import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type LabelRules } from '@arianna/policy';
 
@@ -36,6 +37,7 @@ import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recor
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
+import { UserAgentError, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
@@ -119,6 +121,8 @@ export interface ApiServerOptions {
   devProgress?: DevProgressApi;
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
   changelog?: { home: string };
+  /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
+  userAgents?: UserAgents;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -1007,6 +1011,53 @@ function changelogRoutes(changelog: { home: string } | undefined): Route[] {
   ];
 }
 
+/**
+ * The user's agents (D-119). Promotion into agents/ lifts the L1/A1 ceiling:
+ * it needs `{ confirm: true }`, sent only by the confirmation of the page.
+ */
+function userAgentRoutes(userAgents: UserAgents | undefined): Route[] {
+  const need = (): UserAgents => {
+    if (userAgents === undefined) throw new HttpError(404, 'not found');
+    return userAgents;
+  };
+  const answer = async (run: () => Result | Promise<Result>): Promise<Result> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (!(error instanceof UserAgentError)) throw error;
+      throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'conflict' ? 409 : 400, error.message);
+    }
+  };
+  const name = (params: Params): string => params.id ?? '';
+  return [
+    route('GET', '/api/agents', () => answer(() => ({ body: need().list() }))),
+    route('GET', '/api/agents/sources', () => answer(() => ({ body: need().sources() }))),
+    route('POST', '/api/agents', async (request) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['name', 'description', 'template', 'prompt']);
+      return answer(() => ({ status: 201, body: { agent: service.create(body as unknown as NewUserAgent) } }));
+    }),
+    route('GET', '/api/agents/:id/permissions', (_request, _url, params) => answer(() => ({ body: { agent: need().permissions(name(params)) } }))),
+    route('POST', '/api/agents/:id/activate', async (request, _url, params) => {
+      const service = need();
+      onlyFields(await readJson(request), []);
+      return answer(() => ({ body: { agent: service.activate(name(params)) } }));
+    }),
+    route('POST', '/api/agents/:id/deactivate', async (request, _url, params) => {
+      const service = need();
+      onlyFields(await readJson(request), []);
+      return answer(() => ({ body: { agent: service.deactivate(name(params)) } }));
+    }),
+    route('POST', '/api/agents/:id/promote', async (request, _url, params) => {
+      const service = need();
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return answer(() => ({ body: { agent: service.promote(name(params), body.confirm) } }));
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -1136,6 +1187,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...changelogRoutes(options.changelog));
+  table.push(...userAgentRoutes(options.userAgents));
   const sockets = new Set<WebSocket>();
   let hosts = allowedHosts(options.host, options.port);
 

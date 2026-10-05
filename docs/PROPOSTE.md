@@ -2376,7 +2376,7 @@ Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non 
 ## D-118 + D-119 — Agenti nuovi dalla pagina Agenti, con il loro personaggio PNG
 
 - **Data:** 2026-10-05
-- **Stato:** Accettate (risposte dell'utente, 2026-10-05); tappa T1 fatta sul ramo `task/d118-t1-png`, in attesa della prova dell'utente; T4 cambiata, da confermare
+- **Stato:** Accettate (risposte dell'utente, 2026-10-05); T1 unita a `main` (0.5.0); T2 fatta sul ramo `task/d118-t2`, in attesa della prova dell'utente; T4 cambiata, da confermare
 - **Collegate:** D-060 (formato dei fogli, pacchetti in `data/characters/`), D-079 (catalogo agency-agents), D-107 (personalità, permessi solo nei `.yaml`), D-111 (B: "+ Nuovo" con gli agenti; D: ospiti), D-116 (pagina Agenti), AGENT-CARDS
 
 ### Contesto
@@ -2409,6 +2409,22 @@ Tappe (stime grezze): **T1** personaggi PNG 9-12 h; **T2** schede utente 10-14 h
 - Limite noto: chi ha già il foglio aperto altrove (pannello di stato, ufficio) vede quello vecchio finché non ricarica la pagina; la pagina Agenti lo aggiorna subito.
 - `POST /api/characters/upload` con `{ name, png (base64), replace? }`: 201 col personaggio, 409 con `existing` se il nome c'è già (la pagina chiede), 400 per un file non valido, 413 oltre 256 KiB.
 - Pagina Agenti: per ogni agente "Carica PNG" (anteprima delle animazioni prima dell'invio, nome modificabile, conferma per sostituire), "Animazioni" (canvas con camminata nelle quattro direzioni, scrive, legge e, con la quarta riga, pensa, aspetta, pausa e battito di ciglia, più il foglio intero) e "Scarica PNG". Il foglio caricato viene scelto per l'agente nel modulo: si tiene con "Salva" della scheda.
+
+### Risposte per la tappa T2 (2026-10-05)
+
+- **Promozione a "ufficiale" in `agents/`**, come chiesto all'inizio, anche dopo l'avviso che `agents/` è in git (un commit rende la scheda visibile a chi ha il repository, un push la pubblica). La scheda di conferma lo ripete.
+- **Attivazione e disattivazione subito**, senza riavviare il core.
+- **Strumenti, trifecta, etichette ed esecutori solo dal modello di scheda** (`code`, `web`, `answer` di `templates.ts`); dall'utente nome, descrizione e prompt.
+- **Interfaccia: pulsanti minimi in T2, che T3 deve rendere "migliore e più ampia"** (parole dell'utente).
+
+### Tappa T2, com'è stata fatta
+
+- `packages/agents/src/user.ts`: `checkUserCeiling` (etichetta al massimo L1, autonomia A0 o A1, niente `autonomy_decision`, niente approvazioni, niente `task.delegate` né `channel.send`), `userCard` (YAML dal modello, controllato con `parseAgentCard` e col tetto) e `matchingTemplate` (strumenti, esecutori, trifecta ed etichetta uguali a un modello, autonomia e limiti non sopra i suoi: una scheda modificata a mano oltre il suo modello non si carica) e `loadUserAgents` (una scheda sbagliata o illeggibile viene rifiutata con il motivo e non ferma le altre; rifiutati anche il nome di una scheda di `agents/`, le cartelle che sono link e i file che sono link). Il prompt di un agente utente va alla delega come L1 (`origin: 'user'`), non L0 come quelli in git.
+- `apps/core/src/user-agents.ts`: creazione in `data/agents/disattivati` (scrittura `wx`, nome già usato = 409); descrizione e prompt passano dallo scanner e dal confronto col vault come la personalità (D-107), con il messaggio che nomina il campo e mai il testo; anche il nome passa dallo scanner; attiva e disattiva spostano i due file (prima il prompt, poi la scheda, che se non si sposta riporta indietro il prompt) e cambiano subito la mappa degli agenti del core: una delega pianificata per un agente disattivato nel frattempo si chiude come fallita e il task prosegue; la promozione chiede `confirm: true`, rifiuta se `agents/` ha già un file con quel nome, sposta i file in `agents/` (copia se `data/` sta su un altro volume) e lascia l'agente attivo.
+- Rotte (campi sconosciuti rifiutati, stati `disabled`, `active`, `official`): `GET /api/agents`, `GET /api/agents/sources` (i modelli di scheda; le proposte di agency-agents arrivano in T4), `POST /api/agents`, `GET /api/agents/:id/permissions`, `POST /api/agents/:id/activate`, `deactivate`, `promote`.
+- All'avvio il core aggiunge le schede di `data/agents/attivi` a quelle di `agents/` e scrive nel log solo il nome di quelle rifiutate (il motivo può citare una riga della scheda; lo mostra la pagina).
+- Pagina Agenti: riquadro "Agenti nuovi" con "Nuovo da modello" (nome, modello con i suoi permessi in italiano, descrizione, prompt con contatore, avviso L1), elenco con stato, Permessi, Attiva o Disattiva e "Promuovi a ufficiale…" con la scheda di conferma che dice cosa cambia. Un agente attivato compare subito fra gli agenti della pagina (personaggio, personalità, modello) e nel pannello di stato.
+- Limiti noti: una promozione non si annulla dalla pagina (si spostano a mano i due file); le schede di agency-agents non si attivano ancora (T4); oggi Arianna delega solo al Coder (l'elenco di `task.delegate` è `['coder']`), quindi un agente utente attivo compare nella pagina, nel pannello di stato e nell'ufficio ma non riceve ancora lavoro: è T3 o D-111 B. Rischio che resta: un prompt modificato a mano in `data/agents` vale L1 come quello scritto dalla pagina, e il gateway lo riesamina comunque prima di ogni uscita.
 
 ## Cose non verificate
 

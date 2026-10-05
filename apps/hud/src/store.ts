@@ -773,7 +773,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
