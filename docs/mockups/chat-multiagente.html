@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat multi-agente</title>
+<!--
+  Anteprima di D-107 (docs/PROPOSTE.md): chat con più agenti e Impostazioni → Personalità.
+  File locale e autonomo: niente rete, niente CDN, CSS e JS in linea. Dati inventati.
+  Arianna e Coder dalle mappe di pixel di apps/hud/characters/art/ (posa frontale);
+  Designer ed esperto SEO disegnati qui, originali e semplici.
+-->
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #fbfaf7;
+    --surface-2: #ffffff;
+    --line: #e3e4df;
+    --line-strong: #cfd5d0;
+    --ink: #24302e;
+    --muted: #687673;
+    --accent: #23887c;
+    --accent-ink: #ffffff;
+    --bubble: #3d7e75;
+    --bubble-ink: #ffffff;
+    --glow: #23887c22;
+    --warn: #b9801c;
+    --danger: #c24a35;
+    --ok: #4e9466;
+    --info: #3f6fa8;
+    --l0: #4e9466;
+    --l1: #23887c;
+    --l2: #b9801c;
+    --l3: #c24a35;
+    --grid: #23887c0d;
+    --designer: #8a52c4;
+    --coder: #3a6cb0;
+    --seo: #3f8a56;
+    --arianna: #23887c;
+    --font: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    color: var(--ink);
+    font: 15px/1.5 var(--font);
+  }
+  .banner {
+    max-width: 1240px; margin: 16px auto 0; padding: 8px 14px;
+    border: 1px dashed var(--line-strong); border-radius: 10px;
+    color: var(--muted); font-size: 13px; background: var(--surface);
+  }
+  .banner b { color: var(--ink); }
+  .page {
+    max-width: 1240px; margin: 12px auto 32px; padding: 0 16px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px;
+  }
+  @media (max-width: 960px) { .page { grid-template-columns: minmax(0, 1fr); } }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+
+  /* Chat */
+  .chat-head {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  }
+  .chat-title { font: 600 16px/1.2 var(--display); letter-spacing: .02em; }
+  .chat-sub { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  .label {
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 500 11px/1 var(--mono); padding: 3px 6px; border-radius: 6px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .label.l0 { color: var(--l0); } .label.l1 { color: var(--l1); } .label.l2 { color: var(--l2); }
+  .participants { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .pt {
+    display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+    font-size: 12px; opacity: 0; transform: translateY(4px); transition: opacity .4s, transform .4s;
+  }
+  .pt.in { opacity: 1; transform: none; }
+  .pt canvas { width: 22px; height: 34px; image-rendering: pixelated; }
+  .pt .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .messages { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 520px; }
+  .day { align-self: center; color: var(--muted); font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .msg { display: flex; gap: 10px; align-items: flex-end; max-width: 760px; }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .avatar {
+    flex: none; width: 40px; height: 52px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--surface-2); border: 1px solid var(--line);
+  }
+  .avatar canvas { width: 32px; height: 50px; image-rendering: pixelated; }
+  .bubble {
+    padding: 10px 12px; border-radius: 14px; background: var(--surface-2);
+    border: 1px solid var(--line); border-left: 3px solid var(--who, var(--accent));
+  }
+  .msg.user .bubble { background: var(--bubble); color: var(--bubble-ink); border: none; border-radius: 14px 14px 4px 14px; }
+  .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .meta .name { font-weight: 600; color: var(--who, var(--ink)); }
+  .meta .exec { font-family: var(--mono); font-size: 11px; }
+  .msg.user .meta { color: #ffffffcc; justify-content: flex-end; }
+  .msg.user .meta .label { color: #fff; }
+  .seen {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 6px;
+    background: #3f6fa814; color: var(--info); font-size: 11px; cursor: pointer; border: none; font-family: var(--font);
+  }
+  .brief {
+    display: none; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg);
+    border: 1px dashed var(--line-strong); font-size: 12.5px; color: var(--muted);
+  }
+  .brief.open { display: block; }
+  .brief code { font-family: var(--mono); font-size: 11.5px; color: var(--ok); }
+  .file {
+    display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; margin-right: 4px; padding: 3px 8px; border-radius: 6px;
+    background: var(--bg); border: 1px solid var(--line); font: 12px/1.4 var(--mono);
+  }
+  .sys {
+    align-self: center; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+    padding: 5px 12px; border-radius: 999px; background: var(--glow); color: var(--accent);
+    font-size: 12.5px; font-weight: 500;
+  }
+  .sys .why { color: var(--muted); font-weight: 400; }
+  .sys button { border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; text-decoration: underline; }
+  .round {
+    align-self: center; font: 500 11px/1 var(--mono); color: var(--muted);
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+  }
+  .round .stop { border: none; background: none; color: var(--danger); font: 500 11px var(--mono); cursor: pointer; padding: 0; text-decoration: underline; }
+  .approval {
+    align-self: stretch; max-width: 640px; margin: 0 auto; padding: 12px 14px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--warn); box-shadow: 0 0 0 3px #b9801c14;
+  }
+  .ap-head { font-weight: 600; font-size: 13.5px; color: var(--warn); }
+  .ap-why { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .approval blockquote { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--l0); background: var(--bg); border-radius: 6px; font-size: 13px; }
+  .ap-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ap-out { font-size: 12px; color: var(--ok); }
+
+  .composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-2); position: relative; }
+  .composer input {
+    flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong);
+    background: var(--surface); font: inherit; color: inherit;
+  }
+  .composer button, .btn {
+    padding: 8px 14px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent);
+    color: var(--accent-ink); font: 600 14px var(--font); cursor: pointer;
+  }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .mentions {
+    position: absolute; bottom: 58px; left: 16px; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px; font-size: 13px; box-shadow: 0 6px 20px #0000000f; display: none;
+  }
+  .mentions.open { display: block; }
+  .mentions div { padding: 4px 8px; border-radius: 6px; }
+  .mentions div:hover { background: var(--bg); }
+
+  /* Side column */
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .side h2 { margin: 0; font: 600 14px/1.2 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+  .side .sec { padding: 14px 16px; }
+  .side .sec + .sec { border-top: 1px solid var(--line); }
+  .crumb { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .who-row { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: center; padding: 6px 0; }
+  .who-row canvas { width: 24px; height: 37px; image-rendering: pixelated; }
+  .who-row .n { font-weight: 600; font-size: 13px; }
+  .who-row .d { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0 12px; }
+  .tab {
+    display: flex; align-items: center; gap: 4px; padding: 4px 10px 4px 4px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface-2); font: 500 13px var(--font); color: var(--ink); cursor: pointer;
+  }
+  .tab canvas { width: 16px; height: 25px; image-rendering: pixelated; }
+  .tab[aria-selected="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--glow); }
+  .field { margin-bottom: 12px; }
+  .field > label, .field > .lab { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .field input[type="text"], .field textarea {
+    width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-strong);
+    background: var(--surface-2); font: inherit; color: inherit; resize: vertical;
+  }
+  .seg { display: flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+  .seg button {
+    flex: 1; padding: 7px 4px; border: none; background: var(--surface-2); font: 500 13px var(--font); color: var(--ink); cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line-strong); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .count { float: right; font: 11px var(--mono); color: var(--muted); font-weight: 400; }
+  .count.over { color: var(--danger); }
+  .locked {
+    padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line);
+    font-size: 12px; color: var(--muted);
+  }
+  .locked b { color: var(--ink); }
+  .preview { margin-top: 12px; }
+  .sample {
+    padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    font-size: 13px;
+  }
+  pre.block {
+    margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: #24302e; color: #dcebe8;
+    font: 11px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word;
+  }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .row-btns { display: flex; gap: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="banner"><b>Anteprima di D-107</b> · chat multi-agente e Impostazioni → Personalità · file locale, dati inventati (Pasticceria Aurora non esiste) · i messaggi compaiono uno alla volta: <a href="#" id="replay">rivedi la scena</a></div>
+
+<main class="page">
+  <section class="card" aria-label="Conversazione">
+    <header class="chat-head">
+      <div>
+        <div class="chat-title">Landing Pasticceria Aurora</div>
+        <div class="chat-sub">lavoro · progetto aurora-landing <span class="label l1">L1</span></div>
+      </div>
+      <div class="participants" id="participants"></div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="day">oggi</div>
+    </div>
+
+    <div class="composer">
+      <div class="mentions" id="mentions">
+        <div>@arianna</div><div>@designer</div><div>@coder</div><div>@seo</div><div style="color:var(--muted)">/giro · /basta</div>
+      </div>
+      <input id="composer" placeholder="Scrivi ad Arianna, o @designer, @coder, @seo…" autocomplete="off">
+      <button type="button">Invia</button>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <div class="sec">
+        <h2>Partecipanti</h2>
+        <div class="note" style="margin-top:4px">Chi c'è, su quale modello e cosa vede.</div>
+        <div id="who"></div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Impostazioni, Personalità">
+      <div class="sec">
+        <div class="crumb">Impostazioni → Personalità</div>
+        <h2>Personalità</h2>
+        <div class="tabs" role="tablist" id="tabs"></div>
+
+        <div class="field">
+          <label for="pname">Nome visualizzato</label>
+          <input type="text" id="pname" maxlength="24">
+        </div>
+
+        <div class="field">
+          <span class="lab">Tono delle risposte</span>
+          <div class="seg" id="tone">
+            <button type="button" data-v="serio">Serio</button>
+            <button type="button" data-v="equilibrato">Equilibrato</button>
+            <button type="button" data-v="scherzoso">Scherzoso</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="lab">Ti dà del</span>
+          <div class="seg" id="address">
+            <button type="button" data-v="tu">tu</button>
+            <button type="button" data-v="lei">lei</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="traits">Personalità <span class="count" id="count">0/250</span></label>
+          <textarea id="traits" rows="3" maxlength="270"></textarea>
+        </div>
+
+        <div class="field">
+          <span class="lab">Etichetta di nome e personalità <span class="label l2" style="margin-left:4px">privacy</span></span>
+          <div class="seg" id="plabel">
+            <button type="button" data-v="L2">L2 · resta sul Mac</button>
+            <button type="button" data-v="L1">L1 · può uscire</button>
+          </div>
+          <div class="note" id="where"></div>
+        </div>
+
+        <div class="locked">
+          <b>Regole fisse, non modificabili da qui:</b> privacy L0–L3 e gateway, strumenti, approvazioni, autonomia, limiti. Stanno nella scheda in <code>agents/</code>; la personalità cambia solo lo stile. Negli avvisi esterni (Telegram, notifiche) il nome resta “Arianna”.
+        </div>
+
+        <div class="preview">
+          <span class="lab" style="font-size:12px;font-weight:600;color:var(--muted)">Anteprima: "Ciao, com'è messa la landing?" · <span id="ctx"></span></span>
+          <div class="sample" id="sample"></div>
+          <pre class="block" id="block"></pre>
+          <div class="note" id="cost"></div>
+        </div>
+
+        <div class="row-btns">
+          <button class="btn" type="button" id="save">Salva</button>
+          <button class="btn ghost" type="button" id="reset">Come prima</button>
+        </div>
+        <div class="note" id="saved"></div>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script>
+// ---- Pixel characters (16 columns; front pose, rows 7-31 of the 16x32 frame) ----
+const ART = {
+  arianna: {
+    palette: { o: '#1a1c2c', h: '#8a3b2a', H: '#b5523a', s: '#f2c6a0', S: '#c98f6c', e: '#1b1b2a', p: '#e88f86', m: '#b2504a', d: '#2fb3a3', D: '#1f7f74', r: '#e0483e', k: '#2b2b3a' },
+    rows: [
+      '......oooo......', '....oohhHhoo....', '...ohhhHHhhho...', '..ohhhhhhhhhho..', '..ohhsssssshho..',
+      '..ohssssssssho..', '..ohsessssesho..', '..ohpsssssspho..', '..ohsssmmsssho..', '..ohhossssohho..',
+      '..ohhhossohhho..', '..ohhoddddohho..', '..ooddddddddoo..', '.osDddddddddDso.', '.osDddDddDddDso.',
+      '.osDddddddddDsr.', '..oDddddddddDo.r', '.oddddddddddddor', '.oooooooooooooor',
+      '....oso..oso...r', '....oso..oso..r.', '....oso..oso...r', '....oko..oko..r.', '...okko..okko.r.', '...oooo..oooo..r',
+    ],
+  },
+  coder: {
+    palette: { o: '#1a1c2c', g: '#8fa3ad', G: '#5d707a', v: '#1d2b3a', c: '#4fd1c1', C: '#2a8f84', w: '#dcebe8', a: '#f2b34b', b: '#3b6f8f', B: '#2c5570', k: '#2b2b3a' },
+    rows: [
+      '.......ao.......', '.......oo.......', '....oooooooo....', '...oggggggggo...', '...ogvvvvvvgo...',
+      '...ogvcvvcvgo...', '...ogvvvvvvgo...', '...oggggggggo...', '...ogGGGGGGgo...', '....oooooooo....',
+      '.....oGGGGo.....', '..oooooooooooo..', '.ogobbbbbbbbogo.', '.ogobbccbbbbogo.', '.ogobbbbbbbbogo.',
+      '.okobbbbbbbboko.', '...oGGGGGGGGo...', '...oggggggggo...', '...oooooooooo...',
+      '....ogo..ogo....', '....ogo..ogo....', '....ogo..ogo....', '...oGGo..oGGo...', '...okko..okko...', '...oooo..oooo...',
+    ],
+  },
+  // Original, made for this mockup: beret, violet smock, a pencil behind the ear.
+  designer: {
+    palette: { o: '#1a1c2c', y: '#c0447a', Y: '#8f2f5a', h: '#3a2a3a', s: '#e9b48e', e: '#1b1b2a', m: '#b2504a', a: '#8a52c4', A: '#6a3aa0', w: '#f4ecd8', p: '#f2b34b', k: '#2b2b3a' },
+    rows: [
+      '......oooo......', '....ooyyyyoo....', '...oyyyyyyyyo...', '..oyYyyyyyyyyo..', '..ohhhhhhhhhhop.',
+      '..ohssssssssop..', '..ohsessssesho..', '..ohssssssssho..', '..ohsssmmsssho..', '...ohssssssho...',
+      '....oossssoo....', '...oaaawwaaao...', '..oaaaawwaaaao..', '.osaaaaaaaaaaso.', '.osaaaaaaaaaaso.',
+      '.osAAAAAAAAAAso.', '..oaaaaaaaaaao..', '..oaaaaaaaaaao..', '..oooooooooooo..',
+      '....oko..oko....', '....oko..oko....', '....oko..oko....', '....oko..oko....', '...okko..okko...', '...oooo..oooo...',
+    ],
+  },
+  // Original, made for this mockup: round glasses, green sweater, a magnifier.
+  seo: {
+    palette: { o: '#1a1c2c', b: '#5a4632', s: '#d9a27c', g: '#3f8a56', G: '#2c6640', f: '#2b2b3a', l: '#bfe3f0', m: '#9a4a40', n: '#c9b98f', k: '#2b2b3a' },
+    rows: [
+      '................', '.....oooooo.....', '....obbbbbbo....', '...obbbbbbbbo...', '...obssssssbo...',
+      '..offffsffffo...', '..oflfsssflfo...', '...offfsofffo...', '...ossssmssso...', '....osssssso....',
+      '.....oossoo.....', '...ooGGGGGGoo...', '..oggggggggggo..', '.osggggggggggso.', '.osggggggggggsof',
+      '.osGGGGGGGGGGsfl', '..oggggggggggofo', '..oggggggggggo..', '..oooooooooooo..',
+      '....ono..ono....', '....ono..ono....', '....ono..ono....', '....oko..oko....', '...okko..okko...', '...oooo..oooo...',
+    ],
+  },
+};
+
+function sprite(id, scale) {
+  const art = ART[id];
+  const canvas = document.createElement('canvas');
+  canvas.width = 16 * scale;
+  canvas.height = art.rows.length * scale;
+  const ctx = canvas.getContext('2d');
+  art.rows.forEach((row, y) => {
+    [...row].forEach((ch, x) => {
+      const color = art.palette[ch];
+      if (!color) return;
+      ctx.fillStyle = color;
+      ctx.fillRect(x * scale, y * scale, scale, scale);
+    });
+  });
+  canvas.setAttribute('aria-hidden', 'true');
+  return canvas;
+}
+
+// ---- Agents ----
+const AGENTS = {
+  arianna: { name: 'Arianna', color: 'var(--arianna)', exec: 'locale · qwen3.8-27b', sees: 'tutta la conversazione', cloud: false },
+  designer: { name: 'Designer', color: 'var(--designer)', exec: 'Claude Code · sonnet', sees: 'solo i brief di Arianna (≤ L1) e mockups/ del progetto', cloud: true },
+  coder: { name: 'Coder', color: 'var(--coder)', exec: 'Claude Code · sonnet', sees: 'solo i brief (≤ L1) e la cartella del progetto', cloud: true },
+  seo: { name: 'Esperto SEO', color: 'var(--seo)', exec: 'locale · qwen3.8-27b · catalogo Agenzia', sees: 'solo i brief declassati a L0 (con la tua approvazione); mai personalità né nome', cloud: false },
+};
+
+// ---- Scene ----
+const SCENE = [
+  { kind: 'user', label: 'l1', text: 'Stiamo facendo la landing page per la Pasticceria Aurora. Entro venerdì mi serve una prima versione: hero, menù, prenotazione delle torte e contatti.' },
+  { kind: 'agent', who: 'arianna', label: 'l1', text: 'Bel lavoro da fare! Qui servono tre persone: il designer per struttura e stile, il coder per costruirla e un esperto SEO perché la trovi chi cerca “torte su ordinazione” in zona. Li chiamo.' },
+  { kind: 'sys', who: 'designer', text: 'Arianna ha aggiunto il Designer', why: 'struttura e stile della pagina' },
+  { kind: 'sys', who: 'coder', text: 'Arianna ha aggiunto il Coder', why: 'costruzione in HTML e CSS nel progetto' },
+  { kind: 'sys', who: 'seo', text: 'Arianna ha aggiunto l’esperto SEO', why: 'dal catalogo Agenzia · solo dati L0' },
+  { kind: 'agent', who: 'designer', label: 'l1', greeting: true, text: 'Ciao a tutti, sono il Designer. Faccio mockup HTML autonomi nella cartella mockups/ del progetto.' },
+  { kind: 'agent', who: 'coder', label: 'l1', greeting: true, text: 'Ciao! Sono il Coder: scrivo e provo il codice nel progetto, con i test.' },
+  { kind: 'agent', who: 'seo', label: 'l0', greeting: true, text: 'Buongiorno, esperto SEO. Lavoro solo con informazioni pubbliche.' },
+  { kind: 'round', text: 'giro · 1 di 6' },
+  { kind: 'agent', who: 'designer', label: 'l1', brief: 'Landing di una pasticceria artigianale: hero con foto segnaposto, menù a schede, modulo “prenota una torta”, contatti e mappa statica. Palette calda. Tre varianti dell’hero in mockups/, file HTML autonomi.', briefLabel: 'L1', text: 'Parto da tre varianti dell’hero: una con la vetrina, una con la torta del giorno, una tutta tipografica. Domanda: c’è già un logo?', files: [] },
+  { kind: 'round', text: 'giro · 2 di 6' },
+  { kind: 'approval', who: 'seo', from: 'L1', to: 'L0', brief: 'Pasticceria artigianale in una città media italiana. Pagina unica: torte su ordinazione, menù, contatti. Suggerisci titolo, descrizione e struttura dei titoli.' },
+  { kind: 'agent', who: 'seo', label: 'l0', brief: 'Pasticceria artigianale in una città media italiana. Pagina unica: torte su ordinazione, menù, contatti. Suggerisci titolo, descrizione e struttura dei titoli.', briefLabel: 'L0 (declassato)', text: 'Titolo con “torte su ordinazione” più la città, una H2 per ogni sezione del menù e una descrizione sotto i 155 caratteri. Il menù in testo, non in immagine, così si indicizza.' },
+  { kind: 'round', text: 'giro · 3 di 6' },
+  { kind: 'agent', who: 'coder', label: 'l1', brief: 'HTML statico e CSS senza framework nella cartella del progetto aurora-landing; parti dalla variante dell’hero che sceglierà l’utente; titoli e meta come da nota SEO.', briefLabel: 'L1', text: 'Per una landing così basta HTML e CSS, niente framework: pesa poco e si apre ovunque. Aspetto la variante scelta e parto.' },
+  { kind: 'agent', who: 'arianna', label: 'l1', text: 'Riepilogo: il designer prepara tre varianti, tu scegli, poi il coder costruisce e l’esperto SEO controlla titoli e testi. Vi richiamo io. Giro chiuso (3 interventi su 6).' },
+  { kind: 'user', label: 'l1', text: '@designer niente rosa confetto per favore. Il logo c’è: crema e marrone.' },
+  { kind: 'agent', who: 'designer', label: 'l1', brief: 'Messaggio dell’utente: niente rosa confetto; il logo esiste, crema e marrone.', briefLabel: 'L1', text: 'Ricevuto: crema, cacao e un verde salvia per i pulsanti. Ecco le tre varianti.', files: ['mockups/hero-1.html', 'mockups/hero-2.html', 'mockups/hero-3.html'] },
+];
+
+const messages = document.getElementById('messages');
+const participants = document.getElementById('participants');
+const timers = [];
+
+function chip(id) {
+  const agent = AGENTS[id];
+  const el = document.createElement('span');
+  el.className = 'pt';
+  el.title = `${agent.name} · ${agent.exec}`;
+  el.append(sprite(id, 2));
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  dot.style.background = agent.color;
+  el.append(dot, document.createTextNode(agent.name));
+  participants.append(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
+}
+
+function render(step) {
+  if (step.kind === 'sys') {
+    const el = document.createElement('div');
+    el.className = 'sys';
+    el.innerHTML = `<span>${step.text}</span><span class="why">· ${step.why}</span><button type="button">togli</button>`;
+    messages.append(el);
+    chip(step.who);
+    return;
+  }
+  if (step.kind === 'round') {
+    const el = document.createElement('div');
+    el.className = 'round';
+    el.textContent = step.text + ' · ';
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'stop';
+    stop.textContent = 'Basta così';
+    el.append(stop);
+    messages.append(el);
+    return;
+  }
+  if (step.kind === 'approval') {
+    const agent = AGENTS[step.who];
+    const el = document.createElement('div');
+    el.className = 'approval';
+    const head = document.createElement('div');
+    head.className = 'ap-head';
+    head.textContent = `Approvazione · declassare il brief da ${step.from} a ${step.to} per ${agent.name}`;
+    const why = document.createElement('div');
+    why.className = 'ap-why';
+    why.textContent = `${agent.name} lavora con clearance ${step.to}: riceve solo questo testo, esatto. Approvi una volta sola, solo da qui (mai da Telegram o dal telefono).`;
+    const text = document.createElement('blockquote');
+    text.textContent = step.brief;
+    const buttons = document.createElement('div');
+    buttons.className = 'ap-btns';
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'btn';
+    ok.textContent = 'Approva';
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'btn ghost';
+    no.textContent = 'Rifiuta';
+    const outcome = document.createElement('span');
+    outcome.className = 'ap-out';
+    ok.addEventListener('click', () => { outcome.textContent = 'Approvato: label_changes content:sha256…'; });
+    no.addEventListener('click', () => { outcome.textContent = 'Rifiutato: l’intervento si chiude, Arianna lo legge.'; });
+    buttons.append(ok, no, outcome);
+    el.append(head, why, text, buttons);
+    messages.append(el);
+    timers.push(setTimeout(() => { if (!outcome.textContent) outcome.textContent = 'Approvato (nella scena)'; }, 400));
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = `msg ${step.kind === 'user' ? 'user' : ''}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  if (step.kind === 'user') {
+    meta.innerHTML = `<span class="name">Tu</span><span class="label ${step.label}">${step.label.toUpperCase()}</span>`;
+  } else {
+    const agent = AGENTS[step.who];
+    bubble.style.setProperty('--who', agent.color);
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.append(sprite(step.who, 4));
+    el.append(avatar);
+    meta.innerHTML = `<span class="name">${agent.name}</span><span class="exec">${agent.exec}</span><span class="label ${step.label}">${step.label.toUpperCase()}</span>${step.greeting ? '<span>· saluto dalla scheda</span>' : ''}`;
+    if (step.brief) {
+      const seen = document.createElement('button');
+      seen.type = 'button';
+      seen.className = 'seen';
+      seen.textContent = agent.cloud || step.who === 'seo' ? '◐ ha visto solo il brief' : '◐ brief';
+      meta.append(seen);
+      const brief = document.createElement('div');
+      brief.className = 'brief';
+      brief.innerHTML = `<div><b>Brief di Arianna</b> · ${step.briefLabel} · <code>gateway: passato</code></div><div style="margin-top:4px">${step.brief}</div><div style="margin-top:4px">Non ha letto la conversazione né la base di conoscenza.</div>`;
+      seen.addEventListener('click', () => brief.classList.toggle('open'));
+      bubble.append(meta);
+      const body = document.createElement('div');
+      body.textContent = step.text;
+      bubble.append(body, brief);
+      (step.files || []).forEach((file) => {
+        const f = document.createElement('span');
+        f.className = 'file';
+        f.textContent = `▢ ${file} · Anteprima`;
+        bubble.append(f);
+      });
+      el.append(bubble);
+      messages.append(el);
+      return;
+    }
+  }
+  const body = document.createElement('div');
+  body.textContent = step.text;
+  bubble.append(meta, body);
+  el.append(bubble);
+  messages.append(el);
+}
+
+function play() {
+  timers.splice(0).forEach(clearTimeout);
+  messages.querySelectorAll(':scope > :not(.day)').forEach((n) => n.remove());
+  participants.innerHTML = '';
+  chip('arianna');
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  SCENE.forEach((step, i) => {
+    if (still) { render(step); return; }
+    timers.push(setTimeout(() => render(step), 300 + i * 650));
+  });
+}
+
+document.getElementById('replay').addEventListener('click', (e) => { e.preventDefault(); play(); });
+
+const composer = document.getElementById('composer');
+const mentions = document.getElementById('mentions');
+composer.addEventListener('input', () => mentions.classList.toggle('open', /(^|\s)[@/]\w*$/.test(composer.value)));
+composer.addEventListener('blur', () => setTimeout(() => mentions.classList.remove('open'), 150));
+
+// ---- Participants panel ----
+const who = document.getElementById('who');
+Object.entries(AGENTS).forEach(([id, agent]) => {
+  const row = document.createElement('div');
+  row.className = 'who-row';
+  row.append(sprite(id, 2));
+  const text = document.createElement('div');
+  text.innerHTML = `<div class="n" style="color:${agent.color}">${agent.name}</div><div class="d">${agent.exec}</div><div class="d">Vede: ${agent.sees}</div>`;
+  row.append(text);
+  who.append(row);
+});
+
+// ---- Settings → Personality ----
+const DEFAULTS = {
+  arianna: { name: 'Arianna', tone: 'equilibrato', address: 'tu', traits: '', label: 'L2' },
+  designer: { name: 'Designer', tone: 'scherzoso', address: 'tu', traits: 'Entusiasta dei colori caldi, parla per immagini.', label: 'L2' },
+  coder: { name: 'Coder', tone: 'serio', address: 'tu', traits: 'Asciutto e preciso, ama le cose leggere.', label: 'L2' },
+  seo: { name: 'Esperto SEO', tone: 'equilibrato', address: 'lei', traits: '', label: 'L2' },
+};
+// Clearance of the context shown in the preview: Arianna in a private chat, the cloud ones in the cloud, the SEO at L0.
+const CONTEXT = {
+  arianna: { clearance: 'L2', text: 'conversazione privata (L2)' },
+  designer: { clearance: 'L1', text: 'nel cloud (tetto L1)' },
+  coder: { clearance: 'L1', text: 'nel cloud (tetto L1)' },
+  seo: { clearance: 'L0', text: 'clearance L0' },
+};
+const RANK = { L0: 0, L1: 1, L2: 2 };
+const state = JSON.parse(JSON.stringify(DEFAULTS));
+let current = 'arianna';
+
+const TONE_LINE = {
+  serio: 'Tone: serious, essential, no jokes.',
+  equilibrato: '',
+  scherzoso: 'Tone: warm and playful, a short joke when it fits; never about failures, approvals, money or private matters.',
+};
+
+const SAMPLES = {
+  serio: { tu: 'Il designer ha pronte tre varianti dell’hero; manca la tua scelta. Il coder parte subito dopo.', lei: 'Il designer ha pronte tre varianti dell’hero; manca la sua scelta. Il coder parte subito dopo.' },
+  equilibrato: { tu: 'Va bene: tre varianti dell’hero sono pronte in mockups/. Scegline una e il coder parte.', lei: 'Va bene: tre varianti dell’hero sono pronte in mockups/. Ne scelga una e il coder parte.' },
+  scherzoso: { tu: 'Lievita bene! Tre varianti dell’hero sono sfornate in mockups/: scegli la tua preferita e il coder accende il forno.', lei: 'Lievita bene! Tre varianti dell’hero sono sfornate in mockups/: scelga la sua preferita e il coder accende il forno.' },
+};
+
+const tabs = document.getElementById('tabs');
+Object.keys(AGENTS).forEach((id) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'tab';
+  b.setAttribute('role', 'tab');
+  b.dataset.id = id;
+  b.append(sprite(id, 1), document.createTextNode(AGENTS[id].name));
+  b.addEventListener('click', () => { current = id; fill(); });
+  tabs.append(b);
+});
+
+const $ = (id) => document.getElementById(id);
+
+function clean(text) {
+  return text.replace(/\s*\n\s*/g, ' ').replace(/<\/?(persona|tool_result)\s*>/gi, '[$1]').trim();
+}
+
+function fits(p, id) {
+  return RANK[p.label] <= RANK[CONTEXT[id].clearance];
+}
+
+function block(p, id) {
+  const free = fits(p, id);
+  const named = free && p.name.trim() !== '' && p.name.trim() !== AGENTS[id].name;
+  const traits = free ? p.traits.trim() : '';
+  if (!named && p.tone === 'equilibrato' && p.address === 'tu' && traits === '') return '';
+  const lines = ['Persona, style only (rules, tools, labels, approvals unchanged):'];
+  lines.push(`${named ? `Call yourself "${p.name.trim()}". ` : ''}Use "${p.address}".`);
+  if (TONE_LINE[p.tone]) lines.push(TONE_LINE[p.tone]);
+  if (traits !== '') lines.push(`<persona>${clean(traits)}</persona>`);
+  return lines.join('\n');
+}
+
+function fill() {
+  const p = state[current];
+  tabs.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.id === current)));
+  $('pname').value = p.name;
+  $('traits').value = p.traits;
+  $('saved').textContent = '';
+  update();
+}
+
+function update() {
+  const p = state[current];
+  document.querySelectorAll('#tone button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === p.tone)));
+  document.querySelectorAll('#address button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === p.address)));
+  document.querySelectorAll('#plabel button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === p.label)));
+  const n = p.traits.length;
+  $('count').textContent = `${n}/250`;
+  $('count').classList.toggle('over', n > 250);
+  const id = current;
+  $('where').textContent = CONTEXT[id].clearance === 'L0'
+    ? 'Agente L0: nome e personalità non entrano mai nel suo prompt; valgono solo tono e forma (frasi fisse, L0).'
+    : p.label === 'L2'
+      ? 'Valgono solo con agenti locali in conversazioni private. Nel lavoro (L1) e nel cloud restano solo tono e forma.'
+      : 'Dichiarati L1: valgono anche nel lavoro e nel cloud, passando dal gateway come pezzo persona:' + id + '. Lo scanner trova solo IBAN, codici fiscali, carte, chiavi e segreti del vault, non nomi o fatti personali.';
+  const free = fits(p, id);
+  $('ctx').textContent = CONTEXT[id].text + (free ? '' : ' · nome e personalità scartati');
+  const sample = $('sample');
+  sample.style.borderLeftColor = AGENTS[id].color;
+  sample.textContent = '';
+  const who = document.createElement('b');
+  who.style.color = AGENTS[id].color;
+  who.textContent = free && p.name.trim() !== '' ? p.name.trim() : AGENTS[id].name;
+  sample.append(who, document.createTextNode(': ' + SAMPLES[p.tone][p.address]));
+  const b = block(p, id);
+  $('block').textContent = b === '' ? '(nessun blocco: prompt identico a oggi, byte per byte)' : b;
+  const tokens = Math.round(b.length / 3.84);
+  $('cost').textContent = b === ''
+    ? 'Valori predefiniti: nessun costo, la cache resta quella di oggi.'
+    : `In coda al prompt, prima della regola del thought: il blocco da 2048 token in cache non cambia, nessun riscaldamento. Circa ${tokens} token riletti a ogni passo, circa ${(tokens / 65).toFixed(1).replace('.', ',')} s sull'M1 Max (da misurare).`;
+}
+
+$('pname').addEventListener('input', (e) => { state[current].name = e.target.value; update(); });
+$('traits').addEventListener('input', (e) => { state[current].traits = e.target.value; update(); });
+document.querySelectorAll('#tone button').forEach((b) => b.addEventListener('click', () => { state[current].tone = b.dataset.v; update(); }));
+document.querySelectorAll('#address button').forEach((b) => b.addEventListener('click', () => { state[current].address = b.dataset.v; update(); }));
+document.querySelectorAll('#plabel button').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.v === 'L1' && state[current].label !== 'L1') {
+    const yes = window.confirm('Modifica di privacy.\n\nNome e personalità di questo agente diventano L1: potranno arrivare a Claude o Codex. Lo scanner trova solo IBAN, codici fiscali, carte, chiavi e segreti del vault, non nomi o fatti personali: rileggi il testo.\n\nConfermi?');
+    if (!yes) return;
+  }
+  state[current].label = b.dataset.v;
+  update();
+}));
+$('reset').addEventListener('click', () => { state[current] = { ...DEFAULTS[current] }; fill(); });
+$('save').addEventListener('click', () => {
+  const p = state[current];
+  $('saved').textContent = p.traits.length > 250
+    ? 'Non salvato: la personalità supera i 250 caratteri.'
+    : 'Salvato (finto): vale dal prossimo passo, senza riavvio. Evento persona.changed con i soli nomi dei campi, senza testo né impronta.';
+});
+
+fill();
+play();
+</script>
+</body>
+</html>
