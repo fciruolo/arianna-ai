@@ -62,6 +62,7 @@ export {
   AGENCY_COPYRIGHT,
   AGENCY_REPOSITORY,
   AgencyError,
+  agencyPreset,
   buildIndex,
   headMatchesLock,
   indexRecord,
@@ -95,7 +96,7 @@ export {
   type AgencyIndexFile,
   type AgencyScan,
 } from './agency-catalog.ts';
-export { CARD_TEMPLATES, templateFor, type CardTemplate } from './templates.ts';
+export { CARD_TEMPLATES, type CardTemplate } from './templates.ts';
 export {
   ACTING_TOOLS,
   checkUserCeiling,

@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   AgencyError,
+  agencyPreset,
   buildIndex,
   indexRecord,
   MAX_AGENCY_FILE_BYTES,
@@ -15,7 +16,6 @@ import {
   type AgencyOrigin,
   type AgencyRejection,
 } from './agency.ts';
-import { templateFor } from './templates.ts';
 
 /**
  * The file-system side of the agency-agents importer (D-079, first part): it
@@ -240,7 +240,7 @@ export function writeProposals(
       result.skipped.push({ slug: entry.slug, reason: 'an active card in agents/ has this name' });
       continue;
     }
-    const proposal = proposeCard(entry, templateFor(entry.division), origin);
+    const proposal = proposeCard(entry, agencyPreset(entry.division), origin);
     const yamlPath = join(dir, `${proposal.name}.yaml`);
     const mdPath = join(dir, `${proposal.name}.md`);
     if (!force && (existsSync(yamlPath) || existsSync(mdPath))) {

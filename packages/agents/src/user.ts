@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isAtMost } from '@arianna/policy';
 import { stringify as stringifyYaml } from 'yaml';
 
-import { AGENCY_CARD_MARK, AGENCY_REPOSITORY } from './agency.ts';
+import { AGENCY_CARD_MARK, AGENCY_REPOSITORY } from './agency-mark.ts';
 import { AgentCardError, parseAgentCard, type AgentCard } from './card.ts';
 import { loadAgent, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 import { CARD_TEMPLATES } from './templates.ts';

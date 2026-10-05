@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto';
 
-import { isAtMost } from '@arianna/policy';
 import { stringify as stringifyYaml } from 'yaml';
 
+import { AGENCY_CARD_MARK, AGENCY_REPOSITORY } from './agency-mark.ts';
 import { AgentCardError, ownTable, parseAgentCard } from './card.ts';
-import type { CardTemplate } from './templates.ts';
+import { checkUserPermissions, USER_TRIFECTA, userPresets, type UserPreset } from './user.ts';
 import { parseYamlText } from './yaml.ts';
+
+export { AGENCY_CARD_MARK, AGENCY_REPOSITORY };
 
 /**
  * Read-only importer of the agency-agents catalog (D-079, first part): pure
  * functions that read a catalog file as text and propose a disabled card. The
  * file is public (L0) but untrusted: its `tools` and `services` are kept only
- * as information and never reach a proposal, whose tools, clearance and
- * autonomy come from our templates (templates.ts).
+ * as information and never reach a proposal, whose permissions are a
+ * starting point of the user's agents (`userPresets`), always at L0.
  */
 
-export const AGENCY_REPOSITORY = 'https://github.com/msitarzewski/agency-agents';
 export const AGENCY_COPYRIGHT = 'Copyright (c) 2025 AgentLand Contributors';
 const MIT_PERMISSION = `Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -370,54 +371,67 @@ export interface CardProposal {
   md: string;
 }
 
-const FORBIDDEN_TOOLS = ['task.delegate', 'channel.send'];
+/**
+ * The divisions whose agents start from the `code` preset (one executor,
+ * Claude, with the repository tools); any other division only answers. The
+ * divisions of the web (marketing, research) answer too until the web tools
+ * exist for a delegation.
+ */
+const CODE_DIVISIONS: readonly string[] = ['engineering', 'testing'];
 
-/** The first line of a card proposed by the importer: such a card stays at L0, its prompt is a third party's (D-119, tappa T3b). */
-export const AGENCY_CARD_MARK = '# Proposed by pnpm agency:import (D-079)';
+/** The starting point of a division's proposals, among `userPresets()` (D-119, tappa T3b). */
+export function agencyPreset(division: string): UserPreset {
+  const id = CODE_DIVISIONS.includes(division) ? 'code' : 'answer';
+  const preset = userPresets().find((item) => item.id === id);
+  if (preset === undefined) throw new AgencyError(`no starting point ${id} among the user's agents`);
+  return preset;
+}
 
 /**
  * A disabled card proposed for a catalog entry. Everything that opens
- * something comes from `template`; from the entry only the slug (the card
- * name), the name in the description and the body as the prompt, framed as
- * untrusted. The result is checked with parseAgentCard before it is returned.
+ * something comes from `preset`, a starting point of the user's agents
+ * (`agencyPreset`): one executor, its tools, autonomy and limits; label and
+ * prompt label are always L0 (the prompt is a third party's) and the trifecta
+ * is the computed one. From the entry only the slug (the card name), the name
+ * in the description and the body as the prompt, framed as untrusted. The
+ * result passes parseAgentCard and `checkUserPermissions(card, 'agency')`,
+ * so it loads from `data/agents` as it is.
  */
-export function proposeCard(entry: AgencyEntry, template: CardTemplate, origin: AgencyOrigin): CardProposal {
-  if (!isAtMost(template.maxLabel, 'L1')) throw new AgencyError(`template ${template.id}: max_label must be at most L1`);
-  if (!template.trifecta.untrusted_content) {
-    throw new AgencyError(`template ${template.id}: a third-party prompt is untrusted content, the side must be open`);
-  }
-  if (template.autonomy !== 'A0' && template.autonomy !== 'A1') throw new AgencyError(`template ${template.id}: autonomy above A1`);
-  const forbidden = template.tools.filter((tool) => FORBIDDEN_TOOLS.includes(tool));
-  if (forbidden.length > 0) throw new AgencyError(`template ${template.id}: tool(s) ${forbidden.join(', ')} not allowed`);
+export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: AgencyOrigin): CardProposal {
   if (!COMMIT.test(origin.commit)) throw new AgencyError(`invalid commit ${JSON.stringify(origin.commit)}`);
   if (!SLUG.test(entry.slug) || entry.slug !== slugFromPath(entry.path)) throw new AgencyError(`${entry.path}: invalid slug`);
 
   const name = entry.slug;
   const shownName = entry.name.length > 80 ? `${entry.name.slice(0, 79)}…` : entry.name;
+  const { permissions } = preset;
   const card = {
     name,
     description: `${shownName}: third-party role from agency-agents (MIT), proposed and not active`,
-    max_label: template.maxLabel,
-    executors: [...template.executors],
-    tools: [...template.tools],
-    trifecta: { ...template.trifecta },
-    autonomy: template.autonomy,
-    difficulty: template.difficulty,
-    limits: { max_steps: template.limits.maxSteps, max_minutes: template.limits.maxMinutes, max_cost: template.limits.maxCost },
+    // Third-party text, public: L0 also once the card is among the user's ones (D-119, tappa T3b).
+    max_label: 'L0',
+    executors: [permissions.executor],
+    tools: [...permissions.tools],
+    trifecta: { ...USER_TRIFECTA },
+    autonomy: permissions.autonomy,
+    difficulty: 'normal',
+    limits: { max_steps: permissions.maxSteps, max_minutes: permissions.maxMinutes, max_cost: 0 },
     approvals: [],
     prompt: `${name}.md`,
-    // Third-party text, public: L0 also once the card is among the user's ones (D-119, tappa T3b).
     prompt_label: 'L0',
   };
   const provenance = [
     `${AGENCY_CARD_MARK.slice(2)}: not active until the user approves it.`,
     `Source: ${origin.repository}, commit ${origin.commit}, file ${entry.path}`,
     `sha256 of the file: ${entry.sha256}`,
-    `Template: ${template.id}. Tools, labels and autonomy come from the template, never from the file.`,
+    `Starting point: ${preset.id}. Permissions within the list of user agents, D-119 tappa T3b; never from the file.`,
     `The prompt (${name}.md) is third-party text under the MIT license, ${AGENCY_COPYRIGHT}.`,
   ];
   const yaml = `${provenance.map((text) => `# ${text}`).join('\n')}\n${stringifyYaml(card)}`;
-  parseAgentCard(parseYamlText(yaml, `${name}.yaml`), name);
+  try {
+    checkUserPermissions(parseAgentCard(parseYamlText(yaml, `${name}.yaml`), name), 'agency');
+  } catch (error) {
+    throw new AgencyError(`starting point ${preset.id}: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   const marker = `third-party-role sha256=${entry.sha256}`;
   const md = [

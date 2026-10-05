@@ -4,10 +4,10 @@ import type { Autonomy, Difficulty, ExecutorKind } from './card.ts';
 import type { ToolId, TrifectaSide } from './tools.ts';
 
 /**
- * Card templates for agents proposed from the agency-agents catalog (D-079).
- * Tools, clearance, trifecta and autonomy of a proposed card come from here,
- * chosen by us per division: never from the third-party file, whose `tools`
- * and `services` are only shown as information.
+ * Card templates (D-079, D-119): the starting points of the user's agents
+ * (`userPresets` keeps the ones whose permissions fit the list of tappa T3b,
+ * `code` and `answer`), which also give the permissions of a card proposed
+ * from agency-agents (`agencyPreset`), never the third-party file.
  *
  * Every template: `max_label` at most L1 (a third-party prompt never reads
  * private data), `untrusted_content` open (the prompt itself is untrusted),
@@ -62,15 +62,3 @@ const ANSWER: CardTemplate = {
 };
 
 export const CARD_TEMPLATES: readonly CardTemplate[] = [CODE, WEB, ANSWER];
-
-const BY_DIVISION: Readonly<Record<string, CardTemplate>> = {
-  engineering: CODE,
-  testing: CODE,
-  marketing: WEB,
-  research: WEB,
-};
-
-/** The template of a division; any division not listed only answers. */
-export function templateFor(division: string): CardTemplate {
-  return Object.hasOwn(BY_DIVISION, division) ? (BY_DIVISION[division] ?? ANSWER) : ANSWER;
-}
