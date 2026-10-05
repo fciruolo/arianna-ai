@@ -1,6 +1,6 @@
 # Proposte da discutere (notte 2026-10-05)
 
-Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-103, D-107, D-106, D-110 e D-111, scritte da Claude nella sessione notturna del 2026-10-05. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
+Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-103, D-107, D-106, D-110 e D-111, scritte da Claude nella sessione notturna del 2026-10-05, e D-113, scritta la mattina dopo su richiesta dell'utente. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
 
 ## D-078 — Arianna sviluppata da dentro Arianna
 
@@ -1881,6 +1881,71 @@ Totale tappe 1-4: circa 25-37 h; con "Con chi parli" (6-7) circa 39-58 h. Nessun
 - Se oggi due deleghe sullo stesso progetto da conversazioni diverse possono girare insieme; la fila "un run alla volta" va decisa anche fra conversazioni.
 - Come Telegram tratta una conversazione dove risponde solo il Coder (oggi ignora i messaggi con `agent` non nullo, D-055): probabilmente la conversazione diretta non va legata a Telegram.
 - Effetto dell'auto-compattazione di Claude Code su sessioni lunghe riprese con `--resume`.
+
+## D-113 — Modelli piccoli accanto al 27B: un secondo scanner dei dati personali (Rizzo-PII) e decisioni tipate (Laya, Rizzo Flow)
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere (domanda dell'utente del 2026-10-05: "usare un modello stile jev o laya o rizzo flow ha senso?"; "scrivi comunque la proposta su Laya e Rizzo-PII così la valutiamo dopo")
+- **Collegate:** D-016 e regola 10 (canali esterni), gateway e scanner di `packages/policy`, D-066 (Python solo in `apps/voice`, gabbia di rete), D-081 (prove dei modelli), D-086 (riordino delle note), D-107 (personalità L1, scanner al salvataggio), D-107e (memoria di oMLX), D-110 (routine), D-111 (chi risponde)
+
+### Contesto
+
+Sul 27B locale un passo dell'orchestratore costa circa 19-20 secondi a modello caricato (HANDOFF, 2026-10-05), anche quando il passo deve solo scegliere fra poche opzioni. Nelle ultime settimane sono usciti tre progetti che rispondono a domande tipate senza generare testo, più un modello italiano per i dati personali:
+
+- **Jev:** servizio di decisioni tipate, proprietario, in cloud, con un'API HTTP; circa 236-276 ms.
+- **Laya** (ConvAI Innovations, pesi su Hugging Face dal 2026-09-18, Apache 2.0): encoder non autoregressivo, una sola passata in avanti. Due checkpoint: inglese (ModernBERT-large, 421M, 512 token) e multilingue (mmBERT-base, 322M, 1024 token, oltre 100 lingue). Latenza dichiarata 32,8 ms su una Tesla T4. Accuratezza dichiarata a zero esempi 0,362, **sotto la classe di maggioranza (0,461)**; 0,766 dopo un fine-tuning sui dati del benchmark. Gli autori lo presentano come "base veloce da specializzare", non come motore di decisioni pronto, e peggiora oltre circa 20 opzioni.
+- **Rizzo Flow** (Rizzo AI Academy, Apache 2.0, Python): la versione locale di Jev, decisioni tipate da un modello linguistico su llama.cpp "senza generare un token", cioè leggendo le probabilità delle opzioni da una passata sul prompt.
+- **Rizzo-PII 0.3B** (Simone Rizzo, Hugging Face `rizzoaiacademy/rizzo-pii-0.3B`): classificatore di token su base mmBERT/ModernBERT, circa 0,3B, su CPU con circa 0,5 GB di memoria, contesto di 8192 token. Riconosce 22 categorie di dati personali italiani, compresi codice fiscale, partita IVA e dati catastali. Micro-F1 dichiarato 0,989 su 7.000 frasi italiane, 1,000 su codice fiscale, partita IVA e catasto. Pensato per studi legali e GDPR.
+
+### Proposta
+
+Due parti indipendenti; la seconda non serve alla prima.
+
+**(A) Rizzo-PII come secondo scanner, solo in salita.** Oggi lo scanner del gateway riconosce segreti e forme fisse (chiavi, token, password negli URL, IBAN, codice fiscale, numeri di carta), non nomi, indirizzi o dati catastali scritti in prosa. Rizzo-PII lo affiancherebbe sulle uscite verso destinazioni cloud (esecutori, canali, web) **dentro la decisione del gateway**, non dopo: il core chiede al riconoscitore locale le categorie trovate nel testo congelato (lo stesso che il gateway giudica e di cui calcola lo sha256) e le passa a `gatewayCheck` come un ingresso in più; una regola del gateway, in `packages/policy`, tratta un riscontro come un riscontro dello scanner, con la sua riga in `gateway_log` e lo stesso `next` di oggi (`wait-user`, "Attende te" di D-085, verso esecutori e web; `notify-reference` verso un canale esterno, regola 10). Come per lo scanner attuale, un riscontro blocca anche un testo L1 e un `declassify` non lo sblocca; il riassunto di `gateway_log` si salva solo senza riscontri. Il modello **non abbassa mai** un'etichetta e **non decide mai** un'etichetta: le regole per cartella e il default L2 restano come sono. Uso successivo, lo stesso in salita: al salvataggio di personalità e specializzazione (D-107, accanto a scanner e valori del vault), dove un riscontro rifiuta il testo. Gira in locale sotto loopback, con la stessa gabbia di `apps/voice` (proxy chiuso, `HF_HUB_OFFLINE`), pesi in `data/models` con sha256 nel catalogo.
+
+**(B) Decisioni tipate più veloci del 27B.** Solo per scelte dove un errore costa poco e si vede: il `kind` e i tag di una nota nel riordino di D-086 (che riscrive la nota in posto e non la sposta: una scelta di cartella deciderebbe l'etichetta, quindi è esclusa), quale agente risponde in una conversazione con più agenti (D-111, tappa B), se una routine deve chiamare o può scrivere (D-110). Nelle ultime due il modello sceglie **solo fra le opzioni che router, clearance e regole della routine hanno già ammesso**, e il gateway resta a valle di ogni uscita. **Mai** per etichette, cartelle, gateway, approvazioni, filtro di privacy del router o budget: lì decide il codice. Due strade, in quest'ordine:
+
+- **B1, senza modelli nuovi:** la tecnica di Rizzo Flow applicata al modello già caricato, cioè una passata sul prompt e il confronto delle probabilità delle opzioni, invece di generare una risposta. Richiede che oMLX esponga le probabilità sul prompt (non verificato). Non aggiunge memoria e non tocca D-107e.
+- **B2, Laya multilingue:** solo se B1 non basta. Va specializzato prima dell'uso (a zero esempi è sotto la classe di maggioranza), quindi serve un insieme di esempi: in sviluppo solo esempi finti, con i dati veri solo in locale e solo dopo il criterio della Fase 1A.
+
+### Piano a tappe
+
+1. **Prova di Rizzo-PII fuori dal core**, dopo la risposta alla domanda 3, la voce in DECISIONS per la libreria che carica il modello (transformers o ONNX, nel `uv.lock` di `apps/voice` se resta lì) e la lettura della licenza dei pesi: pesi in `data/models` (revisione fissata e sha256), uno script di prova in `apps/voice` su testi finti in `kb/` e sui brief degli eval. Si misurano dati personali trovati, mancati e **falsi positivi sui brief di codice** (un brief di coding pieno di identificatori bloccati per errore renderebbe inutile la delega). Rapporto in `data/evals/`.
+2. **Integrazione come regola del gateway**, con un riconoscitore finto nei test e negli eval deterministici (`pnpm test`, `pnpm eval`): riscontro che blocca, nessun riscontro che passa, servizio spento, risposta malformata, tempo scaduto, ciascuno con un caso positivo e uno negativo come vuole CLAUDE.md per `packages/policy`; in più casi in `pnpm eval:models` per la qualità del modello vero.
+3. **Verifica delle probabilità sul prompt in oMLX**; se ci sono, prova B1 sul `kind` e sui tag del riordino delle note contro il 27B: accuratezza e secondi per decisione.
+4. **Laya** solo se la tappa 3 non basta e l'utente accetta un fine-tuning.
+
+### Alternative scartate
+
+- **Jev:** è un servizio cloud; quasi tutte le decisioni utili toccano dati L2, che per la regola 10 non possono uscire.
+- **Anonimizzazione reversibile per mandare testi L2 al cloud** (l'uso per cui Rizzo-PII nasce): sarebbe un declassamento deciso da un modello, contro la regola del taint e contro `declassify` con approvazione. Un testo senza nomi resta il testo di un documento L2.
+- **Rizzo-PII al posto dello scanner deterministico:** uno scanner che sbaglia "con buona probabilità" non sostituisce regole verificabili; resta un controllo in più.
+
+### Rischi per la privacy
+
+- **Falso senso di sicurezza:** un secondo scanner che non trova nulla non rende L1 un testo L2. Va scritto nella pagina e nel codice: il modello può solo bloccare.
+- **Un processo Python con i pesi e il testo delle uscite:** stessa gabbia di `apps/voice`, senza sandbox di rete vera finché non c'è `sandbox-exec` (già fra le cose da fare prima dei dati veri). Il testo che riceve è quello che stava per uscire verso il cloud, quindi non gli dà nulla di nuovo, ma un processo che lo inviasse altrove sarebbe una fuga: rete chiusa e test di non-connessione.
+- **Catena di fornitura:** progetti di pochi mesi e pochi contributori; revisione dei pesi fissata, sha256 nel catalogo, nessun codice del repository eseguito oltre alla libreria che carica il modello (da registrare come dipendenza in DECISIONS).
+- **Servizio spento:** se le uscite verso il cloud passassero senza il secondo controllo, la protezione cambierebbe a seconda che un processo sia acceso (domanda 2).
+
+### Domande per l'utente
+
+1. **Rizzo-PII come secondo scanner, solo in salita, dopo la prova della tappa 1?** Raccomandazione: sì; il primo uso è sulle uscite verso il cloud, poi al salvataggio delle personalità.
+2. **Se il riconoscitore non risponde, le uscite verso il cloud si fermano o passano con il solo scanner deterministico?** Raccomandazione: si fermano (default-deny), come una delega senza adattatore. L'unica eccezione possibile è l'installazione di sviluppo, riconosciuta con lo stesso criterio deterministico del doctor (password di sviluppo, nessun vault), mai con un'impostazione che si possa dimenticare accesa; ogni uscita passata senza il secondo controllo resta registrata in `gateway_log`.
+3. **Dove gira: dentro `apps/voice` (stesso ambiente Python e stessa gabbia, nessuna eccezione nuova alla regola "Python solo in `apps/voice`"), in un processo Python suo, o in Node con un runtime ONNX?** Raccomandazione: dentro `apps/voice` come endpoint separato, sapendo che allora `[voice]` e il suo processo diventano necessari per ogni delega cloud (con la domanda 2: senza voce accesa, niente cloud). Un processo Python suo richiede che sia l'utente a cambiare la regola in CLAUDE.md; ONNX in Node evita Python ma è anch'esso una dipendenza nuova con la sua voce in DECISIONS.
+4. **Decisioni tipate: prima la via senza modelli nuovi (B1, probabilità del 27B già caricato), Laya solo se non basta?** Raccomandazione: sì.
+5. **Quale decisione per prima?** Raccomandazione: `kind` e tag del riordino delle note (D-086), dove un errore si corregge a mano e non cambia etichette; poi chi risponde fra più agenti (D-111 B), solo fra quelli già ammessi.
+6. **Quando, rispetto agli altri passi?** Raccomandazione: dopo la tappa A1 rivista di D-107 e la prova di D-058. La tappa 1 non tocca il core ma chiede prima le risposte 1 e 3, la voce della dipendenza e la licenza dei pesi.
+
+### Cose non verificate (D-113)
+
+- Tutti i numeri (latenze, accuratezze, F1, memoria) sono quelli dichiarati dagli autori o da articoli che li riportano; nessuno è stato misurato su questo Mac. La latenza di Laya è su una GPU Tesla T4, non su Apple Silicon.
+- La licenza di Rizzo-PII e la libreria con cui si carica (transformers, ONNX o altro) non sono state lette sulla scheda del modello.
+- Che oMLX esponga le probabilità dei token del prompt (serve a B1): da verificare sulla versione installata.
+- Il repository di Rizzo Flow non è stato letto: forma delle domande, modelli supportati e licenza dei pesi consigliati.
+- Il comportamento di Rizzo-PII su testo misto italiano e codice (brief di coding) non è documentato: è la prima cosa che misura la tappa 1.
+
+Fonti: [Jev vs Laya](https://www.orcarouter.ai/it/blog/jev-vs-laya), [Laya spiegato](https://www.orcarouter.ai/blog/laya-decision-model-explained), [Laya su GameBusiness.jp](https://www.gamebusiness.jp/article/2026/10/01/28183.html), [Rizzo-PII, articolo](https://pasqualepillitteri.it/news/9105/rizzo-pii-anonimizzazione-pii-locale-italiano), [Rizzo-PII su Hugging Face](https://huggingface.co/rizzoaiacademy/rizzo-pii-0.3B), [Rizzo Flow su Trendshift](https://trendshift.io/repositories/252179).
 
 ## Cose non verificate
 
