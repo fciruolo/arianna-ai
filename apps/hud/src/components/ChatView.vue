@@ -8,8 +8,9 @@ import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
+import CreditLine from './CreditLine.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 import PixelAgent from './PixelAgent.vue';
@@ -18,6 +19,8 @@ const props = defineProps<{
   chat: ChatState;
   conversation: Conversation;
   tasks: Record<string, Task>;
+  /** Who wrote each cloud answer, and the files of the Coder's runs (D-082), by message id. */
+  credits: Map<string, MessageCredit>;
   sending: boolean;
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
@@ -331,6 +334,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
+            <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
           </article>
 
           <!-- Arianna (or a system note) -->
@@ -350,6 +354,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>
             <MarkdownText v-else :source="message.body" />
+            <CreditLine v-if="message.model !== null && credits.get(message.id) !== undefined" class="mt-1.5" :credit="credits.get(message.id)!" />
           </div>
 
           <!-- What the task is doing, as a HUD card of steps -->

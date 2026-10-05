@@ -5,12 +5,13 @@ import { startCall as openCallSession, type CallSession } from './lib/call-sessi
 import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
+import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -29,6 +30,8 @@ export function createChatStore() {
   const detached = ref<Conversation | undefined>(undefined);
   const chat = shallowRef<ChatState | null>(null);
   const tasks = ref<Record<string, Task>>({});
+  /** Who wrote the cloud answers of the open conversation, and the files of each run (D-082). */
+  const credits = ref<Map<string, MessageCredit>>(new Map());
   const approvals = ref<Approval[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
   const models = ref<CloudModel[]>([]);
@@ -198,7 +201,15 @@ export function createChatStore() {
     // The user may have opened another conversation meanwhile.
     if (chat.value?.conversationId !== state.conversationId) return;
     chat.value = mergeMessages(chat.value, messages);
-    await Promise.all(taskIds(chat.value).map(refreshTask));
+    await Promise.all([...taskIds(chat.value).map(refreshTask), refreshCredits()]);
+  }
+
+  async function refreshCredits(): Promise<void> {
+    const state = chat.value;
+    // Only a conversation with an answer written in the cloud has credits.
+    if (state === null || !state.messages.some(hasCredit)) return;
+    const listed = await api.listCredits(state.conversationId);
+    if (chat.value?.conversationId === state.conversationId) credits.value = creditsByMessage(listed);
   }
 
   async function open(id: string): Promise<void> {
@@ -206,6 +217,7 @@ export function createChatStore() {
     chat.value = emptyChat(id);
     detached.value = undefined;
     tasks.value = {};
+    credits.value = new Map();
     calls.value = [];
     try {
       await Promise.all([refreshMessages(), refreshCalls()]);
@@ -639,7 +651,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, approvals, models, projects, refreshProjects, remoteDecisions, status, characters, refreshCharacters, live, error, sending, notice, open, close, create, send, decide, chooseModel, rename, archive, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

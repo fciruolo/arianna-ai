@@ -195,6 +195,16 @@ switch (scenario) {
     out({ ...result, result: 'done' });
     break;
   }
+  case 'edit-files': {
+    // A run that changed a tracked file and added one in a subfolder (D-082).
+    writeFileSync(join(process.cwd(), 'README.md'), `${readFileSync(join(process.cwd(), 'README.md'), 'utf8')}Hello.\n`);
+    mkdirSync(join(process.cwd(), 'docs'), { recursive: true });
+    writeFileSync(join(process.cwd(), 'docs', 'hello.md'), '# Hello\n\nA page of the Coder.\n');
+    out(init);
+    out(answer('done'));
+    out({ ...result, result: 'done' });
+    break;
+  }
   default:
     process.exitCode = 2;
 }

@@ -9,6 +9,7 @@ import type { Approval, CharacterChoice, CharacterListing, StatusSnapshot } from
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
+import RecentDelegations from './RecentDelegations.vue';
 
 /**
  * The status panel (D-060): what waits for the user elsewhere, the agents,
@@ -24,7 +25,7 @@ const props = defineProps<{
   remoteDecisions: RemoteDecision[];
   decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void>;
 }>();
-const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: []; close: [] }>();
+const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: []; close: []; open: [conversationId: string] }>();
 
 const ROLE_TEXT: Record<string, string> = { arianna: 'orchestratrice · modello locale', coder: 'codice · esecutori cloud' };
 const DIFFICULTY_TEXT: Record<string, string> = { trivial: 'banale', normal: 'normale', hard: 'difficile', critical: 'critico' };
@@ -133,6 +134,8 @@ function wornBy(packId: string): string[] {
         <p v-else class="text-muted">Nessuna delega ancora: Arianna ha lavorato solo sul modello locale.</p>
       </div>
     </section>
+
+    <RecentDelegations :status="status" @open="(id) => emit('open', id)" />
 
     <section>
       <h3 class="hud-title mb-2.5 flex items-center justify-between">

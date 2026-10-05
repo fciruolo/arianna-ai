@@ -6,7 +6,7 @@ import { extname, join, normalize, sep } from 'node:path';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
-import type { CharacterChoices } from '@arianna/config';
+import type { CharacterChoices, Project } from '@arianna/config';
 import type { LabelRules } from '@arianna/policy';
 
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -27,6 +27,7 @@ import {
   setConversationModel,
 } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
+import { DelegationFileError, listCredits, listRecentDelegations, readDelegationFile } from '../delegation-view.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
@@ -89,6 +90,11 @@ export interface ApiServerOptions {
   capture?: { home: string; rules: LabelRules };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
+  /**
+   * The approved projects with their folders (D-058), read at each request:
+   * where the preview of a file changed by the Coder is read (D-082).
+   */
+  approvedProjects?: () => readonly Project[];
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -218,6 +224,7 @@ interface RouteOptions {
   local: LocalApi | undefined;
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
+  approvedProjects: () => readonly Project[];
   onError: (error: unknown) => void;
 }
 
@@ -499,8 +506,39 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, onError }: RouteOptions): Route[] {
+/**
+ * "Who did what" and "Files changed" (D-082): read only, metadata only. The
+ * preview reads the file again from the approved project, as it is now; no
+ * route opens Finder or runs `open` (the API has no authentication before 1.13).
+ */
+function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]): Route[] {
+  const delegationId = (params: Params): string => {
+    const id = params.id ?? '';
+    if (!/^[1-9]\d{0,17}$/.test(id)) throw new HttpError(404, 'not found');
+    return id;
+  };
   return [
+    route('GET', '/api/delegations', async (_request, url) => {
+      const limit = url.searchParams.get('limit') === null ? 10 : limitParam(url);
+      return { body: { delegations: await listRecentDelegations(sql, limit) } };
+    }),
+    route('GET', '/api/conversations/:id/credits', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      return { body: { credits: await listCredits(sql, id) } };
+    }),
+    route('GET', '/api/delegations/:id/files/:index', async (_request, _url, params) => {
+      const id = delegationId(params);
+      const index = params.index ?? '';
+      if (!/^\d{1,4}$/.test(index)) throw new HttpError(404, 'not found');
+      return { body: { file: await readDelegationFile(sql, approvedProjects(), id, Number(index)) } };
+    }),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, onError }: RouteOptions): Route[] {
+  return [
+    ...delegationRoutes(sql, approvedProjects),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(capture),
@@ -784,6 +822,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { invalid: 400, 'too-large': 413, 'not-allowed': 403, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof DelegationFileError) {
+    const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409 }[error.code];
+    return { status, message: error.message };
+  }
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
@@ -804,6 +846,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     local: options.local,
     capture: options.capture,
     modelEvals: options.modelEvals,
+    approvedProjects: options.approvedProjects ?? (() => []),
     onError: options.onError ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();

@@ -179,3 +179,54 @@ export interface CharacterListing {
   refused: { pack: string; reason: string }[];
   agents: Record<string, CharacterChoice>;
 }
+
+/** How a file changed in the run of a delegation (D-082). */
+export type FileChangeKind = 'added' | 'modified' | 'deleted' | 'renamed';
+
+export interface DelegationFile {
+  /** Relative to the project. */
+  path: string;
+  change: FileChangeKind;
+  /** The old path of a rename. */
+  from?: string;
+}
+
+/** Under an answer written in the cloud: who wrote it, on what, in how long (D-082). */
+export interface MessageCredit {
+  messageId: string;
+  delegationId: string | null;
+  agent: string | null;
+  executor: string | null;
+  alias: string | null;
+  model: string | null;
+  durationMs: number | null;
+  cost: number | null;
+  repo: string | null;
+  files: DelegationFile[] | null;
+}
+
+/** A row of "Deleghe recenti": metadata only. */
+export interface RecentDelegation {
+  id: string;
+  conversationId: string | null;
+  conversationTitle: string | null;
+  agent: string;
+  repo: string | null;
+  status: 'pending' | 'running' | 'ok' | 'failed' | 'refused';
+  executor: string | null;
+  alias: string | null;
+  model: string | null;
+  createdAt: string;
+  durationMs: number | null;
+  cost: number | null;
+  files: number | null;
+}
+
+/** A changed file as it is now, read only. */
+export interface FilePreview {
+  path: string;
+  change: FileChangeKind;
+  repo: string;
+  size: number;
+  text: string;
+}

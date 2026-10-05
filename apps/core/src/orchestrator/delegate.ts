@@ -5,12 +5,13 @@ import {
   CLAUDE_MODELS,
   gitConfigFingerprint,
   openRepository,
-  repositoryStatus,
+  repositoryChanges,
   toolConfigFiles,
   WorkspaceError,
   type ClaudeExecutor,
   type ClaudeModel,
   type ClaudeTool,
+  type FileChange,
   type OpenedRepository,
 } from '@arianna/executors';
 import { createContext, isAtMost, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
@@ -233,6 +234,25 @@ async function close(env: DelegateEnv, task: Task, step: number, delegation: Del
   await show(env.sql, task, step, 'error', result.replace(/^error: [^:]+: /, ''));
 }
 
+/** At most this many changed files are kept for the chat (the database refuses more). */
+export const MAX_STORED_FILES = 500;
+const STORABLE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[^\p{Cc}]{1,1024}$/u;
+
+/**
+ * The changes the chat may list (D-082): paths relative to the project as git
+ * wrote them, a known kind, at most MAX_STORED_FILES. A path the database
+ * would refuse (a control character in the name) is left out of the list;
+ * Arianna still reads it in the text of the result.
+ */
+export function storableFiles(changes: readonly FileChange[]): FileChange[] {
+  const kinds: readonly string[] = ['added', 'modified', 'deleted', 'renamed'];
+  return changes
+    .filter((item) => STORABLE_PATH.test(item.path) && kinds.includes(item.change))
+    .filter((item) => (item.change === 'renamed') === (item.from !== undefined) && (item.from === undefined || STORABLE_PATH.test(item.from)))
+    .slice(0, MAX_STORED_FILES)
+    .map((item) => (item.from === undefined ? { path: item.path, change: item.change } : { path: item.path, change: item.change, from: item.from }));
+}
+
 /** The cloud step: the plan is `cloud`. */
 export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'cloud' }>): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
@@ -315,13 +335,15 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         return { kind: 'continue', usage: result.usage };
       }
       // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
-      const after = await repositoryStatus(path).catch(() => [] as string[]);
-      const changed = after.filter((item) => !before.has(item));
+      const after = await repositoryChanges(path).catch(() => undefined);
+      const changed = (after ?? []).filter((item) => !before.has(item.path));
+      // Saved before the report (D-082): the chat lists them under it as soon as it appears.
+      if (after !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed) });
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
       const toolChanges = changedToolConfig(tools, await toolConfigFiles(path).catch(() => new Map([['(unreadable)', '']])));
       const text = [
         report,
-        ...(changed.length === 0 ? [] : [`Files changed in the project ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.join(', ')}`]),
+        ...(changed.length === 0 ? [] : [`Files changed in the project ${repo} (uncommitted, on branch ${workspace.branch ?? ''}): ${changed.map((item) => item.path).join(', ')}`]),
         // Run by other tools when the user opens the folder with them, outside any sandbox: the user must know.
         ...(toolChanges.length === 0
           ? []

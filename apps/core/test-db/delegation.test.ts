@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -13,14 +14,18 @@ import { AGENTS_DIR, loadAgents, type Answer, type LoadedAgent } from '@arianna/
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
-import { createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
+import { Secret } from '@arianna/vault';
+
+import { archiveConversation, createConversation, postUserMessage, setConversationModel } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { openReply } from '../src/reply.ts';
 import { MAX_QUOTA_RETRIES } from '../src/orchestrator/delegate.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
-import { loadDelegations } from '../src/orchestrator/delegations.ts';
+import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
+import { listCredits } from '../src/delegation-view.ts';
+import { startApiServer } from '../src/server/http.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask, type Task } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -595,4 +600,276 @@ test('a conversation from before D-058 names repos/site: it reads as the project
   assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
   const [delegation] = await loadDelegations(db().sql, task.id);
   assert.deepEqual([delegation?.status, delegation?.repo], ['ok', 'site']);
+});
+
+// ---------------------------------------------------------------------------
+// "Who did what" and "Files changed" (D-082).
+// ---------------------------------------------------------------------------
+
+interface HttpReply {
+  status: number;
+  body: Record<string, unknown>;
+  text: string;
+}
+
+/** node:http, not fetch (NODE_USE_ENV_PROXY would send loopback requests to a proxy). */
+function get(port: number, path: string, headers: Record<string, string> = {}): Promise<HttpReply> {
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest(`http://127.0.0.1:${String(port)}${path}`, { method: 'GET', agent: false, headers }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolvePromise({ status: response.statusCode ?? 0, body: JSON.parse(text) as Record<string, unknown>, text });
+      });
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function withApi<T>(projects: () => readonly Project[], body: (port: number) => Promise<T>): Promise<T> {
+  const live = await startLiveFeed(db().sql);
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, approvedProjects: projects });
+  try {
+    return await body(server.port);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+}
+
+const SITE: Project = { name: 'site', path: 'repos/site', absolute: REPO, label: 'L1' };
+
+function restoreRepo(): void {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  execFileSync('git', ['-C', REPO, 'checkout', '--quiet', '--', 'README.md'], { env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
+  rmSync(join(REPO, 'docs'), { recursive: true, force: true });
+}
+
+test('the files a run changed are saved with the delegation, credited under the report, and shown read only', async () => {
+  try {
+    const { task, conversation } = await ask('work', 'Modifica dei file.', 'site');
+    const executor = orchestrator({ model: scripted([DELEGATE, REPLY]), coderPrompt: 'scenario: edit-files\nYou are the Coder.' });
+    assert.deepEqual(await drain(task.id, executor), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.ok(delegation !== undefined);
+    assert.deepEqual(delegation.files, [
+      { path: 'README.md', change: 'modified' },
+      { path: 'docs/hello.md', change: 'added' },
+    ]);
+    assert.match(delegation.result ?? '', /Files changed in the project site \(uncommitted, on branch main\): README\.md, docs\/hello\.md/);
+    // Written once.
+    await assert.rejects(updateDelegation(db().sql, delegation.id, { files: [] }), /written once/);
+
+    await withApi(() => [SITE], async (port) => {
+      const credits = (await get(port, `/api/conversations/${conversation.id}/credits`)).body.credits as Record<string, unknown>[];
+      assert.equal(credits.length, 1);
+      const [credit] = credits;
+      assert.ok(credit !== undefined);
+      assert.deepEqual(
+        [credit.messageId, credit.delegationId, credit.agent, credit.executor, credit.alias, credit.repo],
+        [delegation.messageId, delegation.id, 'coder', 'claude', 'sonnet', 'site'],
+      );
+      assert.equal(typeof credit.model, 'string');
+      assert.equal(typeof credit.durationMs, 'number');
+      assert.equal(credit.cost, null);
+      assert.deepEqual(credit.files, delegation.files);
+
+      // The list: metadata only, never the brief or the report.
+      const listed = await get(port, '/api/delegations?limit=5');
+      const rows = listed.body.delegations as Record<string, unknown>[];
+      const row = rows.find((item) => item.id === delegation.id);
+      assert.ok(row !== undefined);
+      assert.deepEqual(
+        Object.keys(row).sort(),
+        ['agent', 'alias', 'conversationId', 'conversationTitle', 'cost', 'createdAt', 'durationMs', 'executor', 'files', 'id', 'model', 'repo', 'status'],
+      );
+      assert.deepEqual([row.conversationId, row.status, row.files, row.executor, row.alias], [conversation.id, 'ok', 2, 'claude', 'sonnet']);
+      assert.doesNotMatch(listed.text, /Add a line to README/);
+      assert.doesNotMatch(listed.text, /Files changed/);
+
+      const preview = await get(port, `/api/delegations/${delegation.id}/files/0`);
+      assert.equal(preview.status, 200);
+      const file = preview.body.file as Record<string, unknown>;
+      assert.deepEqual([file.path, file.change, file.repo], ['README.md', 'modified', 'site']);
+      assert.match(String(file.text), /# Fake site\nHello\.\n/);
+      assert.equal((await get(port, `/api/delegations/${delegation.id}/files/2`)).status, 404);
+      assert.equal((await get(port, `/api/delegations/${delegation.id}/files/x`)).status, 404);
+      assert.equal((await get(port, `/api/delegations/0/files/0`)).status, 404);
+    });
+    // The project taken off the list: no preview.
+    await withApi(() => [], async (port) => {
+      const refused = await get(port, `/api/delegations/${delegation.id}/files/0`);
+      assert.equal(refused.status, 403);
+      assert.match(String(refused.body.error), /no longer among the approved projects/);
+    });
+  } finally {
+    restoreRepo();
+  }
+});
+
+/** A delegation of a run on `site` whose files are written as given (the run itself is not needed here). */
+async function delegationWith(files: unknown): Promise<string> {
+  const { task } = await ask('work', 'File preparati.', 'site');
+  const delegation = await createDelegation(db().sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
+  const [run] = await db().sql<{ id: string }[]>`
+    INSERT INTO runs (task_id, step, agent, executor, model, locality, effective_label) VALUES (${task.id}, 2, 'coder', 'claude', 'sonnet', 'cloud', 'L1') RETURNING id::text`;
+  assert.ok(run !== undefined);
+  await updateDelegation(db().sql, delegation.id, { runId: run.id, executor: 'claude', model: 'sonnet' });
+  await db().sql`UPDATE task_delegations SET files = ${JSON.stringify(files)}::text::jsonb WHERE id = ${delegation.id}::bigint`;
+  return delegation.id;
+}
+
+test('the preview refuses links out of the project, .git, large, binary and deleted files', async () => {
+  const outside = join(HOME, 'outside-secret.txt');
+  writeFileSync(outside, 'not of the project\n');
+  symlinkSync(outside, join(REPO, 'out.md'));
+  symlinkSync('README.md', join(REPO, 'in.md'));
+  writeFileSync(join(REPO, 'big.txt'), 'x'.repeat(256 * 1024 + 1));
+  writeFileSync(join(REPO, 'bin.dat'), Buffer.from([0x41, 0x00, 0x42]));
+  writeFileSync(join(REPO, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe8]));
+  try {
+    const id = await delegationWith([
+      { path: 'out.md', change: 'added' },
+      { path: '.git/config', change: 'modified' },
+      { path: 'big.txt', change: 'added' },
+      { path: 'bin.dat', change: 'added' },
+      { path: 'gone.txt', change: 'deleted' },
+      { path: 'missing.txt', change: 'added' },
+      { path: 'in.md', change: 'added' },
+      { path: 'latin1.txt', change: 'added' },
+    ]);
+    await withApi(() => [SITE], async (port) => {
+      const status = async (index: number) => (await get(port, `/api/delegations/${id}/files/${String(index)}`)).status;
+      assert.deepEqual(await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(status)), [403, 403, 413, 415, 410, 410, 200, 415]);
+      // A project whose folder is reached through a link is not the approved path.
+      const linked = join(HOME, 'repos', 'site-link');
+      symlinkSync(REPO, linked);
+      try {
+        const viaLink = await withApi(() => [{ ...SITE, absolute: linked }], (other) => get(other, `/api/delegations/${id}/files/6`));
+        assert.equal(viaLink.status, 403);
+      } finally {
+        unlinkSync(linked);
+      }
+      // Same-origin only, as every route (D-039).
+      assert.equal((await get(port, `/api/delegations/${id}/files/6`, { host: 'evil.example' })).status, 403);
+      assert.equal((await get(port, '/api/delegations', { origin: 'http://evil.example' })).status, 403);
+      assert.equal((await get(port, `/api/delegations/${id}/files/6`, { origin: 'http://evil.example' })).status, 403);
+    });
+  } finally {
+    for (const name of ['out.md', 'in.md', 'big.txt', 'bin.dat', 'latin1.txt']) rmSync(join(REPO, name), { force: true });
+    rmSync(outside, { force: true });
+  }
+});
+
+test('task_delegations.files: paths and kinds only, written once, by a run on a project (migration 0020)', async () => {
+  const { sql } = db();
+  for (const bad of [
+    [{ path: '../escape.txt', change: 'added' }],
+    [{ path: '/etc/hosts', change: 'modified' }],
+    [{ path: 'a/../../b', change: 'added' }],
+    [{ path: 'a.txt', change: 'copied' }],
+    [{ path: 'a.txt', change: 'added', content: 'secret' }],
+    [{ path: 'a.txt', change: 'renamed' }],
+    [{ path: 'a.txt', change: 'added', from: 'b.txt' }],
+    [{ path: 'a\nb', change: 'added' }],
+    [{ path: '', change: 'added' }],
+    [{ path: 7, change: 'added' }],
+    ['a.txt'],
+    { path: 'a.txt' },
+  ]) {
+    await assert.rejects(delegationWith(bad), /task_delegations_files/, JSON.stringify(bad));
+  }
+  const id = await delegationWith([{ path: 'docs/new.md', change: 'renamed', from: 'docs/old.md' }]);
+  await assert.rejects(sql`UPDATE task_delegations SET files = '[]'::jsonb WHERE id = ${id}::bigint`, /written once/);
+  const { task } = await ask('work', 'Senza run.', 'site');
+  const plain = await createDelegation(sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
+  await assert.rejects(sql`UPDATE task_delegations SET files = '[]'::jsonb WHERE id = ${plain.id}::bigint`, /files only for a run on a project/);
+  await assert.rejects(
+    sql`INSERT INTO task_delegations (task_id, step, agent, brief, label, files) VALUES (${task.id}, 2, 'coder', 'x', 'L1', '[]'::jsonb)`,
+    /not with the delegation/,
+  );
+});
+
+test('Claude answering directly is credited from the run of its message', async () => {
+  const { conversation, task } = await ask('work', 'Risposta diretta.', 'site');
+  const [run] = await db().sql<{ id: string }[]>`
+    INSERT INTO runs (task_id, step, agent, executor, model, locality, effective_label) VALUES (${task.id}, 1, 'arianna', 'claude', 'opus', 'cloud', 'L1') RETURNING id::text`;
+  assert.ok(run !== undefined);
+  await db().sql`INSERT INTO events (task_id, run_id, kind, label, payload) VALUES (${task.id}, ${run.id}, 'executor.model', 'L0', ${JSON.stringify({ executor: 'claude', alias: 'opus', model: 'claude-opus-fake-1' })}::text::jsonb)`;
+  const reply = await openReply(db().sql, task.id, { runId: run.id, model: 'opus' });
+  const saved = await reply.finish('Risposta di Claude.', 'L1');
+  assert.ok(saved.stored);
+  await db().sql`UPDATE runs SET status = 'ok', ended_at = started_at + interval '2 seconds', cost_estimate = 0.25 WHERE id = ${run.id}`;
+  const credits = await listCredits(db().sql, conversation.id);
+  assert.deepEqual(credits, [
+    { messageId: saved.message.id, delegationId: null, agent: null, executor: 'claude', alias: 'opus', model: 'claude-opus-fake-1', durationMs: 2000, cost: 0.25, repo: null, files: null },
+  ]);
+});
+
+test('the preview refuses a fifo, .git in any case, a vault value, a project above L1 and an archived conversation', async (t) => {
+  const fifo = join(REPO, 'pipe.txt');
+  let fifoMade = true;
+  try {
+    execFileSync('mkfifo', [fifo]);
+  } catch {
+    fifoMade = false;
+  }
+  symlinkSync('.GIT/config', join(REPO, 'upper-git.md'));
+  const secret = new Secret('vault://test-preview', 'fake-vault-value-preview-0123456789abcdef');
+  writeFileSync(join(REPO, 'leak.txt'), `token: ${secret.reveal()}\n`);
+  try {
+    const id = await delegationWith([
+      { path: 'upper-git.md', change: 'added' },
+      { path: '.GIT/config', change: 'modified' },
+      { path: 'leak.txt', change: 'added' },
+      { path: 'pipe.txt', change: 'added' },
+      { path: 'README.md', change: 'modified' },
+    ]);
+    await withApi(() => [SITE], async (port) => {
+      const status = async (index: number) => (await get(port, `/api/delegations/${id}/files/${String(index)}`)).status;
+      assert.deepEqual(await Promise.all([0, 1, 2].map(status)), [403, 403, 403]);
+      if (fifoMade) assert.equal(await status(3), 403);
+      else t.diagnostic('mkfifo is not available: the fifo case is skipped');
+      assert.equal(await status(4), 200);
+    });
+    // A project now above L1 (a configuration written by hand): no preview.
+    await withApi(() => [{ ...SITE, label: 'L2' } as unknown as Project], async (port) => {
+      assert.equal((await get(port, `/api/delegations/${id}/files/4`)).status, 403);
+    });
+    // An archived conversation is history: restored first, as for a retry (D-064).
+    const [row] = await db().sql<{ conversationId: string }[]>`
+      SELECT t.conversation_id::text AS "conversationId" FROM task_delegations d JOIN tasks t ON t.id = d.task_id WHERE d.id = ${id}::bigint`;
+    assert.ok(row !== undefined);
+    await archiveConversation(db().sql, row.conversationId, true);
+    await withApi(() => [SITE], async (port) => {
+      const archived = await get(port, `/api/delegations/${id}/files/4`);
+      assert.equal(archived.status, 409);
+      assert.match(String(archived.body.error), /archived/);
+    });
+  } finally {
+    for (const name of ['pipe.txt', 'upper-git.md', 'leak.txt']) rmSync(join(REPO, name), { force: true });
+  }
+});
+
+test('a delegation above L1: no preview, and its credit shows neither project nor files', async () => {
+  const { sql } = db();
+  const { conversation, task } = await ask('private', 'Delega privata.');
+  const delegation = await createDelegation(sql, { taskId: task.id, step: 1, agent: 'coder', brief: 'x', label: 'L1', repo: 'site' });
+  const [run] = await sql<{ id: string }[]>`
+    INSERT INTO runs (task_id, step, agent, executor, model, locality, effective_label) VALUES (${task.id}, 2, 'coder', 'claude', 'sonnet', 'cloud', 'L1') RETURNING id::text`;
+  assert.ok(run !== undefined);
+  await updateDelegation(sql, delegation.id, { runId: run.id, executor: 'claude', model: 'sonnet', files: [{ path: 'README.md', change: 'modified' }] });
+  const [message] = await sql<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, label, body, task_id, agent) VALUES (${conversation.id}, 'assistant', 'L2', 'rapporto', ${task.id}, 'coder') RETURNING id::text`;
+  assert.ok(message !== undefined);
+  await updateDelegation(sql, delegation.id, { status: 'failed', result: 'error', resultLabel: 'L2', messageId: message.id });
+  const [credit] = await listCredits(sql, conversation.id);
+  assert.deepEqual([credit?.delegationId, credit?.repo, credit?.files], [delegation.id, null, null]);
+  await withApi(() => [SITE], async (port) => {
+    assert.equal((await get(port, `/api/delegations/${delegation.id}/files/0`)).status, 404);
+    const rows = (await get(port, '/api/delegations?limit=200')).body.delegations as { id: string }[];
+    assert.equal(rows.some((item) => item.id === delegation.id), false);
+  });
 });

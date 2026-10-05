@@ -353,6 +353,77 @@ export async function repositoryStatus(path: string): Promise<string[]> {
   return [...paths].filter((item) => !item.endsWith('/')).sort();
 }
 
+/** How a path differs from the last commit: what the chat shows under the Coder's report (D-082). */
+export type FileChangeKind = 'added' | 'modified' | 'deleted' | 'renamed';
+
+export interface FileChange {
+  /** Relative to the top of the repository, as git writes it. */
+  path: string;
+  change: FileChangeKind;
+  /** The old path of a rename. */
+  from?: string;
+}
+
+/**
+ * The paths `repositoryStatus` lists, each with how it changed against HEAD
+ * (D-082). The same commands, which read no work tree content through a
+ * filter: deleted and modified files from the index by stat, untracked ones
+ * as added, and the staged changes with rename detection on the index blobs
+ * only (`diff-index --cached -M`). A rename git cannot see (not staged)
+ * shows as a deletion and an addition.
+ */
+export async function repositoryChanges(path: string): Promise<FileChange[]> {
+  await checkedRepository(path);
+  const changes = new Map<string, FileChange>();
+  let hasHead = true;
+  try {
+    await git(path, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+  } catch {
+    hasHead = false;
+  }
+  if (hasHead) {
+    const fields = zList(await git(path, ['diff-index', '--cached', '--name-status', '-z', '-M', 'HEAD']));
+    for (let index = 0; index < fields.length; ) {
+      const status = fields[index] ?? '';
+      if (status.startsWith('R') || status.startsWith('C')) {
+        const from = fields[index + 1] ?? '';
+        const to = fields[index + 2] ?? '';
+        changes.set(to, status.startsWith('R') ? { path: to, change: 'renamed', from } : { path: to, change: 'added' });
+        index += 3;
+        continue;
+      }
+      const item = fields[index + 1] ?? '';
+      changes.set(item, { path: item, change: status === 'A' ? 'added' : status === 'D' ? 'deleted' : 'modified' });
+      index += 2;
+    }
+  } else {
+    for (const item of zList(await git(path, ['ls-files', '-z', '--cached']))) changes.set(item, { path: item, change: 'added' });
+  }
+  // The work tree against the index, in one call: `-t` tags each path (R removed, C changed, ? untracked);
+  // a removed file is listed as changed too.
+  const tagged = zList(await git(path, ['ls-files', '-z', '-t', '--deleted', '--modified', '--others', '--exclude-standard']));
+  const deleted = new Set<string>();
+  const modified = new Set<string>();
+  for (const line of tagged) {
+    const tag = line.slice(0, 1);
+    const item = line.slice(2);
+    if (item === '' || item.endsWith('/')) continue;
+    if (tag === 'R') deleted.add(item);
+    else if (tag === 'C') modified.add(item);
+    else if (tag === '?') changes.set(item, { path: item, change: 'added' });
+  }
+  for (const item of deleted) {
+    const staged = changes.get(item);
+    // Added to the index, then removed from the folder: nothing against HEAD.
+    if (staged?.change === 'added' || staged?.change === 'renamed') changes.delete(item);
+    else changes.set(item, { path: item, change: 'deleted' });
+  }
+  for (const item of modified) {
+    if (!deleted.has(item) && !changes.has(item)) changes.set(item, { path: item, change: 'modified' });
+  }
+  return [...changes.values()].filter((item) => item.path !== '' && !item.path.endsWith('/')).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
 /** Files git reads configuration and attributes from, as a relative list; all `.gitattributes` of the tree included. */
 async function gitConfigFiles(root: string): Promise<string[]> {
   const files = ['.git', '.git/config', '.git/info/attributes', '.git/info/exclude'];

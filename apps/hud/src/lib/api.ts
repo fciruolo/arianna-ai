@@ -1,7 +1,7 @@
 import type { CallInfo } from './calls.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
-import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, Message, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Message, MessageCredit, ProjectInfo, RecentDelegation, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -307,4 +307,19 @@ export async function restartLocal(id: string): Promise<void> {
 /** The end of the server's log: may hold private texts, shown only here. */
 export async function loadLocalLog(id: string): Promise<string> {
   return (await call<{ log: string }>('GET', `/api/local/${encodeURIComponent(id)}/log`)).log;
+}
+
+/** Who wrote the cloud answers of a conversation, and the files of each run (D-082). */
+export async function listCredits(conversationId: string): Promise<MessageCredit[]> {
+  return (await call<{ credits: MessageCredit[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/credits`)).credits;
+}
+
+/** The latest delegations, metadata only. */
+export async function listDelegations(limit = 10): Promise<RecentDelegation[]> {
+  return (await call<{ delegations: RecentDelegation[] }>('GET', `/api/delegations?limit=${String(limit)}`)).delegations;
+}
+
+/** A file changed by a run, as it is now in the approved project. */
+export async function loadDelegationFile(delegationId: string, index: number): Promise<FilePreview> {
+  return (await call<{ file: FilePreview }>('GET', `/api/delegations/${encodeURIComponent(delegationId)}/files/${String(index)}`)).file;
 }

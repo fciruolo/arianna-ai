@@ -7,7 +7,9 @@ import {
   Check,
   ChevronRight,
   Clock,
+  FileText,
   Folder,
+  History,
   Info,
   LifeBuoy,
   Lock,
@@ -87,6 +89,8 @@ export const ICONS = {
   settings: Settings,
   info: Info,
   server: Server,
+  file: FileText,
+  history: History,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

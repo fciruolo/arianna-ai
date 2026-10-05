@@ -23,7 +23,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { conversations, archived, systemChats, failure, chat, current, tasks, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { conversations, archived, systemChats, failure, chat, current, tasks, credits, approvals, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -456,6 +456,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :chat="chat"
         :conversation="current"
         :tasks="tasks"
+        :credits="credits"
         :sending="sending"
         :models="models"
         :approvals="inChat"
@@ -499,6 +500,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @dismiss="store.dismissDecision"
       @refresh-characters="store.refreshCharacters"
       @close="showPanel = false"
+      @open="(id) => { showPanel = false; void openConversation(id); }"
     />
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
 

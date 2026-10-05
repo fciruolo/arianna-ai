@@ -15,6 +15,7 @@ import {
   prepareWorkspace,
   removeWorkspace,
   reopenWorkspace,
+  repositoryChanges,
   repositoryStatus,
   scanWorkspace,
   WorkspaceError,
@@ -362,6 +363,40 @@ describe('openRepository (D-056)', () => {
     git(dir, 'mv', 'b.ts', 'd.ts');
     rmSync(join(dir, 'e.ts'));
     assert.deepEqual(await repositoryStatus(dir), ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
+  });
+
+  it('repositoryChanges says how each path changed: added, modified, deleted, renamed (D-082)', async () => {
+    const repo = makeRepo('inplace-changes', { 'a.ts': 'x\n', 'b.ts': 'y\n', 'e.ts': 'z\n', 'f.ts': 'w\n', '.gitignore': 'tmp/\n' });
+    const dir = join(HOME, repo);
+    assert.deepEqual(await repositoryChanges(dir), []);
+    write(dir, { 'a.ts': 'changed\n', 'c.ts': 'new\n', 'tmp/x': '1\n', 'g.ts': 'staged then removed\n' });
+    git(dir, 'mv', 'b.ts', 'd.ts');
+    git(dir, 'add', 'g.ts');
+    rmSync(join(dir, 'g.ts'));
+    rmSync(join(dir, 'e.ts'));
+    git(dir, 'rm', '--quiet', 'f.ts');
+    assert.deepEqual(await repositoryChanges(dir), [
+      { path: 'a.ts', change: 'modified' },
+      { path: 'c.ts', change: 'added' },
+      { path: 'd.ts', change: 'renamed', from: 'b.ts' },
+      { path: 'e.ts', change: 'deleted' },
+      { path: 'f.ts', change: 'deleted' },
+    ]);
+  });
+
+  it('repositoryChanges in a repository without commits: everything is added; a subfolder is refused', async () => {
+    const dir = join(HOME, 'repos', 'inplace-empty');
+    mkdirSync(join(dir, 'sub'), { recursive: true });
+    git(dir, 'init', '--quiet');
+    write(dir, { 'a.ts': 'x\n', 'sub/b.ts': 'y\n', 'gone.ts': 'z\n' });
+    git(dir, 'add', 'a.ts', 'gone.ts');
+    // Staged without a HEAD, then removed from the folder: nothing to show.
+    rmSync(join(dir, 'gone.ts'));
+    assert.deepEqual(await repositoryChanges(dir), [
+      { path: 'a.ts', change: 'added' },
+      { path: 'sub/b.ts', change: 'added' },
+    ]);
+    await assert.rejects(repositoryChanges(join(dir, 'sub')), WorkspaceError);
   });
 
   it('runs no filter of the repository\'s own configuration, and no hook', async () => {

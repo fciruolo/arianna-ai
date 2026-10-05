@@ -325,12 +325,15 @@ const modelEvals = createModelEvals({
   onError: report,
 });
 const dist = join(config.home, 'apps', 'hud', 'dist');
+const approvedProjects = () => settings.current().projects;
 const server = await startApiServer({
   sql,
   live,
   host: config.server.host,
   port: config.server.port,
-  projects: () => settings.current().projects,
+  // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
+  projects: approvedProjects,
+  approvedProjects,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
   defaultModel: () => (claude === undefined ? undefined : defaultConversationModel(settings.current())),

@@ -1,3 +1,4 @@
+import type { FileChange } from '@arianna/executors';
 import type { Label } from '@arianna/policy';
 
 import type { Queryable } from '../db/client.ts';
@@ -30,6 +31,11 @@ export interface Delegation {
   result: string | null;
   resultLabel: Label | null;
   messageId: string | null;
+  /**
+   * The files the run left changed in the project (D-082, migration 0020):
+   * paths and kinds only. Null when not recorded, [] when nothing changed.
+   */
+  files: FileChange[] | null;
 }
 
 export interface NewDelegation {
@@ -53,11 +59,13 @@ export interface DelegationPatch {
   result?: string;
   resultLabel?: Label;
   messageId?: string;
+  /** Written once (database guard): the changes of the run, from `repositoryChanges`. */
+  files?: readonly FileChange[];
 }
 
 const COLUMNS = `id::text, task_id::text AS "taskId", step, agent, brief, label, repo, status, executor, model,
   run_id::text AS "runId", workspace_run::text AS "workspaceRun", session_ref AS "sessionRef", result,
-  result_label AS "resultLabel", message_id::text AS "messageId"`;
+  result_label AS "resultLabel", message_id::text AS "messageId", files`;
 
 export async function createDelegation(sql: Queryable, delegation: NewDelegation): Promise<Delegation> {
   const [row] = await sql.unsafe<Delegation[]>(
@@ -99,6 +107,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
        result = coalesce($9, result),
        result_label = coalesce($10::privacy_label, result_label),
        message_id = coalesce($11::bigint, message_id),
+       files = coalesce($13::text::jsonb, files),
        ended_at = CASE WHEN $12 THEN now() ELSE ended_at END
      WHERE id = $1::bigint
      RETURNING ${COLUMNS}`,
@@ -115,6 +124,7 @@ export async function updateDelegation(sql: Queryable, id: string, patch: Delega
       patch.resultLabel ?? null,
       patch.messageId ?? null,
       ended,
+      patch.files === undefined ? null : JSON.stringify(patch.files),
     ],
   );
   if (row === undefined) throw new Error(`delegation ${id} does not exist`);

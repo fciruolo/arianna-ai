@@ -1,7 +1,7 @@
 import { ApiError } from './api.ts';
 import { ACTION_TEXT, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
-import type { Activity } from './types.ts';
+import type { Activity, FileChangeKind, MessageCredit, RecentDelegation } from './types.ts';
 
 /**
  * The page is in Italian; the core writes its reasons and errors in English,
@@ -258,4 +258,72 @@ export function modelEvalErrorText(code: string | null): string | undefined {
   if (known !== undefined) return known;
   if (code.startsWith('LocalModelError')) return 'il modello locale non ha risposto';
   return 'errore del nucleo';
+}
+
+/** How a file changed in the run of a delegation (D-082). */
+export const CHANGE_TEXT: Record<FileChangeKind, string> = {
+  added: 'aggiunto',
+  modified: 'modificato',
+  deleted: 'cancellato',
+  renamed: 'rinominato',
+};
+
+/** How a delegation ended, in "Deleghe recenti". */
+export const DELEGATION_STATUS_TEXT: Record<RecentDelegation['status'], string> = {
+  pending: 'in attesa',
+  running: 'al lavoro',
+  ok: 'fatto',
+  failed: 'fallito',
+  refused: 'rifiutato',
+};
+
+/** "45 s", "2 min 5 s", "1 h 3 min". */
+export function durationText(ms: number | null): string | undefined {
+  if (ms === null || !Number.isFinite(ms) || ms < 0) return undefined;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${String(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return seconds % 60 === 0 ? `${String(minutes)} min` : `${String(minutes)} min ${String(seconds % 60)} s`;
+  const hours = Math.floor(minutes / 60);
+  return minutes % 60 === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(minutes % 60)} min`;
+}
+
+/** Euro beyond the subscription, Italian style; undefined when nothing was paid. */
+export function costText(cost: number | null): string | undefined {
+  if (cost === null || !Number.isFinite(cost) || cost <= 0) return undefined;
+  return `${cost.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+}
+
+/** "Claude Code / Claude Sonnet (claude-sonnet-4-5)": executor, alias and the model that ran. */
+export function runnerText(credit: Pick<MessageCredit, 'executor' | 'alias' | 'model'>): string {
+  const executor = credit.executor === null ? 'cloud' : (EXECUTOR_TEXT[credit.executor] ?? credit.executor);
+  const alias = credit.alias === null ? undefined : (MODEL_TEXT[credit.alias] ?? credit.alias);
+  const model = credit.model !== null && credit.model !== credit.alias ? ` (${credit.model})` : '';
+  return alias === undefined ? `${executor}${model}` : `${executor} / ${alias}${model}`;
+}
+
+/** The small line under a cloud answer (D-082): who, on what, in how long, at what cost. */
+export function creditText(credit: MessageCredit): string {
+  const who = credit.agent === null ? 'Risposta diretta' : agentName(credit.agent);
+  return [`${who} · ${runnerText(credit)}`, durationText(credit.durationMs), costText(credit.cost)].filter((part) => part !== undefined).join(' · ');
+}
+
+/** "File modificati (3)". */
+export function filesTitle(count: number): string {
+  return count === 1 ? 'File modificato (1)' : `File modificati (${String(count)})`;
+}
+
+/** Why the preview of a changed file is not shown. */
+export function previewErrorText(cause: unknown): string {
+  if (!(cause instanceof ApiError)) return errorText(cause);
+  if (cause.status === 410) return 'Il file non c’è più: cancellato dal run o dopo.';
+  if (cause.status === 413) return 'Il file supera 256 KiB: aprilo dalla cartella del progetto.';
+  if (cause.status === 415) return 'Non è un file di testo UTF-8: niente anteprima.';
+  if (cause.status === 403 && /no longer among the approved projects|above L1/.test(cause.message)) return 'Il progetto non è più fra quelli approvati: niente anteprima.';
+  if (cause.status === 403 && /not the approved path|does not exist/.test(cause.message)) return 'La cartella del progetto non è più quella approvata: niente anteprima.';
+  if (cause.status === 403 && /value of the vault/.test(cause.message)) return 'Il file contiene un valore del vault: niente anteprima.';
+  if (cause.status === 403) return 'Il file esce dal progetto o non si può leggere: niente anteprima.';
+  if (cause.status === 409) return 'La conversazione è archiviata: ripristinala per vedere i file.';
+  if (cause.status === 404) return 'Questo file non è fra quelli della delega.';
+  return errorText(cause);
 }
