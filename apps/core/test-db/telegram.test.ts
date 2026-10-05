@@ -332,7 +332,8 @@ test('a long reply is split into messages Telegram accepts', async () => {
 });
 
 test('Telegram down: the notice waits and is delivered once it is back', async () => {
-  fake.failNext('sendMessage', 502);
+  // Bound to this notice (its L1 title): a message left over from an earlier test does not take the failure.
+  fake.failNext('sendMessage', 502, undefined, 'Riprova finta');
   const work = await createConversation(db().sql, { mode: 'work' });
   const { approvalId } = await waitingApproval(db().sql, {
     conversationId: work.id,
@@ -342,9 +343,12 @@ test('Telegram down: the notice waits and is delivered once it is back', async (
     detail: {},
   });
   await eventually(() => fake.sent().filter((entry) => JSON.stringify(entry.body).includes(approvalId)).length === 2);
-  const [state] = await db().sql<{ cursor: string }[]>`SELECT event_cursor::text AS cursor FROM telegram_state`;
-  const [last] = await db().sql<{ id: string }[]>`SELECT max(id)::text AS id FROM events WHERE kind = 'approval.requested'`;
-  assert.ok(BigInt(state?.cursor ?? '0') >= BigInt(last?.id ?? '0'));
+  // The cursor moves after the message is sent, in its own transaction: wait for it too.
+  await eventually(async () => {
+    const [state] = await db().sql<{ cursor: string }[]>`SELECT event_cursor::text AS cursor FROM telegram_state`;
+    const [last] = await db().sql<{ id: string }[]>`SELECT max(id)::text AS id FROM events WHERE kind = 'approval.requested'`;
+    return BigInt(state?.cursor ?? '0') >= BigInt(last?.id ?? '0');
+  });
 });
 
 test('after two quiet days the bot accepts lower update ids; before, the offset cannot go back', async () => {

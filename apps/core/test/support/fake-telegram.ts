@@ -21,8 +21,12 @@ export interface FakeTelegram {
    * week without updates, when Telegram may restart the ids). Returns the id.
    */
   push(update: Record<string, unknown>, id?: number): number;
-  /** The next call of `method` answers with this HTTP status (and retry_after for 429). */
-  failNext(method: string, status: number, retryAfter?: number): void;
+  /**
+   * The next call of `method` answers with this HTTP status (and retry_after
+   * for 429). With `match`, only the next call whose JSON body contains it:
+   * a call left over from an earlier test does not take the failure.
+   */
+  failNext(method: string, status: number, retryAfter?: number, match?: string): void;
   sent(): FakeCall[];
   close(): Promise<void>;
 }
@@ -54,7 +58,7 @@ export function buttonPress(fromId: number, data: string, chatId: number = fromI
 export async function startFakeTelegram(): Promise<FakeTelegram> {
   const calls: FakeCall[] = [];
   const updates: Record<string, unknown>[] = [];
-  const failures = new Map<string, { status: number; retryAfter?: number }>();
+  const failures = new Map<string, { status: number; retryAfter?: number; match?: string }>();
   const waiting = new Set<() => void>();
   let nextUpdate = 1;
   let nextMessage = 100;
@@ -83,7 +87,7 @@ export async function startFakeTelegram(): Promise<FakeTelegram> {
       const body = await read(request);
       calls.push({ method, token, body });
       const failure = failures.get(method);
-      if (failure !== undefined) {
+      if (failure !== undefined && (failure.match === undefined || JSON.stringify(body).includes(failure.match))) {
         failures.delete(method);
         reply(response, failure.status, {
           ok: false,
@@ -146,8 +150,8 @@ export async function startFakeTelegram(): Promise<FakeTelegram> {
       for (const done of [...waiting]) done();
       return id;
     },
-    failNext(method, status, retryAfter) {
-      failures.set(method, retryAfter === undefined ? { status } : { status, retryAfter });
+    failNext(method, status, retryAfter, match) {
+      failures.set(method, { status, ...(retryAfter === undefined ? {} : { retryAfter }), ...(match === undefined ? {} : { match }) });
     },
     sent() {
       return calls.filter((call) => call.method === 'sendMessage');
