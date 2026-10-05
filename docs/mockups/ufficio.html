@@ -1,0 +1,1433 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ufficio pixel</title>
+<!--
+  Anteprima di D-106 (ufficio pixel giocabile). Un solo file, nessuna rete:
+  niente CDN, niente font scaricati, JS e CSS qui dentro. Dati inventati.
+  Arianna e Coder sono disegnati dalle mappe di pixel di
+  apps/hud/characters/art/arianna.ts e coder.ts (copiate qui sotto, D-060);
+  l'avatar "Tu" è originale e disegnato solo per questa anteprima. Le tre mappe
+  (base, corsia, salotto) sono ambientazioni generiche originali, come i temi
+  del repository di D-103; la quarta voce prova il ripiego su una mappa non valida.
+-->
+<style>
+:root {
+  --bg: #0a1316;
+  --surface: #0e1b1f;
+  --surface-2: #132429;
+  --line: #1e363c;
+  --line-strong: #2b4c53;
+  --ink: #dcebe8;
+  --muted: #7f9b98;
+  --accent: #4fd1c1;
+  --accent-ink: #062a26;
+  --bubble: #2a8f84;
+  --bubble-ink: #f1fbf9;
+  --glow: #4fd1c133;
+  --warn: #f2b34b;
+  --danger: #e2614b;
+  --ok: #7cc796;
+  --info: #7fb4f0;
+  --l0: #7cc796;
+  --l1: #4fd1c1;
+  --l2: #f2b34b;
+  --l3: #e2614b;
+  --grid: #4fd1c10a;
+  /* Office (canvas) tokens. */
+  --floor: #0f1d21;
+  --floor-alt: #112227;
+  --wall-top: #070e10;
+  --wall-face: #16292e;
+  --wall-line: #24434a;
+  --window: #1b3a42;
+  --window-light: #2c5d66;
+  --desk: #24383d;
+  --desk-top: #34525a;
+  --desk-shadow: #050b0d;
+  --monitor: #081013;
+  --screen-off: #16303a;
+  --screen: #4fd1c1;
+  --chair: #2a5560;
+  --rug-l2: #f2b34b1c;
+  --rug-l1: #4fd1c117;
+  --rug-neutral: #7fb4f012;
+  --rug-line: #4fd1c133;
+  --plant: #7cc796;
+  --plant-dark: #3f7a55;
+  --pot: #8a5a3a;
+  --pot-dark: #5e3c26;
+  --sofa: #2a5560;
+  --sofa-dark: #1c3d45;
+  --paper: #dcebe8;
+  --counter: #2b4c53;
+  --counter-top: #3d6871;
+  --outline: #1a1c2c;
+  --speech: #f4f1e8;
+  --shadow: #00000059;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #ffffff; --bubble: #3d7e75; --bubble-ink: #ffffff;
+    --glow: #23887c22; --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+    --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d;
+    --floor: #ece8de; --floor-alt: #e6e1d4; --wall-top: #bfc7c2; --wall-face: #dfe2dc; --wall-line: #c9cfca;
+    --window: #bcd9d4; --window-light: #e4f2ef; --desk: #b98f63; --desk-top: #d6b386; --desk-shadow: #c2b49b;
+    --monitor: #24302e; --screen-off: #46524f; --screen: #3fb8a9; --chair: #3d7e75;
+    --rug-l2: #b9801c24; --rug-l1: #23887c1f; --rug-neutral: #3f6fa817; --rug-line: #23887c40;
+    --plant: #5aa572; --plant-dark: #2f6b45; --pot: #b0703f; --pot-dark: #8a5530; --sofa: #3d7e75; --sofa-dark: #2c5e57;
+    --paper: #ffffff; --counter: #b39a74; --counter-top: #d4bf98; --outline: #1a1c2c; --speech: #ffffff; --shadow: #0000002e;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #ffffff; --bubble: #3d7e75; --bubble-ink: #ffffff;
+  --glow: #23887c22; --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8;
+  --l0: #4e9466; --l1: #23887c; --l2: #b9801c; --l3: #c24a35; --grid: #23887c0d;
+  --floor: #ece8de; --floor-alt: #e6e1d4; --wall-top: #bfc7c2; --wall-face: #dfe2dc; --wall-line: #c9cfca;
+  --window: #bcd9d4; --window-light: #e4f2ef; --desk: #b98f63; --desk-top: #d6b386; --desk-shadow: #c2b49b;
+  --monitor: #24302e; --screen-off: #46524f; --screen: #3fb8a9; --chair: #3d7e75;
+  --rug-l2: #b9801c24; --rug-l1: #23887c1f; --rug-neutral: #3f6fa817; --rug-line: #23887c40;
+  --plant: #5aa572; --plant-dark: #2f6b45; --pot: #b0703f; --pot-dark: #8a5530; --sofa: #3d7e75; --sofa-dark: #2c5e57;
+  --paper: #ffffff; --counter: #b39a74; --counter-top: #d4bf98; --outline: #1a1c2c; --speech: #ffffff; --shadow: #0000002e;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+  min-height: 100vh;
+}
+.hud { font-family: "Chakra Petch", "Eurostile", "Arial Narrow", sans-serif; letter-spacing: .04em; }
+.mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+header.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.ring { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--accent); box-shadow: 0 0 12px var(--glow), inset 0 0 8px var(--glow); }
+.brand h1 { margin: 0; font-size: 17px; text-transform: uppercase; }
+.brand p { margin: 0; color: var(--muted); font-size: 12px; }
+.tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.tools label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.tools select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; font: inherit; }
+.tools select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 5px 10px; font: inherit; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+main.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; padding: 18px 20px 28px; max-width: 1500px; margin: 0 auto; }
+@media (max-width: 980px) { main.layout { grid-template-columns: minmax(0, 1fr); padding: 14px 16px 24px; } }
+
+.stage-wrap { min-width: 0; overflow-x: auto; }
+.stage {
+  position: relative; margin: 0 auto; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 0 0 4px var(--surface), 0 0 24px var(--glow);
+}
+.stage::before, .stage::after { content: ""; position: absolute; width: 14px; height: 14px; border: 2px solid var(--accent); z-index: 3; pointer-events: none; }
+.stage::before { top: 4px; left: 4px; border-right: 0; border-bottom: 0; }
+.stage::after { right: 4px; bottom: 4px; border-left: 0; border-top: 0; }
+canvas#office { display: block; image-rendering: pixelated; image-rendering: crisp-edges; cursor: pointer; outline: none; }
+canvas#office:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.overlay > * { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; }
+.area-tag {
+  font-size: 11px; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--line-strong); color: var(--muted);
+}
+.area-tag b { color: var(--ink); font-weight: 600; }
+.chip { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; border: 1px solid currentColor; margin-left: 4px; }
+.chip.l0 { color: var(--l0); } .chip.l1 { color: var(--l1); } .chip.l2 { color: var(--l2); } .chip.l3 { color: var(--l3); }
+.name-tag {
+  transform-origin: 50% 100%; font-size: 11px; padding: 0 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line-strong);
+}
+.name-tag .st { color: var(--muted); margin-left: 4px; }
+.name-tag.you { border-color: var(--warn); }
+.hint {
+  font-size: 12px; padding: 2px 8px; border-radius: 5px; background: var(--accent); color: var(--accent-ink); font-weight: 600;
+  box-shadow: 0 2px 10px var(--glow);
+}
+.hint kbd { font: 700 11px ui-monospace, Menlo, monospace; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+
+.help { color: var(--muted); font-size: 12.5px; margin: 10px 2px 0; }
+.help kbd, .card kbd { font: 600 11px ui-monospace, Menlo, monospace; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--ink); }
+
+/* Chat panel: the same chat, opened from the office. */
+.chat {
+  position: absolute; top: 10px; right: 10px; bottom: 10px; width: min(340px, calc(100% - 20px)); z-index: 4;
+  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: 0 10px 40px #0006, 0 0 0 1px var(--glow);
+}
+.chat[hidden], .chat form[hidden] { display: none; }
+.chat header { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.chat header canvas { width: 32px; height: 64px; image-rendering: pixelated; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); flex: none; }
+.chat header .who { flex: 1; min-width: 0; }
+.chat header h2 { margin: 0; font-size: 15px; }
+.chat header .meta { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn { border: 1px solid var(--line-strong); background: transparent; color: var(--ink); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; }
+.icon-btn:hover { border-color: var(--accent); }
+.msgs { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 88%; font-size: 13.5px; }
+.msg.user { align-self: flex-end; background: var(--bubble); color: var(--bubble-ink); padding: 7px 11px; border-radius: 17px 17px 5px 17px; }
+.msg.agent { align-self: flex-start; }
+.msg.agent .from { font-size: 11px; color: var(--muted); display: block; margin-bottom: 2px; }
+.notice { font-size: 12px; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 7px 9px; }
+.chat form { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.chat input { flex: 1; min-width: 0; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 10px; font: inherit; }
+.chat input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); border-radius: 9px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.danger { color: var(--danger); }
+.btn:focus-visible, .seg button:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.decision { border: 1px solid var(--line-strong); border-left: 3px solid var(--warn); border-radius: 10px; padding: 10px; display: grid; gap: 6px; }
+.decision .kind { font-size: 11px; color: var(--warn); text-transform: uppercase; letter-spacing: .06em; }
+.decision .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Side column. */
+.side { display: grid; gap: 14px; align-content: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.card h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.roster { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.roster li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; }
+.roster canvas { width: 32px; height: 64px; image-rendering: pixelated; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; }
+.roster .nm { font-weight: 600; }
+.roster .st { font-size: 12px; color: var(--muted); }
+.roster .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted); }
+.roster .acts { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.roster .acts .btn { padding: 3px 9px; font-size: 12px; }
+.feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: 12px; }
+.feed li { color: var(--muted); }
+.feed li .t { color: var(--accent); margin-right: 6px; }
+.note { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+.empty { color: var(--muted); font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="ring" aria-hidden="true"></span>
+    <div>
+      <h1 class="hud">Ufficio</h1>
+      <p>Anteprima di D-106 · dati inventati · nessuna rete, nessun dato vero</p>
+    </div>
+  </div>
+  <div class="tools">
+    <label>Mappa
+      <select id="map" aria-describedby="map-note">
+        <option value="base">Base (open space; tema Ufficio)</option>
+        <option value="corsia">Corsia (reparto generico)</option>
+        <option value="salotto">Salotto (casa generica; anche Cartoon giallo)</option>
+        <option value="rotta">Pacchetto dell'utente non valido (prova)</option>
+      </select>
+    </label>
+    <span id="map-note" class="sr-only">La mappa fa parte del tema (D-103): cambia stanze e arredi, i progetti restano nelle loro isole.</span>
+    <label><input type="checkbox" id="reduce"> Movimento ridotto</label>
+    <div class="seg" role="group" aria-label="Tema">
+      <button type="button" data-theme-choice="system" aria-pressed="true">Sistema</button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false">Scuro</button>
+      <button type="button" data-theme-choice="light" aria-pressed="false">Chiaro</button>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage-wrap" id="stage-wrap" aria-label="Ufficio">
+    <div class="stage" id="stage">
+      <canvas id="office" tabindex="0" role="application"
+        aria-label="Ufficio pixel. Frecce o WASD per muoverti, E o Invio per parlare con l'agente vicino, Esc per chiudere il pannello."
+        aria-describedby="help"></canvas>
+      <div class="overlay" id="overlay" aria-hidden="true"></div>
+      <aside class="chat" id="chat" role="dialog" aria-labelledby="chat-title" hidden>
+        <header>
+          <canvas id="chat-face" width="16" height="32" aria-hidden="true"></canvas>
+          <div class="who">
+            <h2 id="chat-title">Arianna</h2>
+            <div class="meta" id="chat-meta"></div>
+          </div>
+          <button type="button" class="icon-btn" id="chat-close" aria-label="Chiudi (Esc)">×</button>
+        </header>
+        <div class="msgs" id="chat-msgs" aria-live="polite"></div>
+        <form id="chat-form">
+          <label class="sr-only" for="chat-input">Messaggio</label>
+          <input id="chat-input" autocomplete="off" placeholder="Scrivi… (testo finto)">
+          <button class="btn primary" type="submit">Invia</button>
+        </form>
+      </aside>
+    </div>
+    <p id="help" class="help">
+      Clicca nell'ufficio o premi <kbd>Tab</kbd> fino a lì, poi <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> o <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> per camminare,
+      oppure clicca un punto del pavimento o un agente. Vicino a un agente <kbd>E</kbd> o <kbd>Invio</kbd> apre la sua conversazione; alla scrivania
+      «Decisioni» apre le decisioni in attesa. <kbd>Esc</kbd> chiude. L'ufficio non sostituisce la chat: a destra gli stessi agenti con i pulsanti.
+    </p>
+  </section>
+
+  <aside class="side">
+    <section class="card" aria-labelledby="roster-h">
+      <h2 id="roster-h" class="hud">Nell'ufficio</h2>
+      <ul class="roster" id="roster"></ul>
+    </section>
+    <section class="card" aria-labelledby="dec-h">
+      <h2 id="dec-h" class="hud">Decisioni in attesa</h2>
+      <div id="decisions"></div>
+    </section>
+    <section class="card" aria-labelledby="feed-h">
+      <h2 id="feed-h" class="hud">Eventi (solo stati ed etichette)</h2>
+      <ol class="feed mono" id="feed"></ol>
+    </section>
+    <p class="note">
+      <b>Privacy.</b> L'ufficio disegna solo chi c'è, dove, in che stato e l'etichetta della conversazione (L1, L2): mai titoli, testo o nomi di file.
+      Titoli e testo fino a L2 compaiono solo nel pannello di chat e nella finestra Decisioni, come oggi nella chat web.
+      Sopra L2 l'agente ha la sua posa, ma la conversazione non c'è: è solo contata («sopra L2»).
+    </p>
+    <p class="note">Personaggi: Arianna e Coder originali del progetto (D-060), dalle loro mappe di pixel; «Tu» è un avatar originale di questa anteprima.</p>
+  </aside>
+</main>
+<div class="sr-only" aria-live="polite" id="announce"></div>
+
+<script>
+'use strict';
+
+/* ───────────── Characters: the pixel maps of apps/hud/characters/art (D-060) ───────────── */
+
+const ART = {"arianna":{"id":"arianna","palette":{"o":"#1a1c2c","h":"#8a3b2a","H":"#b5523a","s":"#f2c6a0","S":"#c98f6c","e":"#1b1b2a","p":"#e88f86","m":"#b2504a","d":"#2fb3a3","D":"#1f7f74","r":"#e0483e","k":"#2b2b3a","b":"#f4ecd8","B":"#c9b98f"},"parts":{"down":{"head":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssssssssho..","..ohsessssesho..","..ohpsssssspho..","..ohsssmmsssho..","..ohhossssohho.."]},"head-blink":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssssssssho..","..ohsSssssSsho..","..ohpsssssspho..","..ohsssmmsssho..","..ohhossssohho.."]},"head-work":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssssssssho..","..ohssssssssho..","..ohpessssepho..","..ohsssmmsssho..","..ohhossssohho.."]},"head-up":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohsessssesho..","..ohssssssssho..","..ohpsssssspho..","..ohsssmmsssho..","..ohhossssohho.."]},"head-up2":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssesssseho..","..ohssssssssho..","..ohpsssssspho..","..ohsssmmsssho..","..ohhossssohho.."]},"head-sleep":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssssssssho..","..ohsSSssSSsho..","..ohpsssssspho..","..ohssssmsssho..","..ohhossssohho.."]},"body":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDddddddddDso.",".osDddDddDddDso.",".osDddddddddDsr.","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-type":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDddddddddDso.","..osdDddddDsso..","..oDssddddddDo.r","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-type2":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDddddddddDso.","..ossDddddDdso..","..oDddddddssDo.r","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-read":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDdbbbbbbdDso.",".osDsbbBBbbsDso.",".osDdbbbbbbdDsr.","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-read2":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDdbbbbBbdDso.",".osDsbbBBbbsDso.",".osDdbbbbbbdDsr.","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-think":{"top":17,"rows":["..ohhhossossho..","..ohhoddddDsho..","..oodddddddDso..",".osDddddddddDo..",".osDddDddDddDo..",".osDddddddddDo.r","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"body-wait":{"top":17,"rows":["..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDddddddddDo..",".osDddDddDddDo..",".osDddddddddDo.r","..oDddddddddDo.r",".oddddddddddddor",".oooooooooooooor"]},"over-wait":{"top":10,"rows":["..............oo",".............oso",".............oso",".............oso",".............oso",".............oso",".............oso","............oso.","............oso."]},"over-wait2":{"top":9,"rows":["..............oo",".............oso",".............oso",".............oso",".............oso",".............oso",".............oso",".............oso","............oso.","............oso."]},"legs":{"top":26,"rows":["....oso..oso...r","....oso..oso..r.","....oso..oso...r","....oko..oko..r.","...okko..okko.r.","...oooo..oooo..r"]},"legs-step1":{"top":26,"rows":["....oso..oso...r","....oso..oso..r.","...okko..oso...r","...oooo..oko..r.",".........okko.r.",".........oooo..r"]},"legs-step2":{"top":26,"rows":["....oso..oso...r","....oso..oso..r.","....oso..okko..r","....oko..oooo.r.","...okko........r","...oooo.......r."]}},"up":{"head":{"top":7,"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhHhhhhho..","..ohhhhhhhhhho..","..ohhhhhhhhhho..","..ohhhhHhhhhho..","..ohhhhhhhhhho..","..ohhhhhhhhhho..","..ohhhhhhhhhho.."]},"body":{"top":17,"rows":["..ohhhhhhhhhho..","..ohhhhhhhhhho..","..oohhhhhhhhoo..",".osDdhhhhhhdDso.",".osDddhhhhddDso.",".rsDddddddddDso.","r.oDddddddddDo..","roddddddddddddo.","roooooooooooooo."]},"body-type":{"top":17,"rows":["..ohhhhhhhhhho..","..ohhhhhhhhhho..","..oohhhhhhhhoo..",".osDdhhhhhhdDso.","..oDddhhhhddDo..",".r.DddddddddDo..","r.oDddddddddDo..","roddddddddddddo.","roooooooooooooo."]},"body-type2":{"top":17,"rows":["..ohhhhhhhhhho..","..ohhhhhhhhhho..","..oohhhhhhhhoo..",".osDdhhhhhhdDo..","..oDddhhhhddDso.",".r.DddddddddDo..","r.oDddddddddDo..","roddddddddddddo.","roooooooooooooo."]},"body-read":{"top":17,"rows":["..ohhhhhhhhhho..","..ohhhhhhhhhho..","..oohhhhhhhhoo..",".osDdhhhhhhdDso.","..oDddhhhhddDo..",".r.DddddddddDo..","r.oDddddddddDo..","roddddddddddddo.","roooooooooooooo."]},"legs":{"top":26,"rows":["r...oso..oso....",".r..oso..oso....","r...oso..oso....",".r..oko..oko....",".rokko..okko....","r..oooo..oooo..."]},"legs-step1":{"top":26,"rows":["r...oso..oso....",".r..oso..oso....","r..okko..oso....",".r.oooo..oko....","r........okko...",".r.......oooo..."]},"legs-step2":{"top":26,"rows":["r...oso..oso....",".r..oso..oso....","r...oso..okko...",".r..oko..oooo...","r..okko.........",".r.oooo........."]}},"right":{"head":{"top":7,"rows":[".....oooo.......","...oohhHhoo.....","..ohhhHHhhho....","..ohhhhhhhhho...","..ohhhhhsssso...","..ohhhhsssssso..","..ohhhhsssseso..","..ohhhhssssspo..","..ohhhhsssssmo..","..ohhhhhossso..."]},"head-blink":{"top":7,"rows":[".....oooo.......","...oohhHhoo.....","..ohhhHHhhho....","..ohhhhhhhhho...","..ohhhhhsssso...","..ohhhhsssssso..","..ohhhhssssSso..","..ohhhhssssspo..","..ohhhhsssssmo..","..ohhhhhossso..."]},"head-work":{"top":7,"rows":[".....oooo.......","...oohhHhoo.....","..ohhhHHhhho....","..ohhhhhhhhho...","..ohhhhhsssso...","..ohhhhsssssso..","..ohhhhsssssso..","..ohhhhsssseso..","..ohhhhsssssmo..","..ohhhhhossso..."]},"body":{"top":17,"rows":["..ohhhhhoso.....","..ohhhhoddo.....","..ohhhoddddo....","...ohoddsddo....","....oddDsddo....","....oddsdddo....","...oddddddddo...","..oddddddddddo..","..oooooooooooo.."]},"body-type":{"top":17,"rows":["..ohhhhhoso.....","..ohhhhoddo.....","..ohhhoddddo....","...ohoddddsso...","....oddddddo....","....oddddddo....","...oddddddddo...","..oddddddddddo..","..oooooooooooo.."]},"body-type2":{"top":17,"rows":["..ohhhhhoso.....","..ohhhhoddo.....","..ohhhoddddo....","...ohoddddssso..","....oddddddo....","....oddddddo....","...oddddddddo...","..oddddddddddo..","..oooooooooooo.."]},"body-read":{"top":17,"rows":["..ohhhhhoso.....","..ohhhhoddo.....","..ohhhoddddo....","...ohoddsbbbo...","....odddsbbo....","....oddddddo....","...oddddddddo...","..oddddddddddo..","..oooooooooooo.."]},"body-read2":{"top":17,"rows":["..ohhhhhoso.....","..ohhhhoddo.....","..ohhhoddddo....","...ohoddsbBbo...","....odddsbbo....","....oddddddo....","...oddddddddo...","..oddddddddddo..","..oooooooooooo.."]},"legs":{"top":26,"rows":["......osso......","......osso......","......osso......","......okko......","......okkko.....","rrr...ooooo....."]},"legs-step1":{"top":26,"rows":["......osso......",".....os..so.....","....os....so....","....ok....ko....","...okk....kko...","rr.ooo....ooo..."]},"legs-step2":{"top":26,"rows":["......osso......","......osso......",".....os..so.....",".....ok..ko.....","....okk..kko....",".rr.ooo..ooo...."]}}}},"coder":{"id":"coder","palette":{"o":"#1a1c2c","g":"#8fa3ad","G":"#5d707a","v":"#1d2b3a","c":"#4fd1c1","C":"#2a8f84","w":"#dcebe8","a":"#f2b34b","b":"#3b6f8f","B":"#2c5570","k":"#2b2b3a"},"parts":{"down":{"head":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvcvvcvgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-blink":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvCvvCvgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-work":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvvvvvvgo...","...ogvcvvcvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-read2":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvvvvvvgo...","...ogcvvcvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-up":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvcvvcvgo...","...ogvvvvvvgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-up2":{"top":7,"rows":[".......ko.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvcvvcgo...","...ogvvvvvvgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"head-sleep":{"top":7,"rows":[".......ko.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvCCvCCgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo...."]},"body":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..",".ogobbbbbbbbogo.",".ogobbccbbbbogo.",".ogobbbbbbbbogo.",".okobbbbbbbboko.","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-type":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbbccbbbbgo..","..ogkkbbbbbbgo..","..oobbbbbbkkoo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-type2":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbbccbbbbgo..","..ogbbbbbbkkgo..","..ookkbbbbbboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-read":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbccccccbgo..","..okccwcccccko..","..oobbbbbbbboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-read2":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbccccccbgo..","..okcccccwccko..","..oobbbbbbbboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-think":{"top":17,"rows":[".....oGGGGoko...","..oooooooooogo..",".ogobbbbbbbbgo..",".ogobbccbbbbo...",".ogobbbbbbbbo...",".okobbbbbbbbo...","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-wait":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..",".ogobbbbbbbbogo.",".ogobbccbbbbo...",".ogobbbbbbbbo...",".okobbbbbbbbo...","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"over-wait":{"top":10,"rows":["..............oo",".............oko",".............oko",".............ogo",".............ogo",".............ogo",".............ogo",".............ogo","............ogo."]},"over-wait2":{"top":9,"rows":["..............oo",".............oko",".............oko",".............ogo",".............ogo",".............ogo",".............ogo",".............ogo",".............ogo","............ogo."]},"legs":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","....ogo..ogo....","...oGGo..oGGo...","...okko..okko...","...oooo..oooo..."]},"legs-step1":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","...oGGo..ogo....","...okko..oGGo...","...oooo..okko...",".........oooo..."]},"legs-step2":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","....ogo..oGGo...","...oGGo..okko...","...okko..oooo...","...oooo........."]}},"up":{"head":{"top":7,"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogGGGGGGgo...","...ogGggggGgo...","...ogGggggGgo...","...ogGGGGGGgo...","...oggggggggo...","....oooooooo...."]},"head-sleep":{"top":7,"rows":[".......ko.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogGGGGGGgo...","...ogGggggGgo...","...ogGggggGgo...","...ogGGGGGGgo...","...oggggggggo...","....oooooooo...."]},"body":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..",".ogobbbbbbbbogo.",".ogobBBBBBBbogo.",".ogobBbbbbBbogo.",".okobBBBBBBboko.","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-type":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbBBBBBBbgo..","..ogbBbbbbBbgo..","..oobBBBBBBboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-type2":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbBBBBBBbgo..","..okbBbbbbBbgo..","..oobBBBBBBboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"body-read":{"top":17,"rows":[".....oGGGGo.....","..oooooooooooo..","..oobbbbbbbboo..","..ogbBBBBBBbgo..","..ogbBbbbbBbgo..","..oobBBBBBBboo..","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo..."]},"legs":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","....ogo..ogo....","...oGGo..oGGo...","...okko..okko...","...oooo..oooo..."]},"legs-step1":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","...oGGo..ogo....","...okko..oGGo...","...oooo..okko...",".........oooo..."]},"legs-step2":{"top":26,"rows":["....ogo..ogo....","....ogo..ogo....","....ogo..oGGo...","...oGGo..okko...","...okko..oooo...","...oooo........."]}},"right":{"head":{"top":7,"rows":[".......ao.......",".......oo.......","....ooooooo.....","...oggggggggo...","...ogggggvvvo...","...ogggggvvco...","...ogggggvvvo...","...oggggggggo...","...ogGGGGGGGo...","....oooooooo...."]},"head-blink":{"top":7,"rows":[".......ao.......",".......oo.......","....ooooooo.....","...oggggggggo...","...ogggggvvvo...","...ogggggvvCo...","...ogggggvvvo...","...oggggggggo...","...ogGGGGGGGo...","....oooooooo...."]},"body":{"top":17,"rows":["......oGGo......","....oooooooo....","....obbbbbbo....","....obbgbbbo....","....obbgbbbo....","....obbkbbbo....","....oGGGGGGo....","....oggggggo....","....oooooooo...."]},"body-type":{"top":17,"rows":["......oGGo......","....oooooooo....","....obbbbbbo....","....obbbbgggko..","....obbbbbbo....","....obbbbbbo....","....oGGGGGGo....","....oggggggo....","....oooooooo...."]},"body-type2":{"top":17,"rows":["......oGGo......","....oooooooo....","....obbbbbbo....","....obbbbbggko..","....obbbbbbo....","....obbbbbbo....","....oGGGGGGo....","....oggggggo....","....oooooooo...."]},"body-read":{"top":17,"rows":["......oGGo......","....oooooooo....","....obbbbbbo....","....obbbgggcco..","....obbbbbbcco..","....obbbbbbo....","....oGGGGGGo....","....oggggggo....","....oooooooo...."]},"body-read2":{"top":17,"rows":["......oGGo......","....oooooooo....","....obbbbbbo....","....obbbgggcwo..","....obbbbbbcco..","....obbbbbbo....","....oGGGGGGo....","....oggggggo....","....oooooooo...."]},"legs":{"top":26,"rows":["......oggo......","......oggo......","......oggo......","......oGGo......","......okkko.....","......ooooo....."]},"legs-step1":{"top":26,"rows":["......oggo......",".....og..go.....","....og....go....","....oG....Go....","...okk....kko...","...ooo....ooo..."]},"legs-step2":{"top":26,"rows":["......oggo......","......oggo......",".....og..go.....",".....oG..Go.....","....okk..kko....","....ooo..ooo...."]}}}}};
+
+/** "Tu": an original avatar for this preview (amber hoodie, jeans), same rows as the others. */
+ART.user = {
+  id: 'user',
+  palette: { o: '#1a1c2c', h: '#3a2a22', s: '#e8b48a', e: '#1b1b2a', m: '#b2504a', j: '#e0a040', J: '#b07a28', w: '#f4ecd8', n: '#3e5a8a', N: '#2c4268', k: '#2b2b3a' },
+  parts: {
+    down: {
+      head: { top: 7, rows: ['......oooo......', '....oohhhhoo....', '...ohhhhhhhho...', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', '..ohhsssssshho..', '..ohsessssesho..', '..oossssssssoo..', '...osssmmssso...', '....oossssoo....'] },
+      body: { top: 17, rows: ['...oojjwwjjoo...', '..ojjjjjjjjjjo..', '.ojjjjjjjjjjjjo.', '.ojJjjjjjjjjJjo.', '.ojJjjjjjjjjJjo.', '.osJjjjjjjjjJso.', '..oJJJJJJJJJJo..', '...onnnnnnnno...', '...onnnnnnnno...'] },
+      legs: { top: 26, rows: ['....onno.onno...', '....onno.onno...', '....onNo.oNno...', '....onno.onno...', '...okkko.okkko..', '...ooooo.ooooo..'] },
+      'legs-step1': { top: 26, rows: ['....onno.onno...', '....onno.onno...', '...okkko.onno...', '...ooooo.onno...', '.........okkko..', '.........ooooo..'] },
+      'legs-step2': { top: 26, rows: ['....onno.onno...', '....onno.onno...', '....onno.okkko..', '....onno.ooooo..', '...okkko........', '...ooooo........'] },
+    },
+    up: {
+      head: { top: 7, rows: ['......oooo......', '....oohhhhoo....', '...ohhhhhhhho...', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', '..ohhhhhhhhhho..', '...ohhhhhhhho...', '....oossssoo....'] },
+      body: { top: 17, rows: ['...oojjjjjjoo...', '..ojjjjjjjjjjo..', '.ojjJJJJJJJJjjo.', '.ojjJjjjjjjJjjo.', '.ojjJJJJJJJJjjo.', '.osjjjjjjjjjjso.', '..oJJJJJJJJJJo..', '...onnnnnnnno...', '...onnnnnnnno...'] },
+      legs: { top: 26, rows: ['....onno.onno...', '....onno.onno...', '....onNo.oNno...', '....onno.onno...', '...okkko.okkko..', '...ooooo.ooooo..'] },
+      'legs-step1': { top: 26, rows: ['....onno.onno...', '....onno.onno...', '...okkko.onno...', '...ooooo.onno...', '.........okkko..', '.........ooooo..'] },
+      'legs-step2': { top: 26, rows: ['....onno.onno...', '....onno.onno...', '....onno.okkko..', '....onno.ooooo..', '...okkko........', '...ooooo........'] },
+    },
+    right: {
+      head: { top: 7, rows: ['.....oooo.......', '....ohhhhoo.....', '...ohhhhhhho....', '..ohhhhhhhhho...', '..ohhhhhhsssso..', '..ohhhhhssssso..', '..ohhhhhssseso..', '..ohhhhsssssso..', '...ohhhssssmo...', '....oossssoo....'] },
+      body: { top: 17, rows: ['.....ojjjjo.....', '....ojjjjjjo....', '....ojjjjjjo....', '....ojjJjjjo....', '....ojjJjjjo....', '....ojjsjjjo....', '....oJJJJJJo....', '....onnnnnno....', '....onnnnnno....'] },
+      legs: { top: 26, rows: ['.....onnno......', '.....onnno......', '.....onnno......', '.....onnno......', '.....okkkko.....', '.....oooooo.....'] },
+      'legs-step1': { top: 26, rows: ['.....onnno......', '....onnonno.....', '...onno.onno....', '...onno.onno....', '..okkko.okkko...', '..ooooo.ooooo...'] },
+      'legs-step2': { top: 26, rows: ['.....onnno......', '.....onnno......', '....onnonno.....', '....onno.onno...', '...okkko.okkko..', '...ooooo.ooooo..'] },
+    },
+  },
+};
+
+/* Same composition as apps/hud/characters/compose.ts: 7 columns of 16×32,
+   rows down/up/right plus the fourth row (think 0–1, wait 2–3, pause 4–5, blink 6). */
+const FW = 16, FH = 32, COLS = 7, DIRS = ['down', 'up', 'right'];
+const L = (part, dy = 0) => ({ part, dy });
+const DIRECTION_FRAMES = [
+  [L('legs-step1'), L('body-step1'), L('head')],
+  [L('legs'), L('body'), L('head')],
+  [L('legs-step2'), L('body-step2'), L('head')],
+  [L('legs'), L('body-type'), L('head-work')],
+  [L('legs'), L('body-type2'), L('head-work')],
+  [L('legs'), L('body-read'), L('head-read')],
+  [L('legs'), L('body-read2'), L('head-read2')],
+];
+const EXTRA_FRAMES = [
+  [L('legs'), L('body-think'), L('head-up'), L('over-think')],
+  [L('legs'), L('body-think'), L('head-up2'), L('over-think')],
+  [L('legs'), L('body-wait'), L('head'), L('over-wait')],
+  [L('legs'), L('body-wait'), L('head-blink'), L('over-wait2')],
+  [L('legs'), L('body'), L('head-sleep')],
+  [L('legs'), L('body'), L('head-sleep', 1)],
+  [L('legs'), L('body'), L('head-blink')],
+];
+function resolvePart(parts, name) {
+  let current = name;
+  for (;;) {
+    if (parts[current]) return parts[current];
+    const cut = current.lastIndexOf('-');
+    if (cut < 0) return undefined;
+    current = current.slice(0, cut);
+  }
+}
+function hexRgb(hex) { const v = parseInt(hex.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
+function buildSheet(art) {
+  const rows = 4, width = FW * COLS, height = FH * rows;
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const g = canvas.getContext('2d');
+  const img = g.createImageData(width, height);
+  for (let row = 0; row < rows; row++) {
+    const parts = art.parts[DIRS[row] || 'down'];
+    const frames = row < 3 ? DIRECTION_FRAMES : EXTRA_FRAMES;
+    frames.forEach((layers, column) => {
+      for (const layer of layers) {
+        const part = resolvePart(parts, layer.part);
+        if (!part) continue; // overlays are optional
+        part.rows.forEach((line, index) => {
+          const y = part.top + index + layer.dy;
+          if (y < 0 || y >= FH) return;
+          for (let x = 0; x < FW; x++) {
+            const letter = line[x];
+            if (!letter || letter === '.') continue;
+            const [r, gg, b] = hexRgb(art.palette[letter] || '#000000');
+            const at = ((row * FH + y) * width + column * FW + x) * 4;
+            img.data[at] = r; img.data[at + 1] = gg; img.data[at + 2] = b; img.data[at + 3] = 255;
+          }
+        });
+      }
+    });
+  }
+  g.putImageData(img, 0, 0);
+  return canvas;
+}
+const SHEETS = { arianna: buildSheet(ART.arianna), coder: buildSheet(ART.coder), user: buildSheet(ART.user) };
+
+/* Poses as in apps/hud/src/lib/sprites.ts. */
+const at = (column, row = 0) => ({ column, row });
+function poseFrames(pose) {
+  switch (pose) {
+    case 'idle': return { frames: [...Array.from({ length: 26 }, () => at(1)), at(6, 3)], ms: 150 };
+    case 'working': return { frames: [at(3), at(4)], ms: 180 };
+    case 'reading': return { frames: [at(5), at(6)], ms: 520 };
+    case 'thinking': return { frames: [at(0, 3), at(1, 3)], ms: 650 };
+    case 'waiting': return { frames: [at(2, 3), at(3, 3)], ms: 450 };
+    case 'paused': return { frames: [at(4, 3), at(5, 3)], ms: 1200 };
+  }
+  return { frames: [at(1)], ms: 1000 };
+}
+const POSE_TEXT = { idle: 'Qui con te', thinking: 'Sta pensando…', working: 'Al lavoro', reading: 'Sta leggendo', waiting: 'Aspetta una tua decisione', paused: 'In pausa', walking: 'Cammina' };
+const POSE_SHORT = { idle: 'libero', thinking: 'pensa', working: 'scrive', reading: 'legge', waiting: 'aspetta te', paused: 'in pausa', walking: 'cammina' };
+const POSE_BUBBLE = { thinking: 'dots', waiting: 'bang', paused: 'zz' };
+const POSE_DOT = { idle: '--muted', thinking: '--info', working: '--accent', reading: '--ok', waiting: '--warn', paused: '--muted', walking: '--accent' };
+
+/* ───────────── The office ───────────── */
+
+const T = 16, TW = 22, TH = 13, W = TW * T, H = TH * T;
+/* Maps (D-106 with D-103): a map is data, walls, furniture and named anchors.
+   The project islands are the anchors "privata", "demo" and "sviluppo" (the
+   project "arianna") here; in
+   the real thing they are slots island-1…n filled with the approved projects,
+   so every map places the same projects in its own rooms. */
+const rangeH = (r, c0, c1) => Array.from({ length: c1 - c0 + 1 }, (_, i) => [c0 + i, r]);
+const rangeV = (c, r0, r1) => Array.from({ length: r1 - r0 + 1 }, (_, i) => [c, r0 + i]);
+const deskSeat = (area, c0, r) => ({ tile: [c0 + 1, r - 1], point: [(c0 + 1) * T + 8, r * T + 2], face: 'down', area });
+const sofaSeat = (c, r) => ({ tile: [c, r + 1], point: [c * T + 8, r * T + 14], face: 'down', area: 'pausa' });
+const standSeat = (c, r, face) => ({ tile: [c, r], point: [c * T + 8, r * T + 11], face, area: 'pausa' });
+const islands = (rowsTo) => [
+  { id: 'privata', name: 'Privata', label: 'L2', c0: 1, r0: 2, c1: 6, r1: rowsTo, rug: '--rug-l2' },
+  { id: 'demo', name: 'repos/demo', label: 'L1', c0: 8, r0: 2, c1: 13, r1: rowsTo, rug: '--rug-l1' },
+  { id: 'sviluppo', name: 'arianna', label: 'L1', c0: 15, r0: 2, c1: 20, r1: rowsTo, rug: '--rug-l1' },
+];
+const MAPS = {
+  base: {
+    name: 'Base (open space)',
+    walls: [], doors: [],
+    areas: [...islands(6),
+      { id: 'pausa', name: 'Pausa', label: null, c0: 1, r0: 8, c1: 5, r1: 11, rug: '--rug-neutral', tag: 'bottom' },
+      { id: 'decisioni', name: 'Decisioni', label: null, c0: 8, r0: 8, c1: 13, r1: 10, rug: '--rug-neutral' }],
+    desks: [{ area: 'privata', c0: 2, r: 4, kind: 'desk' }, { area: 'demo', c0: 9, r: 4, kind: 'desk' }, { area: 'sviluppo', c0: 16, r: 4, kind: 'desk' }],
+    counter: { c0: 9, c1: 12, r: 9, kind: 'counter' },
+    sofa: { c0: 1, c1: 3, r: 8, kind: 'sofa' },
+    coffee: { c: 5, r: 8, kind: 'coffee' },
+    plants: [[7, 2], [14, 2], [20, 11], [1, 11], [13, 10]],
+    props: [],
+    spawn: [18, 11], door: [17, 18],
+    windows: [2, 8, 12, 19], shelf: 5, board: 15, clock: 10,
+    seats: { pausa: sofaSeat(2, 8), caffe: standSeat(5, 9, 'up') },
+    colors: null,
+  },
+  corsia: {
+    name: 'Corsia (reparto generico)',
+    walls: [...rangeV(7, 2, 5), ...rangeV(14, 2, 5), ...rangeH(6, 1, 20)],
+    doors: [[3, 6], [4, 6], [10, 6], [11, 6], [17, 6], [18, 6]],
+    areas: [...islands(5),
+      { id: 'pausa', name: 'Sala d\'attesa', label: null, c0: 1, r0: 8, c1: 5, r1: 11, rug: '--rug-neutral', tag: 'bottom' },
+      { id: 'decisioni', name: 'Accettazione · Decisioni', label: null, c0: 8, r0: 8, c1: 13, r1: 10, rug: '--rug-neutral' }],
+    desks: [{ area: 'privata', c0: 2, r: 4, kind: 'station' }, { area: 'demo', c0: 9, r: 4, kind: 'station' }, { area: 'sviluppo', c0: 16, r: 4, kind: 'station' }],
+    counter: { c0: 9, c1: 12, r: 9, kind: 'nurse' },
+    sofa: { c0: 1, c1: 3, r: 8, kind: 'chairs' },
+    coffee: { c: 5, r: 8, kind: 'vending' },
+    plants: [[13, 10], [20, 11], [1, 11]],
+    props: [{ kind: 'bed', c: 5, r: 2 }, { kind: 'bed', c: 12, r: 2 }, { kind: 'bed', c: 19, r: 2 }],
+    spawn: [18, 11], door: [17, 18],
+    windows: [3, 10, 17], shelf: null, board: null, clock: 11, rail: true, crosses: [[7, 6], [14, 6]],
+    seats: { pausa: sofaSeat(2, 8), caffe: standSeat(5, 9, 'up') },
+    colors: {
+      light: { floor: '#e4f0ec', 'floor-alt': '#dbeae5', 'wall-face': '#f3f7f5', 'wall-top': '#9cbfb4', 'wall-line': '#6fb19f', desk: '#cfdcd8', 'desk-top': '#f4f8f6', 'desk-shadow': '#b9cbc5', counter: '#cfdcd8', 'counter-top': '#f4f8f6', sofa: '#6fb19f', 'sofa-dark': '#4f8f7e', chair: '#6fb19f' },
+      dark: { floor: '#0e1e1d', 'floor-alt': '#102321', 'wall-face': '#183331', 'wall-top': '#061110', 'wall-line': '#2f7a6a', desk: '#2b4441', 'desk-top': '#3d5c58', 'desk-shadow': '#050b0b', counter: '#2b4441', 'counter-top': '#3d5c58', sofa: '#2f7a6a', 'sofa-dark': '#22594d', chair: '#2f7a6a' },
+    },
+  },
+  salotto: {
+    name: 'Salotto (casa generica)',
+    walls: [...rangeV(7, 2, 6), ...rangeV(14, 2, 6)],
+    doors: [[7, 5], [14, 5]],
+    areas: [...islands(6),
+      { id: 'pausa', name: 'Divano', label: null, c0: 7, r0: 8, c1: 12, r1: 11, rug: '--rug-neutral', tag: 'bottom' },
+      { id: 'decisioni', name: 'Ingresso · Decisioni', label: null, c0: 15, r0: 8, c1: 20, r1: 10, rug: '--rug-neutral' }],
+    desks: [{ area: 'privata', c0: 2, r: 4, kind: 'desk' }, { area: 'demo', c0: 9, r: 4, kind: 'table' }, { area: 'sviluppo', c0: 16, r: 4, kind: 'desk' }],
+    counter: { c0: 16, c1: 19, r: 9, kind: 'cabinet' },
+    sofa: { c0: 8, c1: 10, r: 8, kind: 'couch' },
+    coffee: { c: 12, r: 8, kind: 'fridge' },
+    plants: [[1, 11], [20, 11], [6, 11], [13, 2]],
+    props: [{ kind: 'tv', c: 9, r: 11 }],
+    spawn: [3, 11], door: [2, 3],
+    windows: [2, 10, 18], shelf: 5, board: null, clock: 16, wallpaper: true,
+    seats: { pausa: sofaSeat(9, 8), caffe: standSeat(12, 9, 'up') },
+    colors: {
+      light: { floor: '#d8b68c', 'floor-alt': '#cfac82', 'wall-face': '#f0e2cb', 'wall-top': '#9c7656', 'wall-line': '#dcc6a4', desk: '#8f6240', 'desk-top': '#b88555', 'desk-shadow': '#bf9b72', counter: '#8f6240', 'counter-top': '#b88555', sofa: '#c0603f', 'sofa-dark': '#954a30', chair: '#8f6240', 'rug-neutral': '#c0603f22' },
+      dark: { floor: '#2a1f18', 'floor-alt': '#30241c', 'wall-face': '#3b2c22', 'wall-top': '#120c09', 'wall-line': '#54402f', desk: '#5a3e2b', 'desk-top': '#74533a', 'desk-shadow': '#0a0605', counter: '#5a3e2b', 'counter-top': '#74533a', sofa: '#8a4a32', 'sofa-dark': '#663522', chair: '#5a3e2b', 'rug-neutral': '#c0603f1f' },
+    },
+  },
+};
+/** A user's map pack that fails validation: the office falls back to the base map. */
+MAPS.rotta = { ...MAPS.base, name: 'Pacchetto dell\'utente (non valido)', counter: undefined };
+
+let MAP, AREAS, AREA, DESKS, COUNTER, SOFA, COFFEE, PLANTS, PROPS, SEATS, COUNTER_POINT;
+/** 0 floor, 1 wall, 2 furniture. */
+let grid = [];
+const walkable = (c, r) => c >= 0 && r >= 0 && c < TW && r < TH && grid[r][c] === 0;
+
+function validateMap(m) {
+  const names = { areas: 'aree', desks: 'scrivanie', counter: 'decisioni', sofa: 'pausa', coffee: 'caffè', spawn: 'ingresso', door: 'porta', seats: 'posti' };
+  for (const key of Object.keys(names)) if (!m[key]) return `manca l'ancoraggio «${names[key]}»`;
+  for (const id of ['privata', 'demo', 'sviluppo']) if (!m.desks.some((d) => d.area === id)) return `l'isola «${id}» non ha una scrivania`;
+  return null;
+}
+function applyMap(m) {
+  MAP = m;
+  AREAS = m.areas; AREA = Object.fromEntries(AREAS.map((a) => [a.id, a]));
+  DESKS = m.desks.map((d) => ({ ...d, c1: d.c0 + 2 }));
+  COUNTER = m.counter; SOFA = m.sofa; COFFEE = m.coffee; PLANTS = m.plants; PROPS = m.props || [];
+  SEATS = { ...Object.fromEntries(DESKS.map((d) => [d.area, deskSeat(d.area, d.c0, d.r)])), ...m.seats };
+  COUNTER_POINT = [((COUNTER.c0 + COUNTER.c1 + 1) / 2) * T, COUNTER.r * T + 8];
+  grid = Array.from({ length: TH }, (_, r) => Array.from({ length: TW }, (_, c) => (r <= 1 || r === TH - 1 || c === 0 || c === TW - 1 ? 1 : 0)));
+  for (const [c, r] of m.walls) grid[r][c] = 1;
+  for (const [c, r] of m.doors) grid[r][c] = 0;
+  for (const d of DESKS) for (let c = d.c0; c <= d.c1; c++) grid[d.r][c] = 2;
+  for (let c = COUNTER.c0; c <= COUNTER.c1; c++) grid[COUNTER.r][c] = 2;
+  for (let c = SOFA.c0; c <= SOFA.c1; c++) grid[SOFA.r][c] = 2;
+  grid[COFFEE.r][COFFEE.c] = 2;
+  for (const [c, r] of PLANTS) grid[r][c] = 2;
+  for (const p of PROPS) { grid[p.r][p.c] = 2; if (p.kind === 'bed') grid[p.r][p.c + 1] = 2; }
+}
+/** Every seat and the decisions desk must be reachable from the entrance. */
+function reachability() {
+  for (const [id, seat] of Object.entries(SEATS)) {
+    if (!walkable(seat.tile[0], seat.tile[1]) || !bfs(MAP.spawn, (c, r) => c === seat.tile[0] && r === seat.tile[1])) return `il posto «${id}» non si raggiunge dall'ingresso`;
+  }
+  const nearDesk = (c, r) => Math.abs(c * T + 8 - COUNTER_POINT[0]) <= 24 && Math.abs(r * T + 11 - COUNTER_POINT[1]) <= 24;
+  if (!bfs(MAP.spawn, nearDesk)) return 'la scrivania Decisioni non si raggiunge';
+  return null;
+}
+/** Loads a map, or the base map when it is not valid; returns the id in use and the reason. */
+function loadMap(id) {
+  const wanted = MAPS[id] || MAPS.base;
+  let reason = validateMap(wanted);
+  if (!reason) { applyMap(wanted); reason = reachability(); }
+  if (reason) { applyMap(MAPS.base); return { used: 'base', reason, wanted }; }
+  return { used: id, reason: null, wanted };
+}
+
+function bfs(start, isGoal) {
+  const key = (c, r) => r * TW + c;
+  const prev = new Map([[key(start[0], start[1]), -1]]);
+  const queue = [start];
+  while (queue.length) {
+    const [c, r] = queue.shift();
+    if (isGoal(c, r)) {
+      const path = [];
+      for (let k = key(c, r); k !== -1; k = prev.get(k)) path.push([k % TW, Math.floor(k / TW)]);
+      return path.reverse();
+    }
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dc, nr = r + dr;
+      if (!walkable(nc, nr) || prev.has(key(nc, nr))) continue;
+      prev.set(key(nc, nr), key(c, r));
+      queue.push([nc, nr]);
+    }
+  }
+  return null;
+}
+const tileCenter = ([c, r]) => [c * T + 8, r * T + 11];
+loadMap('base');
+
+/* ───────────── Fake conversations and waits (invented) ───────────── */
+
+/* Small DOM helpers: text always goes in with textContent, never as HTML. */
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function chip(label) { return el('span', 'chip ' + label.toLowerCase(), label); }
+function same(node, key) { if (node.dataset.key === key) return true; node.dataset.key = key; return false; }
+
+/* Conversations: the title is the conversation's own (L1 or L2), shown only in
+   the chat panel and in the decisions window, as in the chat today. */
+const CONVS = {
+  privata: { title: 'Promemoria di prova', label: 'L2', island: 'privata', participants: ['arianna'], msgs: [
+    { who: 'user', text: 'Ricordami di annaffiare le piante finte dell\'ufficio venerdì.' },
+    { who: 'arianna', text: 'Fatto: promemoria per venerdì alle 9, solo in locale.' },
+  ] },
+  demo: { title: 'Test dei minuti', label: 'L1', island: 'demo', participants: ['arianna', 'coder'], msgs: [
+    { who: 'user', text: 'Aggiungi un test per la funzione che somma i minuti.' },
+    { who: 'coder', text: 'Leggo il modulo e i test che ci sono, poi scrivo il caso nuovo e lancio la suite.' },
+  ] },
+  arianna: { title: 'Barra laterale chiusa', label: 'L1', island: 'sviluppo', participants: ['arianna', 'coder'], msgs: [
+    { who: 'user', text: 'Allinea le icone della barra laterale quando è chiusa.' },
+  ] },
+};
+/* Waits as in D-091: an approval or a question, up to L2 listed, above L2 only counted. */
+const pending = [];
+let hiddenWaits = 0;
+let waitSeq = 0;
+const waitTotal = () => pending.length + hiddenWaits;
+
+/* ───────────── Agents: what the core sends, and the pose the chat computes ───────────── */
+
+/* The snapshot of an agent (the core's part): core state, activity kind, why it
+   is paused, island, conversation id and label (null above L2), local or cloud.
+   No titles, no text, no paths. The pose is computed here, in the chat. */
+function officePose(snap) {
+  if (snap.state === 'waiting') return 'waiting';           // the user is needed: wins over everything
+  if (snap.paused) return 'paused';                         // quota, rate limit or paused task: nothing moves
+  switch (snap.activity) {
+    case 'read': case 'search': return 'reading';
+    case 'write': case 'tool': case 'card': case 'delegate': return 'working';
+    case 'thinking': case 'plan': case 'wait': case 'error': return 'thinking';
+  }
+  return snap.state === 'thinking' || snap.state === 'working' ? 'thinking' : 'idle';
+}
+
+/* Fixed names of the cards: a display name (D-107) is L2 and never shows here. */
+const NAMES = { arianna: 'Arianna', coder: 'Coder' };
+const PLACE = { arianna: 'locale', coder: 'cloud' };
+function makeAgent(id, seat, script) {
+  const s = SEATS[seat];
+  return { id, name: NAMES[id], x: s.point[0], y: s.point[1], tile: [...s.tile], seat, face: s.face, dir: s.face, pose: 'idle',
+    walking: false, path: [], script, step: -1, until: 0, bubble: null, bubbleUntil: 0,
+    snap: { state: 'idle', activity: null, paused: null, conv: null, label: null, place: PLACE[id] }, lastConv: id === 'arianna' ? 'privata' : 'demo' };
+}
+const ARIANNA_SCRIPT = [
+  { state: 'thinking', dur: 4, conv: 'privata' },
+  { state: 'working', activity: 'write', dur: 6, conv: 'privata' },
+  { state: 'working', activity: 'read', dur: 5, conv: 'privata' },
+  { wait: 'question', kind: 'Domanda', conv: 'privata', ask: 'Sposto il promemoria a giovedì? Venerdì sei fuori.' },
+  { state: 'idle', dur: 3, check: true, conv: 'privata' },
+  { go: 'caffe' },
+  { state: 'idle', dur: 3 },
+  { go: 'privata' },
+  { state: 'working', activity: 'write', dur: 5, above: true },
+  { wait: 'hidden', dur: 8, above: true },
+];
+const CODER_SCRIPT = [
+  { state: 'idle', paused: 'quota', dur: 5 },
+  { go: 'demo', conv: 'demo', feed: 'Arianna delega al Coder · repos/demo · L1' },
+  { state: 'working', activity: 'read', dur: 6, conv: 'demo' },
+  { state: 'working', activity: 'write', dur: 8, conv: 'demo' },
+  { state: 'idle', dur: 2, check: true, conv: 'demo' },
+  { wait: 'approval', kind: 'Cartella di lavoro', conv: 'arianna', ask: 'Posso lavorare nella cartella del progetto «arianna»?', refuse: 10 },
+  { go: 'sviluppo', conv: 'arianna' },
+  { state: 'working', activity: 'read', dur: 5, conv: 'arianna' },
+  { state: 'working', activity: 'card', dur: 8, conv: 'arianna' },
+  { state: 'idle', dur: 2, check: true, conv: 'arianna' },
+  { go: 'pausa' },
+];
+const agents = [makeAgent('arianna', 'privata', ARIANNA_SCRIPT), makeAgent('coder', 'pausa', CODER_SCRIPT)];
+const byId = Object.fromEntries(agents.map((a) => [a.id, a]));
+
+let now = 0;
+let reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function feed(text) {
+  const list = document.getElementById('feed');
+  const li = el('li');
+  const d = new Date();
+  li.append(el('span', 't', [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':')), text);
+  list.prepend(li);
+  while (list.children.length > 8) list.lastChild.remove();
+}
+function announce(text) { document.getElementById('announce').textContent = text; }
+function areaOfAgent(a) { return AREA[SEATS[a.seat]?.area] || null; }
+function areaText(area) { return area ? `${area.name}${area.label ? ' · ' + area.label : ''}` : ''; }
+function setSnap(a, s) {
+  const conv = s.above ? null : s.conv || null;
+  a.snap = { state: s.state || 'idle', activity: s.activity || null, paused: s.paused || null, conv, label: s.above ? null : conv ? CONVS[conv].label : null, place: PLACE[a.id], above: !!s.above };
+  if (conv) a.lastConv = conv;
+  a.pose = officePose(a.snap);
+}
+
+function enterStep(a, index) {
+  a.step = index % a.script.length;
+  const s = a.script[a.step];
+  if (s.go) {
+    const seat = SEATS[s.go];
+    feed(s.feed || `${a.name} va in ${AREA[seat.area].name}`);
+    if (s.conv) a.lastConv = s.conv;
+    a.seat = null;
+    if (reduce) { arrive(a, s.go); return; }
+    const path = bfs(a.tile, (c, r) => c === seat.tile[0] && r === seat.tile[1]) || [];
+    a.path = [...path.map(tileCenter), seat.point];
+    a.goal = s.go;
+    a.walking = true;
+    return;
+  }
+  if (s.wait) {
+    setSnap(a, { state: 'waiting', conv: s.conv, above: s.above });
+    a.until = s.dur ? now + s.dur * 1000 : Infinity;
+    if (s.wait === 'hidden') {
+      hiddenWaits++;
+      a.hidden = true;
+      feed(`${a.name} · sopra L2 · aspetta te (solo contata)`);
+      announce(`${a.name} aspetta una tua decisione in una conversazione sopra L2: si apre dalla chat.`);
+    } else {
+      const w = { id: ++waitSeq, type: s.wait, kind: s.kind, agent: a.id, conv: s.conv, label: CONVS[s.conv].label };
+      pending.push(w);
+      a.wait = w.id;
+      CONVS[s.conv].msgs.push(s.wait === 'approval' ? { who: 'approval', wait: w.id, by: a.id, text: s.ask, state: 'pending' } : { who: a.id, text: s.ask });
+      feed(`${a.name} · ${areaText(AREA[CONVS[s.conv].island])} · aspetta te`);
+      announce(`${a.name} aspetta una tua decisione: vai alla scrivania Decisioni.`);
+    }
+    refreshWaits();
+    return;
+  }
+  setSnap(a, s);
+  a.until = now + s.dur * 1000;
+  if (s.check) { a.bubble = 'check'; a.bubbleUntil = now + 1800; }
+  if (a.pose !== 'idle') feed(`${a.name} · ${a.snap.above ? 'sopra L2' : areaText(areaOfAgent(a))} · ${POSE_SHORT[a.pose]}${a.snap.paused ? ' (' + a.snap.paused + ')' : ''}`);
+}
+function arrive(a, seatId) {
+  const seat = SEATS[seatId];
+  a.walking = false; a.path = []; a.seat = seatId; a.tile = [...seat.tile];
+  a.x = seat.point[0]; a.y = seat.point[1]; a.dir = seat.face;
+  enterStep(a, a.step + 1);
+}
+/** Ends a wait: approved or refused in the chat's card, closed with "Chiudi" (D-109), or superseded by a new message. */
+function endWait(id, how) {
+  const index = pending.findIndex((w) => w.id === id);
+  if (index < 0) return;
+  const [w] = pending.splice(index, 1);
+  const a = byId[w.agent];
+  const card = CONVS[w.conv].msgs.find((m) => m.who === 'approval' && m.wait === id);
+  if (card) card.state = how;
+  const words = { approved: 'approvata', refused: 'rifiutata', closed: 'chiusa', superseded: 'chiusa: la conversazione è andata avanti' };
+  feed(`${w.kind} ${words[how]} · ${w.label}`);
+  announce(`${w.kind} ${words[how]}.`);
+  if (a.wait === id) {
+    a.wait = null;
+    const s = a.script[a.step];
+    enterStep(a, how === 'refused' || how === 'closed' ? (s.refuse ?? a.step + 1) : a.step + 1);
+  }
+  refreshWaits();
+}
+function refreshWaits() {
+  renderDecisions();
+  if (chatMode === 'decisions') openDecisions();
+  else if (chatMode === 'chat') renderChat();
+}
+
+function updateAgent(a, dt) {
+  if (a.walking) {
+    let left = (40 * dt) / 1000;
+    while (left > 0 && a.path.length) {
+      const [tx, ty] = a.path[0];
+      const dx = tx - a.x, dy = ty - a.y, dist = Math.hypot(dx, dy);
+      if (dist > 0.01) a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      if (dist <= left) {
+        a.x = tx; a.y = ty; left -= dist; a.path.shift();
+        const c = Math.floor(tx / T), r = Math.floor((ty - 2) / T);
+        if (walkable(c, r)) a.tile = [c, r];
+      } else { a.x += (dx / dist) * left; a.y += (dy / dist) * left; left = 0; }
+    }
+    if (!a.path.length) arrive(a, a.goal);
+    return;
+  }
+  if (now >= a.until) {
+    if (a.hidden) { a.hidden = false; hiddenWaits = Math.max(0, hiddenWaits - 1); feed(`Attesa sopra L2 decisa nella chat (solo contata)`); refreshWaits(); }
+    enterStep(a, a.step + 1);
+  }
+}
+
+/* ───────────── You ───────────── */
+
+const you = { x: 0, y: 0, dir: 'up', moving: false, path: [], then: null };
+const keys = new Set();
+const blockedPx = (x, y) => !walkable(Math.floor(x / T), Math.floor(y / T));
+function canStand(x, y, fromX, fromY) {
+  for (const [dx, dy] of [[-5, -5], [5, -5], [-5, -1], [5, -1]]) if (blockedPx(x + dx, y + dy)) return false;
+  for (const a of agents) {
+    const d = Math.hypot(a.x - x, a.y - y);
+    if (d < 9 && d < Math.hypot(a.x - fromX, a.y - fromY)) return false;
+  }
+  return true;
+}
+const youTile = () => [Math.floor(you.x / T), Math.floor((you.y - 3) / T)];
+
+function updateYou(dt) {
+  if (chatOpen) { you.moving = false; return; }
+  let vx = 0, vy = 0;
+  if (keys.has('left')) vx -= 1;
+  if (keys.has('right')) vx += 1;
+  if (keys.has('up')) vy -= 1;
+  if (keys.has('down')) vy += 1;
+  if (vx || vy) {
+    you.path = []; you.then = null;
+    const len = Math.hypot(vx, vy), step = (56 * dt) / 1000;
+    const nx = you.x + (vx / len) * step, ny = you.y + (vy / len) * step;
+    if (canStand(nx, you.y, you.x, you.y)) you.x = nx;
+    if (canStand(you.x, ny, you.x, you.y)) you.y = ny;
+    you.dir = Math.abs(vx) >= Math.abs(vy) && vx !== 0 ? (vx > 0 ? 'right' : 'left') : (vy > 0 ? 'down' : 'up');
+    you.moving = true;
+    return;
+  }
+  if (you.path.length) {
+    let left = (56 * dt) / 1000;
+    while (left > 0 && you.path.length) {
+      const [tx, ty] = you.path[0];
+      const dx = tx - you.x, dy = ty - you.y, dist = Math.hypot(dx, dy);
+      if (dist > 0.01) you.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      if (dist <= left) { you.x = tx; you.y = ty; left -= dist; you.path.shift(); }
+      else { you.x += (dx / dist) * left; you.y += (dy / dist) * left; left = 0; }
+    }
+    you.moving = true;
+    if (!you.path.length && you.then) { const then = you.then; you.then = null; faceTowards(then); interact(then); }
+    return;
+  }
+  you.moving = false;
+}
+function targetPoint(target) { return target === 'decisions' ? COUNTER_POINT : [byId[target].x, byId[target].y]; }
+function faceTowards(target) {
+  const [tx, ty] = targetPoint(target);
+  const dx = tx - you.x, dy = ty - you.y;
+  you.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+}
+/** Walk next to an agent or to the decisions desk, then open it. */
+function goTo(target) {
+  const [px, py] = targetPoint(target);
+  const reach = target === 'decisions' ? 26 : 22;
+  const near = (c, r) => { const [x, y] = tileCenter([c, r]); const d = Math.hypot(x - px, y - py); return d <= reach && d >= 9; };
+  const path = bfs(youTile(), near);
+  if (!path) return;
+  you.then = target;
+  if (reduce) { const [x, y] = tileCenter(path[path.length - 1]); you.x = x; you.y = y; you.path = []; you.then = null; faceTowards(target); interact(target); return; }
+  you.path = path.map(tileCenter);
+}
+function walkTo(c, r) {
+  const path = bfs(youTile(), (pc, pr) => pc === c && pr === r);
+  if (!path) return;
+  you.then = null;
+  if (reduce) { const [x, y] = tileCenter([c, r]); you.x = x; you.y = y; you.path = []; return; }
+  you.path = path.map(tileCenter);
+}
+
+/** What is within reach of you: the closest agent, or the decisions desk. */
+function nearby() {
+  let best = null, bestD = Infinity;
+  for (const a of agents) {
+    const d = Math.hypot(a.x - you.x, a.y - you.y);
+    if (d < 26 && d < bestD) { best = a.id; bestD = d; }
+  }
+  const dc = Math.hypot(COUNTER_POINT[0] - you.x, COUNTER_POINT[1] - you.y);
+  if (dc < 30 && dc < bestD) best = 'decisions';
+  return best;
+}
+function interact(target) {
+  if (!target) return;
+  if (target === 'decisions') openDecisions(); else openChat(target);
+}
+
+/* ───────────── Drawing ───────────── */
+
+const canvas = document.getElementById('office');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+let C = {};
+function readTokens() {
+  const css = getComputedStyle(document.documentElement);
+  const names = ['floor', 'floor-alt', 'wall-top', 'wall-face', 'wall-line', 'window', 'window-light', 'desk', 'desk-top', 'desk-shadow', 'monitor', 'screen-off', 'screen',
+    'chair', 'rug-l2', 'rug-l1', 'rug-neutral', 'rug-line', 'plant', 'plant-dark', 'pot', 'pot-dark', 'sofa', 'sofa-dark', 'paper', 'counter', 'counter-top', 'outline',
+    'speech', 'shadow', 'accent', 'warn', 'ok', 'info', 'danger', 'muted', 'ink', 'l1', 'l2'];
+  C = Object.fromEntries(names.map((n) => [n, css.getPropertyValue('--' + n).trim()]));
+  const dark = getComputedStyle(document.documentElement).colorScheme.includes('dark');
+  if (MAP.colors) Object.assign(C, MAP.colors[dark ? 'dark' : 'light']);
+}
+const rect = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); };
+function drawMap(map, x, y, colors) {
+  map.forEach((line, j) => { for (let i = 0; i < line.length; i++) { const k = line[i]; if (k !== '.') rect(colors[k], x + i, y + j, 1, 1); } });
+}
+
+const PLANT = ['....gg.g....', '..g.gGgg.g..', '.ggGgggGgg..', '..gGggGggGg.', '.gggGgGgggg.', '..ggggGggg..', '...gGggGg...', '....gggg....', '...pppppp...', '...pPPPPp...', '...pppppp...', '....pppp....'];
+const BUBBLES = {
+  dots: ['.........', '.........', '.x..x..x.', '.........', '.........', '.........'],
+  bang: ['....x....', '....x....', '....x....', '....x....', '.........', '....x....'],
+  zz: ['xxx......', '..x......', '.x..xxxx.', 'xxx...x..', '.....x...', '....xxxx.'],
+  check: ['.........', '.......x.', '......x..', '.x...x...', '..x.x....', '...x.....'],
+};
+const BUBBLE_COLOR = { dots: 'ink-dark', bang: 'warn', zz: 'info', check: 'ok' };
+
+function drawFloor() {
+  for (let r = 0; r < TH; r++) for (let c = 0; c < TW; c++) rect((c + r) % 2 ? C['floor-alt'] : C.floor, c * T, r * T, T, T);
+  for (const a of AREAS) {
+    const x = a.c0 * T + 2, y = a.r0 * T + 2, w = (a.c1 - a.c0 + 1) * T - 4, h = (a.r1 - a.r0 + 1) * T - 4;
+    rect(C[a.rug.slice(2)], x, y, w, h);
+    rect(C['rug-line'], x, y, w, 1); rect(C['rug-line'], x, y + h - 1, w, 1); rect(C['rug-line'], x, y, 1, h); rect(C['rug-line'], x + w - 1, y, 1, h);
+  }
+  // doormat
+  rect(C['rug-line'], MAP.door[0] * T + 2, (TH - 2) * T + 6, (MAP.door[1] - MAP.door[0] + 1) * T - 4, 8);
+}
+function drawWalls() {
+  for (let r = 0; r < TH; r++) for (let c = 0; c < TW; c++) {
+    if (grid[r][c] !== 1) continue;
+    const x = c * T, y = r * T;
+    const face = r + 1 < TH && grid[r + 1][c] !== 1 && c > 0 && c < TW - 1;
+    if (!face) { rect(C['wall-top'], x, y, T, T); continue; }
+    rect(C['wall-face'], x, y, T, T);
+    if (MAP.wallpaper) for (let i = 2; i < T; i += 5) rect(C['wall-line'], x + i, y + 1, 1, T - 4);
+    if (MAP.rail) rect(C['wall-line'], x, y + 8, T, 2);
+    rect(C['wall-line'], x, y + T - 2, T, 2);
+  }
+  // door gap in the bottom wall
+  rect(C['wall-face'], MAP.door[0] * T, H - T, (MAP.door[1] - MAP.door[0] + 1) * T, 4);
+  for (const c of MAP.windows) {
+    rect(C.outline, c * T + 1, T + 2, 14, 11);
+    rect(C.window, c * T + 2, T + 3, 12, 9);
+    rect(C['window-light'], c * T + 3, T + 4, 4, 3);
+    rect(C.outline, c * T + 7, T + 3, 1, 9); rect(C.outline, c * T + 2, T + 7, 12, 1);
+  }
+  if (MAP.shelf != null) {
+    const sx = MAP.shelf * T;
+    rect(C.outline, sx + 1, T + 1, 14, 14); rect(C.desk, sx + 2, T + 2, 12, 12);
+    const books = [C.accent, C.warn, C.info, C.ok, C.danger, C.paper];
+    for (let i = 0; i < 5; i++) { rect(books[i], sx + 3 + i * 2, T + 3, 2, 4); rect(books[(i + 2) % 6], sx + 3 + i * 2, T + 9, 2, 4); }
+  }
+  if (MAP.board != null) {
+    // whiteboard with sticky notes (a tiny cardwall)
+    const bx = MAP.board * T;
+    rect(C.outline, bx + 1, T + 1, 46, 13); rect(C.paper, bx + 2, T + 2, 44, 11);
+    [[3, C.warn], [8, C.ok], [17, C.info], [22, C.warn], [31, C.ok], [36, C.accent]].forEach(([dx, col], i) => rect(col, bx + 2 + dx, T + 4 + (i % 2) * 4, 3, 3));
+  }
+  if (MAP.clock != null) {
+    const cx = MAP.clock * T;
+    rect(C.outline, cx + 4, T + 3, 8, 8); rect(C.paper, cx + 5, T + 4, 6, 6); rect(C.outline, cx + 8, T + 5, 1, 3); rect(C.outline, cx + 8, T + 7, 2, 1);
+  }
+  // a green cross (never red on white: that one is a protected emblem)
+  for (const [c, r] of MAP.crosses || []) {
+    const x = c * T, y = r * T;
+    rect(C.paper, x + 3, y + 1, 10, 10); rect('#3fae7a', x + 6, y + 2, 4, 8); rect('#3fae7a', x + 4, y + 4, 8, 4);
+  }
+}
+
+function deskWorker(desk) { return agents.find((a) => a.seat === desk.area && !a.walking); }
+function screenLine(x, y, worker) {
+  if (worker && worker.pose === 'working') rect(C.monitor, x, y + (reduce ? 2 : Math.floor(now / 160) % 6), 5, 1);
+  if (worker && worker.pose === 'waiting') rect(C.warn, x - 1, y, 8, 1);
+}
+function drawDesk(d) {
+  const x = d.c0 * T, y = d.r * T, w = (d.c1 - d.c0 + 1) * T;
+  const worker = deskWorker(d);
+  const on = worker && ['working', 'reading', 'thinking', 'waiting'].includes(worker.pose) ? worker : null;
+  rect(C['desk-shadow'], x + 1, y + 14, w - 2, 2);
+  if (d.kind === 'table') {
+    rect(C.outline, x + 1, y - 4, w - 2, 12); rect(C['desk-top'], x + 2, y - 3, w - 4, 10);
+    rect(C.outline, x + 4, y + 8, 2, 6); rect(C.outline, x + w - 6, y + 8, 2, 6);
+    // a laptop and a fruit bowl
+    rect(C.outline, x + 3, y - 11, 12, 9); rect(on ? C.screen : C['screen-off'], x + 4, y - 10, 10, 6); rect(C.monitor, x + 2, y - 2, 14, 2);
+    if (on) screenLine(x + 5, y - 10, on);
+    rect(C.outline, x + w - 14, y - 2, 10, 4); rect(C.warn, x + w - 13, y - 5, 3, 3); rect(C.danger, x + w - 10, y - 5, 3, 3); rect(C.ok, x + w - 12, y - 7, 3, 3);
+    return;
+  }
+  rect(C.outline, x, y - 3, w, 17);
+  rect(C['desk-top'], x + 1, y - 2, w - 2, 7);
+  rect(C.desk, x + 1, y + 5, w - 2, 8);
+  rect(C['desk-shadow'], x + 1, y + 5, w - 2, 1);
+  if (d.kind === 'station') rect(C['wall-line'], x + 1, y + 8, w - 2, 2);
+  // monitor on the left tile
+  rect(C.outline, x + 2, y - 15, 12, 11);
+  rect(C.monitor, x + 3, y - 14, 10, 9);
+  rect(on ? C.screen : C['screen-off'], x + 4, y - 13, 8, 6);
+  if (on) screenLine(x + 5, y - 13, on);
+  rect(C.outline, x + 7, y - 4, 2, 2);
+  // papers and a mug on the right tile
+  rect(C.paper, x + w - 13, y - 1, 7, 4); rect(C.outline, x + w - 12, y, 5, 1);
+  rect(C.outline, x + w - 5, y - 4, 4, 5); rect(C.accent, x + w - 4, y - 3, 2, 3);
+}
+function drawChair(seat) {
+  const [px, py] = SEATS[seat].point;
+  rect(C.outline, px - 5, py - 17, 10, 1);
+  rect(C.outline, px - 6, py - 16, 12, 9);
+  rect(C.chair, px - 5, py - 16, 10, 7);
+  rect(C['sofa-dark'], px - 5, py - 10, 10, 1);
+}
+function drawCounter() {
+  const x = COUNTER.c0 * T, y = COUNTER.r * T, w = (COUNTER.c1 - COUNTER.c0 + 1) * T;
+  rect(C['desk-shadow'], x + 1, y + 14, w - 2, 2);
+  rect(C.outline, x, y - 3, w, 17);
+  rect(C['counter-top'], x + 1, y - 2, w - 2, 6);
+  rect(C.counter, x + 1, y + 4, w - 2, 9);
+  if (COUNTER.kind === 'nurse') { const cx = x + w / 2; rect('#3fae7a', cx - 6, y + 6, 4, 2); rect('#3fae7a', cx - 5, y + 5, 2, 4); rect(C['wall-line'], x + 1, y + 11, w - 2, 1); }
+  else if (COUNTER.kind === 'cabinet') { for (let i = 0; i < 4; i++) { rect(C['desk-shadow'], x + 2 + i * 16, y + 5, 1, 8); rect(C.outline, x + 8 + i * 16, y + 8, 2, 2); } }
+  else for (let i = 0; i < 3; i++) rect(C['counter-top'], x + 8 + i * 18, y + 7, 10, 2);
+  // a bell
+  const bx = COUNTER_POINT[0] - 3;
+  rect(C.outline, bx, y - 7, 7, 5); rect(waitTotal() ? C.warn : C.muted, bx + 1, y - 6, 5, 3); rect(C.outline, bx + 3, y - 8, 1, 1);
+}
+function drawSofa() {
+  const x = SOFA.c0 * T, y = SOFA.r * T, w = (SOFA.c1 - SOFA.c0 + 1) * T;
+  if (SOFA.kind === 'chairs') {
+    for (let i = 0; i < 3; i++) {
+      const cx = x + i * T + 2;
+      rect(C.outline, cx, y - 6, 12, 17); rect(C['sofa-dark'], cx + 1, y - 5, 10, 8); rect(C.sofa, cx + 1, y + 4, 10, 6);
+      rect(C.outline, cx + 2, y + 11, 1, 3); rect(C.outline, cx + 9, y + 11, 1, 3);
+    }
+    return;
+  }
+  rect(C.outline, x, y - 6, w, 20);
+  rect(C['sofa-dark'], x + 1, y - 5, w - 2, 9);
+  rect(C.sofa, x + 1, y + 4, w - 2, 9);
+  rect(C['sofa-dark'], x + 16, y + 4, 1, 9); rect(C['sofa-dark'], x + 32, y + 4, 1, 9);
+  if (SOFA.kind === 'couch') { rect(C.warn, x + 6, y - 3, 6, 5); rect(C.info, x + w - 12, y - 3, 6, 5); }
+}
+function drawSofaArms() {
+  if (SOFA.kind === 'chairs') return;
+  const x = SOFA.c0 * T, y = SOFA.r * T, w = (SOFA.c1 - SOFA.c0 + 1) * T;
+  rect(C.outline, x, y - 2, 4, 16); rect(C['sofa-dark'], x + 1, y - 1, 2, 14);
+  rect(C.outline, x + w - 4, y - 2, 4, 16); rect(C['sofa-dark'], x + w - 3, y - 1, 2, 14);
+}
+function drawCoffee() {
+  const x = COFFEE.c * T, y = COFFEE.r * T;
+  if (COFFEE.kind === 'vending') {
+    rect(C.outline, x + 1, y - 12, 14, 26); rect(C.monitor, x + 2, y - 11, 12, 24);
+    const goods = [C.warn, C.ok, C.info, C.danger, C.accent, C.paper];
+    for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) rect(goods[(i + j * 2) % 6], x + 3 + i * 4, y - 9 + j * 5, 2, 3);
+    rect(C.paper, x + 4, y + 7, 8, 3);
+    return;
+  }
+  if (COFFEE.kind === 'fridge') {
+    rect(C.outline, x + 1, y - 14, 14, 28); rect(C.paper, x + 2, y - 13, 12, 26); rect(C.outline, x + 2, y - 3, 12, 1);
+    rect(C.muted, x + 11, y - 10, 1, 5); rect(C.muted, x + 11, y, 1, 6);
+    rect(C.warn, x + 4, y - 10, 2, 2); rect(C.accent, x + 7, y + 2, 2, 2); rect(C.danger, x + 4, y + 6, 2, 2);
+    return;
+  }
+  rect(C.outline, x + 2, y - 8, 12, 22); rect(C.monitor, x + 3, y - 7, 10, 20);
+  rect(C.danger, x + 5, y - 5, 2, 2); rect(C.ok, x + 9, y - 5, 2, 2);
+  rect(C.paper, x + 6, y + 4, 4, 4);
+}
+function drawProp(p) {
+  const x = p.c * T, y = p.r * T;
+  if (p.kind === 'bed') {
+    rect(C.outline, x + 1, y - 2, 30, 16); rect(C.paper, x + 2, y - 1, 28, 14);
+    rect(C['wall-line'], x + 11, y - 1, 19, 14); rect(C.paper, x + 3, y + 1, 6, 9);
+    rect(C.outline, x + 2, y + 14, 2, 2); rect(C.outline, x + 28, y + 14, 2, 2);
+  } else if (p.kind === 'tv') {
+    rect(C.outline, x + 1, y - 1, 14, 10); rect(C.monitor, x + 2, y, 12, 8); rect(C.outline, x + 6, y + 9, 4, 4);
+  }
+}
+function drawPlant(c, r) {
+  drawMap(PLANT, c * T + 2, r * T + 2, { g: C.plant, G: C['plant-dark'], p: C.pot, P: C['pot-dark'] });
+}
+function drawShadow(x, y) { rect(C.shadow, Math.round(x) - 5, Math.round(y) - 1, 10, 2); rect(C.shadow, Math.round(x) - 3, Math.round(y) - 2, 6, 1); }
+
+function framePos(sheetRows, pose, dir, walking, t) {
+  if (walking) {
+    const seq = [0, 1, 2, 1];
+    const column = reduce ? 1 : seq[Math.floor(Math.max(0, t) / 130) % 4];
+    return { column, row: dir === 'up' ? 1 : dir === 'down' ? 0 : 2, mirror: dir === 'left' };
+  }
+  if (dir === 'up') return { column: pose === 'working' ? 3 + (reduce ? 0 : Math.floor(Math.max(0, t) / 180) % 2) : 1, row: 1, mirror: false };
+  if (dir === 'left' || dir === 'right') return { column: 1, row: 2, mirror: dir === 'left' };
+  const pf = poseFrames(pose);
+  const f = (reduce ? pf.frames[0] : pf.frames[Math.floor(Math.max(0, t) / pf.ms) % pf.frames.length]) || at(1);
+  return { column: f.column, row: f.row, mirror: false };
+}
+function drawCharacter(sheet, x, y, f) {
+  const dx = Math.round(x) - 8, dy = Math.round(y) - 31;
+  if (f.mirror) {
+    ctx.save(); ctx.translate(dx + FW, dy); ctx.scale(-1, 1);
+    ctx.drawImage(sheet, f.column * FW, f.row * FH, FW, FH, 0, 0, FW, FH);
+    ctx.restore();
+  } else ctx.drawImage(sheet, f.column * FW, f.row * FH, FW, FH, dx, dy, FW, FH);
+}
+function drawBubble(kind, x, y, big) {
+  const bob = reduce ? 0 : Math.floor(now / 500) % 2;
+  const bx = Math.round(x) - 6, by = Math.round(y) - (big ? 0 : bob);
+  rect(C.outline, bx, by, 13, 10);
+  rect(C.speech, bx + 1, by + 1, 11, 8);
+  rect(C.outline, bx + 5, by + 10, 3, 1); rect(C.outline, bx + 6, by + 11, 1, 1); rect(C.speech, bx + 6, by + 9, 1, 1);
+  const color = kind === 'dots' ? '#24302e' : C[BUBBLE_COLOR[kind]];
+  drawMap(BUBBLES[kind], bx + 2, by + 2, { x: color });
+}
+
+function render() {
+  drawFloor();
+  drawWalls();
+  const items = [];
+  for (const d of DESKS) { items.push({ y: d.r * T - 7, draw: () => drawChair(d.area) }); items.push({ y: (d.r + 1) * T, draw: () => drawDesk(d) }); }
+  items.push({ y: COUNTER.r * T + 14, draw: drawCounter });
+  items.push({ y: SOFA.r * T + 4, draw: drawSofa });
+  items.push({ y: SOFA.r * T + 15, draw: drawSofaArms });
+  for (const p of PROPS) items.push({ y: p.r * T + 14, draw: () => drawProp(p) });
+  items.push({ y: COFFEE.r * T + 14, draw: drawCoffee });
+  for (const [c, r] of PLANTS) items.push({ y: r * T + 14, draw: () => drawPlant(c, r) });
+  const near = chatOpen ? null : nearby();
+  for (const a of agents) {
+    items.push({ y: a.y, draw: () => {
+      drawShadow(a.x, a.y);
+      if (near === a.id) { rect(C.accent, Math.round(a.x) - 6, Math.round(a.y), 12, 1); }
+      drawCharacter(SHEETS[a.id], a.x, a.y, framePos(4, a.walking ? 'idle' : a.pose, a.dir, a.walking, now));
+    } });
+  }
+  items.push({ y: you.y, draw: () => {
+    drawShadow(you.x, you.y);
+    drawCharacter(SHEETS.user, you.x, you.y, framePos(3, 'idle', you.dir, you.moving, now));
+  } });
+  items.sort((p, q) => p.y - q.y).forEach((it) => it.draw());
+  // bubbles on top of everything
+  for (const a of agents) {
+    let kind = a.walking ? null : POSE_BUBBLE[a.pose] || null;
+    if (a.bubble && now < a.bubbleUntil) kind = a.bubble;
+    if (kind) drawBubble(kind, a.x, a.y - 39, false);
+  }
+  if (waitTotal()) {
+    const blink = reduce || Math.floor(now / 600) % 2 === 0;
+    if (blink) drawBubble('bang', COUNTER_POINT[0], COUNTER.r * T - 22, true);
+  }
+}
+
+/* ───────────── Overlay (names, area labels, hint) ───────────── */
+
+let scale = 2;
+const overlay = document.getElementById('overlay');
+const tags = {};
+function makeOverlay() {
+  overlay.textContent = '';
+  for (const a of AREAS) {
+    const tag = el('div', 'area-tag');
+    tag.append(el('b', null, a.name));
+    if (a.label) tag.append(chip(a.label));
+    const bottom = a.tag === 'bottom';
+    tag.dataset.x = String(a.c0 * T + 4); tag.dataset.y = String(bottom ? (a.r1 + 1) * T - 12 : a.r0 * T + 3);
+    overlay.append(tag);
+  }
+  for (const a of agents) { tags[a.id] = el('div', 'name-tag'); overlay.append(tags[a.id]); }
+  tags.you = el('div', 'name-tag you', 'Tu');
+  overlay.append(tags.you);
+  tags.hint = el('div', 'hint');
+  overlay.append(tags.hint);
+  placeStatic();
+}
+function placeStatic() {
+  for (const tag of overlay.querySelectorAll('.area-tag')) tag.style.transform = `translate(${Number(tag.dataset.x) * scale}px, ${Number(tag.dataset.y) * scale}px)`;
+}
+function place(node, x, y) { node.style.transform = `translate(${Math.round(x * scale)}px, ${Math.round(y * scale)}px) translate(-50%, -100%)`; }
+function updateOverlay() {
+  for (const a of agents) {
+    const tag = tags[a.id];
+    const state = a.walking ? POSE_SHORT.walking : POSE_SHORT[a.pose];
+    if (!same(tag, state)) tag.replaceChildren(a.name, el('span', 'st', state));
+    place(tag, a.x, a.y - 40);
+  }
+  place(tags.you, you.x, you.y - 33);
+  const near = chatOpen ? null : nearby();
+  if (near) {
+    const label = near === 'decisions' ? (waitTotal() ? `Decisioni in attesa (${waitTotal()})` : 'Nessuna decisione in attesa') : `Parla con ${byId[near].name}`;
+    if (!same(tags.hint, label)) tags.hint.replaceChildren(el('kbd', null, 'E'), label);
+    tags.hint.style.display = '';
+    place(tags.hint, you.x, you.y - 34);
+    tags.you.style.display = 'none';
+  } else { tags.hint.style.display = 'none'; tags.you.style.display = ''; }
+}
+
+function fit() {
+  const wrap = document.getElementById('stage-wrap');
+  const byWidth = Math.floor(wrap.clientWidth / W);
+  const byHeight = Math.floor((window.innerHeight - 150) / H);
+  scale = Math.max(1, Math.min(4, byWidth, Math.max(2, byHeight)));
+  canvas.style.width = W * scale + 'px';
+  canvas.style.height = H * scale + 'px';
+  document.getElementById('stage').style.width = W * scale + 'px';
+  placeStatic();
+}
+
+/* ───────────── Chat panel: the same conversation as the chat ───────────── */
+
+const chat = document.getElementById('chat');
+const msgs = document.getElementById('chat-msgs');
+let chatOpen = false, chatMode = null, chatAgent = null, chatConv = null;
+function drawFace(target, sheet, column, row) {
+  const g = target.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, target.width, target.height);
+  g.drawImage(sheet, column * FW, row * FH, FW, FH, 0, 0, target.width, target.height);
+}
+/** "Parla con": the conversation of the agent's current task, or its last visible one when that is above L2 or there is none. */
+function convFor(a) { return a.snap.conv || a.lastConv; }
+function approvalCard(m) {
+  const box = el('div', 'decision');
+  box.append(el('span', 'kind', 'Cartella di lavoro · scheda della chat'), el('div', null, m.text));
+  if (m.state === 'pending') {
+    const row = el('div', 'row');
+    const yes = el('button', 'btn primary', 'Approva'); yes.type = 'button';
+    const no = el('button', 'btn danger', 'Rifiuta'); no.type = 'button';
+    yes.addEventListener('click', () => endWait(m.wait, 'approved'));
+    no.addEventListener('click', () => endWait(m.wait, 'refused'));
+    row.append(yes, no);
+    box.append(row);
+  } else box.append(el('div', 'empty', m.state === 'approved' ? 'Approvata' : 'Rifiutata'));
+  return box;
+}
+function renderChat() {
+  const a = byId[chatAgent];
+  const conv = CONVS[chatConv];
+  document.getElementById('chat-title').textContent = a.name;
+  const meta = document.getElementById('chat-meta');
+  meta.replaceChildren(`«${conv.title}»`, chip(conv.label), ` · ${a.walking ? POSE_TEXT.walking : POSE_TEXT[a.pose]}`);
+  drawFace(document.getElementById('chat-face'), SHEETS[a.id], 1, 0);
+  msgs.textContent = '';
+  const notes = [conv.label === 'L2'
+    ? 'Conversazione privata (L2): il testo si vede qui come nella chat; nell\'ufficio restano solo stato ed etichetta.'
+    : 'Conversazione di lavoro (L1), la stessa della chat web: ciò che scrivi qui compare anche lì.'];
+  if (a.snap.above) notes.push(`${a.name} ora lavora in una conversazione sopra L2: quella si apre solo dalla chat. Qui c'è la sua ultima conversazione visibile.`);
+  if (conv.participants.length > 1) notes.push(`Partecipanti: ${conv.participants.map((p) => NAMES[p]).join(', ')}. Siedono all'isola del progetto; il messaggio va a @${a.name}.`);
+  for (const n of notes) msgs.append(el('div', 'notice', n));
+  for (const m of conv.msgs) {
+    if (m.who === 'approval') { msgs.append(approvalCard(m)); continue; }
+    if (m.who === 'system') { msgs.append(el('div', 'notice', m.text)); continue; }
+    const bubble = el('div', 'msg ' + (m.who === 'user' ? 'user' : 'agent'));
+    if (m.who !== 'user') bubble.append(el('span', 'from', NAMES[m.who]));
+    bubble.append(m.text);
+    msgs.append(bubble);
+  }
+  const open = el('button', 'btn', 'Apri nella chat'); open.type = 'button';
+  open.addEventListener('click', () => feed('Apri nella chat (anteprima: nessuna navigazione)'));
+  msgs.append(open);
+  document.getElementById('chat-input').placeholder = conv.participants.length > 1 ? `Scrivi a @${a.name}… (testo finto)` : 'Scrivi… (testo finto)';
+  msgs.scrollTop = msgs.scrollHeight;
+}
+function openConv(convId, agentId) {
+  chatMode = 'chat'; chatAgent = agentId; chatConv = convId; chatOpen = true; keys.clear();
+  document.getElementById('chat-form').hidden = false;
+  renderChat();
+  chat.hidden = false;
+  document.getElementById('chat-input').focus();
+}
+function openChat(agentId) { openConv(convFor(byId[agentId]), agentId); }
+/** The window of D-091: a row per wait, oldest first; a click opens the conversation, the decision is in its usual card. */
+function openDecisions() {
+  chatMode = 'decisions'; chatAgent = null; chatConv = null; chatOpen = true; keys.clear();
+  document.getElementById('chat-title').textContent = 'Decisioni in attesa';
+  document.getElementById('chat-meta').textContent = `La finestra della chat (D-091) · ${waitTotal()} in tutto`;
+  drawFace(document.getElementById('chat-face'), SHEETS.arianna, 2, 3);
+  document.getElementById('chat-form').hidden = true;
+  msgs.textContent = '';
+  if (!waitTotal()) msgs.append(el('p', 'empty', 'Nessuna decisione in attesa. Torna quando sulla scrivania c\'è il «!».'));
+  for (const w of pending) {
+    const box = el('div', 'decision');
+    const conv = CONVS[w.conv];
+    const title = el('div'); title.append(el('b', null, `«${conv.title}»`), chip(w.label));
+    box.append(el('span', 'kind', `${w.kind} · ${NAMES[w.agent]}`), title);
+    const row = el('div', 'row');
+    const open = el('button', 'btn primary', 'Apri la conversazione'); open.type = 'button';
+    open.addEventListener('click', () => openConv(w.conv, w.agent));
+    row.append(open);
+    if (w.type === 'question') {
+      const close = el('button', 'btn', 'Chiudi'); close.type = 'button';
+      close.title = 'Chiude un\'attesa senza approvazione (D-109)';
+      close.addEventListener('click', () => endWait(w.id, 'closed'));
+      row.append(close);
+    }
+    box.append(row);
+    msgs.append(box);
+  }
+  if (hiddenWaits) msgs.append(el('p', 'empty', `${hiddenWaits} ${hiddenWaits === 1 ? 'attesa' : 'attese'} sopra L2: solo contate, si aprono dalla chat.`));
+  chat.hidden = false;
+  (msgs.querySelector('button') || document.getElementById('chat-close')).focus();
+}
+function closeChat() {
+  chatOpen = false; chatMode = null; chatAgent = null; chatConv = null;
+  chat.hidden = true;
+  canvas.focus();
+}
+document.getElementById('chat-close').addEventListener('click', closeChat);
+document.getElementById('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !chatConv) return;
+  const convId = chatConv, conv = CONVS[convId], a = byId[chatAgent];
+  // A new message closes the waits of this conversation that have no pending approval (D-109).
+  const superseded = pending.filter((w) => w.conv === convId && w.type === 'question');
+  if (superseded.length) conv.msgs.push({ who: 'system', text: 'Attesa chiusa: la conversazione è andata avanti.' });
+  conv.msgs.push({ who: 'user', text });
+  input.value = '';
+  for (const w of superseded) endWait(w.id, 'superseded');
+  renderChat();
+  setTimeout(() => {
+    conv.msgs.push({ who: a.id, text: `(Anteprima) Nella versione vera il messaggio entra in «${conv.title}» e la risposta arriva in streaming, come nella chat.` });
+    if (chatConv === convId) renderChat();
+  }, 700);
+});
+chat.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeChat(); } });
+
+/* ───────────── Side column ───────────── */
+
+function renderRosterOnce() {
+  const ul = document.getElementById('roster');
+  for (const a of agents) {
+    const li = el('li');
+    const face = el('canvas'); face.width = 16; face.height = 32; drawFace(face, SHEETS[a.id], 1, 0);
+    const box = el('div');
+    const st = el('div', 'st'); st.dataset.st = a.id;
+    box.append(el('div', 'nm', a.name), st);
+    const acts = el('div', 'acts');
+    const go = el('button', 'btn', 'Raggiungi'); go.type = 'button';
+    go.addEventListener('click', () => { canvas.focus(); goTo(a.id); });
+    const talk = el('button', 'btn', 'Parla subito'); talk.type = 'button';
+    talk.addEventListener('click', () => openChat(a.id));
+    acts.append(go, talk); box.append(acts);
+    li.append(face, box);
+    ul.append(li);
+  }
+}
+function updateRoster() {
+  for (const a of agents) {
+    const node = document.querySelector(`[data-st="${a.id}"]`);
+    const area = (a.walking ? AREA[SEATS[a.goal].area] : areaOfAgent(a)) || AREA.pausa;
+    const state = a.walking ? `Va in ${area.name}` : POSE_TEXT[a.pose];
+    const key = [state, area.id, a.snap.above, a.snap.place, a.walking].join('|');
+    if (same(node, key)) continue;
+    const dot = el('span', 'dot'); dot.style.background = `var(${a.walking ? POSE_DOT.walking : POSE_DOT[a.pose]})`;
+    const parts = [dot, state];
+    if (!a.walking) parts.push(` · ${area.name}`);
+    if (a.snap.above) parts.push(el('span', 'chip l3', 'sopra L2'));
+    else if (area.label) parts.push(chip(area.label));
+    parts.push(` · ${a.snap.place}`);
+    node.replaceChildren(...parts);
+  }
+}
+function renderDecisions() {
+  const box = document.getElementById('decisions');
+  box.textContent = '';
+  if (!waitTotal()) { const p = el('p', 'empty', 'Nessuna. Quando c\'è, sulla scrivania «Decisioni» compare un «!».'); p.style.margin = '0'; box.append(p); return; }
+  const p = el('p', null, `${waitTotal()} in attesa`); p.style.margin = '0 0 8px';
+  if (hiddenWaits) p.append(el('span', 'empty', ` (${hiddenWaits} sopra L2, solo contate)`));
+  const go = el('button', 'btn', 'Vai alla scrivania'); go.type = 'button';
+  go.addEventListener('click', () => { canvas.focus(); goTo('decisions'); });
+  const open = el('button', 'btn', 'Apri subito'); open.type = 'button'; open.style.marginLeft = '6px';
+  open.addEventListener('click', openDecisions);
+  box.append(p, go, open);
+}
+
+/* ───────────── Input ───────────── */
+
+const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
+canvas.addEventListener('keydown', (e) => {
+  if (chatOpen) return;
+  const k = KEYMAP[e.code] || KEYMAP[e.key];
+  if (k) { keys.add(k); e.preventDefault(); return; }
+  if (e.code === 'KeyE' || e.key === 'Enter') { e.preventDefault(); interact(nearby()); }
+});
+window.addEventListener('keyup', (e) => { const k = KEYMAP[e.code] || KEYMAP[e.key]; if (k) keys.delete(k); });
+canvas.addEventListener('blur', () => keys.clear());
+canvas.addEventListener('click', (e) => {
+  canvas.focus();
+  if (chatOpen) return;
+  const r = canvas.getBoundingClientRect();
+  const x = ((e.clientX - r.left) / r.width) * W, y = ((e.clientY - r.top) / r.height) * H;
+  const hit = agents.find((a) => x >= a.x - 8 && x <= a.x + 8 && y >= a.y - 30 && y <= a.y);
+  if (hit) { if (Math.hypot(hit.x - you.x, hit.y - you.y) < 26) openChat(hit.id); else goTo(hit.id); return; }
+  const c = Math.floor(x / T), rr = Math.floor(y / T);
+  if (c >= COUNTER.c0 && c <= COUNTER.c1 && (rr === COUNTER.r || rr === COUNTER.r - 1)) { goTo('decisions'); return; }
+  if (walkable(c, rr)) walkTo(c, rr);
+});
+
+const reduceBox = document.getElementById('reduce');
+reduceBox.checked = reduce;
+reduceBox.addEventListener('change', () => { reduce = reduceBox.checked; });
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => { reduce = e.matches; reduceBox.checked = reduce; });
+
+function setTheme(choice) {
+  if (choice === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = choice;
+  for (const b of document.querySelectorAll('[data-theme-choice]')) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice));
+  try { localStorage.setItem('ufficio-theme', choice); } catch { /* preview only */ }
+  readTokens();
+}
+for (const b of document.querySelectorAll('[data-theme-choice]')) b.addEventListener('click', () => setTheme(b.dataset.themeChoice));
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', readTokens);
+
+/* ───────────── Maps follow the theme (D-103) ───────────── */
+
+function switchMap(id) {
+  if (chatOpen) closeChat();
+  const { used, reason, wanted } = loadMap(id);
+  document.getElementById('map').value = used;
+  for (const a of agents) {
+    if (a.walking) { arrive(a, a.goal); continue; }
+    const seat = SEATS[a.seat];
+    a.x = seat.point[0]; a.y = seat.point[1]; a.tile = [...seat.tile]; a.dir = seat.face;
+  }
+  [you.x, you.y] = tileCenter(MAP.spawn);
+  you.path = []; you.then = null; keys.clear();
+  readTokens();
+  makeOverlay();
+  if (reason) {
+    feed(`Mappa «${wanted.name}» rifiutata: ${reason}. Uso la mappa base.`);
+    announce(`Mappa rifiutata: ${reason}. Uso la mappa base.`);
+  } else feed(`Mappa: ${MAP.name}. Stessi progetti, stanze diverse`);
+}
+document.getElementById('map').addEventListener('change', (e) => switchMap(e.target.value));
+
+/* ───────────── Start ───────────── */
+
+[you.x, you.y] = tileCenter(MAP.spawn);
+
+let saved = 'system';
+try { saved = localStorage.getItem('ufficio-theme') || 'system'; } catch { /* preview only */ }
+setTheme(saved);
+makeOverlay();
+fit();
+window.addEventListener('resize', fit);
+renderRosterOnce();
+renderDecisions();
+for (const a of agents) enterStep(a, 0);
+updateRoster();
+window.addEventListener('error', (e) => feed(`Errore dell'anteprima: ${e.message}`));
+feed('Ufficio aperto: 2 agenti, 3 scrivanie di progetto');
+
+let last = performance.now(), rosterAt = 0, running = false;
+function loop(t) {
+  if (!running) return;
+  const dt = Math.max(0, Math.min(64, t - last));
+  last = t;
+  now += dt;
+  for (const a of agents) updateAgent(a, dt);
+  updateYou(dt);
+  render();
+  updateOverlay();
+  if (now - rosterAt > 250) { updateRoster(); rosterAt = now; }
+  requestAnimationFrame(loop);
+}
+function start() { if (running) return; running = true; last = performance.now(); requestAnimationFrame(loop); }
+/* No frames while the page is hidden. */
+document.addEventListener('visibilitychange', () => { if (document.hidden) running = false; else start(); });
+start();
+canvas.focus({ preventScroll: true });
+</script>
+</body>
+</html>

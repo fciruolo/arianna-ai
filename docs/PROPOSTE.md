@@ -1080,6 +1080,316 @@ Totale circa 73-111 h. Nessuna dipendenza esterna nuova (solo la dipendenza inte
 - Numeri del Mac nuovo (chip, banda, prefill, richieste concorrenti in oMLX, tetto Metal predefinito).
 - Contenuto di D-106 (in scrittura): il collegamento in (D) va riletto quando c'è.
 
+## D-106 — Ufficio pixel giocabile: il tuo personaggio va a parlare con gli agenti
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere. **La tappa 1 è anticipata su scelta dell'utente** (2026-10-05, in costruzione stanotte): è un'eccezione alla regola "una fase alla volta" e va annotata in `ROADMAP.md`
+- **Collegate:**
+  - D-011 (pixel-agents incorporato nell'HUD): questa proposta la sostituisce solo in parte, vedi "Alternative";
+  - D-006: già sostituita da D-011;
+  - D-060: pixel agent, formato dei fogli, pacchetti in `data/characters`;
+  - D-091 e D-109: la finestra "Decisioni in attesa" e il suo "Chiudi";
+  - D-107: nomi fissi delle schede, conversazioni con più partecipanti;
+  - D-103: temi; un tema definisce anche la mappa dell'ufficio (punto 8);
+  - D-058: progetti approvati;
+  - D-082 e D-083: deleghe e righe di attività;
+  - D-089: barra sinistra;
+  - D-013: documenti da allineare;
+  - `SPEC.md` ("Interfacce", "Ufficio pixel-art"), `ROADMAP.md` (Fase 3), `OPEN-QUESTIONS.md` (licenza degli sprite di pixel-agents);
+  - anteprima `docs/mockups/ufficio.html`.
+
+### Contesto
+
+**Richiesta dell'utente (testuale):** "quando faremo l'ufficio in pixel art dove vediamo i nostri agenti animati che vediamo che lavorano a vari progetti e con cui io personaggio posso andare a parlargli come se fosse un gioco?"
+
+**Nota successiva dell'utente (testuale):** "l'ufficio ovviamente segue il tema... se c'è scrubs l'ufficio diventa il sacro cuore (l'ospedale), così come se mettiamo i simpsons vorrei la loro casa ecc".
+
+**Risposta breve.**
+- L'ufficio è nella Fase 3 della `ROADMAP.md` (riga "pixel-agents con `HookProvider` proprio 12-18"), dopo la Fase 2.
+- La parte "io personaggio vado a parlargli" non c'è né nella specifica né in pixel-agents: è un'aggiunta. Questa proposta la descrive e dice cosa cambia rispetto a D-011.
+- L'utente ha scelto di anticipare la tappa 1.
+
+**Cosa c'è oggi** (letto nel repository il 2026-10-05):
+
+- **Specifica.** `SPEC.md` prevede l'ufficio come terza vista sugli stessi dati e sugli stessi eventi. Lo costruisce adottando pixel-agents (MIT) incorporato nell'HUD, con un `HookProvider` per Arianna, con le aree legate al cardwall e il fumetto "in attesa" legato alla colonna "Attende te" (righe 309-313). D-011 è accettata.
+- **Personaggi (D-060).**
+  - Arianna e il Coder originali sono mappe di pixel in `apps/hud/characters/art/*.ts`, trasformate in fogli 112×128.
+  - Fotogrammi 16×32; righe giù, su e destra; colonne 0–2 camminata, 3–4 scrittura, 5–6 lettura; una quarta riga con pensa, aspetta, pausa e battito di ciglia.
+- **Pose nella chat.** `apps/hud/src/lib/sprites.ts` ha già:
+  - `Pose` (`idle`, `thinking`, `working`, `reading`, `waiting`, `paused`) e `poseFrames`;
+  - i fumetti `…`, `!` e `zz`;
+  - `poseOf`, che ricava la posa dalla riga di attività;
+  - `conversationState`, che mette "in attesa" solo con un'approvazione vera.
+- **"Arianna aspetta una tua decisione".** Il pannello di stato conta le attese con `pendingTotal(items, hidden)` (`apps/hud/src/lib/pending.ts`): le righe visibili fino a L2 più le attese sopra L2, solo contate (`hidden`, da `pending-api.ts`).
+- **Dati che il core già espone:**
+  - `GET /api/status` (agenti e stato), `GET /api/projects` (D-058), `GET /api/delegations` (D-082);
+  - le attese di D-091;
+  - il WebSocket `/api/ws` con gli eventi `task.*`, `approval.*` ed `executor.*`.
+
+**pixel-agents, verificato sulla copia locale in sola lettura** (`/Users/faust/Sites/pixel-agents`, D-059; `package.json` versione 1.4.1, licenza MIT):
+
+- **Architettura.**
+  - È un "runtime" Node con server Fastify 5 (`@fastify/websocket`, `@fastify/static`, `@fastify/cors`) e un'interfaccia React 19 su canvas.
+  - Lo servono un'estensione di VS Code oppure il comando standalone `pixel-agents`.
+  - Ascolta su `127.0.0.1`, con un token per hook e WebSocket.
+- **`HookProvider`** (`core/src/provider.ts`):
+  - `normalizeHookEvent(raw)` restituisce `{ sessionId, event }`;
+  - `installHooks`, `uninstallHooks`, `areHooksInstalled` e `consentDisclosure` servono a un provider che scrive gli hook nella configurazione della CLI;
+  - `formatToolStatus` produce l'etichetta sopra il personaggio, per esempio "Reading foo.ts" nel provider di Claude Code;
+  - c'è poi `readingTools`.
+- **Eventi.** Gli eventi normalizzati sono `toolStart` (con nome dello strumento e `input`), `toolEnd`, `turnEnd` (con `awaitingInput`), `subagentStart`/`End`/`TurnEnd`, `progress`, `permissionRequest`, `sessionStart` (con `cwd` e `transcriptPath`) e `sessionEnd`. Il commento del file dice che oggi esiste solo il provider di Claude Code.
+- **Concetti utili** (`CONTEXT.md`):
+  - aree collegate a cartelle di lavoro;
+  - posti ricavati dalle sedie;
+  - passeggiata a turno finito, mentre chi aspetta te resta seduto;
+  - fumetto "…" per il permesso e spunta per il turno finito;
+  - agenti senza terminale disegnati come "fantasmi";
+  - sotto-agenti accanto al genitore;
+  - editor della disposizione.
+- **Manca un avatar dell'utente.** Nell'interfaccia la tastiera serve solo all'editor e all'introduzione (`useEditorKeyboard.ts`, `IntroBubble.tsx`). Si interagisce selezionando un personaggio e portando in primo piano il suo terminale.
+
+### Proposta
+
+**1. Cosa vedi.** Una pagina `/ufficio` della chat web, con un'icona nella barra sinistra di D-089. È un ufficio a tessere di 16 px, ingrandito di un fattore intero con `image-rendering: pixelated`. Contiene:
+- un'**isola di scrivanie per progetto**, con nome del progetto ed etichetta, per esempio "repos/demo · L1";
+- un'**isola "Privata · L2"**, sempre presente;
+- una **scrivania "Decisioni"**;
+- un **angolo pausa**;
+- il **tuo personaggio**.
+
+L'anteprima `docs/mockups/ufficio.html` lo mostra:
+- tre isole (`Privata`, `repos/demo`, `arianna`);
+- Arianna e il Coder disegnati dalle mappe di pixel vere, con stati simulati;
+- un avatar "Tu";
+- un selettore fra tre mappe generiche, con lo stesso ripiego di un pacchetto non valido.
+
+**2. Isole.** Si ricavano dai dati, senza editor:
+- una isola per ogni progetto approvato (D-058) con una conversazione di lavoro o una delega negli ultimi 7 giorni, più "Privata", fino agli slot della mappa;
+- gli altri progetti stanno dietro l'ancoraggio "Archivio", che apre un elenco;
+- l'ordine è stabile: prima i progetti fissati, poi i più attivi, a parità per nome. Un progetto resta nella stessa isola da un giorno all'altro.
+
+**3. Chi calcola la posa.**
+- **Il core** manda solo una **fotografia** (tipo `OfficeSnapshot`). Per ogni agente porta:
+  - lo **stato del core** (`idle`, `thinking`, `working`, `waiting`, come `/api/status`);
+  - il **tipo dell'ultima attività** (`Activity.kind`: `search`, `read`, `write`, `tool`, `card`, `delegate`, `thinking`, `plan`, `wait`, `error`), mai la riga di attività;
+  - il **motivo di pausa** (`null`, `quota`, `rate_limit`, `task`);
+  - l'id dell'isola;
+  - l'**id e l'etichetta della conversazione**, oppure `null` sopra L2;
+  - "locale" o "cloud".
+
+  Oltre agli agenti la fotografia porta il totale delle attese.
+- **La chat** calcola la posa in un modulo puro, `apps/hud/src/lib/office/` (con `poseOf` di `sprites.ts`), coperto da test con un caso positivo e uno negativo per regola. Le regole, in ordine:
+  1. `waiting` → "aspetta te", fumetto "!". Vince su tutto, perché serve l'utente.
+  2. Motivo di pausa presente → "in pausa", fumetto "zz", sul divano. `quota` e `rate_limit` arrivano da `executor.quota` ed `executor.rate_limit` per l'esecutore del task in corso, quando il router non ha un altro esecutore ammesso; `task` arriva da un task in pausa. La pausa vince sull'attività perché il lavoro è fermo.
+  3. Attività `search` o `read` → "legge" (colonne 5–6).
+  4. Attività `write`, `tool`, `card` o `delegate` → "scrive" (colonne 3–4), con lo schermo della scrivania acceso.
+  5. Attività `thinking`, `plan`, `wait` o `error`, oppure stato `thinking`/`working` senza attività → "pensa", fumetto "…".
+  6. Altrimenti → "libero": seduto, oppure passeggia (domanda 6).
+- **Movimenti.** Su `task.delegate` il Coder si alza e cammina fino all'isola del progetto. A task finito compare una spunta per 2 secondi. Un segno sulla scrivania dice "locale" o "cloud". Claude e Codex non sono personaggi: sono gli esecutori del Coder (D-082).
+
+**4. Attese e scrivania "Decisioni"** (D-091 e D-109).
+- **Cos'è un'attesa:** un'**approvazione in sospeso** oppure una **domanda** (un task in `waiting_user` senza approvazione, per esempio Arianna che chiede una conferma). L'agente resta seduto con "aspetta te".
+- **Il "!" della scrivania** usa **lo stesso totale** della riga "Arianna aspetta una tua decisione": `pendingTotal(items, hidden)`, cioè le righe fino a L2 più `hidden`.
+- **Cosa apre la scrivania.** Vicino alla scrivania, E apre **la finestra di D-091 così com'è**:
+  - una riga per attesa, dalla più vecchia;
+  - un clic porta alla conversazione, dove la decisione si prende **nella scheda di sempre**;
+  - "Chiudi" di D-109 per le attese senza approvazione;
+  - le attese sopra L2 solo contate.
+
+  Nessun pulsante "approva" nell'ufficio e nessuna scorciatoia. L'anteprima fa lo stesso: la finestra non ha più "Approva"/"Rifiuta", la scheda di approvazione è nel pannello della conversazione, e un messaggio nuovo chiude la domanda ("Attesa chiusa: la conversazione è andata avanti.", D-109).
+
+**5. Parlare con un agente** (con D-107).
+- **Nome sopra il personaggio.** È **il nome fisso della scheda** ("Arianna", "Coder"). Il nome visualizzato di D-107 è testo dell'utente, L2, e nell'ufficio non compare mai: si vede solo nel pannello di chat, dove la chat già lo mostra.
+- **Dove siedono gli agenti.**
+  - Gli agenti di una conversazione con più partecipanti (`conversation_participants` di D-107) siedono **all'isola della conversazione**: quella del progetto per una conversazione di lavoro, "Privata" per una privata.
+  - Chi non trova una scrivania libera resta in piedi accanto all'isola, come i sotto-agenti di pixel-agents.
+  - Un agente presente in più conversazioni siede dove ha il task in corso, altrimenti dove ha lavorato per ultimo.
+- **"Parla con X"** (E o Invio vicino all'agente, oppure "Parla subito" nell'elenco) apre un **pannello laterale con la stessa chat** (`ChatView` in formato compatto). La conversazione è:
+  - quella del task in corso di X, se è fino a L2. Se ha più partecipanti, il composer parte con "@X";
+  - altrimenti, cioè con un task sopra L2 o senza task, l'ultima conversazione visibile di X, con una riga che lo dice;
+  - per Arianna senza nessuna conversazione, una nuova.
+
+  **Nessun canale nuovo:** stesse rotte, stesso WebSocket, stessi messaggi. "Apri nella chat" porta alla conversazione intera; **Esc** chiude e riporta il focus sull'ufficio.
+
+**6. Il tuo personaggio.**
+- **Movimento:** frecce o WASD, oppure clic o tocco, con un percorso a tessere (ricerca in ampiezza) e collisioni con muri e mobili. Gli agenti bloccano solo da vicino e non chiudono mai in un angolo.
+- **Aspetto:** un personaggio a scelta fra i pacchetti di D-060. Nel repository entra un avatar originale "Tu", ridisegnato **partendo da** quello dell'anteprima con tutte le pose (scrittura, lettura, quarta riga), in `apps/hud/characters/art/user.ts`, costruito da `build.ts` e coperto dal test dei PNG. Personaggi di film e cartoni restano solo in `data/characters/` (D-060).
+
+**7. Privacy: la garanzia vale per ciò che si disegna.**
+- **Il componente dell'ufficio** (canvas, nomi, etichette, elenco "Nell'ufficio") **riceve solo `OfficeSnapshot`**, il tipo del punto 3. Questo tipo non ha titoli, testo, percorsi, comandi né nomi visualizzati.
+  - Un test fallisce se il tipo guadagna un campo `string` che non sia un id, un'etichetta o un valore di un'enumerazione.
+  - Un secondo test costruisce la fotografia da task e conversazioni con titoli e testo L2 e controlla che nulla di quel testo ci finisca.
+- **Il testo** passa solo da `ChatView` e `PendingDecisions`, montati nel pannello, con le loro rotte di oggi. Lì il testo fino a L2 compare **come oggi**, nel pannello di chat e nella finestra Decisioni.
+- **Task sopra L2.** La posa sì (Arianna "scrive"), l'id della conversazione no. L'attesa conta solo in `hidden`, come nella riga "Arianna aspetta una tua decisione".
+- **Etichette senza contenuto.** Sopra il personaggio compaiono nome e stato ("Coder · legge"), mai un'attività con dettagli.
+- **Isole.** Mostrano il nome del progetto approvato, al massimo L1 per D-058. L'isola privata si chiama sempre "Privata".
+- **Accesso.** Come la chat: solo su loopback o in VPN, mai su Telegram.
+- **Niente hook nella CLI.** Nessun hook nella configurazione di `claude` o `codex` e nessuna lettura dei transcript in `~/.claude`.
+- **Nel codice:** l'ufficio non usa `v-html` né `innerHTML`, solo testo. L'anteprima fa lo stesso (`textContent`).
+
+**8. L'ufficio segue il tema: mappe come dati** (con D-103). Un tema può portare anche la **mappa dell'ufficio**: pianta, tessere, arredi e posizione delle isole.
+
+- **File.**
+  - La cartella del tema contiene `theme.json`, più facoltativamente `office.json` e `tileset.png`. D-103 va allargata: oggi la cartella può contenere "solo `theme.json`".
+  - I tileset dei temi del repository stanno in `apps/hud/themes/<id>/tileset.png`, generati da mappe di pixel con `build.ts` e coperti dal test dei PNG, come i personaggi.
+- **Mappa base.** La mappa di partenza ha id **`base`** (open space), distinto dal tema "Ufficio" di D-103, che la usa con i suoi colori e arredi.
+- **Corrispondenza fra temi e mappe nel repository:**
+  - "Corsia" usa la mappa `corsia`;
+  - "Salotto animato" e "Cartoon giallo" usano la stessa mappa `salotto`, ognuno con i suoi colori;
+  - gli stagionali usano `base` con decori.
+- **Formato** (schema chiuso, versione 1), in due forme chiuse:
+
+  ```json
+  {
+    "format": 1,
+    "size": [22, 13],
+    "tileset": { "file": "tileset.png", "tile": 16 },
+    "rows": ["######################", "#....................#", "…"],
+    "legend": { "#": { "tile": 0, "solid": true }, ".": { "tile": 1 }, ",": { "tile": 2 } },
+    "furniture": [{ "tile": 12, "at": [5, 2], "size": [2, 1], "solid": true }],
+    "rooms": { "privata": "studio", "island-1": "ufficio", "pause": "sala-attesa" },
+    "anchors": {
+      "entrance": [18, 11],
+      "decisions": { "room": [8, 8, 13, 10], "desk": [9, 9, 4] },
+      "pause": { "seat": [2, 9], "face": "down" },
+      "coffee": { "seat": [5, 9], "face": "up" },
+      "private": { "room": [1, 2, 6, 6], "desk": [2, 4, 3] },
+      "islands": [{ "room": [8, 2, 13, 6], "desk": [9, 4, 3] }, { "room": [15, 2, 20, 6], "desk": [16, 4, 3] }],
+      "archive": [20, 7]
+    }
+  }
+  ```
+
+  La seconda forma, per gli stagionali, è `{ "format": 1, "base": "base", "decor": [{ "tile": 3, "at": [4, 1] }] }`: la mappa base più arredi decorativi non solidi, senza `rows`.
+  - **`room`** è `[c0, r0, c1, r1]`, estremi inclusi.
+  - **`desk`** è `[c, r, larghezza]`: le tessere della scrivania sono solide. Il posto dell'agente è la tessera sopra il centro, con il personaggio rivolto in basso, e gli altri posti sono le tessere libere accanto.
+  - `rooms` dà a una stanza un tipo da un **vocabolario chiuso** (`ufficio`, `studio`, `reparto`, `sala-attesa`, `cucina`, `salotto`, `ingresso`). Serve all'etichetta generica quando un'isola è vuota. Il nome sull'isola viene sempre dal progetto, mai dalla mappa.
+- **Come i progetti si adattano.**
+  - Gli slot `islands` si riempiono nell'ordine stabile del punto 2, quindi un progetto resta nella "stessa" isola anche cambiando mappa.
+  - Quelli in più vanno in `archive`; gli slot vuoti restano scrivanie libere.
+  - Nell'anteprima `Privata`, `repos/demo` e `arianna` cambiano stanza e arredi nelle tre mappe, ma restano le stesse isole.
+- **Validazione**, fatta dal core in sola lettura come per i pacchetti di D-060 e i temi di D-103:
+  - **File:** nella cartella solo `theme.json`, `office.json` e `tileset.png`. `office.json` al massimo 16 KB. Schema chiuso: una chiave sconosciuta fa rifiutare la mappa. Nessuna stringa libera, niente URL né codice; l'id della mappa usa `[a-z0-9-]`.
+  - **Dimensioni:** al massimo 40×30 tessere. Le righe sono tutte della larghezza dichiarata, e **ogni carattere di `rows` è una chiave di `legend`**.
+  - **Limiti di quantità:** al massimo 16 voci in `legend`, 128 arredi in `furniture`, 12 isole e 32 decori.
+  - **Tileset:** `tileset.png` al massimo 256×256 px e 256 KB, con larghezza e altezza **multipli di 16**, letto con il controllo di formato dei fogli dei personaggi. Gli indici di tessera stanno dentro il tileset.
+  - **Ancoraggi:** tutti dentro la mappa. I **posti** (`seat`, `entrance`, `archive`) sono su tessere **calpestabili**; le **scrivanie** (`desk`) su tessere **solide**, ciascuna con almeno una tessera vicina calpestabile e raggiungibile. Servono almeno `private` e due `islands`.
+  - **Raggiungibilità:** ogni posto e la scrivania Decisioni si raggiungono dall'ingresso, con una ricerca in ampiezza come nell'anteprima.
+  - Un test con un caso che passa e uno che fallisce per ogni regola.
+- **Ripiego.** Una mappa non valida non blocca nulla: l'ufficio usa la mappa `base` con i colori del tema, e Impostazioni mostra il motivo (per esempio "manca l'ancoraggio «decisioni»"). Vale anche per un tema senza mappa.
+- **Ambienti di opere protette.** L'ospedale di Scrubs, la casa dei Simpson e simili arrivano **solo come pacchetto dell'utente** in `data/themes/<id>/`, fuori da git, con lo stesso validatore. Non vengono disegnati né scaricati da Claude (D-060). Valgono le ragioni di D-103: diritto d'autore, marchi, repository condivisibile.
+
+**9. Accessibilità.** L'ufficio **non sostituisce la chat**, e nessuna azione esiste solo lì.
+- **Elenco "Nell'ufficio"** con stato, isola, etichetta e i pulsanti "Raggiungi" e "Parla subito", più "Decisioni in attesa" con "Apri subito".
+- **Canvas** raggiungibile con Tab, con un'etichetta che spiega i tasti.
+- **Annunci** `aria-live` ("Il Coder aspetta una tua decisione").
+- **`prefers-reduced-motion`:** fotogrammi fermi, agenti che compaiono a destinazione, fumetti fermi. C'è anche un interruttore.
+- **Etichette** sempre scritte ("L1", "L2", "sopra L2"), mai solo un colore.
+- **Contrasto** dai token del tema (D-103).
+- **Risparmio:** il ciclo di disegno si ferma a pagina nascosta (`visibilitychange`). L'anteprima lo fa già.
+
+### Alternative
+
+| | A. pixel-agents incorporato (D-011) | B. Motore nostro su canvas, senza dipendenze (**raccomandata**) |
+| --- | --- | --- |
+| Cosa si riusa | Motore, posti, editor, mobili, animali, effetti | I nostri fogli, `sprites.ts`, `ChatView`, `PendingDecisions`, i token dei temi |
+| Avatar che cammina e parla | **Non c'è**: fork dell'interfaccia React da mantenere | Si scrive insieme al resto (nell'anteprima, circa 300 righe) |
+| Dipendenze | React 19, Fastify 5 e tre plugin, un secondo server su un'altra porta: voci in DECISIONS e due interfacce (Vue e React) | Nessuna |
+| Eventi | `AgentEvent` è pensato per gli strumenti: `toolStart` porta nome e `input`. Serve un nostro `HookProvider` con `installHooks` vuoto e un ponte dal core, che dovrebbe ridurre gli eventi prima di mandarli | La fotografia del punto 3, nello stesso processo |
+| Privacy | Con **un provider nostro** `formatToolStatus` è codice nostro e può evitare "Reading foo.ts"; serve comunque non attivare il provider di Claude Code, che legge i transcript in `~/.claude` | Solo ciò che `OfficeSnapshot` porta, per costruzione |
+| Personaggi | **Nostri anche con A**, se pixel-agents accetta i nostri fogli; gli sprite di serie (licenza da chiarire) non servono | Nostri o dell'utente |
+| Grafica e temi | Un'altra identità in un iframe; i temi di D-103 e le mappe del punto 8 andrebbero portati nel suo formato di disposizione | Stessi token, stesse mappe, stesso chiaro/scuro |
+
+- **Scartate.**
+  - C: pixel-agents solo per le sessioni di Claude Code, accanto a un ufficio nostro. Sarebbero due uffici, senza guadagno.
+  - D: un motore di gioco (Phaser, PixiJS). Dipendenze pesanti per un problema piccolo.
+- **Perché B.** Avatar, chat nel pannello, mappe dei temi e garanzia di privacy sono più semplici nello stesso codice Vue.
+  - **Reversibilità probabile, da verificare:** i fogli sono nel formato di pixel-agents, ma non ho letto il suo caricatore (`core/src/assets/loader.ts`) né provato un foglio 112×128.
+  - Da pixel-agents si prendono le **idee**: aree, posti, passeggiata, fumetti, sotto-agenti, fantasmi. Se si copia del codice, il file porta l'avviso MIT e la licenza va in `third_party/pixel-agents/LICENSE`, come per OpenDots.
+- **D-011 si sostituisce solo in parte.** Restano vere "HUD scritto in Vue" e "l'ufficio incorporato nell'HUD/chat come vista"; cade "pixel-agents standalone incorporato". Nella tabella di DECISIONS lo stato diventa "In parte sostituita da D-106".
+
+**Se l'utente sceglie B, da allineare** (D-013, non li tocco ora):
+- **`DECISIONS.md`:** D-011, stato "In parte sostituita da D-106"; riga di D-060 ("così lo stesso file vale … nell'ufficio della fase 3": resta vera, togliere "il formato di pixel-agents" come motivo unico).
+- **`PROPOSTE.md`, D-103** (ancora da decidere):
+  - la cartella del tema ammette `office.json` e `tileset.png`;
+  - tileset in `apps/hud/themes/<id>/`;
+  - alla tabella dei temi ispirati si aggiunge la mappa ("Cartoon giallo" → `salotto`).
+- **`SPEC.md`:**
+  - riga 309 (paragrafo dell'ufficio: motore nostro, idee da pixel-agents, avatar e "Parla con");
+  - riga 311 (la "strada più rapida in due passi" con pixel-agents);
+  - riga 390 ("Unico linguaggio con … pixel-agents");
+  - riga 397 ("pixel-agents incorporato");
+  - riga 419 ("Costruire o adottare": da "Adottare" a "Scrivere, con idee da pixel-agents");
+  - riga 455 (rischio della Fase 3: "integrazione di pixel-agents con un provider tuo");
+  - la riga 17 ("ispirato a pixel-agents") resta vera.
+- **`ROADMAP.md`:**
+  - riga 11 (Fase 3: "ufficio pixel" e criterio "Vedi agenti al lavoro");
+  - riga 43 ("pixel-agents con `HookProvider` proprio 12-18" → tappe di D-106);
+  - riga 60 del taglio ("Ufficio pixel 12-18");
+  - **nota dell'eccezione: tappa 1 di D-106 anticipata su scelta dell'utente**.
+- **`REFERENCES.md`:** riga 7 ("Adottare" → "Idee") e la sezione "pixel-agents" (righe 12-17: server standalone, provider, sprite, modalità JSONL).
+- **`OPENDOTS.md`:** riga 134 ("identico byte per byte … basta indicare a pixel-agents la stessa cartella") → il formato resta, l'ufficio è nostro.
+- **`OPEN-QUESTIONS.md`:** riga 23 (licenza degli sprite) → "chiusa da D-106: gli sprite di pixel-agents non si usano".
+
+### Piano a tappe
+
+Stime grezze (±50%): sono da rifare a fine tappa 1.
+
+| Tappa | Contenuto | Ore |
+| --- | --- | --- |
+| 0 | Anteprima `docs/mockups/ufficio.html` (fatta, 2026-10-05) | — |
+| 1 | **Anticipata stanotte.** Motore puro in `apps/hud/src/lib/office/`: griglia, percorsi, collisioni, ordine di disegno, fotogrammi dai fogli, calcolo della posa del punto 3. Test `node:test`. Pagina `/ufficio` con la mappa `base` fissa e le pose da `/api/status` | 6-9 |
+| 2 | Isole dai progetti e stati dagli eventi: `OfficeSnapshot` nel core (`GET /api/office` più aggiornamenti sul WebSocket di oggi), con i due test del punto 7. Il Coder cammina sulle deleghe; il "!" usa `pendingTotal` | 5-8 |
+| 3 | Avatar e interazione: personaggio da `[characters]`, tastiera, clic e tocco; E apre `ChatView` compatto sulla conversazione del punto 5; scrivania Decisioni con `PendingDecisions`; elenco accessibile e annunci | 5-8 |
+| 4 | Rifiniture: avatar "Tu" con tutte le pose, movimento ridotto, colori del tema, passeggiata se la vuoi | 3-5 |
+| 5 | Mappe come dati: `office.json`, validatore con i test, caricamento da `apps/hud/themes/` e `data/themes/` con ripiego, disegno dal tileset; mappa `base` con tileset generato da `build.ts` | 6-9 |
+| 6 | Mappe `corsia` e `salotto`: tessere e arredi originali, ancoraggi, prova a occhio | 5-8 |
+| 7 | Decori stagionali sulla mappa base (dopo la tappa 4 di D-103) | 2-3 |
+| | **Totale** | **32-50** |
+
+- **Rispetto alla Fase 3.** Le tappe 1-4 (19-30 ore) superano le 12-18 ore previste per pixel-agents, perché avatar e interazione sono lavoro nuovo.
+- **Con la strada A** le ore di integrazione resterebbero quelle, più 8-12 ore per il fork dell'interfaccia React.
+- **Le tappe 5-7** (13-20 ore) dipendono dalla tappa 1 di D-103 (temi come dati) e si possono rinviare senza toccare il resto.
+
+### Rischi
+
+- **`ChatView` in formato compatto (tappa 3).** Oggi `ChatView` è la vista della pagina, legata alla conversazione aperta, alla rotta e allo stato globale (`store.ts`). Montarne una seconda istanza in un pannello può richiedere di separare stato e vista. Se costa troppo, il ripiego è un pannello che porta alla chat ("Apri nella chat") più un composer ridotto.
+- **Distrazione.** Il "gioco" può diventare il posto dove si guarda invece di lavorare. Per questo l'ufficio è una pagina facoltativa.
+- **Prestazioni.** Il ciclo si ferma a pagina nascosta e rallenta quando nulla si muove.
+- **Fotografia che si allarga.** I due test del punto 7 lo impediscono, e ogni campo nuovo passa da DECISIONS.
+- **Nomi delle cartelle.** Al massimo L1 per D-058. Se servisse, si aggiunge un nome d'isola a scelta dell'utente, trattato come i nomi di D-107: L2, quindi mai disegnato.
+- **Mappe dell'utente.** Un pacchetto valido ma brutto o scomodo non è un errore: il ripiego vale solo per le mappe non valide.
+
+### Cosa si può costruire subito a basso rischio
+
+- **Tappa 1** (scelta dall'utente, in corso): motore puro e calcolo della posa con i test, pagina `/ufficio` che legge solo `/api/status`. Non tocca `packages/policy`, `packages/router` né `packages/executors`, non porta dipendenze né dati nuovi.
+- **Avatar "Tu".** Ridisegnato partendo dall'anteprima, con tutte le pose, coperto dal test dei PNG.
+
+### Domande per l'utente
+
+1. ~~Anticiparla rispetto alla Fase 2?~~ **Decisa:** tappa 1 anticipata. Le tappe 2-4 restano dopo la Fase 2, salvo nuova scelta.
+2. **Quale avatar:** il "Tu" ridisegnato dall'anteprima, un personaggio dai tuoi pacchetti in `data/characters/`, o scelta in Impostazioni con "Tu" come predefinito?
+3. **Isole in un open space** (come la mappa `base`) **o stanze per progetto** (muri e porte, come `corsia`)?
+4. **Motore nostro (B), con D-011 sostituita in parte?**
+5. **Arianna:** resta alla scrivania "Privata" o siede all'isola della conversazione che sta orchestrando (punto 5)?
+6. **Agenti liberi:** restano seduti o passeggiano come in pixel-agents?
+7. **Dove vive l'ufficio:** pagina a sé nella barra sinistra, pannello dell'HUD in Fase 3, o entrambi?
+8. **Quali progetti diventano isole:** quelli attivi negli ultimi 7 giorni, oppure quelli che fissi tu?
+9. **Quali mappe per prime?** Proposta: `base`, poi `corsia` e `salotto` insieme ai temi di D-103 che le usano.
+10. **Mappa decisa dal tema o scelta a parte?** Proposta: la decide il tema ("l'ufficio segue il tema"), con un selettore separato solo se ti serve.
+11. **Le tue mappe di opere vere** le prepari o procuri tu in `data/themes/`. Vuoi un controllo da riga di comando (`pnpm arianna:themes check`) che ti dica cosa non va?
+
+### Cose non verificate (D-106)
+
+- **pixel-agents letto, non eseguito.** Serve `npm install`, quindi la rete. Non ho controllato se si può mettere in un iframe (`frame-ancestors`/CSP), il peso dell'interfaccia, il caricatore dei fogli (`core/src/assets/loader.ts`, quindi la reversibilità) né il valore di `HOOK_API_PREFIX`.
+- **Sessioni non interattive.** Resta aperta la questione della specifica, cioè se le sessioni `claude -p` compaiano in pixel-agents. Con B la domanda cade.
+- **Anteprima provata solo in Chrome senza interfaccia** (`--headless`, con il tempo simulato).
+  - Ho controllato: le tre mappe in chiaro e scuro, il ripiego, la domanda chiusa da un messaggio nuovo e da "Chiudi", l'approvazione nella scheda della conversazione con il Coder che riparte, l'attesa sopra L2 solo contata.
+  - Non l'ho provata con un lettore di schermo né su un telefono.
+- **Arredi disegnati dal codice.** Nell'anteprima gli arredi li disegna il codice, non un tileset: il formato di `office.json` (legenda, arredi a più tessere, eventuale secondo livello) va provato con la mappa `base` nella tappa 5.
+- **Limiti proposti, non misurati.** 40×30 tessere, 16 KB, 256×256 px e 256 KB, le quantità massime: vanno confermati con le prime mappe vere.
+- **`ChatView` non letto per questa proposta.** Il rischio della tappa 3 viene dalla struttura della chat descritta in D-089 e D-090.
+
 ## Cose non verificate
 
 - Numeri di stelle, commit e date: letti da pagine GitHub riassunte da un modello; la data delle release di Open Design (2024 sulla pagina, incoerente con la licenza del 2026) va controllata.
