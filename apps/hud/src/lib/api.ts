@@ -34,6 +34,11 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
   return data as T;
 }
 
+/** A trial notice from the core (I-1), the same way as a real one: every open page shows it. How many pages it reached. */
+export async function testNotice(kind: 'reply' | 'approval' | 'failure'): Promise<number> {
+  return (await call<{ sent: string; pages: number }>('POST', '/api/notifications/test', { kind })).pages;
+}
+
 /** The list, or the archived conversations (up to 200, the most the core gives in one page). */
 export async function listConversations(archived = false): Promise<Conversation[]> {
   return (await call<{ conversations: Conversation[] }>('GET', archived ? '/api/conversations?archived=1&limit=200' : '/api/conversations')).conversations;

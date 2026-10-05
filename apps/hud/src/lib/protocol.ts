@@ -7,7 +7,7 @@ export type ServerMessage =
   | ({ type: 'activity' } & Activity)
   | ({ type: 'edit' } & EditPiece)
   /** A notification (I-1): a kind and a conversation, never text; the page decides whether to show it. */
-  | { type: 'notice'; kind: NoticeKind; conversationId: string | null }
+  | { type: 'notice'; kind: NoticeKind; conversationId: string | null; trial?: true }
   | { type: 'ready' };
 
 export type NoticeKind = 'reply' | 'approval' | 'failure';
@@ -99,7 +99,7 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
       const kind = NOTICE_KINDS.find((item) => item === value.kind);
       const { conversationId } = value;
       if (kind === undefined || (conversationId !== null && (typeof conversationId !== 'string' || !UUID.test(conversationId)))) return undefined;
-      return { type: 'notice', kind, conversationId };
+      return { type: 'notice', kind, conversationId, ...(value.trial === true ? { trial: true as const } : {}) };
     }
     case 'event': {
       const event = value.event;

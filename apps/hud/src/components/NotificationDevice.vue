@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
+import { testNotice } from '../lib/api.ts';
 import { askPermission, permissionNow } from '../lib/notices.ts';
 import { enablePush, pushState, type PushState } from '../lib/push.ts';
 import Icon from './Icon.vue';
@@ -15,6 +16,9 @@ const permission = ref<NotificationPermission | 'unsupported'>('default');
 const push = ref<{ state: PushState; key: string | null }>({ state: 'off', key: null });
 const problem = ref<string | null>(null);
 const working = ref(false);
+/** What the last trial did. */
+const sent = ref<string | null>(null);
+const trying = ref(false);
 
 onMounted(() => {
   permission.value = permissionNow();
@@ -28,6 +32,30 @@ onMounted(() => {
 async function allow(): Promise<void> {
   problem.value = null;
   permission.value = await askPermission();
+}
+
+const TRIALS = [
+  { kind: 'reply', label: 'Risposta' },
+  { kind: 'approval', label: 'Approvazione' },
+  { kind: 'failure', label: 'Lavoro fallito' },
+] as const;
+
+/** Asks the core for a trial notice: it comes back over the live feed and shows as a real one. */
+async function trial(kind: (typeof TRIALS)[number]['kind']): Promise<void> {
+  if (trying.value) return;
+  problem.value = null;
+  sent.value = null;
+  trying.value = true;
+  try {
+    const pages = await testNotice(kind);
+    if (pages === 0) sent.value = 'Nessuna pagina collegata al core: ricarica la chat.';
+    else if (permission.value === 'granted') sent.value = 'Mandata: l’avviso compare nella chat e anche fra le notifiche del Mac. Se quella non arriva, controlla “Non disturbare” e il browser in Impostazioni di Sistema → Notifiche.';
+    else sent.value = 'Mandata: l’avviso compare nella chat. Per la notifica del Mac serve il permesso del browser.';
+  } catch {
+    problem.value = 'Il core non ha mandato la notifica di prova.';
+  } finally {
+    trying.value = false;
+  }
 }
 
 async function subscribe(): Promise<void> {
@@ -56,6 +84,11 @@ async function subscribe(): Promise<void> {
       <p v-else-if="permission === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito: riattivale dalle impostazioni del browser.</p>
       <p v-else-if="permission === 'granted'" class="text-sm text-ok">Consentite in questo browser.</p>
       <button v-else type="button" class="btn self-start" @click="allow"><Icon name="bell" :size="16" />Consenti le notifiche in questo browser</button>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-[13px] text-muted">Prova una notifica:</span>
+        <button v-for="item in TRIALS" :key="item.kind" type="button" class="btn" :disabled="trying" @click="trial(item.kind)"><Icon name="bell" :size="16" />{{ item.label }}</button>
+      </div>
+      <p v-if="sent !== null" role="status" class="text-xs text-muted">{{ sent }}</p>
 
       <h3 class="hud-title mt-1">Con la chat chiusa (Web Push)</h3>
       <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: servono le chiavi di Impostazioni → Voce → Notifiche push (<code class="font-mono text-[12.5px]">pnpm voice:vapid</code>).</p>

@@ -12,7 +12,7 @@ import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
-import { permissionNow, shouldShow, showNotice } from './lib/notices.ts';
+import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toast } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
@@ -72,6 +72,9 @@ export function createChatStore() {
   const sending = ref(false);
   /** "Nota salvata in kb/inbox/… (L2)" after a "/nota" (D-080): path and label, never the text. */
   const notice = ref<string | null>(null);
+  /** The notices shown inside the chat (I-1), newest last, at most three. */
+  const toasts = ref<Toast[]>([]);
+  let toastSeq = 0;
   /** Calls (D-066): the receipts of the open conversation, the state of the voice, the call in progress. */
   const calls = ref<CallInfo[]>([]);
   const voiceState = ref<string | null>(null);
@@ -652,9 +655,16 @@ export function createChatStore() {
       return;
     }
     if (message.type === 'notice') {
-      // I-1: a fixed sentence and the link, only when the user is not looking at it already.
+      // I-1: a toast in the chat in view, a system notification (fixed sentence and link) when it is hidden; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
-      if (shouldShow(message.conversationId, view)) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
+      const where = noticeWhere(message.conversationId, view, message.trial === true);
+      if (where.system) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
+      if (where.toast) {
+        // The title stays in this page, on this Mac: a toast may name the conversation, a system notification never.
+        const title = conversations.value.find((item) => item.id === message.conversationId)?.title ?? null;
+        toastSeq += 1;
+        toasts.value = pushToast(toasts.value, { id: toastSeq, kind: message.kind, conversationId: message.conversationId, title });
+      }
       return;
     }
     if (message.type === 'delta') {
@@ -757,6 +767,17 @@ export function createChatStore() {
     return document.visibilityState === 'visible';
   }
 
+  function dismissToast(id: number): void {
+    toasts.value = toasts.value.filter((item) => item.id !== id);
+  }
+
+  /** "Apri" on a toast: to its conversation (the home page for a trial). */
+  function openToast(id: number): void {
+    const toast = toasts.value.find((item) => item.id === id);
+    dismissToast(id);
+    if (toast !== undefined) followLink(noticeUrl(toast.conversationId));
+  }
+
   /** A click on a notice of this page: the address changes and App.vue follows it as after Back. */
   function followLink(path: string): void {
     if (window.location.pathname !== path) window.history.pushState(null, '', path);
@@ -827,7 +848,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

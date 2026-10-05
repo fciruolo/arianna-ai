@@ -5,10 +5,11 @@
 // or the title of a conversation.
 const TEXTS = {
   call: { title: 'Arianna ti chiama', body: 'Apri la chat per rispondere.' },
-  reply: { title: 'Arianna ha risposto', body: 'Apri la chat per vedere.' },
-  approval: { title: 'Arianna aspetta una tua decisione', body: 'Apri la chat per vedere.' },
-  failure: { title: 'Un lavoro è fallito', body: 'Apri la chat per vedere.' },
+  reply: { title: 'Arianna ha risposto', body: 'Clicca per aprire la conversazione.' },
+  approval: { title: 'Arianna aspetta una tua decisione', body: 'Clicca per vedere cosa approvare.' },
+  failure: { title: 'Un lavoro è fallito', body: 'Clicca per vedere cosa è successo.' },
 };
+const ICON = '/notification-icon.png';
 // The core unreachable, or nothing recent: still a notification (browsers require one), without saying what.
 const UNKNOWN = { title: 'Arianna', body: 'Apri la chat per vedere le novità.' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,14 +29,14 @@ async function latest() {
 
 async function show() {
   const notice = await latest();
-  if (notice === null) return self.registration.showNotification(UNKNOWN.title, { body: UNKNOWN.body, tag: 'arianna', data: { url: '/' } });
+  if (notice === null) return self.registration.showNotification(UNKNOWN.title, { body: UNKNOWN.body, icon: ICON, tag: 'arianna', data: { url: '/' } });
   const text = TEXTS[notice.kind];
   const url = notice.conversationId === null ? '/' : `/c/${notice.conversationId}`;
   if (notice.kind === 'call') {
-    return self.registration.showNotification(text.title, { body: text.body, tag: 'arianna-call', renotify: true, requireInteraction: true, data: { url: null } });
+    return self.registration.showNotification(text.title, { body: text.body, icon: ICON, tag: 'arianna-call', renotify: true, requireInteraction: true, data: { url: null } });
   }
   // The same tag as a notice shown by an open page: the two replace each other.
-  return self.registration.showNotification(text.title, { body: text.body, tag: `arianna-${notice.kind}-${notice.conversationId ?? 'home'}`, data: { url } });
+  return self.registration.showNotification(text.title, { body: text.body, icon: ICON, tag: `arianna-${notice.kind}-${notice.conversationId ?? 'home'}`, data: { url } });
 }
 
 self.addEventListener('push', (event) => {

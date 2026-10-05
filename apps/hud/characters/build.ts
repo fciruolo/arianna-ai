@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ORIGINALS, PACK_DIR, sheetPng } from './originals.ts';
+import { NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, sheetPng } from './originals.ts';
 import { encodePng } from './png.ts';
 import { renderSheet, type CharacterArt } from './compose.ts';
 
@@ -39,6 +39,8 @@ for (const art of ORIGINALS) {
   writeFileSync(join(PACK_DIR, `${art.id}.png`), sheetPng(art));
   console.log(`Written ${art.id}.png`);
 }
+writeFileSync(NOTIFICATION_ICON, notificationIconPng());
+console.log('Written public/notification-icon.png');
 if (process.argv.includes('--preview')) {
   const dir = join(home, 'data', 'characters-preview');
   mkdirSync(dir, { recursive: true });

@@ -13,7 +13,36 @@ export const NOTICE_TITLE: Readonly<Record<NoticeKind, string>> = {
   approval: 'Arianna aspetta una tua decisione',
   failure: 'Un lavoro è fallito',
 };
-export const NOTICE_BODY = 'Apri la chat per vedere.';
+export const NOTICE_BODY: Readonly<Record<NoticeKind, string>> = {
+  reply: 'Clicca per aprire la conversazione.',
+  approval: 'Clicca per vedere cosa approvare.',
+  failure: 'Clicca per vedere cosa è successo.',
+};
+/** The logo of Arianna, in place of the browser's own icon (public/notification-icon.png). */
+export const NOTICE_ICON = '/notification-icon.png';
+
+/** A notice shown inside the chat (I-1): the conversation title is read from this page's own list. */
+export interface Toast {
+  id: number;
+  kind: NoticeKind;
+  conversationId: string | null;
+  title: string | null;
+}
+
+/** At most this many toasts at once: the oldest goes first. */
+export const MAX_TOASTS = 3;
+
+/** The stack with `toast` on top: one of the same kind and conversation is replaced, never doubled. */
+export function pushToast(list: readonly Toast[], toast: Toast): Toast[] {
+  return [...list.filter((item) => !(item.kind === toast.kind && item.conversationId === toast.conversationId)), toast].slice(-MAX_TOASTS);
+}
+
+/** The small line above the title of a toast. */
+export const TOAST_KICKER: Readonly<Record<NoticeKind, string>> = {
+  reply: 'Risposta',
+  approval: 'Approvazione',
+  failure: 'Lavoro fallito',
+};
 
 export interface NoticeView {
   /** document.visibilityState === 'hidden'. */
@@ -24,11 +53,17 @@ export interface NoticeView {
   permission: NotificationPermission | 'unsupported';
 }
 
-/** Show a notice in this page? Only with permission, and only if the user is not looking at it already. */
-export function shouldShow(conversationId: string | null, view: NoticeView): boolean {
-  if (view.permission !== 'granted') return false;
-  if (view.hidden) return true;
-  return conversationId === null || conversationId !== view.openConversation;
+/**
+ * Where a notice shows: in the page (the toast of the chat) when the user is
+ * looking at the chat but at another conversation; as a notification of the
+ * system when the page is hidden or out of focus; nowhere when it is the
+ * conversation being read. A trial (the buttons of Impostazioni → Notifiche)
+ * shows both, to see them side by side.
+ */
+export function noticeWhere(conversationId: string | null, view: NoticeView, trial = false): { toast: boolean; system: boolean } {
+  if (trial) return { toast: true, system: view.permission === 'granted' };
+  if (view.hidden) return { toast: false, system: view.permission === 'granted' };
+  return { toast: conversationId === null || conversationId !== view.openConversation, system: false };
 }
 
 /**
@@ -59,7 +94,7 @@ export async function askPermission(): Promise<NotificationPermission | 'unsuppo
  * the push), else from the page. `open` follows a click on the page's own.
  */
 export async function showNotice(kind: NoticeKind, conversationId: string | null, open: (path: string) => void): Promise<void> {
-  const options = { body: NOTICE_BODY, tag: noticeTag(kind, conversationId), data: { url: noticeUrl(conversationId) } };
+  const options = { body: NOTICE_BODY[kind], icon: NOTICE_ICON, tag: noticeTag(kind, conversationId), data: { url: noticeUrl(conversationId) } };
   const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
   if (registration !== undefined) {
     await registration.showNotification(NOTICE_TITLE[kind], options);

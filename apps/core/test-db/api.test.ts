@@ -431,6 +431,23 @@ test('notifications (I-1): a page says whether it is in view, notices reach ever
   assert.deepEqual(await response.json(), { notice: null });
 });
 
+test('notifications (I-1): a trial notice reaches the open pages with no conversation; another kind or field is refused', async () => {
+  const socket = await openSocket('/api/ws');
+  try {
+    await socket.until((message) => message.type === 'ready');
+    const sent = await fetch(`${origin}/api/notifications/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"kind":"approval"}' });
+    assert.equal(sent.status, 200);
+    assert.deepEqual(await sent.json(), { sent: 'approval', pages: 1 });
+    assert.deepEqual(await socket.until((message) => message.type === 'notice'), { type: 'notice', kind: 'approval', conversationId: null, trial: true });
+  } finally {
+    socket.ws.close();
+  }
+  for (const body of ['{"kind":"call"}', '{"kind":"reply","text":"x"}', '{}']) {
+    const refused = await fetch(`${origin}/api/notifications/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    assert.equal(refused.status, 400, body);
+  }
+});
+
 /** A step executor for the declassification path: ask, then use the decided approval. */
 function declassifier(): StepExecutor & { seen: StepContext[] } {
   const seen: StepContext[] = [];

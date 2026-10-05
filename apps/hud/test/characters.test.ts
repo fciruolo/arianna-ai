@@ -5,13 +5,17 @@ import { test } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 import { checkArt, renderSheet, type CharacterArt, type Part } from '../characters/compose.ts';
-import { ORIGINALS, PACK_DIR, sheetPng } from '../characters/originals.ts';
+import { NOTIFICATION_ICON, notificationIconPng, ORIGINALS, PACK_DIR, sheetPng } from '../characters/originals.ts';
 import { encodePng } from '../characters/png.ts';
 
 test('the sheets in git are the ones the pixel maps give (run node apps/hud/characters/build.ts after a change)', () => {
   for (const art of ORIGINALS) {
     assert.deepEqual(readFileSync(join(PACK_DIR, `${art.id}.png`)), sheetPng(art), art.id);
   }
+});
+
+test('the icon of the notifications in git is the head of Arianna the pixel maps give (I-1)', () => {
+  assert.deepEqual(readFileSync(NOTIFICATION_ICON), notificationIconPng());
 });
 
 test('pack.json lists every original sheet', () => {

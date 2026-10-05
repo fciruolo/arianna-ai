@@ -16,7 +16,7 @@ La conversazione di un'approvazione o di un fallimento si legge da `tasks.conver
 
 ## Dove arriva
 
-1. **Pagine aperte.** Il core manda l'avviso a ogni pagina collegata al WebSocket (`{ "type": "notice", "kind", "conversationId" }`). La pagina mostra la notifica del browser (`Notification`, o `showNotification` del service worker se c'è) quando l'utente ha dato il permesso e la pagina è nascosta o fuori fuoco, oppure quando l'avviso è di un'altra conversazione. Un clic apre `/c/<id>`.
+1. **Pagine aperte.** Il core manda l'avviso a ogni pagina collegata al WebSocket (`{ "type": "notice", "kind", "conversationId" }`). La pagina decide dove mostrarlo (`noticeWhere` in `apps/hud/src/lib/notices.ts`): con la pagina davanti e un'altra conversazione aperta, un **avviso nella chat** (stile A scelto dall'utente da `docs/mockups/notifiche.html`: scheda in basso a destra con la testa pixel di Arianna, colore per tipo, Apri e Dopo, una barra che la chiude in 6 s e si ferma con il mouse o la tastiera sopra; al massimo tre, uno nuovo dello stesso tipo e conversazione sostituisce il vecchio; non serve il permesso); con la pagina nascosta o fuori fuoco, la **notifica del browser** (`Notification`, o `showNotification` del service worker se c'è) se l'utente ha dato il permesso; per la conversazione che si sta leggendo, niente. L'avviso di prova mostra tutti e due. Un clic apre `/c/<id>`.
 2. **Chat chiusa: Web Push.** Se nessuna pagina è in primo piano e `[voice.push]` è configurato, il core manda una push vuota come per le chiamate (D-066): senza corpo, solo l'intestazione VAPID, `ttl` 3600, `urgency: normal`, `topic: arianna-<tipo>` (una push nuova dello stesso tipo sostituisce quella non ancora consegnata). Prima, il gateway controlla sul canale `push` la frase fissa del tipo (L0), come per "Arianna ti chiama".
 3. **Il service worker** (`apps/hud/public/sw.js`), ricevuta la push, chiede al core `GET /api/notifications/latest`: l'ultimo avviso spinto (tipo e id della conversazione, tenuto in memoria per un'ora) e scrive la frase fissa. La domanda va dal dispositivo al core, mai dal servizio push. Se il core non risponde scrive "Arianna — Apri la chat per vedere le novità." (i browser vogliono comunque una notifica). Le chiamate usano la stessa strada: il ringer registra `call` prima della push.
 
@@ -36,12 +36,14 @@ failures = true
 quiet = "22:00-07:00"   # ora locale, anche a cavallo della mezzanotte; senza la chiave nessun silenzio
 ```
 
-Senza la sezione: tutti i tipi accesi, nessun silenzio. Le ore di silenzio fermano sia la pagina sia la push; le chiamate restano con i loro orari di `[voice.outgoing]`. Nella chat: Impostazioni → Agenti e voce → **Notifiche**, con i tre interruttori e le ore di silenzio (salvati in `arianna.toml`) e il riquadro **Questo dispositivo**, che chiede il permesso del browser e iscrive il dispositivo alla push. Il permesso si chiede solo dal clic.
+Senza la sezione: tutti i tipi accesi, nessun silenzio. Le ore di silenzio fermano sia la pagina sia la push; le chiamate restano con i loro orari di `[voice.outgoing]`. Nella chat: Impostazioni → Agenti e voce → **Notifiche**, con i tre interruttori e le ore di silenzio (salvati in `arianna.toml`) e il riquadro **Questo dispositivo**, che chiede il permesso del browser e iscrive il dispositivo alla push. Il permesso si chiede solo dal clic. Con il permesso dato, tre pulsanti **Prova una notifica** (Risposta, Approvazione, Lavoro fallito) chiedono al core `POST /api/notifications/test` con `{ "kind" }` (solo `reply`, `approval`, `failure`): il core manda l'avviso a tutte le pagine aperte, senza conversazione e senza push, e risponde quante ne ha raggiunte; nato da un clic, non guarda `[notifications]` né le ore di silenzio.
 
 ## Privacy
 
 - Nessun dato L1/L2 esce: la push è vuota; il gateway vede e registra solo le quattro frasi fisse L0.
-- `GET /api/notifications/latest` risponde con tipo e UUID della conversazione, alle stesse condizioni di ogni altra rotta del core (loopback, stesso Host).
+- L'avviso nella chat porta anche il **titolo della conversazione**, letto dall'elenco che la pagina ha già: resta nella pagina, sul Mac, e non finisce mai nella notifica del browser né nella push (scelta voluta: il "mai testo né titolo" vale per ciò che passa da macOS e dai servizi push).
+- `GET /api/notifications/latest` risponde con tipo e UUID della conversazione, alle stesse condizioni di ogni altra rotta del core (loopback, stesso Host). `POST /api/notifications/test` alle stesse condizioni: non esce nulla dal Mac.
+- L'icona della notifica è la testa pixel di Arianna (`apps/hud/public/notification-icon.png`, generata dalle mappe dei personaggi con `node apps/hud/characters/build.ts`).
 - Telegram è spento (D-110) e non riceve questi avvisi.
 
 ## Limiti

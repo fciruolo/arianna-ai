@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
 import IncomingCall from './components/IncomingCall.vue';
+import NoticeToasts from './components/NoticeToasts.vue';
 import KnowledgePage from './components/KnowledgePage.vue';
 import DraftChat from './components/DraftChat.vue';
 import FailureDialog from './components/FailureDialog.vue';
@@ -62,7 +63,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -804,5 +805,6 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @retry="store.retry"
       @chat="store.openSystemChat"
     />
+    <NoticeToasts :toasts="toasts" @open="store.openToast" @dismiss="store.dismissToast" />
   </div>
 </template>

@@ -1317,6 +1317,17 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
   table.push(route('GET', '/api/notifications/latest', () => Promise.resolve({ body: { notice: options.notices?.latest() ?? null } })));
+  // A trial notice (I-1): the same way as a real one, to every open page, with no conversation;
+  // asked by a click, so neither [notifications] nor the quiet hours hold it back. No push.
+  table.push(
+    route('POST', '/api/notifications/test', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['kind']);
+      const kind = body.kind;
+      if (kind !== 'reply' && kind !== 'approval' && kind !== 'failure') throw new HttpError(400, 'kind must be reply, approval or failure');
+      return { body: { sent: kind, pages: broadcastNotice({ kind, conversationId: null }, true) } };
+    }),
+  );
   table.push(...changelogRoutes(options.changelog));
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
@@ -1324,6 +1335,17 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
+  /** To every open page; how many it reached. */
+  function broadcastNotice(notice: Notice & { kind: NoticeKind }, trial = false): number {
+    const frame = JSON.stringify({ type: 'notice', kind: notice.kind, conversationId: notice.conversationId, ...(trial ? { trial: true } : {}) });
+    let reached = 0;
+    for (const ws of sockets) {
+      if (ws.readyState !== ws.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) continue;
+      ws.send(frame);
+      reached += 1;
+    }
+    return reached;
+  }
   let hosts = allowedHosts(options.host, options.port);
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -1474,8 +1496,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     clients: () => sockets.size,
     visiblePages: () => visible.size,
     broadcast(notice) {
-      const frame = JSON.stringify({ type: 'notice', kind: notice.kind, conversationId: notice.conversationId });
-      for (const ws of sockets) if (ws.readyState === ws.OPEN && ws.bufferedAmount <= MAX_BUFFERED_BYTES) ws.send(frame);
+      broadcastNotice(notice);
     },
     async close() {
       for (const ws of sockets) ws.terminate();

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { connectLive, type SocketLike } from '../src/lib/live.ts';
-import { NOTICE_BODY, NOTICE_TITLE, noticeTag, noticeUrl, shouldShow } from '../src/lib/notices.ts';
+import { NOTICE_BODY, NOTICE_ICON, NOTICE_TITLE, noticeTag, noticeUrl, noticeWhere, pushToast } from '../src/lib/notices.ts';
 import { parseServerMessage } from '../src/lib/protocol.ts';
 import { notificationsBody, notificationsForm, notificationsProblem } from '../src/lib/settings.ts';
 import { resolveSection, sectionDirty } from '../src/lib/settings-index.ts';
@@ -23,17 +23,21 @@ test('a notice frame: a known kind and a conversation id or null, nothing else',
   for (const raw of ['{"type":"notice","kind":"call","conversationId":null}', '{"type":"notice","kind":"reply","conversationId":"../x"}', '{"type":"notice","kind":"reply"}', '{"type":"notice"}']) {
     assert.equal(parseServerMessage(raw), undefined, raw);
   }
+  // A trial is marked only by true.
+  assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"trial":true}'), { type: 'notice', kind: 'reply', conversationId: null, trial: true });
+  assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"trial":"yes"}'), { type: 'notice', kind: 'reply', conversationId: null });
 });
 
-test('shouldShow: only with permission; hidden page always, visible page only for another conversation', () => {
+test('noticeWhere: toast in the chat in view, system notification when hidden, nothing for the open conversation; a trial shows both', () => {
   const view = { hidden: false, openConversation: ID, permission: 'granted' as const };
-  assert.equal(shouldShow(ID, view), false, 'the user is reading it');
-  assert.equal(shouldShow(OTHER, view), true);
-  assert.equal(shouldShow(null, view), true);
-  assert.equal(shouldShow(ID, { ...view, hidden: true }), true);
-  assert.equal(shouldShow(OTHER, { ...view, permission: 'default' }), false);
-  assert.equal(shouldShow(OTHER, { ...view, hidden: true, permission: 'denied' }), false);
-  assert.equal(shouldShow(OTHER, { ...view, permission: 'unsupported' }), false);
+  assert.deepEqual(noticeWhere(ID, view), { toast: false, system: false }, 'the user is reading it');
+  assert.deepEqual(noticeWhere(OTHER, view), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(null, view), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(OTHER, { ...view, permission: 'default' }), { toast: true, system: false }, 'a toast needs no permission');
+  assert.deepEqual(noticeWhere(ID, { ...view, hidden: true }), { toast: false, system: true });
+  assert.deepEqual(noticeWhere(ID, { ...view, hidden: true, permission: 'denied' }), { toast: false, system: false });
+  assert.deepEqual(noticeWhere(null, view, true), { toast: true, system: true });
+  assert.deepEqual(noticeWhere(null, { ...view, permission: 'default' }, true), { toast: true, system: false });
 });
 
 test('the fixed words, the link and the tag shared with the service worker', () => {
@@ -42,7 +46,8 @@ test('the fixed words, the link and the tag shared with the service worker', () 
   assert.equal(noticeUrl(null), '/');
   assert.equal(noticeTag('reply', ID), `arianna-reply-${ID}`);
   for (const title of Object.values(NOTICE_TITLE)) assert.ok(SW.includes(`'${title}'`), title);
-  assert.ok(SW.includes(`'${NOTICE_BODY}'`));
+  for (const body of Object.values(NOTICE_BODY)) assert.ok(SW.includes(`'${body}'`), body);
+  assert.ok(SW.includes(`'${NOTICE_ICON}'`));
   assert.ok(SW.includes('`arianna-${notice.kind}-${notice.conversationId ?? \'home\'}`'));
 });
 
@@ -96,4 +101,14 @@ test('the Notifiche section has its address and its unsaved edits', () => {
   assert.equal(resolveSection('notifiche').item.id, 'notifications');
   assert.equal(sectionDirty('notifications', (section) => section === 'notifications'), true);
   assert.equal(sectionDirty('notifications', (section) => section === 'voice'), false);
+});
+
+test('pushToast: on top, the same kind and conversation replaced, at most three', () => {
+  const toast = (id: number, kind: 'reply' | 'approval' | 'failure', conversationId: string | null) => ({ id, kind, conversationId, title: null });
+  const one = pushToast([], toast(1, 'reply', ID));
+  assert.deepEqual(pushToast(one, toast(2, 'reply', ID)).map(({ id }) => id), [2], 'the same notice again replaces it');
+  assert.deepEqual(pushToast(one, toast(2, 'approval', ID)).map(({ id }) => id), [1, 2], 'another kind stays');
+  assert.deepEqual(pushToast(one, toast(2, 'reply', OTHER)).map(({ id }) => id), [1, 2], 'another conversation stays');
+  const three = [toast(1, 'reply', ID), toast(2, 'approval', ID), toast(3, 'failure', null)];
+  assert.deepEqual(pushToast(three, toast(4, 'reply', OTHER)).map(({ id }) => id), [2, 3, 4], 'the oldest goes');
 });
