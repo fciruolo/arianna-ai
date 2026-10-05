@@ -125,7 +125,7 @@ export interface ApiServerOptions {
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
   userAgents?: UserAgents;
   /**
-   * What the participant bar shows of an agent (D-125): where it runs and the
+   * What the participant bar shows of an active agent (D-125): where it runs and the
    * label of its name in the lines of the chat; undefined for an agent no
    * longer active. Without it every agent reads as gone (executor null, L1).
    */

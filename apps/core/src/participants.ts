@@ -138,7 +138,9 @@ export async function enterOnDelegation(tx: Queryable, entry: Entry): Promise<bo
     label: 'L1',
     payload: { conversationId: entry.conversationId, agent: entry.agent, participantId: row.id, delegationId: entry.delegationId },
   });
-  await systemLine(tx, entry.conversationId, entry.taskId, maxLabel(entry.reasonLabel, entry.nameLabel), addingLine(entry.agent, entry.reason));
+  // Without the reason the line holds only the name: the name's label.
+  const label = entry.reason === undefined ? entry.nameLabel : maxLabel(entry.reasonLabel, entry.nameLabel);
+  await systemLine(tx, entry.conversationId, entry.taskId, label, addingLine(entry.agent, entry.reason));
   await systemLine(tx, entry.conversationId, entry.taskId, entry.nameLabel, addedLine(entry.agent));
   return true;
 }
@@ -151,13 +153,27 @@ export async function isParticipant(sql: Queryable, conversationId: string, agen
 }
 
 /**
- * Whether `delegationId` brought its agent into the conversation and the
- * agent is still there: its run then carries ENTRY_TEXT. False from the
- * second delegation on, and after the user took the agent out.
+ * Whether the run of `delegationId` is the agent's first work since it
+ * joined the conversation (it is an active participant, and no other
+ * delegation to it there has reached a run since it joined): the run then
+ * carries ENTRY_TEXT. A delegation that never ran (a declassification
+ * refused, a missing project) leaves the greeting to the next one that does.
+ * False after the user took the agent out, until it joins again.
  */
 export async function isEntryDelegation(sql: Queryable, delegationId: string): Promise<boolean> {
   const [row] = await sql<{ found: boolean }[]>`
-    SELECT EXISTS (SELECT FROM conversation_participants WHERE delegation_id = ${delegationId}::bigint AND removed_at IS NULL) AS found`;
+    SELECT EXISTS (
+      SELECT FROM task_delegations d
+      JOIN tasks t ON t.id = d.task_id
+      JOIN conversation_participants p ON p.conversation_id = t.conversation_id AND p.agent = d.agent AND p.removed_at IS NULL
+      WHERE d.id = ${delegationId}::bigint
+        AND d.id >= coalesce(p.delegation_id, 0)
+        AND NOT EXISTS (
+          SELECT FROM task_delegations o JOIN tasks ot ON ot.id = o.task_id
+          WHERE ot.conversation_id = t.conversation_id AND o.agent = d.agent AND o.id <> d.id
+            AND o.id >= coalesce(p.delegation_id, 0) AND o.created_at >= p.added_at AND o.run_id IS NOT NULL
+        )
+    ) AS found`;
   return row?.found === true;
 }
 

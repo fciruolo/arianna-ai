@@ -304,7 +304,6 @@ export async function endCall(callId: string): Promise<void> {
   await call('POST', `/api/calls/${encodeURIComponent(callId)}/end`, {});
 }
 
-/** The calls of a conversation, as receipts (D-066). */
 /** The agents in the conversation besides Arianna and the user (D-125). */
 export async function listParticipants(conversationId: string): Promise<Participant[]> {
   return (await call<{ participants: Participant[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/participants`)).participants;
@@ -315,6 +314,7 @@ export async function removeParticipant(conversationId: string, agent: string): 
   await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/participants/${encodeURIComponent(agent)}/remove`, {});
 }
 
+/** The calls of a conversation, as receipts (D-066). */
 export async function listConversationCalls(conversationId: string): Promise<CallInfo[]> {
   return (await call<{ calls: CallInfo[] }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}/calls`)).calls;
 }

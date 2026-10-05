@@ -341,6 +341,34 @@ test('conversation_summaries: from a running local run, at least the label of it
   await assert.rejects(sql`DELETE FROM conversation_summaries WHERE conversation_id = ${conversation.id}`, /permission denied/);
 });
 
+test('conversation_summaries: a system line with a task is for the user only, a system message without one still counts (0026)', async () => {
+  const { sql, owner } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  const { taskId, runId } = await taskWithRun(conversation.id);
+  const base = { conversationId: conversation.id, taskId, runId };
+  const line = (label: Label, task: string | null) => owner`
+    INSERT INTO messages (conversation_id, role, label, body, task_id) VALUES (${conversation.id}, 'system', ${label}, 'Coder è stato aggiunto', ${task})`;
+  await seed(conversation.id, 1, 2, {}, 'L0');
+  await line('L2', taskId);
+  await seed(conversation.id, 2, 3, {}, 'L0');
+  await line('L2', taskId);
+  await seed(conversation.id, 1, 5, {}, 'L0');
+  const [m1, m2, , m4, m5, , m7] = await messageIds(conversation.id);
+  await insertPiece({ ...base, first: m1 ?? '', last: m2 ?? '', label: 'L2' });
+  // The line between two pieces is no gap; the one inside a piece does not raise its label.
+  await insertPiece({ ...base, first: m4 ?? '', last: m5 ?? '', label: 'L0' });
+  await insertPiece({ ...base, first: m7 ?? '', last: m7 ?? '', label: 'L0' });
+
+  // A system message without a task (a system chat, D-064) is read: a gap, and its label counts.
+  await line('L1', null);
+  await seed(conversation.id, 1, 6, {}, 'L0');
+  const ids = await messageIds(conversation.id);
+  const [m8, m9] = ids.slice(-2);
+  await assert.rejects(insertPiece({ ...base, first: m9 ?? '', last: m9 ?? '', label: 'L1' }), /leaving no message out/);
+  await assert.rejects(insertPiece({ ...base, first: m8 ?? '', last: m9 ?? '', label: 'L0' }), /below the label L1/);
+  await insertPiece({ ...base, first: m8 ?? '', last: m9 ?? '', label: 'L1' });
+});
+
 test('conversation_summaries: never from a cloud run, a stopped run, another conversation, or above the clearance', async () => {
   const { sql, owner } = db();
   const work = await createConversation(sql, { mode: 'work', project: 'demo', projects: ['demo'] });

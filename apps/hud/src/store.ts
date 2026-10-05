@@ -171,7 +171,6 @@ export function createChatStore() {
     }
   }
 
-  /** Pins a conversation at the top of the list, or unpins it (D-089). */
   async function refreshParticipants(): Promise<void> {
     const id = chat.value?.conversationId;
     if (id === undefined) return;
@@ -193,6 +192,7 @@ export function createChatStore() {
     }
   }
 
+  /** Pins a conversation at the top of the list, or unpins it (D-089). */
   async function pin(id: string, value: boolean): Promise<void> {
     error.value = null;
     try {

@@ -410,7 +410,7 @@ const server = await startApiServer({
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   participantAgent: (name) => {
     const agent = agents.get(name);
-    return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? null, nameLabel: nameLabelOf(agent) };
+    return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
   },
   characters: {
     dirs: { original: join(config.home, 'apps', 'hud', 'characters', 'originali'), data: join(config.paths.data, 'characters') },

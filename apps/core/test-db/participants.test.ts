@@ -202,6 +202,30 @@ test('a private conversation: the reason line carries what the step read (L2), t
   assert.ok(agentCall(model).messages[0]?.content.includes(ENTRY_TEXT));
 });
 
+test('a delegation that never ran leaves the greeting to the next one that does', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const refused = await postUserMessage(db().sql, conversation.id, 'Traduci: ciao.');
+  const first = scripted([DELEGATE, REPLY], []);
+  assert.deepEqual(await drain(refused.task.id, orchestrator(first)), ['waiting-approval']);
+  const waiting = await loadTask(db().sql, refused.task.id);
+  assert.ok(waiting?.waitingApprovalId !== null && waiting?.waitingApprovalId !== undefined);
+  await recordDecision(db().sql, waiting.waitingApprovalId, 'rejected', 'web');
+  assert.deepEqual(await drain(refused.task.id, orchestrator(first)), ['answered']);
+  assert.equal(first.requests.filter((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME).length, 0);
+
+  // Already in (the lines were written with the call), so no new lines; but its first real work greets.
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Traduci: buonasera.');
+  const second = scripted([DELEGATE, REPLY], [{ report: 'Eccomi! Good evening.' }]);
+  const executor = orchestrator(second);
+  assert.deepEqual(await drain(task.id, executor), ['waiting-approval']);
+  assert.deepEqual(await linesOf(task.id), []);
+  const again = await loadTask(db().sql, task.id);
+  assert.ok(again?.waitingApprovalId !== null && again?.waitingApprovalId !== undefined);
+  await recordDecision(db().sql, again.waitingApprovalId, 'approved', 'web');
+  assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+  assert.ok(agentCall(second).messages[0]?.content.includes(ENTRY_TEXT));
+});
+
 test('the guard of conversation_participants: only removed_at changes, once; never deleted; the grants', async () => {
   const { sql, owner } = db();
   const conversation = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'] });
