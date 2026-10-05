@@ -2376,7 +2376,7 @@ Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non 
 ## D-118 + D-119 — Agenti nuovi dalla pagina Agenti, con il loro personaggio PNG
 
 - **Data:** 2026-10-05
-- **Stato:** Accettate (risposte dell'utente, 2026-10-05); T1 unita a `main` (0.5.0); T2 fatta sul ramo `task/d118-t2`, in attesa della prova dell'utente; T4 cambiata, da confermare
+- **Stato:** Accettate (risposte dell'utente, 2026-10-05); T1 unita a `main` (0.5.0); T2 unita a `main` (0.6.0, provata da Claude nel browser su richiesta dell'utente); T4 cambiata, da confermare
 - **Collegate:** D-060 (formato dei fogli, pacchetti in `data/characters/`), D-079 (catalogo agency-agents), D-107 (personalità, permessi solo nei `.yaml`), D-111 (B: "+ Nuovo" con gli agenti; D: ospiti), D-116 (pagina Agenti), AGENT-CARDS
 
 ### Contesto
