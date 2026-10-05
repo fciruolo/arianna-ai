@@ -19,6 +19,7 @@ import CreditLine from './CreditLine.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 import MessageActions from './MessageActions.vue';
+import MessageTime from './MessageTime.vue';
 import PixelAgent from './PixelAgent.vue';
 
 const props = defineProps<{
@@ -314,6 +315,11 @@ const statusClass: Record<Task['status'], string> = {
   failed: 'text-danger',
 };
 const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
+
+/** When each message was sent (D-112); `now` moves every minute, so today's times become "ieri" after midnight. */
+const now = ref(new Date());
+const clock = setInterval(() => (now.value = new Date()), 60_000);
+onBeforeUnmount(() => clearInterval(clock));
 </script>
 
 <template>
@@ -431,6 +437,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
               {{ message.body }}
             </div>
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
+              <MessageTime :ts="message.ts" :now="now" />
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
@@ -462,6 +469,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
+              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
             </header>
@@ -476,6 +484,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
               </span>
               <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
+              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span
