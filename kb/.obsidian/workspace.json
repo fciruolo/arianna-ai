@@ -11,10 +11,14 @@
             "id": "ebe60e9a3e87b9bb",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "inbox/2026-10-05-045200-riesci-a-conteggiare-quanto-tempo-ci-met.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "Nuova scheda"
+              "title": "2026-10-05-045200-riesci-a-conteggiare-quanto-tempo-ci-met"
             }
           }
         ]
@@ -186,10 +190,17 @@
   },
   "active": "c5cb3f7b0e071d34",
   "lastOpenFiles": [
+    "inbox/2026-10-05-045158-riesci-a-conteggiare-quanto-tempo-ci-met.md",
+    "inbox/2026-10-05-041848-vorrei-acquistare-il-nuovo-mac-studio-m5.md",
+    "inbox/2026-10-05-041734-fatto-il-coder-ha-aggiunto-in-index-html.md",
+    "README.md",
+    "work/progetti/arianna-demo.md",
     "work/clienti/rossi-srl.md",
-    "public/ricette/torta-di-mele.md",
-    "public/arianna.md",
+    "private/casa/contratto-affitto-via-roma.md",
+    "private/casa/caldaia.md",
     "private/auto/assicurazione.md",
-    "inbox/ciao.md"
+    "inbox/ciao.md",
+    "public/ricette/torta-di-mele.md",
+    "public/arianna.md"
   ]
 }
