@@ -878,6 +878,8 @@ La tappa 1 senza la parte nella chat: lo schema, il validatore e il test del con
 
 ## D-107 — Ufficio virtuale multi-agente: personalità e tono, chat con più agenti, voce, Mac Studio 128 GB
 
+> **Superata in parte da D-107a2 (2026-10-05, risposte dell'utente):** nome, testo libero e specializzazione sono **L1 per dichiarazione dell'utente** (niente campo `label`, niente `personaLabel`; `PERSONA_LABEL` e `personaFits(clearance)` in `packages/policy`), testo libero e nuovo campo `specialization` fino a 500 caratteri, cinque toni (serio, asciutto, equilibrato, caloroso, scherzoso senza tabù), nome di Arianna non modificabile, file non valido che scarta i testi. Dove sotto si legge L2 per default, 250 caratteri o tre toni, vale D-107a2.
+
 - **Data:** 2026-10-05
 - **Stato:** Proposta, da discutere
 - **Collegate:** D-034 (trifecta e deleghe), D-053/D-055 (orchestratore, delega con brief e declassamento), D-060 (personaggi pixel), D-066/D-070..D-074 (chiamate, latenza, modelli della voce in memoria), D-071 (pagina Impostazioni, sezioni ordinarie e di privacy), D-075 (prompt identico byte per byte e blocchi da 2048 token di oMLX), D-077 (storia ancorata), D-079 (catalogo agency-agents), D-090 (menu "/" della chat), D-094 (scheda `designer`), D-095 (computer dell'agente: il run di uno specialista vi si vede come quello del Coder, nulla da cambiare), D-101 (`task.update` e autonomia delle carte), D-103 (temi), D-106 (ufficio pixel giocabile, in scrittura in parallelo)
@@ -1210,7 +1212,7 @@ L'anteprima `docs/mockups/ufficio.html` lo mostra:
   Nessun pulsante "approva" nell'ufficio e nessuna scorciatoia. L'anteprima fa lo stesso: la finestra non ha più "Approva"/"Rifiuta", la scheda di approvazione è nel pannello della conversazione, e un messaggio nuovo chiude la domanda ("Attesa chiusa: la conversazione è andata avanti.", D-109).
 
 **5. Parlare con un agente** (con D-107).
-- **Nome sopra il personaggio.** È **il nome fisso della scheda** ("Arianna", "Coder"). Il nome visualizzato di D-107 è testo dell'utente, L2, e nell'ufficio non compare mai: si vede solo nel pannello di chat, dove la chat già lo mostra.
+- **Nome sopra il personaggio.** È **il nome fisso della scheda** ("Arianna", "Coder"). Il nome visualizzato di D-107 è testo dell'utente (L1 per dichiarazione, D-107a2) e per scelta nell'ufficio non compare mai: si vede solo nel pannello di chat, dove la chat già lo mostra.
 - **Dove siedono gli agenti.**
   - Gli agenti di una conversazione con più partecipanti (`conversation_participants` di D-107) siedono **all'isola della conversazione**: quella del progetto per una conversazione di lavoro, "Privata" per una privata.
   - Chi non trova una scrivania libera resta in piedi accanto all'isola, come i sotto-agenti di pixel-agents.
@@ -1509,7 +1511,7 @@ La routine non esegue istruzioni libere: "dimmi quali email importanti" diventa 
   | Colonna | Valori |
   | --- | --- |
   | `id` | |
-  | `title` | Testo dell'utente: L2 per default, come i nomi di D-107 |
+  | `title` | Testo dell'utente: L2 per default (i nomi di D-107 sono invece L1 per dichiarazione, D-107a2) |
   | `conversation_id` | La conversazione privata della routine, punto (d) |
   | `days` | Insieme di giorni ISO 1-7 |
   | `at` | `HH:MM` |
@@ -1785,7 +1787,7 @@ Raccomandazione: **(c1) con (c2) come ripiego** quando la sessione non si trova 
 
 **(f) Come appare.**
 - **"+ Nuovo"** (finestra di D-097/D-108): accanto a "Privata" e "Lavoro" una terza scelta **"Con il Coder"**, che chiede il progetto e mostra l'avviso; apre una bozza (D-108) con il personaggio del Coder al posto di quello di Arianna. Indirizzo `/nuova?tipo=coder&progetto=<nome>`. È il primo passo: con "Con chi parli" (punto (h)) questa scelta diventa la carta "Claude" con un progetto.
-- **Intestazione:** personaggio e nome fisso "Coder" (il nome della scheda; il nome visualizzato di D-107 è L2 e qui non entra), progetto, selettore del modello (Sonnet, Opus, Fable con budget) e segno "va a Claude". Nella barra sinistra la conversazione ha l'icona del Coder.
+- **Intestazione:** personaggio e nome fisso "Coder" (il nome della scheda; il nome visualizzato di D-107, L1 per dichiarazione da D-107a2, qui per scelta non entra), progetto, selettore del modello (Sonnet, Opus, Fable con budget) e segno "va a Claude". Nella barra sinistra la conversazione ha l'icona del Coder.
 - **Ufficio (D-106):** sulla scrivania del Coder "Parla con il Coder" apre la conversazione diretta più recente sul progetto dell'isola, oppure una bozza "Con il Coder" su quel progetto; se il Coder sta lavorando a una delega di Arianna, apre quella conversazione come oggi (`talk.ts`). Cambia solo il ramo finale di `talkTarget` (`apps/hud/src/lib/office/talk.ts`).
 - **Legame con D-107:** la chat diretta è il caso più piccolo di una conversazione con partecipanti: un solo agente, senza Arianna. Non serve `conversation_participants`; se D-107 arriva, `conversations.agent` diventa "partecipante fisso, Arianna assente" e le regole di (a) restano. Un `@coder` in una chat di gruppo resta un `team.ask` via Arianna, non una chat diretta.
 - **Legame con D-078:** la scheda "Sviluppo" di D-078 può essere esattamente una conversazione diretta sul progetto `arianna-dev`, con la scheda `developer` al posto del `coder`: D-078 diceva "Arianna locale fa solo da tramite come in D-055", e con D-111 il tramite non serve. D-111 è la base, D-078 aggiunge memoria in `HANDOFF.md`, "una delega attiva" e niente `kb.*`. **Su un punto D-111 non basta ancora:** la scheda `developer` deve leggere `CLAUDE.md` del clone, che `--safe-mode` esclude (`profile.ts:108-111`); finché D-078 non risolve come dare quelle regole al Coder (per esempio nel prompt della scheda, o un profilo diverso verificato dal vivo), la chat diretta sul clone lavorerebbe senza di esse.

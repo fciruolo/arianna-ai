@@ -15,7 +15,7 @@ export {
   type ReadResult,
 } from './context.ts';
 export { PolicyError } from './errors.ts';
-export { personaFits, personaLabel, type PersonaLabel } from './persona.ts';
+export { PERSONA_LABEL, personaFits } from './persona.ts';
 export {
   canSendTo,
   isAtMost,

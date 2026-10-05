@@ -230,7 +230,7 @@ export function chatMessages(
 
 /** Fences a tool result; a tag inside it (a page could hold one) cannot end the fence. */
 export function toolResult(content: string): string {
-  return `<tool_result>\n${content.replace(/<\/?tool_result\s*>/gi, '[tool_result]')}\n</tool_result>`;
+  return `<tool_result>\n${content.replace(/<\s*\/?\s*tool_result\b[^>]*>/gi, '[tool_result]')}\n</tool_result>`;
 }
 
 /**

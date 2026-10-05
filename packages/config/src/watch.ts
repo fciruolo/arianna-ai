@@ -7,11 +7,12 @@
 // reads `current()` at each use. Only `paths`, `database` and `server` wait
 // for a restart.
 //
-// The cloud executors, the projects, Telegram and a persona declared L1
-// (D-107) are privacy settings: the user turns them on by editing the file
-// (or confirming on the settings page), never an agent. A file that cannot be
-// read closes them until it is valid again (the persona back to L2), so that
-// an exit taken off by hand next to a typo is not left open.
+// The cloud executors, the projects, Telegram and the user's text of a
+// persona (L1 by declaration, D-107) are privacy settings: the user writes
+// them by editing the file (or on the settings page), never an agent. A file
+// that cannot be read closes them until it is valid again (the persona keeps
+// tone and form of address, its text is dropped), so that an exit taken off
+// by hand next to a typo is not left open.
 import { unwatchFile, watchFile } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -44,7 +45,7 @@ export interface WatchOptions {
   onChange: (change: ConfigChange) => void;
   /**
    * An invalid file keeps the previous configuration, except the exits
-   * (projects, cloud executors, Telegram, a persona declared L1 back to L2),
+   * (projects, cloud executors, Telegram, the text of the personas),
    * which are closed until it is valid.
    */
   onError: (error: unknown) => void;
@@ -90,11 +91,11 @@ function empty(change: ConfigChange): boolean {
 
 /**
  * `config` with every exit closed: no project, no cloud executor, no Telegram,
- * and no persona text declared L1 (D-107): back to L2, it reaches only steps
- * with clearance L2.
+ * and no text of a persona (L1, D-107): only tone and form of address, fixed
+ * sentences of ours.
  */
 function closeExits(config: AriannaConfig): AriannaConfig {
-  const personas = Object.fromEntries(Object.entries(config.personas).map(([agent, persona]) => [agent, { ...persona, label: 'L2' as const }]));
+  const personas = Object.fromEntries(Object.entries(config.personas).map(([agent, persona]) => [agent, { tone: persona.tone, address: persona.address }]));
   const closed: AriannaConfig = { ...config, projects: [], cloud: { ...config.cloud, executors: [] }, personas };
   delete closed.telegram;
   return closed;

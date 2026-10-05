@@ -160,7 +160,15 @@ function cloudModelsSection(cloud: Settings['cloud']): string[] {
 /** `[personas.<agent>]`: every field, the display name and the text only when set. */
 function personasSection(personas: Personas | undefined): string[] {
   if (personas === undefined || Object.keys(personas).length === 0) {
-    return ['#', '# [personas.arianna]', '# tone = "equilibrato"', '# address = "tu"', '# display_name = "Ari"', '# traits = "Precisa e calma."', '# label = "L2"'];
+    return [
+      '#',
+      '# [personas.coder]',
+      '# tone = "asciutto"',
+      '# address = "tu"',
+      '# display_name = "Dario"',
+      '# traits = "Preciso e calmo."',
+      '# specialization = "Sviluppatore senior TypeScript, attento ai test."',
+    ];
   }
   return Object.entries(personas).flatMap(([agent, persona], index) => [
     ...(index === 0 ? [] : ['']),
@@ -169,7 +177,7 @@ function personasSection(personas: Personas | undefined): string[] {
     `address = ${str(persona.address)}`,
     ...(persona.displayName === undefined ? [] : [`display_name = ${str(persona.displayName)}`]),
     ...(persona.traits === undefined ? [] : [`traits = ${str(persona.traits)}`]),
-    `label = ${str(persona.label)}`,
+    ...(persona.specialization === undefined ? [] : [`specialization = ${str(persona.specialization)}`]),
   ]);
 }
 
@@ -330,17 +338,17 @@ export function renderSettings(settings: Settings): string {
       ? ['#', '# [characters]', '# arianna = "originali/arianna"', '# coder = "originali/coder"']
       : ['[characters]', ...Object.entries(settings.characters).map(([agent, choice]) => `${agent} = ${str(choice)}`)]),
     '',
-    '# Personas (D-107): style only, never permissions; tools, labels and',
-    '# approvals stay in agents/*.yaml. Per agent id: `tone` is serio,',
-    '# equilibrato (default, adds nothing) or scherzoso; `address` is tu',
-    '# (default) or lei; `display_name` (1-24 letters, spaces, apostrophe,',
-    '# hyphen; the id never changes) and `traits` (free text, at most 250',
-    '# characters) are yours, so L2 by default: they reach only steps with',
-    '# clearance L2 (private conversations, local models) and are dropped',
-    '# elsewhere. `label = "L1"` lets them reach work and cloud steps too: a',
-    '# privacy setting, only the user declares it. Agents at L0 never read them.',
-    '# Without a table an agent has the defaults: its prompt does not change.',
-    '# Applies without a restart; an invalid file takes an L1 back to L2.',
+    '# Personas (D-107): style and role only, never permissions; tools, labels',
+    '# and approvals stay in agents/*.yaml. Per agent id: `tone` is serio,',
+    '# asciutto, equilibrato (default, adds nothing), caloroso or scherzoso;',
+    '# `address` is tu (default) or lei; `display_name` (1-24 letters, spaces,',
+    '# apostrophe, hyphen; the id never changes; not for arianna), `traits`',
+    '# (free text) and `specialization` (role and expertise, refining the role',
+    '# of agents/<name>.md), at most 500 characters each. Your text is L1 by',
+    '# your declaration: it reaches Claude and Codex too, so no personal data',
+    '# here. Agents and tasks at L0 never read it. Without a table an agent has',
+    '# the defaults: its prompt does not change. Applies without a restart; an',
+    '# invalid file drops the text and keeps tone and address.',
     ...personasSection(settings.personas),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',

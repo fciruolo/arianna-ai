@@ -31,12 +31,19 @@ test('[personas] (D-107): absent, every agent has the defaults', () => {
 
 test('[personas.<agent>] is read with the checks of @arianna/agents', () => {
   assert.deepEqual(
-    personasOf('[personas.arianna]\ntone = "scherzoso"\ndisplay_name = "Ari"\ntraits = "Precisa e calma."\n\n[personas.coder]\naddress = "lei"\nlabel = "L1"'),
+    personasOf(
+      '[personas.arianna]\ntone = "caloroso"\ntraits = "Precisa e calma."\n\n[personas.coder]\ntone = "asciutto"\naddress = "lei"\ndisplay_name = "Dario"\nspecialization = "Sviluppatore senior."',
+    ),
     {
-      arianna: { tone: 'scherzoso', address: 'tu', displayName: 'Ari', traits: 'Precisa e calma.', label: 'L2' },
-      coder: { tone: 'equilibrato', address: 'lei', label: 'L1' },
+      arianna: { tone: 'caloroso', address: 'tu', traits: 'Precisa e calma.' },
+      coder: { tone: 'asciutto', address: 'lei', displayName: 'Dario', specialization: 'Sviluppatore senior.' },
     },
   );
+});
+
+test('[personas]: Arianna keeps her name, the other agents can be renamed', () => {
+  assert.throws(() => personasOf('[personas.arianna]\ndisplay_name = "Ari"'), { name: 'ConfigError', message: /personas\.arianna\.display_name/ });
+  assert.equal(personasOf('[personas.coder]\ndisplay_name = "Ari"').coder?.displayName, 'Ari');
 });
 
 test('[personas] refuses what the persona refuses, and bad agent ids, naming the field but not the text', () => {
@@ -44,9 +51,10 @@ test('[personas] refuses what the persona refuses, and bad agent ids, naming the
   const bad = [
     '[personas.arianna]\ntone = "sarcastico"',
     '[personas.arianna]\naddress = "voi"',
-    '[personas.arianna]\nlabel = "L0"',
+    '[personas.arianna]\nlabel = "L1"',
     '[personas.arianna]\ntools = ["channel.send"]',
-    `[personas.arianna]\ntraits = "${secret}${'a'.repeat(250)}"`,
+    `[personas.arianna]\ntraits = "${secret}${'a'.repeat(500)}"`,
+    `[personas.arianna]\nspecialization = "${secret}${'a'.repeat(500)}"`,
     `[personas.arianna]\ntraits = "${secret}\\u0007"`,
     '[personas.arianna]\ndisplay_name = ""',
     '[personas.arianna]\ndisplay_name = "Un nome davvero troppo lungo"',
@@ -60,15 +68,15 @@ test('[personas] refuses what the persona refuses, and bad agent ids, naming the
 });
 
 test('[personas] refuses __proto__ as an agent id or as a key', () => {
-  for (const section of ['[personas.__proto__]\ntone = "serio"', '[personas.arianna]\n__proto__ = "x"', '[personas."__proto__"]\nlabel = "L1"']) {
+  for (const section of ['[personas.__proto__]\ntone = "serio"', '[personas.arianna]\n__proto__ = "x"', '[personas."__proto__"]\ntone = "serio"']) {
     assert.throws(() => personasOf(section), { name: 'ConfigError' }, section);
   }
 });
 
 test('the settings write [personas] and read back the same, text with quotes and line breaks included', () => {
   const personas = {
-    arianna: { tone: 'scherzoso' as const, address: 'lei' as const, displayName: "D'Ari", traits: 'Dice "ciao"\ne ride. à \\ ok', label: 'L1' as const },
-    coder: { tone: 'serio' as const, address: 'tu' as const, label: 'L2' as const },
+    arianna: { tone: 'scherzoso' as const, address: 'lei' as const, traits: 'Dice "ciao"\ne ride. à \\ ok' },
+    coder: { tone: 'serio' as const, address: 'tu' as const, displayName: "D'Ari", specialization: 'Senior "TS"\n\\ test' },
   };
   const settings: Settings = { ...DEFAULT_SETTINGS, personas };
   const text = renderSettings(settings);
@@ -78,7 +86,7 @@ test('the settings write [personas] and read back the same, text with quotes and
   assert.equal(renderSettings(readSettings(text, HOME, EMPTY_CATALOG)), text);
   // Without personas the key stays absent and the file shows the commented example.
   assert.equal(readSettings(VALID, HOME, EMPTY_CATALOG).personas, undefined);
-  assert.match(VALID, /^# \[personas\.arianna\]$/m);
+  assert.match(VALID, /^# \[personas\.coder\]$/m);
 });
 
 const WATCH_HOME = join(resolveHome({}), 'data', 'test-tmp', `personas-${randomUUID()}`);
@@ -99,7 +107,7 @@ function next(events: (ConfigChange | Error)[]): Promise<ConfigChange | Error> {
   });
 }
 
-test('personas apply without a restart; an invalid file takes a declared L1 back to L2', async () => {
+test('personas apply without a restart; an invalid file drops their text and keeps tone and address', async () => {
   mkdirSync(join(WATCH_HOME, 'config'), { recursive: true });
   writeFileSync(join(WATCH_HOME, CATALOG_FILE), 'version: 1\nmodels: []\n');
   const write = (text: string): void => {
@@ -116,7 +124,7 @@ test('personas apply without a restart; an invalid file takes a declared L1 back
     onChange: (change) => events.push(change),
     onError: (error) => events.push(error instanceof Error ? error : new Error(String(error))),
   });
-  const declared = { arianna: { tone: 'serio' as const, address: 'tu' as const, traits: 'Calma.', label: 'L1' as const } };
+  const declared = { coder: { tone: 'serio' as const, address: 'lei' as const, displayName: 'Dario', traits: 'Calma.', specialization: 'Senior.' } };
   try {
     // Past the watcher's first look (twice the interval): a write before it would race with it.
     await new Promise((done) => setTimeout(done, 120));
@@ -127,11 +135,11 @@ test('personas apply without a restart; an invalid file takes a declared L1 back
     write('[paths]\ndata = "/elsewhere"\n');
     assert.deepEqual(await next(events), { applied: ['personas'], restart: [] });
     assert.ok((await next(events)) instanceof Error);
-    assert.deepEqual(watcher.current().personas, { arianna: { ...declared.arianna, label: 'L2' } });
+    assert.deepEqual(watcher.current().personas, { coder: { tone: 'serio', address: 'lei' } });
 
     write(renderSettings({ ...DEFAULT_SETTINGS, personas: declared }));
     assert.deepEqual(await next(events), { applied: ['personas'], restart: [] });
-    assert.equal(watcher.current().personas.arianna?.label, 'L1');
+    assert.deepEqual(watcher.current().personas, declared);
   } finally {
     watcher.close();
   }

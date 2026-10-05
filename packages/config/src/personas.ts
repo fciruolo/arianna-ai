@@ -5,12 +5,16 @@ import { asTable, ConfigError } from './validate.ts';
 
 /**
  * The persona of each agent (D-107): `[personas.<agent>]` of arianna.toml,
- * agent id → tone, form of address, display name, free text and its label.
- * Style only: an agent's tools, labels and approvals stay in agents/*.yaml.
- * The type and its checks are in @arianna/agents; an agent without a table
- * has the defaults, which add nothing to its prompt.
+ * agent id → tone, form of address, display name, free text and
+ * specialization (L1 by the user's declaration). Style and role only: an
+ * agent's tools, labels and approvals stay in agents/*.yaml. The type and its
+ * checks are in @arianna/agents; an agent without a table has the defaults,
+ * which add nothing to its prompt.
  */
 export type Personas = Record<string, Persona>;
+
+/** Agents whose name never changes (D-107, answer 2): Arianna stays "Arianna". */
+export const FIXED_NAMES: readonly string[] = ['arianna'];
 
 export function parsePersonas(value: unknown): Personas {
   if (value === undefined) return {};
@@ -27,6 +31,7 @@ export function parsePersonas(value: unknown): Personas {
       if (error instanceof PersonaError) throw new ConfigError(error.message);
       throw error;
     }
+    if (FIXED_NAMES.includes(agent) && personas[agent].displayName !== undefined) throw new ConfigError(`${where}.display_name: this agent keeps its name`);
   }
   return personas;
 }

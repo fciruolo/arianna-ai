@@ -42,6 +42,7 @@ export {
   DEFAULT_PERSONA,
   MAX_DISPLAY_NAME,
   MAX_PERSONA_BLOCK,
+  MAX_SPECIALIZATION,
   MAX_TRAITS,
   parsePersona,
   personaBlock,

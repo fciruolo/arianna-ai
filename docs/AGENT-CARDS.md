@@ -70,19 +70,19 @@ In Fase 1A servono solo Arianna e Coder (`agents/arianna.yaml`, `agents/coder.ya
 
 ## Personalità
 
-Ogni agente (Arianna compresa) può avere una personalità in `[personas.<agente>]` di `config/arianna.toml` (D-107, tappa A1). È **solo stile, mai permessi**: strumenti, `max_label`, `cloud_max_label`, trifecta, autonomia, approvazioni e limiti si leggono soltanto dalla scheda (`agents/<nome>.yaml`), il prompt di base resta in `agents/<nome>.md` e lo schema di risposta dipende solo dagli strumenti offerti.
+Ogni agente (Arianna compresa) può avere una personalità in `[personas.<agente>]` di `config/arianna.toml` (D-107, tappa A1 rivista, D-107a2). È **stile e ruolo, mai permessi**: strumenti, `max_label`, `cloud_max_label`, trifecta, autonomia, approvazioni e limiti si leggono soltanto dalla scheda (`agents/<nome>.yaml`), il prompt di base resta intero in `agents/<nome>.md` con le sue regole e lo schema di risposta dipende solo dagli strumenti offerti.
 
 | Campo | Valori | Etichetta |
 | --- | --- | --- |
-| `tone` | `serio` · `equilibrato` (predefinito, non aggiunge nulla) · `scherzoso` | Frase fissa nostra, L0 |
+| `tone` | `serio` · `asciutto` · `equilibrato` (predefinito, non aggiunge nulla) · `caloroso` · `scherzoso` (senza argomenti tabù: approvazioni e avvisi sono testi del codice) | Frase fissa nostra, L0 |
 | `address` | `tu` (predefinito) · `lei` | Frase fissa nostra, L0 |
-| `display_name` | 1-24 caratteri: lettere, spazi, apostrofo, trattino; l'id dell'agente non cambia | Testo dell'utente: `label` |
-| `traits` | Testo libero, al massimo 250 caratteri (a capo → spazio) | Testo dell'utente: `label` |
-| `label` | `L2` (predefinito) · `L1` solo per dichiarazione esplicita | — |
+| `display_name` | 1-24 caratteri: lettere, spazi, apostrofo, trattino; l'id dell'agente non cambia; **non per `arianna`**, che resta "Arianna" | Testo dell'utente, L1 |
+| `traits` | Testo libero, al massimo 500 caratteri (a capo → spazio) | Testo dell'utente, L1 |
+| `specialization` | Ruolo e competenze ("sviluppatore senior TypeScript, attento ai test"), al massimo 500 caratteri: **affina** il ruolo del `.md`, non lo sostituisce; vuoto, vale solo il `.md` | Testo dell'utente, L1 |
 
-Tipo, validazione (`parsePersona`), scarto per clearance (`personaParts`) e blocco del prompt (`personaBlock`) stanno in `packages/agents/src/persona.ts`; l'etichetta e il confronto con la clearance in `packages/policy` (`personaLabel`, `personaFits`). Nome e testo entrano in un passo solo se `label` non supera la clearance del passo; altrimenti sono scartati in modo deterministico e restano tono e forma. Con l'etichetta predefinita L2 valgono solo nei passi a clearance L2; per un agente L0 non entrano mai.
+I testi dell'utente sono **L1 per sua dichiarazione** (2026-10-05, `PRIVACY-POLICY-SPEC.md`): valgono nelle conversazioni private e di lavoro e nelle deleghe cloud, mai per un agente o un task L0. Non c'è un campo `label`. Tipo, validazione (`parsePersona`), scarto per clearance (`personaParts`) e blocco del prompt (`personaBlock`) stanno in `packages/agents/src/persona.ts`; l'etichetta (`PERSONA_LABEL`) e il confronto con la clearance (`personaFits`) in `packages/policy`. Il divieto di rinominare Arianna sta in `packages/config` (`FIXED_NAMES`). Un file non valido scarta i testi e tiene tono e forma.
 
-Il blocco va in coda al prompt di sistema, fra gli esempi e la regola del `thought`, così il prefisso in cache (D-075) non cambia; tag `<persona>` e `<tool_result>` nel testo sono neutralizzati e il blocco resta entro 600 caratteri. Con i valori predefiniti (o con nome e testo scartati, `equilibrato` e `tu`) il blocco è vuoto e il prompt è identico byte per byte a quello senza personalità. Il passaggio del blocco all'orchestratore, alle deleghe e alla voce è la tappa A3; la sezione in Impostazioni è la tappa A2.
+Il blocco va in coda al prompt di sistema, fra gli esempi e la regola del `thought`, così il prefisso in cache (D-075) non cambia: prima la specializzazione, poi nome e forma, tono, testo libero. Tag `<persona>`, `<specialization>` e `<tool_result>` nei testi sono neutralizzati e il blocco resta entro 1400 caratteri. Con i valori predefiniti (o con i testi scartati, `equilibrato` e `tu`) il blocco è vuoto e il prompt è identico byte per byte a quello senza personalità. La sezione in Impostazioni è la tappa A2; il passaggio del blocco all'orchestratore, alle deleghe e alla voce è la tappa A3.
 
 ## Autonomia
 
