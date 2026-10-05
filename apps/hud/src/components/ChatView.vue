@@ -442,6 +442,8 @@ onBeforeUnmount(() => clearInterval(clock));
               {{ message.body }}
             </div>
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
+              <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
               <MessageTime :ts="message.ts" :now="now" />
               <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -465,7 +467,6 @@ onBeforeUnmount(() => clearInterval(clock));
                   @click="emit('callWhenDone', taskOf(message)!.id)"
                 ><Icon name="phone" :size="12" />chiamami quando finisci</button>
               </template>
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
             </div>
           </div>
 
