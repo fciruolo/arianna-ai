@@ -1,6 +1,6 @@
 # Proposte da discutere (notte 2026-10-05)
 
-Forma lunga delle proposte D-078, D-079 e D-080, scritte da Claude nella sessione notturna del 2026-10-05. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
+Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096 e D-103, scritte da Claude nella sessione notturna del 2026-10-05. Le righe corte stanno in `docs/DECISIONS.md`; le domande per l'utente sono alla fine di ogni proposta. Nessuna è applicata.
 
 ## D-078 — Arianna sviluppata da dentro Arianna
 
@@ -678,6 +678,199 @@ Totale: circa 20-29 ore.
 - Tempo di `pg_dump` e dimensione dell'archivio con i dati veri: oggi `data/postgres` occupa 222 MB con dati finti.
 - Se Time Machine è davvero configurato su questo Mac (`tmutil isexcluded` risponde anche senza destinazione) e se il suo disco è cifrato.
 - Come Synology Drive tratta un `.part` in scrittura (che non ne sincronizzi uno a metà): da provare con la cartella vera, oppure scrivere il `.part` fuori dalla cartella sincronizzata e spostarlo alla fine.
+
+
+
+---
+
+## D-103 — Temi: colori, sfondo e costumi dei personaggi, scelti in Impostazioni
+
+- **Data:** 2026-10-05
+- **Stato:** Proposta, da discutere
+- **Collegate:** D-060 (identità grafica, pacchetti di personaggi, diritti), D-061 (icone dietro un punto unico), D-062 (font serviti in locale), D-087b (sfondo della Conoscenza), pagina Impostazioni (3.5, `SettingsPage.vue`), `docs/OPENDOTS.md` (P1, P2), anteprima `docs/mockups/temi.html`
+
+### Contesto
+
+**Richiesta dell'utente (testuale):** "possiamo sviluppare nelle impostazioni dei temi? magari cambiando anche la grafica pixel art degli agenti e di arianna. poter usare per esempio un tema scrubs, the office, simpsons, griffin, natale, san patrizio, halloween ecc".
+
+**Cosa c'è oggi** (letto nel repository il 2026-10-05):
+
+- **Colori:** un solo insieme di token in `apps/hud/src/style.css` (`--bg`, `--surface`, `--ink`, `--muted`, `--accent`, `--bubble`, `--l0`…`--l3`, `--grid`, `--graph-1`…`--graph-6` e altri), scuro di base e chiaro caldo, collegati a Tailwind con `@theme inline`. Lo sfondo è la griglia HUD disegnata con `--grid` sul `body`. Le animazioni HUD si spengono già con `prefers-reduced-motion`.
+- **Oggi "tema" vuol dire solo chiaro/scuro:** `apps/hud/src/lib/theme.ts` offre sistema, scuro e chiaro, salvato nel browser (`localStorage`) e applicato con `data-theme` su `<html>`.
+- **Personaggi (D-060):** Arianna e Coder originali sono mappe di pixel in `apps/hud/characters/art/*.ts`, trasformate in fogli 112×128 da `node apps/hud/characters/build.ts` (pacchetto `originali`, con un test che fallisce se i PNG non corrispondono alle mappe). I pacchetti dell'utente stanno in `data/characters/<pacchetto>/`; il core li controlla e li serve in sola lettura (`apps/core/src/characters.ts`, `GET /api/characters`) e `[characters]` di `arianna.toml` assegna un personaggio a ogni agente senza riavvio.
+- **Il contrasto del tema di base non è mai stato misurato.** L'ho calcolato ora con la formula WCAG 2.x sui valori di `style.css`. Sono sotto soglia **sette coppie**. Nello scuro: il testo delle bolle dell'utente (`--bubble-ink` su `--bubble`, **3,71:1**). Nel chiaro, tutte su `--surface` tranne la prima: `--accent-ink` su `--accent` (**4,30:1**), `--l0` e `--ok` (stesso colore, **3,50:1**), `--l1` (**4,12:1**), `--l2` e `--warn` (stesso colore, **3,26:1**). Per il testo normale AA chiede 4,5:1, quindi il test della tappa 1 fallirebbe già sul tema di oggi. La tappa 1 comincia correggendo questi sette colori (`--bubble` nello scuro; `--accent`, `--l0`, `--ok`, `--l1`, `--l2`, `--warn` nel chiaro).
+
+### Proposta
+
+**1. Cos'è un tema.** Un tema è un insieme di dati, non di codice:
+
+- **token dei colori** in due varianti, scura e chiara. La scelta chiaro/scuro/sistema resta com'è e vale per ogni tema: in Impostazioni diventa "Modalità", e "Tema" indica la cosa nuova;
+- **sfondo**: un motivo da una lista chiusa (`griglia`, `puntini`, `righe`, `nessuno`) e un decoro facoltativo da una lista chiusa, uno per tema (`neve` Natale, `trifogli` San Patrizio, `pipistrelli` Halloween, `coriandoli` Carnevale, `sole` Estate, `puntini-pastello` Pasqua, `corrimano` Corsia, `moquette` Ufficio, `nuvole` Cartoon giallo, `carta-da-parati` Salotto animato), disegnati dal nostro CSS e colorati con i token del tema;
+- **pochi dettagli dell'HUD**: `hud.corners` (angoli luminosi, `true`/`false`), `hud.glow` (bagliore: `nessuno`, `tenue`, `medio`, `forte`) e `hud.radius` (raggio degli angoli: `squadrato` 8 px, `hud` 14 px come oggi, `morbido` 20 px);
+- **personaggi per agente**: per ogni agente un riferimento `<pacchetto>/<personaggio>` nel formato di D-060 (per esempio `originali/arianna-natale`); un'assegnazione esplicita in `[characters]` di `arianna.toml` vince sempre sul tema;
+- **una finestra di date**, facoltativa e solo per i temi stagionali (vedi il punto 5).
+
+Un tema **non** cambia voce, suoni, carattere o prompt di Arianna, testi, font (restano i tre di D-062), icone, disposizione della pagina, né il significato delle etichette L0–L3. Può cambiarne il colore, ma l'etichetta mostra sempre anche il testo "L2": il colore non è mai l'unico segnale (WCAG 1.4.1).
+
+**2. Formato.** Un tema del repository è una cartella `apps/hud/themes/<id>/` con un solo `theme.json`:
+
+```json
+{
+  "id": "natale",
+  "name": "Natale",
+  "kind": "stagionale",
+  "dates": { "from": "12-08", "to": "01-06" },
+  "background": { "pattern": "griglia", "decor": "neve" },
+  "hud": { "corners": true, "glow": "medio", "radius": "hud" },
+  "characters": { "arianna": "originali/arianna-natale", "coder": "originali/coder-natale" },
+  "tokens": {
+    "dark":  { "bg": "#0f1418", "surface": "#151c21", "ink": "#eef3f1", "accent": "#e2574c", "bubble": "#2f6a4f", "bubble-ink": "#ffffff" },
+    "light": { "bg": "#f7f3ee", "surface": "#fffdf9", "ink": "#2a2321", "accent": "#b3362c", "bubble": "#1f5f44", "bubble-ink": "#ffffff" }
+  }
+}
+```
+
+(Nell'esempio mancano per brevità gli altri token: in un tema vero ci sono tutti, e un token mancante prende il valore del tema Base.)
+
+**Date.** `dates` ha una di due forme:
+
+- `{ "from": "MM-DD", "to": "MM-DD" }`, estremi inclusi; se `from` viene dopo `to` (per esempio `12-08` → `01-06`) la finestra è a cavallo d'anno;
+- `{ "feast": "carnevale" }` oppure `{ "feast": "pasqua" }`, per le feste mobili, con finestre fisse rispetto alla domenica di Pasqua calcolata dal codice: `carnevale` da Pasqua − 52 a Pasqua − 47 giorni (dal giovedì al martedì grasso), `pasqua` da Pasqua − 7 a Pasqua + 1 (dalla Domenica delle Palme a Pasquetta).
+
+**Costumi.** I costumi dei temi del repository **non sono PNG nella cartella del tema**. Sono varianti delle mappe di pixel originali, in un file `apps/hud/characters/art/costumes/<tema>.ts` con:
+
+- le parti da sovrapporre (cappello, sciarpa, maschera), **una per direzione** (`down`, `up`, `right`) come le parti dei personaggi, perché un cappello disegnato di fronte non sta su una testa di lato o di spalle. Una direzione senza la sua parte è un errore di `build.ts`, non un costume a metà;
+- i colori da sostituire (il vestito verde a San Patrizio);
+- **gli oggetti del tema** (alberello, zucca, pentola d'oro, pallone, croce, tazza), che fanno parte del costume: sono disegnati da `build.ts` dentro il fotogramma 16×32, in mano o ai piedi, nelle pose in cui hanno senso. Nell'anteprima stanno accanto al personaggio solo per chiarezza.
+
+`build.ts` applica il costume a tutte le pose e lo scrive come foglio in più del pacchetto `originali` (`arianna-natale.png`, `coder-natale.png`…), elencato nel suo `pack.json`; il test che confronta PNG e mappe copre anche questi. Così un costume vale in chat, nel pannello e nell'ufficio pixel della fase 3 senza essere disegnato due volte.
+
+I temi dell'utente stanno in `data/themes/<id>/theme.json`, fuori da git. Si copiano a mano come i pacchetti di personaggi e possono puntare a pacchetti di `data/characters/`.
+
+**3. Validazione (come i pacchetti di D-060).** Il core legge `apps/hud/themes/` e `data/themes/` in sola lettura e serve alla chat l'elenco già controllato (`GET /api/themes`). Le regole:
+
+- nella cartella c'è solo `theme.json`, al massimo 16 KB; `id` è uguale al nome della cartella e usa `[a-z0-9-]`; un tema di `data/themes/` con lo stesso id di uno del repository viene rifiutato;
+- **lo schema è chiuso**: una chiave sconosciuta fa rifiutare il tema; ogni token è nella lista dei token di `style.css`, più `deco-a` e `deco-b` (i due colori dei decori, che entrano anche nel tema Base), e ogni valore è `#rrggbb` o `#rrggbbaa`; `pattern`, `decor`, `hud.glow` e `hud.radius` sono enumerazioni; le date hanno una delle due forme del punto 2;
+- un riferimento a un personaggio è `<pacchetto>/<personaggio>`, con ciascuna parte che rispetta `CHARACTER_ID` di `packages/config/src/characters.ts` (`^[a-z0-9][a-z0-9_-]{0,63}$`), la stessa regola di `[characters]`;
+- **niente CSS libero e niente URL**: nessun campo finisce nel CSS così com'è, e nessuna stringa può contenere `://`, `url(` o `@import`. La chat applica i token con `style.setProperty`, e solo per le chiavi della lista;
+- i riferimenti ai personaggi passano dal controllo di `characters.ts`: se un personaggio manca o non è valido si usa l'originale e Impostazioni lo segnala;
+- `name` si mostra come testo, mai come HTML.
+
+Un tema non valido compare in Impostazioni con il motivo e non si può scegliere. Un test (accanto a quello dei pacchetti) ha per ogni regola un caso che passa e uno che fallisce.
+
+**4. Contrasto minimo (WCAG AA) verificato da un test.** Per ogni tema del repository, in tutte e due le varianti, un test calcola il rapporto di contrasto WCAG 2.x e fallisce sotto soglia:
+
+| Coppia | Soglia |
+| --- | --- |
+| `ink` su `bg`, `surface`, `surface-2` | 4,5:1 |
+| `muted` su `surface` e `surface-2` | 4,5:1 |
+| `bubble-ink` su `bubble`, `accent-ink` su `accent` | 4,5:1 |
+| `l0`…`l3`, `warn`, `danger`, `ok`, `info` (usati come testo) su `surface` | 4,5:1 |
+| `accent` su `bg` (bordi, anelli, focus: componenti non testuali, WCAG 1.4.11) | 3:1 |
+
+`--grid`, `--glow` e i decori sono ornamenti e non hanno soglia. In cambio il decoro sta sotto il contenuto, con opacità bassa, e mai dietro il testo del composer. Per i temi dell'utente il core fa lo stesso calcolo alla lettura: un tema sotto soglia si può scegliere, ma Impostazioni lo segnala ("contrasto basso: alcune scritte si leggono male").
+
+**5. Due tipi di tema.**
+
+**(a) Temi stagionali originali, nel repository.** Palette, decoro e costumi di Arianna e Coder disegnati da noi come varianti delle mappe originali. Quelli proposti:
+
+| Tema | Finestra proposta | Arianna | Coder | Decoro |
+| --- | --- | --- | --- | --- |
+| Natale | 8 dicembre – 6 gennaio (dall'Immacolata all'Epifania) | cappello rosso con pompon, sciarpa | cappello sopra l'antenna | neve che scende, alberello |
+| San Patrizio | 17 marzo | cilindro verde con fibbia, vestito verde | cilindro piccolo, corpo verde | trifogli, pentola d'oro |
+| Halloween | 24 – 31 ottobre | cappello da strega, vestito arancio | cappello da strega, corpo viola | pipistrelli, zucca |
+| Carnevale | dal giovedì grasso al martedì grasso (date mobili: da Pasqua − 52 a Pasqua − 47 giorni) | maschera dorata sugli occhi, piuma, vestito viola | cappellino a cono | coriandoli |
+| Estate | 1 – 31 agosto (Ferragosto in mezzo) | cappello di paglia, occhiali da sole | cappello di paglia | sole, righe da ombrellone |
+| Pasqua (facoltativo) | dalla Domenica delle Palme a Pasquetta (date mobili) | fiocco pastello | uovo dipinto in mano | puntini pastello |
+
+**Attivazione per data, da confermare:** se l'utente la accende, durante la finestra il tema stagionale prende il posto di quello scelto, ma solo quando il tema scelto è "Base"; un tema scelto a mano non viene mai sostituito. Vale la data locale del Mac. Le feste mobili (Carnevale, Pasqua) le calcola una funzione con il computus, provata su anni noti. Il Carnevale ambrosiano (Milano, qualche giorno dopo) resta fuori, salvo tua richiesta.
+
+**(b) Temi ispirati a serie e cartoni.** Qui c'è un limite. **Nel repository** il tema può portare solo una **palette e un'ambientazione generica**, con un nome generico e **senza nomi, loghi, scritte, sigle né personaggi delle opere**:
+
+| Richiesta | Tema nel repository | Cosa contiene | Arianna e Coder |
+| --- | --- | --- | --- |
+| Scrubs | **Corsia** | verde acqua e bianco ospedaliero, corrimano a metà parete, croce verde da farmacia (mai rossa su bianco: è un emblema protetto) | Arianna in casacca e cuffia da sala, con lo stetoscopio |
+| The Office | **Ufficio** | beige, grigio moquette, azzurro da cartellina, scrivanie open space | Arianna in camicia e cravatta, tazza di caffè |
+| Simpsons | **Cartoon giallo** | cielo azzurro con nuvole, giallo acceso, contorni spessi | colori pieni e contorni più marcati; la pelle resta la sua |
+| Griffin | **Salotto animato** | carta da parati a righe e colori caldi di un salotto qualsiasi | colori pieni, nessun dettaglio riconoscibile |
+
+I **personaggi veri** (i protagonisti della serie o del cartone) arrivano solo come **pacchetto dell'utente** in `data/characters/<pacchetto>/`, nel formato di D-060. L'utente li assegna agli agenti da Impostazioni, oppure con un tema suo in `data/themes/`, che può chiamare come vuole. Nel repository non c'è niente di loro.
+
+**Perché c'è questo limite:**
+
+1. **Diritto d'autore.** I personaggi di una serie o di un cartone (aspetto, costume, tratti riconoscibili) sono opere protette. Una loro versione in pixel art "fatta da noi" resta un'opera derivata: ridisegnarla non la rende nostra. Palette, colori e ambientazioni generiche (una corsia d'ospedale, un ufficio, un cielo da cartone) non sono protetti.
+2. **Marchi.** Titoli, loghi e nomi dei personaggi sono marchi registrati: un tema del repository chiamato col titolo della serie userebbe quel marchio.
+3. **Il repository si può condividere.** Ciò che sta in git si copia e si pubblica, e finisce nei cloni e nei backup condivisi. `data/` invece resta sulla macchina dell'utente, per uso personale, sotto la sua responsabilità.
+4. **D-060 lo dice già.** I personaggi di film, telefilm e cartoni stanno "solo in `data/`, mai in git, mai disegnati o scaricati da Claude". Il tema ispirato è il massimo che si può mettere in git senza violare D-060.
+
+Non è un parere legale: è la linea prudente già decisa.
+
+**6. Selettore in Impostazioni.** Nella sezione "Aspetto":
+
+- **Modalità**: sistema, scuro, chiaro (quella di oggi);
+- **Tema**: una griglia di schede, ciascuna con un'anteprima dal vivo (sfondo, una bolla, l'etichetta L2, Arianna nel costume del tema, il colore d'accento), lo stato del contrasto e, per i temi dell'utente, l'origine (`data/themes`). La scelta si applica subito e si annulla con "Torna a Base";
+- **Feste automatiche**: un interruttore (vedi il punto 5);
+- **Decori animati**: un interruttore, acceso di base e sempre spento quando il sistema chiede meno movimento;
+- **Personaggi**: l'elenco degli agenti con il personaggio in uso e da dove viene (tema, scelta esplicita, originale).
+
+Tema e feste automatiche vanno in `[appearance]` di `arianna.toml` (`theme = "base"`, `seasonal = true`), così valgono su ogni dispositivo. Si applicano senza riavvio come `[characters]`: il core legge quella sezione a ogni richiesta da `settings.current()` (`apps/core/src/main.ts`) e la pagina Impostazioni la scrive come sezione ordinaria (`ORDINARY_SECTIONS`); `[appearance]` segue la stessa strada. La modalità chiaro/scuro resta nel browser, perché dipende dallo schermo.
+
+**7. Movimento.** I decori sono solo CSS (sfondi con gradienti che scorrono), senza canvas né timer JavaScript, e fermi quando la pagina è nascosta. Con `prefers-reduced-motion: reduce`, o con l'interruttore spento, restano fermi come le animazioni HUD di oggi. Nessun decoro lampeggia più di tre volte al secondo (WCAG 2.3.1) e nessuno passa sopra il testo.
+
+### Piano a tappe
+
+| Tappa | Cosa | Stima |
+| --- | --- | --- |
+| 1 | Token in `theme.json` e tema Base portato da `style.css` (che resta come ripiego), con i sette colori sotto soglia corretti e `deco-a`/`deco-b` aggiunti; validatore, `GET /api/themes` e applicazione nella chat; test del contrasto e dello schema | 4-6 h |
+| 2 | Selettore in Impostazioni con anteprima; `[appearance]` in `arianna.toml` senza riavvio: lettura in `packages/config` (con `onlyKeys`), scrittura in `renderSettings` (wizard e pagina Impostazioni), sezione in `ORDINARY_SECTIONS` di `apps/core/src/settings-page.ts`; "Modalità" al posto di "Tema" per chiaro/scuro | 4-5 h |
+| 3 | Decori CSS della lista chiusa, interruttore, `prefers-reduced-motion` | 2-3 h |
+| 4 | Costumi in `build.ts` (parti sovrapposte per direzione, colori sostituiti e oggetti del tema su tutte le pose); Natale, San Patrizio e Halloween per Arianna e Coder (6 fogli), coperti dal test dei PNG | 6-8 h |
+| 5 | Attivazione per data, con computus e test | 1-2 h |
+| 6 | Corsia, Ufficio, Cartoon giallo e Salotto animato: palette, decori, costumi generici di Arianna e Coder | 4-6 h |
+| 7 | Carnevale ed Estate (e Pasqua, se la vuoi) | 3-4 h |
+| 8 | Temi dell'utente in `data/themes/` (stesso validatore, avviso di contrasto, riferimenti a `data/characters/`) e istruzioni in `docs/` | 2-3 h |
+
+Totale: circa 26-37 ore. La parte lunga è disegnare i costumi in tutte le 28 pose (anche di spalle e di lato) dei due personaggi. È lavoro sull'aspetto, fuori dalla fase corrente: serve il tuo assenso (regola "una fase alla volta"). Le tappe 1-3 si possono fare anche da sole e preparano il terreno per il resto. **Nessuna dipendenza nuova.**
+
+### Alternative scartate
+
+- **Temi come file CSS liberi in `data/themes/`.** Un CSS può caricare immagini da fuori (`url(...)`) e, con i selettori d'attributo, far uscire pezzi di testo della pagina, dove c'è L2 in chiaro. Uno schema chiuso fatto di soli colori non lascia questa porta.
+- **Una libreria di temi (daisyUI o simili).** Sarebbe una dipendenza nuova e porterebbe un'identità diversa da quella di D-060; i nostri token bastano.
+- **"Parodie" o versioni "simili" dei personaggi delle serie nel repository.** Resterebbero opere derivate di personaggi protetti; D-060 lo esclude.
+- **Scaricare pacchetti di fan art da internet o generarli con un modello d'immagini.** Licenze incerte, accesso alla rete, qualità e coerenza fra le pose da verificare; e D-060 vieta a Claude di scaricarli.
+- **Temi che cambiano anche voce, suoni o carattere di Arianna.** La voce non si tocca (prove e scelte di D-066 già fatte), e una personalità che cambia con le feste renderebbe incoerenti gli eval dell'orchestratore.
+- **Un tema per conversazione o per agente.** Più stato e più casi per poco guadagno: l'agente ha già il suo personaggio.
+- **PNG dei costumi disegnati a mano nella cartella del tema.** Si perderebbe la garanzia che le immagini corrispondono alle mappe, e ogni ritocco di Arianna andrebbe ripetuto in ogni costume.
+
+### Rischi
+
+- **Privacy: basso.** I temi sono solo presentazione: non escono dalla macchina, non caricano nulla dalla rete, non toccano dati, etichette, gateway né instradamento. Il rischio vero (un CSS che fa uscire testo) è chiuso dallo schema.
+- **Diritti.** I pacchetti dell'utente in `data/characters/` finiscono nel backup cifrato di D-096, che resta personale; non vanno mai in un backup condiviso né in screenshot pubblici. Va scritto accanto alle istruzioni dei pacchetti.
+- **Leggibilità.** Un tema stagionale molto colorato può peggiorare la chat ogni giorno per settimane. Il test AA e i decori a bassa opacità lo limitano, e "Torna a Base" è sempre a un clic.
+- **Sorprese.** Un cambio di tema per data può sembrare un errore ("perché è tutto rosso?"). Per questo vale solo con il tema Base, e una riga in Impostazioni dice quale festa è attiva.
+- **Manutenzione.** Ogni ritocco alle pose di Arianna va riprovato su ogni costume. Le parti sovrapposte lo rendono automatico, ma un cappello disegnato per la testa frontale può non stare su quella laterale: a ogni modifica va guardato a occhio.
+- **Coerenza con la Conoscenza (D-087b).** I colori del grafo (`--graph-1`…`--graph-6`) sono token come gli altri e un tema li può cambiare, ma nel tema scuro la sala di controllo resta nera.
+
+### Cosa si può costruire subito a basso rischio
+
+La tappa 1 senza la parte nella chat: lo schema, il validatore e il test del contrasto, con il tema Base estratto da `style.css` e i sette colori corretti. Dice subito se la chat di oggi rispetta AA, e di ciò che l'utente vede cambia solo quei sette colori.
+
+### Domande per l'utente
+
+1. **Attivazione automatica per data?** Raccomandazione: sì, con un interruttore acceso di base, ma solo quando il tema scelto è Base. Finestre come nella tabella: Natale dall'Immacolata all'Epifania, Halloween l'ultima settimana di ottobre, San Patrizio il solo 17 marzo.
+2. **Quali temi per primi?** Raccomandazione: Base con i contrasti corretti, poi **Halloween** (mancano tre settimane: si fa in tempo), poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
+3. **Quali altri temi stagionali ti interessano:** Carnevale, Estate, Pasqua, Capodanno, altro? Raccomandazione: Carnevale ed Estate; Pasqua solo se la vuoi.
+4. **Ti vanno bene i temi ispirati con nomi e personaggi generici nel repository, con i personaggi veri solo dai tuoi pacchetti in `data/characters/`?** È il limite di D-060; un tuo tema in `data/themes/` può chiamarsi come vuoi.
+5. **La scelta del tema vale per tutti i dispositivi (`arianna.toml`) o per browser?** Raccomandazione: per tutti i dispositivi; la modalità chiaro/scuro resta per browser.
+6. **Costumi in tutte le 28 pose (servono anche all'ufficio pixel della fase 3) o solo in quelle frontali della chat?** Raccomandazione: tutte, anche se costa qualche ora in più.
+7. **I temi cambiano anche suoni o voce?** Proposta: no, la voce non si tocca. Se vuoi parlare di suoni (oggi non ce ne sono), meglio in un'altra decisione.
+
+### Cose non verificate (D-103)
+
+- I contrasti del tema di base sono calcolati sui valori di `style.css`, non misurati sullo schermo. Dove un token si usa con trasparenza (per esempio un testo `--l2` su `bg-warn/10`) il contrasto reale è diverso, e il test dovrà tenerne conto.
+- Le finestre di date sono proposte, non confrontate con i calendari locali; il Carnevale ambrosiano non è considerato.
+- La parte sui diritti è la linea prudente di D-060, non un parere legale.
+- L'anteprima `docs/mockups/temi.html` usa colori provvisori: la pagina stessa calcola i loro rapporti di contrasto, ma i temi veri si fissano nella tappa 1, con il test.
 
 
 

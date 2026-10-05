@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temi di Arianna</title>
+<!--
+  Anteprima della proposta D-103 (docs/PROPOSTE.md). File autonomo: niente rete,
+  niente CDN, niente font scaricati. Arianna e Coder sono disegnati dalle mappe
+  di pixel vere di apps/hud/characters/art/ (posa frontale ferma), con i costumi
+  come parti sovrapposte. Nessun personaggio protetto: i temi "ispirati" hanno
+  solo palette e ambientazione generiche. Colori provvisori.
+-->
+<style>
+  :root {
+    --page-bg: #0a1316;
+    --page-ink: #dcebe8;
+    --page-muted: #8fa7a4;
+    --page-line: #1e363c;
+    --page-chip: #132429;
+    color-scheme: dark;
+  }
+  :root[data-mode="light"] {
+    --page-bg: #f5f4f0;
+    --page-ink: #24302e;
+    --page-muted: #5f6d6a;
+    --page-line: #e3e4df;
+    --page-chip: #ffffff;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-ink);
+    font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.02em; margin: 0 0 6px; }
+  .lead { color: var(--page-muted); max-width: 820px; margin: 0 0 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 20px; }
+  .seg { display: inline-flex; border: 1px solid var(--page-line); border-radius: 10px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--page-ink); border: 0; padding: 7px 12px; font: inherit; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--page-chip); font-weight: 600; box-shadow: inset 0 0 0 1px var(--page-line); }
+  .label { color: var(--page-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+
+  /* One card = one theme; every colour comes from the theme's variables. */
+  .card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    min-height: 470px;
+  }
+  .decor { position: absolute; inset: 0; pointer-events: none; opacity: 0.55; z-index: 0; }
+  .card > *:not(.decor) { position: relative; z-index: 1; }
+  .top {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .ring {
+    width: 64px; height: 108px; border-radius: 14px; display: grid; place-items: end center; overflow: hidden;
+    border: 1px solid var(--accent); box-shadow: 0 0 14px -4px var(--accent);
+    background: var(--surface-2); padding-bottom: 4px; flex: none;
+  }
+  canvas.sprite { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  .who { flex: 1; min-width: 0; }
+  .who b { font-size: 15px; letter-spacing: 0.03em; }
+  .status { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip {
+    font: 600 11px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 7px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); background: var(--surface);
+  }
+  .body { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .msg-user {
+    align-self: flex-end; max-width: 80%; background: var(--bubble); color: var(--bubble-ink);
+    padding: 9px 12px; border-radius: 14px 14px 4px 14px;
+  }
+  .msg-ai {
+    align-self: flex-start; max-width: 88%; background: var(--surface); border: 1px solid var(--line);
+    padding: 9px 12px; border-radius: 14px 14px 14px 4px;
+  }
+  .meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .tag {
+    font: 600 11px/1 ui-monospace, Menlo, monospace; padding: 3px 6px; border-radius: 5px;
+    color: var(--l2); border: 1px solid var(--l2);
+  }
+  .coder {
+    display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px;
+    border: 1px dashed var(--line); background: var(--surface); font-size: 13px;
+  }
+  .coder .ring { width: 44px; height: 74px; border-radius: 10px; box-shadow: none; }
+  .pack {
+    font-size: 12px; color: var(--muted); border: 1px dashed var(--muted); border-radius: 10px; padding: 7px 10px;
+    background: var(--surface);
+  }
+  .composer {
+    display: flex; gap: 8px; align-items: center; margin: 0 14px 12px; padding: 8px 8px 8px 12px;
+    border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
+  }
+  .composer span { flex: 1; }
+  .send {
+    border: 0; border-radius: 10px; padding: 7px 12px; font: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .checks summary { cursor: pointer; color: var(--ink); }
+  .checks .list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 4px; }
+  .checks {
+    padding: 8px 14px 12px;
+    font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted);
+    border-top: 1px solid var(--line); background: var(--surface);
+  }
+  .checks .ok::before { content: "ok "; color: var(--ink); font-weight: 700; }
+  .checks .ko { color: var(--ink); }
+  .checks .ko::before { content: "NO "; font-weight: 700; background: var(--ink); color: var(--bg); padding: 0 3px; border-radius: 3px; margin-right: 2px; }
+
+  /* Decors: a closed list, CSS only, coloured by the theme (D-103, point 1). */
+  .d-grid { background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px; opacity: 1; }
+  .d-snow {
+    background-image:
+      radial-gradient(circle, var(--deco-a) 1.6px, transparent 2.2px),
+      radial-gradient(circle, var(--deco-a) 1px, transparent 1.6px);
+    background-size: 46px 46px, 27px 27px;
+    background-position: 0 0, 13px 7px;
+    animation: fall 9s linear infinite;
+  }
+  @keyframes fall { to { background-position: 10px 46px, 4px 54px; } }
+  .d-clover {
+    background-image:
+      radial-gradient(circle at 50% 40%, var(--deco-a) 3px, transparent 3.5px),
+      radial-gradient(circle at 42% 52%, var(--deco-a) 3px, transparent 3.5px),
+      radial-gradient(circle at 58% 52%, var(--deco-a) 3px, transparent 3.5px);
+    background-size: 64px 64px;
+    opacity: 0.35;
+  }
+  .d-bats {
+    background-image:
+      radial-gradient(circle at 88% 12%, var(--deco-a) 26px, transparent 27px),
+      radial-gradient(circle, var(--deco-b) 1.6px, transparent 2px);
+    background-size: 100% 100%, 38px 38px;
+    opacity: 0.4;
+  }
+  .d-confetti {
+    background-image:
+      linear-gradient(45deg, var(--deco-a) 0 4px, transparent 4px),
+      linear-gradient(-30deg, var(--deco-b) 0 3px, transparent 3px),
+      radial-gradient(circle, var(--accent) 2px, transparent 2.5px);
+    background-size: 52px 61px, 37px 43px, 29px 31px;
+    background-position: 0 0, 17px 9px, 5px 20px;
+    animation: drift 12s linear infinite;
+    opacity: 0.45;
+  }
+  @keyframes drift { to { background-position: 52px 61px, -20px 52px, 34px 51px; } }
+  .d-sun {
+    background-image:
+      radial-gradient(circle at 92% 8%, var(--deco-a) 0 30px, transparent 31px),
+      repeating-linear-gradient(90deg, var(--deco-b) 0 18px, transparent 18px 36px);
+    background-size: 100% 100%, 100% 26px;
+    background-position: 0 0, 0 100%;
+    background-repeat: no-repeat;
+    opacity: 0.35;
+  }
+  .d-rail {
+    background-image:
+      linear-gradient(transparent 58%, var(--deco-a) 58% 60%, var(--deco-b) 60% 63%, transparent 63%),
+      linear-gradient(var(--deco-b) 0 0);
+    background-size: 100% 100%, 100% 38%;
+    background-position: 0 0, 0 100%;
+    background-repeat: no-repeat;
+    opacity: 0.3;
+  }
+  .d-carpet {
+    background-image:
+      repeating-linear-gradient(45deg, var(--deco-a) 0 1px, transparent 1px 9px),
+      repeating-linear-gradient(-45deg, var(--deco-a) 0 1px, transparent 1px 9px);
+    opacity: 0.35;
+  }
+  .d-clouds {
+    background-image:
+      radial-gradient(ellipse 60px 22px at 18% 22%, var(--deco-a) 98%, transparent),
+      radial-gradient(ellipse 40px 18px at 28% 18%, var(--deco-a) 98%, transparent),
+      radial-gradient(ellipse 70px 24px at 76% 60%, var(--deco-a) 98%, transparent),
+      radial-gradient(ellipse 44px 18px at 86% 56%, var(--deco-a) 98%, transparent);
+    opacity: 0.4;
+    animation: clouds 40s linear infinite alternate;
+  }
+  .d-wallpaper {
+    background-image: repeating-linear-gradient(90deg, var(--deco-a) 0 10px, transparent 10px 22px, var(--deco-b) 22px 24px, transparent 24px 36px);
+    opacity: 0.22;
+  }
+  @keyframes clouds { to { background-position: 30px 0, 30px 0, -30px 0, -30px 0; } }
+
+  /* Less motion: from the system or from the switch in the page. */
+  @media (prefers-reduced-motion: reduce) { .decor { animation: none !important; } }
+  body.still .decor { animation: none !important; }
+
+  .notes { margin-top: 28px; color: var(--page-muted); max-width: 860px; }
+  .notes li { margin: 4px 0; }
+  code { font: 12px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Temi di Arianna: anteprima</h1>
+  <p class="lead">Proposta D-103. Ogni scheda è un tema: colori nella modalità scelta qui sotto, sfondo, un pezzo di chat (bolla, etichetta L2, composer) e Arianna e Coder disegnati dalle mappe di pixel vere, nel costume del tema. In fondo a ogni scheda ci sono i rapporti di contrasto WCAG calcolati dalla pagina: "NO" vuol dire sotto la soglia AA. I colori sono provvisori.</p>
+
+  <div class="controls">
+    <span class="label">Modalità</span>
+    <div class="seg" id="mode">
+      <button type="button" data-v="dark" aria-pressed="true">Scuro</button>
+      <button type="button" data-v="light" aria-pressed="false">Chiaro</button>
+      <button type="button" data-v="system" aria-pressed="false">Sistema</button>
+    </div>
+    <span class="label">Decori animati</span>
+    <div class="seg" id="motion">
+      <button type="button" data-v="on" aria-pressed="true">Sì</button>
+      <button type="button" data-v="off" aria-pressed="false">No</button>
+    </div>
+    <span class="label" id="motion-note"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <ul class="notes">
+    <li><b>Stagionali</b> (Natale, San Patrizio, Halloween, Carnevale, Estate): temi originali nel repository, con i costumi disegnati come varianti delle mappe di Arianna e Coder; possono attivarsi da soli per data, solo se il tema scelto è Base (da confermare).</li>
+    <li><b>Ispirati</b> (Corsia, Ufficio, Cartoon giallo, Salotto animato): nel repository solo palette e ambientazione generica, senza titoli, loghi né personaggi delle serie. I personaggi veri arrivano solo da un tuo pacchetto in <code>data/characters/</code> (D-060): qui non sono disegnati.</li>
+    <li>I decori sono solo CSS e si fermano con "Decori animati: No" o quando il sistema chiede meno movimento.</li>
+    <li>Le pose mostrate sono quelle frontali ferme; nei fogli veri il costume, con parti disegnate per ogni direzione, vale per tutte le 28 pose (camminata, scrittura, lettura, pensa, aspetta, pausa).</li>
+    <li>Gli oggetti (alberello, pentola d'oro, zucca, pallone, croce verde, tazza) fanno parte del costume: nei fogli veri <code>build.ts</code> li disegna dentro il fotogramma 16×32, in mano o ai piedi. Qui stanno accanto solo per chiarezza.</li>
+    <li>Il controllo del contrasto è quello del test proposto: testo su sfondo e superfici, testo secondario, bolla, pulsante, etichette L0–L3 e colori di stato come testo (4,5:1), accento sullo sfondo (3:1). Nella scheda Base sono corretti i sette colori sotto soglia di oggi.</li>
+  </ul>
+</div>
+
+<script>
+'use strict';
+
+/* ---- Pixel maps: copied from apps/hud/characters/art/arianna.ts and coder.ts (front, idle). ---- */
+const ARIANNA = {
+  palette: {
+    o: '#1a1c2c', h: '#8a3b2a', H: '#b5523a', s: '#f2c6a0', S: '#c98f6c', e: '#1b1b2a', p: '#e88f86',
+    m: '#b2504a', d: '#2fb3a3', D: '#1f7f74', r: '#e0483e', k: '#2b2b3a', b: '#f4ecd8', B: '#c9b98f',
+  },
+  parts: [
+    { top: 26, rows: ['....oso..oso...r', '....oso..oso..r.', '....oso..oso...r', '....oko..oko..r.', '...okko..okko.r.', '...oooo..oooo..r'] },
+    { top: 17, rows: [
+      '..ohhhossohhho..', '..ohhoddddohho..', '..ooddddddddoo..', '.osDddddddddDso.', '.osDddDddDddDso.',
+      '.osDddddddddDsr.', '..oDddddddddDo.r', '.oddddddddddddor', '.oooooooooooooor',
+    ] },
+    { top: 7, rows: [
+      '......oooo......', '....oohhHhoo....', '...ohhhHHhhho...', '..ohhhhhhhhhho..', '..ohhsssssshho..',
+      '..ohssssssssho..', '..ohsessssesho..', '..ohpsssssspho..', '..ohsssmmsssho..', '..ohhossssohho..',
+    ] },
+  ],
+};
+
+const CODER = {
+  palette: {
+    o: '#1a1c2c', g: '#8fa3ad', G: '#5d707a', v: '#1d2b3a', c: '#4fd1c1', C: '#2a8f84', w: '#dcebe8',
+    a: '#f2b34b', b: '#3b6f8f', B: '#2c5570', k: '#2b2b3a',
+  },
+  parts: [
+    { top: 26, rows: ['....ogo..ogo....', '....ogo..ogo....', '....ogo..ogo....', '...oGGo..oGGo...', '...okko..okko...', '...oooo..oooo...'] },
+    { top: 17, rows: [
+      '.....oGGGGo.....', '..oooooooooooo..', '.ogobbbbbbbbogo.', '.ogobbccbbbbogo.', '.ogobbbbbbbbogo.',
+      '.okobbbbbbbboko.', '...oGGGGGGGGo...', '...oggggggggo...', '...oooooooooo...',
+    ] },
+    { top: 7, rows: [
+      '.......ao.......', '.......oo.......', '....oooooooo....', '...oggggggggo...', '...ogvvvvvvgo...',
+      '...ogvcvvcvgo...', '...ogvvvvvvgo...', '...oggggggggo...', '...ogGGGGGGgo...', '....oooooooo....',
+    ] },
+  ],
+};
+
+/* ---- Costume parts (D-103): drawn over the original, with their own colours. ---- */
+const SANTA_HAT = {
+  pal: { R: '#c8323a', W: '#f4f1ea' },
+  rows: [
+    '..........oo....', '.........oWWo...', '........oRWWo...', '.......oRRoo....', '.....ooRRRo.....',
+    '....oRRRRRRo....', '...oRRRRRRRRo...', '..oRRRRRRRRRRo..', '.oWWWWWWWWWWWWo.', '.oWWWWWWWWWWWWo.',
+  ],
+};
+const SCARF = { pal: { R: '#c8323a', W: '#f4f1ea' }, rows: ['...oRRRRRRRRo...', '...oRWRWRWRWo...', '.........oRo....', '.........oWo....'] };
+const WITCH_HAT = {
+  pal: { V: '#4a2a66', A: '#ff9a3c' },
+  rows: [
+    '.........oo.....', '........oVVo....', '........oVVo....', '.......oVVVo....', '.......oVVVVo...',
+    '......oVVVVVo...', '......oAAAAAo...', '.....oVVVVVVVo..', '.oVVVVVVVVVVVVo.', 'oVVVVVVVVVVVVVVo',
+  ],
+};
+const TOP_HAT = {
+  pal: { G: '#2e8b3e', Y: '#e8c34a', k: '#1b1b22' },
+  rows: ['....oooooooo....', '....oGGGGGGo....', '....oGGGGGGo....', '....oGGGGGGo....', '....okkYYkko....', '..ooGGGGGGGGoo..', '..oGGGGGGGGGGo..', '..oooooooooooo..'],
+};
+const MASK = { pal: { M: '#e8c34a' }, rows: ['..ohMMMMMMMMho..', '..ohMeMMMMeMho..'] };
+const FEATHER = { pal: { P: '#d0489f' }, rows: ['...........P....', '..........PP....', '..........P.....'] };
+const PARTY_HAT = {
+  pal: { P: '#d0489f', Y: '#e8c34a' },
+  rows: ['.......Y........', '......oPo.......', '......oYPo......', '.....oPYPPo.....', '.....oYPPYPo....', '....oooooooo....'],
+};
+const STRAW_HAT = {
+  pal: { T: '#e8c870', r: '#d0453a' },
+  rows: ['.....oooooo.....', '....oTTTTTTo....', '....oTTTTTTo....', '...orrrrrrrro...', 'ooTTTTTTTTTTTToo', '.oooooooooooooo.'],
+};
+const SUNGLASSES = { pal: { K: '#121218', k: '#121218' }, rows: ['....KKKkkKKK....'] };
+const SCRUB_CAP = {
+  pal: { C: '#7cc4cf', c: '#4a8f9b' },
+  rows: ['.....oCCCCo.....', '...ooCCCCCCoo...', '..oCCcCCCcCCCo..', '..oCCCCCCcCCCo..'],
+};
+const STETHOSCOPE = { pal: { Z: '#cfd6da', z: '#8a949a' }, rows: ['.....Z....Z.....', '.....Z....Z.....', '......Z..Z......', '.......ZZ.......', '.......zz.......'] };
+const TIE = {
+  pal: { T: '#26406b', t: '#35588f', Y: '#e8c34a' },
+  rows: ['.......TT.......', '.......tt.......', '....Y..tt.......', '......tttt......', '.......tt.......'],
+};
+
+/* Props: 8×8 at the bottom right, next to the character. */
+const PROPS = {
+  pumpkin: { pal: { Q: '#e8812e', q: '#b85c1a', Y: '#ffd34a', g: '#4f8a2a' }, rows: ['....g...', '...gg...', '.oooooo.', 'oQqQQqQo', 'oQYQQYQo', 'oQQQQQQo', 'oQYYYYQo', '.oooooo.'] },
+  tree: { pal: { g: '#2f8a4a', G: '#1f6a36', R: '#d23c3c', Y: '#ffd34a', k: '#6b4226' }, rows: ['...Y....', '...g....', '..gRg...', '..ggg...', '.gGgYg..', '.ggggg..', 'gRgggGg.', '...k....'] },
+  gold: { pal: { Y: '#e8c34a', k: '#2a2a30' }, rows: ['........', '..Y.Y...', '.YYYYYY.', 'oooooooo', '.okkkko.', '.okkkko.', '.okkkko.', '..oooo..'] },
+  ball: { pal: { R: '#e0483e', W: '#ffffff', B: '#3a7bd5', Y: '#ffd34a' }, rows: ['........', '........', '..oooo..', '.oRRWWo.', 'oRRRWWWo', 'oBBBYYYo', '.oBBYYo.', '..oooo..'] },
+  cross: { pal: { G: '#3fae5a' }, rows: ['........', '..oooo..', '..oGGo..', 'oooGGooo', 'oGGGGGGo', 'oooGGooo', '..oGGo..', '..oooo..'] },
+  mug: { pal: { w: '#f4f1ea', W: '#9b968b' }, rows: ['..W.W...', '...W....', '.ooooo..', '.owwwoo.', '.owwwo.o', '.owwwoo.', '.ooooo..', '........'] },
+};
+
+/* Costume = recolour of the original + parts on top. Character tops follow the maps (head at row 7 or 9). */
+const COSTUMES = {
+  base: { arianna: {}, coder: {} },
+  natale: {
+    arianna: { over: [{ ...SANTA_HAT, top: 0 }, { ...SCARF, top: 17 }] },
+    coder: { over: [{ ...SANTA_HAT, top: 1 }] },
+    prop: 'tree',
+  },
+  patrizio: {
+    arianna: { recolor: { d: '#3aa65a', D: '#25773d' }, over: [{ ...TOP_HAT, top: 1 }] },
+    coder: { recolor: { b: '#2e8b4a', B: '#1f6a36' }, over: [{ ...TOP_HAT, top: 2 }] },
+    prop: 'gold',
+  },
+  halloween: {
+    arianna: { recolor: { d: '#e0782c', D: '#a9531a' }, over: [{ ...WITCH_HAT, top: 0 }] },
+    coder: { recolor: { b: '#5b3a82', B: '#432a63' }, over: [{ ...WITCH_HAT, top: 1 }] },
+    prop: 'pumpkin',
+  },
+  carnevale: {
+    arianna: { recolor: { d: '#8a3ab8', D: '#5e2884' }, over: [{ ...MASK, top: 12 }, { ...FEATHER, top: 5 }] },
+    coder: { over: [{ ...PARTY_HAT, top: 3 }] },
+  },
+  estate: {
+    arianna: { recolor: { d: '#f2a33a', D: '#c47a1c' }, over: [{ ...STRAW_HAT, top: 4 }, { ...SUNGLASSES, top: 13 }] },
+    coder: { over: [{ ...STRAW_HAT, top: 5 }] },
+    prop: 'ball',
+  },
+  corsia: {
+    arianna: { recolor: { d: '#4fa9b8', D: '#357f8c' }, over: [{ ...SCRUB_CAP, top: 7 }, { ...STETHOSCOPE, top: 17 }] },
+    coder: { recolor: { b: '#4fa9b8', B: '#357f8c' }, over: [{ ...STETHOSCOPE, top: 19 }] },
+    prop: 'cross',
+  },
+  ufficio: {
+    arianna: { recolor: { d: '#eeeae0', D: '#bdb6a6' }, over: [{ ...TIE, top: 18 }] },
+    coder: { over: [{ ...TIE, top: 19 }] },
+    prop: 'mug',
+  },
+  cartoon: {
+    arianna: { recolor: { d: '#3a7bd5', D: '#2a5aa0', o: '#000000' } },
+    coder: { recolor: { b: '#e84a5f', B: '#b8344a', o: '#000000' } },
+  },
+  salotto: {
+    arianna: { recolor: { d: '#c8643c', D: '#934428', o: '#000000' } },
+    coder: { recolor: { b: '#8a6a3a', B: '#6a4f28', o: '#000000' } },
+  },
+};
+
+/* ---- Themes: provisional tokens, dark and light. ---- */
+const THEMES = [
+  { id: 'base', name: 'Base', kind: 'base', decor: 'd-grid', note: 'la HUD di oggi, con i sette colori sotto soglia corretti',
+    dark: { bg: '#0a1316', surface: '#0e1b1f', 'surface-2': '#132429', line: '#1e363c', ink: '#dcebe8', muted: '#7f9b98', accent: '#4fd1c1', 'accent-ink': '#062a26', bubble: '#1f6f66', 'bubble-ink': '#f1fbf9', l0: '#7cc796', l1: '#4fd1c1', l2: '#f2b34b', l3: '#e2614b', ok: '#7cc796', warn: '#f2b34b', danger: '#e2614b', info: '#7fb4f0', grid: '#4fd1c112', 'deco-a': '#4fd1c1', 'deco-b': '#4fd1c1' },
+    light: { bg: '#f5f4f0', surface: '#fbfaf7', 'surface-2': '#ffffff', line: '#e3e4df', ink: '#24302e', muted: '#687673', accent: '#1d7a70', 'accent-ink': '#ffffff', bubble: '#3d7e75', 'bubble-ink': '#ffffff', l0: '#3b7a50', l1: '#1d7a70', l2: '#8a5d0c', l3: '#c24a35', ok: '#3b7a50', warn: '#8a5d0c', danger: '#c24a35', info: '#3f6fa8', grid: '#23887c14', 'deco-a': '#23887c', 'deco-b': '#23887c' } },
+  { id: 'natale', name: 'Natale', kind: 'stagionale', decor: 'd-snow', note: '8 dicembre – 6 gennaio',
+    dark: { bg: '#0e1512', surface: '#14201b', 'surface-2': '#1a2a23', line: '#27392f', ink: '#f1f4ef', muted: '#9fb3a8', accent: '#e8665a', 'accent-ink': '#1c0705', bubble: '#2b6b4c', 'bubble-ink': '#ffffff', l2: '#f2c14b', grid: '#ffffff08', 'deco-a': '#ffffff', 'deco-b': '#e8665a' },
+    light: { bg: '#f8f4ee', surface: '#fffdf9', 'surface-2': '#ffffff', line: '#eadfd2', ink: '#2b2220', muted: '#6e625c', accent: '#b8322a', 'accent-ink': '#ffffff', bubble: '#1e5e43', 'bubble-ink': '#ffffff', l2: '#855c00', grid: '#b8322a10', 'deco-a': '#9fb8c8', 'deco-b': '#b8322a' } },
+  { id: 'patrizio', name: 'San Patrizio', kind: 'stagionale', decor: 'd-clover', note: '17 marzo',
+    dark: { bg: '#0b1610', surface: '#11211a', 'surface-2': '#162a20', line: '#22402f', ink: '#eaf5ec', muted: '#93b39c', accent: '#5fd17a', 'accent-ink': '#06240f', bubble: '#1d6b3a', 'bubble-ink': '#ffffff', l2: '#e9c25a', grid: '#5fd17a0c', 'deco-a': '#5fd17a', 'deco-b': '#e9c25a' },
+    light: { bg: '#f2f7f1', surface: '#fbfdfa', 'surface-2': '#ffffff', line: '#dbe8dc', ink: '#1f2e23', muted: '#5a6b5e', accent: '#1e7a3c', 'accent-ink': '#ffffff', bubble: '#1e6b38', 'bubble-ink': '#ffffff', l2: '#7a5900', grid: '#1e7a3c10', 'deco-a': '#2e9a4e', 'deco-b': '#c9a227' } },
+  { id: 'halloween', name: 'Halloween', kind: 'stagionale', decor: 'd-bats', note: '24 – 31 ottobre',
+    dark: { bg: '#120c16', surface: '#1a1220', 'surface-2': '#22182a', line: '#35263f', ink: '#f3ead9', muted: '#b29db9', accent: '#ff8a2a', 'accent-ink': '#2a1200', bubble: '#5b2d7a', 'bubble-ink': '#ffffff', l2: '#f2b34b', grid: '#ff8a2a0a', 'deco-a': '#f2d27a', 'deco-b': '#8a5ab0' },
+    light: { bg: '#fbf3ea', surface: '#fffaf4', 'surface-2': '#ffffff', line: '#eedccb', ink: '#2a1a2e', muted: '#6c5a70', accent: '#b0500c', 'accent-ink': '#ffffff', bubble: '#5b2d7a', 'bubble-ink': '#ffffff', l2: '#855700', grid: '#b0500c10', 'deco-a': '#f2b34b', 'deco-b': '#5b2d7a' } },
+  { id: 'carnevale', name: 'Carnevale', kind: 'stagionale', decor: 'd-confetti', note: 'giovedì – martedì grasso',
+    dark: { bg: '#140f1e', surface: '#1c1529', 'surface-2': '#241b34', line: '#372a4c', ink: '#f2ecfa', muted: '#ab9fc0', accent: '#f0c040', 'accent-ink': '#2a1f00', bubble: '#7a2d6b', 'bubble-ink': '#ffffff', l2: '#f2b34b', grid: '#f0c0400a', 'deco-a': '#f0c040', 'deco-b': '#d0489f' },
+    light: { bg: '#fdf7f0', surface: '#fffcf8', 'surface-2': '#ffffff', line: '#efe0d4', ink: '#2a2030', muted: '#665a70', accent: '#9a2a7c', 'accent-ink': '#ffffff', bubble: '#7a2d6b', 'bubble-ink': '#ffffff', l2: '#855700', grid: '#9a2a7c10', 'deco-a': '#e8a020', 'deco-b': '#d0489f' } },
+  { id: 'estate', name: 'Estate', kind: 'stagionale', decor: 'd-sun', note: 'agosto',
+    dark: { bg: '#0c1620', surface: '#122130', 'surface-2': '#18293b', line: '#253a50', ink: '#eef5fb', muted: '#9fb2c4', accent: '#ffcf5a', 'accent-ink': '#2a1d00', bubble: '#1d6a8a', 'bubble-ink': '#ffffff', l2: '#ffc14d', grid: '#ffcf5a0a', 'deco-a': '#ffcf5a', 'deco-b': '#3a9ac8' },
+    light: { bg: '#fff8ea', surface: '#fffdf6', 'surface-2': '#ffffff', line: '#f0e2c4', ink: '#2b2618', muted: '#6b6250', accent: '#b8400b', 'accent-ink': '#ffffff', bubble: '#0f6a8a', 'bubble-ink': '#ffffff', l2: '#855700', grid: '#b8400b10', 'deco-a': '#ffcf5a', 'deco-b': '#3a9ac8' } },
+  { id: 'corsia', name: 'Corsia', kind: 'ispirato', decor: 'd-rail', note: 'ospedale generico',
+    dark: { bg: '#0b1716', surface: '#10211f', 'surface-2': '#152a28', line: '#21403c', ink: '#e6f4f1', muted: '#91b0aa', accent: '#7fd8c4', 'accent-ink': '#06261f', bubble: '#21706a', 'bubble-ink': '#ffffff', l2: '#f2b34b', grid: '#7fd8c40a', 'deco-a': '#7fd8c4', 'deco-b': '#2a4f4a' },
+    light: { bg: '#eef6f4', surface: '#fbfefd', 'surface-2': '#ffffff', line: '#d5e6e2', ink: '#1f3330', muted: '#526b66', accent: '#15766a', 'accent-ink': '#ffffff', bubble: '#1b6f80', 'bubble-ink': '#ffffff', l2: '#7d5600', grid: '#15766a10', 'deco-a': '#9fb8b2', 'deco-b': '#cfe6e0' } },
+  { id: 'ufficio', name: 'Ufficio', kind: 'ispirato', decor: 'd-carpet', note: 'open space generico',
+    dark: { bg: '#14161a', surface: '#1b1e24', 'surface-2': '#22262e', line: '#30353f', ink: '#ebedf0', muted: '#a0a6b0', accent: '#8fb4e8', 'accent-ink': '#0b1a2e', bubble: '#34557f', 'bubble-ink': '#ffffff', l2: '#f2b34b', grid: '#8fb4e80a', 'deco-a': '#8fb4e8', 'deco-b': '#8fb4e8' },
+    light: { bg: '#efece4', surface: '#faf8f3', 'surface-2': '#ffffff', line: '#ded9cc', ink: '#262a30', muted: '#5c6169', accent: '#2f5b94', 'accent-ink': '#ffffff', bubble: '#2f5b94', 'bubble-ink': '#ffffff', l2: '#7d5600', grid: '#2f5b9410', 'deco-a': '#9aa3ae', 'deco-b': '#9aa3ae' } },
+  { id: 'cartoon', name: 'Cartoon giallo', kind: 'ispirato', decor: 'd-clouds', note: 'cartone generico',
+    dark: { bg: '#0f1b2e', surface: '#162640', 'surface-2': '#1c2f4f', line: '#2a4166', ink: '#f2f6fc', muted: '#a3b3cc', accent: '#ffd83a', 'accent-ink': '#2a2100', bubble: '#2457a8', 'bubble-ink': '#ffffff', l2: '#ffc14d', l3: '#f27a68', danger: '#f27a68', grid: '#ffd83a0a', 'deco-a': '#ffffff', 'deco-b': '#ffd83a' },
+    light: { bg: '#e6f3ff', surface: '#ffffff', 'surface-2': '#ffffff', line: '#c9dcf0', ink: '#1b2333', muted: '#4f5b70', accent: '#1f5fbf', 'accent-ink': '#ffffff', bubble: '#1f5fbf', 'bubble-ink': '#ffffff', l2: '#7d5600', grid: '#1f5fbf10', 'deco-a': '#ffffff', 'deco-b': '#ffd83a' } },
+  { id: 'salotto', name: 'Salotto animato', kind: 'ispirato', decor: 'd-wallpaper', note: 'salotto generico',
+    dark: { bg: '#1a120e', surface: '#221813', 'surface-2': '#2b1f18', line: '#3d2c22', ink: '#f6ece2', muted: '#c0a996', accent: '#f0a860', 'accent-ink': '#2a1404', bubble: '#7a3f22', 'bubble-ink': '#ffffff', l2: '#f2b34b', grid: '#f0a8600a', 'deco-a': '#c8643c', 'deco-b': '#f0a860' },
+    light: { bg: '#f7efe4', surface: '#fffaf3', 'surface-2': '#ffffff', line: '#eadbc8', ink: '#2e2018', muted: '#6e5a4c', accent: '#a04a1c', 'accent-ink': '#ffffff', bubble: '#8a4422', 'bubble-ink': '#ffffff', l2: '#7d5600', grid: '#a04a1c10', 'deco-a': '#d9a77a', 'deco-b': '#7a9a6a' } },
+];
+
+/* A token a theme leaves out takes the value of Base (D-103, point 2). */
+const BASE = THEMES[0];
+function tokensOf(theme, mode) {
+  return { ...BASE[mode], ...theme[mode] };
+}
+
+/* ---- WCAG 2.x contrast (the same calculation the test of stage 1 would run). ---- */
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const x = luminance(a);
+  const y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+const CHECKS = [
+  ['testo/sfondo', 'ink', 'bg', 4.5],
+  ['testo/superficie', 'ink', 'surface', 4.5],
+  ['testo/superficie 2', 'ink', 'surface-2', 4.5],
+  ['secondario', 'muted', 'surface', 4.5],
+  ['secondario/sup. 2', 'muted', 'surface-2', 4.5],
+  ['bolla', 'bubble-ink', 'bubble', 4.5],
+  ['pulsante', 'accent-ink', 'accent', 4.5],
+  ['L0', 'l0', 'surface', 4.5],
+  ['L1', 'l1', 'surface', 4.5],
+  ['L2', 'l2', 'surface', 4.5],
+  ['L3', 'l3', 'surface', 4.5],
+  ['ok', 'ok', 'surface', 4.5],
+  ['avviso', 'warn', 'surface', 4.5],
+  ['pericolo', 'danger', 'surface', 4.5],
+  ['info', 'info', 'surface', 4.5],
+  ['accento/sfondo', 'accent', 'bg', 3],
+];
+
+/* ---- Drawing. ---- */
+function drawRows(ctx, rows, top, left, pal, scale) {
+  rows.forEach((line, y) => {
+    [...line].forEach((ch, x) => {
+      if (ch === '.') return;
+      const colour = pal[ch];
+      if (!colour) return;
+      ctx.fillStyle = colour;
+      ctx.fillRect((left + x) * scale, (top + y) * scale, scale, scale);
+    });
+  });
+}
+function sprite(art, costume, propId, scale) {
+  const width = propId ? 24 : 16;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'sprite';
+  canvas.width = width * scale;
+  canvas.height = 32 * scale;
+  const ctx = canvas.getContext('2d');
+  const pal = { ...art.palette, ...(costume.recolor || {}) };
+  for (const part of art.parts) drawRows(ctx, part.rows, part.top, 0, pal, scale);
+  for (const part of costume.over || []) drawRows(ctx, part.rows, part.top, 0, { ...pal, ...part.pal }, scale);
+  if (propId) {
+    const prop = PROPS[propId];
+    drawRows(ctx, prop.rows, 24, 16, { o: pal.o, ...prop.pal }, scale);
+  }
+  return canvas;
+}
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (key === 'text') node.textContent = value;
+    else node.setAttribute(key, value);
+  }
+  for (const child of children || []) node.append(child);
+  return node;
+}
+
+function card(theme, mode) {
+  const tokens = tokensOf(theme, mode);
+  const costume = COSTUMES[theme.id];
+  const node = el('article', { class: 'card', 'aria-label': 'Tema ' + theme.name });
+  for (const [key, value] of Object.entries(tokens)) node.style.setProperty('--' + key, value);
+
+  node.append(el('div', { class: 'decor ' + theme.decor }));
+
+  const ring = el('div', { class: 'ring' }, [sprite(ARIANNA, costume.arianna, costume.prop, 3)]);
+  ring.style.width = costume.prop ? '88px' : '64px';
+  const kindText = { base: 'base', stagionale: 'stagionale', ispirato: 'ispirato' }[theme.kind];
+  node.append(el('div', { class: 'top' }, [
+    ring,
+    el('div', { class: 'who' }, [
+      el('b', { text: 'Arianna' }),
+      el('div', { class: 'status' }, [el('span', { class: 'dot' }), el('span', { text: 'pensa…' })]),
+      el('div', { class: 'status', text: theme.name + ' · ' + theme.note }),
+    ]),
+    el('div', { class: 'chips' }, [el('span', { class: 'chip', text: kindText })]),
+  ]));
+
+  const body = el('div', { class: 'body' }, [
+    el('div', { class: 'msg-user', text: 'Quando scade il preventivo Rossi?' }),
+    el('div', { class: 'msg-ai' }, [
+      el('div', { class: 'meta' }, [el('span', { text: 'Arianna · locale' }), el('span', { class: 'tag', text: 'L2' })]),
+      el('div', { text: 'Il preventivo finto per Rossi scade venerdì 9. Vuoi un promemoria il giorno prima?' }),
+    ]),
+    el('div', { class: 'coder' }, [
+      el('div', { class: 'ring' }, [sprite(CODER, costume.coder, null, 2)]),
+      el('div', {}, [el('b', { text: 'Coder' }), el('div', { class: 'status', text: 'scrive i test · L1' })]),
+    ]),
+  ]);
+  if (theme.kind === 'ispirato') {
+    body.append(el('div', { class: 'pack', text: 'Altri personaggi: dal tuo pacchetto in data/characters/ (fuori da git, non disegnati qui).' }));
+  }
+  node.append(body);
+
+  node.append(el('div', { class: 'composer' }, [
+    el('span', { text: 'Scrivi ad Arianna…' }),
+    el('button', { class: 'send', type: 'button', text: 'Invia' }),
+  ]));
+
+  const list = el('div', { class: 'list' });
+  let passed = 0;
+  for (const [label, fg, bg, min] of CHECKS) {
+    const ratio = contrast(tokens[fg], tokens[bg]);
+    if (ratio >= min) passed += 1;
+    list.append(el('span', { class: ratio >= min ? 'ok' : 'ko', text: label + ' ' + ratio.toFixed(2) + ':1' }));
+  }
+  const summary = 'Contrasto AA: ' + passed + ' coppie su ' + CHECKS.length + ' sopra soglia';
+  node.append(el('details', { class: 'checks' }, [el('summary', { text: summary }), list]));
+  return node;
+}
+
+/* ---- Controls. ---- */
+const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+let modeChoice = 'dark';
+let motion = 'on';
+
+function render() {
+  const mode = modeChoice === 'system' ? (systemLight.matches ? 'light' : 'dark') : modeChoice;
+  document.documentElement.dataset.mode = mode;
+  const grid = document.getElementById('grid');
+  grid.replaceChildren(...THEMES.map((theme) => card(theme, mode)));
+  document.body.classList.toggle('still', motion === 'off');
+  document.getElementById('motion-note').textContent = reduced.matches ? '(il sistema chiede meno movimento: decori fermi)' : '';
+}
+
+function segmented(id, onPick) {
+  const group = document.getElementById(id);
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    for (const other of group.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+    onPick(button.dataset.v);
+    render();
+  });
+}
+segmented('mode', (value) => { modeChoice = value; });
+segmented('motion', (value) => { motion = value; });
+systemLight.addEventListener('change', render);
+reduced.addEventListener('change', render);
+render();
+</script>
+</body>
+</html>
