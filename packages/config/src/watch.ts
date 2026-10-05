@@ -75,6 +75,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('voice') ? ['voice'] : []),
       ...(changed('characters') ? ['characters'] : []),
+      ...(changed('installation') ? ['installation'] : []),
     ],
     restart: RESTART_SECTIONS.filter(changed),
   };

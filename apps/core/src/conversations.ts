@@ -24,6 +24,8 @@ export interface Conversation {
   title: string | null;
   /** When the user archived it; null while it is in the list. */
   archivedAt: Date | null;
+  /** When the user pinned it at the top of the list (D-089); null when not pinned. Never set while archived. */
+  pinnedAt: Date | null;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
@@ -87,7 +89,7 @@ export class ChatError extends Error {
 }
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model,
-  c.title, c.archived_at AS "archivedAt",
+  c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram,
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
@@ -175,8 +177,10 @@ export async function loadConversation(sql: Queryable, id: string): Promise<Conv
 }
 
 /**
- * Most recently active first: the user's conversations, with `origin: 'system'`
- * the system chats (D-064), or with `archived` every archived conversation.
+ * The pinned ones first, the latest pin on top (D-089), then the most
+ * recently active: the user's conversations, with `origin: 'system'` the
+ * system chats (D-064), or with `archived` every archived conversation
+ * (never pinned).
  */
 export async function listConversations(
   sql: Queryable,
@@ -191,7 +195,7 @@ export async function listConversations(
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
        WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND ($2 OR c.origin = $3)
      ) listed
-     ORDER BY coalesce("lastMessageAt", "createdAt") DESC, id
+     ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
     [limit, archived, options.origin ?? 'user'],
   );
@@ -248,6 +252,24 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
+    }
+    return reload(tx, id);
+  });
+}
+
+/**
+ * Pins a conversation at the top of the list, or unpins it (D-089). No limit
+ * on how many. An archived conversation is refused (409): it is restored
+ * first; archiving a pinned one unpins it (migration 0022). Pinning again
+ * keeps the first time, so the order does not jump. The event carries the id only.
+ */
+export async function pinConversation(sql: Sql, id: string, pinned: boolean): Promise<Conversation> {
+  return sql.begin(async (tx) => {
+    const conversation = await lockConversation(tx, id);
+    if (pinned && conversation.archivedAt !== null) throw new ChatError('archived', 'the conversation is archived: restore it to pin it');
+    if ((conversation.pinnedAt !== null) !== pinned) {
+      await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
+      await appendEvent(tx, { kind: 'conversation.pinned', label: 'L0', payload: { conversationId: id, pinned } });
     }
     return reload(tx, id);
   });

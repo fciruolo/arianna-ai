@@ -7,7 +7,7 @@ import { parse as parseToml } from 'smol-toml';
 
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
-import { DATA_DIR, DEFAULT_SERVER, parseConfig } from './config.ts';
+import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { asTable } from './validate.ts';
@@ -52,6 +52,8 @@ export interface Settings {
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
+  /** `[installation]` (D-089): kept as written; the wizard does not ask for it. */
+  installation?: { mode: InstallationMode };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -107,6 +109,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     characters: { ...config.characters },
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
+    ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
   };
 }
 
@@ -336,6 +339,14 @@ export function renderSettings(settings: Settings): string {
     '# the private key stays in the vault (key vapid-private-key). Applies without',
     '# a restart, once no call is in progress.',
     ...voiceSection(settings.voice),
+    '',
+    '# What the web chat says this installation is (D-089): development while the',
+    '# database uses the development passwords or while mode = "development";',
+    '# production only with real passwords and no such line. Applies without a',
+    '# restart.',
+    ...(settings.installation === undefined
+      ? ['#', '# [installation]', '# mode = "development"']
+      : ['[installation]', `mode = ${str(settings.installation.mode)}`]),
   ];
   return `${lines.join('\n')}\n`;
 }

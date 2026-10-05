@@ -34,6 +34,7 @@ import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer } from './organize.ts';
 import { defaultConversationModel, selectableModels } from './orchestrator/routing.ts';
+import { installationInfo } from './installation.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
 import { createBotApi } from './telegram/api.ts';
@@ -358,6 +359,8 @@ const server = await startApiServer({
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
   modelEvals,
+  // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
+  installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
   onError: report,
 });

@@ -327,6 +327,60 @@ export function buildKnowledgeGraph(home: string, rules: LabelRules, cache?: Gra
   return graphOf(pages, hidden, truncated);
 }
 
+/** A page of kb/ up to L2 as the search reads it (D-089). */
+export interface VisiblePage {
+  id: string;
+  title: string;
+  folder: string;
+  tags: string[];
+  label: Label;
+  updatedAt: string;
+  body: string;
+}
+
+/**
+ * Visits the pages of kb/ up to L2 with their text, in the order of the walk,
+ * read as readKnowledgePage reads them. Pages above L2 (by folder, without
+ * opening them, or by their header), unreadable or too large are counted in
+ * `hidden`; `skip` leaves pages out before anything is read or counted.
+ * `visit` returns false to stop.
+ */
+export function eachKbPage(
+  home: string,
+  rules: LabelRules,
+  visit: (page: VisiblePage) => boolean,
+  skip: (id: string) => boolean = () => false,
+): { hidden: number; truncated: boolean } {
+  const root = kbRoot(home);
+  if (root === undefined) return { hidden: 0, truncated: false };
+  const listed = listPageIds(root);
+  let hidden = 0;
+  for (const id of listed.slice(0, MAX_GRAPH_PAGES)) {
+    if (!validId(id) || skip(id)) continue;
+    if (!isAtMost(labelForPath(rules, `${KB_DIR}/${id}`), 'L2')) {
+      hidden += 1;
+      continue;
+    }
+    const file = readPageFile(home, id);
+    const facts = file === undefined ? undefined : factsOf(rules, id, file.raw);
+    if (file === undefined || facts === undefined || !isAtMost(facts.label, 'L2')) {
+      hidden += 1;
+      continue;
+    }
+    const page: VisiblePage = {
+      id,
+      title: facts.title,
+      folder: id.includes('/') ? (id.split('/')[0] ?? '') : '',
+      tags: facts.tags,
+      label: facts.label,
+      updatedAt: new Date(file.mtimeMs).toISOString(),
+      body: parsePage(file.raw).body,
+    };
+    if (!visit(page)) return { hidden, truncated: false };
+  }
+  return { hidden, truncated: listed.length > MAX_GRAPH_PAGES };
+}
+
 export interface KnowledgePage {
   id: string;
   title: string;

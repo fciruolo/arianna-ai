@@ -151,3 +151,11 @@ port = 7420
 # public_key = "<pnpm voice:vapid>"
 # private_key = "vault://vapid-private-key"
 # subject = "mailto:you@example.org"
+
+# What the web chat says this installation is (D-089): development while the
+# database uses the development passwords or while mode = "development";
+# production only with real passwords and no such line. Applies without a
+# restart.
+#
+# [installation]
+# mode = "development"

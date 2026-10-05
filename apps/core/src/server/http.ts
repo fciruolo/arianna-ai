@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { CharacterChoices, Project } from '@arianna/config';
-import { isLabel, type LabelRules } from '@arianna/policy';
+import { isLabel, maxLabel, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
@@ -22,6 +22,8 @@ import {
   listConversations,
   listMessages,
   loadConversation,
+  loadMessage,
+  pinConversation,
   postUserMessage,
   purgeConversation,
   renameConversation,
@@ -37,9 +39,13 @@ import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
+import type { InstallationInfo } from '../installation.ts';
+import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
+import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
+import { listWaitingTasks } from '../waiting.ts';
 import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
 import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
 import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
@@ -98,6 +104,8 @@ export interface ApiServerOptions {
   capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean> };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
+  /** What this installation is (D-089), read at each request: mode, folder name, commit. */
+  installation?: () => InstallationInfo;
   /**
    * The approved projects with their folders (D-058), read at each request:
    * where the preview of a file changed by the Coder is read (D-082).
@@ -233,6 +241,7 @@ interface RouteOptions {
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
+  installation: ApiServerOptions['installation'];
   onError: (error: unknown) => void;
 }
 
@@ -442,7 +451,7 @@ function settingsRoutes(settings: SettingsPage | undefined, local: LocalApi | un
  */
 const CAPTURE_BODY_BYTES = 2 * MAX_CAPTURE_BYTES + 4096;
 
-function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
+function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   return [
     route('POST', '/api/capture', async (request) => {
       if (capture === undefined) throw new HttpError(404, 'not found');
@@ -454,8 +463,15 @@ function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: un
         if (error instanceof HttpError && error.status === 413) throw new HttpError(413, `text is longer than ${String(MAX_CAPTURE_BYTES / 1024)} KiB`);
         throw error;
       }
-      onlyFields(body, ['text', 'kind', 'url', 'title', 'from']);
-      const { text, kind, url, title, from } = body;
+      onlyFields(body, ['text', 'kind', 'url', 'title', 'from', 'messageId']);
+      const { kind, url, title, from, messageId } = body;
+      // A message of the chat saved once (D-089): its label and, without `text`, its text come from the database.
+      if (messageId !== undefined && (typeof messageId !== 'string' || !/^[1-9]\d{0,18}$/.test(messageId))) {
+        throw new HttpError(400, 'messageId must be a message id');
+      }
+      const message = messageId === undefined ? undefined : await loadMessage(sql, messageId);
+      if (messageId !== undefined && message === undefined) throw new HttpError(404, 'message not found');
+      const text = body.text ?? message?.body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
       if (!isCaptureKind(chosen)) throw new HttpError(400, 'kind must be thought, link or note');
@@ -463,16 +479,24 @@ function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: un
       if (title !== undefined && typeof title !== 'string') throw new HttpError(400, 'title must be a string');
       // The label of the message saved (D-084): it can only raise the note, and above L2 nothing is written.
       if (from !== undefined && !isLabel(from)) throw new HttpError(400, 'from must be a label');
-      const note = captureNote({
+      const raised = message === undefined ? from : maxLabel(message.label, from ?? message.label);
+      const input = {
         home: capture.home,
         rules: capture.rules,
         text,
         kind: chosen,
-        source: { channel: 'hud', id: randomUUID() },
         ...(url === undefined ? {} : { url }),
         ...(title === undefined ? {} : { title }),
-        ...(from === undefined ? {} : { from }),
-      });
+        ...(raised === undefined ? {} : { from: raised }),
+      };
+      let note;
+      try {
+        note = message === undefined ? captureNote({ ...input, source: { channel: 'hud', id: randomUUID() } }) : captureMessage({ ...input, messageId: message.id });
+      } catch (error) {
+        // `note`: the file name of the note already saved, or null when it is above L2.
+        if (error instanceof AlreadySavedError) return { status: 409, body: { error: error.message, note: error.note } };
+        throw error;
+      }
       // Organized in the background (D-086): the note is already saved, a failed queue leaves it new.
       let organizing = false;
       if (capture.organize !== undefined) {
@@ -485,8 +509,36 @@ function captureRoutes(capture: ApiServerOptions['capture'], onError: (error: un
       }
       return { status: 201, body: { path: note.path, label: note.label, organizing } };
     }),
+    // The messages of a conversation already saved in kb/inbox (D-089): the chat shows "Salvato" after a reload.
+    route('GET', '/api/conversations/:id/saved', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      if (capture === undefined) throw new HttpError(404, 'not found');
+      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      const ids = [...savedMessageIds(capture.home, capture.rules)];
+      if (ids.length === 0) return { body: { messageIds: [] } };
+      const rows = await sql<{ id: string }[]>`
+        SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${ids}::bigint[]) ORDER BY id`;
+      return { body: { messageIds: rows.map((row) => row.id) } };
+    }),
     ...noteRoutes(capture),
     ...knowledgeRoutes(capture),
+  ];
+}
+
+/**
+ * "Cerca" (D-089): conversation titles, message texts, notes and pages of
+ * kb/, up to L2, grouped by kind. The query never goes to a log: errors name
+ * fixed reasons only.
+ */
+function searchRoutes(sql: Sql, capture: ApiServerOptions['capture']): Route[] {
+  return [
+    route('GET', '/api/search', async (_request, url) => {
+      const raw = url.searchParams.get('limit');
+      const limit = raw === null ? DEFAULT_SEARCH_LIMIT : Number(raw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SEARCH_LIMIT) throw new HttpError(400, `limit must be 1-${String(MAX_SEARCH_LIMIT)}`);
+      const kb = capture === undefined ? {} : { kb: { home: capture.home, rules: capture.rules } };
+      return { body: await searchAll(sql, url.searchParams.get('q') ?? '', { limit, ...kb }) };
+    }),
   ];
 }
 
@@ -615,18 +667,25 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, onError }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError }: RouteOptions): Route[] {
   return [
     ...delegationRoutes(sql, approvedProjects),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
-    ...captureRoutes(capture, onError),
+    ...captureRoutes(sql, capture, onError),
+    ...searchRoutes(sql, capture),
     ...settingsRoutes(settings, local, onError),
     ...callRoutes(sql, voice, calls, pusher),
     route('GET', '/api/health', () => Promise.resolve({ body: { ok: true } })),
 
     // The status panel (D-060): agents, last router decision, gateway today. Counts and labels only.
     route('GET', '/api/status', async () => ({ body: await loadStatus(sql, agents()) })),
+
+    // What this installation is (D-089): development or production, the name of its folder, the commit.
+    route('GET', '/api/installation', () => {
+      if (installation === undefined) throw new HttpError(404, 'not found');
+      return Promise.resolve({ body: { installation: installation() } });
+    }),
 
     // The character packs and who wears what. Refused folders are named with the reason, never their content.
     route('GET', '/api/characters', async () => {
@@ -709,6 +768,18 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       return { body: { conversation: await archiveConversation(sql, id, body.archived) } };
     }),
 
+    // Pins a conversation at the top of the list, or unpins it (D-089); an archived one is restored first (409).
+    route('POST', '/api/conversations/:id/pin', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { conversation: await pinConversation(sql, id, true) } };
+    }),
+    route('POST', '/api/conversations/:id/unpin', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return { body: { conversation: await pinConversation(sql, id, false) } };
+    }),
+
     // Deletes the texts of an archived conversation for good (D-057): the user confirmed it in the page.
     route('POST', '/api/conversations/:id/purge', async (request, _url, params) => {
       const id = idParam(params, 'id');
@@ -741,6 +812,9 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const { message, task } = await postUserMessage(sql, id, body.body);
       return { status: 201, body: { message, task } };
     }),
+
+    // The tasks waiting for the user, oldest first, up to L2; the others only counted (D-091). Before /api/tasks/:id.
+    route('GET', '/api/tasks/waiting', async () => ({ body: await listWaitingTasks(sql) })),
 
     route('GET', '/api/tasks/:id', async (_request, _url, params) => {
       const task = await loadTask(sql, idParam(params, 'id'));
@@ -922,6 +996,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
@@ -943,6 +1018,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     capture: options.capture,
     modelEvals: options.modelEvals,
     approvedProjects: options.approvedProjects ?? (() => []),
+    installation: options.installation,
     onError: options.onError ?? (() => undefined),
   });
   const sockets = new Set<WebSocket>();

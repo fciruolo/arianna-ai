@@ -34,6 +34,9 @@ export class NoteError extends Error {
   }
 }
 
+/** `source: message:<id>` (D-089): a note saved from a message of the chat. */
+export const MESSAGE_SOURCE = /^message:([1-9]\d{0,18})$/;
+
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}\.md$/;
 
 /** The file name of a note, as the routes take it: no folder, no `..`, no encoding. */
@@ -208,27 +211,47 @@ export interface ListOptions {
  * `hidden`, without their title or tags.
  */
 export function listNotes(home: string, rules: LabelRules, options: ListOptions): { notes: NoteSummary[]; hidden: number } {
+  const notes: NoteSummary[] = [];
+  let hidden = 0;
+  const { aboveByFolder } = eachInboxNote(home, rules, (path, raw) => {
+    if (notes.length >= options.limit) return false;
+    const note = summaryOf(rules, path, raw);
+    if (!isAtMost(note.label, 'L2')) {
+      hidden += 1;
+      return true;
+    }
+    if (options.status === undefined || note.status === options.status) notes.push(note);
+    return true;
+  });
+  return { notes, hidden: hidden + aboveByFolder };
+}
+
+/**
+ * Visits the note files of kb/inbox, newest first (the name starts with the
+ * time of capture), at most MAX_LISTED: plain files only, read as
+ * readNoteFile reads them. A note above L2 by its folder is never opened,
+ * only counted. `visit` returns false to stop.
+ */
+export function eachInboxNote(home: string, rules: LabelRules, visit: (path: string, raw: string) => boolean): { aboveByFolder: number } {
   const dir = inboxIfAny(home);
-  if (dir === undefined) return { notes: [], hidden: 0 };
+  if (dir === undefined) return { aboveByFolder: 0 };
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    return { notes: [], hidden: 0 };
+    return { aboveByFolder: 0 };
   }
   const names = entries
     .filter((entry) => entry.isFile() && NAME.test(entry.name) && !entry.name.includes('..'))
     .map((entry) => entry.name)
     .sort((a, b) => b.localeCompare(a))
     .slice(0, MAX_LISTED);
-  const notes: NoteSummary[] = [];
-  let hidden = 0;
+  let aboveByFolder = 0;
   for (const name of names) {
-    if (notes.length >= options.limit) break;
     const path = `${KB_INBOX}/${name}`;
     // Above L2 by its folder: the file is not opened.
     if (!isAtMost(labelForPath(rules, path), 'L2')) {
-      hidden += 1;
+      aboveByFolder += 1;
       continue;
     }
     let raw: string;
@@ -237,15 +260,14 @@ export function listNotes(home: string, rules: LabelRules, options: ListOptions)
     } catch {
       continue;
     }
-    const note = summaryOf(rules, path, raw);
-    if (!isAtMost(note.label, 'L2')) {
-      hidden += 1;
-      continue;
-    }
-    if (options.status !== undefined && note.status !== options.status) continue;
-    notes.push(note);
+    if (!visit(path, raw)) break;
   }
-  return { notes, hidden };
+  return { aboveByFolder };
+}
+
+/** The summary of a note file, as the listing gives it: for the search (D-089). */
+export function noteSummary(rules: LabelRules, path: string, raw: string): NoteSummary {
+  return summaryOf(rules, path, raw);
 }
 
 /**
@@ -270,7 +292,7 @@ export function keptCaptureFields(raw: string): { source?: string; capturedAt?: 
   const kept: { source?: string; capturedAt?: string; capturedKind?: string; url?: string } = {};
   const source = fields.get('source');
   const channels = CAPTURE_CHANNELS.join('|');
-  if (source !== undefined && new RegExp(`^capture:(${channels}):[A-Za-z0-9_-]{1,64}$`).test(source)) kept.source = source;
+  if (source !== undefined && (new RegExp(`^capture:(${channels}):[A-Za-z0-9_-]{1,64}$`).test(source) || MESSAGE_SOURCE.test(source))) kept.source = source;
   const capturedAt = fields.get('captured_at');
   if (capturedAt !== undefined && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(capturedAt)) kept.capturedAt = capturedAt;
   const kind = fields.get('kind');

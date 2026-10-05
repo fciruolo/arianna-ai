@@ -68,7 +68,15 @@ export interface AriannaConfig {
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
   voice?: VoiceConfig;
+  /**
+   * `[installation]` (D-089): `mode = "development"` marks this installation as
+   * development even with real passwords; absent, the passwords decide.
+   */
+  installation?: { mode: InstallationMode };
 }
+
+export const INSTALLATION_MODES = ['development', 'production'] as const;
+export type InstallationMode = (typeof INSTALLATION_MODES)[number];
 
 /**
  * `catalog` checks `[roles]`: without it no role can be assigned. `userHome`
@@ -84,7 +92,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram', 'voice'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -109,6 +117,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
   const voice = parseVoice(root.voice);
   if (voice !== undefined && voice.port === parseServer(root.server).port) throw new ConfigError('voice.port: must differ from server.port');
   const roles = parseRoles(root.roles, catalog);
+  const installation = parseInstallation(root.installation);
   return {
     home,
     paths: { data },
@@ -121,7 +130,19 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     characters: parseCharacters(root.characters),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
+    ...(installation === undefined ? {} : { installation }),
   };
+}
+
+function parseInstallation(value: unknown): AriannaConfig['installation'] {
+  if (value === undefined) return undefined;
+  const table = asTable(value, 'installation');
+  onlyKeys(table, ['mode'], 'installation');
+  if (table.mode === undefined) return undefined;
+  const mode = asString(table.mode, 'installation.mode');
+  const known = INSTALLATION_MODES.find((item) => item === mode);
+  if (known === undefined) throw new ConfigError(`installation.mode: must be one of ${INSTALLATION_MODES.join(', ')}`);
+  return { mode: known };
 }
 
 function parseDatabase(database: Record<string, unknown>, host: string): DatabaseConfig {

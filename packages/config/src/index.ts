@@ -32,10 +32,12 @@ export {
   DATA_DIR,
   DEFAULT_SERVER,
   EXAMPLE_CONFIG_FILE,
+  INSTALLATION_MODES,
   loadConfig,
   parseConfig,
   type AriannaConfig,
   type DatabaseConfig,
+  type InstallationMode,
   userHomeOf,
 } from './config.ts';
 export { resolveHome, resolveInHome } from './home.ts';

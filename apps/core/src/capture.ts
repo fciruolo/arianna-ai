@@ -37,13 +37,15 @@ export class CaptureError extends Error {
   }
 }
 
+export type CaptureSource = { channel: CaptureChannel; id: string } | { messageId: string };
+
 export interface CaptureInput {
   home: string;
   rules: LabelRules;
   text: string;
   kind: CaptureKind;
-  /** Written as `capture:<channel>:<id>`. */
-  source: { channel: CaptureChannel; id: string };
+  /** Written as `capture:<channel>:<id>`, or `message:<id>` for a message of the chat saved in the inbox (D-089). */
+  source: CaptureSource;
   url?: string;
   title?: string;
   /** The label of what the capture came from (a work conversation: L1); it can only raise the note. */
@@ -107,7 +109,9 @@ function fileStamp(now: Date): string {
 
 function checkInput(input: CaptureInput): { text: string; url?: string; title?: string } {
   if (!isCaptureKind(input.kind)) throw new CaptureError('invalid', `kind must be one of ${CAPTURE_KINDS.join(', ')}`);
-  if (!CAPTURE_CHANNELS.includes(input.source.channel) || !/^[A-Za-z0-9_-]{1,64}$/.test(input.source.id)) {
+  if ('messageId' in input.source) {
+    if (!/^[1-9]\d{0,18}$/.test(input.source.messageId)) throw new CaptureError('invalid', 'invalid source');
+  } else if (!CAPTURE_CHANNELS.includes(input.source.channel) || !/^[A-Za-z0-9_-]{1,64}$/.test(input.source.id)) {
     throw new CaptureError('invalid', 'invalid source');
   }
   if (typeof input.text !== 'string') throw new CaptureError('invalid', 'text is required');
@@ -178,6 +182,11 @@ function remove(file: string): void {
   }
 }
 
+/** The value of the `source:` line, written only here. */
+export function sourceLine(source: CaptureSource): string {
+  return 'messageId' in source ? `message:${source.messageId}` : `capture:${source.channel}:${source.id}`;
+}
+
 export function captureNote(input: CaptureInput): CaptureResult {
   const { text, url, title } = checkInput(input);
   const now = input.now ?? new Date();
@@ -191,7 +200,7 @@ export function captureNote(input: CaptureInput): CaptureResult {
   const header = [
     '---',
     `label: ${label}`,
-    `source: capture:${input.source.channel}:${input.source.id}`,
+    `source: ${sourceLine(input.source)}`,
     `captured_at: ${localTimestamp(now)}`,
     `kind: ${input.kind}`,
     'status: new',
