@@ -8,11 +8,13 @@
  */
 export type ComposeGuard = { run: true } | { run: false; exitCode: number; message: string };
 
-export function composeGuard(gitDir: string, commonDir: string, args: readonly string[]): ComposeGuard {
+export function composeGuard(gitDir: string | null, commonDir: string | null, args: readonly string[]): ComposeGuard {
+  // Not a repository (or no git): an installation, never a worktree.
+  if (gitDir === null || commonDir === null) return { run: true };
   // In the main folder git-dir and git-common-dir are the same; in a linked worktree git-dir is .git/worktrees/<name>.
   if (gitDir === commonDir) return { run: true };
   if (args[0] === 'up') {
-    return { run: false, exitCode: 0, message: "docker compose: in a git worktree the database is the main folder's; not recreated (start it there with pnpm db:up)" };
+    return { run: false, exitCode: 0, message: "docker compose: in a git worktree the database is the main folder's; not recreated; if it is off, start it there with pnpm db:up" };
   }
   return { run: false, exitCode: 1, message: `docker compose ${args[0] ?? ''}: refused in a git worktree; run it from the main folder` };
 }

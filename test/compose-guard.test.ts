@@ -8,12 +8,17 @@ test('docker compose runs from the main folder, whatever the command', () => {
   assert.deepEqual(composeGuard('/repo/.git', '/repo/.git', ['down']), { run: true });
 });
 
+test('an installation without git or without .git runs docker compose', () => {
+  assert.deepEqual(composeGuard(null, null, ['up']), { run: true });
+  assert.deepEqual(composeGuard('/repo/.git/worktrees/x', null, ['down']), { run: true });
+});
+
 test('in a git worktree up does nothing and every other command is refused', () => {
   const worktree = '/repo/.git/worktrees/agent-x';
   assert.deepEqual(composeGuard(worktree, '/repo/.git', ['up', '--detach', '--wait']), {
     run: false,
     exitCode: 0,
-    message: "docker compose: in a git worktree the database is the main folder's; not recreated (start it there with pnpm db:up)",
+    message: "docker compose: in a git worktree the database is the main folder's; not recreated; if it is off, start it there with pnpm db:up",
   });
   assert.deepEqual(composeGuard(worktree, '/repo/.git', ['down']), { run: false, exitCode: 1, message: 'docker compose down: refused in a git worktree; run it from the main folder' });
   assert.equal(composeGuard(worktree, '/repo/.git', []).run, false);

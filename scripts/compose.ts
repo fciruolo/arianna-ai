@@ -10,7 +10,14 @@ import { composeGuard } from './compose-guard.ts';
 
 const config = loadConfig();
 
-const git = (flag: string): string => resolve(config.home, execFileSync('git', ['rev-parse', flag], { cwd: config.home, encoding: 'utf8' }).trim());
+/** The folder git names for `flag`; null outside a repository or without git (an installation copied without .git). */
+const git = (flag: string): string | null => {
+  try {
+    return resolve(config.home, execFileSync('git', ['rev-parse', flag], { cwd: config.home, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
+  } catch {
+    return null;
+  }
+};
 const guard = composeGuard(git('--git-dir'), git('--git-common-dir'), process.argv.slice(2));
 if (!guard.run) {
   console.error(guard.message);
