@@ -395,7 +395,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
             return runLocalDelegation(env, ctx, planned);
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
-            return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step };
+            return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step, agent: planned.delegation.agent };
           case 'budget':
             await show(task, step, 'wait', `budget · ${planned.model}`);
             return { kind: 'budget', executor: 'claude', model: planned.model, step: planned.delegation.step };

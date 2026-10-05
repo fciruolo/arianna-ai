@@ -14,6 +14,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Corretto
 - Il test del doctor con il database contava ancora 24 migrazioni: ora le conta dalla cartella.
+- La scheda "Cartella con modifiche" diceva sempre "Il Coder lavorerebbe…" anche quando lavora un agente nuovo: ora nomina l'agente (D-119, tappa T3b).
+- Nella finestra di conferma la trifecta non ripete più "chiuso"/"aperto" e "Modifica il codice" non parla più di worktree.
 
 ## [0.7.0] - 2026-10-05
 

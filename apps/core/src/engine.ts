@@ -101,7 +101,7 @@ export type StepOutcome = (
    * The project folder has changes the user has not committed (D-056): they
    * approve the Coder working over them, from the chat. `files` are paths.
    */
-  | { kind: 'workspace'; repo: string; files: string[]; step: number }
+  | { kind: 'workspace'; repo: string; files: string[]; step: number; agent?: string }
   /**
    * The executor refused for now (a quota, task 1.5): the same step runs
    * again at `at`, without the user. The task stays at work; the run failed.
@@ -314,7 +314,7 @@ export async function processStepJob(
         // Paths of a work repository: the task's label covers them.
         const [created] = await tx<{ id: string }[]>`
           INSERT INTO approvals (task_id, kind, action, detail, label)
-          VALUES (${task.id}, 'workspace', 'dirty-workspace', ${tx.json({ repo: outcome.repo, files: outcome.files, step: outcome.step })}, ${task.effectiveLabel}::privacy_label)
+          VALUES (${task.id}, 'workspace', 'dirty-workspace', ${tx.json({ repo: outcome.repo, files: outcome.files, step: outcome.step, ...(outcome.agent === undefined ? {} : { agent: outcome.agent }) })}, ${task.effectiveLabel}::privacy_label)
           RETURNING id::text`;
         if (created === undefined) throw new Error('INSERT INTO approvals returned no row');
         await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: workspace', cause: 'approval', approvalId: created.id });

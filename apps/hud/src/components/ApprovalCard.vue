@@ -13,8 +13,10 @@ const isDeclassify = computed(() => props.approval.kind === 'declassify');
 /** A workspace approval names the repository and the files with uncommitted changes. */
 const workspace = computed(() => {
   if (props.approval.kind !== 'workspace') return undefined;
-  const { repo, files } = props.approval.detail;
-  return typeof repo === 'string' && Array.isArray(files) ? { repo, files: files.map(String) } : undefined;
+  const { repo, files, agent } = props.approval.detail;
+  // The agent that would work there (D-119): the Coder for an approval written before it was named.
+  const who = typeof agent === 'string' && agent !== 'coder' ? agent : 'Il Coder';
+  return typeof repo === 'string' && Array.isArray(files) ? { repo, files: files.map(String), who } : undefined;
 });
 /** A budget approval names executor and model (router aliases) and the step. */
 const budget = computed(() => {
@@ -55,7 +57,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       </template>
       <template v-else-if="workspace !== undefined">
         <p>
-          Il Coder lavorerebbe in <span class="font-mono">{{ workspace.repo }}</span>, dove hai modifiche non ancora committate. Approvando lavora sopra di
+          {{ workspace.who }} lavorerebbe in <span class="font-mono">{{ workspace.repo }}</span>, dove hai modifiche non ancora committate. Approvando lavora sopra di
           esse, sul branch corrente; rifiutando, Arianna lo saprà. Oppure committa prima e riprendi il task.
         </p>
         <ul class="flex max-h-40 flex-wrap gap-1.5 overflow-auto">

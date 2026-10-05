@@ -194,7 +194,7 @@ export function workText(works: UserAgentWork): string {
 
 const TOOL_TEXT: Record<string, string> = {
   'repo.read': 'legge il codice del progetto',
-  'repo.write': 'modifica il codice nel worktree',
+  'repo.write': 'modifica il codice del progetto',
   'repo.test': 'esegue i test',
   'task.update': 'sposta le carte della conversazione',
   'user.ask': 'ti fa domande in chat',
@@ -297,17 +297,17 @@ export function trifectaRows(trifecta: CardSummary['trifecta']): { side: string;
     {
       side: 'Dati privati',
       open: trifecta.private_data,
-      why: trifecta.private_data ? 'legge dati privati (L2)' : 'chiuso: legge al massimo dati di lavoro (L1), mai le conversazioni private',
+      why: trifecta.private_data ? 'legge dati privati (L2)' : 'legge al massimo dati di lavoro (L1), mai le conversazioni private',
     },
     {
       side: 'Contenuti non fidati',
       open: trifecta.untrusted_content,
-      why: trifecta.untrusted_content ? 'aperto: il codice di un progetto e i testi che riceve possono contenere istruzioni ostili' : 'chiuso',
+      why: trifecta.untrusted_content ? 'il codice di un progetto e i testi che riceve possono contenere istruzioni ostili' : 'non legge contenuti di terzi',
     },
     {
       side: 'Comunicazione esterna',
       open: trifecta.external_comms,
-      why: trifecta.external_comms ? 'può mandare dati fuori' : 'chiuso: niente web né canali; Claude Code lavora in una sandbox senza rete',
+      why: trifecta.external_comms ? 'può mandare dati fuori' : 'niente web né canali; Claude Code lavora in una sandbox senza rete',
     },
   ];
 }

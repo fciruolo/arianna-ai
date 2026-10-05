@@ -421,9 +421,10 @@ test('uncommitted changes in the folder: the user approves first; the changed fi
     assert.deepEqual(await drain(task.id, executor), ['continued', 'waiting-approval']);
     const waiting = await waitingFor(task.id);
     assert.equal(waiting.waitingReason, 'approval needed: workspace');
-    const [approval] = await db().sql<{ kind: string; action: string; detail: { repo: string; files: string[]; step: number } }[]>`
+    const [approval] = await db().sql<{ kind: string; action: string; detail: { repo: string; files: string[]; step: number; agent: string } }[]>`
       SELECT kind, action, detail FROM approvals WHERE id = ${waiting.waitingApprovalId}`;
-    assert.deepEqual([approval?.kind, approval?.action, approval?.detail.repo, approval?.detail.files, approval?.detail.step], ['workspace', 'dirty-workspace', 'site', ['notes.txt'], 1]);
+    // The card names the agent that would work there (D-119, tappa T3b).
+    assert.deepEqual([approval?.kind, approval?.action, approval?.detail.repo, approval?.detail.files, approval?.detail.step, approval?.detail.agent], ['workspace', 'dirty-workspace', 'site', ['notes.txt'], 1, 'coder']);
     assert.equal((await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`).length, 0);
 
     await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
