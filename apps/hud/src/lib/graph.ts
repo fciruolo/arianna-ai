@@ -164,25 +164,25 @@ interface Quad {
   cy: number;
   /** A single body in a leaf; -1 for an inner quad or an empty one. */
   body: number;
-  /** Bodies stacked on the same point beyond the depth limit. */
-  extra: number[];
+  /** Bodies stacked on the same point beyond the depth limit: made only when that happens (rare). */
+  extra: number[] | undefined;
   children: (Quad | undefined)[] | undefined;
 }
 
 function newQuad(x0: number, y0: number, size: number): Quad {
-  return { x0, y0, size, mass: 0, cx: 0, cy: 0, body: -1, extra: [], children: undefined };
+  return { x0, y0, size, mass: 0, cx: 0, cy: 0, body: -1, extra: undefined, children: undefined };
 }
 
 function insert(quad: Quad, nodes: readonly SimNode[], i: number, depth: number): void {
   const node = nodes[i];
   if (node === undefined) return;
   if (quad.children === undefined) {
-    if (quad.body < 0 && quad.extra.length === 0) {
+    if (quad.body < 0 && quad.extra === undefined) {
       quad.body = i;
       return;
     }
     if (depth > 24) {
-      quad.extra.push(i);
+      (quad.extra ??= []).push(i);
       return;
     }
     const old = quad.body;
@@ -212,21 +212,30 @@ function accumulate(quad: Quad, nodes: readonly SimNode[]): void {
   let mass = 0;
   let cx = 0;
   let cy = 0;
-  const add = (x: number, y: number, m: number) => {
-    mass += m;
-    cx += x * m;
-    cy += y * m;
-  };
   if (quad.children === undefined) {
-    for (const i of quad.body >= 0 ? [quad.body, ...quad.extra] : quad.extra) {
-      const node = nodes[i];
-      if (node !== undefined) add(node.x, node.y, 1);
+    const first = nodes[quad.body];
+    if (first !== undefined) {
+      mass += 1;
+      cx += first.x;
+      cy += first.y;
+    }
+    if (quad.extra !== undefined) {
+      for (const i of quad.extra) {
+        const node = nodes[i];
+        if (node === undefined) continue;
+        mass += 1;
+        cx += node.x;
+        cy += node.y;
+      }
     }
   } else {
     for (const child of quad.children) {
       if (child === undefined) continue;
       accumulate(child, nodes);
-      if (child.mass > 0) add(child.cx, child.cy, child.mass);
+      if (child.mass === 0) continue;
+      mass += child.mass;
+      cx += child.cx * child.mass;
+      cy += child.cy * child.mass;
     }
   }
   quad.mass = mass;
@@ -259,48 +268,56 @@ function jiggle(i: number): number {
   return ((i * 9301 + 49297) % 233280) / 233280 / 1e3 - 0.5e-3;
 }
 
+/** Adds to `out` the push node i (at `node`) gets from `mass` bodies at (x, y). No closure, no allocation. */
+function addPush(out: { vx: number; vy: number }, i: number, node: SimNode, x: number, y: number, mass: number, chargeAlpha: number): void {
+  let dx = x - node.x;
+  let dy = y - node.y;
+  if (dx === 0) dx = jiggle(i);
+  if (dy === 0) dy = jiggle(i + 1);
+  const f = (chargeAlpha * mass) / Math.max(dx * dx + dy * dy, 1);
+  out.vx += dx * f;
+  out.vy += dy * f;
+}
+
+/**
+ * The walk of the quadtree, reused by every node of every tick: the module
+ * is single-threaded and the walk is not re-entrant, so one stack is enough.
+ */
+const walk: Quad[] = [];
+
 /** The velocity change repulsion gives node i: `charge` per body, approximated beyond `theta`. */
 export function repulsionOn(i: number, nodes: readonly SimNode[], tree: Quad | undefined, charge: number, alpha: number, theta: number): { vx: number; vy: number } {
   const node = nodes[i];
-  let vx = 0;
-  let vy = 0;
-  if (node === undefined) return { vx, vy };
-  const apply = (x: number, y: number, mass: number) => {
-    let dx = x - node.x;
-    let dy = y - node.y;
-    if (dx === 0) dx = jiggle(i);
-    if (dy === 0) dy = jiggle(i + 1);
-    const l2 = Math.max(dx * dx + dy * dy, 1);
-    const f = (charge * mass * alpha) / l2;
-    vx += dx * f;
-    vy += dy * f;
-  };
+  const out = { vx: 0, vy: 0 };
+  if (node === undefined) return out;
+  const ca = charge * alpha;
   if (tree === undefined) {
     for (let j = 0; j < nodes.length; j += 1) {
       const other = nodes[j];
-      if (j !== i && other !== undefined) apply(other.x, other.y, 1);
+      if (j !== i && other !== undefined) addPush(out, i, node, other.x, other.y, 1, ca);
     }
-    return { vx, vy };
+    return out;
   }
-  const stack: Quad[] = [tree];
-  while (stack.length > 0) {
-    const quad = stack.pop();
-    if (quad === undefined || quad.mass === 0) continue;
-    const dx = quad.cx - node.x;
-    const dy = quad.cy - node.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+  walk.length = 0;
+  walk.push(tree);
+  for (let quad = walk.pop(); quad !== undefined; quad = walk.pop()) {
+    if (quad.mass === 0) continue;
     if (quad.children === undefined) {
-      for (const j of quad.body >= 0 ? [quad.body, ...quad.extra] : quad.extra) {
-        const other = nodes[j];
-        if (j !== i && other !== undefined) apply(other.x, other.y, 1);
+      const first = nodes[quad.body];
+      if (quad.body !== i && first !== undefined) addPush(out, i, node, first.x, first.y, 1, ca);
+      if (quad.extra !== undefined) {
+        for (const j of quad.extra) {
+          const other = nodes[j];
+          if (j !== i && other !== undefined) addPush(out, i, node, other.x, other.y, 1, ca);
+        }
       }
-    } else if (distance > 0 && quad.size / distance < theta) {
-      apply(quad.cx, quad.cy, quad.mass);
-    } else {
-      for (const child of quad.children) if (child !== undefined) stack.push(child);
+      continue;
     }
+    const distance = Math.hypot(quad.cx - node.x, quad.cy - node.y);
+    if (distance > 0 && quad.size / distance < theta) addPush(out, i, node, quad.cx, quad.cy, quad.mass, ca);
+    else for (const child of quad.children) if (child !== undefined) walk.push(child);
   }
-  return { vx, vy };
+  return out;
 }
 
 /** One tick: forces, then positions; returns the new alpha. */

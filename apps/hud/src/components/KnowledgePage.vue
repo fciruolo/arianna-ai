@@ -41,6 +41,39 @@ import {
   type Star,
   type View,
 } from '../lib/graph.ts';
+import {
+  blendCamera,
+  copyCamera,
+  createSimulation3,
+  depthOrder,
+  driftWeight,
+  driftYaw,
+  emptyProjection,
+  fitCamera,
+  flyTarget,
+  fogAlpha,
+  hitTest3,
+  isSettled3,
+  makeProjector,
+  NEAR,
+  NEAR_FADE,
+  nearFade,
+  orbitBy,
+  projectInto,
+  projectNodes,
+  projectSegment,
+  readViewMode,
+  step3,
+  updateProjector,
+  wrapAngle,
+  zoomCamera,
+  type Camera,
+  type Point3,
+  type Projected,
+  type Projector,
+  type Segment,
+  type Simulation3,
+} from '../lib/graph3d.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -55,6 +88,12 @@ import MarkdownText from './MarkdownText.vue';
  * the light theme it follows the platform unless "Sfondo scuro" is on. Stars
  * drift on a background canvas, a graph that keeps breathing after it settles, pulses
  * running along the edges, an optional slow orbit and full screen.
+ *
+ * D-104: a 3D view on request (2D/3D switch, remembered in this browser).
+ * The same graph in a 3D force simulation, seen through an orbital camera
+ * with a perspective projection on the same canvas: drag to turn, wheel or
+ * pinch to zoom, a click on a node flies there; nodes fade with distance
+ * (fog), painted from the farthest; a slow drift when nobody touches it.
  */
 
 const props = defineProps<{
@@ -89,6 +128,11 @@ const themeDark = ref(true);
 const darkChoice = ref(false);
 const mode = computed(() => sceneMode(themeDark.value, darkChoice.value));
 const DARK_KEY = 'arianna.knowledge.dark';
+/** "2d" or "3d" (D-104): a convenience of this browser (localStorage). */
+const VIEW_KEY = 'arianna.knowledge.view';
+const view3d = ref(false);
+/** The slow drift of the 3D camera when the graph is left alone. */
+const drifting = ref(true);
 
 let sim: Simulation | null = null;
 let adjacency: Set<number>[] = [];
@@ -120,6 +164,35 @@ let px = new Float64Array(0);
 let py = new Float64Array(0);
 /** Screen pixels of the breath. */
 const BREATH_PX = 2.4;
+
+// The 3D view (D-104).
+let sim3: Simulation3 | null = null;
+let camera: Camera = { target: { x: 0, y: 0, z: 0 }, yaw: 0.6, pitch: -0.35, distance: 600 };
+let flight: { from: Camera; to: Camera; start: number } | null = null;
+/** The camera follows the graph while it settles, until the user moves it. */
+let autoFit3 = true;
+let projector: Projector | null = null;
+let proj3 = emptyProjection(0);
+let fog3 = new Float64Array(0);
+let order3: Uint32Array = new Uint32Array(0);
+/** The titles chosen this frame, nearest first. */
+let labelPick = new Uint32Array(0);
+/** Pixels the centre of the 3D view moves (left, negative) to leave room for the panel. */
+let shift3 = 0;
+/** The stars follow the turns of the camera without jumping where the yaw wraps. */
+let starPanX = 0;
+let lastStarYaw = 0;
+const FLIGHT_MS = 900;
+
+/** True when the 3D view is on and its simulation exists. */
+function is3d(): boolean {
+  return view3d.value && sim3 !== null;
+}
+
+/** The room the note panel takes on wide screens, as a shift of the centre. */
+function panelShift(): number {
+  return selected.value >= 0 && width > 900 ? -400 : 0;
+}
 
 /** The palette of the black control room: luminous on black (D-087b). */
 const SCENE = {
@@ -239,6 +312,46 @@ function toggleDark(): void {
   wake();
 }
 
+function loadViewChoice(): boolean {
+  try {
+    return readViewMode(window.localStorage.getItem(VIEW_KEY)) === '3d';
+  } catch {
+    return false;
+  }
+}
+
+function setView3d(on: boolean): void {
+  if (view3d.value === on) return;
+  view3d.value = on;
+  try {
+    window.localStorage.setItem(VIEW_KEY, on ? '3d' : '2d');
+  } catch {
+    // Private window or blocked storage: the choice lasts until the page closes.
+  }
+  if (on) ensureSim3();
+  hovered.value = -1;
+  drag = null;
+  pointers.clear();
+  glide = null;
+  flight = null;
+  if (canvas.value !== null) canvas.value.style.cursor = 'grab';
+  wake();
+}
+
+/** The 3D simulation of the loaded graph, made the first time it is needed; positions kept from `previous`. */
+function ensureSim3(previous?: ReadonlyMap<string, Point3>): void {
+  const data = graph.value;
+  if (data === null || sim3 !== null) return;
+  sim3 = createSimulation3(data.nodes, data.edges, previous);
+  if (previous === undefined || previous.size === 0) {
+    // A head start, as in 2D, so the first frame is not a tangle.
+    const warm = Math.min(120, Math.floor(60_000 / Math.max(1, data.nodes.length)));
+    for (let i = 0; i < warm; i += 1) step3(sim3);
+    autoFit3 = true;
+    if (width > 0) camera = fitCamera(camera, sim3.nodes, width + panelShift(), height);
+  }
+}
+
 watch(() => mode.value.dark, () => buildPalette());
 
 function sizeCanvas(element: HTMLCanvasElement | null): void {
@@ -263,6 +376,7 @@ function resize(): void {
   const count = Math.min(360, Math.round((width * height) / 5200));
   if (count !== stars.length) stars = makeStars(count);
   if (first && sim !== null) view = fitView(turnedNodes(), width, height);
+  if (first && sim3 !== null) camera = fitCamera(camera, sim3.nodes, width + panelShift(), height);
   requestFrame();
 }
 
@@ -285,12 +399,15 @@ function tick(now: number): void {
   frame = 0;
   if (sim === null || document.hidden) return;
   if (window.devicePixelRatio !== dpr) resize();
-  const settled = isSettled(sim);
+  const three = is3d();
+  const settled = three && sim3 !== null ? isSettled3(sim3) : isSettled(sim);
+  // The 3D drift runs at full rate while the window has the focus: at 30 fps a slow turn shudders.
+  const driftOn = three && drifting.value && !reduced && windowFocused && driftWeight(now - lastInteraction) > 0;
   const interval = frameInterval({
     hidden: document.hidden,
     focused: windowFocused,
     reduced,
-    busy: !settled || glide !== null || drag !== null,
+    busy: !settled || glide !== null || flight !== null || drag !== null || driftOn || (three && shift3 !== panelShift()),
     interacting: now - lastInteraction < INTERACT_MS,
   });
   // Resting (reduced motion, nothing to do): wait for the next request.
@@ -300,23 +417,49 @@ function tick(now: number): void {
     return;
   }
   dirty = false;
-  if (!settled) {
-    step(sim);
-    settledAt = 0;
-    if (autoFit && glide === null) view = blendView(view, fitView(turnedNodes(), width, height), 0.08);
-  } else if (settledAt === 0) {
-    settledAt = now;
+  if (three && sim3 !== null) {
+    advance3(sim3, now, settled);
+  } else {
+    if (!settled) {
+      step(sim);
+      settledAt = 0;
+      if (autoFit && glide === null) view = blendView(view, fitView(turnedNodes(), width, height), 0.08);
+    } else if (settledAt === 0) {
+      settledAt = now;
+    }
+    if (glide !== null) {
+      const t = (now - glide.start) / 450;
+      view = blendView(glide.from, glide.to, t);
+      if (t >= 1) glide = null;
+    }
+    if (orbiting.value && !reduced && drag === null) orbitAngle = advanceOrbit(orbitAngle, now - lastDraw);
   }
-  if (glide !== null) {
-    const t = (now - glide.start) / 450;
-    view = blendView(glide.from, glide.to, t);
-    if (t >= 1) glide = null;
-  }
-  if (orbiting.value && !reduced && drag === null) orbitAngle = advanceOrbit(orbitAngle, now - lastDraw);
   lastDraw = now;
   drawBackdrop(now);
-  draw(now);
-  if (interval !== undefined || glide !== null || !isSettled(sim)) schedule();
+  if (three) draw3d(now);
+  else draw(now);
+  const still = three && sim3 !== null ? isSettled3(sim3) : isSettled(sim);
+  if (interval !== undefined || glide !== null || flight !== null || !still) schedule();
+}
+
+/** One frame of the 3D view: the simulation, the camera's flight, the panel's room and the drift. */
+function advance3(s: Simulation3, now: number, settled: boolean): void {
+  if (!settled) {
+    step3(s);
+    // Only while the graph settles: the fit allocates a little, the blend writes into the camera.
+    if (autoFit3 && flight === null) blendCamera(camera, fitCamera(camera, s.nodes, width + panelShift(), height), 0.08, camera);
+  }
+  if (flight !== null) {
+    const t = (now - flight.start) / FLIGHT_MS;
+    blendCamera(flight.from, flight.to, t, camera);
+    if (t >= 1) flight = null;
+  }
+  const goal = panelShift();
+  shift3 = reduced || Math.abs(goal - shift3) < 0.5 ? goal : shift3 + (goal - shift3) * 0.16;
+  if (drifting.value && !reduced && drag === null && flight === null) {
+    camera.yaw = driftYaw(camera.yaw, now - lastDraw, driftWeight(now - lastInteraction));
+  }
+  projector = projector === null ? makeProjector(camera, width, height, shift3) : updateProjector(projector, camera, width, height, shift3);
 }
 
 /** Black, a halo at the centre of the world, a grid of dots and the drifting stars. */
@@ -330,8 +473,19 @@ function drawBackdrop(now: number): void {
   ctx.fillStyle = colors.bg;
   ctx.fillRect(0, 0, width, height);
 
+  const three = is3d() && projector !== null;
+  let panX = view.x;
+  let panY = view.y;
+  if (three) {
+    // Turning the camera slides the sky: the accumulated yaw, so a full turn has no seam.
+    starPanX += wrapAngle(camera.yaw - lastStarYaw) * width * 1.5;
+    lastStarYaw = camera.yaw;
+    panX = starPanX;
+    panY = -camera.pitch * height * 1.5;
+  }
+
   // The halo, as a reactor glow under the graph.
-  const centre = toScreen(view, 0, 0);
+  const centre = three && projector !== null ? { x: projector.cx, y: projector.cy } : toScreen(view, 0, 0);
   const radius = Math.max(width, height) * 0.55;
   const halo = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, radius);
   halo.addColorStop(0, withAlpha(colors.accent, dark ? 0.11 : 0.06));
@@ -342,13 +496,18 @@ function drawBackdrop(now: number): void {
 
   // Stars behind everything, deeper ones dimmer and slower; faint specks on the light theme.
   for (const star of stars) {
-    const at = starPosition(star, time, view.x, view.y, width, height);
+    const at = starPosition(star, time, panX, panY, width, height);
     const twinkle = reduced ? 0 : 0.22 * Math.sin(time * 1.3 + star.phase);
     ctx.globalAlpha = Math.max(0.08, Math.min(1, 0.25 + 0.5 * star.depth + twinkle)) * (dark ? 1 : 0.3);
     ctx.fillStyle = dark ? (star.depth > 0.9 ? '#e6fbff' : star.phase > 4.5 ? '#c9b8ff' : '#9fdcff') : star.phase > 4.5 ? colors.violet : colors.accent;
     ctx.fillRect(at.x, at.y, star.size, star.size);
   }
   ctx.globalAlpha = 1;
+
+  if (three && projector !== null) {
+    drawFloor(ctx, projector, colors.accent, dark);
+    return;
+  }
 
   // The grid of dots moves with the world; every fourth one is a little cross.
   let spacing = 40 * view.k;
@@ -380,6 +539,82 @@ function drawBackdrop(now: number): void {
     ctx.lineTo(cx, cy + 4);
   }
   ctx.stroke();
+}
+
+/** The floor's rings: share of the graph's radius and opacity. */
+const FLOOR_RINGS: readonly (readonly [number, number])[] = [
+  [0.35, 0.1],
+  [0.7, 0.12],
+  [1.05, 0.16],
+];
+const FLOOR_SEGMENTS = 72;
+const FLOOR_SPOKES = 12;
+/** The floor's colours, made once per palette (rings, then the spokes). */
+let floorStyles: string[] = [];
+let floorStylesKey = '';
+/** Scratch of the 3D drawing, reused every frame. */
+const segment: Segment = { x0: 0, y0: 0, x1: 0, y1: 0 };
+const scratchPoint: Projected = { x: 0, y: 0, scale: 0, depth: 0 };
+
+/**
+ * The 3D view's "holotable": rings and spokes on a plane under the graph,
+ * turning with the camera, so the eye reads the space. A few strokes, each
+ * piece cut at the camera's near plane; nothing allocated per frame.
+ */
+function drawFloor(ctx: CanvasRenderingContext2D, p: Projector, accent: string, dark: boolean): void {
+  if (sim3 === null || sim3.nodes.length === 0) return;
+  const key = `${accent}|${String(dark)}`;
+  if (key !== floorStylesKey) {
+    floorStylesKey = key;
+    floorStyles = [...FLOOR_RINGS.map(([, alpha]) => withAlpha(accent, alpha * (dark ? 1 : 0.8))), withAlpha(accent, 0.06 * (dark ? 1 : 0.8))];
+  }
+  let cx = 0;
+  let cz = 0;
+  let low = -Infinity;
+  for (const node of sim3.nodes) {
+    cx += node.x;
+    cz += node.z;
+    low = Math.max(low, node.y);
+  }
+  cx /= sim3.nodes.length;
+  cz /= sim3.nodes.length;
+  let radius = 60;
+  for (const node of sim3.nodes) radius = Math.max(radius, Math.hypot(node.x - cx, node.z - cz));
+  const y = low + 40;
+  ctx.lineWidth = 1;
+  FLOOR_RINGS.forEach(([share], ring) => {
+    const r = radius * share;
+    ctx.beginPath();
+    for (let k = 0; k < FLOOR_SEGMENTS; k += 1) {
+      const a0 = (k / FLOOR_SEGMENTS) * Math.PI * 2;
+      const a1 = ((k + 1) / FLOOR_SEGMENTS) * Math.PI * 2;
+      if (!projectSegment(p, cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r, cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r, segment)) continue;
+      ctx.moveTo(segment.x0, segment.y0);
+      ctx.lineTo(segment.x1, segment.y1);
+    }
+    ctx.strokeStyle = floorStyles[ring] ?? accent;
+    ctx.stroke();
+  });
+  ctx.beginPath();
+  for (let spoke = 0; spoke < FLOOR_SPOKES; spoke += 1) {
+    const angle = (spoke / FLOOR_SPOKES) * Math.PI * 2;
+    const c = Math.cos(angle) * radius;
+    const s = Math.sin(angle) * radius;
+    if (!projectSegment(p, cx + c * 0.1, y, cz + s * 0.1, cx + c * 1.05, y, cz + s * 1.05, segment)) continue;
+    ctx.moveTo(segment.x0, segment.y0);
+    ctx.lineTo(segment.x1, segment.y1);
+  }
+  ctx.strokeStyle = floorStyles[FLOOR_RINGS.length] ?? accent;
+  ctx.stroke();
+}
+
+/** A point at share `t` of the way from node a to node b, on the screen, into scratchPoint; false when it is not in front of the camera. */
+function alongLink(s: Simulation3, p: Projector, a: number, b: number, t: number): boolean {
+  const na = s.nodes[a];
+  const nb = s.nodes[b];
+  if (na === undefined || nb === undefined) return false;
+  projectInto(scratchPoint, p, na.x + (nb.x - na.x) * t, na.y + (nb.y - na.y) * t, na.z + (nb.z - na.z) * t);
+  return scratchPoint.depth >= NEAR_FADE;
 }
 
 /** Where every node is drawn this frame: the orbit, then the breath once the graph has settled. */
@@ -618,12 +853,276 @@ function draw(now: number): void {
   ctx.globalAlpha = 1;
 }
 
+/** Depth bands of the 3D edges: one stroke per band, type and brightness instead of one per edge. */
+const FOG_BANDS = 4;
+
+/**
+ * The 3D view (D-104): nodes projected with perspective, edges and glows
+ * fading with depth, cores painted from the farthest so the near ones cover
+ * the far ones; additive glows need no order.
+ */
+function draw3d(now: number): void {
+  const element = canvas.value;
+  const data = graph.value;
+  const colors = palette;
+  const s = sim3;
+  const p = projector;
+  if (element === null || s === null || p === null || data === null || colors === null) return;
+  const ctx = element.getContext('2d');
+  if (ctx === null) return;
+  const time = now / 1000;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const count = s.nodes.length;
+  if (proj3.x.length !== count) {
+    proj3 = emptyProjection(count);
+    fog3 = new Float64Array(count);
+  }
+  projectNodes(p, s.nodes, proj3);
+  order3 = depthOrder(proj3.depth, count, order3);
+  let front = Infinity;
+  let back = -Infinity;
+  for (let i = 0; i < count; i += 1) {
+    const depth = proj3.depth[i] ?? 0;
+    if (depth < NEAR) continue;
+    front = Math.min(front, depth);
+    back = Math.max(back, depth);
+  }
+  // Fog with the distance, and a fade to nothing for a node grazing the camera.
+  for (let i = 0; i < count; i += 1) {
+    const depth = proj3.depth[i] ?? 0;
+    fog3[i] = fogAlpha(depth, front, back) * nearFade(depth);
+  }
+  const X = (i: number): number => proj3.x[i] ?? 0;
+  const Y = (i: number): number => proj3.y[i] ?? 0;
+  const R = (i: number): number => proj3.r[i] ?? 0;
+  const F = (i: number): number => fog3[i] ?? 1;
+
+  const focus = hovered.value >= 0 ? hovered.value : selected.value;
+  const lit = focus >= 0 ? new Set([focus, ...(adjacency[focus] ?? [])]) : null;
+  const showFilter = filtering.value;
+  const visible = (i: number): boolean => (lit === null || lit.has(i)) && (!showFilter || matches.value[i] === true);
+
+  // Edges by depth band: the far ones dim, the near ones bright.
+  ctx.lineCap = 'round';
+  for (const type of ['link', 'tag'] as const) {
+    ctx.setLineDash(type === 'tag' ? [3, 4] : []);
+    for (const bright of [false, true]) {
+      for (let band = 0; band < FOG_BANDS; band += 1) {
+        ctx.beginPath();
+        let any = false;
+        for (const link of s.links) {
+          if (data.edges[link.edge]?.type !== type) continue;
+          if (R(link.source) <= 0 || R(link.target) <= 0) continue;
+          const on = lit !== null && (link.source === focus || link.target === focus);
+          if (on !== bright) continue;
+          if (!bright && (lit !== null || showFilter) && !(visible(link.source) && visible(link.target))) continue;
+          const fog = (F(link.source) + F(link.target)) / 2;
+          if (Math.min(FOG_BANDS - 1, Math.floor((1 - fog) * FOG_BANDS)) !== band) continue;
+          ctx.moveTo(X(link.source), Y(link.source));
+          ctx.lineTo(X(link.target), Y(link.target));
+          any = true;
+        }
+        if (!any) continue;
+        const shimmer = reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 1.6 + band * 1.3);
+        const depthAlpha = 1 - (band + 0.5) / FOG_BANDS * 0.8;
+        const base = bright ? 0.9 : type === 'link' ? 0.42 : 0.26;
+        ctx.strokeStyle = withAlpha(bright || type === 'link' ? colors.accent : colors.tag, base * depthAlpha * shimmer);
+        ctx.lineWidth = bright ? 1.6 : band === 0 ? 1.2 : 1;
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.setLineDash([]);
+  if (lit !== null || showFilter) {
+    ctx.beginPath();
+    for (const link of s.links) {
+      if (R(link.source) <= 0 || R(link.target) <= 0) continue;
+      if (visible(link.source) && visible(link.target)) continue;
+      if (lit !== null && (link.source === focus || link.target === focus)) continue;
+      ctx.moveTo(X(link.source), Y(link.source));
+      ctx.lineTo(X(link.target), Y(link.target));
+    }
+    ctx.strokeStyle = withAlpha(colors.muted, 0.07);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = colors.dark ? 'lighter' : 'source-over';
+  if (!reduced) {
+    pulses = updatePulses(pulses, now, pulseRandom, s.links.length);
+    for (const pulse of pulses) {
+      const t = pulseProgress(pulse, now);
+      const link = s.links[pulse.link];
+      if (t === undefined || link === undefined) continue;
+      const dim = (lit !== null || showFilter) && !(visible(link.source) && visible(link.target));
+      ctx.fillStyle = colorOf(pulse.reverse ? link.target : link.source);
+      const fade = Math.sin(Math.min(1, Math.max(0, pulse.reverse ? 1 - t : t)) * Math.PI);
+      const fog = (F(link.source) + F(link.target)) / 2;
+      for (let j = 0; j < 5; j += 1) {
+        const share = t + (pulse.reverse ? j : -j) * 0.025;
+        if (share < 0 || share > 1) continue;
+        if (!alongLink(s, p, link.source, link.target, share)) continue;
+        const at = scratchPoint;
+        ctx.globalAlpha = (dim ? 0.15 : 0.9) * fade * fog * (1 - j / 5);
+        ctx.beginPath();
+        ctx.arc(at.x, at.y, Math.min(8, Math.max(1, 2.2 * at.scale)) * (1 - j * 0.15), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (!reduced && selected.value >= 0) {
+    const from = selected.value;
+    ctx.fillStyle = colors.accent;
+    for (let index = 0; index < s.links.length; index += 1) {
+      const link = s.links[index];
+      if (link === undefined || (link.source !== from && link.target !== from)) continue;
+      const to = link.source === from ? link.target : link.source;
+      for (let j = 0; j < 3; j += 1) {
+        const t = (time * 0.45 + j / 3 + index * 0.137) % 1;
+        if (!alongLink(s, p, from, to, t)) continue;
+        const at = scratchPoint;
+        ctx.globalAlpha = 0.35 + 0.65 * Math.sin(t * Math.PI);
+        ctx.beginPath();
+        ctx.arc(at.x, at.y, Math.min(9, Math.max(1.2, 2.4 * at.scale)) * (1 - Math.abs(t - 0.5)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Glows: additive light, so the order does not matter; far ones are fainter.
+  const many = count > 1200;
+  for (let i = 0; i < count; i += 1) {
+    const r = R(i);
+    if (r <= 0 || F(i) < 0.01 || (many && !(lit?.has(i) ?? false))) continue;
+    const sprite = colors.glows.get(colorOf(i));
+    if (sprite === undefined) continue;
+    const pulse = reduced ? 1 : hubGlow(data.nodes[i]?.degree ?? 0, maxDegree, time, i);
+    const radius = Math.max(3, r * (i === focus ? 4.6 : 3.4) * pulse);
+    ctx.globalAlpha = F(i) * (visible(i) ? 1 : 0.12);
+    ctx.drawImage(sprite, X(i) - radius, Y(i) - radius, radius * 2, radius * 2);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Cores from the farthest to the nearest.
+  for (let k = 0; k < count; k += 1) {
+    const i = order3[k] ?? 0;
+    const r = R(i);
+    if (r <= 0) continue;
+    const x = X(i);
+    const y = Y(i);
+    const color = colorOf(i);
+    ctx.globalAlpha = F(i) * (visible(i) ? 1 : 0.18);
+    ctx.beginPath();
+    if (nodes.value[i]?.kind === 'tag') {
+      for (let side = 0; side < 6; side += 1) {
+        const angle = (Math.PI / 3) * side + Math.PI / 6;
+        if (side === 0) ctx.moveTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+        else ctx.lineTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+      }
+      ctx.closePath();
+      ctx.fillStyle = colors.bg;
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else {
+      ctx.arc(x, y, Math.max(0.9, r), 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      if (r > 2.2) {
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = withAlpha(colors.dark ? '#ffffff' : colors.bg, colors.dark ? 0.6 : 0.7);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  const ring = (i: number, spin: boolean) => {
+    const r = R(i);
+    if (r <= 0) return;
+    const x = X(i);
+    const y = Y(i);
+    const radius = r + 8;
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 1.3;
+    if (spin) {
+      const turn = reduced ? 0 : time * 0.8;
+      for (let q = 0; q < 4; q += 1) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, turn + (q * Math.PI) / 2, turn + (q * Math.PI) / 2 + Math.PI / 3.2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = withAlpha(colors.accent, 0.25);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  };
+  if (selected.value >= 0) ring(selected.value, true);
+  if (hovered.value >= 0 && hovered.value !== selected.value) ring(hovered.value, false);
+
+  // Titles: chosen from the nearest (the focus and its neighbours always, up
+  // to 40 matches or nodes big enough on the screen), drawn from the farthest
+  // so the near ones stay on top.
+  ctx.font = '500 11px "JetBrains Mono", ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  if (labelPick.length < count) labelPick = new Uint32Array(count);
+  let picked = 0;
+  let extra = 0;
+  for (let k = count - 1; k >= 0; k -= 1) {
+    const i = order3[k] ?? 0;
+    const r = R(i);
+    if (r <= 0) continue;
+    const special = i === focus || i === selected.value;
+    const near = (lit?.has(i) ?? false) && F(i) > 0.05;
+    const matched = showFilter && matches.value[i] === true && F(i) > 0.05;
+    const big = r >= 7 && F(i) > 0.55 && visible(i);
+    if (!(special || near || ((matched || big) && extra < 40))) continue;
+    const x = X(i);
+    const y = Y(i) + r;
+    if (x < -100 || x > width + 100 || y < -20 || y > height + 20) continue;
+    if (!(special || near)) extra += 1;
+    labelPick[picked] = i;
+    picked += 1;
+  }
+  const plate = withAlpha(colors.surface, 0.8);
+  for (let k = picked - 1; k >= 0; k -= 1) {
+    const i = labelPick[k] ?? 0;
+    const special = i === focus || i === selected.value;
+    const x = X(i);
+    const y = Y(i) + R(i);
+    const title = nodes.value[i]?.title ?? '';
+    const text = title.length > 32 ? `${title.slice(0, 31)}…` : title;
+    const w = ctx.measureText(text).width;
+    ctx.globalAlpha = special ? 1 : 0.85 * Math.max(0.4, F(i));
+    ctx.fillStyle = plate;
+    ctx.fillRect(x - w / 2 - 4, y + 4, w + 8, 16);
+    ctx.fillStyle = special ? colors.accent : colors.ink;
+    ctx.fillText(text, x, y + 6.5);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // Pointer: drag a node, pan the background, pinch with two fingers, click to select.
+// In 3D: drag to turn the camera, pinch to zoom, click a node to fly there.
 const pointers = new Map<number, { x: number; y: number }>();
 type Drag =
   | { kind: 'node'; index: number; startX: number; startY: number; moved: boolean }
   | { kind: 'pan'; startX: number; startY: number; view: View; moved: boolean }
-  | { kind: 'pinch'; distance: number; mid: { x: number; y: number }; view: View };
+  | { kind: 'pinch'; distance: number; mid: { x: number; y: number }; view: View }
+  | { kind: 'turn'; index: number; startX: number; startY: number; camera: Camera; moved: boolean }
+  | { kind: 'pinch3'; distance: number; camera: Camera };
 let drag: Drag | null = null;
 
 function local(event: PointerEvent | WheelEvent | MouseEvent): { x: number; y: number } {
@@ -638,6 +1137,7 @@ function worldAt(x: number, y: number): { x: number; y: number } {
 }
 
 function hit(x: number, y: number, touch: boolean): number {
+  if (is3d() && sim3 !== null) return hitTest3(proj3, Math.min(proj3.x.length, sim3.nodes.length), x, y, touch ? 14 : 4);
   if (sim === null) return -1;
   const world = worldAt(x, y);
   return nodeAt(sim.nodes, world.x, world.y, (touch ? 14 : 4) / view.k);
@@ -664,6 +1164,18 @@ function onPointerDown(event: PointerEvent): void {
   pointers.set(event.pointerId, at);
   autoFit = false;
   glide = null;
+  if (is3d()) {
+    autoFit3 = false;
+    flight = null;
+    if (pointers.size === 2) {
+      const pinch = pinchOf();
+      if (pinch !== undefined) drag = { kind: 'pinch3', distance: pinch.distance, camera: copyCamera(camera) };
+    } else if (pointers.size === 1) {
+      drag = { kind: 'turn', index: hit(at.x, at.y, event.pointerType === 'touch'), startX: at.x, startY: at.y, camera: copyCamera(camera), moved: false };
+    }
+    requestFrame();
+    return;
+  }
   if (pointers.size === 2) {
     release();
     const pinch = pinchOf();
@@ -692,7 +1204,16 @@ function onPointerMove(event: PointerEvent): void {
     }
     return;
   }
-  if (drag.kind === 'pinch') {
+  if (drag.kind === 'turn') {
+    if (Math.hypot(at.x - drag.startX, at.y - drag.startY) > 3) drag.moved = true;
+    if (drag.moved) {
+      camera = orbitBy(drag.camera, at.x - drag.startX, at.y - drag.startY);
+      if (canvas.value !== null) canvas.value.style.cursor = 'grabbing';
+    }
+  } else if (drag.kind === 'pinch3') {
+    const pinch = pinchOf();
+    if (pinch !== undefined) camera = zoomCamera(drag.camera, pinch.distance / drag.distance);
+  } else if (drag.kind === 'pinch') {
     const pinch = pinchOf();
     if (pinch === undefined) return;
     const zoomed = zoomAt(drag.view, drag.mid.x, drag.mid.y, pinch.distance / drag.distance);
@@ -724,6 +1245,22 @@ function onPointerMove(event: PointerEvent): void {
 function onPointerUp(event: PointerEvent): void {
   pointers.delete(event.pointerId);
   const done = drag;
+  if (done?.kind === 'pinch3') {
+    // One finger left: it turns from here.
+    const rest = [...pointers.values()][0];
+    drag = rest === undefined ? null : { kind: 'turn', index: -1, startX: rest.x, startY: rest.y, camera: copyCamera(camera), moved: true };
+    return;
+  }
+  if (done?.kind === 'turn') {
+    drag = null;
+    if (canvas.value !== null) canvas.value.style.cursor = hovered.value >= 0 ? 'pointer' : 'grab';
+    if (!done.moved && event.type === 'pointerup') {
+      if (done.index >= 0) focusOn(done.index);
+      else void select(-1);
+    }
+    requestFrame();
+    return;
+  }
   if (done?.kind === 'pinch') {
     // One finger left: it pans from here.
     const rest = [...pointers.values()][0];
@@ -750,13 +1287,34 @@ function onWheel(event: WheelEvent): void {
   const at = local(event);
   autoFit = false;
   glide = null;
-  view = zoomAt(view, at.x, at.y, wheelFactor(event.deltaY, event.deltaMode));
+  if (is3d()) {
+    autoFit3 = false;
+    flight = null;
+    camera = zoomCamera(camera, wheelFactor(event.deltaY, event.deltaMode));
+  } else {
+    view = zoomAt(view, at.x, at.y, wheelFactor(event.deltaY, event.deltaMode));
+  }
   requestFrame();
 }
 
 function onDoubleClick(event: MouseEvent): void {
   const at = local(event);
-  if (hit(at.x, at.y, false) < 0) fit();
+  const index = hit(at.x, at.y, false);
+  if (index < 0) fit();
+  else if (is3d()) focusOn(index);
+}
+
+/** The 3D camera flies to `to`; with reduced motion it jumps. */
+function flyTo(to: Camera): void {
+  autoFit3 = false;
+  if (reduced) {
+    camera = to;
+    flight = null;
+  } else {
+    // A copy: the flight writes into `camera` every frame.
+    flight = { from: copyCamera(camera), to, start: performance.now() };
+  }
+  requestFrame();
 }
 
 function glideTo(to: View): void {
@@ -771,10 +1329,20 @@ function glideTo(to: View): void {
 }
 
 function fit(): void {
+  if (is3d() && sim3 !== null) {
+    flyTo(fitCamera(camera, sim3.nodes, width + panelShift(), height));
+    return;
+  }
   if (sim !== null) glideTo(fitView(turnedNodes(), width - (selected.value >= 0 && width > 900 ? 400 : 0), height));
 }
 
 function focusOn(index: number): void {
+  const node3 = is3d() ? sim3?.nodes[index] : undefined;
+  if (node3 !== undefined) {
+    void select(index);
+    flyTo(flyTarget(camera, node3));
+    return;
+  }
   const node = sim?.nodes[index];
   if (node === undefined) return;
   void select(index);
@@ -833,9 +1401,12 @@ async function load(): Promise<void> {
     const data = await loadKnowledgeGraph();
     const previousIds = graph.value?.nodes.map((node) => node.id) ?? [];
     const previous = new Map(sim?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y }]) ?? []);
+    const previous3 = new Map(sim3?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y, z: node.z }]) ?? []);
     const selectedId = selectedNode.value?.id;
     graph.value = data;
     sim = createSimulation(data.nodes, data.edges, previous);
+    sim3 = null;
+    if (view3d.value || previous3.size > 0) ensureSim3(previous3);
     adjacency = neighbours(data.nodes.length, sim.links);
     maxDegree = data.nodes.reduce((most, node) => Math.max(most, node.degree), 0);
     pulses = [];
@@ -919,7 +1490,27 @@ function onFullscreenChange(): void {
 }
 
 function toggleOrbit(): void {
-  orbiting.value = !orbiting.value;
+  // In 3D the button drives the slow drift of the camera, in 2D the orbit of the view.
+  if (view3d.value) drifting.value = !drifting.value;
+  else orbiting.value = !orbiting.value;
+  wake();
+}
+
+/**
+ * Arrows turn the 3D camera, + and - zoom it: only while the canvas has the
+ * focus (it is focusable), so the keys keep their meaning everywhere else.
+ */
+function onCanvasKey(event: KeyboardEvent): void {
+  if (!is3d() || event.metaKey || event.ctrlKey || event.altKey) return;
+  const turns: Record<string, [number, number]> = { ArrowLeft: [-40, 0], ArrowRight: [40, 0], ArrowUp: [0, -40], ArrowDown: [0, 40] };
+  const turn = turns[event.key];
+  if (turn !== undefined) camera = orbitBy(camera, turn[0], turn[1]);
+  else if (event.key === '+' || event.key === '=') camera = zoomCamera(camera, 1.2);
+  else if (event.key === '-') camera = zoomCamera(camera, 1 / 1.2);
+  else return;
+  event.preventDefault();
+  autoFit3 = false;
+  flight = null;
   wake();
 }
 
@@ -964,6 +1555,7 @@ onMounted(() => {
   motion?.addEventListener('change', onMotion);
   canFullscreen.value = document.fullscreenEnabled && typeof root.value?.requestFullscreen === 'function';
   darkChoice.value = loadDarkChoice();
+  view3d.value = loadViewChoice();
   readTheme();
   buildPalette();
   scheme?.addEventListener('change', onTheme);
@@ -997,6 +1589,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('blur', onBlur);
   for (const name of WAKE_EVENTS) window.removeEventListener(name, wake);
   sim = null;
+  sim3 = null;
 });
 </script>
 
@@ -1006,10 +1599,16 @@ onBeforeUnmount(() => {
       <canvas ref="backdrop" class="pointer-events-none absolute inset-0 block" aria-hidden="true" />
       <canvas
         ref="canvas"
-        class="relative block touch-none select-none"
+        class="relative block touch-none outline-none select-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-inset"
         style="cursor: grab"
         role="img"
-        :aria-label="`Grafo della conoscenza: ${counts.notes} note e ${counts.links} collegamenti. Usa il filtro per cercare una nota.`"
+        tabindex="0"
+        :aria-label="
+          view3d
+            ? `Grafo della conoscenza in 3D: ${counts.notes} note e ${counts.links} collegamenti. Frecce per ruotare, + e − per lo zoom. Usa il filtro per cercare una nota.`
+            : `Grafo della conoscenza: ${counts.notes} note e ${counts.links} collegamenti. Usa il filtro per cercare una nota.`
+        "
+        @keydown="onCanvasKey"
         @pointerdown="onPointerDown"
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
@@ -1038,6 +1637,7 @@ onBeforeUnmount(() => {
           <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (L3)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
+        <p v-if="view3d" class="mt-1 font-mono text-[10.5px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
         <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 focus-within:border-accent">
           <Icon name="search" :size="14" />
           <input
@@ -1148,6 +1748,18 @@ onBeforeUnmount(() => {
 
     <!-- Orbit and full screen -->
     <div class="absolute top-3 right-3 flex items-center gap-1.5">
+      <div class="kp-seg" role="group" aria-label="Vista del grafo">
+        <button type="button" :class="{ on: !view3d }" :aria-pressed="!view3d" title="Grafo piatto (2D)" @click="setView3d(false)">2D</button>
+        <button
+          type="button"
+          :class="{ on: view3d }"
+          :aria-pressed="view3d"
+          title="Grafo nello spazio (3D): trascina per ruotare, rotella per lo zoom, clic su un nodo per volarci"
+          @click="setView3d(true)"
+        >
+          3D
+        </button>
+      </div>
       <button
         v-if="mode.toggle"
         type="button"
@@ -1167,9 +1779,9 @@ onBeforeUnmount(() => {
         v-if="!reducedMotion"
         type="button"
         class="kp-tool"
-        :class="{ on: orbiting }"
-        :aria-pressed="orbiting"
-        title="Orbita: rotazione lentissima della vista"
+        :class="{ on: view3d ? drifting : orbiting }"
+        :aria-pressed="view3d ? drifting : orbiting"
+        :title="view3d ? 'Orbita: la camera gira piano quando non tocchi il grafo' : 'Orbita: rotazione lentissima della vista'"
         @click="toggleOrbit"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
@@ -1270,6 +1882,41 @@ onBeforeUnmount(() => {
 .kp-tool:focus-visible {
   color: var(--ink);
   border-color: var(--accent);
+}
+
+.kp-seg {
+  display: inline-flex;
+  height: 32px;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.kp-seg button {
+  min-width: 34px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  font: 600 10.5px/1 var(--font-hud);
+  letter-spacing: 0.14em;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.kp-seg button:hover,
+.kp-seg button:focus-visible {
+  color: var(--ink);
+}
+
+.kp-seg button.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .kp-tool.on {
