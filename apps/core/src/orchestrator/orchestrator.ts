@@ -151,6 +151,45 @@ async function historyOf(
   return history;
 }
 
+/** What separates two messages of the same role joined into one. */
+export const JOIN_SEPARATOR = '\n\n';
+
+/**
+ * Consecutive messages of the same role joined into one (D-092): chat
+ * templates that require user and assistant to alternate (Gemma) reject or
+ * mangle two `user` messages in a row, as a system message, the summary
+ * (D-077) and the user's question can be. `tool` results are never joined:
+ * each is fenced on its own (chatMessages). The order stays; the joined
+ * entry carries the highest label of its parts and their sources, `+`-separated.
+ *
+ * Deterministic and append-only for the prefix cache (D-075): the same
+ * parts give the same bytes, and a part added at the end changes only the
+ * last entry, and only when it has the same role, by appending
+ * `JOIN_SEPARATOR` and its text: every byte before stays where it was.
+ * An empty part adds no separator (its label and source still count).
+ *
+ * chatMessages (packages/agents/src/protocol.ts) sends a `tool` result as
+ * `user`: a `tool` followed by a `user` would still be two user messages in
+ * the template. It does not happen today: the task's turns (assistant, then
+ * its result) always come after the messages of the chat.
+ */
+export function joinSameRole(parts: readonly Labeled<TurnMessage>[]): Labeled<TurnMessage>[] {
+  const joined: Labeled<TurnMessage>[] = [];
+  for (const part of parts) {
+    const last = joined.at(-1);
+    if (last !== undefined && last.value.role === part.value.role && part.value.role !== 'tool') {
+      joined[joined.length - 1] = {
+        value: { role: last.value.role, content: [last.value.content, part.value.content].filter((text) => text !== '').join(JOIN_SEPARATOR) },
+        label: maxLabel(last.label, part.label),
+        source: `${last.source}+${part.source}`,
+      };
+    } else {
+      joined.push({ value: { ...part.value }, label: part.label, source: part.source });
+    }
+  }
+  return joined;
+}
+
 /** The text a chat action writes for the user, or undefined for a call or a plan. */
 function chatText(answer: Answer): string | undefined {
   switch (answer.action) {
@@ -381,7 +420,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
       if (decision.texts.length !== history.length) throw new Error('the gateway allowed a different number of texts');
-      const allowed = history.map((part, index): TurnMessage => ({ role: part.value.role, content: decision.texts[index] ?? '' }));
+      // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
+      const allowed = joinSameRole(history.map((part, index) => ({ ...part, value: { role: part.value.role, content: decision.texts[index] ?? '' } }))).map(
+        (part) => part.value,
+      );
 
       const tools = orchestratorTools(agent, canDelegate(env));
       await show(task, step, 'thinking');

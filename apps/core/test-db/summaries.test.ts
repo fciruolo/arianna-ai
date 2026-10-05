@@ -154,7 +154,8 @@ test('a short conversation is read whole, without a summary', async () => {
   assert.equal(fakeModel.summaryRequests.length, 0);
   assert.deepEqual(await pieces(conversation.id), []);
   const read = contents(fakeModel.answerRequests[0]).slice(1);
-  assert.deepEqual(read, ['Messaggio 1', 'Messaggio 2', 'Messaggio 3', 'Messaggio 4', 'Messaggio 5', 'Domanda breve']);
+  // Two user messages in a row reach the model as one (D-092).
+  assert.deepEqual(read, ['Messaggio 1', 'Messaggio 2', 'Messaggio 3', 'Messaggio 4', 'Messaggio 5\n\nDomanda breve']);
 });
 
 test('past the maximum the anchor jumps: the local model summarizes what it left, with the highest label', async () => {

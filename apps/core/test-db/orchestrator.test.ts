@@ -444,5 +444,8 @@ test('in a system chat the model reads the messages of the system, marked, befor
   assert.equal(system.role, 'user');
   assert.match(system.content, /local-model\.unavailable/);
   assert.doesNotMatch(messages.map((message) => message.content).join('\n'), /Domanda finita male/, 'the question is not attached');
-  assert.equal(messages.at(-1)?.content, 'Cosa è successo?');
+  // The system message and the question are both the user's: one message, in order (D-092).
+  assert.equal(messages.at(-1), system);
+  assert.ok(system.content.endsWith('\n\nCosa è successo?'));
+  assert.ok(messages.slice(1).every((message, index, all) => index === 0 || message.role !== all[index - 1]?.role), 'user and assistant alternate');
 });

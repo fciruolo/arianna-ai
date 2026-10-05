@@ -72,6 +72,8 @@ export function directBrief(history: readonly Labeled<TurnMessage>[], prompt: st
 /**
  * One answer of Claude in the system chat. `history` is what the local
  * orchestrator would read (historyOf); it goes out only through the gateway.
+ * Same-role messages are not joined here (D-092): the brief is one prompt
+ * of `Role:` fragments, not a chat template that requires alternation.
  */
 export async function runDirect(env: DelegateEnv, ctx: StepContext, model: DirectModel, history: readonly Labeled<TurnMessage>[]): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
