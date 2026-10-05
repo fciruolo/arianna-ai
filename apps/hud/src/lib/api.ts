@@ -1,5 +1,5 @@
 import type { CallInfo } from './calls.ts';
-import type { Progress as DevProgress } from './dev-progress.ts';
+import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
@@ -398,6 +398,11 @@ export async function organizeNote(name: string): Promise<void> {
 /** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */
 export async function loadDevProgress(): Promise<{ progress: DevProgress; maxAnswer: number }> {
   return call<{ progress: DevProgress; maxAnswer: number }>('GET', '/api/dev/progress');
+}
+
+/** How many open questions wait for the user (D-120): only the number, for the dot of the settings. */
+export async function loadDevPending(): Promise<number> {
+  return pendingFromBody(await call<unknown>('GET', '/api/dev/pending'));
 }
 
 /** Appends an answer to docs/RISPOSTE.md for Claude Code; the question is named by its key only. */

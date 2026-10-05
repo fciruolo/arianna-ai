@@ -35,6 +35,7 @@ import {
   TONES,
   type PersonaForm,
 } from '../lib/persona.ts';
+import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import { SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
@@ -104,7 +105,10 @@ import SettingsCard from './SettingsCard.vue';
  * `installation`: what this installation is (D-098), shown as a read-only row; undefined while unknown.
  * `section`: the slug of the address (D-105), `/impostazioni/<slug>`; the page shows that section only.
  */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined }>();
+/** `devPending`: open questions of "Sviluppo di Arianna" without an answer, a dot on its entry (D-120). */
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number }>();
+const devDot = computed(() => pendingBadge(props.devPending ?? 0));
+const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
 /** `dirty`: some section holds edits not saved, for the back button of the browser (App.vue). */
 const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
@@ -587,6 +591,13 @@ watch(active, () => {
           @click.prevent="open(item)"
         >
           <span class="min-w-0 flex-1">{{ item.title }}</span>
+          <span
+            v-if="item.id === 'dev-progress' && devDot !== null"
+            role="img"
+            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
+            :title="devLabel ?? undefined"
+            :aria-label="devLabel ?? undefined"
+          >{{ devDot }}</span>
           <span v-if="dirty(item)" role="img" class="size-[7px] rounded-full bg-warn" title="Modifiche non salvate" aria-label="modifiche non salvate" />
           <span v-if="item.privacy" role="img" class="inline-flex text-warn" :title="PRIVACY_HINT" :aria-label="PRIVACY_HINT"><Icon name="gateway" :size="14" /></span>
           <span v-if="item.page !== undefined" class="inline-flex -rotate-90 opacity-60" aria-hidden="true"><Icon name="expand" :size="13" /></span>
