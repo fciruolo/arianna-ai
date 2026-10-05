@@ -33,6 +33,24 @@ export function isKnowledgePath(pathname: string): boolean {
   return pathname === KNOWLEDGE_PATH || pathname === `${KNOWLEDGE_PATH}/`;
 }
 
+/** The page of the thoughts (D-090). */
+export const THOUGHTS_PATH = '/pensieri';
+
+export function isThoughtsPath(pathname: string): boolean {
+  return pathname === THOUGHTS_PATH || pathname === `${THOUGHTS_PATH}/`;
+}
+
+/** The knowledge page with a node selected (D-090): `/conoscenza?nota=inbox/x.md`. */
+export function knowledgePathFor(nodeId: string): string {
+  return `${KNOWLEDGE_PATH}?${new URLSearchParams({ nota: nodeId }).toString()}`;
+}
+
+/** The node the address of the knowledge page selects, or undefined. */
+export function knowledgeFocus(search: string): string | undefined {
+  const id = new URLSearchParams(search).get('nota')?.trim();
+  return id === undefined || id === '' ? undefined : id;
+}
+
 /** The path of a conversation, or the root when none is open. */
 export function pathFor(conversationId: string | null): string {
   return conversationId === null ? '/' : `/c/${conversationId}`;

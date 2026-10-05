@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { stepsAnchors } from '../lib/activity-log.ts';
-import { canSaveToInbox, commandError } from '../lib/capture.ts';
+import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
+import { canSaveToInbox } from '../lib/capture.ts';
+import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import type { ChatState } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
-import { activityText, agentName, reasonText, SAVE_TO_INBOX_HINT, SAVE_TO_INBOX_TEXT } from '../lib/italian.ts';
+import { activityText, agentName, reasonText, SAVE_TO_INBOX_HINT, SAVE_TO_INBOX_TEXT, SEARCH_LATER_TEXT } from '../lib/italian.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Label, Message, MessageCredit, StatusSnapshot, Task } from '../lib/types.ts';
@@ -52,6 +54,8 @@ const emit = defineEmits<{
   cancelCall: [callId: string];
   /** "Salva in inbox" (D-084): the message's text as a note in kb/inbox. */
   saveToInbox: [text: string, label: Label];
+  /** A "/" command the page carries out (D-090): open a page, a new conversation. */
+  command: [action: Exclude<CommandAction, { kind: 'note' | 'help' | 'search' }>];
 }>();
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
@@ -137,21 +141,105 @@ const unplaced = computed(() => {
 /** The Coder's run while it works for this conversation: shown in the persona header. */
 const coderRun = computed(() => props.status?.agents.find((agent) => agent.id === 'coder')?.run ?? null);
 
+// The "/" menu (D-090): while the draft is a slash and a word, the commands that match.
+const menuDismissed = ref<string | null>(null);
+const activeCommand = ref(0);
+const commandHint = ref<string | null>(null);
+const commandQuery = computed(() => menuQuery(draft.value));
+const menuItems = computed(() => (commandQuery.value === undefined ? [] : filterCommands(commandQuery.value)));
+const menuOpen = computed(() => commandQuery.value !== undefined && draft.value !== menuDismissed.value);
+const activeId = computed(() => {
+  const command = menuOpen.value ? menuItems.value[activeCommand.value] : undefined;
+  return command === undefined ? undefined : `command-${command.name}`;
+});
+watch(commandQuery, () => {
+  activeCommand.value = 0;
+});
+
+function setDraft(text: string): void {
+  draft.value = text;
+  menuDismissed.value = null;
+  void nextTick(() => {
+    resize();
+    const element = composer.value;
+    if (element === null) return;
+    element.focus();
+    element.setSelectionRange(text.length, text.length);
+  });
+}
+
+/** Carries out a command that is not a note (the store saves notes, as before). */
+function run(command: ChatCommand): void {
+  const { action } = command;
+  switch (action.kind) {
+    case 'note':
+      return;
+    case 'help':
+      setDraft('/');
+      return;
+    case 'search':
+      commandHint.value = SEARCH_LATER_TEXT;
+      setDraft('');
+      return;
+    default:
+      setDraft('');
+      emit('command', action);
+  }
+}
+
+/** A row of the menu chosen: Tab completes; Invio and the mouse run it, or complete one that takes a text. */
+function choose(command: ChatCommand, how: 'enter' | 'tab'): void {
+  commandHint.value = null;
+  if (how === 'tab' || command.takesArgument) setDraft(completion(command));
+  else run(command);
+}
+
 function submit(): void {
   const body = draft.value;
   if (body.trim() === '' || props.sending) return;
+  commandHint.value = null;
+  const meaning = resolveDraft(body);
+  if (meaning.kind === 'command' && meaning.command.action.kind !== 'note') {
+    run(meaning.command);
+    return;
+  }
   emit('send', body);
   // An unknown command is not sent (D-080): the draft stays, to be corrected.
-  if (commandError(body) !== undefined) return;
+  if (meaning.kind === 'error') return;
   draft.value = '';
   void nextTick(resize);
 }
 
 function onKey(event: KeyboardEvent): void {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+  if (event.isComposing) return;
+  if (menuOpen.value) {
+    const count = menuItems.value.length;
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) {
+      event.preventDefault();
+      activeCommand.value = moveSelection(activeCommand.value, event.key === 'ArrowDown' ? 1 : -1, count);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      menuDismissed.value = draft.value;
+      return;
+    }
+    const command = menuItems.value[activeCommand.value];
+    if (command !== undefined && (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey))) {
+      event.preventDefault();
+      choose(command, event.key === 'Tab' ? 'tab' : 'enter');
+      return;
+    }
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     submit();
   }
+}
+
+function onInput(): void {
+  commandHint.value = null;
+  resize();
 }
 
 /** The composer grows with the text, up to a limit. */
@@ -180,6 +268,30 @@ watch(
     if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
   },
 );
+
+// D-091: the card or message asked for (the "Decisioni in attesa" window, or #approval-<id> / #message-<id>
+// in the address) is brought into view once on the page and lit for a moment. After the watchers above, so it wins.
+async function focusAsked(): Promise<void> {
+  if (pendingFocus(props.chat.conversationId) === undefined) return;
+  await nextTick();
+  const anchor = pendingFocus(props.chat.conversationId);
+  const element = anchor === undefined ? null : document.getElementById(anchor);
+  if (element === null || list.value?.contains(element) !== true) return;
+  clearFocus();
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  element.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+  element.classList.add(...HIGHLIGHT_CLASSES);
+  window.setTimeout(() => element.classList.remove(...HIGHLIGHT_CLASSES), HIGHLIGHT_MS);
+}
+watch(() => [props.chat.conversationId, props.chat.messages.length, props.approvals.length], focusAsked);
+const onFocusEvent = (): void => void focusAsked();
+onMounted(() => {
+  const fromAddress = parseAnchor(window.location.hash);
+  if (fromAddress !== undefined) requestFocus(props.chat.conversationId, fromAddress);
+  window.addEventListener(FOCUS_EVENT, onFocusEvent);
+  void focusAsked();
+});
+onBeforeUnmount(() => window.removeEventListener(FOCUS_EVENT, onFocusEvent));
 
 const statusClass: Record<Task['status'], string> = {
   inbox: 'text-muted',
@@ -303,7 +415,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
           <!-- User -->
-          <div v-if="message.role === 'user'" class="flex flex-col items-end gap-1">
+          <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
               {{ message.body }}
             </div>
@@ -343,7 +455,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           </div>
 
           <!-- A report of the agent Arianna delegated to -->
-          <article v-else-if="message.agent !== null" class="hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
+          <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
@@ -361,7 +473,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           </article>
 
           <!-- Arianna (or a system note) -->
-          <div v-else class="max-w-[92%]">
+          <div v-else :id="messageAnchor(message.id)" class="max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
@@ -413,14 +525,14 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
           <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
 
-          <ApprovalCard v-for="approval in approvalsOf(message)" :key="approval.id" :approval="approval" :decide="decide" />
+          <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
           <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
             <Icon name="phone" :size="12" />{{ receiptText(call) }}
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
 
-        <ApprovalCard v-for="approval in unplaced" :key="approval.id" :approval="approval" :decide="decide" />
+        <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
           <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">Arianna</div>
@@ -434,33 +546,66 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <button type="button" class="btn btn-primary" @click="emit('restore')"><Icon name="restore" :size="16" />Ripristina</button>
     </div>
     <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
-      <form
-        class="mx-auto flex max-w-[780px] items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
-        @submit.prevent="submit"
-      >
-        <label for="composer" class="sr-only">Messaggio</label>
-        <textarea
-          id="composer"
-          ref="composer"
-          v-model="draft"
-          rows="1"
-          maxlength="16000"
-          placeholder="Scrivi ad Arianna…"
-          class="max-h-48 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 text-ink outline-none placeholder:text-muted focus-visible:outline-none"
-          @keydown="onKey"
-          @input="resize"
-        />
-        <button
-          type="submit"
-          :disabled="sending || draft.trim() === ''"
-          class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Invia"
+      <div class="relative mx-auto max-w-[780px]">
+        <!-- The "/" menu (D-090) -->
+        <div v-if="menuOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
+          <p class="hud-title px-3.5 pt-1 pb-1.5">Comandi</p>
+          <ul id="command-menu" role="listbox" aria-label="Comandi" class="max-h-72 overflow-y-auto">
+            <li
+              v-for="(command, index) in menuItems"
+              :id="`command-${command.name}`"
+              :key="command.name"
+              role="option"
+              :aria-selected="index === activeCommand"
+              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[13px]"
+              :class="index === activeCommand ? 'bg-surface-2 text-ink' : 'text-muted'"
+              @mousedown.prevent
+              @mouseenter="activeCommand = index"
+              @click="choose(command, 'enter')"
+            >
+              <span class="w-36 shrink-0 font-mono sm:w-40" :class="index === activeCommand ? 'text-accent' : 'text-ink'">{{ usage(command) }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ command.description }}</span>
+              <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[10.5px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
+            </li>
+          </ul>
+          <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[13px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
+          <p class="px-3.5 pt-1.5 font-mono text-[10px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
+        </div>
+        <form
+          class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
+          @submit.prevent="submit"
         >
-          <Icon name="send" />
-        </button>
-      </form>
+          <label for="composer" class="sr-only">Messaggio</label>
+          <textarea
+            id="composer"
+            ref="composer"
+            v-model="draft"
+            rows="1"
+            maxlength="16000"
+            placeholder="Scrivi ad Arianna… (/ per i comandi)"
+            class="max-h-48 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 text-ink outline-none placeholder:text-muted focus-visible:outline-none"
+            role="combobox"
+            aria-multiline="true"
+            aria-autocomplete="list"
+            :aria-controls="menuOpen ? 'command-menu' : undefined"
+            :aria-expanded="menuOpen"
+            :aria-activedescendant="activeId"
+            @keydown="onKey"
+            @input="onInput"
+          />
+          <button
+            type="submit"
+            :disabled="sending || draft.trim() === ''"
+            class="grid size-[38px] shrink-0 place-items-center rounded-full bg-accent text-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Invia"
+          >
+            <Icon name="send" />
+          </button>
+        </form>
+      </div>
+      <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span>Invio per inviare · Maiusc+Invio a capo · /nota testo: salva in kb/inbox (L2), senza Arianna</span>
+        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (L2), senza Arianna</span>
         <span>Etichetta <b class="font-medium" :class="labelClass[conversation.clearance]">{{ conversation.clearance }}</b>: {{ MODE_HINT[conversation.mode] }}</span>
       </p>
     </div>

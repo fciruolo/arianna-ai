@@ -18,6 +18,11 @@ test('an ordinary message is not a note', () => {
   assert.equal(parseNoteCommand('ricorda /nota x'), undefined);
 });
 
+test('/n is the shortcut of /nota', () => {
+  assert.deepEqual(parseNoteCommand('/n comprare il pane'), { text: 'comprare il pane', kind: 'note' });
+  assert.equal(parseNoteCommand('/nuova'), undefined);
+});
+
 test('/nota is recognized in any case', () => {
   assert.deepEqual(parseNoteCommand('/NOTA x'), { text: 'x', kind: 'note' });
   assert.deepEqual(parseNoteCommand('/Nota x'), { text: 'x', kind: 'note' });
@@ -25,8 +30,15 @@ test('/nota is recognized in any case', () => {
 });
 
 test('an unknown command is not sent, ordinary messages and paths are', () => {
-  assert.equal(commandError('/note comprare il pane'), 'Comando sconosciuto: /note. Per salvare una nota scrivi /nota seguito dal testo.');
-  assert.match(commandError('  /aiuto') ?? '', /^Comando sconosciuto: \/aiuto\./);
+  assert.equal(
+    commandError('/note comprare il pane'),
+    'Comando sconosciuto: /note. Per salvare una nota scrivi /nota seguito dal testo; scrivi / per vedere i comandi.',
+  );
+  assert.match(commandError('  /boh') ?? '', /^Comando sconosciuto: \/boh\./);
+  // The commands of the "/" menu (D-090) are known; they take no text.
+  assert.equal(commandError('/aiuto'), undefined);
+  assert.equal(commandError('/pensieri'), undefined);
+  assert.equal(commandError('/pensieri oggi'), '/pensieri non vuole testo dopo il nome.');
   assert.equal(commandError('/nota comprare il pane'), undefined);
   assert.equal(commandError('comprare il pane'), undefined);
   assert.equal(commandError('/etc/hosts non si apre'), undefined);
@@ -82,4 +94,10 @@ test('an L3 message is not saved in the inbox: no button, and an Italian error i
   for (const label of ['L0', 'L1', 'L2'] as const) assert.equal(canSaveToInbox(label), true, label);
   assert.equal(canSaveToInbox('L3'), false);
   assert.deepEqual(messageNote('Codice del conto', 'L3'), { error: MESSAGE_ABOVE_L2_TEXT });
+});
+
+test('/nota after invisible characters is still a note (D-090)', () => {
+  assert.deepEqual(parseNoteCommand('​/nota pane'), { text: 'pane', kind: 'note' });
+  assert.deepEqual(parseNoteCommand(' /n pane'), { text: 'pane', kind: 'note' });
+  assert.equal(parseNoteCommand('/nota:pane'), undefined);
 });

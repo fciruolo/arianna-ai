@@ -5,6 +5,7 @@ import { startCall as openCallSession, type CallSession } from './lib/call-sessi
 import { callErrorText, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, emptyChat, mergeMessages, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, messageNote, parseNoteCommand, savedText } from './lib/capture.ts';
+import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
@@ -382,6 +383,9 @@ export function createChatStore() {
       error.value = refused;
       return false;
     }
+    // The other "/" commands (D-090) are carried out by the page, never sent to Arianna.
+    const meaning = resolveDraft(body);
+    if (meaning.kind === 'command' && meaning.command.action.kind !== 'note') return false;
     sending.value = true;
     try {
       // "/nota ..." does not reach Arianna: a note in kb/inbox, without a model (D-080).
@@ -390,6 +394,8 @@ export function createChatStore() {
         notice.value = savedText(await api.captureNote(note));
         return true;
       }
+      // Whatever is left must be a message: a command never reaches Arianna.
+      if (!goesToArianna(body)) return false;
       const { message, task } = await api.sendMessage(state.conversationId, body);
       if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
       tasks.value = { ...tasks.value, [task.id]: task };

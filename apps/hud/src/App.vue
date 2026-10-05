@@ -12,8 +12,10 @@ import NewConversation from './components/NewConversation.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import StatusPanel from './components/StatusPanel.vue';
+import ThoughtsPage from './components/ThoughtsPage.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
+import type { CommandAction } from './lib/commands.ts';
 import { agentName } from './lib/italian.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
@@ -22,10 +24,14 @@ import {
   documentTitle,
   isKnowledgePath,
   isSettingsPath,
+  isThoughtsPath,
   isVoiceTrialPath,
   KNOWLEDGE_PATH,
+  knowledgeFocus,
+  knowledgePathFor,
   pathFor,
   SETTINGS_PATH,
+  THOUGHTS_PATH,
   VOICE_TRIAL_PATH,
 } from './lib/route.ts';
 import { conversationState, poseOf, POSE_TEXT, type Pose } from './lib/sprites.ts';
@@ -88,13 +94,13 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null) store.close();
-  if (window.location.pathname !== path) window.history.pushState(null, '', path);
+  if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState(null, '', path);
   document.title = documentTitle(title);
 }
 
@@ -106,9 +112,37 @@ function openSettings(): void {
   openPage('settings', SETTINGS_PATH, 'Impostazioni');
 }
 
-/** The graph of the knowledge base (D-087). */
-function openKnowledge(): void {
-  openPage('knowledge', KNOWLEDGE_PATH, 'Conoscenza');
+/** The node the knowledge page selects when it opens (D-090: "Apri nel grafo"). */
+const knowledgeNode = ref<string | undefined>(undefined);
+
+/** The graph of the knowledge base (D-087), with a node selected when given. */
+function openKnowledge(nodeId?: string): void {
+  knowledgeNode.value = nodeId;
+  openPage('knowledge', nodeId === undefined ? KNOWLEDGE_PATH : knowledgePathFor(nodeId), 'Conoscenza');
+}
+
+/** The thoughts (D-090). */
+function openThoughts(): void {
+  openPage('thoughts', THOUGHTS_PATH, 'Pensieri');
+}
+
+/** A "/" command of the chat (D-090). */
+function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' | 'search' }>): void {
+  if (action.kind === 'new-conversation') {
+    const conversation = current.value;
+    if (conversation === undefined) return;
+    const project = projects.value.find((entry) => entry.path === conversation.workspace)?.name;
+    // A work conversation on a project no longer approved: say so, never open one without it silently.
+    if (conversation.mode === 'work' && conversation.workspace !== null && project === undefined) {
+      error.value = 'Il progetto di questa conversazione non è più fra quelli approvati: apri la nuova conversazione dal pulsante e scegli il progetto.';
+      return;
+    }
+    void createConversation(conversation.mode, conversation.mode === 'work' ? project : undefined);
+    return;
+  }
+  if (action.page === 'thoughts') openThoughts();
+  else if (action.page === 'knowledge') openKnowledge();
+  else openSettings();
 }
 
 /** A save of the settings page: the chat shows the new characters and projects (models follow the live feed). */
@@ -129,7 +163,11 @@ function followAddress(): void {
     return;
   }
   if (isKnowledgePath(window.location.pathname)) {
-    openKnowledge();
+    openKnowledge(knowledgeFocus(window.location.search));
+    return;
+  }
+  if (isThoughtsPath(window.location.pathname)) {
+    openThoughts();
     return;
   }
   page.value = 'chat';
@@ -262,9 +300,20 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         aria-label="Conoscenza"
         title="Conoscenza"
         :aria-current="page === 'knowledge' ? 'page' : undefined"
-        @click="openKnowledge"
+        @click="openKnowledge()"
       >
         <Icon name="knowledge" />
+      </button>
+      <button
+        type="button"
+        class="grid size-[38px] place-items-center rounded-[9px] border"
+        :class="page === 'thoughts' ? 'border-line-strong bg-surface-2 text-accent' : 'border-transparent text-muted hover:bg-surface-2 hover:text-ink'"
+        aria-label="Pensieri"
+        title="Pensieri"
+        :aria-current="page === 'thoughts' ? 'page' : undefined"
+        @click="openThoughts"
+      >
+        <Icon name="thoughts" />
       </button>
       <button
         type="button"
@@ -320,7 +369,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
       <NewConversation :projects="projects" @create="createConversation" @refresh="store.refreshProjects" />
       <!-- On narrow screens the icon rail is hidden: the voice trial is reached from here. -->
-      <button type="button" class="btn md:hidden" @click="openKnowledge"><Icon name="knowledge" :size="16" />Conoscenza</button>
+      <button type="button" class="btn md:hidden" @click="openKnowledge()"><Icon name="knowledge" :size="16" />Conoscenza</button>
+      <button type="button" class="btn md:hidden" @click="openThoughts"><Icon name="thoughts" :size="16" />Pensieri</button>
       <button type="button" class="btn md:hidden" @click="openVoiceTrial"><Icon name="mic" :size="16" />Provino della voce</button>
       <button type="button" class="btn md:hidden" @click="openSettings"><Icon name="settings" :size="16" />Impostazioni</button>
 
@@ -393,6 +443,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'voice-trial'">Voce / <b class="font-medium text-ink">Provino</b></template>
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
+          <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else>Arianna</template>
         </p>
         <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
@@ -483,7 +534,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
       <VoiceTrial v-if="page === 'voice-trial'" />
       <SettingsPage v-else-if="page === 'settings'" @changed="settingsChanged" />
-      <KnowledgePage v-else-if="page === 'knowledge'" />
+      <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
+      <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <ChatView
         v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"
@@ -509,6 +561,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @retry="store.retry"
         @attach-question="store.attachQuestion"
         @open="openConversation"
+        @command="runCommand"
       />
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">

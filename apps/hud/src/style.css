@@ -508,6 +508,31 @@ body {
   }
 }
 
+/* A thought being organized (D-090): a thin light that runs along a line. */
+@keyframes hud-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+.hud-scan {
+  position: relative;
+  overflow: hidden;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.hud-scan::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: hud-scan 1.8s ease-in-out infinite;
+}
+
 .animate-hud-spin {
   animation: hud-spin 9s linear infinite;
 }
@@ -525,7 +550,12 @@ body {
   .animate-hud-spin,
   .animate-hud-bob,
   .animate-hud-blink,
-  .animate-call-breathe {
+  .animate-call-breathe,
+  .hud-scan::after {
     animation: none;
+  }
+  .hud-scan::after {
+    width: 100%;
+    opacity: 0.5;
   }
 }

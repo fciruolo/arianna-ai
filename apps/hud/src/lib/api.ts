@@ -2,6 +2,7 @@ import type { CallInfo } from './calls.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { OrdinarySection, PrivacyProposal, PrivacySection, SettingsValues, SettingsView } from './settings.ts';
+import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, FilePreview, Label, Message, MessageCredit, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
@@ -111,7 +112,13 @@ export async function sendMessage(conversationId: string, body: string): Promise
 }
 
 /** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
-export async function captureNote(note: { text: string; kind: 'note' | 'link'; url?: string; title?: string; from?: Label }): Promise<{ path: string; label: string }> {
+export async function captureNote(note: {
+  text: string;
+  kind: 'note' | 'link' | 'thought';
+  url?: string;
+  title?: string;
+  from?: Label;
+}): Promise<{ path: string; label: string; organizing?: boolean }> {
   return call('POST', '/api/capture', note);
 }
 
@@ -343,4 +350,19 @@ export async function loadKnowledgeGraph(): Promise<GraphData> {
 /** One page of kb/ with its text, up to L2; 404 for anything else. */
 export async function loadKnowledgePage(id: string): Promise<KnowledgePage> {
   return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}`)).page;
+}
+
+/** The notes of kb/inbox (D-086), newest first: header fields only, never the text. */
+export async function listNotes(limit = 200): Promise<NoteListing> {
+  return call<NoteListing>('GET', `/api/notes?limit=${String(limit)}`);
+}
+
+/** One note of kb/inbox with its text, up to L2. */
+export async function loadNote(name: string): Promise<Note> {
+  return (await call<{ note: Note }>('GET', `/api/notes/${encodeURIComponent(name)}`)).note;
+}
+
+/** Queues a new note to be organized again by the local model. */
+export async function organizeNote(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/organize`, {});
 }

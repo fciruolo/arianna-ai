@@ -16,6 +16,7 @@ import {
   Inbox,
   Info,
   LifeBuoy,
+  Lightbulb,
   Lock,
   Menu,
   MessageCircle,
@@ -99,6 +100,7 @@ export const ICONS = {
   copy: Copy,
   inbox: Inbox,
   knowledge: BrainCircuit,
+  thoughts: Lightbulb,
   search: Search,
   focus: Focus,
 } satisfies Record<string, Component>;

@@ -103,6 +103,12 @@ const ERRORS: Record<string, string> = {
     'Una chat di sistema su questa conversazione sta ancora lavorando: aspetta che finisca, poi eliminala (sparisce insieme).',
   'only a system chat takes the question of a task': 'Solo una chat di sistema può allegare la domanda di un task.',
   'the task has no question to attach': 'Questo task non ha una domanda da allegare.',
+  // The notes of kb/inbox (D-086, the "Pensieri" page of D-090).
+  'note not found': 'Nota non trovata: forse è stata spostata o è sopra L2.',
+  'the note is too large to read': 'La nota è troppo grande per essere letta qui.',
+  'the note is already organized': 'La nota è già stata riordinata.',
+  'notes cannot be organized now': 'Il riordino delle note non è disponibile adesso: manca il modello locale.',
+  'status must be new or organized': 'Filtro di stato non valido.',
   // Trials of a model (D-081).
   'the model is not in the catalog': 'Il modello non è nel catalogo.',
   'the catalog does not list this role for the model': 'Il catalogo non indica questo modello per l’orchestratore.',
@@ -361,3 +367,22 @@ export const SAVE_TO_INBOX_HINT = 'Salva il testo di questo messaggio come nota 
 export const MESSAGE_TOO_LARGE_TEXT = 'Il messaggio è più lungo di 64 KiB: troppo per una nota, non l’ho salvato.';
 export const MESSAGE_ABOVE_L2_TEXT = 'Il messaggio è L3: kb/inbox arriva fino a L2, non l’ho salvato.';
 export const MESSAGE_EMPTY_TEXT = 'Il messaggio è vuoto: non c’è niente da salvare.';
+
+/** The "Pensieri" page (D-090). */
+export const THOUGHT_EMPTY_TEXT = 'Il pensiero è vuoto: scrivi qualcosa prima di salvarlo.';
+export const THOUGHT_TOO_LARGE_TEXT = 'Il pensiero supera 64 KiB: accorcialo o dividilo in due.';
+export const THOUGHT_PLACEHOLDER = 'Scrivi un pensiero…';
+export const THOUGHT_MIC_HINT = 'La voce arriva presto';
+export const THOUGHT_SAVED_TEXT = 'Pensiero salvato: lo riordino in background.';
+export const THOUGHT_SAVED_UNQUEUED_TEXT = 'Pensiero salvato, ma il riordino non è partito: riprova dal pannello della nota.';
+export const THOUGHT_STATE_TEXT: Record<'organizing' | 'stuck' | 'organized', string> = {
+  organizing: 'In riordino…',
+  stuck: 'Non riordinato',
+  organized: 'Riordinato',
+};
+export const THOUGHT_STATE_HINT: Record<'organizing' | 'stuck' | 'organized', string> = {
+  organizing: 'Il modello locale sta scrivendo titolo, riassunto, collegamenti e tag',
+  stuck: 'Il riordino non è arrivato: puoi chiederlo di nuovo',
+  organized: 'Titolo, riassunto, collegamenti e tag scritti dal modello locale; il testo originale è in fondo',
+};
+export const SEARCH_LATER_TEXT = 'La ricerca su tutto il sistema arriva con la barra nuova.';

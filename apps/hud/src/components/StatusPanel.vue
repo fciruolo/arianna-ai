@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { agentName } from '../lib/italian.ts';
 import { ACTION_TEXT, DECISION_TEXT, EXECUTOR_TEXT, MODEL_TEXT, REMOTE_CHANNEL_TEXT } from '../lib/labels.ts';
+import { pendingItems, pendingTotal } from '../lib/pending.ts';
+import { loadPending } from '../lib/pending-api.ts';
+import { PENDING_OPEN } from '../lib/pending-text.ts';
 import type { RemoteDecision } from '../lib/remote-decisions.ts';
+import { routerReasonText } from '../lib/router-reasons.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Approval, CharacterChoice, CharacterListing, StatusSnapshot } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
+import PendingDecisions from './PendingDecisions.vue';
 import PixelAgent from './PixelAgent.vue';
 import RecentDelegations from './RecentDelegations.vue';
 
@@ -41,6 +46,31 @@ function timeOf(ts: string): string {
   return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** "Decisioni in attesa" (D-091): opened from the row of what waits for the user. */
+const showPending = ref(false);
+/** Changes when the store reads the status or the approvals again: the window and the row read with it. */
+const pendingSignal = computed(() => [props.status, props.approvals]);
+/** The total of the window (approvals, waiting tasks, those above L2 counted), read again with the signal. */
+const pendingRead = ref<number | null>(null);
+let pendingLatest = 0;
+async function readPending(): Promise<void> {
+  const request = ++pendingLatest;
+  try {
+    const data = await loadPending();
+    if (request === pendingLatest) pendingRead.value = pendingTotal(pendingItems(data.approvals, data.tasks, data.titles, data.waiting), data.hidden);
+  } catch {
+    // Keeps the last total; until the first read, the counts of the status stand in.
+  }
+}
+watch(pendingSignal, () => void readPending(), { immediate: true });
+/** Before the first read: the waiting tasks plus the approvals without a task, never fewer than the approvals listed. */
+const pendingCount = computed(
+  () =>
+    pendingRead.value ??
+    Math.max((props.status?.waiting ?? 0) + props.approvals.filter((approval) => approval.taskId === null).length, props.approvals.length),
+);
+const somethingWaits = computed(() => pendingCount.value > 0);
+
 const peak = computed(() => Math.max(1, ...(props.status?.gateway.hours ?? [])));
 
 /** The first character of a pack, as its preview. */
@@ -63,6 +93,18 @@ function wornBy(packId: string): string[] {
       <span class="hud-title flex-1">Pannello di stato</span>
       <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi il pannello" @click="emit('close')"><Icon name="close" /></button>
     </div>
+
+    <button
+      v-if="somethingWaits"
+      type="button"
+      class="flex items-center gap-2 rounded-[10px] border border-warn/60 bg-surface-2 px-3 py-2 text-left text-xs hover:border-warn"
+      aria-haspopup="dialog"
+      @click="showPending = true"
+    >
+      <span class="text-warn"><Icon name="warning" :size="16" /></span>
+      <span class="min-w-0 flex-1 font-semibold">{{ PENDING_OPEN }}</span>
+      <span class="font-mono text-[10.5px] text-warn">{{ pendingCount }}</span>
+    </button>
 
     <section v-if="approvals.length > 0">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
@@ -98,7 +140,14 @@ function wornBy(packId: string): string[] {
           </div>
           <div class="min-w-0">
             <b class="block font-semibold">{{ agentName(id) }}</b>
-            <div class="text-xs text-muted">{{ POSE_TEXT[poseFor(id)] }}</div>
+            <button
+              v-if="poseFor(id) === 'waiting'"
+              type="button"
+              class="text-left text-xs text-warn underline decoration-dotted underline-offset-2 hover:text-ink"
+              aria-haspopup="dialog"
+              @click="showPending = true"
+            >{{ POSE_TEXT[poseFor(id)] }}</button>
+            <div v-else class="text-xs text-muted">{{ POSE_TEXT[poseFor(id)] }}</div>
             <div class="mt-0.5 truncate font-mono text-[10.5px] text-muted">
               <template v-if="runOf(id) !== null">
                 {{ EXECUTOR_TEXT[runOf(id)!.executor] ?? runOf(id)!.executor }}<template v-if="runOf(id)!.model"> · {{ MODEL_TEXT[runOf(id)!.model!] ?? runOf(id)!.model }}</template><template v-if="runOf(id)!.repo"> · {{ runOf(id)!.repo }}</template>
@@ -129,6 +178,9 @@ function wornBy(packId: string): string[] {
               {{ EXECUTOR_TEXT[status.router.executor ?? ''] ?? status.router.executor }} · {{ MODEL_TEXT[status.router.model ?? ''] ?? status.router.model }}
             </span>
             <span v-else class="text-warn">in attesa</span>
+          </div>
+          <div class="mt-1 border-t border-line pt-1 font-sans text-[11.5px] leading-snug">
+            <span class="text-muted">motivo: </span>{{ routerReasonText(status.router.reason) }}
           </div>
         </template>
         <p v-else class="text-muted">Nessuna delega ancora: Arianna ha lavorato solo sul modello locale.</p>
@@ -192,5 +244,15 @@ function wornBy(packId: string): string[] {
         <span class="font-mono">[characters]</span> di <span class="font-mono">arianna.toml</span>.
       </p>
     </section>
+
+    <!-- Out of the panel: its transform would make the fixed window relative to it. -->
+    <Teleport to="body">
+      <PendingDecisions
+        v-if="showPending"
+        :signal="pendingSignal"
+        @close="showPending = false"
+        @open="(id) => emit('open', id)"
+      />
+    </Teleport>
   </aside>
 </template>

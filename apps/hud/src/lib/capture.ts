@@ -1,3 +1,4 @@
+import { resolveDraft, stripLeading } from './commands.ts';
 import { MESSAGE_ABOVE_L2_TEXT, MESSAGE_EMPTY_TEXT, MESSAGE_TOO_LARGE_TEXT } from './italian.ts';
 import type { Label } from './types.ts';
 
@@ -12,13 +13,12 @@ export interface NoteCommand {
   url?: string;
 }
 
-const COMMAND = /^\/nota(?:\s+|$)/i;
-/** "/" and a word, then a space or the end: a command, known or not ("/etc/hosts" is not one). */
-const ANY_COMMAND = /^\/(\p{L}+)(?:\s|$)/u;
+/** "/nota" or its shortcut "/n" (D-090). */
+const COMMAND = /^\/(?:nota|n)(?:\s+|$)/i;
 
 /** The note a draft asks for, or undefined for an ordinary message. */
 export function parseNoteCommand(draft: string): NoteCommand | undefined {
-  const start = draft.trimStart();
+  const start = stripLeading(draft);
   const match = COMMAND.exec(start);
   if (match === null) return undefined;
   const text = start.slice(match[0].length).trim();
@@ -35,13 +35,12 @@ export function parseNoteCommand(draft: string): NoteCommand | undefined {
 
 /**
  * Why a draft is not sent, in Italian: a command this page does not know
- * ("/note" for "/nota") must not reach Arianna as a message.
+ * ("/note" for "/nota") must not reach Arianna as a message. The known
+ * commands are those of lib/commands.ts (D-090).
  */
 export function commandError(draft: string): string | undefined {
-  const start = draft.trimStart();
-  if (COMMAND.test(start)) return undefined;
-  const name = ANY_COMMAND.exec(start)?.[1];
-  return name === undefined ? undefined : `Comando sconosciuto: /${name}. Per salvare una nota scrivi /nota seguito dal testo.`;
+  const meaning = resolveDraft(draft);
+  return meaning.kind === 'error' ? meaning.text : undefined;
 }
 
 /** What the chat says once the note is saved: path and label, never the text. */
