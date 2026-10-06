@@ -3,7 +3,7 @@
 // a message saved once in kb/inbox; what the chat says about the installation.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -252,8 +252,8 @@ test('a message is saved in kb/inbox once: two saves together give one note and 
   assert.match(raw, /^label: L2$/m);
 
   const saved = await call('GET', `/api/conversations/${chat.id}/saved`);
-  assert.deepEqual(saved.body, { messageIds: [message.id] });
-  assert.deepEqual((await call('GET', `/api/conversations/${other.id}/saved`)).body, { messageIds: [] });
+  assert.deepEqual(saved.body, { messageIds: [message.id], conversation: false });
+  assert.deepEqual((await call('GET', `/api/conversations/${other.id}/saved`)).body, { messageIds: [], conversation: false });
   assert.equal((await call('GET', `/api/conversations/${randomUUID()}/saved`)).status, 404);
 
   // A sent text is kept; a missing or malformed message is refused before anything is written.
@@ -321,4 +321,30 @@ test('the installation: mode, folder name and commit, same-origin only', async (
   const reply = await call('GET', '/api/installation');
   assert.deepEqual(reply.body, { installation: { mode: 'development', home: 'arianna-ai', version: 'abc1234' } });
   assert.equal((await call('GET', '/api/installation', { headers: { host: `evil.example:${String(server.port)}` } })).status, 403);
+});
+
+test('I-7 (D-131): the whole conversation saved in kb/inbox, replaced by a second save; refused above L2 or with nothing to save', async () => {
+  const { sql } = db();
+  const chat = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'] });
+  await postUserMessage(sql, chat.id, 'Prima parte del ragionamento.');
+  const first = await call('POST', `/api/conversations/${chat.id}/save`, { body: {} });
+  assert.equal(first.status, 201);
+  const firstBody = first.body as { path: string; label: string; replaced: boolean };
+  assert.deepEqual([firstBody.label, firstBody.replaced], ['L2', false]);
+  assert.deepEqual((await call('GET', `/api/conversations/${chat.id}/saved`)).body, { messageIds: [], conversation: true });
+  await postUserMessage(sql, chat.id, 'Seconda parte.');
+  const second = await call('POST', `/api/conversations/${chat.id}/save`, { body: {} });
+  const secondBody = second.body as { path: string; replaced: boolean };
+  assert.deepEqual([second.status, secondBody.replaced], [201, true]);
+  assert.match(readFileSync(join(home, secondBody.path), 'utf8'), /Seconda parte\./);
+  assert.equal(existsSync(join(home, firstBody.path)) && firstBody.path !== secondBody.path, false);
+
+  assert.equal((await call('POST', `/api/conversations/${randomUUID()}/save`, { body: {} })).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${chat.id}/save`, { body: { all: true } })).status, 400);
+  const empty = await createConversation(sql, { mode: 'private' });
+  assert.equal((await call('POST', `/api/conversations/${empty.id}/save`, { body: {} })).status, 400);
+  const secret = await createConversation(sql, { mode: 'private' });
+  await postUserMessage(sql, secret.id, 'Una domanda.');
+  await insertSecretMessage(secret.id, 'valore segreto');
+  assert.equal((await call('POST', `/api/conversations/${secret.id}/save`, { body: {} })).status, 403);
 });
