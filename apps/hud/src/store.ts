@@ -666,7 +666,7 @@ export function createChatStore() {
     if (message.type === 'notice') {
       // One place only: the helper of the Mac, else a system notification (fixed sentence and link), else a toast; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
-      const where = noticeWhere(message.conversationId, view, message.trial === true, message.helper === true);
+      const where = noticeWhere(message.conversationId, view, message.helper === true);
       if (where.system) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
       if (where.toast) {
         // The title stays in this page, on this Mac: a toast may name the conversation, a system notification never.

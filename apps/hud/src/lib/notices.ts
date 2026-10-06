@@ -60,10 +60,10 @@ export interface NoticeView {
  * of the Mac connected (D-128) nowhere in the page, the helper shows it;
  * else as a notification of the system when the browser allows it; else as
  * the toast of the chat, if the page is in view. A trial (the buttons of
- * Impostazioni → Notifiche) shows both, to see them side by side.
+ * Impostazioni → Notifiche) follows the same rule: it shows what a real
+ * notice would.
  */
-export function noticeWhere(conversationId: string | null, view: NoticeView, trial = false, helper = false): { toast: boolean; system: boolean } {
-  if (trial) return { toast: true, system: view.permission === 'granted' && !helper };
+export function noticeWhere(conversationId: string | null, view: NoticeView, helper = false): { toast: boolean; system: boolean } {
   if (!view.hidden && conversationId !== null && conversationId === view.openConversation) return { toast: false, system: false };
   if (helper) return { toast: false, system: false };
   if (view.permission === 'granted') return { toast: false, system: true };

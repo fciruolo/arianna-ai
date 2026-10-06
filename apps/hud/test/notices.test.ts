@@ -30,7 +30,7 @@ test('a notice frame: a known kind and a conversation id or null, nothing else',
   assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"trial":"yes"}'), { type: 'notice', kind: 'reply', conversationId: null });
 });
 
-test('noticeWhere: one place only, the system notification when allowed, the toast without it, nothing for the open conversation; a trial shows both', () => {
+test('noticeWhere: one place only, the system notification when allowed, the toast without it, nothing for the open conversation', () => {
   const view = { hidden: false, openConversation: ID, permission: 'granted' as const };
   assert.deepEqual(noticeWhere(ID, view), { toast: false, system: false }, 'the user is reading it');
   assert.deepEqual(noticeWhere(OTHER, view), { toast: false, system: true }, 'the system notification, not both');
@@ -39,8 +39,9 @@ test('noticeWhere: one place only, the system notification when allowed, the toa
   assert.deepEqual(noticeWhere(OTHER, { ...view, permission: 'unsupported' }), { toast: true, system: false });
   assert.deepEqual(noticeWhere(ID, { ...view, hidden: true }), { toast: false, system: true }, 'hidden, it is not being read');
   assert.deepEqual(noticeWhere(ID, { ...view, hidden: true, permission: 'denied' }), { toast: false, system: false });
-  assert.deepEqual(noticeWhere(null, view, true), { toast: true, system: true });
-  assert.deepEqual(noticeWhere(null, { ...view, permission: 'default' }, true), { toast: true, system: false });
+  // A trial has no conversation: the same rule as a real notice, one place only.
+  assert.deepEqual(noticeWhere(null, { ...view, openConversation: null }), { toast: false, system: true });
+  assert.deepEqual(noticeWhere(null, { ...view, openConversation: null, permission: 'default' }), { toast: true, system: false });
 });
 
 test('the fixed words, the link and the tag shared with the service worker', () => {
@@ -121,10 +122,10 @@ test('pushToast: on top, the same kind and conversation replaced, at most three'
 
 test('with the helper of the Mac (D-128) the page shows nothing of its own: the helper does', () => {
   const hidden = { hidden: true, openConversation: null, permission: 'granted' as const };
-  assert.deepEqual(noticeWhere(ID, hidden, false, true), { toast: false, system: false });
-  assert.deepEqual(noticeWhere(ID, hidden, true, true), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(ID, hidden, true), { toast: false, system: false });
+  assert.deepEqual(noticeWhere(null, hidden, true), { toast: false, system: false }, 'a trial too');
   const shown = { hidden: false, openConversation: null, permission: 'granted' as const };
-  assert.deepEqual(noticeWhere(ID, shown, false, true), { toast: false, system: false }, 'no toast next to the helper notification');
-  assert.deepEqual(noticeWhere(ID, { ...shown, permission: 'default' }, false, true), { toast: false, system: false });
-  assert.deepEqual(noticeWhere(ID, hidden, false, false), { toast: false, system: true });
+  assert.deepEqual(noticeWhere(ID, shown, true), { toast: false, system: false }, 'no toast next to the helper notification');
+  assert.deepEqual(noticeWhere(ID, { ...shown, permission: 'default' }, true), { toast: false, system: false });
+  assert.deepEqual(noticeWhere(ID, hidden, false), { toast: false, system: true });
 });
