@@ -91,7 +91,10 @@ async function until(check: () => boolean): Promise<void> {
   for (let tries = 0; tries < 100 && !check(); tries += 1) await sleep(50);
 }
 
-test('a command that ends by itself: its log, how it ended, the events', async () => {
+test('a command that ends by itself: its log, how it ended, the events', async (t) => {
+  t.after(() => {
+    delete process.env.SECRET_PG;
+  });
   const events: string[] = [];
   const manager = createServiceManager({ onEvent: (kind, payload) => events.push(`${kind} ${payload.service}`) });
   // A variable of the core never reaches the command.
@@ -105,7 +108,6 @@ test('a command that ends by itself: its log, how it ended, the events', async (
   assert.ok(run.lines.includes('12 test passati'));
   assert.ok(run.lines.includes('rosso'), 'no colour codes');
   assert.ok(!run.lines.includes('leak'));
-  delete process.env.SECRET_PG;
   assert.deepEqual(events, ['service.started package.json:test', 'service.stopped package.json:test']);
 });
 

@@ -349,6 +349,8 @@ export function createServiceManager(options: ServiceManagerOptions = {}): Servi
     signalGroup(pid, 'SIGTERM');
     const timer = setTimeout(() => {
       if (groupAlive(pid)) signalGroup(pid, 'SIGKILL');
+      // Gone now: the id may be given to another group later, never signalled again from here.
+      if (!run.running) delete run.pid;
     }, grace);
     timer.unref();
   }
@@ -399,6 +401,8 @@ export function createServiceManager(options: ServiceManagerOptions = {}): Servi
     // `close`, not `exit`: the last lines of the streams are in by then.
     child.once('close', (code, signal) => {
       finish(code, signal, run.stopping ?? 'exit');
+      // A group with nothing left: its id is forgotten, so that stopAll never signals a group reusing it.
+      if (run.pid !== undefined && !groupAlive(run.pid)) delete run.pid;
     });
     if (limit !== null) {
       const timer = setTimeout(() => {
