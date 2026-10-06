@@ -764,12 +764,12 @@ watch(active, () => {
                   </div>
                 </div>
               </div>
-              <!-- D-123: the model that draws a character; Claude Sonnet unless the user chooses -->
+              <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
               <div class="grid grid-cols-1 items-center gap-1.5 border-t border-line pt-2.5 sm:grid-cols-[140px_minmax(0,1fr)] md:gap-3">
                 <label for="role-sprites" class="font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
                 <select id="role-sprites" v-model="forms.sprites" class="field min-w-0 px-2 py-1.5 text-[13px]">
-                  <option value="sonnet">Claude Sonnet (predefinito)</option>
-                  <option value="opus">Claude Opus</option>
+                  <option value="sonnet">Claude Sonnet</option>
+                  <option value="opus">Claude Opus (predefinito)</option>
                   <option value="local">modello locale (quello dell’orchestratore)</option>
                 </select>
               </div>

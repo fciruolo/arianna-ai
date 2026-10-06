@@ -156,7 +156,7 @@ async function keep(replace: boolean): Promise<void> {
         </div>
       </div>
       <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
-      <p v-if="busy && !drawn" class="text-xs text-muted" role="status">Sto disegnando… può volerci un minuto.</p>
+      <p v-if="busy && !drawn" class="text-xs text-muted" role="status">Sto disegnando e poi ricontrollo il disegno: può volerci qualche minuto.</p>
       <div class="flex flex-wrap gap-2">
         <button v-if="!drawn" type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy || !ready" @click="generate">Genera</button>
         <template v-else-if="!existing">
