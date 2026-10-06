@@ -286,6 +286,8 @@ const conversation = (id: string, mode: 'work' | 'private', at: string, extra: P
   effectiveLabel: mode === 'work' ? 'L1' : 'L2',
   workspace: null,
   model: null,
+  agent: null,
+  contextTokens: null,
   title: 'non usato',
   archivedAt: null,
   telegram: false,

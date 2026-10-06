@@ -10,6 +10,7 @@ import {
   repositoryHead,
   toolConfigFiles,
   WorkspaceError,
+  type ClaudeError,
   type ClaudeExecutor,
   type ClaudeModel,
   type ClaudeTool,
@@ -21,8 +22,8 @@ import {
 import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
-import { runClaudeStep } from '../claude-step.ts';
-import { loadConversation, type Message } from '../conversations.ts';
+import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
+import { loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
 import type { RunUsage } from '../runs.ts';
@@ -162,6 +163,145 @@ async function workspaceApprovalOf(sql: Sql, delegation: Delegation): Promise<Ap
   return row;
 }
 
+/**
+ * The direct chat of a task (D-111): its conversation, when the delegated
+ * agent answers there in place of Arianna. Undefined otherwise.
+ */
+export async function directChatOf(sql: Sql, task: Task, agent: string): Promise<Conversation | undefined> {
+  if (task.conversationId === null) return undefined;
+  const conversation = await loadConversation(sql, task.conversationId);
+  return conversation?.agent === agent ? conversation : undefined;
+}
+
+/**
+ * What the user's consent covers in a direct chat (D-111, risposta 9): the
+ * files the agent changed in the earlier answers of the conversation (it does
+ * not commit, so the folder stays dirty of its own work) and the files of the
+ * consents the user already gave there. Any other dirty file is asked again.
+ */
+async function directChatCovered(sql: Sql, conversationId: string, agent: string): Promise<Set<string>> {
+  const rows = await sql<{ path: string }[]>`
+    SELECT f.value ->> 'path' AS path FROM task_delegations d
+      JOIN tasks t ON t.id = d.task_id, jsonb_array_elements(coalesce(d.files, '[]'::jsonb)) f
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${agent} AND d.status = 'ok'
+    UNION
+    SELECT f.value ->> 'from' FROM task_delegations d
+      JOIN tasks t ON t.id = d.task_id, jsonb_array_elements(coalesce(d.files, '[]'::jsonb)) f
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${agent} AND d.status = 'ok' AND f.value ? 'from'
+    UNION
+    SELECT jsonb_array_elements_text(a.detail -> 'files') FROM approvals a
+      JOIN tasks t ON t.id = a.task_id
+      WHERE t.conversation_id = ${conversationId} AND a.kind = 'workspace' AND a.state = 'approved' AND jsonb_typeof(a.detail -> 'files') = 'array'`;
+  return new Set(rows.map((row) => row.path).filter((path) => typeof path === 'string'));
+}
+
+/**
+ * What the Coder reads after its prompt in the direct chat (D-111): our fixed
+ * text, L0. An instruction to the model, not a control: scanner and gateway
+ * stay the nets.
+ */
+export const DIRECT_CHAT_TEXT = [
+  'You are in a direct chat with the user inside Arianna, without Arianna in between: each message of the user reaches you as it is, and your answer is shown to the user as it is.',
+  'Answer in the language of the user, as in a chat: say what you did and what is left, briefly.',
+  'Never ask the user for credentials, personal data, or commands to run outside the project.',
+].join(' ');
+
+/** How an earlier exchange starts in a brief of the direct chat: the cloud reads them as text, the local model as turns. */
+export const EARLIER_MESSAGE = '[earlier message of the user]\n';
+export const EARLIER_ANSWER = '[your earlier answer]\n';
+
+/** At most this many earlier exchanges of the direct chat, and this many characters, in the fallback brief (D-111). */
+export const DIRECT_HISTORY_EXCHANGES = 10;
+export const DIRECT_HISTORY_CHARS = 12_000;
+
+/**
+ * The session of the direct chat to continue (D-111, tappa A2): the one of
+ * the latest answer of the same agent in the same project, in this
+ * conversation. Undefined at the first message, or when none was kept.
+ */
+export async function directChatSession(sql: Sql, conversationId: string, delegation: Delegation): Promise<string | undefined> {
+  const [row] = await sql<{ sessionRef: string | null }[]>`
+    SELECT d.session_ref AS "sessionRef" FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
+        AND d.status = 'ok' AND d.id <> ${delegation.id}
+      ORDER BY d.created_at DESC, d.id DESC LIMIT 1`;
+  return row?.sessionRef ?? undefined;
+}
+
+/**
+ * When the session cannot be resumed (D-111, tappa A2): the latest exchanges
+ * of the direct chat, oldest first, as brief fragments with their labels.
+ * Only exchanges that ended with an answer: a message whose brief the gateway
+ * refused never reached the Coder and is not sent now either. Capped by
+ * exchanges and characters, the newest kept.
+ */
+export async function directChatHistory(sql: Sql, conversationId: string, delegation: Delegation): Promise<BriefFragment[]> {
+  const rows = await sql<{ brief: string; label: Label; answer: string | null; answerLabel: Label | null; taskId: string }[]>`
+    SELECT d.brief, d.label, m.body AS answer, m.label AS "answerLabel", d.task_id::text AS "taskId"
+      FROM task_delegations d JOIN tasks t ON t.id = d.task_id LEFT JOIN messages m ON m.id = d.message_id
+      WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
+        AND d.status = 'ok' AND d.id <> ${delegation.id}
+      ORDER BY d.created_at DESC, d.id DESC LIMIT ${DIRECT_HISTORY_EXCHANGES}`;
+  const kept: BriefFragment[][] = [];
+  let chars = 0;
+  for (const row of rows) {
+    const exchange: BriefFragment[] = [{ text: `${EARLIER_MESSAGE}${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
+    if (row.answer !== null && row.answerLabel !== null) {
+      exchange.push({ text: `${EARLIER_ANSWER}${row.answer}`, label: row.answerLabel, source: `task:${row.taskId}` });
+    }
+    const size = exchange.reduce((sum, fragment) => sum + fragment.text.length, 0);
+    if (chars + size > DIRECT_HISTORY_CHARS) {
+      // The latest exchange alone above the cap is cut, not left out: the start of the message, the end of the answer.
+      if (kept.length === 0) kept.push(cutExchange(exchange, DIRECT_HISTORY_CHARS));
+      break;
+    }
+    chars += size;
+    kept.push(exchange);
+  }
+  return kept.reverse().flat();
+}
+
+const CUT = '[…]';
+
+const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
+  const sum = (x: number | undefined, y: number | undefined) => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
+  const tokensIn = sum(a.tokensIn, b.tokensIn);
+  const tokensOut = sum(a.tokensOut, b.tokensOut);
+  const cost = sum(a.cost, b.cost);
+  return {
+    steps: (a.steps ?? 1) + (b.steps ?? 1),
+    ...(tokensIn === undefined ? {} : { tokensIn }),
+    ...(tokensOut === undefined ? {} : { tokensOut }),
+    ...(cost === undefined ? {} : { cost }),
+  };
+};
+
+/** An exchange within `budget` characters: half to the start of the message, the rest to the end of the answer. */
+function cutExchange(exchange: BriefFragment[], budget: number): BriefFragment[] {
+  const [message, answer] = exchange;
+  if (message === undefined) return [];
+  const forMessage = answer === undefined ? budget : Math.min(message.text.length, Math.floor(budget / 2));
+  const cutMessage = message.text.length <= forMessage ? message.text : `${message.text.slice(0, forMessage - CUT.length)}${CUT}`;
+  if (answer === undefined) return [{ ...message, text: cutMessage }];
+  const forAnswer = budget - cutMessage.length;
+  // The end of the answer, its opening line kept: the local model reads it as its own turn.
+  const opening = answer.text.startsWith(EARLIER_ANSWER) ? EARLIER_ANSWER : '';
+  const cutAnswer =
+    answer.text.length <= forAnswer ? answer.text : `${opening}${CUT}${answer.text.slice(answer.text.length - (forAnswer - CUT.length - opening.length))}`;
+  return [{ ...message, text: cutMessage }, { ...answer, text: cutAnswer }];
+}
+
+/** What the Coder reads before the earlier exchanges, when its session could not be resumed: our fixed text, L0. */
+export const DIRECT_HISTORY_TEXT =
+  'Your earlier session of this chat could not be resumed: the latest exchanges follow, oldest first, then the new message of the user. Answer the new message.';
+
+/** The same for an agent on the local model (D-111d): no project, nothing leaves the computer. */
+export const DIRECT_LOCAL_TEXT = [
+  'You are in a direct chat with the user inside Arianna, without Arianna in between: each message of the user reaches you as it is, and your answer is shown to the user as it is.',
+  'Answer in the language of the user, as in a chat, briefly.',
+  'Never ask the user for credentials.',
+].join(' ');
+
 /** What Arianna reads when no project is there for the Coder. */
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
 
@@ -248,13 +388,17 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     }
     // The consent covers the files it named: paths dirtied since are asked again.
     const covered = new Set(consent?.state === 'approved' && Array.isArray(consent.detail.files) ? consent.detail.files.map(String) : []);
+    // In the direct chat the consent is for the conversation (D-111).
+    const direct = await directChatOf(env.sql, task, delegation.agent);
+    if (direct !== undefined) for (const path of await directChatCovered(env.sql, direct.id, delegation.agent)) covered.add(path);
     if (dirty.some((path) => !covered.has(path))) return { kind: 'workspace', delegation, repo: folder.repo, files: dirty };
   }
 
-  // Every attempt is a cloud run of the task after the delegating step; the quota ones failed.
+  // Every attempt is a cloud run of the task from the delegating step on (the delegating step itself is
+  // local, except in the direct chat, where the first attempt runs at it, D-111); the quota ones failed.
   const [refusals] = await env.sql<{ count: number }[]>`
     SELECT count(*)::int AS count FROM runs
-    WHERE task_id = ${delegation.taskId} AND step > ${delegation.step} AND locality = 'cloud' AND status = 'failed'`;
+    WHERE task_id = ${delegation.taskId} AND step >= ${delegation.step} AND locality = 'cloud' AND status = 'failed'`;
   if ((refusals?.count ?? 0) >= MAX_QUOTA_RETRIES) {
     return closed('failed', `${String(MAX_QUOTA_RETRIES)} attempts refused by the executor: tell the user, or try again later`);
   }
@@ -405,18 +549,24 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // The Coder's own prompt, then the brief: both leave through the gateway.
   // At its first delegation in this conversation the agent also reads how to enter it (D-125): our fixed text, L0.
   const entry = await isEntryDelegation(sql, delegation.id);
-  const brief = [
+  // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
+  const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
+  const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
+  const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
-    { text: delegation.brief, label, source: `task:${task.id}` },
+    ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];
+  // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
+  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
-  const result = await runClaudeStep(sql, claude, ctx, {
+  const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined) => runClaudeStep(sql, claude, ctx, {
     // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
-    // at the higher of the two labels, as the local run (a prompt of the user is L1, tappa T3b).
-    context: createContext(task.clearance, maxLabel(label, promptLabelOf(agent))),
+    // at the highest label of what it reads, as the local run (a prompt of the user is L1, tappa T3b).
+    context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
     brief,
+    ...(sessionRef === undefined ? {} : { sessionRef }),
     workspace,
     model: plan.model,
     tools: claudeToolsOf(agent.card.tools),
@@ -441,6 +591,16 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       }
     },
   });
+  let result = await attempt(session === undefined ? [...opening, message] : [message], session);
+  // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
+  if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
+    const history = await directChatHistory(sql, task.conversationId, delegation);
+    const fallback = history.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...history];
+    const lost = result.usage;
+    result = await attempt([...opening, ...fallback, message], null);
+    // The failed resume counts too.
+    if (result.kind !== 'blocked') result = { ...result, usage: addUsage(lost, result.usage) };
+  }
 
   switch (result.kind) {
     case 'answer': {
@@ -483,6 +643,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         result: text,
         resultLabel: result.result.label,
         sessionRef: result.result.sessionRef,
+        ...(result.result.usage.context === undefined ? {} : { contextTokens: result.result.usage.context }),
         ...(messageId === undefined ? {} : { messageId }),
       });
       return { kind: 'continue', usage: result.usage };
@@ -502,6 +663,17 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result.reason}`);
       return { kind: 'continue', usage: result.usage };
   }
+}
+
+/**
+ * A resume that found no session to continue (D-111, tappa A2): the binary
+ * ended before its first message, or reported another session.
+ */
+export function sessionLost(error: ClaudeError): boolean {
+  // Another session and nothing else: a binary that broke the profile in any other way is not started again.
+  if (error.kind === 'profile') return error.violations.length === 1 && error.violations[0] === 'session';
+  // A result before the init is refused as bad-output by the stream.
+  return error.sessionRef === undefined && (error.kind === 'exit' || error.kind === 'bad-output');
 }
 
 /** Longest report of an agent that only answers (characters). */
@@ -562,8 +734,20 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   await show(sql, task, step, 'delegate', `${delegation.agent} · local/${plan.model}`);
 
   const prompt = promptPart(agent, delegation.agent);
-  const parts = [prompt, { text: delegation.brief, label, source: `task:${task.id}` }];
-  const read = maxLabel(prompt.label, label);
+  // In the direct chat (D-111d) the local model keeps no session: it reads how to talk with the user and the latest exchanges.
+  const direct = task.conversationId !== null && (await directChatOf(sql, task, delegation.agent)) !== undefined;
+  // Never an earlier exchange above what the card may read now: a card lowered after the conversation began reads less.
+  const ceiling = briefCeiling(agent.card);
+  const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation)).filter((part) => isAtMost(part.label, ceiling)) : [];
+  // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
+  const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
+  const parts = [
+    prompt,
+    ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
+    ...history,
+    { text: delegation.brief, label, source: `task:${task.id}` },
+  ];
+  const read = parts.reduce<Label>((top, part) => maxLabel(top, part.label), prompt.label);
   const decision = await passGateway(
     sql,
     parts.map((part) => ({ value: part.text, label: part.label, source: part.source })),
@@ -572,8 +756,17 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     { taskId: task.id, runId },
   );
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
-  const [instructions, brief] = decision.texts;
-  if (instructions === undefined || brief === undefined || decision.texts.length !== 2) throw new Error('the gateway allowed a different number of texts');
+  if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
+  const instructions = decision.texts[0] ?? '';
+  const brief = decision.texts.at(-1) ?? '';
+  const middle = decision.texts.slice(1, -1);
+  // The fixed text of the direct chat joins the instructions; each earlier exchange is a turn of the chat.
+  const system = direct ? `${instructions}\n\n${middle[0] ?? ''}` : instructions;
+  const turns = (direct ? middle.slice(1) : middle).map((text, index) => {
+    const role = roles[index] ?? 'user';
+    const opening = role === 'assistant' ? EARLIER_ANSWER : EARLIER_MESSAGE;
+    return { role, content: text.startsWith(opening) ? text.slice(opening.length) : text };
+  });
 
   const entry = await isEntryDelegation(sql, delegation.id);
   let report: string;
@@ -582,7 +775,8 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: localSystem(instructions, entry) },
+        { role: 'system', content: localSystem(system, entry) },
+        ...turns,
         { role: 'user', content: brief },
       ],
       schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },
