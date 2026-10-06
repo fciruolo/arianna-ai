@@ -149,13 +149,16 @@ function closePanel(): void {
 // "Cerca" (D-097) and "+ Nuovo": windows in the middle of the page.
 const showSearch = ref(false);
 const showNew = ref(false);
+/** The agent "+ Nuovo" opens on ("Apri una chat" in Impostazioni → Agenti, D-133); undefined: the usual first choice. */
+const newWith = ref<string | undefined>(undefined);
 function openSearch(): void {
   showSidebar.value = false;
   showSearch.value = true;
 }
-function openNew(): void {
+function openNew(agent?: string): void {
   showSidebar.value = false;
   void store.refreshProjects();
+  newWith.value = agent;
   showNew.value = true;
 }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -684,7 +687,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
       <ChangelogPage v-else-if="page === 'changelog'" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
@@ -779,6 +782,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :projects="projects"
       :agents="directAgents"
       :characters="characters?.agents"
+      :initial-agent="newWith"
       @close="showNew = false"
       @create="openDraft"
       @refresh="store.refreshProjects"
