@@ -148,3 +148,9 @@ Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambi
 - **Avviso di chiusura:** sul WebSocket della chat un messaggio `{ "type": "conversation.incognito-closed", "conversationId": "…", "cause": "user" | "idle" | "restart" }`; dopo, `GET /api/conversations/:id` risponde 404.
 - **Presenza:** la pagina aperta su un'incognita lo dice al core con il messaggio di visibilità già usato dalle notifiche (`conversation` nel messaggio, D-128); 10 minuti senza nessuna pagina su quella conversazione → chiusura con causa `idle`. A 9 minuti il core manda `{ "type": "conversation.incognito-closing", "conversationId": "…", "inSeconds": 60 }`.
 - **Indirizzo:** la chat apre un'incognita su `/incognito`, mai con l'id nell'indirizzo.
+
+## Esito della tappa 0 (2026-10-07, notte)
+
+- **Log di oMLX:** al livello predefinito `info` il file `data/omlx.log` non contiene testi: per ogni richiesta solo modello, token, tempi, `finish_reason` (controllato su 571 righe "Chat completion" e cercando frasi note di una conversazione: assenti). Il livello `trace` invece "includes full message content" (`omlx serve --help`). Da fare: il wizard (`pnpm arianna:init`) scrive `--log-level info` esplicito nel `command` dell'endpoint, così un default cambiato da oMLX non porta i prompt nel log; il doctor rifiuta `trace` e `debug`.
+- **Cache di oMLX su disco:** nella configurazione di sviluppo è accesa (`--paged-ssd-cache-dir data/omlx-cache`, 10 GB): contiene blocchi KV derivati dai prompt, non testo. La scheda dell'incognito la nomina quando il `command` contiene `--paged-ssd-cache-dir`.
+- **Profilo di `claude` con `--no-session-persistence`:** non verificato stanotte (serve un run vero e la lettura della cartella `.claude` nella home dell'utente, fuori dal repository: la fa l'utente, o un `pnpm eval:live` con il caso descritto in tappa 3).
