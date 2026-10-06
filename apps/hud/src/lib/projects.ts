@@ -17,6 +17,8 @@ export function isProjectsPath(pathname: string): boolean {
 export interface BrowsableProject {
   name: string;
   absolute: string;
+  /** "Mostra nascosti" is on for this project (D-135). */
+  hidden: boolean;
 }
 
 export interface TreeEntry {
@@ -24,6 +26,8 @@ export interface TreeEntry {
   kind: 'dir' | 'file';
   size: number | null;
   shut?: 'hidden' | 'excluded' | 'outside';
+  /** A file that may hold a secret: its text comes covered (D-135). */
+  secret?: true;
 }
 
 export interface ProjectFile {
@@ -31,6 +35,9 @@ export interface ProjectFile {
   size: number;
   text: string;
   openable: boolean;
+  /** A secret (D-135); `covered` until "Mostra", with an empty text. */
+  secret?: true;
+  covered?: true;
 }
 
 export interface RepositoryBranch {
@@ -70,14 +77,15 @@ export interface CommitDiff {
 
 /** Why an entry is shown with a lock. */
 export const SHUT_TEXT: Readonly<Record<NonNullable<TreeEntry['shut']>, string>> = {
-  hidden: 'nascosto: non si mostra',
-  excluded: 'escluso: dipendenze, non codice del progetto',
+  hidden: 'nascosto: accendi "Mostra nascosti" per vederlo',
+  excluded: 'escluso: dipendenze, non codice del progetto; accendi "Mostra nascosti" per vederlo',
   outside: 'un collegamento che porta fuori dal progetto',
 };
 
 /** Why a file or a diff is not shown, from the codes of the core. */
 export const FILE_ERROR_TEXT: Readonly<Record<string, string>> = {
-  refused: 'Questo file resta chiuso: i file nascosti, .git e i file con valori del vault non si mostrano mai.',
+  refused: 'Questo file resta chiuso: i file nascosti si vedono con "Mostra nascosti", quelli con valori del vault mai.',
+  covered: 'Può contenere un segreto: il testo non si mostra nel diff. Aprilo dalla scheda File (con "Mostra nascosti" acceso, se è nascosto) e premi "Mostra".',
   'too-large': 'File troppo grande da mostrare (oltre 256 KiB).',
   binary: 'Non è un file di testo.',
   deleted: 'Il file non c’è più.',

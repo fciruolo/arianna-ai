@@ -45,7 +45,7 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { browsableProjects, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, serviceStates } from '../project-browser.ts';
+import { browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
@@ -795,8 +795,9 @@ const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
  * Read only: folders, files, branches, changes, commits and their diff;
- * "Apri" for a page or an image with the links of D-117. Nothing is written,
- * nothing goes out.
+ * "Apri" for a page or an image with the links of D-117. Nothing is written
+ * in the project, nothing goes out. Hidden entries only with the consent of
+ * D-135, which the core reads for each request.
  */
 function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks): Route[] {
   const projectParam = (params: Params): string => {
@@ -810,13 +811,33 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
     return value;
   };
   return [
-    route('GET', '/api/browse', () => Promise.resolve({ body: { projects: browsableProjects(approvedProjects()) } })),
-    route('GET', '/api/browse/:project/tree', async (_request, url, params) => ({
-      body: await listProjectDir(approvedProjects(), projectParam(params), pathParam(url, 'dir', false)),
-    })),
-    route('GET', '/api/browse/:project/file', async (_request, url, params) => ({
-      body: { file: await readBrowsedFile(approvedProjects(), projectParam(params), pathParam(url, 'path', true)) },
-    })),
+    route('GET', '/api/browse', async () => ({ body: { projects: browsableProjects(approvedProjects(), await hiddenConsents(sql)) } })),
+    route('POST', '/api/browse/:project/hidden', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['on']);
+      if (typeof body.on !== 'boolean') throw new HttpError(400, 'on must be true or false');
+      await setHiddenShown(sql, approvedProjects(), name, body.on);
+      return { body: { hidden: body.on } };
+    }),
+    route('GET', '/api/browse/:project/tree', async (_request, url, params) => {
+      const name = projectParam(params);
+      const projects = approvedProjects();
+      return { body: await listProjectDir(projects, name, pathParam(url, 'dir', false), await hiddenShown(sql, projects, name)) };
+    }),
+    route('GET', '/api/browse/:project/file', async (_request, url, params) => {
+      const name = projectParam(params);
+      const projects = approvedProjects();
+      return { body: { file: await readBrowsedFile(projects, name, pathParam(url, 'path', true), { showHidden: await hiddenShown(sql, projects, name) }) } };
+    }),
+    // "Mostra" on a covered secret (D-135): a POST, so that no other page can write its event; the trace before the text.
+    route('POST', '/api/browse/:project/reveal', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string' || body.path === '' || body.path.length > 4096) throw new HttpError(400, 'path must be a file of the project');
+      return { body: { file: await revealBrowsedFile(sql, approvedProjects(), name, body.path) } };
+    }),
     route('POST', '/api/browse/:project/open', async (request, _url, params) => {
       const name = projectParam(params);
       const body = await readJson(request);
@@ -825,9 +846,11 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
       return { body: await openBrowsedFile(approvedProjects(), openLinks, name, body.path) };
     }),
     route('GET', '/api/browse/:project/git', async (_request, _url, params) => ({ body: { git: await readProjectGit(sql, approvedProjects(), projectParam(params)) } })),
-    route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => ({
-      body: { diff: await readCommitDiff(sql, approvedProjects(), projectParam(params), params.commit ?? '') },
-    })),
+    route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => {
+      const name = projectParam(params);
+      const projects = approvedProjects();
+      return { body: { diff: await readCommitDiff(sql, projects, name, params.commit ?? '', await hiddenShown(sql, projects, name)) } };
+    }),
   ];
 }
 

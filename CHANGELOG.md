@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.23.0] - 2026-10-06
+
+### Aggiunto
+
+- "Mostra nascosti" nella scheda File della pagina Progetti: col tuo consenso, chiesto ogni volta che lo accendi e valido per quel progetto finché lo spegni, si vedono anche i file col punto, node_modules e l'interno di .git (D-135).
+
+### Sicurezza
+
+- I file che possono contenere segreti (.env, chiavi, .npmrc, .git/config) arrivano coperti, anche quando non sono nascosti: "Mostra" li scopre una volta e lascia traccia negli eventi; nei diff restano coperti (D-135).
+- "Apri" non serve più un segreto attraverso un collegamento con un nome da pagina o da immagine, né dalla pagina Progetti né dai file delle deleghe (D-135).
+
 ## [0.22.0] - 2026-10-06
 
 ### Aggiunto

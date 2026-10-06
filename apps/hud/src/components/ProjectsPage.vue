@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, serviceLog, startService, stopService } from '../lib/api.ts';
+import { listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   agoText,
@@ -34,6 +34,8 @@ import Icon from './Icon.vue';
  * Git are read only: the tree, a file with the colours of the code, "Apri"
  * for pages and images (D-117), branches, changes not committed, commits and
  * their diff. "Apri in VS Code" is a vscode:// link: the core runs nothing.
+ * "Mostra nascosti" (D-135): with the user's consent, kept per project, the
+ * hidden entries too; a secret comes covered until "Mostra".
  */
 
 const projects = ref<BrowsableProject[] | null>(null);
@@ -52,6 +54,66 @@ const fileProblem = ref<string | null>(null);
 const fileLoading = ref(false);
 const openProblem = ref<string | null>(null);
 const query = ref('');
+
+// Hidden entries (D-135): the consent is the core's, asked here each time it is turned on.
+const hiddenOn = computed(() => project.value?.hidden === true);
+const hiddenConfirm = ref(false);
+const hiddenBusy = ref(false);
+const hiddenProblem = ref<string | null>(null);
+const revealing = ref(false);
+const hiddenCancel = ref<HTMLButtonElement | null>(null);
+watch(hiddenConfirm, async (now) => {
+  if (!now) return;
+  await nextTick();
+  hiddenCancel.value?.focus();
+});
+
+function toggleHidden(): void {
+  hiddenProblem.value = null;
+  if (hiddenOn.value) void setHidden(false);
+  else hiddenConfirm.value = true;
+}
+
+async function setHidden(on: boolean): Promise<void> {
+  if (project.value === null) return;
+  const name = project.value.name;
+  hiddenBusy.value = true;
+  try {
+    await setProjectHidden(name, on);
+    projects.value = (projects.value ?? []).map((item) => (item.name === name ? { ...item, hidden: on } : item));
+    if (chosen.value === name) reloadShown(on);
+  } catch (cause) {
+    hiddenProblem.value = browseErrorText(cause);
+  } finally {
+    hiddenConfirm.value = false;
+    hiddenBusy.value = false;
+  }
+}
+
+/** After the consent changed: the open folders read again (the hidden ones closed when it is off), the file and the commit too. */
+function reloadShown(on: boolean): void {
+  const stillOpen = [...openFolders.value].filter((dir) => on || !dir.split('/').some((part) => part.startsWith('.') || part === 'node_modules'));
+  folders.value = {};
+  openFolders.value = new Set(stillOpen);
+  for (const dir of stillOpen) void loadFolder(dir);
+  if (selected.value !== null) void showFile(selected.value);
+  if (commit.value !== null) void showCommit(commit.value);
+}
+
+/** "Mostra" on a covered secret: read once more with reveal; another file covers it again. */
+async function reveal(): Promise<void> {
+  if (project.value === null || file.value === null) return;
+  const path = file.value.path;
+  revealing.value = true;
+  try {
+    const found = await revealProjectFile(project.value.name, path);
+    if (selected.value === path) file.value = found;
+  } catch (cause) {
+    if (selected.value === path) fileProblem.value = browseErrorText(cause);
+  } finally {
+    revealing.value = false;
+  }
+}
 
 // Git
 const git = ref<ProjectGit | null>(null);
@@ -436,16 +498,35 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                   :class="changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : changeMark(changes, row.path, row.entry.kind) === 'A' ? 'text-ok' : ''"
                   >{{ row.entry.name }}</span
                 >
-                <span v-if="changeMark(changes, row.path, row.entry.kind)" class="ml-auto pl-2 text-[10.5px]" :class="changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : 'text-ok'">{{
+                <span v-if="row.entry.secret" class="ml-auto pl-2 text-warn" title="Può contenere un segreto: il testo arriva coperto"><Icon name="private" :size="11" /></span>
+                <span v-if="changeMark(changes, row.path, row.entry.kind)" class="pl-2 text-[10.5px]" :class="[row.entry.secret ? '' : 'ml-auto', changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : 'text-ok']">{{
                   changeMark(changes, row.path, row.entry.kind)
                 }}</span>
               </button>
               <p v-if="row.entry.kind === 'dir' && openFolders.has(row.path) && folders[row.path] === 'loading'" class="px-2 text-muted" :style="{ paddingLeft: `${String(30 + row.depth * 14)}px` }">…</p>
             </template>
           </div>
-          <p class="flex shrink-0 gap-3 border-t border-line px-3 py-2 text-[11.5px] text-muted">
-            <span><b class="font-mono text-warn">M</b> modificato</span><span><b class="font-mono text-ok">A</b> nuovo</span><span class="inline-flex items-center gap-1"><Icon name="private" :size="11" />chiuso</span>
-          </p>
+          <div class="shrink-0 border-t border-line px-3 py-2 text-[11.5px] text-muted">
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="hiddenOn"
+              class="mb-2 flex w-full items-center gap-2 rounded-md text-left text-[12.5px] text-ink"
+              :disabled="hiddenBusy"
+              title="File e cartelle col punto, node_modules e .git, col tuo consenso"
+              @click="toggleHidden"
+            >
+              <span class="relative h-[18px] w-8 shrink-0 rounded-full border transition-colors" :class="hiddenOn ? 'border-accent bg-accent/70' : 'border-line-strong bg-surface-2'"
+                ><span class="absolute top-[2px] size-3 rounded-full bg-ink transition-[left]" :class="hiddenOn ? 'left-[15px]' : 'left-[2px]'"></span
+              ></span>
+              Mostra nascosti
+            </button>
+            <p v-if="hiddenProblem" class="mb-1.5 text-danger" role="alert">{{ hiddenProblem }}</p>
+            <p class="flex flex-wrap gap-x-3 gap-y-1">
+              <span><b class="font-mono text-warn">M</b> modificato</span><span><b class="font-mono text-ok">A</b> nuovo</span><span class="inline-flex items-center gap-1"><Icon name="private" :size="11" />chiuso</span
+              ><span class="inline-flex items-center gap-1"><span class="text-warn"><Icon name="private" :size="11" /></span>segreto</span>
+            </p>
+          </div>
         </div>
         <div class="flex min-h-0 min-w-0 flex-col">
           <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3">
@@ -453,8 +534,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               <template v-if="selected"><span class="text-muted">{{ project.name }} / </span>{{ selected }}</template>
               <span v-else class="text-muted">Scegli un file a sinistra</span>
             </span>
-            <span v-if="file" class="font-mono text-[11.5px] whitespace-nowrap text-muted">{{ sizeText(file.size) }} · {{ fileLines.length }} righe</span>
-            <a v-if="selected && !fileProblem" :href="vscodeUrl(project.absolute, selected)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre questo file in Visual Studio Code"><Icon name="code" :size="13" />VS Code</a>
+            <span v-if="file" class="font-mono text-[11.5px] whitespace-nowrap text-muted">{{ sizeText(file.size) }}<template v-if="!file.covered"> · {{ fileLines.length }} righe</template></span>
+            <a v-if="selected && !fileProblem && file?.covered !== true" :href="vscodeUrl(project.absolute, selected)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre questo file in Visual Studio Code"><Icon name="code" :size="13" />VS Code</a>
             <button v-if="file?.openable" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre in una scheda nuova, servita dal computer" @click="openInBrowser"><Icon name="external" :size="13" />Apri</button>
           </div>
           <p v-if="openProblem" class="border-b border-line px-3 py-1.5 text-xs text-danger" role="alert">{{ openProblem }}</p>
@@ -462,6 +543,14 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <p v-if="fileLoading" class="p-4 text-sm text-muted">Carico…</p>
             <div v-else-if="fileProblem" class="grid h-full place-items-center p-8 text-center text-[13px] text-muted">
               <div class="grid max-w-sm justify-items-center gap-2"><Icon name="private" :size="26" />{{ fileProblem }}</div>
+            </div>
+            <div v-else-if="file?.covered" class="grid h-full place-items-center p-8 text-center text-[13px]">
+              <div class="grid max-w-md justify-items-center gap-3">
+                <span class="text-warn"><Icon name="warning" :size="26" /></span>
+                <p>Questo file può contenere un segreto: password, token o chiavi. Il testo è coperto, così non compare sullo schermo per sbaglio.</p>
+                <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="revealing" @click="reveal">Mostra</button>
+                <p class="text-xs text-muted">Si scopre solo questa volta, e resta traccia nel registro degli eventi. Attenzione a condivisioni dello schermo e screenshot.</p>
+              </div>
             </div>
             <pre v-else-if="file" class="m-0 py-3 font-mono text-[12.5px] leading-[1.7]"><span v-for="(line, at) in fileLines" :key="at" class="flex"><span class="w-12 shrink-0 border-r-2 pr-3.5 mr-3.5 text-right text-muted/70 select-none" :class="changedHere === 'A' ? 'border-ok' : 'border-transparent'">{{ at + 1 }}</span><span class="whitespace-pre pr-4"><span v-for="(token, index) in line" :key="index" :class="tokenClass[token.kind]">{{ token.text }}</span></span></span></pre>
           </div>
@@ -614,6 +703,28 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         </div>
       </div>
     </template>
+
+    <!-- The consent of D-135: in the page, never a dialog of the browser -->
+    <div v-if="hiddenConfirm && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="hidden-confirm-title" @keydown.esc="hiddenConfirm = false">
+      <div class="w-full max-w-lg rounded-2xl border border-line-strong bg-surface shadow-[0_24px_60px_#0008]">
+        <div class="flex gap-3 px-5 pt-5">
+          <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-warn/15 text-warn"><Icon name="warning" :size="16" /></span>
+          <div>
+            <h2 id="hidden-confirm-title" class="mt-0.5 mb-1 text-[16px] font-semibold">Mostrare i file nascosti di {{ project.name }}?</h2>
+            <p class="text-[13px] text-muted">Resta acceso per questo progetto finché lo spegni. Tutto resta sul computer: niente va al cloud né ai modelli.</p>
+          </div>
+        </div>
+        <ul class="mx-5 mt-4 grid list-disc gap-1.5 pl-5 text-[13px]">
+          <li>Vedrai le voci col punto (.github, .vscode, .env…), node_modules e l’interno di .git.</li>
+          <li>I file che possono contenere segreti (.env, chiavi, .npmrc, .git/config) arrivano coperti: li scopri uno alla volta con “Mostra”.</li>
+          <li>Un segreto scoperto si vede sullo schermo, e quindi anche in condivisioni e screenshot.</li>
+        </ul>
+        <div class="mt-5 flex justify-end gap-2 border-t border-line px-5 py-3">
+          <button ref="hiddenCancel" type="button" class="btn px-3 py-1 text-[13px]" :disabled="hiddenBusy" @click="hiddenConfirm = false">Annulla</button>
+          <button type="button" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="hiddenBusy" @click="setHidden(true)">Mostra nascosti</button>
+        </div>
+      </div>
+    </div>
 
     <!-- The confirmation of a start or a stop: in the page, never a dialog of the browser -->
     <div v-if="confirming && confirmation && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="service-confirm-title" @keydown.esc="confirming = null">

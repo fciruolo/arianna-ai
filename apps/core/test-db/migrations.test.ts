@@ -25,6 +25,7 @@ test('migrations apply from zero and create every table', async () => {
       'label_changes',
       'messages',
       'model_evals',
+      'project_hidden_consents',
       'push_subscriptions',
       'router_decisions',
       'runs',
