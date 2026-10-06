@@ -639,7 +639,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
-          <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">Arianna</div>
+          <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
       </div>
