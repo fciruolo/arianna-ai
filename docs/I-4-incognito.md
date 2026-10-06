@@ -1,6 +1,6 @@
 # I-4, modalità incognita: proposta di progetto
 
-Stato: **decisa come D-136** (2026-10-07); prima: proposta di Claude (idea I-4 di `docs/PROPOSTE.md`, "Idee dell'utente del 2026-10-05 sera"; risposta dell'utente: "come una chat normale", stessi strumenti e agenti, ma niente salvato in Arianna). Nessun codice scritto. Quando l'utente avrà risposto alle domande in fondo, la proposta diventa una voce di `docs/DECISIONS.md` (id nuovo) e le tappe un ramo per tappa.
+Stato: **decisa come D-136** (2026-10-07) e **implementata** sul ramo `task/i4-incognito` nella notte del 2026-10-07, da provare (esiti delle tappe in fondo). Prima: proposta di Claude (idea I-4 di `docs/PROPOSTE.md`, "Idee dell'utente del 2026-10-05 sera"; risposta dell'utente: "come una chat normale", stessi strumenti e agenti, ma niente salvato in Arianna).
 
 ## In una frase
 
@@ -159,7 +159,7 @@ Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambi
 
 - `packages/executors`: `persistSession: false` aggiunge `--no-session-persistence` (con `-p`, sempre presente); la ripresa di una sessione non salvata è rifiutata con `invalid-options` prima del gateway, senza spendere il brief. Nel core (`claude-step.ts`, `delegate.ts`) l'id di una sessione non salvata non va in `runs.session_ref` né in `task_delegations.session_ref`; una chat diretta incognita manda gli scambi recenti nel brief (il ripiego di D-111b) invece di riprendere la sessione.
 - **Da fare dal vivo:** un caso in `evals/contract/claude.jsonl` (`persistSession` in `ContractStep` di `packages/evals/src/contract.ts`) che confronta l'elenco dei file del profilo di `claude` nella home dell'utente prima e dopo un run con il flag. Leggere la home dell'utente è fuori dalle regole del repository per Claude Code: il caso lo scrive e lo lancia l'utente, o lo autorizza esplicitamente.
-- Manca un test in `apps/core/test-db/direct-chat.test.ts` per la chat diretta incognita (storia nel brief, niente `--resume`): va con la tappa 2.
+- Le chat dirette incognite sono vietate dal database (`agent IS NULL`): il ramo pensato per loro in `delegate.ts` è stato tolto.
 
 ### Aggiunte al contratto (2026-10-07, notte, dai dubbi della tappa 4)
 
@@ -172,4 +172,12 @@ Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambi
 
 - **Database (`0031_incognito.sql`):** segno immutabile; un'incognita è aperta dall'utente, senza agente diretto, senza titolo, mai archiviata né fissata (vincolo), e la sua cancellazione non passa dall'archivio; trigger contro una chat di sistema su un suo task, contro Telegram legato a lei, e contro un titolo di task diverso da "Incognito"; `purge_incognito` rifiuta se un task, un run o un job è ancora al lavoro e restituisce i conteggi per la scheda. Test del canarino (`apps/core/test-db/incognito-schema.test.ts` e `incognito.test.ts`): dopo la chiusura nessuna colonna di testo, json o array di testo dello schema contiene la stringa.
 - **Limiti e scelte del core:** nessuna chat diretta incognita (`agent IS NULL`); la causa `incognito` di un job resta solo negli eventi (il purge azzera `last_error`); `remains.cloud` ha una voce per ogni uscita ammessa verso il cloud, col modello del run; un'incognita resta aperta finché almeno una pagina la dichiara aperta, anche nascosta; stato e ufficio mostrano inattivo un agente che lavora su un'incognita; un passo che ignora `stop` oltre 15 secondi viene chiuso d'ufficio e le sue scritture successive sono rifiutate dai trigger.
-- **Dubbi per l'utente:** (1) un'incognita con una pagina aperta e nascosta resta aperta senza limite: va bene o serve un tetto (per esempio 12 ore)? (2) programmare una chiamata da un'incognita è accettato ma non squilla mai: rifiutarlo con 409?
+- **Dubbio per l'utente** (in `docs/OPEN-QUESTIONS.md`): un'incognita con una pagina aperta e nascosta resta aperta senza limite; serve un tetto? **Chiamate:** dopo la revisione, in un'incognita sono rifiutate (409 `incognito`: nessuna chiamata in entrata, programmata o "a lavoro finito"), e la chiusura annulla quelle rimaste.
+
+### Dalla revisione complessiva (2026-10-07, notte)
+
+- `GET /api/incognito/notice` dà anche `localCache` (vero quando oMLX ha la cache su SSD): la scheda la nomina.
+- Il 409 di `POST /end` con il lavoro ancora in corso ha il codice stabile `{ "error": "busy" }`.
+- Le chiamate legate a un'incognita rispondono 409 `{ "error": "incognito" }`.
+- `task_delegations` rifiuta le scritture per un task di una conversazione cancellata (migrazione `0032`): un passo tardivo non lascia un brief dopo la chiusura.
+- **Eval dal vivo in sospeso:** il caso del profilo di `claude` non è scritto (serve leggere la home dell'utente); finché non c'è, la scheda dice che gli altri file del profilo non sono verificati.

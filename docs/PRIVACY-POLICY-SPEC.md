@@ -55,9 +55,10 @@ Un'incognita è una conversazione privata o di lavoro con un segno fissato alla 
 | Messaggi, turni e ragionamento, deleghe (brief e rapporti), riassunti, righe di attività, partecipanti | Cancellati alla chiusura |
 | Titolo della conversazione e dei task | Mai scritti (`NULL` e "Incognito" fisso) |
 | Note in `kb/inbox/`, carte figlie (`kb.write`, `task.create`, `task.update`, "Salva in inbox", `/nota`) | Mai scritte: strumenti spenti, rotte 409 |
-| Sessioni di Claude Code nella home dell'utente | Non salvate (`--no-session-persistence`); altre cartelle del profilo da verificare dal vivo |
-| Telegram, chiamate in uscita, notifiche | Saltate |
-| `events`, `gateway_log`, `router_decisions`, `runs` (senza `session_ref` né cartella), `label_changes`, `task_errors`, `jobs`, riga scheletro della conversazione e dei task | Restano, senza contenuto: dicono se e verso chi qualcosa è uscito, mai cosa |
+| Sessioni di Claude Code nella home dell'utente | Non salvate (`--no-session-persistence`); altre cartelle del profilo da verificare dal vivo (eval dal vivo in sospeso, domanda in `OPEN-QUESTIONS.md`); la scheda lo dice |
+| Appunti del sistema dopo "Copia" | Fuori dal controllo di Arianna (un gestore degli appunti può conservarli): la scheda lo dice |
+| Telegram, chiamate (in entrata, in uscita, programmate), notifiche | Saltate; le chiamate legate a un'incognita sono rifiutate e la chiusura annulla quelle rimaste |
+| `events`, `gateway_log`, `router_decisions`, `runs` (senza `session_ref` né cartella), `label_changes`, `task_errors`, `jobs`, riga scheletro della conversazione e dei task | Restano, senza contenuto: dicono se e verso chi qualcosa è uscito, mai cosa. Restano anche due **impronte** sha256 (`gateway_log.payload_sha256` di ogni uscita e `label_changes.subject` di un declassamento): non contengono il testo, ma permettono di confermare un testo breve indovinato |
 | Ciò che il fornitore cloud ha ricevuto (solo incognite di lavoro) | Resta presso il fornitore, secondo l'abbonamento |
 | File cambiati dal Coder nel progetto | Restano: elencati nella scheda di chiusura |
 | Byte cancellati nelle pagine del database, nel WAL e nella coda di `pg_notify` | Restano illeggibili ad Arianna fino alla sovrascrittura; li protegge la cifratura del disco |

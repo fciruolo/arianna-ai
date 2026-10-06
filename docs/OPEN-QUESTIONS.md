@@ -24,7 +24,6 @@
 | Skill nel formato agentskills.io | Verificare compatibilità con Hermes, Claude Code e Codex (idea 7) | Task 1.9 |
 | Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087) | Rileggerle in `DECISIONS.md`: sono applicate ma da confermare | Prossima sessione con l'utente |
 | Incognito: tetto di durata con la pagina aperta | Oggi un'incognita resta aperta finché una pagina la tiene aperta, anche nascosta (D-136): proposta di Claude, nessun tetto | Prima di unire D-136 |
-| Incognito: chiamata programmata da un'incognita | Oggi la rotta l'accetta ma la chiamata non squilla mai (D-136): proposta di Claude, rifiutarla con un messaggio chiaro | Prima di unire D-136 |
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
 | Modelli: schede cloud da rileggere | Frasi tradotte, prezzi API e nomi dei modelli di Codex in `config/cloud-models.catalog.yaml` (D-137, I-3 M1) | Prima di unire I-3 |
 
@@ -634,13 +633,6 @@ Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (rig
 - Opzione: Tetto di 12 ore — dopo 12 ore dall'apertura si chiude comunque, con l'avviso un minuto prima; un lavoro lungo del Coder può venire interrotto.
 - Opzione: Tetto di 2 ore — più prudente per la privacy, ma una sessione di lavoro lunga va riaperta.
 - Esempio: Apri un'incognita alle 18:00 per parlare di un preventivo e dimentichi la scheda aperta; senza tetto alle 9:00 del giorno dopo i testi sono ancora nel database, con il tetto di 12 ore spariscono alle 6:00.
-
-### oq-incognito-chiamata-programmata-da-un-incognita
-
-- Contesto: Da una conversazione si può chiedere "chiamami quando finisci" o "chiamami più tardi". In un'incognita la chat non offre più questi pulsanti, ma il core accetta ancora la richiesta se arriva, e poi non chiama mai (le incognite non squillano, per non lasciare tracce sul telefono).
-- Opzione consigliata: Rifiutarla con un messaggio — il core risponde che in un'incognita le chiamate non ci sono; nessuna attesa che non arriverà mai.
-- Opzione: Lasciare com'è — nessun lavoro in più; una richiesta arrivata per altre strade resta muta.
-- Esempio: Da un'incognita di lavoro scrivi "chiamami fra un'ora"; con il rifiuto Arianna risponde subito "In una conversazione incognita non posso chiamarti", invece di non chiamare e basta.
 
 ### oq-incognito-verifica-dal-vivo-del-profilo-di-claud
 
