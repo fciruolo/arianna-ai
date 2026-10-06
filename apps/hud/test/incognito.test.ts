@@ -18,6 +18,7 @@ import {
   INCOGNITO_PATH,
   isIncognitoPath,
   NOTE_OFF_TEXT,
+  officeMayNote,
   noteRefusal,
   noticeLines,
   parseEndResult,
@@ -68,33 +69,46 @@ test('an incognito draft is with Arianna only, and differs from a normal one', (
 });
 
 test('the notice of the core is read only in its shape', () => {
-  assert.deepEqual(parseNotice({ cloud: true, project: 'sito-demo' }), { cloud: true, project: 'sito-demo' });
-  assert.deepEqual(parseNotice({ cloud: false, project: null }), { cloud: false, project: null });
-  assert.deepEqual(parseNotice({ cloud: false, project: '  ' }), { cloud: false, project: null });
+  assert.deepEqual(parseNotice({ cloud: true, project: 'sito-demo', localCache: true }), { cloud: true, project: 'sito-demo', localCache: true });
+  assert.deepEqual(parseNotice({ cloud: false, project: null, localCache: false }), { cloud: false, project: null, localCache: false });
+  // A core without the field: no cache said.
+  assert.deepEqual(parseNotice({ cloud: false, project: '  ' }), { cloud: false, project: null, localCache: false });
+  assert.equal(parseNotice({ cloud: false, project: null, localCache: 'yes' }), undefined);
   assert.equal(parseNotice({ cloud: 'yes', project: null }), undefined);
   assert.equal(parseNotice({ cloud: true, project: 3 }), undefined);
   assert.equal(parseNotice(null), undefined);
 });
 
+const COPY_LINE = 'Copia passa dagli appunti del sistema, che possono conservarne una copia.';
+const CACHE_LINE = 'Il modello locale tiene una cache su disco derivata dai testi (non leggibile come testo), finché non viene sostituita.';
+
 test('"Cosa resta fuori da Arianna" says the texts of the document, by mode', () => {
-  const private_ = noticeLines({ cloud: false, project: null });
+  const private_ = noticeLines({ cloud: false, project: null, localCache: false });
   assert.equal(private_[0], 'Niente esce dal Mac.');
   assert.ok(private_.some((line) => line.startsWith('Alla chiusura Arianna cancella testi, riassunti e attività.')));
   assert.ok(private_.some((line) => line.includes('registro di sicurezza, senza testo') && line.includes('il disco cifrato li protegge')));
+  assert.ok(private_.includes(COPY_LINE));
+  assert.ok(!private_.includes(CACHE_LINE));
   assert.ok(!private_.some((line) => line.includes('Claude')));
-  const work = noticeLines({ cloud: true, project: 'sito-demo' });
+  const work = noticeLines({ cloud: true, project: 'sito-demo', localCache: false });
   assert.ok(!work.includes('Niente esce dal Mac.'));
-  assert.ok(work.includes('Ciò che il Coder riceve va a Claude (Anthropic) e resta presso di loro secondo il tuo abbonamento.'));
+  assert.ok(work.includes('Ciò che gli agenti su Claude ricevono va a Claude (Anthropic) e resta presso di loro secondo il tuo abbonamento.'));
   assert.ok(work.includes('I file che il Coder cambia nel progetto sito-demo restano.'));
-  assert.ok(work.includes('Claude Code non salva la sessione.'));
+  // The session is not saved; the rest of the profile is not verified yet: never said as a certainty.
+  assert.ok(work.includes('Claude Code non salva la sessione; altri file del suo profilo (cronologie, copie dei file, debug) non sono ancora verificati.'));
+  assert.ok(!work.includes('Claude Code non salva la sessione.'));
+  assert.ok(work.includes(COPY_LINE));
   // Work without a project: no sentence about files.
-  assert.ok(!noticeLines({ cloud: true, project: null }).some((line) => line.includes('I file')));
+  assert.ok(!noticeLines({ cloud: true, project: null, localCache: false }).some((line) => line.includes('I file')));
+  // The local cache, in both modes, only when the core says it is on.
+  assert.ok(noticeLines({ cloud: false, project: null, localCache: true }).includes(CACHE_LINE));
+  assert.ok(noticeLines({ cloud: true, project: null, localCache: true }).includes(CACHE_LINE));
 });
 
-test('until the core answers, a work conversation is taken as one that reaches Claude', () => {
-  assert.deepEqual(assumedNotice('work', 'sito-demo'), { cloud: true, project: 'sito-demo' });
-  assert.deepEqual(assumedNotice('work', undefined), { cloud: true, project: null });
-  assert.deepEqual(assumedNotice('private', 'sito-demo'), { cloud: false, project: null });
+test('until the core answers, a work conversation is taken as one that reaches Claude, and the cache as on', () => {
+  assert.deepEqual(assumedNotice('work', 'sito-demo'), { cloud: true, project: 'sito-demo', localCache: true });
+  assert.deepEqual(assumedNotice('work', undefined), { cloud: true, project: null, localCache: true });
+  assert.deepEqual(assumedNotice('private', 'sito-demo'), { cloud: false, project: null, localCache: true });
 });
 
 const RESULT: EndResult = {
@@ -179,13 +193,30 @@ test("an incognito conversation's approvals are shown only in its page", () => {
 });
 
 test('"Termina" is asked again only while the work is stopping, a few times', () => {
-  const busy = 'the conversation is still at work: try again in a moment';
-  assert.equal(endRetryDelay(409, busy, 0), END_RETRY_MS);
-  assert.equal(endRetryDelay(409, busy, END_RETRIES - 1), END_RETRY_MS);
-  assert.equal(endRetryDelay(409, busy, END_RETRIES), undefined);
+  assert.equal(endRetryDelay(409, 'busy', 0), END_RETRY_MS);
+  assert.equal(endRetryDelay(409, 'busy', END_RETRIES - 1), END_RETRY_MS);
+  assert.equal(endRetryDelay(409, 'busy', END_RETRIES), undefined);
+  // The code, not the text: an old message is not recognized.
+  assert.equal(endRetryDelay(409, 'the conversation is still at work: try again in a moment', 0), undefined);
   assert.equal(endRetryDelay(409, 'not incognito', 0), undefined);
-  assert.equal(endRetryDelay(500, busy, 0), undefined);
+  assert.equal(endRetryDelay(500, 'busy', 0), undefined);
   assert.equal(endRetryDelay(404, 'not found', 0), undefined);
+});
+
+test('tasks waiting for the user of an incognito conversation stay out of every place outside it', () => {
+  const normal = { id: 't1', conversationId: OTHER, incognito: false };
+  const hidden = { id: 't2', conversationId: ID, incognito: true };
+  const oldCore = { id: 't3', conversationId: OTHER };
+  assert.deepEqual(withoutIncognito([normal, hidden, oldCore]), [normal, oldCore]);
+  assert.deepEqual(withoutIncognito([{ id: 't4', incognito: null }]), [{ id: 't4', incognito: null }]);
+});
+
+test('the office never notes the live lines of an incognito conversation', () => {
+  const known = new Set([ID]);
+  assert.equal(officeMayNote(ID, known), false);
+  assert.equal(officeMayNote(ID.toUpperCase(), known), false);
+  assert.equal(officeMayNote(OTHER, known), true);
+  assert.equal(officeMayNote(ID, new Set()), true);
 });
 
 test('"/nota" is refused only in incognito', () => {

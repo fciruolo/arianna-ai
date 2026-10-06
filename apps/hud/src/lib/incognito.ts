@@ -57,21 +57,25 @@ export function entryFromState(state: unknown): IncognitoEntry | undefined {
 export interface IncognitoNotice {
   cloud: boolean;
   project: string | null;
+  /** The local model keeps a cache on disk derived from the texts. */
+  localCache: boolean;
 }
 
 export function parseNotice(body: unknown): IncognitoNotice | undefined {
   if (!isRecord(body) || typeof body.cloud !== 'boolean') return undefined;
-  const { project } = body;
+  const { project, localCache } = body;
   if (project !== null && typeof project !== 'string') return undefined;
-  return { cloud: body.cloud, project: project === null || project.trim() === '' ? null : project };
+  if (localCache !== undefined && typeof localCache !== 'boolean') return undefined;
+  return { cloud: body.cloud, project: project === null || project.trim() === '' ? null : project, localCache: localCache === true };
 }
 
 /**
  * The notice while the core has not answered (or cannot): a work conversation
- * is taken as one that reaches Claude, so the card never says less than true.
+ * is taken as one that reaches Claude, and the local cache as on, so the card
+ * never says less than true.
  */
 export function assumedNotice(mode: ConversationMode, project: string | undefined): IncognitoNotice {
-  return { cloud: mode === 'work', project: mode === 'work' && project !== undefined && project !== '' ? project : null };
+  return { cloud: mode === 'work', project: mode === 'work' && project !== undefined && project !== '' ? project : null, localCache: true };
 }
 
 const DELETED = 'Alla chiusura Arianna cancella testi, riassunti e attività.';
@@ -80,9 +84,11 @@ const AUDIT =
 
 /** "Cosa resta fuori da Arianna", before the first message: the sentences of docs/I-4-incognito.md, by mode. */
 export function noticeLines(notice: IncognitoNotice): string[] {
-  const lines = [notice.cloud ? 'Ciò che il Coder riceve va a Claude (Anthropic) e resta presso di loro secondo il tuo abbonamento.' : 'Niente esce dal Mac.', DELETED];
+  const lines = [notice.cloud ? 'Ciò che gli agenti su Claude ricevono va a Claude (Anthropic) e resta presso di loro secondo il tuo abbonamento.' : 'Niente esce dal Mac.', DELETED];
   if (notice.project !== null) lines.push(`I file che il Coder cambia nel progetto ${notice.project} restano.`);
-  if (notice.cloud) lines.push('Claude Code non salva la sessione.');
+  if (notice.cloud) lines.push('Claude Code non salva la sessione; altri file del suo profilo (cronologie, copie dei file, debug) non sono ancora verificati.');
+  if (notice.localCache) lines.push('Il modello locale tiene una cache su disco derivata dai testi (non leggibile come testo), finché non viene sostituita.');
+  lines.push('Copia passa dagli appunti del sistema, che possono conservarne una copia.');
   lines.push(AUDIT);
   return lines;
 }
@@ -209,9 +215,13 @@ interface ApprovalPlace {
   conversationId?: string | null | undefined;
 }
 
-/** Approvals with no incognito ones: for every place outside the page of their conversation ("Decisioni in attesa", the office, the notes). */
-export function withoutIncognito<T extends ApprovalPlace>(approvals: readonly T[]): T[] {
-  return approvals.filter((approval) => approval.incognito !== true);
+/**
+ * Approvals, or tasks waiting for the user, with no incognito ones: for every
+ * place outside the page of their conversation ("Decisioni in attesa", the
+ * status panel, the office, the notes).
+ */
+export function withoutIncognito<T extends { id: string; incognito?: boolean | null | undefined }>(items: readonly T[]): T[] {
+  return items.filter((item) => item.incognito !== true);
 }
 
 /**
@@ -236,17 +246,25 @@ export function splitApprovals<T extends ApprovalPlace>(
   return { inChat, elsewhere };
 }
 
+/**
+ * Whether the office (D-106) may note a live activity line: never one of an
+ * incognito conversation this page knows (open, created by its draft, closed).
+ */
+export function officeMayNote(conversationId: string, incognito: ReadonlySet<string>): boolean {
+  return !incognito.has(conversationId.toLowerCase());
+}
+
 /** How many times "Termina" is asked again while the core stops the work, and how long it waits each time. */
 export const END_RETRIES = 4;
 export const END_RETRY_MS = 1500;
 
 /**
  * Whether "Termina" is asked again after a failure, and after how long: only
- * for the 409 of a conversation still stopping its work, a few times; any
- * other error is said at once.
+ * for the 409 `{ "error": "busy" }` of a conversation still stopping its work,
+ * a few times; any other error is said at once.
  */
-export function endRetryDelay(status: number, message: string, attempt: number): number | undefined {
-  if (status !== 409 || !message.startsWith('the conversation is still at work') || attempt >= END_RETRIES) return undefined;
+export function endRetryDelay(status: number, error: string, attempt: number): number | undefined {
+  if (status !== 409 || error !== 'busy' || attempt >= END_RETRIES) return undefined;
   return END_RETRY_MS;
 }
 

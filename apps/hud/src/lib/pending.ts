@@ -16,6 +16,8 @@ import type { Approval, Label, Task } from './types.ts';
 export interface WaitingTask {
   id: string;
   conversationId: string | null;
+  /** Its conversation is incognito (D-136): shown only in that conversation's page, never in "Decisioni in attesa". Optional: an older core sends none. */
+  incognito?: boolean | null;
   conversationTitle: string | null;
   mode: string | null;
   archived: boolean;
