@@ -106,7 +106,7 @@ export function hrefOf(item: IndexItem): string {
 export const EDITED_BY: Record<string, readonly string[]> = {
   roles: ['roles', 'sprites'],
   'cloud-models': ['cloudModels'],
-  agents: ['characters', 'personas', 'agents'],
+  agents: ['characters', 'personas', 'agents', 'participants'],
   voice: ['voice'],
   notifications: ['notifications'],
   executors: ['executors'],

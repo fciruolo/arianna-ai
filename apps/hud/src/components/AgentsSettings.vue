@@ -29,7 +29,7 @@ import {
   TONE_TEXT,
   TONES,
 } from '../lib/persona.ts';
-import { modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
+import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -67,8 +67,8 @@ import SheetPreview from './SheetPreview.vue';
  * `save`: writes them in one go; false when the core refused, the reason in `error`.
  */
 const props = defineProps<{
-  form: AgentParts;
-  base: AgentParts;
+  form: AgentParts & { participants: number };
+  base: AgentParts & { participants: number };
   view: SettingsView;
   characters: CharacterListing | null;
   sheetVersion: number;
@@ -246,22 +246,27 @@ const textsInvalid = computed(() => {
 // The bar
 const changedSettings = computed(() => changedAgents(props.form, props.base));
 const dirtyIds = computed(() => new Set([...changedSettings.value, ...changedTexts.value]));
-const unsaved = computed(() => unsavedNames([...dirtyIds.value].map(nameOf).sort((a, b) => a.localeCompare(b))));
+// When an idle agent leaves a conversation (I-8, D-130): one number for every agent, saved with the rest.
+const leaveChanged = computed(() => props.form.participants !== props.base.participants);
+const dirty = computed(() => dirtyIds.value.size > 0 || leaveChanged.value);
+const unsaved = computed(() =>
+  unsavedNames([...[...dirtyIds.value].map(nameOf).sort((a, b) => a.localeCompare(b)), ...(leaveChanged.value ? ['uscita degli agenti'] : [])]),
+);
 const working = ref(false);
 const barError = ref('');
 const saved = ref(false);
 let savedTimer: number | undefined;
-watch(dirtyIds, (ids) => {
-  if (ids.size > 0) saved.value = false;
+watch(dirty, (now) => {
+  if (now) saved.value = false;
 });
-const blocked = computed(() => (changedSettings.value.length > 0 ? props.invalid : undefined) ?? textsInvalid.value);
+const blocked = computed(() => (changedSettings.value.length > 0 || leaveChanged.value ? props.invalid : undefined) ?? textsInvalid.value);
 
 async function saveAll(): Promise<void> {
   if (working.value || props.busy || blocked.value !== undefined) return;
   working.value = true;
   barError.value = '';
   try {
-    if (changedSettings.value.length > 0 && !(await props.save())) return;
+    if ((changedSettings.value.length > 0 || leaveChanged.value) && !(await props.save())) return;
     for (const name of changedTexts.value) {
       const draft = texts.value[name];
       if (!draft) continue;
@@ -495,6 +500,16 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
           <span class="font-mono">{{ item.name }}</span> (in {{ item.state === 'active' ? 'attivi' : 'disattivati' }}) non caricato: <span class="font-mono text-muted">{{ item.reason }}</span>
         </span>
         <button v-if="item.state === 'disabled'" type="button" class="btn btn-danger px-2 py-0.5 text-xs" :disabled="busyName !== ''" @click="deleting = { name: item.name, typed: '' }; error = ''">Elimina…</button>
+      </div>
+      <!-- For every agent: when one that entered a conversation leaves by itself (I-8, D-130) -->
+      <div class="flex flex-col gap-1 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
+        <label for="leave-after" class="flex flex-wrap items-center gap-2">
+          Un agente entrato in una conversazione esce da solo dopo
+          <input id="leave-after" v-model.number="form.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[13px]" />
+          tuoi messaggi senza lavori per lui
+        </label>
+        <p class="text-xs text-muted">Saluta con una frase e rientra alla delega seguente. 0 vuol dire mai. Il Coder non esce da solo: lo togli tu.</p>
+        <p v-if="leaveAfterProblem(form.participants) !== undefined" class="text-xs text-warn">{{ leaveAfterProblem(form.participants) }}</p>
       </div>
     </aside>
 
@@ -754,7 +769,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
 
     <!-- One bar for look, persona, model and texts: the cards' own buttons are gone -->
     <div
-      v-if="dirtyIds.size > 0 || working || saved || barError"
+      v-if="dirty || working || saved || barError"
       class="sticky bottom-4 z-10 mx-auto flex max-w-full flex-wrap items-center gap-3 rounded-xl border bg-surface py-2 pr-3 pl-4 shadow-[0_10px_30px_#0006,0_0_0_4px_var(--glow)] lg:col-span-2"
       :class="barError || props.error || blocked ? 'border-danger' : 'border-accent'"
       role="status"
@@ -762,11 +777,11 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
       <span class="min-w-0 text-[13px]" :class="{ 'text-danger': barError || props.error || blocked }">
         <template v-if="barError || props.error">{{ barError || props.error }}</template>
         <template v-else-if="working || busy">Salvo…</template>
-        <template v-else-if="dirtyIds.size > 0 && blocked">{{ blocked }}</template>
-        <template v-else-if="dirtyIds.size > 0">Modifiche non salvate a <b>{{ unsaved }}</b></template>
+        <template v-else-if="dirty && blocked">{{ blocked }}</template>
+        <template v-else-if="dirty">Modifiche non salvate a <b>{{ unsaved }}</b></template>
         <template v-else>Salvato</template>
       </span>
-      <template v-if="dirtyIds.size > 0">
+      <template v-if="dirty">
         <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="working || busy" @click="undo">Annulla</button>
         <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="working || busy || blocked !== undefined" @click="saveAll">Salva</button>
       </template>

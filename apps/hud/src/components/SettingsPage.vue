@@ -44,6 +44,7 @@ import {
   roleOptions,
   rolesBody,
   keptSections,
+  leaveAfterProblem,
   pollAction,
   SECTION_TEXT,
   sectionChanged,
@@ -118,6 +119,7 @@ interface Forms {
   personas: Record<string, PersonaForm>;
   agents: AgentsForm;
   sprites: SettingsValues['sprites'];
+  participants: number;
   voice: VoiceForm;
   notifications: NotificationsForm;
   executors: string[];
@@ -134,6 +136,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     personas: personasForm(values.personas),
     agents: agentsForm(values.agents, agentModels),
     sprites: values.sprites,
+    participants: values.participants,
     voice: voiceForm(values.voice, defaults),
     notifications: notificationsForm(values.notifications),
     executors: [...values.executors],
@@ -143,7 +146,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'notifications', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -233,7 +236,7 @@ function markSaved(section: Section): void {
 }
 
 /** The parts the Agenti card saves together, in one write (D-116); it is known by `agents`. */
-const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents'];
+const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'participants'];
 
 /** Saves `parts` (by default the section alone) in one write; the card is known by `section`. False: not saved. */
 async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<boolean> {
@@ -248,6 +251,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   if (parts.includes('sprites')) values.sprites = current.sprites;
+  if (parts.includes('participants')) values.participants = current.participants;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   generation += 1;
   busy.value = section;
@@ -866,7 +870,7 @@ watch(active, () => {
               :sheet-version="sheetVersion"
               :busy="busy === 'agents'"
               :error="errors.agents"
-              :invalid="personasInvalid"
+              :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)"
               :direct-agents="directAgents ?? []"
               :save="() => save('agents', AGENT_PARTS)"
               @cancel="resetAgents"
