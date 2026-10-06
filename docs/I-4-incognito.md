@@ -132,3 +132,19 @@ La stima di PROPOSTE (8-12 ore) non contava la rotta per fermare un task scelto 
 ## Scelte dell'utente (2026-10-05, sera)
 
 Tutte e quattro sulle opzioni consigliate: incognito come una chat normale (privata o di lavoro; nel modo di lavoro il Coder su Claude, con la scheda che dice cosa resta presso il fornitore; sessioni di Claude Code non salvate); cancellazione alla chiusura senza cifratura (aggiungibile dopo); strumenti che salvano spenti (`kb.write`, `task.create`, "Salva in inbox", /nota; "Copia" resta); chiusura con "Termina", dopo 10 minuti senza pagina aperta o al riavvio, fermando il lavoro in corso e elencando i file già cambiati.
+
+## Contratto API fra core e chat (fissato il 2026-10-07 per le tappe 2 e 4)
+
+Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambio va scritto qui.
+
+- **Creazione:** `POST /api/conversations` accetta `incognito: true` insieme a `mode` (`private` o `work`) e, per `work`, al progetto come oggi. Rifiutato (400) con `origin` di sistema o con un agente diretto, se il core non lo supporta (scriverlo qui).
+- **Forma:** ogni conversazione restituita dal core ha `incognito: boolean`. Per un'incognita `title` è sempre `null`.
+- **Esclusioni:** `GET /api/conversations` (lista e archivio), `GET /api/search`, stato e ufficio, attese di altre pagine non mostrano mai un'incognita. `GET /api/conversations/:id` e i messaggi della conversazione funzionano (la pagina tiene l'id in memoria).
+- **Salvataggi spenti:** `POST /api/capture` con un `messageId` di un'incognita, `POST /api/conversations/:id/save` e `/nota` da un'incognita rispondono **409** `{ "error": "incognito" }`. `GET /api/conversations/:id/saved` risponde come per una conversazione senza salvataggi.
+- **Chiusura:** `POST /api/conversations/:id/end` (solo incognite, altrimenti 409 `{ "error": "not incognito" }`; 404 se non c'è o è già cancellata) ferma il lavoro in corso, cancella e risponde 200 con:
+  `{ "deleted": { "messages": n, "tasks": n, "summaries": n }, "remains": { "files": [{ "project": "nome", "path": "src/x.ts" }], "cloud": [{ "model": "opus", "bytes": n }] } }`
+  (`files` da `task_delegations.files` letti prima del purge; `cloud` dalle righe di `gateway_log`/`runs` di quella conversazione, solo modello e byte).
+- **Scheda di apertura:** `GET /api/incognito/notice?mode=private|work&project=nome` → `{ "cloud": boolean, "project": string | null }` (la chat compone i testi; nessun dato oltre a questi).
+- **Avviso di chiusura:** sul WebSocket della chat un messaggio `{ "type": "conversation.incognito-closed", "conversationId": "…", "cause": "user" | "idle" | "restart" }`; dopo, `GET /api/conversations/:id` risponde 404.
+- **Presenza:** la pagina aperta su un'incognita lo dice al core con il messaggio di visibilità già usato dalle notifiche (`conversation` nel messaggio, D-128); 10 minuti senza nessuna pagina su quella conversazione → chiusura con causa `idle`. A 9 minuti il core manda `{ "type": "conversation.incognito-closing", "conversationId": "…", "inSeconds": 60 }`.
+- **Indirizzo:** la chat apre un'incognita su `/incognito`, mai con l'id nell'indirizzo.
