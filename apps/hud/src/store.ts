@@ -9,7 +9,7 @@ import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
-import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, incognitoAction, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
+import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, incognitoAction, officeMayNote, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -102,6 +102,8 @@ export function createChatStore() {
   let soonTimer: number | undefined;
   /** Incognito conversations this page saw close: "back" to one shows that it is closed, without asking the core. */
   const endedIncognito = new Set<string>();
+  /** Every incognito conversation this page has seen, open or closed: its live lines never reach the office. */
+  const knownIncognito = new Set<string>();
   const ending = ref(false);
 
   const current = computed(() =>
@@ -150,6 +152,7 @@ export function createChatStore() {
       }
       throw cause;
     }
+    if (conversation.incognito === true) knownIncognito.add(conversation.id);
     if (chat.value?.conversationId === id) detached.value = conversation;
   }
 
@@ -170,6 +173,7 @@ export function createChatStore() {
   /** Forgets every text of an incognito conversation the page holds, and shows why it is gone. */
   function closeIncognito(id: string, cause: CloseCause | 'gone' | 'lost'): void {
     endedIncognito.add(id);
+    knownIncognito.add(id);
     discardIncognito();
     incognitoEnd.value = { kind: 'closed', text: closedText(cause) };
   }
@@ -446,6 +450,7 @@ export function createChatStore() {
     clearSoon();
     // Before the chat: the address follows the open conversation, and an incognito one has its own.
     detached.value = known?.id === id ? known : undefined;
+    if (known?.incognito === true) knownIncognito.add(known.id);
     chat.value = emptyChat(id);
     tasks.value = {};
     credits.value = new Map();
@@ -624,6 +629,7 @@ export function createChatStore() {
       if (step.kind === 'create') {
         created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true);
         id = created.id;
+        if (start.incognito === true) knownIncognito.add(id);
         // The user left the draft while it was created: nothing is sent, the text stays where it was written.
         if (draft.value?.key !== start.key) return false;
         draft.value = { ...start, conversationId: id };
@@ -853,7 +859,8 @@ export function createChatStore() {
       return;
     }
     if (message.type === 'activity') {
-      noteActivity(officeSignals.value, message.conversationId, message.kind);
+      // The office never shows the work of an incognito conversation (D-136).
+      if (officeMayNote(message.conversationId, knownIncognito)) noteActivity(officeSignals.value, message.conversationId, message.kind);
       if (chat.value !== null) chat.value = applyActivity(chat.value, message);
       return;
     }
