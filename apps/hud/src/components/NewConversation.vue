@@ -8,13 +8,14 @@ import type { CharacterChoice, ConversationMode, DirectAgent, ProjectInfo } from
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
 
-const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined }>();
+/** `initialAgent`: the direct chat with this agent is the first choice (D-133). */
+const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
 /** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
 type Kind = 'private' | 'work' | 'agent';
-const kind = ref<Kind>('private');
+const kind = ref<Kind>(props.initialAgent === undefined ? 'private' : 'agent');
 const project = ref('');
-const agent = ref('');
+const agent = ref(props.initialAgent ?? '');
 const agentMode = ref<ConversationMode>('private');
 const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' }[] = [
   { id: 'private', text: MODE_TEXT.private, icon: 'private' },

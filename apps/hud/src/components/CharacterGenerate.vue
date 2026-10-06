@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { generateSprite, loadSpriteInfo, uploadCharacter, type GeneratedSprite, type SpriteInfo, type UploadedCharacter } from '../lib/api.ts';
 import { SPRITE_MODEL_TEXT, spriteErrorText, spriteReasonText, uploadErrorText } from '../lib/italian.ts';
@@ -20,7 +20,8 @@ const props = withDefaults(defineProps<{ agentLabel: string; name: string; descr
   keep: 'premi Salva per tenerlo',
   fetchPrompt: undefined,
 });
-const emit = defineEmits<{ uploaded: [character: UploadedCharacter] }>();
+/** `busy`: drawing, or a drawing not kept yet; the Agenti page keeps the agent and the tab meanwhile (D-133). */
+const emit = defineEmits<{ uploaded: [character: UploadedCharacter]; busy: [busy: boolean] }>();
 
 const MAX_HINT = 300;
 const info = ref<SpriteInfo | null>(null);
@@ -30,6 +31,8 @@ const busy = ref(false);
 const error = ref('');
 const done = ref('');
 const drawn = ref<GeneratedSprite | null>(null);
+// A drawing on its way, or drawn and not kept yet: leaving it would lose the quota it cost.
+watch([busy, drawn], () => emit('busy', busy.value || drawn.value !== null));
 const characterName = ref('');
 const existing = ref<{ id: string; name: string } | null>(null);
 
