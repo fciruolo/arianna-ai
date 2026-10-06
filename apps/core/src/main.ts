@@ -23,6 +23,7 @@ import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@ar
 import { createContext } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
+import { directPolicies } from './direct-chat.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
@@ -431,6 +432,8 @@ const server = await startApiServer({
   defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
   agents: () => [...agents.keys()],
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
+  // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
+  directAgents: () => directPolicies(agents, { claude: claude !== undefined && settings.current().cloud.executors.includes('claude') }),
   participantAgent: (name) => {
     const agent = agents.get(name);
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };

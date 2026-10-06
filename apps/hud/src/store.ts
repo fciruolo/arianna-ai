@@ -15,7 +15,7 @@ import { payloadString, type ServerMessage } from './lib/protocol.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /**
  * State of the page. Every change comes from the API; the socket only says
@@ -48,6 +48,8 @@ export function createChatStore() {
   const models = ref<CloudModel[]>([]);
   /** The approved projects (D-058); the list changes without a restart, so it is read again when needed. */
   const projects = ref<ProjectInfo[]>([]);
+  /** Who the user may talk with directly (D-111d), as their cards allow. */
+  const directAgents = ref<DirectAgent[]>([]);
   /** Approvals decided from Telegram (or the phone) while the page was open. */
   const remoteDecisions = ref<RemoteDecision[]>([]);
   const storage = typeof window === 'undefined' ? undefined : window.localStorage;
@@ -209,7 +211,8 @@ export function createChatStore() {
 
   async function refreshProjects(): Promise<void> {
     try {
-      projects.value = await api.listProjects();
+      // The agents too: who is active, and Claude on or off, change without a restart.
+      [projects.value, directAgents.value] = await Promise.all([api.listProjects(), api.listDirectAgents().catch(() => directAgents.value)]);
     } catch (cause) {
       fail(cause);
     }
@@ -741,7 +744,7 @@ export function createChatStore() {
         // A task that settles has saved its last activity lines: "Mostra i passi (N)" follows (D-083).
         if (event.kind === 'task.status' && known) work.push(refreshActivityCounts());
         // The direct chat (D-111): the context of the Coder's session is saved after its answer, the indicator follows.
-        if (event.kind === 'task.status' && known && current.value?.agent === 'coder') work.push(refreshConversations());
+        if (event.kind === 'task.status' && known && current.value?.agent !== null && current.value?.agent !== undefined) work.push(refreshConversations());
         // The source task of the open system chat: its "Riprova" follows the task's status.
         if (event.kind.startsWith('task.') && event.taskId !== null && event.taskId === current.value?.sourceTaskId) work.push(refreshConversations());
     }
@@ -806,7 +809,7 @@ export function createChatStore() {
     window.clearTimeout(statusTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

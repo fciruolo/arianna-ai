@@ -3,12 +3,12 @@ import { ref } from 'vue';
 
 import { useModal } from '../lib/modal.ts';
 import type { DraftChoice } from '../lib/draft.ts';
-import type { ProjectInfo } from '../lib/types.ts';
+import type { DirectAgent, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import NewConversation from './NewConversation.vue';
 
-/** "+ Nuovo" of the left bar (D-097): private, work or with the Coder (D-111), and the project. */
-defineProps<{ projects: ProjectInfo[] }>();
+/** "+ Nuovo" of the left bar (D-097): private, work or with an agent (D-111d), and the project. */
+defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[] }>();
 const emit = defineEmits<{ close: []; create: [choice: DraftChoice]; refresh: [] }>();
 
 const dialog = ref<HTMLElement | null>(null);
@@ -36,7 +36,7 @@ function create(choice: DraftChoice): void {
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
       <div class="px-[15px] py-3.5">
-        <NewConversation :projects="projects" @create="create" @refresh="emit('refresh')" />
+        <NewConversation :projects="projects" :agents="agents" @create="create" @refresh="emit('refresh')" />
       </div>
     </section>
   </div>

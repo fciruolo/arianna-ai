@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { coderWarning, SESSION_COPY } from '../src/lib/draft.ts';
+import { cloudWarning, localNote, SESSION_COPY } from '../src/lib/draft.ts';
 import { CONTEXT_WINDOW, contextMeter, contextTitle } from '../src/lib/direct-chat.ts';
 
 test('the context meter: empty before the first answer, then tokens of the window with a level', () => {
@@ -19,9 +19,10 @@ test('the context meter: empty before the first answer, then tokens of the windo
 });
 
 test('the warning of the direct chat names the project and the copy of the session', () => {
-  const text = coderWarning('sito');
+  const text = cloudWarning('coder', 'sito');
   assert.match(text, /così com'è a Claude \(Anthropic\)/);
-  assert.match(text, /progetto sito/);
+  assert.match(text, /progetto sito che Coder apre/);
   assert.ok(text.endsWith(SESSION_COPY));
-  assert.equal(coderWarning(undefined).includes('progetto undefined'), false);
+  assert.equal(cloudWarning('revisore', undefined).includes('progetto'), false);
+  assert.match(localNote('traduttore'), /modello locale: niente esce dal Mac/);
 });

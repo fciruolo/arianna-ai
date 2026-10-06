@@ -9,17 +9,19 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { type Answer, type LoadedAgent } from '@arianna/agents';
+import { loadAgent, userCard, userPresets, type Answer, type LoadedAgent } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
 import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKind, type LocalModel } from '@arianna/executors';
 
 import { ChatError, createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_CHAT_TEXT, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, sessionLost } from '../src/orchestrator/delegate.ts';
+import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, sessionLost } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { startLiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
 import { loadTask } from '../src/tasks.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -82,10 +84,23 @@ function untouched(): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
-function orchestrator(model: LocalModel, coderPrompt?: string): StepExecutor {
+/** A user agent that only answers, on the local model (the template `answer`, D-119). */
+function translator(): LoadedAgent {
+  const dir = join(HOME, 'cards');
+  mkdirSync(dir, { recursive: true });
+  const permissions = userPresets().find(({ id }) => id === 'answer')?.permissions;
+  const files = userCard({ name: 'traduttore', description: 'Agente traduttore di prova', permissions, prompt: 'Traduci in inglese il testo che ricevi.' });
+  writeFileSync(join(dir, 'traduttore.yaml'), files.yaml);
+  writeFileSync(join(dir, 'traduttore.md'), files.md);
+  return { ...loadAgent(dir, 'traduttore'), origin: 'user' };
+}
+
+function orchestrator(model: LocalModel, coderPrompt?: string, translatorReads: 'L1' | 'L2' = 'L1'): StepExecutor {
   const coder = loaded.get('coder');
   assert.ok(coder !== undefined);
   const agents = new Map<string, LoadedAgent>(loaded);
+  const local = translator();
+  agents.set('traduttore', { ...local, card: { ...local.card, maxLabel: translatorReads } });
   if (coderPrompt !== undefined) agents.set('coder', { card: coder.card, prompt: coderPrompt });
   const settings = () => ({
     ...BASE,
@@ -112,21 +127,29 @@ async function drain(taskId: string, executor: StepExecutor): Promise<string[]> 
   throw new Error('drain did not end');
 }
 
+/** The Coder as direct-chat.ts reads its card: Claude, a work conversation on a project. */
+const CODER = { name: 'coder', modes: ['work'] as const, project: true };
+
 function directChat() {
-  return createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: 'coder' });
+  return createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: CODER });
 }
 
 function received(): { prompt: string } {
   return JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
 }
 
-test('a direct chat needs a work conversation on a project: private or without project is refused (D-111)', async () => {
-  await assert.rejects(createConversation(db().sql, { mode: 'private', agent: 'coder' }), (error: unknown) => error instanceof ChatError && error.code === 'invalid');
-  await assert.rejects(createConversation(db().sql, { mode: 'work', projects: PROJECTS, agent: 'coder' }), /needs a project/);
-  await assert.rejects(createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: 'designer' as 'coder' }), /agent must be coder/);
-  // The database says the same, whatever the code does.
-  await assert.rejects(db().sql`INSERT INTO conversations (mode, clearance, agent) VALUES ('private', 'L2', 'coder')`, /conversations_agent_work_project/);
-  await assert.rejects(db().sql`INSERT INTO conversations (mode, clearance, workspace, agent) VALUES ('work', 'L1', 'site', 'designer')`, /conversations_agent_known/);
+test('a direct chat follows the card: mode and project as it allows, never Arianna (D-111d)', async () => {
+  await assert.rejects(createConversation(db().sql, { mode: 'private', agent: CODER }), (error: unknown) => error instanceof ChatError && error.code === 'invalid');
+  await assert.rejects(createConversation(db().sql, { mode: 'work', projects: PROJECTS, agent: CODER }), /needs a project/);
+  await assert.rejects(createConversation(db().sql, { mode: 'work', agent: { name: 'arianna', modes: ['work'], project: false } }), /not one the user may talk with/);
+  // A local agent that may read L2: a private conversation, no project.
+  const local = await createConversation(db().sql, { mode: 'private', agent: { name: 'traduttore', modes: ['private', 'work'], project: false } });
+  assert.deepEqual([local.agent, local.mode, local.workspace], ['traduttore', 'private', null]);
+  await assert.rejects(createConversation(db().sql, { mode: 'private', agent: { name: 'revisore', modes: ['work'], project: false } }), /does not answer a private/);
+  // The database keeps an agent id, never Arianna, only in a conversation of the user.
+  await assert.rejects(db().sql`INSERT INTO conversations (mode, clearance, agent) VALUES ('private', 'L2', 'arianna')`, /conversations_agent_known/);
+  await assert.rejects(db().sql`INSERT INTO conversations (mode, clearance, agent) VALUES ('private', 'L2', 'Bad Name')`, /conversations_agent_known/);
+  await assert.rejects(db().sql`INSERT INTO conversations (mode, clearance, agent, origin, system_reason) VALUES ('private', 'L2', 'coder', 'system', 'failure')`, /conversations_agent_user|check constraint/);
   const plain = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   assert.equal(plain.agent, null);
   const direct = await directChat();
@@ -453,5 +476,78 @@ test('a latest exchange above the cap alone is cut, not left out', async () => {
     assert.ok(prompt.length < DIRECT_HISTORY_CHARS + 6000, String(prompt.length));
   } finally {
     restoreRepo();
+  }
+});
+
+/** The local model answering as the translator: each report in turn, every request kept. */
+function reporting(reports: string[]): LocalModel & { requests: ChatRequest[] } {
+  const requests: ChatRequest[] = [];
+  return {
+    requests,
+    chat(request) {
+      requests.push(request);
+      const report = reports[requests.length - 1];
+      if (report === undefined || request.schema?.name !== LOCAL_REPORT_SCHEMA_NAME) return Promise.reject(new Error('not an answer of the agent'));
+      const value = { report };
+      return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', usage: { promptTokens: 1, completionTokens: 1 }, endpoint: 'stub', model: 'stub', durationMs: 1 });
+    },
+  };
+}
+
+test('a direct chat with a local agent (D-111d): no project, its answer closes the task, the next message reads the earlier turns', async () => {
+  const direct = await createConversation(db().sql, { mode: 'work', agent: { name: 'traduttore', modes: ['work'], project: false } });
+  const model = reporting(['Good morning.', 'Good night.']);
+  const first = await postUserMessage(db().sql, direct.id, 'Buongiorno.');
+  assert.deepEqual(await drain(first.task.id, orchestrator(model)), ['answered']);
+  const second = await postUserMessage(db().sql, direct.id, 'Buonanotte.');
+  assert.deepEqual(await drain(second.task.id, orchestrator(model)), ['answered']);
+  const answers = await db().sql<{ agent: string | null; body: string }[]>`
+    SELECT agent, body FROM messages WHERE conversation_id = ${direct.id} AND role = 'assistant' ORDER BY id`;
+  assert.deepEqual(answers.map((row) => [row.agent, row.body]), [['traduttore', 'Good morning.'], ['traduttore', 'Good night.']]);
+  const [, later] = model.requests;
+  assert.ok(later !== undefined);
+  assert.match(String(later.messages[0]?.content), new RegExp(DIRECT_LOCAL_TEXT.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.deepEqual(later.messages.slice(1).map((message) => [message.role, message.content]), [
+    ['user', 'Buongiorno.'],
+    ['assistant', 'Good morning.'],
+    ['user', 'Buonanotte.'],
+  ]);
+});
+
+test('a private direct chat with a local agent that may read Privato: the brief and the answer stay L2, nothing to Claude', async () => {
+  const direct = await createConversation(db().sql, { mode: 'private', agent: { name: 'traduttore', modes: ['private', 'work'], project: false } });
+  const model = reporting(['Good morning, privately.']);
+  const { task } = await postUserMessage(db().sql, direct.id, 'Buongiorno, in privato.');
+  assert.deepEqual(await drain(task.id, orchestrator(model, undefined, 'L2')), ['answered']);
+  const [answer] = await db().sql<{ label: string }[]>`SELECT label FROM messages WHERE conversation_id = ${direct.id} AND role = 'assistant'`;
+  assert.equal(answer?.label, 'L2');
+  const cloud = await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.equal(cloud.length, 0);
+  // The same card lowered to Interno: a private message is above what it may read, nothing reaches the local model.
+  const lowered = reporting(['mai']);
+  const next = await postUserMessage(db().sql, direct.id, 'Ancora.');
+  await drain(next.task.id, orchestrator(lowered, undefined, 'L1'));
+  assert.equal(lowered.requests.length, 0);
+});
+
+test('the routes (D-111d): the list of who answers, and a conversation only with an agent and a mode it allows', async () => {
+  const live = await startLiveFeed(db().sql);
+  const agents = [{ agent: 'traduttore', description: 'Traduce', cloud: false, modes: ['work' as const], project: false }];
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, directAgents: () => agents, projects: () => [] });
+  const post = (body: unknown) =>
+    fetch(`http://127.0.0.1:${String(server.port)}/api/conversations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const listed = await fetch(`http://127.0.0.1:${String(server.port)}/api/direct-agents`);
+    assert.deepEqual(await listed.json(), { agents });
+    const made = await post({ mode: 'work', agent: 'traduttore' });
+    assert.equal(made.status, 201);
+    assert.equal(((await made.json()) as { conversation: { agent: string } }).conversation.agent, 'traduttore');
+    // An agent not in the list, Arianna, or a mode its card does not allow: refused, whatever the page sends.
+    assert.equal((await post({ mode: 'work', agent: 'coder' })).status, 400);
+    assert.equal((await post({ mode: 'work', agent: 'arianna' })).status, 400);
+    assert.equal((await post({ mode: 'private', agent: 'traduttore' })).status, 400);
+  } finally {
+    await server.close();
+    await live.close();
   }
 });

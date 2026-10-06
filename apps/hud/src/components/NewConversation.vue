@@ -1,33 +1,49 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { coderWarning, type DraftChoice } from '../lib/draft.ts';
+import { cloudWarning, localNote, type DraftChoice } from '../lib/draft.ts';
+import { agentName } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
-import type { ProjectInfo } from '../lib/types.ts';
+import type { ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ projects: ProjectInfo[] }>();
+const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[] }>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
-/** Private, work with Arianna, or the direct chat with the Coder (D-111), always on a project. */
-type Kind = 'private' | 'work' | 'coder';
+/** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
+type Kind = 'private' | 'work' | 'agent';
 const kind = ref<Kind>('private');
 const project = ref('');
+const agent = ref('');
+const agentMode = ref<ConversationMode>('private');
 const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' }[] = [
   { id: 'private', text: MODE_TEXT.private, icon: 'private' },
   { id: 'work', text: MODE_TEXT.work, icon: 'work' },
-  { id: 'coder', text: 'Con il Coder', icon: 'coder' },
+  { id: 'agent', text: 'Con un agente', icon: 'coder' },
 ];
-const hint = computed(() =>
-  kind.value === 'coder' ? 'Parli direttamente con il Coder (Claude Code) su un progetto, senza Arianna in mezzo.' : MODE_HINT[kind.value],
-);
-// The direct chat has no "Nessun progetto": the first project is chosen when the empty one was.
-const coderProject = computed(() => (kind.value === 'coder' && project.value === '' ? (props.projects[0]?.name ?? '') : project.value));
 
-// The list changes without a restart of the core (D-058): read it again when a work conversation is about to start.
+const policy = computed(() => props.agents.find((entry) => entry.agent === agent.value));
+/** The mode of the direct chat: the one chosen when the card allows both, else the only one. */
+const mode = computed<ConversationMode>(() => {
+  const modes = policy.value?.modes ?? [];
+  return modes.includes(agentMode.value) ? agentMode.value : (modes[0] ?? 'work');
+});
+// An agent on Claude works in a project: no "Nessun progetto" there, the first project is chosen when the empty one was.
+const agentProject = computed(() => (policy.value?.project === true && project.value === '' ? (props.projects[0]?.name ?? '') : project.value));
+const hint = computed(() => {
+  if (kind.value !== 'agent') return MODE_HINT[kind.value];
+  return 'Parli direttamente con un agente, senza Arianna in mezzo. Dove gira e che dati può leggere li decide la sua scheda.';
+});
+const ready = computed(() => {
+  if (kind.value !== 'agent') return true;
+  if (policy.value === undefined) return false;
+  return !policy.value.project || agentProject.value !== '';
+});
+
+// The lists change without a restart of the core (D-058, D-111d): read them again when they are about to be used.
 watch(kind, (value) => {
   if (value !== 'private') emit('refresh');
 });
-// The first approved project is the default; a project taken off the list is no longer chosen.
+// The first approved project and the first agent are the defaults; one taken off the list is no longer chosen.
 watch(
   () => props.projects,
   (list) => {
@@ -35,10 +51,20 @@ watch(
   },
   { immediate: true },
 );
+watch(
+  () => props.agents,
+  (list) => {
+    if (!list.some((entry) => entry.agent === agent.value)) agent.value = list[0]?.agent ?? '';
+  },
+  { immediate: true },
+);
 
 function submit(): void {
-  if (kind.value === 'coder') {
-    if (coderProject.value !== '') emit('create', { mode: 'work', project: coderProject.value, agent: 'coder' });
+  if (kind.value === 'agent') {
+    const chosen = policy.value;
+    if (chosen === undefined || !ready.value) return;
+    const withProject = chosen.project || (mode.value === 'work' && project.value !== '');
+    emit('create', { mode: mode.value, agent: chosen.agent, ...(withProject && mode.value === 'work' ? { project: agentProject.value } : {}) });
     return;
   }
   if (kind.value === 'work' && project.value !== '') emit('create', { mode: 'work', project: project.value });
@@ -48,7 +74,7 @@ function submit(): void {
 
 <template>
   <form class="flex flex-col gap-2" @submit.prevent="submit">
-    <div class="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità">
+    <div class="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Con chi parli">
       <button
         v-for="option in kinds"
         :key="option.id"
@@ -63,13 +89,58 @@ function submit(): void {
       </button>
     </div>
     <p class="px-0.5 text-xs leading-snug text-muted">{{ hint }}</p>
-    <template v-if="kind !== 'private'">
+
+    <template v-if="kind === 'agent'">
+      <label v-if="agents.length > 0" class="flex flex-col gap-1 text-xs text-muted">
+        Agente
+        <select v-model="agent" class="field px-2.5 py-1.5 text-[13px]">
+          <option v-for="entry in agents" :key="entry.agent" :value="entry.agent">
+            {{ agentName(entry.agent) }} · {{ entry.cloud ? 'Claude' : 'modello locale' }}
+          </option>
+        </select>
+      </label>
+      <p v-else class="text-xs leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
+      <p v-if="policy !== undefined && policy.description !== ''" class="px-0.5 text-xs leading-snug text-muted">{{ policy.description }}</p>
+      <div v-if="policy !== undefined && policy.modes.length > 1" class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità">
+        <button
+          v-for="option in policy.modes"
+          :key="option"
+          type="button"
+          role="radio"
+          :aria-checked="mode === option"
+          class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition"
+          :class="mode === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
+          @click="agentMode = option"
+        >
+          <Icon :name="option" :size="13" />{{ MODE_TEXT[option] }}
+        </button>
+      </div>
+      <template v-if="policy?.project === true">
+        <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
+          Progetto
+          <select :value="agentProject" class="field px-2.5 py-1.5 text-[13px]" @change="project = ($event.target as HTMLSelectElement).value">
+            <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
+          </select>
+        </label>
+        <p v-else class="text-xs leading-snug text-muted">
+          {{ agentName(policy.agent) }} lavora in un progetto, e non ce n'è uno approvato: aggiungilo con
+          <code class="font-mono">pnpm arianna:init --reconfigure</code>.
+        </p>
+      </template>
+      <p
+        v-if="policy !== undefined"
+        role="note"
+        class="rounded-lg border px-3 py-2 text-xs leading-snug"
+        :class="policy.cloud ? 'border-warn/50 bg-warn/10 text-warn' : 'border-line bg-surface-2 text-muted'"
+      >
+        {{ policy.cloud ? cloudWarning(policy.agent, policy.project ? agentProject : undefined) : localNote(policy.agent) }}
+      </p>
+    </template>
+
+    <template v-else-if="kind === 'work'">
       <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
         Progetto
-        <select v-if="kind === 'coder'" :value="coderProject" class="field px-2.5 py-1.5 text-[13px]" @change="project = ($event.target as HTMLSelectElement).value">
-          <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
-        </select>
-        <select v-else v-model="project" class="field px-2.5 py-1.5 text-[13px]">
+        <select v-model="project" class="field px-2.5 py-1.5 text-[13px]">
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           <option value="">Nessun progetto</option>
         </select>
@@ -78,16 +149,14 @@ function submit(): void {
         Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno con
         <code class="font-mono">pnpm arianna:init --reconfigure</code>.
       </p>
-      <p v-if="kind === 'coder' && projects.length > 0" role="note" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-xs leading-snug text-warn">
-        {{ coderWarning(coderProject) }}
-      </p>
     </template>
+
     <button
       type="submit"
-      :disabled="kind === 'coder' && coderProject === ''"
+      :disabled="!ready"
       class="flex w-full items-center gap-2 rounded-[9px] border border-line-strong bg-surface-2 px-3 py-2.5 text-left font-medium hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <Icon :name="kind === 'coder' ? 'coder' : 'new'" />{{ kind === 'coder' ? 'Parla con il Coder' : 'Nuova conversazione' }}
+      <Icon :name="kind === 'agent' ? 'coder' : 'new'" />{{ kind === 'agent' && policy !== undefined ? `Parla con ${agentName(policy.agent)}` : 'Nuova conversazione' }}
     </button>
   </form>
 </template>

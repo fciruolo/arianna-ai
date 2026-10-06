@@ -62,7 +62,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, remoteDecisions, status, characters, live, error, sending, notice } = store;
+const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -709,7 +709,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :sending="sending"
         :send="store.sendDraft"
         :arianna="characters?.agents.arianna"
-        :coder="characters?.agents.coder"
+        :characters="characters?.agents"
+        :agents="directAgents"
       />
       <ChatView
         v-else-if="chat !== null && current !== undefined"
@@ -728,6 +729,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :calls="calls"
         :participants="participants"
         :characters="characters?.agents"
+        :direct-agents="directAgents"
         @send="store.send"
         @remove-participant="store.removeParticipant"
         @call-when-done="store.callWhenDone"
@@ -775,6 +777,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"
+      :agents="directAgents"
       @close="showNew = false"
       @create="openDraft"
       @refresh="store.refreshProjects"

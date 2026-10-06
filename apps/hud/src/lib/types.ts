@@ -2,8 +2,19 @@
 export type Label = 'L0' | 'L1' | 'L2' | 'L3';
 export type ConversationMode = 'work' | 'private';
 
-/** The agents a conversation can have in place of Arianna (D-111). */
-export type ConversationAgent = 'coder';
+/** The agent a conversation has in place of Arianna (D-111d): any agent id but Arianna's. */
+export type ConversationAgent = string;
+
+/** An agent the user may talk with directly (GET /api/direct-agents, D-111d): what its card allows. */
+export interface DirectAgent {
+  agent: string;
+  description: string;
+  /** Every message goes to Claude: the warning, "va a Claude", the context indicator. */
+  cloud: boolean;
+  modes: ConversationMode[];
+  /** The conversation needs an approved project. */
+  project: boolean;
+}
 
 export interface Conversation {
   id: string;

@@ -206,6 +206,10 @@ export const DIRECT_CHAT_TEXT = [
   'Never ask the user for credentials, personal data, or commands to run outside the project.',
 ].join(' ');
 
+/** How an earlier exchange starts in a brief of the direct chat: the cloud reads them as text, the local model as turns. */
+export const EARLIER_MESSAGE = '[earlier message of the user]\n';
+export const EARLIER_ANSWER = '[your earlier answer]\n';
+
 /** At most this many earlier exchanges of the direct chat, and this many characters, in the fallback brief (D-111). */
 export const DIRECT_HISTORY_EXCHANGES = 10;
 export const DIRECT_HISTORY_CHARS = 12_000;
@@ -241,9 +245,9 @@ export async function directChatHistory(sql: Sql, conversationId: string, delega
   const kept: BriefFragment[][] = [];
   let chars = 0;
   for (const row of rows) {
-    const exchange: BriefFragment[] = [{ text: `[earlier message of the user]\n${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
+    const exchange: BriefFragment[] = [{ text: `${EARLIER_MESSAGE}${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
     if (row.answer !== null && row.answerLabel !== null) {
-      exchange.push({ text: `[your earlier answer]\n${row.answer}`, label: row.answerLabel, source: `task:${row.taskId}` });
+      exchange.push({ text: `${EARLIER_ANSWER}${row.answer}`, label: row.answerLabel, source: `task:${row.taskId}` });
     }
     const size = exchange.reduce((sum, fragment) => sum + fragment.text.length, 0);
     if (chars + size > DIRECT_HISTORY_CHARS) {
@@ -280,13 +284,23 @@ function cutExchange(exchange: BriefFragment[], budget: number): BriefFragment[]
   const cutMessage = message.text.length <= forMessage ? message.text : `${message.text.slice(0, forMessage - CUT.length)}${CUT}`;
   if (answer === undefined) return [{ ...message, text: cutMessage }];
   const forAnswer = budget - cutMessage.length;
-  const cutAnswer = answer.text.length <= forAnswer ? answer.text : `${CUT}${answer.text.slice(answer.text.length - (forAnswer - CUT.length))}`;
+  // The end of the answer, its opening line kept: the local model reads it as its own turn.
+  const opening = answer.text.startsWith(EARLIER_ANSWER) ? EARLIER_ANSWER : '';
+  const cutAnswer =
+    answer.text.length <= forAnswer ? answer.text : `${opening}${CUT}${answer.text.slice(answer.text.length - (forAnswer - CUT.length - opening.length))}`;
   return [{ ...message, text: cutMessage }, { ...answer, text: cutAnswer }];
 }
 
 /** What the Coder reads before the earlier exchanges, when its session could not be resumed: our fixed text, L0. */
 export const DIRECT_HISTORY_TEXT =
   'Your earlier session of this chat could not be resumed: the latest exchanges follow, oldest first, then the new message of the user. Answer the new message.';
+
+/** The same for an agent on the local model (D-111d): no project, nothing leaves the computer. */
+export const DIRECT_LOCAL_TEXT = [
+  'You are in a direct chat with the user inside Arianna, without Arianna in between: each message of the user reaches you as it is, and your answer is shown to the user as it is.',
+  'Answer in the language of the user, as in a chat, briefly.',
+  'Never ask the user for credentials.',
+].join(' ');
 
 /** What Arianna reads when no project is there for the Coder. */
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
@@ -720,8 +734,20 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   await show(sql, task, step, 'delegate', `${delegation.agent} · local/${plan.model}`);
 
   const prompt = promptPart(agent, delegation.agent);
-  const parts = [prompt, { text: delegation.brief, label, source: `task:${task.id}` }];
-  const read = maxLabel(prompt.label, label);
+  // In the direct chat (D-111d) the local model keeps no session: it reads how to talk with the user and the latest exchanges.
+  const direct = task.conversationId !== null && (await directChatOf(sql, task, delegation.agent)) !== undefined;
+  // Never an earlier exchange above what the card may read now: a card lowered after the conversation began reads less.
+  const ceiling = briefCeiling(agent.card);
+  const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation)).filter((part) => isAtMost(part.label, ceiling)) : [];
+  // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
+  const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
+  const parts = [
+    prompt,
+    ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
+    ...history,
+    { text: delegation.brief, label, source: `task:${task.id}` },
+  ];
+  const read = parts.reduce<Label>((top, part) => maxLabel(top, part.label), prompt.label);
   const decision = await passGateway(
     sql,
     parts.map((part) => ({ value: part.text, label: part.label, source: part.source })),
@@ -730,8 +756,17 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     { taskId: task.id, runId },
   );
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
-  const [instructions, brief] = decision.texts;
-  if (instructions === undefined || brief === undefined || decision.texts.length !== 2) throw new Error('the gateway allowed a different number of texts');
+  if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
+  const instructions = decision.texts[0] ?? '';
+  const brief = decision.texts.at(-1) ?? '';
+  const middle = decision.texts.slice(1, -1);
+  // The fixed text of the direct chat joins the instructions; each earlier exchange is a turn of the chat.
+  const system = direct ? `${instructions}\n\n${middle[0] ?? ''}` : instructions;
+  const turns = (direct ? middle.slice(1) : middle).map((text, index) => {
+    const role = roles[index] ?? 'user';
+    const opening = role === 'assistant' ? EARLIER_ANSWER : EARLIER_MESSAGE;
+    return { role, content: text.startsWith(opening) ? text.slice(opening.length) : text };
+  });
 
   const entry = await isEntryDelegation(sql, delegation.id);
   let report: string;
@@ -740,7 +775,8 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: localSystem(instructions, entry) },
+        { role: 'system', content: localSystem(system, entry) },
+        ...turns,
         { role: 'user', content: brief },
       ],
       schema: { name: LOCAL_REPORT_SCHEMA_NAME, schema: LOCAL_REPORT_SCHEMA },

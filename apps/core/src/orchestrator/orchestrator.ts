@@ -461,8 +461,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
             const outcome = await runDelegation(env, ctx, planned);
             return directChat ? directChatEnd(task, outcome) : outcome;
           }
-          case 'local':
-            return runLocalDelegation(env, ctx, planned);
+          case 'local': {
+            const outcome = await runLocalDelegation(env, ctx, planned);
+            return directChat ? directChatEnd(task, outcome) : outcome;
+          }
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
             return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step, agent: planned.delegation.agent };

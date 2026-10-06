@@ -54,9 +54,8 @@ export interface Conversation {
 }
 
 export type ConversationOrigin = 'user' | 'system';
-/** The agents a conversation can have in place of Arianna (D-111, tappa A). */
-export const CONVERSATION_AGENTS = ['coder'] as const;
-export type ConversationAgent = (typeof CONVERSATION_AGENTS)[number];
+/** The agent a conversation has in place of Arianna (D-111d): any agent id but Arianna's, as its card allows. */
+export type ConversationAgent = string;
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type MessageChannel = 'web' | 'telegram' | 'voice';
 
@@ -130,8 +129,11 @@ export interface NewConversation {
   project?: string;
   projects?: readonly string[];
   model?: string;
-  /** Who answers in place of Arianna (D-111): a work conversation with a project only. */
-  agent?: ConversationAgent;
+  /**
+   * Who answers in place of Arianna (D-111d), with what its card allows
+   * (direct-chat.ts): the caller reads the card, this checks mode and project.
+   */
+  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
 }
 
 /**
@@ -155,20 +157,20 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
   }
   if (options.model !== undefined && options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
   if (options.agent !== undefined) {
-    // Every message of a direct chat goes as it is to Claude: never from a private conversation (D-111).
-    if (!(CONVERSATION_AGENTS as readonly string[]).includes(options.agent)) throw new ChatError('invalid', 'agent must be coder');
-    if (options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation talks with the Coder directly');
-    if (options.project === undefined) throw new ChatError('invalid', 'the direct chat with the Coder needs a project');
+    // An agent on Claude only in a work conversation on a project; a local one where its card may read (D-111d).
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(options.agent.name) || options.agent.name === CHAT_AGENT) throw new ChatError('invalid', 'agent is not one the user may talk with');
+    if (!options.agent.modes.includes(options.mode)) throw new ChatError('invalid', `${options.agent.name} does not answer a ${options.mode} conversation`);
+    if (options.agent.project && options.project === undefined) throw new ChatError('invalid', `the direct chat with ${options.agent.name} needs a project`);
   }
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO conversations (mode, clearance, workspace, model, agent)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent ?? null})
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
     kind: 'conversation.created',
     label: 'L0',
-    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent }) },
+    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }) },
   });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');
@@ -488,11 +490,16 @@ export async function writeUserMessage(
     assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
-  // In the direct chat the message is the brief, as it is: the step goes to the Coder without a local step (D-111).
+  // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
   if (conversation.agent !== null) {
-    // conversations_agent_work_project keeps the project there.
-    if (conversation.workspace === null) throw new Error('a direct chat without a project');
-    await createDelegation(tx, { taskId: task.id, step: DIRECT_STEP, agent: conversation.agent, brief: body, label, repo: conversation.workspace });
+    await createDelegation(tx, {
+      taskId: task.id,
+      step: DIRECT_STEP,
+      agent: conversation.agent,
+      brief: body,
+      label,
+      ...(conversation.workspace === null ? {} : { repo: conversation.workspace }),
+    });
   }
   if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
 
