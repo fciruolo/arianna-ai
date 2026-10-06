@@ -135,3 +135,41 @@ export function mergeSavedIds(current: SavedNotes, read: ReadonlySet<string>, as
   for (const id of read) if (!next.has(id)) next.set(id, null);
   return next;
 }
+
+/** "Salva in inbox" of the whole conversation (I-7, D-131): the label of the button, before and after a first save. */
+export const SAVE_CONVERSATION_TEXT = 'Salva in inbox';
+export const UPDATE_CONVERSATION_TEXT = 'Aggiorna in inbox';
+export const SAVE_CONVERSATION_HINT =
+  'Salva tutta la conversazione come una nota in kb/inbox (i tuoi messaggi, quelli di Arianna e i rapporti degli agenti, senza le righe di sistema); il modello locale le dà titolo e riassunto.';
+export const UPDATE_CONVERSATION_HINT = 'Riscrive la nota di questa conversazione in kb/inbox con tutti i messaggi di adesso: una modifica fatta a mano alla nota si perde.';
+
+/** Whether the whole conversation already has its note in kb/inbox; false when the core cannot say. */
+export async function loadConversationSaved(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<boolean> {
+  try {
+    const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/saved`, { credentials: 'same-origin' });
+    if (!response.ok) return false;
+    const data = (await response.json().catch(() => ({}))) as { conversation?: unknown };
+    return data.conversation === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Saves the whole conversation; what the chat says after it, never an exception. */
+export async function saveConversation(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<{ ok: true; text: string } | { ok: false; text: string }> {
+  try {
+    const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/save`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const data = (await response.json().catch(() => ({}))) as { path?: unknown; replaced?: unknown; error?: unknown };
+    if (response.status === 201 && typeof data.path === 'string') {
+      return { ok: true, text: `${data.replaced === true ? 'Nota aggiornata' : 'Conversazione salvata'} in ${data.path}` };
+    }
+    return { ok: false, text: errorText(new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`)) };
+  } catch (cause) {
+    return { ok: false, text: errorText(cause) };
+  }
+}

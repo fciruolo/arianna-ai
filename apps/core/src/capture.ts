@@ -18,6 +18,8 @@ export const CAPTURE_CHANNELS = ['hud', 'cli'] as const;
 export type CaptureChannel = (typeof CAPTURE_CHANNELS)[number];
 
 export const MAX_CAPTURE_BYTES = 64 * 1024;
+/** The id of a conversation, as the database writes it. */
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_TITLE = 200;
 const MAX_URL = 2_000;
 const MAX_SLUG = 40;
@@ -37,7 +39,7 @@ export class CaptureError extends Error {
   }
 }
 
-export type CaptureSource = { channel: CaptureChannel; id: string } | { messageId: string };
+export type CaptureSource = { channel: CaptureChannel; id: string } | { messageId: string } | { conversationId: string };
 
 export interface CaptureInput {
   home: string;
@@ -111,6 +113,8 @@ function checkInput(input: CaptureInput): { text: string; url?: string; title?: 
   if (!isCaptureKind(input.kind)) throw new CaptureError('invalid', `kind must be one of ${CAPTURE_KINDS.join(', ')}`);
   if ('messageId' in input.source) {
     if (!/^[1-9]\d{0,18}$/.test(input.source.messageId)) throw new CaptureError('invalid', 'invalid source');
+  } else if ('conversationId' in input.source) {
+    if (!CONVERSATION_ID.test(input.source.conversationId)) throw new CaptureError('invalid', 'invalid source');
   } else if (!CAPTURE_CHANNELS.includes(input.source.channel) || !/^[A-Za-z0-9_-]{1,64}$/.test(input.source.id)) {
     throw new CaptureError('invalid', 'invalid source');
   }
@@ -184,7 +188,10 @@ function remove(file: string): void {
 
 /** The value of the `source:` line, written only here. */
 export function sourceLine(source: CaptureSource): string {
-  return 'messageId' in source ? `message:${source.messageId}` : `capture:${source.channel}:${source.id}`;
+  if ('messageId' in source) return `message:${source.messageId}`;
+  // A whole conversation saved in the inbox (I-7, D-131).
+  if ('conversationId' in source) return `conversation:${source.conversationId}`;
+  return `capture:${source.channel}:${source.id}`;
 }
 
 export function captureNote(input: CaptureInput): CaptureResult {

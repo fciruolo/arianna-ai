@@ -9,7 +9,18 @@ import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
-import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
+import {
+  loadConversationSaved,
+  loadSavedIds,
+  mergeSavedIds,
+  SAVE_CONVERSATION_HINT,
+  SAVE_CONVERSATION_TEXT,
+  saveConversation,
+  UPDATE_CONVERSATION_HINT,
+  UPDATE_CONVERSATION_TEXT,
+  withSaved,
+  type SavedNotes,
+} from '../lib/message-actions.ts';
 import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
@@ -114,11 +125,34 @@ watch(
   () => props.chat.conversationId,
   async (conversationId) => {
     saved.value = new Map();
-    const ids = await loadSavedIds(conversationId);
+    wholeSaved.value = false;
+    wholeNote.value = null;
+    const [ids, whole] = await Promise.all([loadSavedIds(conversationId), loadConversationSaved(conversationId)]);
     saved.value = mergeSavedIds(saved.value, ids, conversationId, props.chat.conversationId);
+    if (conversationId === props.chat.conversationId) wholeSaved.value = whole;
   },
   { immediate: true },
 );
+
+// I-7 (D-131): the whole conversation in one note of kb/inbox; a second save replaces it.
+const wholeSaved = ref(false);
+const wholeSaving = ref(false);
+const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
+async function saveWhole(): Promise<void> {
+  if (wholeSaving.value) return;
+  const conversationId = props.chat.conversationId;
+  wholeSaving.value = true;
+  wholeNote.value = null;
+  const outcome = await saveConversation(conversationId);
+  wholeSaving.value = false;
+  // Another conversation is open now: it reads its own state again.
+  if (conversationId !== props.chat.conversationId) {
+    wholeSaved.value = await loadConversationSaved(props.chat.conversationId);
+    return;
+  }
+  wholeNote.value = outcome;
+  if (outcome.ok) wholeSaved.value = true;
+}
 function markSaved(messageId: string, note: string | null): void {
   saved.value = withSaved(saved.value, messageId, note);
 }
@@ -380,6 +414,20 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
           </div>
         </section>
+
+        <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
+        <div v-if="chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            class="btn px-2.5 py-1 text-xs"
+            :disabled="wholeSaving"
+            :title="wholeSaved ? UPDATE_CONVERSATION_HINT : SAVE_CONVERSATION_HINT"
+            @click="saveWhole"
+          >
+            <Icon name="inbox" :size="14" />{{ wholeSaving ? 'Salvo…' : wholeSaved ? UPDATE_CONVERSATION_TEXT : SAVE_CONVERSATION_TEXT }}
+          </button>
+          <span v-if="wholeNote !== null" role="status" :class="wholeNote.ok ? 'text-muted' : 'text-warn'">{{ wholeNote.text }}</span>
+        </div>
 
         <!-- Who else is here (D-125): the agents Arianna brought in, each can be taken out -->
         <section v-if="participants.length > 0" class="flex flex-wrap items-center gap-2" aria-label="Partecipanti della conversazione">

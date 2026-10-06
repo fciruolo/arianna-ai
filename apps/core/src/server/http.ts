@@ -13,6 +13,7 @@ import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
+import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -543,10 +544,33 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (capture === undefined) throw new HttpError(404, 'not found');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
       const ids = [...savedMessageIds(capture.home, capture.rules)];
-      if (ids.length === 0) return { body: { messageIds: [] } };
+      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna".
+      const conversation = findConversationNote(capture.home, capture.rules, id) !== undefined;
+      if (ids.length === 0) return { body: { messageIds: [], conversation } };
       const rows = await sql<{ id: string }[]>`
         SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${ids}::bigint[]) ORDER BY id`;
-      return { body: { messageIds: rows.map((row) => row.id) } };
+      return { body: { messageIds: rows.map((row) => row.id), conversation } };
+    }),
+    // I-7 (D-131): the whole conversation in one note of kb/inbox, without the lines of the system; a second save replaces it.
+    route('POST', '/api/conversations/:id/save', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if (capture === undefined) throw new HttpError(404, 'not found');
+      const conversation = await loadConversation(sql, id);
+      if (conversation === undefined) throw new HttpError(404, 'not found');
+      const lines = await sql<SavedLine[]>`
+        SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
+      const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
+      let organizing = false;
+      if (capture.organize !== undefined) {
+        try {
+          await capture.organize(note.path);
+          organizing = true;
+        } catch (error) {
+          onError(error);
+        }
+      }
+      return { status: 201, body: { path: note.path, label: note.label, replaced: note.replaced, organizing } };
     }),
     ...noteRoutes(capture),
     ...knowledgeRoutes(capture),
