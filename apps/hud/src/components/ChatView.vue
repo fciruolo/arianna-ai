@@ -10,10 +10,11 @@ import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import { loadSavedIds, mergeSavedIds, withSaved, type SavedNotes } from '../lib/message-actions.ts';
-import { LABEL_TEXT, MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
+import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
+import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
@@ -50,6 +51,8 @@ const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls)
 const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
   send: [body: string];
+  /** "Cosa vogliono dire le etichette?": the legend (etichette parlanti). */
+  legend: [];
   chooseModel: [model: string | null];
   restore: [];
   /** Open the error window of a failed task (D-064). */
@@ -325,7 +328,6 @@ const statusClass: Record<Task['status'], string> = {
   done: 'text-ok',
   failed: 'text-danger',
 };
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 /** When each message was sent (D-112); `now` moves every minute, so today's times become "ieri" after midnight. */
 const now = ref(new Date());
@@ -470,7 +472,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
               <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
               <MessageTime :ts="message.ts" :now="now" />
-              <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
+              <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <template v-if="taskOf(message) !== undefined">
@@ -507,7 +509,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
-              <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
+              <LabelBadge :label="message.label" />
               <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
@@ -523,7 +525,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
-              <span class="lab" :class="labelClass[message.label]" :title="LABEL_TEXT[message.label]">{{ message.label }}</span>
+              <LabelBadge :label="message.label" />
               <span
                 v-if="repliesToTelegram(message)"
                 class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info"
@@ -649,8 +651,11 @@ onBeforeUnmount(() => clearInterval(clock));
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (L2), senza Arianna</span>
-        <span>Etichetta <b class="font-medium" :class="labelClass[conversation.clearance]">{{ conversation.clearance }}</b>: {{ MODE_HINT[conversation.mode] }}</span>
+        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), senza Arianna</span>
+        <span class="inline-flex flex-wrap items-center gap-1.5">
+          Etichetta <LabelBadge :label="conversation.clearance" />: {{ MODE_HINT[conversation.mode] }}
+          <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
+        </span>
       </p>
     </div>
   </section>

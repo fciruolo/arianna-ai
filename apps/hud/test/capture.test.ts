@@ -57,13 +57,13 @@ test('other addresses or a link with words stay notes', () => {
 });
 
 test('the notice names path and label', () => {
-  assert.equal(savedText({ path: 'kb/inbox/2026-10-05-081244-pane.md', label: 'L2' }), 'Nota salvata in kb/inbox/2026-10-05-081244-pane.md (L2)');
+  assert.equal(savedText({ path: 'kb/inbox/2026-10-05-081244-pane.md', label: 'L2' }), 'Nota salvata in kb/inbox/2026-10-05-081244-pane.md (Privato)');
 });
 
 test('the refusals of the capture are shown in Italian, unknown ones generically', () => {
   assert.equal(errorText(new ApiError(400, 'text is empty')), 'La nota è vuota.');
   assert.equal(errorText(new ApiError(413, 'text is longer than 64 KiB')), 'La nota supera 64 KiB.');
-  assert.equal(errorText(new ApiError(403, 'kb/inbox is labeled L3: captures stop at L2')), 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.');
+  assert.equal(errorText(new ApiError(403, 'kb/inbox is labeled L3: captures stop at L2')), 'La cartella kb/inbox è sopra Privato: la nota non è stata salvata.');
   assert.equal(errorText(new ApiError(503, 'there is no kb/ folder')), 'Manca la cartella kb/: la nota non è stata salvata.');
   assert.equal(errorText(new ApiError(400, 'something else')), 'Richiesta non valida.');
 });

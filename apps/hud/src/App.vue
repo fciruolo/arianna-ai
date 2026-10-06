@@ -9,6 +9,7 @@ import DraftChat from './components/DraftChat.vue';
 import FailureDialog from './components/FailureDialog.vue';
 import Icon from './components/Icon.vue';
 import InstallationBadge from './components/InstallationBadge.vue';
+import LabelLegend from './components/LabelLegend.vue';
 import NewConversationDialog from './components/NewConversationDialog.vue';
 import OfficePage from './components/OfficePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
@@ -148,6 +149,8 @@ function closePanel(): void {
 
 // "Cerca" (D-097) and "+ Nuovo": windows in the middle of the page.
 const showSearch = ref(false);
+/** The legend of the labels (etichette parlanti): from the header and from the foot of the chat. */
+const showLegend = ref(false);
 const showNew = ref(false);
 function openSearch(): void {
   showSidebar.value = false;
@@ -604,9 +607,18 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
         </p>
-        <span v-if="current !== undefined" class="lab" :class="labelClass[current.clearance]" :title="LABEL_TEXT[current.clearance]">
-          {{ current.clearance }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
-        </span>
+        <button
+          v-if="current !== undefined"
+          type="button"
+          class="lab inline-flex items-center gap-1"
+          :class="labelClass[current.clearance]"
+          :title="`${LABEL_TEXT[current.clearance]} · ${current.mode === 'work' ? 'può uscire' : 'resta qui'}: cosa vogliono dire le etichette`"
+          :aria-label="`Etichetta ${LABEL_TEXT[current.clearance]}, ${current.mode === 'work' ? 'può uscire' : 'resta qui'}: apri la legenda delle etichette`"
+          aria-haspopup="dialog"
+          @click="showLegend = true"
+        >
+          <i class="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[current.clearance] }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
+        </button>
         <div v-if="current !== undefined && page === 'chat'" class="relative">
           <button
             type="button"
@@ -736,6 +748,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @attach-question="store.attachQuestion"
         @open="openConversation"
         @command="runCommand"
+        @legend="showLegend = true"
       />
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">
@@ -769,6 +782,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
 
     <SearchDialog v-if="showSearch" @close="showSearch = false" @go="goTo" />
+    <LabelLegend v-if="showLegend" @close="showLegend = false" />
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"

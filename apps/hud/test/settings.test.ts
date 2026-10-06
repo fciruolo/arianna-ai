@@ -183,8 +183,8 @@ test('the card lists what changes, section by section', () => {
   assert.deepEqual(lines, [
     { kind: 'remove', text: 'Esecutore Codex spento' },
     { kind: 'add', text: 'Chat di Telegram 2' },
-    { kind: 'add', text: 'Progetto site (L1, ~/site)' },
-    { kind: 'change', text: 'Progetto demo (L1, repos/demo) → L0, repos/demo' },
+    { kind: 'add', text: 'Progetto site (Interno, ~/site)' },
+    { kind: 'change', text: 'Progetto demo (Interno, repos/demo) → Pubblico, repos/demo' },
     { kind: 'change', text: 'Server omlx: senza comando: il nucleo lo osserva soltanto' },
   ]);
   assert.deepEqual(changeLines({ telegram: { before: null, after: { chats: [1] } } }), [{ kind: 'add', text: 'Telegram acceso (1 chat)' }]);
@@ -200,14 +200,14 @@ test('the card lists every exit after the change, not only the changed ones', ()
     endpoints: [{ id: 'omlx', url: 'http://127.0.0.1:7001/v1', command: ['omlx', 'serve'] }],
   });
   assert.deepEqual(lines, [
-    'Claude Code potrà ricevere testi L0-L1 dal gateway e lavorare in: demo (L1).',
-    'Telegram: 2 chat, al massimo L1.',
-    'omlx (http://127.0.0.1:7001/v1) vede i dati L2 in chiaro; il nucleo esegue: omlx serve',
+    'Claude Code potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: demo (Interno).',
+    'Telegram: 2 chat, al massimo Interno.',
+    'omlx (http://127.0.0.1:7001/v1) vede i dati Privati in chiaro; il nucleo esegue: omlx serve',
   ]);
   assert.deepEqual(exitLines({ executors: [], projects: [], telegram: null, endpoints: [{ id: 'x', url: 'u', command: null }] }), [
     'Nessun esecutore cloud: niente esce verso Claude Code o Codex.',
     'Telegram spento.',
-    'x (u) vede i dati L2 in chiaro.',
+    'x (u) vede i dati Privati in chiaro.',
   ]);
 });
 
@@ -243,7 +243,7 @@ test('servers added and removed, and the model names of a server, are listed wit
     projects: { added: [], removed: [{ name: 'demo', path: 'repos/demo', label: 'L1' }], changed: [] },
   });
   assert.deepEqual(lines, [
-    { kind: 'remove', text: 'Progetto demo (L1, repos/demo)' },
+    { kind: 'remove', text: 'Progetto demo (Interno, repos/demo)' },
     { kind: 'add', text: 'Server new (http://127.0.0.1:7002/v1, comando: omlx serve)' },
     { kind: 'remove', text: 'Server old (http://127.0.0.1:7003/v1, solo osservato)' },
     { kind: 'change', text: 'Server omlx: nomi dei modelli: orchestrator = big' },

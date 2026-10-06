@@ -201,8 +201,8 @@ function itemClass(on: boolean): string {
 
     <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
       Gateway attivo ·
-      <template v-if="status.gateway.privateOut === 0">nessun dato L2/L3 è uscito oggi</template>
-      <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite L2/L3 oggi: controlla il registro</span>
+      <template v-if="status.gateway.privateOut === 0">nessun dato Privato o Segreto è uscito oggi</template>
+      <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: controlla il registro</span>
     </p>
   </aside>
 </template>

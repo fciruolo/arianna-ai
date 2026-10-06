@@ -82,7 +82,7 @@ const isNew = computed(() => props.proposal.before === null);
           <p class="text-xs text-muted">Cosa esce verso il cloud</p>
           <p v-for="line in exits" :key="line" class="text-[13px]">{{ line }}</p>
         </div>
-        <p class="text-xs text-muted">Finché resta in <code class="font-mono">data/agents</code> vale comunque il tetto: al massimo L1 e A1, niente deleghe, canali né approvazioni.</p>
+        <p class="text-xs text-muted">Finché resta in <code class="font-mono">data/agents</code> vale comunque il tetto: al massimo Interno e A1, niente deleghe, canali né approvazioni.</p>
       </div>
       <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
       <div class="flex justify-end gap-2">

@@ -11,6 +11,7 @@ import { pendingItems, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Approval, CharacterListing, Conversation, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
+import { labelWord } from '../lib/labels.ts';
 import OfficeCanvas from './OfficeCanvas.vue';
 import PendingDecisions from './PendingDecisions.vue';
 import PixelAgent from './PixelAgent.vue';
@@ -116,7 +117,7 @@ const sheets = computed(() => Object.fromEntries(snapshot.value.agents.map((agen
 function placeText(agent: OfficeAgent): string {
   switch (agent.place.kind) {
     case 'private':
-      return 'Privata · L2';
+      return 'Privata';
     case 'pause':
       return 'Pausa';
     case 'archive':
@@ -124,7 +125,7 @@ function placeText(agent: OfficeAgent): string {
     case 'island': {
       const slot = agent.place.slot;
       const island = snapshot.value.islands.find((item) => item.slot === slot);
-      return island === undefined ? 'Isola' : `${island.project} · ${island.label}`;
+      return island === undefined ? 'Isola' : `${island.project} · ${labelWord(island.label)}`;
     }
   }
 }
@@ -231,7 +232,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           <p v-if="snapshot.decisions.total === 0" class="text-xs text-muted">Nessuna. Quando c'è, sulla scrivania «Decisioni» compare un «!».</p>
           <template v-else>
             <p class="text-xs">
-              <b class="font-mono text-warn">{{ snapshot.decisions.total }}</b> in attesa<template v-if="snapshot.decisions.hidden > 0">, {{ snapshot.decisions.hidden }} sopra L2 solo contate</template>.
+              <b class="font-mono text-warn">{{ snapshot.decisions.total }}</b> in attesa<template v-if="snapshot.decisions.hidden > 0">, {{ snapshot.decisions.hidden }} sopra Privato solo contate</template>.
             </p>
             <div class="mt-2 flex flex-wrap gap-1.5">
               <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="map === null" @click="reach('decisions')">Vai alla scrivania</button>

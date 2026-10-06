@@ -22,7 +22,7 @@ const OUTCOME_TEXT: Record<string, string> = {
 };
 
 const NOTES: Record<string, string> = {
-  'context not issued by the policy, read as L2': 'contesto non etichettato dalla policy, trattato come L2',
+  'context not issued by the policy, read as L2': 'contesto non etichettato dalla policy, trattato come Privato',
   'cloud excluded: agent': 'cloud escluso: non consentito all’agente',
   'cloud excluded: privacy': 'cloud escluso per privacy',
 };

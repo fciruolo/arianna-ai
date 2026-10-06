@@ -209,7 +209,7 @@ async function confirmEdit(): Promise<void> {
     </header>
     <div class="flex flex-col gap-3 p-4">
       <p class="text-xs text-muted">
-        Un agente creato qui nasce disattivato, in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (L1) e agisce solo nella sandbox (A1),
+        Un agente creato qui nasce disattivato, in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (Interno) e agisce solo nella sandbox (A1),
         qualunque cosa dica la sua scheda. Strumenti e permessi si scelgono dentro l’elenco ammesso, con «Modifica»: una scheda cambiata a mano oltre l’elenco non si carica. Da attivo,
         Arianna gli passa i lavori adatti a lui.
       </p>
@@ -234,7 +234,7 @@ async function confirmEdit(): Promise<void> {
         <p class="text-xs" :class="agent.works === null ? 'text-warn' : 'text-muted'">{{ agent.state === 'active' ? 'Da attivo' : 'Quando è attivo' }} {{ workText(agent.works) }}.</p>
         <ul v-if="open === agent.name" class="list-disc pl-5 text-xs text-muted">
           <li v-for="line in permissionLines(agent.card)" :key="line">{{ line }}</li>
-          <li>Tetto finché resta in <code class="font-mono">data/agents</code>: al massimo L1 e A1</li>
+          <li>Tetto finché resta in <code class="font-mono">data/agents</code>: al massimo Interno e A1</li>
         </ul>
 
         <!-- Description and prompt, changed in place -->
@@ -254,7 +254,7 @@ async function confirmEdit(): Promise<void> {
               <PermissionsPicker v-model="editing.permissions" :sources="sources" :id-prefix="`edit-${agent.name}`" />
             </div>
             <p class="text-xs text-muted">
-              {{ agent.state === 'active' ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano L1 per tua
+              {{ agent.state === 'active' ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano Interno per tua
               dichiarazione, possono arrivare a un esecutore cloud (non scriverci dati personali) e passano dagli stessi controlli della creazione.
             </p>
             <div class="flex justify-end gap-2">
@@ -292,9 +292,9 @@ async function confirmEdit(): Promise<void> {
           La scheda passa da <code class="font-mono">data/agents</code> a <code class="font-mono">agents/</code>, la cartella del repository in git, e l’agente diventa attivo. Cosa cambia:
         </p>
         <ul class="list-disc pl-5 text-[13px]">
-          <li>il tetto L1 e A1 cade: valgono etichette, strumenti e azioni scritti nella scheda;</li>
+          <li>il tetto Interno e A1 cade: valgono etichette, strumenti e azioni scritti nella scheda;</li>
           <li>oggi la scheda dice: {{ permissionLines(promoting.card).slice(0, 2).join('; ') }};</li>
-          <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a L2;</li>
+          <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a Privato;</li>
           <li>i file risultano nuovi in git: un commit li rende visibili a chi ha il repository, e un push li pubblica.</li>
         </ul>
         <p class="text-xs text-muted">Si torna indietro da questa pagina con «Riporta fra i miei», finché la scheda resta quella scritta qui.</p>
@@ -312,7 +312,7 @@ async function confirmEdit(): Promise<void> {
         <h2 id="demote-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
         <ul class="list-disc pl-5 text-[13px]">
           <li>la scheda torna in <code class="font-mono">data/agents/disattivati</code>, fuori da git, e l’agente si ferma: Arianna non gli passa più lavoro finché non lo riattivi;</li>
-          <li>torna il tetto L1 e A1;</li>
+          <li>torna il tetto Interno e A1;</li>
           <li>se i file di <code class="font-mono">agents/{{ demoting.name }}</code> erano già in un commit, git li vedrà come tolti: il prossimo commit lo registra.</li>
         </ul>
         <p class="text-xs text-muted">Una scheda cambiata a mano oltre i permessi ammessi non può tornare: resta ufficiale.</p>

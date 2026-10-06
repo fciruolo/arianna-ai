@@ -32,7 +32,7 @@ const card: CardSummary = {
 describe('permissionLines', () => {
   it('says what the card allows in Italian', () => {
     assert.deepEqual(permissionLines(card), [
-      'Dati: L1, dati di lavoro',
+      'Dati: Interno, dati di lavoro',
       'Autonomia: A1, agisce solo nella sandbox',
       'Gira su: modello locale, Claude Code',
       'Strumenti: legge il codice del progetto; ti fa domande in chat',
@@ -78,7 +78,7 @@ describe('tappa T3 (D-119)', () => {
     assert.equal(userAgentErrorText(new UserAgentApiError(400, 'x was not created from the Agents page')), 'Questo agente non è nato da questa pagina: resta ufficiale.');
     assert.equal(
       userAgentErrorText(new UserAgentApiError(400, 'x: max_label L2 is above L1 (cards made from the Agents page stay at L1 and A1)')),
-      'La scheda supera il tetto L1/A1 delle schede utente: non può tornare fra i tuoi agenti.',
+      'La scheda supera il tetto Interno/A1 delle schede utente: non può tornare fra i tuoi agenti.',
     );
     assert.equal(userAgentErrorText(new UserAgentApiError(400, 'deletion needs the name of the agent as confirmation')), 'Per eliminare scrivi esattamente il nome dell’agente.');
   });
@@ -128,7 +128,7 @@ describe('tappa T3b (D-119): permissions chosen within the list', () => {
     assert.deepEqual(changeRows(proposal), [
       { field: 'Dove lavora', before: 'modello locale', after: 'Claude Code' },
       { field: 'Strumenti', before: 'nessuno', after: 'legge il codice del progetto' },
-      { field: 'Dati che può leggere', before: 'L0, solo dati pubblici', after: 'L1, dati di lavoro' },
+      { field: 'Dati che può leggere', before: 'Pubblico, solo dati pubblici', after: 'Interno, dati di lavoro' },
     ]);
     assert.deepEqual(
       trifectaRows(proposal.trifecta).map(({ side, open }) => [side, open]),

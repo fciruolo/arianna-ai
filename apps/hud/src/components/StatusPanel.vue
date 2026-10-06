@@ -11,6 +11,7 @@ import { routerReasonText } from '../lib/router-reasons.ts';
 import { activeText } from '../lib/sidebar.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Approval, CharacterChoice, CharacterListing, StatusSnapshot } from '../lib/types.ts';
+import LabelBadge from './LabelBadge.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
 import PendingDecisions from './PendingDecisions.vue';
@@ -35,7 +36,6 @@ const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: [];
 
 const ROLE_TEXT: Record<string, string> = { arianna: 'orchestratrice · modello locale', coder: 'codice · esecutori cloud' };
 const DIFFICULTY_TEXT: Record<string, string> = { trivial: 'banale', normal: 'normale', hard: 'difficile', critical: 'critico' };
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function runOf(id: string) {
   return props.status?.agents.find((agent) => agent.id === id)?.run ?? null;
@@ -169,7 +169,7 @@ function wornBy(packId: string): string[] {
         <template v-if="status?.router">
           <div class="flex justify-between gap-2.5"><span class="text-muted">quando</span><span>{{ timeOf(status.router.ts) }}</span></div>
           <div class="flex justify-between gap-2.5">
-            <span class="text-muted">etichetta</span><span :class="labelClass[status.router.label]">{{ status.router.label }}</span>
+            <span class="text-muted">etichetta</span><LabelBadge :label="status.router.label" />
           </div>
           <div class="flex justify-between gap-2.5">
             <span class="text-muted">difficoltà</span><span>{{ DIFFICULTY_TEXT[status.router.difficulty] ?? status.router.difficulty }}</span>
@@ -202,7 +202,7 @@ function wornBy(packId: string): string[] {
             <span class="text-muted">bloccate</span><span :class="status.gateway.blocked > 0 ? 'text-warn' : 'text-ok'">{{ status.gateway.blocked }}</span>
           </div>
           <div class="flex justify-between gap-2.5">
-            <span class="text-muted">L2/L3 uscite</span>
+            <span class="text-muted">uscite Private o Segrete</span>
             <span :class="status.gateway.privateOut === 0 ? 'text-ok' : 'text-danger'">{{ status.gateway.privateOut === 0 ? 'mai' : status.gateway.privateOut }}</span>
           </div>
           <div class="mt-2 flex h-[34px] items-end gap-[3px]" role="img" :aria-label="`Decisioni del gateway nelle ultime 12 ore: ${status.gateway.hours.join(', ')}`">

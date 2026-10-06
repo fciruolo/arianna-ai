@@ -2,9 +2,10 @@
 import { computed, nextTick, ref } from 'vue';
 
 import { groupByDay } from '../lib/day-groups.ts';
-import { LABEL_TEXT, MODE_TEXT } from '../lib/labels.ts';
+import { MODE_TEXT } from '../lib/labels.ts';
 import { splitPinned } from '../lib/sidebar.ts';
 import type { Conversation } from '../lib/types.ts';
+import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 
 const props = defineProps<{
@@ -22,7 +23,6 @@ const groups = computed(() => {
   const { pinned, others } = splitPinned(props.conversations);
   return [...(pinned.length > 0 ? [{ title: 'Fissate', conversations: pinned }] : []), ...groupByDay(others, new Date())];
 });
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function titleOf(conversation: Conversation): string {
   return conversation.title ?? 'Nuova conversazione';
@@ -125,9 +125,7 @@ function confirmArchive(id: string): void {
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
-              <span class="lab" :class="labelClass[conversation.clearance]" :title="`${MODE_TEXT[conversation.mode]}: fino a ${LABEL_TEXT[conversation.clearance]}`">
-                {{ conversation.clearance }}
-              </span>
+              <LabelBadge :label="conversation.clearance" />
             </button>
             <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
               <button
@@ -179,9 +177,7 @@ function confirmArchive(id: string): void {
           >
             <span class="shrink-0 text-warn" title="Chat di sistema"><Icon name="system" :size="14" /></span>
             <span class="min-w-0 flex-1 truncate">{{ titleOf(conversation) }}</span>
-            <span class="lab" :class="labelClass[conversation.clearance]" :title="`${MODE_TEXT[conversation.mode]}: fino a ${LABEL_TEXT[conversation.clearance]}`">
-              {{ conversation.clearance }}
-            </span>
+            <LabelBadge :label="conversation.clearance" />
           </button>
           <button
             type="button"

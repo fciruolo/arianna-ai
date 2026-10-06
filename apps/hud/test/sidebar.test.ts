@@ -162,10 +162,10 @@ test('the arrows move through the rows and wrap around', () => {
 
 test('the foot of the window says what was hidden or cut, never what it holds', () => {
   assert.equal(searchFootnote({ hidden: 0, truncated: false }), null);
-  assert.equal(searchFootnote({ hidden: 1, truncated: false }), '1 elemento sopra L2 non è cercato.');
+  assert.equal(searchFootnote({ hidden: 1, truncated: false }), '1 elemento sopra Privato non è cercato.');
   assert.equal(
     searchFootnote({ hidden: 3, truncated: true }),
-    '3 elementi sopra L2 non sono cercati; la ricerca si è fermata dopo 2 secondi: potrebbe mancare qualcosa.',
+    '3 elementi sopra Privato non sono cercati; la ricerca si è fermata dopo 2 secondi: potrebbe mancare qualcosa.',
   );
   assert.equal(searchFootnote({ hidden: 0, truncated: true }), 'La ricerca si è fermata dopo 2 secondi: potrebbe mancare qualcosa.');
 });

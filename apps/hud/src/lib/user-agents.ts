@@ -1,3 +1,4 @@
+import { labelWord } from './labels.ts';
 /**
  * The agents the user creates from the Agents page (D-119): types and calls
  * of `/api/agents`, and the Italian text of what a card allows and of the
@@ -210,9 +211,9 @@ const TOOL_TEXT: Record<string, string> = {
 };
 
 const LABEL_TEXT: Record<string, string> = {
-  L0: 'L0, solo dati pubblici',
-  L1: 'L1, dati di lavoro',
-  L2: 'L2, dati privati',
+  L0: 'Pubblico, solo dati pubblici',
+  L1: 'Interno, dati di lavoro',
+  L2: 'Privato, dati personali',
 };
 
 const AUTONOMY_TEXT: Record<string, string> = {
@@ -227,7 +228,7 @@ const EXECUTOR_TEXT: Record<string, string> = { local: 'modello locale', claude:
 /** What a card allows, one line per fact, in Italian. */
 export function permissionLines(card: CardSummary): string[] {
   const lines = [
-    `Dati: ${LABEL_TEXT[card.maxLabel] ?? card.maxLabel}${card.cloudMaxLabel === undefined ? '' : ` (in cloud al massimo ${card.cloudMaxLabel})`}`,
+    `Dati: ${LABEL_TEXT[card.maxLabel] ?? card.maxLabel}${card.cloudMaxLabel === undefined ? '' : ` (in cloud al massimo ${labelWord(card.cloudMaxLabel)})`}`,
     `Autonomia: ${AUTONOMY_TEXT[card.autonomy] ?? card.autonomy}`,
     `Gira su: ${card.executors.map((executor) => EXECUTOR_TEXT[executor] ?? executor).join(', ')}`,
     card.tools.length === 0 ? 'Strumenti: nessuno' : `Strumenti: ${card.tools.map((tool) => TOOL_TEXT[tool] ?? tool).join('; ')}`,
@@ -297,7 +298,7 @@ export function trifectaRows(trifecta: CardSummary['trifecta']): { side: string;
     {
       side: 'Dati privati',
       open: trifecta.private_data,
-      why: trifecta.private_data ? 'legge dati privati (L2)' : 'legge al massimo dati di lavoro (L1), mai le conversazioni private',
+      why: trifecta.private_data ? 'legge dati Privati' : 'legge al massimo dati Interni, mai le conversazioni private',
     },
     {
       side: 'Contenuti non fidati',
@@ -342,7 +343,7 @@ export function userAgentErrorText(error: unknown): string {
   if (/max_?[sS]teps/.test(message)) return 'I passi vanno da 1 a 50.';
   if (/max_?[mM]inutes/.test(message)) return 'I minuti vanno da 1 a 45.';
   if (/permissions of a user's agent|^permissions:/.test(message)) return 'La scheda va oltre i permessi ammessi per gli agenti utente: non può stare fra i tuoi agenti.';
-  if (/above (L1|A1)|not allowed/.test(message)) return 'La scheda supera il tetto L1/A1 delle schede utente: non può tornare fra i tuoi agenti.';
+  if (/above (L1|A1)|not allowed/.test(message)) return 'La scheda supera il tetto Interno/A1 delle schede utente: non può tornare fra i tuoi agenti.';
   if (/as confirmation/.test(message)) return 'Per eliminare scrivi esattamente il nome dell’agente.';
   const field = message.startsWith('the prompt') ? 'Il prompt' : message.startsWith('the name') ? 'Il nome' : 'La descrizione';
   if (/looks like personal data or a secret/.test(message)) return `${field} sembra contenere dati personali o un segreto: non salvato.`;

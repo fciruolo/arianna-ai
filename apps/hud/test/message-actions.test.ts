@@ -67,7 +67,7 @@ test('every 404 of a message save gets the same text, whatever the core says in 
 test('other answers are failures with an Italian reason', () => {
   assert.deepEqual(captureOutcome(403, { error: 'kb/inbox is labeled L3: captures stop at L2' }), {
     kind: 'failed',
-    text: 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.',
+    text: 'La cartella kb/inbox è sopra Privato: la nota non è stata salvata.',
   });
   assert.deepEqual(captureOutcome(500, {}), { kind: 'failed', text: 'Errore del nucleo: riprova fra poco.' });
 });
