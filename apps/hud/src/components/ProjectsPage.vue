@@ -263,7 +263,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           </div>
           <p class="flex flex-wrap items-center gap-x-2.5 font-mono text-xs text-muted">
             <span class="truncate">{{ project.absolute }}</span>
-            <a :href="vscodeUrl(project.absolute)" class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-sans hover:bg-surface-2 hover:text-ink" title="Apre la cartella del progetto in Visual Studio Code">
+            <a :href="vscodeUrl(project.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" title="Apre la cartella del progetto in Visual Studio Code">
               <Icon name="code" :size="13" />Apri in VS Code
             </a>
           </p>
