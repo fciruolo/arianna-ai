@@ -9,6 +9,7 @@ import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
+import { closedText, closingLines, closingSoonText, incognitoAction, noteRefusal, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -90,6 +91,18 @@ export function createChatStore() {
   /** A call of Arianna ringing now (D-066): answer or decline. */
   const incoming = ref<{ callId: string; conversationId: string; reason: 'waiting' | 'task-done' | 'scheduled' } | null>(null);
   let connection: LiveConnection | undefined;
+  /**
+   * Incognito (D-136): the card shown in place of a conversation that closed,
+   * with the counts the core gave after "Termina", or why it closed. Texts of
+   * the conversation are never kept here.
+   */
+  const incognitoEnd = ref<{ kind: 'ended'; lines: string[] } | { kind: 'closed'; text: string } | null>(null);
+  /** "Si chiude fra 1 minuto": the warning of the core before the closing for inactivity. */
+  const incognitoSoon = ref<string | null>(null);
+  let soonTimer: number | undefined;
+  /** Incognito conversations this page saw close: "back" to one shows that it is closed, without asking the core. */
+  const endedIncognito = new Set<string>();
+  const ending = ref(false);
 
   const current = computed(() =>
     [...conversations.value, ...systemChats.value, ...archived.value, ...(detached.value === undefined ? [] : [detached.value])].find(
@@ -125,8 +138,117 @@ export function createChatStore() {
       detached.value = undefined;
       return;
     }
-    const conversation = await api.loadConversation(id);
+    let conversation: Conversation;
+    try {
+      conversation = await api.loadConversation(id);
+    } catch (cause) {
+      // An incognito conversation the core deleted meanwhile: its card, not an error.
+      if (gone(cause) && detached.value?.id === id && detached.value.incognito === true) {
+        closeIncognito(id, 'gone');
+        return;
+      }
+      throw cause;
+    }
     if (chat.value?.conversationId === id) detached.value = conversation;
+  }
+
+  function gone(cause: unknown): boolean {
+    return cause instanceof api.ApiError && cause.status === 404;
+  }
+
+  /** The open incognito conversation, or the one its draft already created. */
+  function incognitoIds(): (string | null)[] {
+    return [current.value?.incognito === true ? current.value.id : null, draft.value?.incognito === true ? draft.value.conversationId : null];
+  }
+
+  /** Forgets every text of an incognito conversation the page holds, and shows why it is gone. */
+  function closeIncognito(id: string, cause: CloseCause | 'gone' | 'lost'): void {
+    endedIncognito.add(id);
+    discardIncognito();
+    incognitoEnd.value = { kind: 'closed', text: closedText(cause) };
+  }
+
+  function discardIncognito(): void {
+    // Its approvals go at once, whether or not the list can be read again.
+    const own = new Set(Object.keys(tasks.value));
+    approvals.value = approvals.value.filter((approval) => approval.taskId === null || !own.has(approval.taskId));
+    close();
+    credits.value = new Map();
+    activityCounts.value = {};
+    participants.value = [];
+    notice.value = null;
+    clearSoon();
+    // Its approvals, if any were waiting, are gone with it.
+    void refreshApprovals().catch(() => undefined);
+  }
+
+  function clearSoon(): void {
+    window.clearTimeout(soonTimer);
+    soonTimer = undefined;
+    incognitoSoon.value = null;
+  }
+
+  /** "Termina" (D-136): the core stops the work and deletes; the card shows what it deleted and what stays outside. */
+  async function endIncognito(): Promise<void> {
+    const id = current.value?.incognito === true ? current.value.id : undefined;
+    if (id === undefined || ending.value) return;
+    error.value = null;
+    ending.value = true;
+    try {
+      const result = await api.endIncognito(id);
+      endedIncognito.add(id);
+      discardIncognito();
+      incognitoEnd.value = { kind: 'ended', lines: closingLines(result) };
+    } catch (cause) {
+      if (gone(cause)) closeIncognito(id, 'gone');
+      else fail(cause);
+    } finally {
+      ending.value = false;
+    }
+  }
+
+  /**
+   * An incognito conversation from the state of its history entry (back,
+   * reload): opened if the core still has it, else the card that says it is closed.
+   */
+  async function openIncognito(id: string): Promise<void> {
+    if (endedIncognito.has(id)) {
+      close();
+      incognitoEnd.value = { kind: 'closed', text: closedText('gone') };
+      return;
+    }
+    try {
+      const conversation = await api.loadConversation(id);
+      await open(id, conversation);
+    } catch (cause) {
+      if (gone(cause)) closeIncognito(id, 'gone');
+      else fail(cause);
+    }
+  }
+
+  /** The link came back: an incognito conversation open on this page may have closed meanwhile (a restart, 10 minutes). */
+  async function checkIncognito(): Promise<void> {
+    const id = current.value?.incognito === true ? current.value.id : undefined;
+    if (id === undefined) return;
+    try {
+      await api.loadConversation(id);
+    } catch (cause) {
+      if (gone(cause) && current.value?.id === id) closeIncognito(id, 'lost');
+    }
+  }
+
+  function onIncognito(signal: IncognitoSignal): void {
+    const action = incognitoAction(signal, incognitoIds(), endedIncognito);
+    if (action === 'ignore') return;
+    if (signal.type === 'conversation.incognito-closed') {
+      closeIncognito(signal.conversationId, signal.cause);
+      return;
+    }
+    // This page is on it: say so again, and warn until the minute is over.
+    tellVisibility();
+    window.clearTimeout(soonTimer);
+    incognitoSoon.value = closingSoonText(signal.inSeconds);
+    soonTimer = window.setTimeout(clearSoon, signal.inSeconds * 1000);
   }
 
   /** Renames a conversation; false if the core refused the title. */
@@ -298,11 +420,15 @@ export function createChatStore() {
     if (chat.value?.conversationId === state.conversationId) credits.value = creditsByMessage(listed);
   }
 
-  async function open(id: string): Promise<void> {
+  /** `known`: the conversation when the page already has it, as an incognito one, which no list holds (D-136). */
+  async function open(id: string, known?: Conversation): Promise<void> {
     error.value = null;
     draft.value = null;
+    incognitoEnd.value = null;
+    clearSoon();
+    // Before the chat: the address follows the open conversation, and an incognito one has its own.
+    detached.value = known?.id === id ? known : undefined;
     chat.value = emptyChat(id);
-    detached.value = undefined;
     tasks.value = {};
     credits.value = new Map();
     activityCounts.value = {};
@@ -434,6 +560,8 @@ export function createChatStore() {
   function close(): void {
     error.value = null;
     draft.value = null;
+    incognitoEnd.value = null;
+    clearSoon();
     calls.value = [];
     chat.value = null;
     detached.value = undefined;
@@ -446,7 +574,14 @@ export function createChatStore() {
     draftKey += 1;
     // The Coder only with a project (D-111): without one the draft is a plain conversation of its mode.
     const agent = choiceAgent(choice);
-    draft.value = { key: draftKey, mode: choice.mode, project: choice.project, ...(agent === undefined ? {} : { agent }), conversationId: null };
+    draft.value = {
+      key: draftKey,
+      mode: choice.mode,
+      project: choice.project,
+      ...(agent === undefined ? {} : { agent }),
+      ...(choice.incognito === true ? { incognito: true } : {}),
+      conversationId: null,
+    };
   }
 
   /**
@@ -469,7 +604,7 @@ export function createChatStore() {
       let created: Conversation | undefined;
       let id: string;
       if (step.kind === 'create') {
-        created = await api.createConversation(start.mode, start.project, start.agent);
+        created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true);
         id = created.id;
         // The user left the draft while it was created: nothing is sent, the text stays where it was written.
         if (draft.value?.key !== start.key) return false;
@@ -480,6 +615,11 @@ export function createChatStore() {
       await api.sendMessage(id, body);
       // The user left the draft meanwhile: the message is in, the page stays where the user went.
       if (draft.value?.key !== start.key) return true;
+      // An incognito conversation never enters a list (D-136): the page holds it alone.
+      if (start.incognito === true) {
+        await open(id, created ?? (await api.loadConversation(id)));
+        return true;
+      }
       if (created !== undefined) conversations.value = [created, ...conversations.value.filter((item) => item.id !== id)];
       await open(id);
       // The list with the title the core gave; a failure here leaves the open conversation as it is.
@@ -518,10 +658,16 @@ export function createChatStore() {
     // The other "/" commands (D-090) are carried out by the page, never sent to Arianna.
     const meaning = resolveDraft(body);
     if (meaning.kind === 'command' && meaning.command.action.kind !== 'note') return false;
+    // "/nota" is off in incognito (D-136): nothing of it goes to kb/inbox, the draft stays.
+    const note = parseNoteCommand(body);
+    const off = noteRefusal(note !== undefined, current.value?.incognito === true);
+    if (off !== undefined) {
+      error.value = off;
+      return false;
+    }
     sending.value = true;
     try {
       // "/nota ..." does not reach Arianna: a note in kb/inbox, without a model (D-080).
-      const note = parseNoteCommand(body);
       if (note !== undefined) {
         notice.value = savedText(await api.captureNote(note));
         return true;
@@ -657,10 +803,17 @@ export function createChatStore() {
 
   function onLive(message: ServerMessage): void {
     if (message.type === 'ready') {
-      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
+      tellVisibility();
       // At every connection, also after a restart of the core, which keeps it in memory (D-128).
       void reportThisMac().catch(() => undefined);
-      void refreshAll().catch(fail);
+      // An incognito conversation closed while the link was down is said as such, before the reads that would fail on it.
+      void checkIncognito()
+        .then(refreshAll)
+        .catch(fail);
+      return;
+    }
+    if (message.type === 'conversation.incognito-closed' || message.type === 'conversation.incognito-closing') {
+      onIncognito(message);
       return;
     }
     if (message.type === 'notice') {
@@ -795,16 +948,24 @@ export function createChatStore() {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
+  /** Whether the page is in view, and on which conversation: the notices (D-128) and the presence on an incognito one (D-136). */
+  function tellVisibility(): void {
+    connection?.sendVisibility(pageInView(), document.hasFocus(), seenConversation());
+  }
+
+  /** The conversation this page is on: the open one, or the incognito one its draft created while the first message failed (D-136). */
+  function seenConversation(): string | null {
+    return chat.value?.conversationId ?? (draft.value?.incognito === true ? draft.value.conversationId : null);
+  }
+
   function start(): void {
-    const tell = (): void => {
-      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
-    };
+    const tell = tellVisibility;
     document.addEventListener('visibilitychange', tell);
     // Another app in front (D-128): the helper of the Mac shows the notices then.
     window.addEventListener('focus', tell);
     window.addEventListener('blur', tell);
     // Another conversation open: the helper is silent only for the one being read.
-    stopOpenWatch = watch(() => chat.value?.conversationId ?? null, tell);
+    stopOpenWatch = watch(seenConversation, tell);
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);
@@ -864,9 +1025,10 @@ export function createChatStore() {
     connection?.close();
     window.clearInterval(statusPoll);
     window.clearTimeout(statusTimer);
+    window.clearTimeout(soonTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

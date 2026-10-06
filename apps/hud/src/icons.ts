@@ -54,6 +54,7 @@ import {
   Sun,
   Trash2,
   TriangleAlert,
+  VenetianMask,
   X,
 } from 'lucide-vue-next';
 
@@ -119,6 +120,7 @@ export const ICONS = {
   branch: GitBranch,
   external: ExternalLink,
   code: Code2,
+  incognito: VenetianMask,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;
