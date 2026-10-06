@@ -236,6 +236,20 @@ export function splitApprovals<T extends ApprovalPlace>(
   return { inChat, elsewhere };
 }
 
+/** How many times "Termina" is asked again while the core stops the work, and how long it waits each time. */
+export const END_RETRIES = 4;
+export const END_RETRY_MS = 1500;
+
+/**
+ * Whether "Termina" is asked again after a failure, and after how long: only
+ * for the 409 of a conversation still stopping its work, a few times; any
+ * other error is said at once.
+ */
+export function endRetryDelay(status: number, message: string, attempt: number): number | undefined {
+  if (status !== 409 || !message.startsWith('the conversation is still at work') || attempt >= END_RETRIES) return undefined;
+  return END_RETRY_MS;
+}
+
 /** Why "Salva in inbox" and "/nota" are off in incognito: said over the button, and as the error of the command. */
 export const SAVE_OFF_HINT = 'Spento in incognito: niente di questa conversazione si salva in Arianna. "Copia" funziona.';
 export const NOTE_OFF_TEXT = 'In una conversazione incognita /nota è spento: niente si salva in kb/inbox. Usa "Copia" per tenere un testo.';

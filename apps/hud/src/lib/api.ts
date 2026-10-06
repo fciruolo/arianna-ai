@@ -175,6 +175,8 @@ export async function captureNote(note: {
   url?: string;
   title?: string;
   from?: Label;
+  /** The conversation "/nota" was written in: the core refuses it from an incognito one (D-136). */
+  conversationId?: string;
 }): Promise<{ path: string; label: string; organizing?: boolean }> {
   return call('POST', '/api/capture', note);
 }
