@@ -3,12 +3,12 @@ import { ref } from 'vue';
 
 import { useModal } from '../lib/modal.ts';
 import type { DraftChoice } from '../lib/draft.ts';
-import type { DirectAgent, ProjectInfo } from '../lib/types.ts';
+import type { CharacterChoice, DirectAgent, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import NewConversation from './NewConversation.vue';
 
 /** "+ Nuovo" of the left bar (D-097): private, work or with an agent (D-111d), and the project. */
-defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[] }>();
+defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined }>();
 const emit = defineEmits<{ close: []; create: [choice: DraftChoice]; refresh: [] }>();
 
 const dialog = ref<HTMLElement | null>(null);
@@ -28,7 +28,7 @@ function create(choice: DraftChoice): void {
       aria-modal="true"
       aria-labelledby="new-title"
       tabindex="-1"
-      class="hud-card flex w-full max-w-[420px] flex-col bg-surface outline-none"
+      class="hud-card flex w-full max-w-[480px] flex-col bg-surface outline-none"
     >
       <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="text-accent"><Icon name="new" :size="18" /></span>
@@ -36,7 +36,7 @@ function create(choice: DraftChoice): void {
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
       <div class="px-[15px] py-3.5">
-        <NewConversation :projects="projects" :agents="agents" @create="create" @refresh="emit('refresh')" />
+        <NewConversation :projects="projects" :agents="agents" :characters="characters" @create="create" @refresh="emit('refresh')" />
       </div>
     </section>
   </div>

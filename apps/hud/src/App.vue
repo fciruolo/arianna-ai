@@ -778,6 +778,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       v-if="showNew"
       :projects="projects"
       :agents="directAgents"
+      :characters="characters?.agents"
       @close="showNew = false"
       @create="openDraft"
       @refresh="store.refreshProjects"

@@ -4,10 +4,11 @@ import { computed, ref, watch } from 'vue';
 import { cloudWarning, localNote, type DraftChoice } from '../lib/draft.ts';
 import { agentName } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
-import type { ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
+import type { CharacterChoice, ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
+import PixelAgent from './PixelAgent.vue';
 
-const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[] }>();
+const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined }>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
 /** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
 type Kind = 'private' | 'work' | 'agent';
@@ -91,16 +92,30 @@ function submit(): void {
     <p class="px-0.5 text-xs leading-snug text-muted">{{ hint }}</p>
 
     <template v-if="kind === 'agent'">
-      <label v-if="agents.length > 0" class="flex flex-col gap-1 text-xs text-muted">
-        Agente
-        <select v-model="agent" class="field px-2.5 py-1.5 text-[13px]">
-          <option v-for="entry in agents" :key="entry.agent" :value="entry.agent">
-            {{ agentName(entry.agent) }} · {{ entry.cloud ? 'Claude' : 'modello locale' }}
-          </option>
-        </select>
-      </label>
+      <!-- One card per agent (the user's choice after the trial of D-111d): character, name, where it runs, what it does. -->
+      <div v-if="agents.length > 0" class="grid max-h-[46vh] grid-cols-2 gap-2 overflow-y-auto p-0.5" role="radiogroup" aria-label="Agente">
+        <button
+          v-for="entry in agents"
+          :key="entry.agent"
+          type="button"
+          role="radio"
+          :aria-checked="agent === entry.agent"
+          class="flex flex-col items-start gap-1.5 rounded-[10px] border p-2.5 text-left transition"
+          :class="agent === entry.agent ? 'border-accent bg-surface shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line bg-surface-2 hover:border-line-strong'"
+          @click="agent = entry.agent"
+        >
+          <span class="flex w-full items-center gap-2">
+            <PixelAgent :choice="characters?.[entry.agent]" pose="idle" :scale="1" />
+            <span class="min-w-0 flex-1 truncate text-[13px] font-medium">{{ agentName(entry.agent) }}</span>
+          </span>
+          <span
+            class="rounded-full border px-1.5 py-px font-mono text-[10px]"
+            :class="entry.cloud ? 'border-l1/60 text-l1' : 'border-line-strong text-muted'"
+          >{{ entry.cloud ? 'Claude' : 'locale' }}</span>
+          <span v-if="entry.description !== ''" class="line-clamp-2 text-[11.5px] leading-snug text-muted" :title="entry.description">{{ entry.description }}</span>
+        </button>
+      </div>
       <p v-else class="text-xs leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
-      <p v-if="policy !== undefined && policy.description !== ''" class="px-0.5 text-xs leading-snug text-muted">{{ policy.description }}</p>
       <div v-if="policy !== undefined && policy.modes.length > 1" class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità">
         <button
           v-for="option in policy.modes"
