@@ -248,4 +248,21 @@ describe('the model from the settings', () => {
     assert.match(readFileSync(file, 'utf8'), /\[sprites\]\nmodel = "local"/);
     assert.throws(() => page.update({ fingerprint: next.fingerprint, values: { sprites: 'gpt' } }), /sprites: one of sonnet, opus, local/);
   });
+
+  it('[participants] leave_after (I-8, D-130): ten by default, saved as an ordinary setting, 0 to 100', () => {
+    const file = join(home, CONFIG_FILE);
+    writeFileSync(file, renderSettings(DEFAULT_SETTINGS));
+    const running = read(renderSettings(DEFAULT_SETTINGS));
+    const page = createSettingsPage({ home, userHome: root, dataDir: join(home, DATA_DIR), running: () => running, agentModels: () => ({}) });
+    const view = page.read();
+    assert.equal(view.values?.participants, 10);
+    assert.ok(view.ordinary.includes('participants'));
+    const next = page.update({ fingerprint: settingsFingerprint(readFileSync(file, 'utf8')), values: { participants: 0 } });
+    assert.equal(next.values?.participants, 0);
+    assert.match(readFileSync(file, 'utf8'), /\[participants\]\nleave_after = 0/);
+    assert.equal(read(readFileSync(file, 'utf8')).participants.leaveAfter, 0);
+    for (const bad of [-1, 101, 2.5, '10']) {
+      assert.throws(() => page.update({ fingerprint: next.fingerprint, values: { participants: bad } }), /participants: a whole number/);
+    }
+  });
 });

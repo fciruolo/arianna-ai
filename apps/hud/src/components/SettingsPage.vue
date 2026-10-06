@@ -60,6 +60,8 @@ import {
   roleOptions,
   rolesBody,
   keptSections,
+  leaveAfterProblem,
+  MAX_LEAVE_AFTER,
   modelBlocker,
   pollAction,
   SECTION_TEXT,
@@ -129,6 +131,7 @@ interface Forms {
   personas: Record<string, PersonaForm>;
   agents: AgentsForm;
   sprites: SettingsValues['sprites'];
+  participants: number;
   voice: VoiceForm;
   executors: string[];
   telegram: TelegramForm;
@@ -144,6 +147,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     personas: personasForm(values.personas),
     agents: agentsForm(values.agents, agentModels),
     sprites: values.sprites,
+    participants: values.participants,
     voice: voiceForm(values.voice, defaults),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
@@ -152,7 +156,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -242,7 +246,7 @@ function markSaved(section: Section): void {
 }
 
 /** The parts the Agenti card saves together, in one write (D-116); it is known by `agents`. */
-const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents'];
+const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'participants'];
 
 /** Saves `parts` (by default the section alone) in one write; the card is known by `section`. */
 async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<void> {
@@ -257,6 +261,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   if (parts.includes('sprites')) values.sprites = current.sprites;
+  if (parts.includes('participants')) values.participants = current.participants;
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -886,10 +891,19 @@ watch(active, () => {
             </SettingsCard>
 
             <!-- Agents (D-116): look, persona and model of each agent, saved together -->
-            <SettingsCard v-if="active === 'agents'" id="agents" title="Agenti" kind="now" :changed="agentsChanged" :saved="saved === 'agents'" :invalid="personasInvalid" :busy="busy === 'agents'" :error="errors.agents" @cancel="resetAgents" @save="save('agents', AGENT_PARTS)">
+            <SettingsCard v-if="active === 'agents'" id="agents" title="Agenti" kind="now" :changed="agentsChanged" :saved="saved === 'agents'" :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)" :busy="busy === 'agents'" :error="errors.agents" @cancel="resetAgents" @save="save('agents', AGENT_PARTS)">
               <p class="text-xs text-muted">
                 Aspetto, modello e stile di ogni agente. Strumenti, permessi, etichette e limiti non cambiano: restano nelle schede <code class="font-mono">agents/*.yaml</code>.
               </p>
+              <div class="flex flex-col gap-1 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
+                <label for="leave-after" class="flex flex-wrap items-center gap-2">
+                  Un agente entrato in una conversazione esce da solo dopo
+                  <input id="leave-after" v-model.number="forms.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[13px]" />
+                  tuoi messaggi senza lavori per lui
+                </label>
+                <p class="text-xs text-muted">Saluta con una frase e rientra alla delega seguente. 0 vuol dire mai. Il Coder non esce da solo: lo togli tu.</p>
+                <p v-if="leaveAfterProblem(forms.participants) !== undefined" class="text-xs text-warn">{{ leaveAfterProblem(forms.participants) }}</p>
+              </div>
               <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
                 <div class="flex items-center gap-3">
                   <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" :version="sheetVersion" />

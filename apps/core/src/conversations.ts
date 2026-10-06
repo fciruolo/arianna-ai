@@ -4,6 +4,7 @@ import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
+import { leaveIdle, type LeaveRule } from './participants.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 import { closeSupersededWaits } from './waiting.ts';
 
@@ -393,7 +394,7 @@ export async function postUserMessage(
   sql: Sql,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel } = {},
+  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   return sql.begin((tx) => writeUserMessage(tx, conversationId, body, options));
@@ -407,7 +408,7 @@ export async function writeUserMessage(
   tx: Queryable,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel } = {},
+  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
@@ -455,6 +456,8 @@ export async function writeUserMessage(
     label: 'L0',
     payload: { conversationId, messageId: row.id, role: 'user' },
   });
+  // The agents with nothing to do here for a while say goodbye (I-8), after the message that made them idle.
+  if (options.leave !== undefined) await leaveIdle(tx, conversationId, task.id, options.leave);
   const message = await loadMessage(tx, row.id);
   if (message === undefined) throw new Error('the new message is missing');
   return { message, task };

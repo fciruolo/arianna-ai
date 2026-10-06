@@ -15,6 +15,7 @@ import {
   loadConfig,
   parseCatalog,
   parseConfig,
+  parseParticipants,
   resolveHome,
 } from '../src/index.ts';
 
@@ -44,7 +45,18 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     personas: {},
     agents: {},
     sprites: { model: 'sonnet' },
+    participants: { leaveAfter: 10 },
   });
+});
+
+test('[participants] (I-8, D-130): leave_after from 0 (never) to 100, ten when absent', () => {
+  assert.deepEqual(parseParticipants(undefined), { leaveAfter: 10 });
+  assert.deepEqual(parseParticipants({}), { leaveAfter: 10 });
+  assert.deepEqual(parseParticipants({ leave_after: 0 }), { leaveAfter: 0 });
+  assert.deepEqual(parseParticipants({ leave_after: 25 }), { leaveAfter: 25 });
+  for (const bad of [{ leave_after: -1 }, { leave_after: 101 }, { leave_after: 2.5 }, { leave_after: '10' }, { leave_after: 10, other: 1 }, 'x']) {
+    assert.throws(() => parseParticipants(bad), ConfigError, JSON.stringify(bad));
+  }
 });
 
 test('characters (D-060): agent = "<pack>/<character>", nothing else', () => {

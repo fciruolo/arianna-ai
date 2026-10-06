@@ -49,7 +49,7 @@ import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
-import { activeParticipants, removeParticipant } from '../participants.ts';
+import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -131,6 +131,8 @@ export interface ApiServerOptions {
    * longer active. Without it every agent reads as gone (executor null, L1).
    */
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
+  /** When an idle agent leaves a conversation (I-8, D-130), read at each message; undefined, none leaves. */
+  leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
@@ -266,6 +268,7 @@ interface RouteOptions {
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
   installation: ApiServerOptions['installation'];
+  leaveRule?: (() => LeaveRule | undefined) | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -700,7 +703,7 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, leaveRule }: RouteOptions): Route[] {
   return [
     ...delegationRoutes(sql, approvedProjects),
     ...modelEvalRoutes(modelEvals),
@@ -854,7 +857,8 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const body = await readJson(request);
       onlyFields(body, ['body']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
-      const { message, task } = await postUserMessage(sql, id, body.body);
+      const leave = leaveRule?.();
+      const { message, task } = await postUserMessage(sql, id, body.body, leave === undefined ? {} : { leave });
       return { status: 201, body: { message, task } };
     }),
 
@@ -1291,6 +1295,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     approvedProjects: options.approvedProjects ?? (() => []),
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
+    leaveRule: options.leaveRule,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...changelogRoutes(options.changelog));

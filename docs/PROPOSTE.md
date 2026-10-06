@@ -2483,7 +2483,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |
 | I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
 | I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | scelta fatta (tutta la conversazione, una nota che si aggiorna): da scrivere come decisione e implementare |
-| I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | scelte fatte: da scrivere come decisione e implementare |
+| I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | D-130, fatta sul ramo `task/i8-uscita` (prova dell'utente da fare) |
 
 ### I-1, notifiche delle risposte
 

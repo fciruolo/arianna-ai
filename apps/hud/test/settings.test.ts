@@ -304,3 +304,9 @@ test('a 409 for a file that cannot be read says so, and still reloads', () => {
   assert.match(unreadable.text, /non si leggono: voice.port/);
   assert.match(writeError(409, 'arianna.toml changed since the page read it: reload').text, /è cambiato/);
 });
+
+test('leaveAfterProblem (I-8, D-130): a whole number from 0 (never) to 100', async () => {
+  const { leaveAfterProblem } = await import('../src/lib/settings.ts');
+  for (const good of [0, 1, 10, 100]) assert.equal(leaveAfterProblem(good), undefined, String(good));
+  for (const bad of [-1, 101, 2.5, '10', Number.NaN]) assert.match(leaveAfterProblem(bad) ?? '', /da 0 \(mai\) a 100/, String(bad));
+});
