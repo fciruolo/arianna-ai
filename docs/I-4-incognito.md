@@ -160,3 +160,9 @@ Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambi
 - `packages/executors`: `persistSession: false` aggiunge `--no-session-persistence` (con `-p`, sempre presente); la ripresa di una sessione non salvata è rifiutata con `invalid-options` prima del gateway, senza spendere il brief. Nel core (`claude-step.ts`, `delegate.ts`) l'id di una sessione non salvata non va in `runs.session_ref` né in `task_delegations.session_ref`; una chat diretta incognita manda gli scambi recenti nel brief (il ripiego di D-111b) invece di riprendere la sessione.
 - **Da fare dal vivo:** un caso in `evals/contract/claude.jsonl` (`persistSession` in `ContractStep` di `packages/evals/src/contract.ts`) che confronta l'elenco dei file del profilo di `claude` nella home dell'utente prima e dopo un run con il flag. Leggere la home dell'utente è fuori dalle regole del repository per Claude Code: il caso lo scrive e lo lancia l'utente, o lo autorizza esplicitamente.
 - Manca un test in `apps/core/test-db/direct-chat.test.ts` per la chat diretta incognita (storia nel brief, niente `--resume`): va con la tappa 2.
+
+### Aggiunte al contratto (2026-10-07, notte, dai dubbi della tappa 4)
+
+- **Attese:** `GET /api/approvals` (e le attese sul WebSocket) includono quelle delle incognite con `incognito: true` e `conversationId`; la chat le mostra solo nella pagina della loro conversazione, mai in "Decisioni in attesa" altrove. Nessun altro canale le annuncia.
+- **Notifiche:** per un'incognita il core non manda nulla sullo stream delle notifiche (aiutante del Mac), né Web Push, né avvisi nella chat con un collegamento `/c/<id>` (finirebbe nella cronologia).
+- **Dopo la chiusura:** `GET /api/conversations/:id` di un'incognita cancellata risponde 404 con `{ "error": "not found", "closed": "user" | "idle" | "restart" }`, così la pagina dice la causa esatta; ogni altro 404 resta com'è.
