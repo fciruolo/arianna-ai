@@ -161,6 +161,20 @@ test('archived conversations and system chats never ring; a wait counts from its
   assert.ok(again?.taskId !== waiting.taskId);
 });
 
+test('Arianna never calls about an incognito conversation (D-136): not a wait, not a scheduled call', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private', incognito: true });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Controlla il contratto finto');
+  await db().sql`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
+  await db().sql`UPDATE tasks SET status = 'waiting_user', waiting_reason = 'approval', updated_at = now() - interval '90 minutes' WHERE id = ${task.id}`;
+  await scheduleCall(db().sql, conversation.id, clock, clock);
+  assert.equal(await ringer.tick(), undefined);
+  // A normal conversation in the same state rings.
+  const normal = await waitingTask(40);
+  const call = await ringer.tick();
+  assert.equal(call?.conversationId, normal.conversationId);
+  await calls.decline(call.id);
+});
+
 test('nobody can hear it (no page, no push): Arianna writes at once instead of ringing', async () => {
   online = 0;
   push = false;

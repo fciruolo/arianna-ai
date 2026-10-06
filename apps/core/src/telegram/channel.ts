@@ -5,6 +5,7 @@ import { ChatError, loadMessage, writeConversation, writeUserMessage } from '../
 import type { Queryable, Sql } from '../db/client.ts';
 import { recordDecisionIn } from '../engine.ts';
 import { appendEvent } from '../events.ts';
+import { isIncognitoTask } from '../incognito.ts';
 import { errorCode } from '../jobs.ts';
 import type { LiveFeed, LiveMessage, PublicEvent } from '../live.ts';
 import { loadTask } from '../tasks.ts';
@@ -332,6 +333,8 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
     const approval = typeof payload?.approvalId === 'string' ? await loadApproval(sql, payload.approvalId) : undefined;
     // Decided meanwhile (from the web): nothing to ask.
     if (approval?.state !== 'pending') return;
+    // An incognito conversation never reaches Telegram, not even as a notice without content (D-136).
+    if (approval.taskId !== null && (await isIncognitoTask(sql, approval.taskId))) return;
     const task = approval.taskId === null ? undefined : await loadTask(sql, approval.taskId);
     // The title comes from the user's message: shown only when the task is at most L1.
     // The detail is never shown, whatever its label: it is read in the web chat.

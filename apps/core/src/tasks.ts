@@ -89,8 +89,9 @@ export async function loadTask(sql: Queryable, id: string): Promise<Task | undef
 /**
  * Why a task moved, for the event log; the free-text reason stays in `tasks`.
  * `superseded`: a wait closed because the user wrote again in its conversation (D-109).
+ * `incognito`: its incognito conversation closed (D-136): the work stops for good.
  */
-export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error' | 'agent' | 'superseded';
+export type MoveCause = 'user' | 'engine' | 'limit' | 'approval' | 'executor' | 'error' | 'agent' | 'superseded' | 'incognito';
 
 export interface MoveOptions {
   /** Required for `waiting_user`: the one line the user reads. Stored in the task, not in events. */

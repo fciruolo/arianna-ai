@@ -28,6 +28,7 @@ import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
+import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
 import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
@@ -104,6 +105,12 @@ if (status.pending.length + status.edited.length + status.missing.length > 0) {
   await sql.end();
   process.exit(1);
 }
+
+// D-136: an incognito conversation does not outlive the core. Those left open
+// by the previous run (a crash, a restart) close now, before the worker takes
+// back and resumes their interrupted runs.
+const closedIncognito = await closeIncognitoAtStart(sql, report);
+if (closedIncognito > 0) console.log(`Incognito: closed ${String(closedIncognito)} left open by the previous run`);
 
 // Set once the core starts stopping: nothing new is opened after it.
 let stopping = false;
@@ -319,6 +326,9 @@ const worker = createWorker({
   endpointPort: (id) => endpointPort(settings.current().local.endpoints.find((endpoint) => endpoint.id === id)?.url),
   onError: report,
 });
+/** Closes an incognito conversation, stopping the step the worker runs for it (D-136). */
+const endIncognito = (conversationId: string, cause: IncognitoCause) =>
+  closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito') });
 const live = await startLiveFeed(sql, { onError: report });
 
 // The calls (D-066), on the voice in place: off, they are refused. Limits,
@@ -479,9 +489,21 @@ const server = await startApiServer({
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
   installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
+  incognito: { close: endIncognito },
   onError: report,
 });
 await worker.start();
+// D-136: 10 minutes without a page on an incognito conversation close it; the pages hear it a minute before.
+const incognitoWatch = createIncognitoWatch({
+  list: () => openIncognito(sql),
+  pagesOn: (conversationId) => server.pagesOn(conversationId),
+  close: (conversationId) => endIncognito(conversationId, 'idle'),
+  warn: (conversationId, inSeconds) => {
+    server.incognitoClosing(conversationId, inSeconds);
+  },
+  onError: report,
+});
+incognitoWatch.start();
 // Trials left running by the previous run are closed as `interrupted`, never resumed.
 await modelEvals.start();
 // New notes left by pnpm kb:capture or by a previous run: queued again, at most MAX_RESUMED.
@@ -515,6 +537,7 @@ const ringer = createRinger({
 const notifier = createNotifier({
   settings: () => settings.current().notifications,
   conversationOf: (taskId) => conversationOfTask(sql, taskId),
+  incognito: (conversationId) => isIncognitoConversation(sql, conversationId),
   visiblePages: () => server.visiblePages(),
   broadcast: (notice) => {
     server.broadcast(notice);
@@ -547,6 +570,7 @@ async function shutdown(): Promise<void> {
   // The processes started from "Progetti" stop with the core (D-134 g); compose services stay with Docker.
   await services.stopAll();
   settings.close();
+  incognitoWatch.stop();
   stopNotices();
   await telegram.close();
   await server.close();

@@ -72,12 +72,14 @@ export async function openFailureChat(sql: Sql, taskId: string, options: { direc
   if (!isUuid(taskId)) throw new ChatError('not-found', `task ${taskId} does not exist`);
   return sql.begin(async (tx) => {
     // One at a time per task: the unique index would refuse the second anyway.
-    const [task] = await tx<{ status: string; mode: ConversationMode | null; purged: boolean }[]>`
-      SELECT t.status, c.mode, c.purged_at IS NOT NULL AS purged
+    const [task] = await tx<{ status: string; mode: ConversationMode | null; purged: boolean; incognito: boolean }[]>`
+      SELECT t.status, c.mode, c.purged_at IS NOT NULL AS purged, coalesce(c.incognito, false) AS incognito
       FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
       WHERE t.id = ${taskId} FOR UPDATE OF t`;
     if (task === undefined) throw new ChatError('not-found', `task ${taskId} does not exist`);
     if (task.purged) throw new ChatError('invalid', 'the conversation of the task was deleted');
+    // Its texts would outlive the closing (D-136): the error is read in the incognito conversation itself.
+    if (task.incognito) throw new ChatError('incognito', 'incognito');
     const failure = await loadFailure(tx, taskId);
     if (failure === undefined) throw new ChatError('invalid', 'the task has no recorded error');
 
