@@ -30,6 +30,7 @@ import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
+import { isIncognitoConversation } from '../incognito.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
@@ -511,20 +512,23 @@ export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?
 }
 
 /**
- * The cloud step: the plan is `cloud`. `persistSession` false runs `claude`
- * without saving its session (`--no-session-persistence`, D-136): nothing is
- * resumed, and the direct chat sends its latest exchanges at every message.
+ * The cloud step: the plan is `cloud`. A run that saves no session runs
+ * `claude` with `--no-session-persistence` (D-136): nothing is resumed, and
+ * the direct chat sends its latest exchanges at every message. Every run of
+ * a task of an incognito conversation is one, resumed ones included, whatever
+ * `persist` asks; `persist` false asks it elsewhere.
  */
-// TODO(D-136): the core passes false for a run of an incognito conversation (I-4, tappa 2); every caller saves the session for now.
 export async function runDelegation(
   env: DelegateEnv,
   ctx: StepContext,
   plan: Extract<DelegationPlan, { kind: 'cloud' }>,
-  persistSession = true,
+  persist = true,
 ): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
   const { delegation } = plan;
   const { sql } = env;
+  const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
+  const persistSession = persist && !incognito;
   const claude = env.claude;
   if (claude === undefined) throw new Error('claude is not available');
   const failed = async (result: string): Promise<StepOutcome> => {
