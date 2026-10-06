@@ -1,4 +1,5 @@
-import type { ConversationMode } from './types.ts';
+import { agentName } from './italian.ts';
+import type { ConversationAgent, ConversationMode } from './types.ts';
 
 /**
  * A new conversation as in Claude Code (D-108): "Nuovo" opens a draft that
@@ -12,6 +13,8 @@ export interface Draft {
   mode: ConversationMode;
   /** The approved project of a work conversation, by name. */
   project?: string | undefined;
+  /** Who answers in place of Arianna (D-111d): the direct chat with an agent, as its card allows. */
+  agent?: ConversationAgent | undefined;
   /**
    * Set once the core created the conversation but the first message did not
    * go through: a retry sends to it, never creates a second one.
@@ -21,28 +24,85 @@ export interface Draft {
 
 export const DRAFT_PATH = '/nuova';
 
+/** What "Nuovo" chose: the mode, the project, and who answers. */
+export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent'>;
+
 const MODE_WORD: Record<ConversationMode, string> = { private: 'privata', work: 'lavoro' };
 
-/** `/nuova?tipo=privata`, `/nuova?tipo=lavoro&progetto=arianna`: a reload comes back to the draft. */
-export function draftPath(mode: ConversationMode, project?: string): string {
-  const params = new URLSearchParams({ tipo: MODE_WORD[mode] });
-  if (mode === 'work' && project !== undefined && project !== '') params.set('progetto', project);
+/** An agent id as the core writes it: Arianna is never one. */
+const AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const isAgentId = (value: string | null | undefined): value is string => typeof value === 'string' && AGENT_ID.test(value) && value !== 'arianna';
+
+/**
+ * `/nuova?tipo=privata`, `/nuova?tipo=lavoro&progetto=arianna`, with an agent
+ * `/nuova?con=traduttore&tipo=lavoro`: a reload comes back to the draft.
+ */
+export function draftPath(choice: DraftChoice): string {
+  const params = new URLSearchParams();
+  if (isAgentId(choice.agent)) params.set('con', choice.agent);
+  params.set('tipo', MODE_WORD[choice.mode]);
+  if (choice.mode === 'work' && choice.project !== undefined && choice.project !== '') params.set('progetto', choice.project);
   return `${DRAFT_PATH}?${params.toString()}`;
 }
 
-/** The draft an address asks for, or undefined for any other address. An unknown type is a private one. */
-export function draftFromAddress(pathname: string, search: string): Pick<Draft, 'mode' | 'project'> | undefined {
+/**
+ * The draft an address asks for, or undefined for any other address. An
+ * unknown type is a private one. `tipo=coder` is the address of the first
+ * direct chat (D-111c), read as `con=coder&tipo=lavoro`.
+ */
+export function draftFromAddress(pathname: string, search: string): DraftChoice | undefined {
   if (pathname !== DRAFT_PATH && pathname !== `${DRAFT_PATH}/`) return undefined;
   const params = new URLSearchParams(search);
-  if (params.get('tipo') !== 'lavoro') return { mode: 'private' };
-  const project = params.get('progetto')?.trim();
-  return project === undefined || project === '' ? { mode: 'work' } : { mode: 'work', project };
+  const kind = params.get('tipo');
+  const asked = kind === 'coder' ? 'coder' : params.get('con');
+  const agent = isAgentId(asked) ? { agent: asked } : {};
+  const mode: ConversationMode = kind === 'lavoro' || kind === 'coder' ? 'work' : 'private';
+  const project = mode === 'work' ? params.get('progetto')?.trim() : undefined;
+  return { mode, ...(project === undefined || project === '' ? {} : { project }), ...agent };
 }
 
-/** What the first message may be: a text for Arianna; the "/" commands work once the conversation exists. */
-export function firstMessageProblem(text: string, goesToArianna: (draft: string) => boolean): string | undefined {
+/** Who answers in a draft of this choice: an agent id, never Arianna; what its card allows is checked against the list (D-111d). */
+export function choiceAgent(choice: DraftChoice): ConversationAgent | undefined {
+  return isAgentId(choice.agent) ? choice.agent : undefined;
+}
+
+/** The same choice: the page does not open a draft again for it. */
+export function sameChoice(a: DraftChoice, b: DraftChoice): boolean {
+  return a.mode === b.mode && a.project === b.project && a.agent === b.agent;
+}
+
+/** What stays out of Arianna's hands in a direct chat on Claude (D-111): also said where such a conversation is deleted. */
+export const SESSION_COPY = 'Claude Code tiene una copia della sessione nella tua home: eliminare la conversazione qui non la cancella.';
+
+/** "al Coder", "a traduttore": the name of an agent after "a". */
+export function toAgent(agent: string): string {
+  const name = agentName(agent);
+  return agent === 'coder' ? `al ${name}` : `a ${name}`;
+}
+
+/** The warning of a direct chat with an agent on Claude, plain and never hidden (D-111d). */
+export function cloudWarning(agent: string, project: string | undefined): string {
+  const files = project === undefined || project === '' ? '' : `, insieme ai file del progetto ${project} che ${agentName(agent)} apre`;
+  return `Ogni messaggio va così com'è a Claude (Anthropic)${files}. Arianna non lo filtra. Per dati personali usa una conversazione privata. ${SESSION_COPY}`;
+}
+
+/** The note of a direct chat with a local agent: nothing leaves the Mac. */
+export function localNote(agent: string): string {
+  return `${agentName(agent)} risponde con il modello locale: niente esce dal Mac. Arianna non è in mezzo.`;
+}
+
+/** Above this many characters a message of a direct chat on Claude asks before it goes (D-111, risposta 5). */
+export const LONG_TO_CLAUDE = 4000;
+
+/** Whether a message of a direct chat asks "Va davvero a Claude?" first: only when it goes to Claude. */
+export function asksBeforeClaude(cloud: boolean, text: string): boolean {
+  return cloud && text.length > LONG_TO_CLAUDE;
+}
+
+/** What the first message may be: a text for Arianna or the agent; the "/" commands work once the conversation exists. */
+export function firstMessageProblem(text: string, goesToArianna: (draft: string) => boolean, agent?: ConversationAgent): string | undefined {
   if (text.trim() === '') return 'Scrivi il primo messaggio.';
-  if (!goesToArianna(text)) return 'I comandi con "/" funzionano dopo il primo messaggio: scrivi prima ad Arianna.';
+  if (!goesToArianna(text)) return `I comandi con "/" funzionano dopo il primo messaggio: scrivi prima ${agent === undefined ? 'ad Arianna' : toAgent(agent)}.`;
   return undefined;
 }
 
@@ -57,4 +117,20 @@ export function draftProjectProblem(draft: Pick<Draft, 'mode' | 'project'>, appr
   return approved.includes(draft.project)
     ? undefined
     : `Il progetto "${draft.project}" non è fra quelli approvati: apri "Nuovo" e scegline un altro, o lascia la conversazione senza progetto.`;
+}
+
+/**
+ * What "Invia" does with a message of the direct chat (D-111): `send`, `ask`
+ * "Va davvero a Claude?" first, or `wait` while the question is open. Only
+ * the button of the question confirms: Enter again, or a held key, never does.
+ * A text that does not go to Claude (a note, a command) never asks.
+ */
+export function longMessageStep(
+  cloud: boolean,
+  text: string,
+  goesToClaude: boolean,
+  state: { asking: boolean; confirmed: boolean },
+): 'send' | 'ask' | 'wait' {
+  if (!goesToClaude || !asksBeforeClaude(cloud, text) || state.confirmed) return 'send';
+  return state.asking ? 'wait' : 'ask';
 }

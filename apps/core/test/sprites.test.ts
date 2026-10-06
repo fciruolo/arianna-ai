@@ -14,10 +14,10 @@ import { cleanSheet } from '../src/characters.ts';
 import { decodePng } from '../src/png.ts';
 import { createSettingsPage } from '../src/settings-page.ts';
 import { spriteUnavailable, parseSpriteRequest, SpriteError } from '../src/sprites/generate.ts';
-import { SPRITE_PROMPT, spriteBrief } from '../src/sprites/prompt.ts';
+import { EXAMPLES, SPRITE_PROMPT, spriteBrief } from '../src/sprites/prompt.ts';
 import { checkSprite, moveEyes, readSpriteReply, SPRITE_SCHEMA, SpriteSpecError, spriteSheet, type SpriteSpec } from '../src/sprites/spec.ts';
 
-const EXAMPLE_TEXT = SPRITE_PROMPT.split('\n').findLast((line) => line.startsWith('{"palette"')) ?? '';
+const EXAMPLE_TEXT = JSON.stringify(EXAMPLES[0]?.spec);
 const example = (): SpriteSpec => JSON.parse(EXAMPLE_TEXT) as SpriteSpec;
 const refused = (value: unknown, pattern: RegExp): void => {
   assert.throws(() => checkSprite(value), (error: unknown) => error instanceof SpriteSpecError && pattern.test(error.message));
@@ -146,7 +146,7 @@ describe('the sheet', () => {
 
 describe('the brief', () => {
   it('the fixed prompt is the same bytes every time, pinned: a change is a choice', () => {
-    assert.equal(createHash('sha256').update(SPRITE_PROMPT).digest('hex'), '77bf8a62b9bfa499f98b88b530aca1c30ed7b741c0754f4ddf487d744983254c');
+    assert.equal(createHash('sha256').update(SPRITE_PROMPT).digest('hex'), '5719d2be6deda290367bc7bda5972f74fda7c0ba1fa7d5704eeeebf5b6a62afb');
     const one = spriteBrief(subject)[0];
     const two = spriteBrief({ ...subject, name: 'altro', hint: 'cappello rosso' }, { tone: 'scherzoso', specialization: 'grafici' })[0];
     assert.deepEqual(one, { text: SPRITE_PROMPT, label: 'L0', source: 'prompt:sprite' });
@@ -213,10 +213,10 @@ describe('the model from the settings', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('[sprites] absent is Claude Sonnet; opus and local are read; anything else is refused', () => {
+  it('[sprites] absent is Claude Opus (D-132); sonnet and local are read; anything else is refused', () => {
     const base = renderSettings(DEFAULT_SETTINGS);
-    assert.equal(read(base).sprites.model, 'sonnet');
-    assert.equal(read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'opus' })).sprites.model, 'opus');
+    assert.equal(read(base).sprites.model, 'opus');
+    assert.equal(read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'sonnet' })).sprites.model, 'sonnet');
     assert.equal(read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'local' })).sprites.model, 'local');
     assert.throws(() => read(`${base}\n[sprites]\nmodel = "fable"\n`), /sprites\.model/);
     assert.throws(() => read(`${base}\n[sprites]\nmodel = "opus"\ncolour = "red"\n`), /sprites: unknown key/);
@@ -241,7 +241,7 @@ describe('the model from the settings', () => {
     const running = read(renderSettings(DEFAULT_SETTINGS));
     const page = createSettingsPage({ home, userHome: root, dataDir: join(home, DATA_DIR), running: () => running, agentModels: () => ({}) });
     const view = page.read();
-    assert.equal(view.values?.sprites, 'sonnet');
+    assert.equal(view.values?.sprites, 'opus');
     assert.ok(view.ordinary.includes('sprites'));
     const next = page.update({ fingerprint: settingsFingerprint(readFileSync(file, 'utf8')), values: { sprites: 'local' } });
     assert.equal(next.values?.sprites, 'local');

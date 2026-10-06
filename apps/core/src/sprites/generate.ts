@@ -6,8 +6,10 @@ import { ClaudeError, LocalModelError, prepareEmptyWorkspace, removeWorkspace, t
 import { createContext, scanText, type Context, type Decision, type Labeled, type Target } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
-import { spriteBrief, SUBJECT_LABEL, type SpriteSubject } from './prompt.ts';
-import { readSpriteReply, SPRITE_SCHEMA, SpriteSpecError, spriteSheet } from './spec.ts';
+import type { BriefFragment } from '../claude-step.ts';
+import { checkFragment, draftFragment, REVIEW_PROMPT, spriteBrief, SUBJECT_LABEL, type SpriteSubject } from './prompt.ts';
+import { spritePreview, spriteProblems } from './quality.ts';
+import { readSpriteReply, SPRITE_SCHEMA, SpriteSpecError, spriteSheet, type SpriteSpec } from './spec.ts';
 
 /**
  * "Genera personaggio" (D-123): the brief through the gateway, the model of
@@ -15,6 +17,11 @@ import { readSpriteReply, SPRITE_SCHEMA, SpriteSpecError, spriteSheet } from './
  * folder, or the local model with the schema), the answer checked and turned
  * into a sheet. Nothing is written: the page keeps the PNG with the upload
  * of D-118. One drawing at a time.
+ *
+ * Two passes (D-132), as Claude drew the Coder by hand: a first drawing
+ * (asked again once if the answer is not valid), then a review in which the
+ * model sees it composed as text with what quality.ts found, and corrects
+ * it. The review is kept unless it is invalid or looks worse.
  */
 export const SPRITE_LOCAL_ALIAS = 'local-large';
 const CLAUDE_TIMEOUT_MS = 4 * 60_000;
@@ -204,15 +211,37 @@ export function createSpriteGenerator(options: SpriteGeneratorOptions): SpriteGe
       running = true;
       try {
         const brief = spriteBrief(subject, options.persona(subject.name));
-        const payload = brief.map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source }));
-        const reply = model === 'local' ? await askLocal(payload, signal) : await askClaude(model, payload, signal);
-        let sheet;
+        const draw = async (extra: BriefFragment[]): Promise<SpriteSpec> => {
+          const payload = [...brief, ...extra].map((fragment) => ({ value: fragment.text, label: fragment.label, source: fragment.source }));
+          const reply = model === 'local' ? await askLocal(payload, signal) : await askClaude(model, payload, signal);
+          return readSpriteReply(reply);
+        };
+        let first: SpriteSpec;
         try {
-          sheet = spriteSheet(readSpriteReply(reply));
+          first = await draw([]);
         } catch (error) {
-          if (error instanceof SpriteSpecError) throw new SpriteError('bad-reply', `the drawing is not valid: ${error.message}`);
-          throw error;
+          if (!(error instanceof SpriteSpecError)) throw error;
+          // A page that left spends nothing more: no gateway row, no folder.
+          signal?.throwIfAborted();
+          try {
+            first = await draw([checkFragment([error.message], true)]);
+          } catch (again) {
+            if (again instanceof SpriteSpecError) throw new SpriteError('bad-reply', `the drawing is not valid: ${again.message}`);
+            throw again;
+          }
         }
+        const found = spriteProblems(first);
+        let spec = first;
+        signal?.throwIfAborted();
+        try {
+          const review: BriefFragment = { text: REVIEW_PROMPT, label: 'L0', source: 'prompt:sprite-review' };
+          const second = await draw([review, draftFragment(first, spritePreview(first)), checkFragment(found.map((problem) => problem.text))]);
+          if (spriteProblems(second).length <= found.length) spec = second;
+        } catch (error) {
+          // The first drawing cost a request already: a review that fails keeps it, unless the page left.
+          if (signal?.aborted === true || !(error instanceof SpriteSpecError || error instanceof SpriteError)) throw error;
+        }
+        const sheet = spriteSheet(spec);
         // The output inherits the highest label of what went in: the agent's texts, L1 (never above: the brief holds nothing else).
         return { png: sheet.png, rows: sheet.rows, model, label: SUBJECT_LABEL };
       } finally {

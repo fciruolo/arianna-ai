@@ -2,6 +2,8 @@
 import { computed, nextTick, ref } from 'vue';
 
 import { groupByDay } from '../lib/day-groups.ts';
+import { SESSION_COPY } from '../lib/draft.ts';
+import { agentName } from '../lib/italian.ts';
 import { MODE_TEXT } from '../lib/labels.ts';
 import { splitPinned } from '../lib/sidebar.ts';
 import type { Conversation } from '../lib/types.ts';
@@ -121,8 +123,8 @@ function confirmArchive(id: string): void {
               :aria-current="conversation.id === selected ? 'true' : undefined"
               @click="emit('open', conversation.id)"
             >
-              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="MODE_TEXT[conversation.mode]">
-                <Icon :name="conversation.telegram ? 'telegram' : conversation.mode" :size="14" />
+              <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${agentName(conversation.agent)}` : MODE_TEXT[conversation.mode]">
+                <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
               <LabelBadge :label="conversation.clearance" />
@@ -219,6 +221,7 @@ function confirmArchive(id: string): void {
               conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e le sessioni di Claude Code dei lavori delegati. Non si
               può annullare.
             </p>
+            <p v-if="conversation.agent !== null && conversation.workspace !== null" class="text-xs leading-snug text-warn">{{ SESSION_COPY }}</p>
             <div class="flex gap-2">
               <button type="button" class="btn btn-danger px-2 py-1 text-xs" @click="confirmPurge"><Icon name="delete" :size="14" />Elimina per sempre</button>
               <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="purging = null">Annulla</button>

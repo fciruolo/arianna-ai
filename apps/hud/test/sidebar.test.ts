@@ -27,6 +27,8 @@ function conversation(id: string, pinnedAt: string | null, extra: Partial<Conver
     mode: 'private',
     clearance: 'L2',
     effectiveLabel: 'L0',
+    agent: null,
+    contextTokens: null,
     workspace: null,
     model: null,
     title: id,

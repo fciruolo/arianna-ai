@@ -1119,3 +1119,93 @@ test('a second delegation of the same task runs again: the report of the first i
   const lines = await db().sql`SELECT 1 FROM messages WHERE task_id = ${task.id} AND role = 'system'`;
   assert.equal(lines.length, 2);
 });
+
+interface RawReply {
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: Buffer;
+}
+
+function raw(port: number, method: 'GET' | 'POST', path: string, json?: unknown, headers: Record<string, string> = {}): Promise<RawReply> {
+  return new Promise((resolvePromise, reject) => {
+    const payload = json === undefined ? undefined : JSON.stringify(json);
+    const request = httpRequest(
+      `http://127.0.0.1:${String(port)}${path}`,
+      { method, agent: false, headers: { ...headers, ...(payload === undefined ? {} : { 'content-type': 'application/json' }) } },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          resolvePromise({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks) });
+        });
+      },
+    );
+    request.on('error', reject);
+    request.end(payload);
+  });
+}
+
+test('"Apri" (D-117, tappa 3): a page and the files it loads, sandboxed, only through the token of the chat', async () => {
+  const secret = new Secret('vault://test-open', 'fake-vault-value-open-0123456789abcdef');
+  mkdirSync(join(REPO, 'web'), { recursive: true });
+  writeFileSync(join(REPO, 'web', 'index.html'), '<!doctype html><link rel="stylesheet" href="style.css"><h1>Ciao</h1>');
+  writeFileSync(join(REPO, 'web', 'style.css'), 'h1 { color: teal; }');
+  writeFileSync(join(REPO, 'web', 'leak.js'), `const token = "${secret.reveal()}";`);
+  writeFileSync(join(REPO, 'web', 'data.bin'), 'x');
+  writeFileSync(join(REPO, '.env'), 'SECRET=1');
+  // A page that is a link to a hidden file.
+  symlinkSync('../.env', join(REPO, 'web', 'env.html'));
+  let projects: readonly Project[] = [SITE];
+  try {
+    const id = await delegationWith([
+      { path: 'web/index.html', change: 'added' },
+      { path: 'README.md', change: 'modified' },
+      { path: 'web/gone.html', change: 'deleted' },
+    ]);
+    await withApi(() => projects, async (port) => {
+      const opened = await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 0 });
+      assert.equal(opened.status, 200);
+      const url = (JSON.parse(opened.body.toString('utf8')) as { url: string }).url;
+      assert.match(url, /^\/api\/open\/[A-Za-z0-9_-]{32}\/web\/index\.html$/);
+
+      const page = await raw(port, 'GET', url);
+      assert.equal(page.status, 200);
+      assert.match(page.body.toString('utf8'), /<h1>Ciao<\/h1>/);
+      assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
+      const csp = String(page.headers['content-security-policy']);
+      assert.match(csp, /^sandbox allow-scripts; /);
+      assert.match(csp, /connect-src 'none'/);
+      assert.equal(page.headers['cross-origin-resource-policy'], 'cross-origin');
+      assert.equal(page.headers['cache-control'], 'no-store');
+      // Its style, relative to it: loaded with the same token.
+      const style = await raw(port, 'GET', url.replace('index.html', 'style.css'));
+      assert.deepEqual([style.status, style.headers['content-type']], [200, 'text/css; charset=utf-8']);
+
+      // Never: a value of the vault, a hidden file, an unknown type, a way out of the project, another token.
+      assert.equal((await raw(port, 'GET', url.replace('index.html', 'leak.js'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace('web/index.html', '.env'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace('web/index.html', '.git/config'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace('index.html', 'data.bin'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace('index.html', 'env.html'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace('web/index.html', '..%2F..%2Fetc%2Fpasswd'))).status, 403);
+      assert.equal((await raw(port, 'GET', url.replace(/open\/[^/]+\//, `open/${'a'.repeat(32)}/`))).status, 404);
+      // A page of another site cannot ask for a link.
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 0 }, { origin: 'http://evil.example' })).status, 403);
+
+      // Only a page or an image the run left: not a markdown file, not a deleted one, not a missing index.
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 1 })).status, 403);
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 2 })).status, 410);
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 3 })).status, 404);
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 'x' })).status, 400);
+
+      // The project taken off the list: no new link, and the link already given no longer serves.
+      projects = [];
+      assert.equal((await raw(port, 'POST', `/api/delegations/${id}/open`, { index: 0 })).status, 403);
+      assert.equal((await raw(port, 'GET', url)).status, 403);
+    });
+  } finally {
+    rmSync(join(REPO, 'web'), { recursive: true, force: true });
+    rmSync(join(REPO, '.env'), { force: true });
+    restoreRepo();
+  }
+});

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { generateSprite, loadSpriteInfo, uploadCharacter, type GeneratedSprite, type SpriteInfo, type UploadedCharacter } from '../lib/api.ts';
 import { SPRITE_MODEL_TEXT, spriteErrorText, spriteReasonText, uploadErrorText } from '../lib/italian.ts';
@@ -20,7 +20,8 @@ const props = withDefaults(defineProps<{ agentLabel: string; name: string; descr
   keep: 'premi Salva per tenerlo',
   fetchPrompt: undefined,
 });
-const emit = defineEmits<{ uploaded: [character: UploadedCharacter] }>();
+/** `busy`: drawing, or a drawing not kept yet; the Agenti page keeps the agent and the tab meanwhile (D-133). */
+const emit = defineEmits<{ uploaded: [character: UploadedCharacter]; busy: [busy: boolean] }>();
 
 const MAX_HINT = 300;
 const info = ref<SpriteInfo | null>(null);
@@ -30,6 +31,8 @@ const busy = ref(false);
 const error = ref('');
 const done = ref('');
 const drawn = ref<GeneratedSprite | null>(null);
+// A drawing on its way, or drawn and not kept yet: leaving it would lose the quota it cost.
+watch([busy, drawn], () => emit('busy', busy.value || drawn.value !== null));
 const characterName = ref('');
 const existing = ref<{ id: string; name: string } | null>(null);
 
@@ -156,7 +159,7 @@ async function keep(replace: boolean): Promise<void> {
         </div>
       </div>
       <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
-      <p v-if="busy && !drawn" class="text-xs text-muted" role="status">Sto disegnando… può volerci un minuto.</p>
+      <p v-if="busy && !drawn" class="text-xs text-muted" role="status">Sto disegnando e poi ricontrollo il disegno: può volerci qualche minuto.</p>
       <div class="flex flex-wrap gap-2">
         <button v-if="!drawn" type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy || !ready" @click="generate">Genera</button>
         <template v-else-if="!existing">

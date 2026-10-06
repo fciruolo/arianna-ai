@@ -17,7 +17,8 @@ import type { LiveFeed } from '../src/live.ts';
 import { decodePng } from '../src/png.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { createSpriteGenerator, SPRITE_LOCAL_ALIAS, SpriteError } from '../src/sprites/generate.ts';
-import { SPRITE_PROMPT } from '../src/sprites/prompt.ts';
+import { EXAMPLES, REVIEW_PROMPT, SPRITE_PROMPT } from '../src/sprites/prompt.ts';
+import { spriteSheet, type SpriteSpec } from '../src/sprites/spec.ts';
 
 const REPO = resolveHome({});
 const root = join(REPO, DATA_DIR, 'test-tmp', randomUUID());
@@ -123,14 +124,20 @@ describe('POST /api/characters/generate', () => {
     assert.equal(json.rows, 4);
     const image = decodePng(Buffer.from(String(json.png), 'base64'), 128);
     assert.deepEqual([image.width, image.height], [112, 128]);
-    assert.equal(launches, 1);
-    assert.equal(decisions.length, 1);
-    const decision = decisions[0];
+    assert.equal(launches, 2, 'a drawing, then its review (D-132)');
+    assert.equal(decisions.length, 2);
+    const [decision, review] = decisions;
     assert.ok(decision?.decision === 'allow');
     assert.equal(decision.label, 'L1');
     assert.equal(decision.texts[0], SPRITE_PROMPT);
     assert.ok(decision.texts.includes('Tone: scherzoso'));
     assert.ok(decision.texts.includes('User hint: felpa gialla'));
+    assert.ok(review?.decision === 'allow');
+    assert.equal(review.label, 'L1', 'the first drawing is output of L1 texts');
+    assert.equal(review.texts[0], SPRITE_PROMPT);
+    assert.ok(review.texts.includes(REVIEW_PROMPT));
+    assert.ok(review.texts.some((text) => text.startsWith('Your first drawing:\n{"palette"') && text.includes('row  front')));
+    assert.ok(review.texts.includes('The automatic check found:\n- nothing'), 'the example has nothing to fix');
     const worktrees = join(root, WORKTREES_DIR);
     assert.deepEqual(existsSync(worktrees) ? readdirSync(worktrees) : [], [], 'the empty folder is gone');
   });
@@ -141,6 +148,24 @@ describe('POST /api/characters/generate', () => {
     assert.equal(broken.status, 502);
     assert.equal(broken.json.code, 'bad-reply');
     assert.match(String(broken.json.error), /not JSON/);
+  });
+
+  it('an answer that is not valid is asked again once, with what the check said', async () => {
+    launches = 0;
+    decisions.length = 0;
+    assert.equal((await post('/api/characters/generate', { ...agent, hint: 'scenario-broken' })).status, 502);
+    assert.equal(launches, 2, 'two tries, no review of nothing');
+    const again = decisions[1];
+    assert.ok(again?.decision === 'allow');
+    assert.ok(again.texts.includes('Your previous answer was refused, answer again following the schema. The check said:\n- the answer is not JSON'));
+  });
+
+  it('a review that fails keeps the first drawing', async () => {
+    for (const hint of ['scenario-reviewbroken', 'scenario-reviewquota']) {
+      const { status, json } = await post('/api/characters/generate', { ...agent, hint });
+      assert.equal(status, 200, `${hint}: ${JSON.stringify(json)}`);
+      assert.equal(json.rows, 4);
+    }
   });
 
   it('a quota refusal is a 429 with the time it resets', async () => {
@@ -179,6 +204,7 @@ describe('POST /api/characters/generate', () => {
     assert.equal(status, 200, JSON.stringify(json));
     assert.equal(json.model, 'local');
     assert.equal(launches, 0);
+    assert.equal(localRequests.length, 2, 'a drawing and its review');
     const request = localRequests[0];
     assert.equal(request?.model, SPRITE_LOCAL_ALIAS);
     assert.equal(request.schema?.name, 'sprite');
@@ -189,13 +215,14 @@ describe('POST /api/characters/generate', () => {
 
   it('one drawing at a time: a second request while the first runs is busy', async () => {
     let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const slow: LocalModel = {
-      chat: () =>
-        new Promise((resolve) => {
-          release = () => {
-            resolve({ text: EXAMPLE, value: JSON.parse(EXAMPLE), finishReason: 'stop', endpoint: 'omlx', model: 'fake', durationMs: 1 });
-          };
-        }),
+      chat: async () => {
+        await gate;
+        return { text: EXAMPLE, value: JSON.parse(EXAMPLE) as unknown, finishReason: 'stop', endpoint: 'omlx', model: 'fake', durationMs: 1 };
+      },
     };
     const service = createSpriteGenerator({
       model: () => 'local',
@@ -214,11 +241,7 @@ describe('POST /api/characters/generate', () => {
     await assert.rejects(service.generate(agent), (error: unknown) => error instanceof SpriteError && error.code === 'busy');
     release();
     assert.equal((await first).model, 'local');
-    release = () => undefined;
-    const again = service.generate(agent);
-    await new Promise((resolve) => setImmediate(resolve));
-    release();
-    assert.equal((await again).rows, 4, 'free again once the first is done');
+    assert.equal((await service.generate(agent)).rows, 4, 'free again once the first is done');
   });
 
   it('a drawing of the local model that breaks the rules is a 502', async () => {
@@ -227,5 +250,75 @@ describe('POST /api/characters/generate', () => {
     const { status, json } = await post('/api/characters/generate', agent);
     assert.equal(status, 502);
     assert.match(String(json.error), /not in the schema/);
+  });
+
+  it('the review is kept unless it looks worse than the first drawing (D-132)', async () => {
+    const good = EXAMPLES[1]?.spec;
+    assert.ok(good !== undefined);
+    const worse: SpriteSpec = { ...good, palette: { ...good.palette, o: '#c0c0c0' } };
+    const run = async (answers: SpriteSpec[]): Promise<Buffer> => {
+      const queue = [...answers];
+      const service = createSpriteGenerator({
+        model: () => 'local',
+        unavailable: () => undefined,
+        localModel: () => ({
+          chat: () => {
+            const value = queue.shift();
+            return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'omlx', model: 'fake', durationMs: 1 });
+          },
+        }),
+        persona: () => undefined,
+        gateway: (payload, context, target) => {
+          const decision = gatewayCheck(payload, context, target, secretMatcher([]));
+          if (decision.decision === 'allow') markLogged(decision);
+          return Promise.resolve(decision);
+        },
+        dataDir: root,
+      });
+      return (await service.generate(agent)).png;
+    };
+    assert.deepEqual(await run([good, worse]), spriteSheet(good).png, 'a worse review is dropped');
+    assert.deepEqual(await run([worse, good]), spriteSheet(good).png, 'a better review wins');
+  });
+
+  it('a review the gateway blocks keeps the first drawing; an unexpected error or a page that left is not hidden', async () => {
+    const good = EXAMPLES[1]?.spec;
+    assert.ok(good !== undefined);
+    const service = (chat: LocalModel['chat'], gateway: (calls: number) => Decision | undefined = () => undefined) => {
+      let calls = 0;
+      return createSpriteGenerator({
+        model: () => 'local',
+        unavailable: () => undefined,
+        localModel: () => ({ chat }),
+        persona: () => undefined,
+        gateway: (payload, context, target) => {
+          calls += 1;
+          const decision = gateway(calls) ?? gatewayCheck(payload, context, target, secretMatcher([]));
+          if (decision.decision === 'allow') markLogged(decision);
+          return Promise.resolve(decision);
+        },
+        dataDir: root,
+      });
+    };
+    const answer = () => Promise.resolve({ text: JSON.stringify(good), value: good, finishReason: 'stop' as const, endpoint: 'omlx', model: 'fake', durationMs: 1 });
+    const blocked = service(answer, (calls) => (calls === 2 ? { decision: 'block', reason: 'test', findings: [] } as unknown as Decision : undefined));
+    assert.deepEqual((await blocked.generate(agent)).png, spriteSheet(good).png);
+
+    let calls = 0;
+    const broken = service(() => {
+      calls += 1;
+      return calls === 1 ? answer() : Promise.reject(new TypeError('a bug'));
+    });
+    await assert.rejects(broken.generate(agent), TypeError);
+
+    const controller = new AbortController();
+    let asked = 0;
+    const leaving = service(() => {
+      asked += 1;
+      controller.abort();
+      return answer();
+    });
+    await assert.rejects(leaving.generate(agent, controller.signal), (error: unknown) => error instanceof Error && error.name === 'AbortError');
+    assert.equal(asked, 1, 'no review once the page left');
   });
 });

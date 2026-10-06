@@ -45,6 +45,12 @@ export interface ClaudeStepInput {
    * rejection stops the run.
    */
   onEvent?: (event: Extract<ClaudeEvent, { type: 'text' | 'tool' | 'edit' }>) => void | Promise<void>;
+  /**
+   * The session to continue (D-111, the direct chat): a string resumes it,
+   * null starts a new one even after a crash. The interrupted run's session,
+   * when the engine has one, comes first; absent, only that one is resumed.
+   */
+  sessionRef?: string | null;
 }
 
 export type ClaudeStepResult =
@@ -58,6 +64,16 @@ export type ClaudeStepResult =
   | { kind: 'quota'; overage: boolean; resetsAt?: Date; usage: RunUsage }
   /** The run failed; its usage counts anyway. `error` says how, for the readable error (D-064). */
   | { kind: 'failed'; reason: string; usage: RunUsage; error: ClaudeError };
+
+/**
+ * The session a step continues: none when the caller asks for a new one
+ * (null); else the interrupted run's, when the engine has one; else the
+ * caller's (D-111, tappa A2).
+ */
+export function sessionToResume(step: Pick<StepContext, 'resume'>, input: Pick<ClaudeStepInput, 'sessionRef'>): string | undefined {
+  if (input.sessionRef === null) return undefined;
+  return step.resume?.sessionRef ?? input.sessionRef ?? undefined;
+}
 
 /** A model name as the binary reports it; anything else is not written. */
 const REPORTED_MODEL = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
@@ -95,7 +111,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     return { kind: 'failed', reason: `claude: ${error.kind}`, usage: toUsage(error.usage), error };
   };
 
-  const sessionRef = step.resume?.sessionRef ?? undefined;
+  const sessionRef = sessionToResume(step, input);
   const launch = {
     workspace: input.workspace,
     model: input.model,
