@@ -6,7 +6,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, DelegationDiff, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -104,9 +104,14 @@ export async function loadInstallation(): Promise<InstallationInfo | undefined> 
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
-export async function createConversation(mode: ConversationMode, project?: string): Promise<Conversation> {
-  const body = project === undefined || project === '' ? { mode } : { mode, project };
+export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent): Promise<Conversation> {
+  const body = { mode, ...(project === undefined || project === '' ? {} : { project }), ...(agent === undefined ? {} : { agent }) };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
+}
+
+/** The agents the user may talk with directly now (D-111d). */
+export async function listDirectAgents(): Promise<DirectAgent[]> {
+  return (await call<{ agents: DirectAgent[] }>('GET', '/api/direct-agents')).agents;
 }
 
 /** The projects the user approved, which a new work conversation may choose. */
@@ -466,6 +471,11 @@ export async function loadDelegationDiff(delegationId: string): Promise<Delegati
 /** A file changed by a run, as it is now in the approved project. */
 export async function loadDelegationFile(delegationId: string, index: number): Promise<FilePreview> {
   return (await call<{ file: FilePreview }>('GET', `/api/delegations/${encodeURIComponent(delegationId)}/files/${String(index)}`)).file;
+}
+
+/** "Apri" (D-117, tappa 3): the link of a page or an image of the delegation, served sandboxed for a few minutes. */
+export async function openDelegationFile(delegationId: string, index: number): Promise<string> {
+  return (await call<{ url: string }>('POST', `/api/delegations/${encodeURIComponent(delegationId)}/open`, { index })).url;
 }
 
 /** The graph of kb/ (D-087): pages up to L2 with their links and tags, never their text. */

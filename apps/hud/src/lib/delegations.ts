@@ -21,6 +21,18 @@ export function canPreview(file: DelegationFile): boolean {
   return file.change !== 'deleted';
 }
 
+/** What "Apri" opens in a new tab (D-117, tappa 3): a page or an image the run left; the core says the same. */
+const OPENABLE = new Set(['html', 'htm', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif']);
+
+export function canOpen(file: DelegationFile): boolean {
+  if (file.change === 'deleted') return false;
+  const name = file.path.split('/').at(-1) ?? '';
+  const dot = name.lastIndexOf('.');
+  // A hidden file is never served.
+  if (file.path.split('/').some((part) => part.startsWith('.'))) return false;
+  return dot > 0 && OPENABLE.has(name.slice(dot + 1).toLowerCase());
+}
+
 const LANGUAGES: Record<string, string> = {
   ts: 'ts',
   tsx: 'tsx',

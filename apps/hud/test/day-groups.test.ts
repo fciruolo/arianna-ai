@@ -10,6 +10,8 @@ function conversation(id: string, lastMessageAt: Date | null, createdAt = new Da
     mode: 'private',
     clearance: 'L2',
     effectiveLabel: 'L0',
+    agent: null,
+    contextTokens: null,
     workspace: null,
     model: null,
     title: id,

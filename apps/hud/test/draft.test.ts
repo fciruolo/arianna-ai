@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { goesToArianna } from '../src/lib/commands.ts';
-import { draftFromAddress, draftPath, draftProjectProblem, draftStep, firstMessageProblem } from '../src/lib/draft.ts';
+import { asksBeforeClaude, choiceAgent, longMessageStep, draftFromAddress, draftPath, draftProjectProblem, draftStep, firstMessageProblem, LONG_TO_CLAUDE, sameChoice } from '../src/lib/draft.ts';
 
 test('a draft has an address of its own, and a reload comes back to it', () => {
-  assert.equal(draftPath('private'), '/nuova?tipo=privata');
-  assert.equal(draftPath('work'), '/nuova?tipo=lavoro');
-  assert.equal(draftPath('work', 'arianna'), '/nuova?tipo=lavoro&progetto=arianna');
-  assert.equal(draftPath('private', 'arianna'), '/nuova?tipo=privata');
+  assert.equal(draftPath({ mode: 'private' }), '/nuova?tipo=privata');
+  assert.equal(draftPath({ mode: 'work' }), '/nuova?tipo=lavoro');
+  assert.equal(draftPath({ mode: 'work', project: 'arianna' }), '/nuova?tipo=lavoro&progetto=arianna');
+  assert.equal(draftPath({ mode: 'private', project: 'arianna' }), '/nuova?tipo=privata');
   assert.deepEqual(draftFromAddress('/nuova', '?tipo=privata'), { mode: 'private' });
   assert.deepEqual(draftFromAddress('/nuova/', ''), { mode: 'private' });
   assert.deepEqual(draftFromAddress('/nuova', '?tipo=strano'), { mode: 'private' });
@@ -40,4 +40,40 @@ test('a work draft on a project no longer approved is said at once; otherwise no
   assert.equal(draftProjectProblem({ mode: 'private', project: 'vecchio' }, ['arianna']), undefined);
   // The list is not read yet: no warning that could be false.
   assert.equal(draftProjectProblem({ mode: 'work', project: 'vecchio' }, undefined), undefined);
+});
+
+test('the direct chat with an agent has its address (D-111d); the old address of the Coder still opens it', () => {
+  assert.equal(draftPath({ mode: 'work', project: 'arianna', agent: 'coder' }), '/nuova?con=coder&tipo=lavoro&progetto=arianna');
+  assert.equal(draftPath({ mode: 'private', agent: 'traduttore' }), '/nuova?con=traduttore&tipo=privata');
+  assert.deepEqual(draftFromAddress('/nuova', '?con=traduttore&tipo=privata'), { mode: 'private', agent: 'traduttore' });
+  assert.deepEqual(draftFromAddress('/nuova', '?con=coder&tipo=lavoro&progetto=arianna'), { mode: 'work', project: 'arianna', agent: 'coder' });
+  assert.deepEqual(draftFromAddress('/nuova', '?tipo=coder&progetto=arianna'), { mode: 'work', project: 'arianna', agent: 'coder' });
+  // Never Arianna, never an id the core would refuse.
+  assert.deepEqual(draftFromAddress('/nuova', '?con=arianna&tipo=privata'), { mode: 'private' });
+  assert.deepEqual(draftFromAddress('/nuova', '?con=Bad%20Name&tipo=lavoro'), { mode: 'work' });
+  assert.equal(choiceAgent({ mode: 'private', agent: 'traduttore' }), 'traduttore');
+  assert.equal(choiceAgent({ mode: 'work', agent: 'arianna' }), undefined);
+  assert.equal(sameChoice({ mode: 'work', project: 'a', agent: 'coder' }, { mode: 'work', project: 'a' }), false);
+  assert.equal(sameChoice({ mode: 'work', project: 'a', agent: 'coder' }, { mode: 'work', project: 'a', agent: 'coder' }), true);
+  assert.match(firstMessageProblem('/nota x', goesToArianna, 'coder') ?? '', /scrivi prima al Coder/);
+  assert.match(firstMessageProblem('/nota x', goesToArianna, 'traduttore') ?? '', /scrivi prima a traduttore/);
+});
+
+test('a long message of the direct chat asks before it goes to Claude; on the local model never', () => {
+  const long = 'a'.repeat(LONG_TO_CLAUDE + 1);
+  assert.equal(asksBeforeClaude(true, long), true);
+  assert.equal(asksBeforeClaude(true, 'a'.repeat(LONG_TO_CLAUDE)), false);
+  assert.equal(asksBeforeClaude(false, long), false);
+});
+
+test('a long message asks once, waits while asking, and only the button sends it', () => {
+  const long = 'a'.repeat(LONG_TO_CLAUDE + 1);
+  assert.equal(longMessageStep(true, long, true, { asking: false, confirmed: false }), 'ask');
+  // Enter again, or a held key, while the question is open: nothing.
+  assert.equal(longMessageStep(true, long, true, { asking: true, confirmed: false }), 'wait');
+  assert.equal(longMessageStep(true, long, true, { asking: true, confirmed: true }), 'send');
+  // A note or a command never goes to Claude: no question.
+  assert.equal(longMessageStep(true, long, false, { asking: false, confirmed: false }), 'send');
+  assert.equal(longMessageStep(true, 'breve', true, { asking: false, confirmed: false }), 'send');
+  assert.equal(longMessageStep(false, long, true, { asking: false, confirmed: false }), 'send');
 });

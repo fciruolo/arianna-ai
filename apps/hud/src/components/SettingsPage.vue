@@ -13,31 +13,12 @@ import {
   preparePrivacy,
   restartLocal,
   saveSettings,
-  sheetUrl,
   type CopiedVoice,
   type TrialModel,
   type UploadedCharacter,
 } from '../lib/api.ts';
 import { MODE_BADGE, MODE_HINT, type InstallationInfo } from '../lib/installation.ts';
-import {
-  ADDRESSES,
-  characters as countCharacters,
-  costText,
-  DEFAULT_PERSONA_FORM,
-  FIXED_NAMES,
-  MAX_DISPLAY_NAME,
-  MAX_TEXT,
-  PERSONA_NOTICE,
-  PERSONA_WHERE,
-  personaCost,
-  personasBody,
-  personasForm,
-  personasProblem,
-  TONE_EXAMPLE,
-  TONE_TEXT,
-  TONES,
-  type PersonaForm,
-} from '../lib/persona.ts';
+import { personasBody, personasForm, personasProblem, type PersonaForm } from '../lib/persona.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
@@ -61,8 +42,6 @@ import {
   rolesBody,
   keptSections,
   leaveAfterProblem,
-  MAX_LEAVE_AFTER,
-  modelBlocker,
   pollAction,
   SECTION_TEXT,
   sectionChanged,
@@ -74,7 +53,6 @@ import {
   voiceProblem,
   writeError,
   type AgentsForm,
-  type CloudModelAlias,
   type CatalogModel,
   type CloudModelsForm,
   type EndpointForm,
@@ -92,17 +70,12 @@ import {
   type VoiceForm,
   type VoiceValues,
 } from '../lib/settings.ts';
-import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
-import { listUserAgents, loadUserAgentPrompt } from '../lib/user-agents.ts';
-import CharacterGenerate from './CharacterGenerate.vue';
-import CharacterUpload from './CharacterUpload.vue';
+import type { CharacterListing, DirectAgent } from '../lib/types.ts';
+import AgentsSettings from './AgentsSettings.vue';
 import Icon from './Icon.vue';
 import ModelEvals from './ModelEvals.vue';
-import PixelAgent from './PixelAgent.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
-import SheetPreview from './SheetPreview.vue';
-import UserAgents from './UserAgents.vue';
 
 /**
  * The settings page of the web chat (D-071), over /api/settings. Each card
@@ -116,13 +89,23 @@ import UserAgents from './UserAgents.vue';
  * `section`: the slug of the address (D-105), `/impostazioni/<slug>`; the page shows that section only.
  */
 /** `devPending`: open questions of "Sviluppo di Arianna" without an answer, a dot on its entry (D-120). */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number }>();
+/** `directAgents`: the agents one can talk with directly (D-111d), for "Apri una chat" in Agenti (D-133). */
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[] }>();
 const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
 /** `dirty`: some section holds edits not saved, for the back button of the browser (App.vue). */
-/** `newAgent`: the page "Nuovo agente" (D-119, tappa T3). */
-const emit = defineEmits<{ changed: [sections: string[]]; voiceTrial: []; devProgress: []; changelog: []; newAgent: []; section: [slug: string | undefined]; dirty: [dirty: boolean] }>();
+/** `newAgent`: the page "Nuovo agente" (D-119, tappa T3). `chat`: "+ Nuovo" opened on an agent (D-133). */
+const emit = defineEmits<{
+  changed: [sections: string[]];
+  voiceTrial: [];
+  devProgress: [];
+  changelog: [];
+  newAgent: [];
+  chat: [agent: string];
+  section: [slug: string | undefined];
+  dirty: [dirty: boolean];
+}>();
 
 interface Forms {
   roles: Partial<Record<ModelRole, string>>;
@@ -248,11 +231,11 @@ function markSaved(section: Section): void {
 /** The parts the Agenti card saves together, in one write (D-116); it is known by `agents`. */
 const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'participants'];
 
-/** Saves `parts` (by default the section alone) in one write; the card is known by `section`. */
-async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<void> {
+/** Saves `parts` (by default the section alone) in one write; the card is known by `section`. False: not saved. */
+async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<boolean> {
   const current = forms.value;
   const fingerprint = view.value?.fingerprint;
-  if (current === null || fingerprint === null || fingerprint === undefined) return;
+  if (current === null || fingerprint === null || fingerprint === undefined) return false;
   const values: SettingsBody = {};
   if (parts.includes('roles')) values.roles = rolesBody(current.roles);
   if (parts.includes('cloudModels')) values.cloudModels = cloudModelsBody(current.cloudModels);
@@ -270,8 +253,10 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
     apply(await saveSettings(fingerprint, values), others(parts));
     markSaved(section);
     emit('changed', [...parts]);
+    return true;
   } catch (error) {
     fail(section, error);
+    return false;
   } finally {
     busy.value = null;
   }
@@ -364,19 +349,8 @@ const characters = ref<CharacterListing | null>(null);
 /** "Novità": the current version, in small at the bottom of the index; null until read or when there is none. */
 const currentVersion = ref<string | null>(null);
 
-/** Agent → its description and whether it is the user's (its prompt can be read): what "Genera personaggio" sends (D-123). */
-const agentTexts = ref<Record<string, { description: string; user: boolean }>>({});
-
 onMounted(() => {
   void reload();
-  void listUserAgents()
-    .then((listing) => {
-      agentTexts.value = Object.fromEntries([
-        ...listing.official.map((agent) => [agent.name, { description: agent.description, user: false }] as const),
-        ...listing.user.map((agent) => [agent.name, { description: agent.description, user: true }] as const),
-      ]);
-    })
-    .catch(() => undefined);
   void loadChangelog()
     .then((changelog) => {
       currentVersion.value = changelog.current;
@@ -417,22 +391,8 @@ const voiceChoices = computed(() => {
   return voices.map((voice) => ({ value: voice, label: clones.value.find((clone) => clone.id === voice)?.name ?? voice }));
 });
 
-const agentIds = computed(() => {
-  const ids = new Set([...Object.keys(characters.value?.agents ?? {}), ...Object.keys(view.value?.values?.characters ?? {}), ...Object.keys(view.value?.agentModels ?? {})]);
-  return [...ids].sort((a, b) => (a === 'arianna' ? -1 : b === 'arianna' ? 1 : a.localeCompare(b)));
-});
-const characterOptions = computed(() =>
-  (characters.value?.packs ?? []).flatMap((pack) => pack.characters.map((character) => ({ value: `${pack.id}/${character.id}`, label: `${pack.name} · ${character.name}`, pack, character }))),
-);
 /** Bumped by an upload: the sheets are asked again, a replaced one included (D-118). */
 const sheetVersion = ref(0);
-/** The agents whose animations are open. */
-const animationsOpen = ref(new Set<string>());
-function toggleAnimations(agent: string): void {
-  const next = new Set(animationsOpen.value);
-  if (!next.delete(agent)) next.add(agent);
-  animationsOpen.value = next;
-}
 /** An agent activated, deactivated or promoted (D-119): its card, character and model show up at once. */
 async function onAgentsChanged(): Promise<void> {
   emit('changed', ['userAgents', 'characters']);
@@ -443,67 +403,40 @@ async function onAgentsChanged(): Promise<void> {
     // The next reload lists it.
   }
 }
-/** A sheet saved in the pack miei (D-118): listed again and chosen for the agent; the card's Salva keeps it. */
+/** A sheet saved in the pack miei (D-118): listed again and chosen for the agent; the bar's Salva keeps it. */
 async function onUploaded(agent: string, saved: UploadedCharacter): Promise<void> {
   sheetVersion.value += 1;
   try {
     characters.value = await loadCharacters();
   } catch {
-    // The choice below still names it; a reload lists it.
+    // The choice still names it; a reload lists it.
   }
   if (forms.value !== null) forms.value.characters[agent] = `${saved.pack}/${saved.character}`;
 }
-function resetCharacter(agent: string): void {
-  if (forms.value !== null) delete forms.value.characters[agent];
-}
-/** The character without a choice, as the core picks it: the original of the same name, otherwise the Coder's. */
-function defaultOption(agent: string) {
-  const originals = characterOptions.value.filter((option) => option.pack.original);
-  return originals.find((option) => option.character.id === agent) ?? originals.find((option) => option.character.id === 'coder');
-}
-function previewOf(agent: string): CharacterChoice | undefined {
-  const value = forms.value?.characters[agent] ?? '';
-  const option = value === '' ? defaultOption(agent) : characterOptions.value.find((item) => item.value === value);
-  if (option !== undefined) return { pack: option.pack.id, character: option.character.id, rows: option.character.rows };
-  return value === '' ? characters.value?.agents[agent] : undefined;
-}
-
-// Personas (D-107): one form per agent; an agent without a persona gets the
-// defaults here, which are no change (compared as sent).
-watch(
-  // `forms` is replaced by a new view, its `personas` by a reset of the card.
-  [agentIds, forms, () => forms.value?.personas],
-  () => {
-    const personas = forms.value?.personas;
-    if (personas === undefined) return;
-    for (const agent of agentIds.value) if (!Object.hasOwn(personas, agent)) personas[agent] = { ...DEFAULT_PERSONA_FORM };
-  },
-  { immediate: true },
-);
-// Also an agent the file names but the characters do not: its card stays reachable.
-const personaAgents = computed(() => {
-  const named = Object.keys(forms.value?.personas ?? {}).filter((agent) => !agentIds.value.includes(agent));
-  return [...agentIds.value, ...named.sort()].filter((agent) => forms.value?.personas[agent] !== undefined);
-});
 const personasInvalid = computed(() => (forms.value === null ? undefined : personasProblem(forms.value.personas, agentName)));
 
-// The Agenti card (D-116): look, persona and model of each agent, saved together.
-const agentsChanged = computed(() => AGENT_PARTS.some(changed));
+// The Agenti page (D-116, D-133): look, persona and model of every agent, saved together.
 function resetAgents(): void {
   for (const part of AGENT_PARTS) reset(part);
   delete errors.value.agents;
 }
-/** The cloud models the card of an agent allows; none: local only. */
-function modelsOf(agent: string): CloudModelAlias[] {
-  return view.value?.agentModels[agent] ?? [];
+/** Description and prompt of a user's agent changed and not saved: they live in the Agenti page only. */
+const agentTextsDirty = ref(false);
+/** "Apri una chat" from Agenti: the edits not saved are lost on the way, as when leaving the settings. */
+function openChat(agent: string): void {
+  if (!confirmLeave()) return;
+  emit('chat', agent);
 }
-/** Why a model would not start a conversation now, from the saved settings. */
-function blockerOf(model: CloudModelAlias): string | undefined {
-  const values = view.value?.values;
-  return values === null || values === undefined ? undefined : modelBlocker(model, values);
+/** Another section from inside Agenti: the texts of the user's agents not saved are lost, so ask first (D-133). */
+function textsLeft(): boolean {
+  return !agentTextsDirty.value || window.confirm('Descrizione e prompt cambiati di un tuo agente non sono salvati: cambiando sezione si perdono. Vuoi cambiare?');
 }
 function openSection(slug: string): void {
-  emit('section', slug);
+  if (textsLeft()) emit('section', slug);
+}
+/** "Nuovo agente" is a page of its own: leaving the settings, as with the other pages. */
+function openNewAgent(): void {
+  if (confirmLeave()) emit('newAgent');
 }
 
 // Telegram chats and projects: added from a small row of fields.
@@ -584,15 +517,21 @@ const chosen = computed(() => resolveSection(props.section));
 const active = computed(() => chosen.value.item.id);
 const pending = computed(() => pendingTitles(active.value, (section) => changed(section as Section)));
 function dirty(item: IndexItem): boolean {
-  return sectionDirty(item.id, (section) => changed(section as Section));
+  return sectionDirty(item.id, (section) => changed(section as Section)) || (item.id === 'agents' && agentTextsDirty.value);
 }
-/** Every section holding edits not saved. */
-const unsaved = computed(() => pendingTitles('', (section) => changed(section as Section)));
+/** Every section holding edits not saved; the texts of the user's agents too (D-133). */
+const unsaved = computed(() => {
+  const titles = pendingTitles('', (section) => changed(section as Section));
+  return agentTextsDirty.value ? [...titles, 'Agenti (descrizione e prompt)'] : titles;
+});
 watch(unsaved, (titles) => emit('dirty', titles.length > 0), { immediate: true });
-/** Leaving the settings loses the edits not saved: ask first. */
-function leave(to: 'voiceTrial' | 'devProgress' | 'changelog'): void {
+/** Leaving the settings loses the edits not saved: true when there are none, or the user says to go anyway. */
+function confirmLeave(): boolean {
   const left = unsaved.value;
-  if (left.length > 0 && !window.confirm(`Ci sono modifiche non salvate in: ${left.join(', ')}. Uscendo dalle Impostazioni si perdono. Vuoi uscire?`)) return;
+  return left.length === 0 || window.confirm(`Ci sono modifiche non salvate in: ${left.join(', ')}. Uscendo dalle Impostazioni si perdono. Vuoi uscire?`);
+}
+function leave(to: 'voiceTrial' | 'devProgress' | 'changelog'): void {
+  if (!confirmLeave()) return;
   if (to === 'devProgress') emit('devProgress');
   else if (to === 'changelog') emit('changelog');
   else emit('voiceTrial');
@@ -604,10 +543,13 @@ function open(item: IndexItem): void {
     leave(item.id === 'dev-progress' ? 'devProgress' : item.id === 'changelog' ? 'changelog' : 'voiceTrial');
     return;
   }
+  // The texts of the user's agents live in the Agenti page only: another section drops them.
+  if (active.value === 'agents' && item.id !== 'agents' && !textsLeft()) return;
   fromIndex = !chosen.value.explicit;
   emit('section', item.slug);
 }
 function backToIndex(): void {
+  if (!textsLeft()) return;
   if (fromIndex) {
     fromIndex = false;
     window.history.back();
@@ -684,7 +626,7 @@ watch(active, () => {
     </nav>
 
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
-      <div class="mx-auto flex max-w-[860px] flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
+      <div :class="active === 'agents' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
         <header>
           <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex">‹ Impostazioni</button>
           <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">{{ chosen.item.title }}</h1>
@@ -769,12 +711,12 @@ watch(active, () => {
                   </div>
                 </div>
               </div>
-              <!-- D-123: the model that draws a character; Claude Sonnet unless the user chooses -->
+              <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
               <div class="grid grid-cols-1 items-center gap-1.5 border-t border-line pt-2.5 sm:grid-cols-[140px_minmax(0,1fr)] md:gap-3">
                 <label for="role-sprites" class="font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
                 <select id="role-sprites" v-model="forms.sprites" class="field min-w-0 px-2 py-1.5 text-[13px]">
-                  <option value="sonnet">Claude Sonnet (predefinito)</option>
-                  <option value="opus">Claude Opus</option>
+                  <option value="sonnet">Claude Sonnet</option>
+                  <option value="opus">Claude Opus (predefinito)</option>
                   <option value="local">modello locale (quello dell’orchestratore)</option>
                 </select>
               </div>
@@ -890,134 +832,27 @@ watch(active, () => {
               <p v-else class="text-sm text-muted">Le chiamate sono spente: accendile per scegliere voce, limiti e orari.</p>
             </SettingsCard>
 
-            <!-- Agents (D-116): look, persona and model of each agent, saved together -->
-            <SettingsCard v-if="active === 'agents'" id="agents" title="Agenti" kind="now" :changed="agentsChanged" :saved="saved === 'agents'" :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)" :busy="busy === 'agents'" :error="errors.agents" @cancel="resetAgents" @save="save('agents', AGENT_PARTS)">
-              <p class="text-xs text-muted">
-                Aspetto, modello e stile di ogni agente. Strumenti, permessi, etichette e limiti non cambiano: restano nelle schede <code class="font-mono">agents/*.yaml</code>.
-              </p>
-              <div class="flex flex-col gap-1 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
-                <label for="leave-after" class="flex flex-wrap items-center gap-2">
-                  Un agente entrato in una conversazione esce da solo dopo
-                  <input id="leave-after" v-model.number="forms.participants" type="number" min="0" :max="MAX_LEAVE_AFTER" step="1" class="field w-16 px-2 py-1 text-[13px]" />
-                  tuoi messaggi senza lavori per lui
-                </label>
-                <p class="text-xs text-muted">Saluta con una frase e rientra alla delega seguente. 0 vuol dire mai. Il Coder non esce da solo: lo togli tu.</p>
-                <p v-if="leaveAfterProblem(forms.participants) !== undefined" class="text-xs text-warn">{{ leaveAfterProblem(forms.participants) }}</p>
-              </div>
-              <div v-for="agent in personaAgents" :key="agent" class="flex flex-col gap-2.5 rounded-[10px] border border-line bg-surface-2 p-3">
-                <div class="flex items-center gap-3">
-                  <PixelAgent :choice="previewOf(agent)" pose="idle" :scale="1" :version="sheetVersion" />
-                  <h3 class="hud-title">{{ agentName(agent) }}</h3>
-                  <div v-if="previewOf(agent) || forms.characters[agent] !== undefined" class="ml-auto flex flex-wrap gap-2">
-                    <!-- The character comes from Genera personaggio or Carica PNG; a chosen one, even one no longer served, can go back to the default. -->
-                    <button v-if="forms.characters[agent] !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="resetCharacter(agent)">Torna al predefinito</button>
-                    <button v-if="previewOf(agent)" type="button" class="btn px-2.5 py-1 text-xs" :aria-expanded="animationsOpen.has(agent)" @click="toggleAnimations(agent)">
-                      {{ animationsOpen.has(agent) ? 'Chiudi animazioni' : 'Animazioni' }}
-                    </button>
-                    <a v-if="previewOf(agent)" class="btn px-2.5 py-1 text-xs" :href="sheetUrl(previewOf(agent)!, sheetVersion)" :download="`${previewOf(agent)!.character}.png`">Scarica PNG</a>
-                  </div>
-                </div>
-                <SheetPreview v-if="animationsOpen.has(agent) && previewOf(agent)" :src="sheetUrl(previewOf(agent)!, sheetVersion)" :rows="previewOf(agent)!.rows" />
-                <CharacterGenerate
-                  v-if="agentTexts[agent]"
-                  :agent-label="agentName(agent)"
-                  :name="agent"
-                  :description="agentTexts[agent].description"
-                  prompt=""
-                  :fetch-prompt="agentTexts[agent].user ? () => loadUserAgentPrompt(agent) : undefined"
-                  @uploaded="(saved) => onUploaded(agent, saved)"
-                />
-                <CharacterUpload :agent-label="agentName(agent)" @uploaded="(saved) => onUploaded(agent, saved)" />
-                <div class="flex flex-col gap-2.5">
-                  <!-- Arianna: the orchestrator of Modelli locali, one place to set it, local only. -->
-                  <div v-if="agent === 'arianna'" class="flex flex-col gap-1 text-xs text-muted">
-                    Modello
-                    <p class="flex flex-wrap items-center gap-2 py-1.5 text-[13px] text-ink">
-                      <span class="font-mono text-xs">{{ view.values?.roles.orchestrator ?? 'nessuno' }}</span><span class="chip">locale</span>
-                      <a href="/impostazioni/modelli-locali" class="text-xs text-accent hover:underline" @click.prevent="openSection('modelli-locali')">Si cambia in Modelli locali</a>
-                    </p>
-                  </div>
-                  <label v-else-if="forms.agents[agent] !== undefined && modelsOf(agent).length > 0" class="flex flex-col gap-1 text-xs text-muted">
-                    Modello delle conversazioni nuove
-                    <select v-model="forms.agents[agent]" class="field px-2 py-1.5 text-[13px] text-ink">
-                      <option value="">automatico (sceglie il router)</option>
-                      <option v-for="model in modelsOf(agent)" :key="model" :value="model">{{ MODEL_TEXT[model] ?? model }}{{ blockerOf(model) === undefined ? '' : ` (${blockerOf(model)})` }}</option>
-                      <!-- A model of the file the card no longer allows stays visible: it is kept, and ignored. -->
-                      <option v-if="forms.agents[agent] !== '' && !modelsOf(agent).includes(forms.agents[agent] as CloudModelAlias)" :value="forms.agents[agent]">
-                        {{ MODEL_TEXT[forms.agents[agent] ?? ''] ?? forms.agents[agent] }} (non consentito dalla scheda)
-                      </option>
-                    </select>
-                  </label>
-                  <div v-else class="flex flex-col gap-1 text-xs text-muted">
-                    Modello
-                    <p class="py-1.5 text-[13px] text-ink">solo modelli locali: sceglie il router</p>
-                  </div>
-                </div>
-                <template v-if="forms.personas[agent]">
-                  <fieldset class="flex flex-col gap-1 text-xs text-muted">
-                    <legend class="mb-1">Tono</legend>
-                    <div class="flex flex-wrap gap-1.5">
-                      <label
-                        v-for="tone in TONES"
-                        :key="tone"
-                        class="cursor-pointer rounded-[9px] border px-2.5 py-1 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
-                        :class="forms.personas[agent].tone === tone ? 'border-accent bg-accent/15 text-ink' : 'border-line-strong text-muted hover:text-ink'"
-                      >
-                        <input v-model="forms.personas[agent].tone" type="radio" :name="`tone-${agent}`" :value="tone" class="sr-only" />{{ TONE_TEXT[tone] }}
-                      </label>
-                    </div>
-                  </fieldset>
-                  <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
-                    <label class="flex flex-col gap-1 text-xs text-muted">
-                      Ti dà del
-                      <select v-model="forms.personas[agent].address" class="field px-2 py-1.5 text-[13px] text-ink">
-                        <option v-for="address in ADDRESSES" :key="address" :value="address">{{ address }}</option>
-                      </select>
-                    </label>
-                    <label class="flex flex-col gap-1 text-xs text-muted">
-                      Nome visualizzato
-                      <input
-                        v-model="forms.personas[agent].displayName"
-                        :maxlength="MAX_DISPLAY_NAME"
-                        :disabled="FIXED_NAMES.includes(agent)"
-                        :placeholder="FIXED_NAMES.includes(agent) ? 'non si cambia' : agentName(agent)"
-                        class="field px-2 py-1.5 text-[13px] text-ink disabled:opacity-60"
-                      />
-                    </label>
-                  </div>
-                  <p class="text-xs text-muted">Esempio: <span class="italic text-ink">«{{ TONE_EXAMPLE[forms.personas[agent].tone] }}»</span></p>
-                  <label class="flex flex-col gap-1 text-xs text-muted">
-                    <span class="flex justify-between gap-2"
-                      >Specializzazione: ruolo e competenze<span class="font-mono" :class="countCharacters(forms.personas[agent].specialization) > MAX_TEXT ? 'text-danger' : ''"
-                        >{{ countCharacters(forms.personas[agent].specialization) }}/{{ MAX_TEXT }}</span
-                      ></span
-                    >
-                    <textarea v-model="forms.personas[agent].specialization" rows="3" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Es. sviluppatore senior TypeScript, attento ai test e alla leggibilità." />
-                  </label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">
-                    <span class="flex justify-between gap-2"
-                      >Personalità: come parla<span class="font-mono" :class="countCharacters(forms.personas[agent].traits) > MAX_TEXT ? 'text-danger' : ''"
-                        >{{ countCharacters(forms.personas[agent].traits) }}/{{ MAX_TEXT }}</span
-                      ></span
-                    >
-                    <textarea v-model="forms.personas[agent].traits" rows="3" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Es. precisa e calma, con un debole per le metafore di cucina." />
-                  </label>
-                  <p class="flex items-start gap-2 text-xs text-warn"><Icon name="gateway" :size="14" class="mt-px" />{{ PERSONA_NOTICE }}</p>
-                  <p class="text-xs text-muted">{{ costText(personaCost(forms.personas[agent])) }}</p>
-                </template>
-              </div>
-              <p class="text-xs text-muted">
-                Il modello vale per le conversazioni nuove (per ora quelle di lavoro, con il Coder; gli altri agenti quando si potranno scegliere in «+ Nuovo»): il selettore della chat
-                lo cambia per una conversazione, e il router lo usa finché nessuna regola lo esclude. Un
-                modello spento o con l’esecutore spento si può scegliere, ma vale solo quando è acceso; non accende mai un esecutore. Per Arianna solo modelli locali.
-              </p>
-              <p class="text-xs text-muted">
-                {{ PERSONA_WHERE }} La specializzazione si aggiunge al ruolo scritto nella scheda dell’agente, non lo sostituisce. Al salvataggio un testo con IBAN, codici fiscali,
-                carte, chiavi o valori del vault viene rifiutato. Un foglio caricato con «Carica PNG» va nel pacchetto
-                <code class="font-mono">data/characters/miei</code>, fuori da git; un pacchetto intero si copia a mano in <code class="font-mono">data/characters</code>, poi si ricarica questa pagina.
-              </p>
-            </SettingsCard>
-            <UserAgents v-if="active === 'agents'" @changed="onAgentsChanged" @new-agent="emit('newAgent')" />
+            <!-- Agents (D-116, D-133): the cards on the left, the chosen agent in tabs, one bar to save -->
+            <AgentsSettings
+              v-if="active === 'agents'"
+              :form="forms"
+              :base="base ?? forms"
+              :view="view"
+              :characters="characters"
+              :sheet-version="sheetVersion"
+              :busy="busy === 'agents'"
+              :error="errors.agents"
+              :invalid="personasInvalid ?? leaveAfterProblem(forms.participants)"
+              :direct-agents="directAgents ?? []"
+              :save="() => save('agents', AGENT_PARTS)"
+              @cancel="resetAgents"
+              @uploaded="onUploaded"
+              @changed="onAgentsChanged"
+              @new-agent="openNewAgent"
+              @section="openSection"
+              @chat="openChat"
+              @dirty="agentTextsDirty = $event"
+            />
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />

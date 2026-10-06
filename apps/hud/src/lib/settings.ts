@@ -42,7 +42,7 @@ export interface SettingsValues {
   personas: Record<string, PersonaValues>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModelAlias }>;
-  /** The model that draws a character (D-123): `[sprites] model`, sonnet when absent. */
+  /** The model that draws a character (D-123): `[sprites] model`, opus when absent (D-132). */
   sprites: 'sonnet' | 'opus' | 'local';
   /** Messages of the user before an idle agent leaves the conversation (I-8, D-130): `[participants] leave_after`; 0 never. */
   participants: number;

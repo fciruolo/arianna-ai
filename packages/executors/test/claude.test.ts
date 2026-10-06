@@ -176,12 +176,25 @@ describe('claude stream', () => {
     );
     assert.deepEqual(stream.result, { ok: true, text: 'ok', permissionDenials: 0 });
     assert.equal(stream.sessionRef, SESSION);
-    assert.deepEqual(stream.usage, { tokensIn: 2 + 1675 + 1448, tokensOut: 4, turns: 1 });
+    assert.deepEqual(stream.usage, { tokensIn: 2 + 1675 + 1448, tokensOut: 4, turns: 1, context: 2 + 1675 + 1448 + 4 });
     const limit = events[3];
     assert.ok(limit?.type === 'rate-limit');
     assert.equal(limit.window, 'five_hour');
     assert.equal(limit.utilization, 0.25);
     assert.equal(limit.resetsAt?.toISOString(), new Date(1_790_979_600_000).toISOString());
+  });
+
+  it('the context is the latest response, not the sum of the run (D-111)', () => {
+    const stream = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+    stream.feed(realInit('/w'));
+    const assistant = (id: string, input: number, output: number) =>
+      JSON.stringify({ type: 'assistant', message: { id, content: [], usage: { input_tokens: input, cache_read_input_tokens: 10, output_tokens: output } } });
+    stream.feed(assistant('a', 100, 5));
+    stream.feed(assistant('b', 200, 7));
+    assert.deepEqual(stream.usage, { tokensIn: 110 + 210, tokensOut: 12, turns: 2, context: 210 + 7 });
+    const fresh = new ClaudeStream({ cwd: '/w', tools: ['Read'] });
+    fresh.feed(realInit('/w'));
+    assert.equal(fresh.usage.context, undefined);
   });
 
   it('trusts nothing before init, and fails on a line that is not JSON', () => {
