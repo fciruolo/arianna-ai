@@ -2,7 +2,25 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-06, 10:40 circa (vedi la sezione delle 10:40). Prima: 2026-10-06, 01:00 circa. **Chat installabile come app di Chrome fatta** sul ramo `task/notifiche-d126` (commit `ecb646a`: manifest, icone 192/512/mascherabile dalla testa pixel con `headIconPng`, test; `reviewer` senza bloccanti). **Prova dell'utente: l'app si installa, ma la notifica di macOS arriva ancora a nome di "Google Chrome".** Scritta **D-128, aiutante nativo in Swift** (`apps/notifier`, barra dei menu, endpoint `GET /api/notifications/stream` con solo tipo e conversazione), accettata. **Scelte dell'utente:** il ramo `task/notifiche-d126` resta aperto e si unisce come 0.13.0 solo quando l'aiutante funziona; ordine: **prima la chat diretta con il Coder (D-111 tappa A), poi D-128** ("in parallelo se possibile": non con la quota sopra il 100%), poi etichette parlanti con legenda, I-8, I-7. La chat diretta con il Coder va in un ramo suo da `main`. Core e chat girano ancora su `task/notifiche-d126`.
+Aggiornato: 2026-10-06, 14:30 circa (vedi la sezione delle 14:30). Prima: 10:40 circa. Prima: 2026-10-06, 01:00 circa. **Chat installabile come app di Chrome fatta** sul ramo `task/notifiche-d126` (commit `ecb646a`: manifest, icone 192/512/mascherabile dalla testa pixel con `headIconPng`, test; `reviewer` senza bloccanti). **Prova dell'utente: l'app si installa, ma la notifica di macOS arriva ancora a nome di "Google Chrome".** Scritta **D-128, aiutante nativo in Swift** (`apps/notifier`, barra dei menu, endpoint `GET /api/notifications/stream` con solo tipo e conversazione), accettata. **Scelte dell'utente:** il ramo `task/notifiche-d126` resta aperto e si unisce come 0.13.0 solo quando l'aiutante funziona; ordine: **prima la chat diretta con il Coder (D-111 tappa A), poi D-128** ("in parallelo se possibile": non con la quota sopra il 100%), poi etichette parlanti con legenda, I-8, I-7. La chat diretta con il Coder va in un ramo suo da `main`. Core e chat girano ancora su `task/notifiche-d126`.
+
+**2026-10-06, 14:30 circa: stato mentre l'utente è via (2-3 ore)** (sostituisce la sezione delle 12:30 per ciò che va fatto ora).
+
+**Stato:** `main` alla **0.18.0** (tag `v0.17.0` notifiche D-126 + aiutante del Mac D-128, `v0.18.0` etichette parlanti D-129; niente push). La **cartella principale è staccata su `task/i8-uscita` (`51fbfc7`)**, con core e chat riavviati lì e la chat del core ricompilata: pronta per la prova di I-8.
+- **0.17.0:** in prova l'utente ha chiesto "una notifica sola": quella di sistema quando c'è (aiutante, poi browser con permesso), l'avviso nella chat solo senza; anche la prova di Impostazioni → Notifiche segue la regola; la pagina dice al core quale conversazione ha aperta (`conversation` nel messaggio di visibilità). Limiti scritti in D-128.
+- **0.18.0:** etichette parlanti provate ("Funziona", anche il posto della legenda).
+
+**In attesa di prova, una domanda a opzioni ciascuno, nell'ordine:**
+1. `task/i8-uscita` (D-130, worktree `.claude/worktrees/i8`): aggiornato con la 0.18.0; il numero "esce da solo dopo N messaggi" sta in fondo all'elenco di Impostazioni → Agenti e si salva con la barra unica; nella chat diretta nessuno esce. `pnpm test:db` 403/403, `reviewer` senza bloccanti (correzioni fatte). Unione come 0.19.0.
+2. `task/i7-salva-conversazione` (D-131, worktree `.claude/worktrees/i7`): aggiornato con la 0.18.0 (`232221b`), check verde. Prima della prova: cartella principale sul ramo, `pnpm hud:build`, riavvio.
+3. `task/d134-progetti` (D-134 tappa 1, worktree `.claude/worktrees/progetti`, `122029e`): pagina Progetti con File e Git in sola lettura, "Apri", "Apri in VS Code". Non provata dal vivo (il core attivo serve I-8; un secondo core dal worktree litigherebbe con la voce sulla porta 7421 e con i lavori in coda). Tappa 2 (Servizi) da fare dopo, con le regole già scritte in D-134 (g).
+
+**Non ovvio:**
+- `pnpm -s …` qui non funziona (pnpm risponde "unexpected argument '-s'") e il comando non parte: usare `pnpm hud:build` senza `-s`.
+- L'app di Chrome installata carica la chat servita dal core (`apps/hud/dist`): **dopo ogni cambio della chat da provare lì serve `pnpm hud:build`**, altrimenti gira codice vecchio (è stata la causa del doppione delle notifiche).
+- Dopo un riavvio del core l'aiutante del Mac si ricollega da solo, ma a intervalli crescenti fino a un minuto: aspettare "Collegata al core" nel suo menu prima di provare.
+- I test con il database in un worktree vogliono `config/arianna.toml` **aggiornato** copiato dalla cartella principale: con una copia vecchia falliscono i test delle deleghe locali.
+- Il controllo dei percorsi blocca anche percorsi inventati che iniziano con la cartella degli utenti del Mac, nei comandi e nei file: nei test usare per esempio `/srv/...`.
 
 **2026-10-06, 12:30 circa: consegna per una conversazione nuova** (sostituisce le sezioni delle 11:45 e precedenti per ciò che va fatto ora).
 
