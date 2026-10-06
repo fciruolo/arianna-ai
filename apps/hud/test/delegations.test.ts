@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { canPreview, codeFence, creditsByMessage, diffRows, diffTotals, hasCredit, languageOf } from '../src/lib/delegations.ts';
+import { canOpen, canPreview, codeFence, creditsByMessage, diffRows, diffTotals, hasCredit, languageOf } from '../src/lib/delegations.ts';
 import { CHANGE_TEXT, costText, creditText, diffCountText, DIFF_ERROR_TEXT, durationText, filesTitle, previewErrorText, runnerText } from '../src/lib/italian.ts';
 import { parseMarkdown } from '../src/lib/markdown.ts';
 import type { FileDiff, MessageCredit } from '../src/lib/types.ts';
@@ -140,4 +140,14 @@ test('diffTotals adds up the files with a diff, not the ones with an error', () 
   assert.deepEqual(diffTotals([]), { added: 0, removed: 0 });
   assert.equal(diffCountText(13, 1), '+13 −1');
   assert.match(DIFF_ERROR_TEXT['no-base'], /versione di partenza/);
+});
+
+test('"Apri" only on a page or an image the run left, never on a hidden file (D-117, tappa 3)', () => {
+  assert.equal(canOpen({ path: 'web/index.html', change: 'added' }), true);
+  assert.equal(canOpen({ path: 'img/Logo.PNG', change: 'modified' }), true);
+  assert.equal(canOpen({ path: 'web/index.html', change: 'deleted' }), false);
+  assert.equal(canOpen({ path: 'README.md', change: 'modified' }), false);
+  assert.equal(canOpen({ path: '.github/page.html', change: 'added' }), false);
+  assert.equal(canOpen({ path: 'web/.html', change: 'added' }), false);
+  assert.equal(canOpen({ path: 'Makefile', change: 'added' }), false);
 });

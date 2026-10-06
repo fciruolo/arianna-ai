@@ -8,8 +8,8 @@ import { asOneOf, asTable, onlyKeys } from './validate.ts';
 export const SPRITE_MODELS = ['sonnet', 'opus', 'local'] as const;
 export type SpriteModel = (typeof SPRITE_MODELS)[number];
 
-/** Without `[sprites]`: Claude Sonnet, the user's choice (D-123). */
-export const DEFAULT_SPRITE_MODEL: SpriteModel = 'sonnet';
+/** Without `[sprites]`: Claude Opus (D-132; Sonnet before). */
+export const DEFAULT_SPRITE_MODEL: SpriteModel = 'opus';
 
 /** `[sprites]` of arianna.toml: `model` only. */
 export interface SpritesConfig {

@@ -149,6 +149,11 @@ switch (scenario) {
     out({ ...init, session_id: '00000000-0000-4000-8000-000000000002' });
     hang();
     break;
+  case 'no-session':
+    // A resume of a session the binary no longer has: it ends before any message.
+    process.stderr.write('No conversation found with session ID\n');
+    process.exitCode = 1;
+    break;
   case 'second-init':
     out(init);
     out({ ...init, tools: [...tools, 'Bash'] });

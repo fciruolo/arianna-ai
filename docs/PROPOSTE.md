@@ -2484,6 +2484,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
 | I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | D-131, fatta sul ramo `task/i7-salva-conversazione` (prova dell'utente da fare) |
 | I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | scelte fatte: da scrivere come decisione e implementare |
+| I-9 | Una skill di Claude Code per la pixel art (oggi non esiste): regole di disegno, controlli e esempi del progetto, riusabile per i personaggi nuovi disegnati a mano | idea | da stimare | D-132 | annotata il 2026-10-06, da decidere |
 
 ### I-1, notifiche delle risposte
 

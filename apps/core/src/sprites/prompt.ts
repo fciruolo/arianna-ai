@@ -2,8 +2,11 @@ import type { Persona } from '@arianna/agents';
 import type { Label } from '@arianna/policy';
 
 import { ARIANNA } from '../../../hud/characters/art/arianna.ts';
+import { CODER } from '../../../hud/characters/art/coder.ts';
+import { USER } from '../../../hud/characters/art/user.ts';
+import type { CharacterArt } from '../../../hud/characters/compose.ts';
 import type { BriefFragment } from '../claude-step.ts';
-import { checkSprite, type SpriteSpec } from './spec.ts';
+import { checkSprite, REQUIRED_LETTERS, type SpriteSpec } from './spec.ts';
 
 /**
  * The brief of a character drawn by a model (D-123): our fixed part, L0, the
@@ -11,26 +14,47 @@ import { checkSprite, type SpriteSpec } from './spec.ts';
  * declaration, one fragment per field with its source.
  */
 
-/** Arianna's own parts, as the model must answer: the example of the prompt (the validator accepts it). */
-function ariannaExample(): SpriteSpec {
-  const { down, up, right } = ARIANNA.parts;
-  const rows = (part: { rows: readonly string[] } | undefined): string[] => [...(part?.rows ?? [])];
+/**
+ * A hand-drawn character as the model must answer: the examples of the
+ * prompt (the validator accepts them, quality.ts finds nothing to fix).
+ * `head` renames letters in the heads only (the Coder's eyes are its cyan
+ * light), `extra` adds the required letters an art lacks.
+ */
+function exampleOf(art: CharacterArt, head: Record<string, string> = {}, extra: Record<string, string> = {}): SpriteSpec {
+  const { down, up, right } = art.parts;
+  const thread = (part: { rows: readonly string[] } | undefined): { rows: readonly string[] } | undefined =>
+    part === undefined ? undefined : { rows: withoutThread(part.rows) };
+  const rows = (part: { rows: readonly string[] } | undefined, rename: Record<string, string> = {}): string[] =>
+    (part?.rows ?? []).map((line) => Array.from(line).map((letter) => rename[letter] ?? letter).join(''));
   const pieces = {
-    head: { front: rows(down.head), side: rows(right.head), back: rows(up.head) },
-    body: { front: rows(down.body), side: rows(right.body), back: rows(up.body) },
-    legs: { front: rows(down.legs), side: rows(right.legs), stride: rows(right['legs-step1']) },
+    head: { front: rows(down.head, head), side: rows(right.head, head), back: rows(up.head, head) },
+    body: { front: rows(thread(down.body)), side: rows(thread(right.body)), back: rows(thread(up.body)) },
+    legs: { front: rows(thread(down.legs)), side: rows(thread(right.legs)), stride: rows(thread(right['legs-step1'])) },
   };
-  const used = new Set([...Object.values(pieces).flatMap((group) => Object.values(group).flat().join(''))].join(''));
+  const used = new Set(Object.values(pieces).flatMap((group) => Object.values(group).flat()).join(''));
   const palette: Record<string, string> = {};
-  for (const [letter, colour] of Object.entries(ARIANNA.palette)) {
-    if (used.has(letter) || letter === 'o' || letter === 's' || letter === 'e') palette[letter] = colour;
-    // Her blink is the skin's shadow.
-    if (letter === 'e') palette.E = ARIANNA.palette.S ?? '#c98f6c';
+  for (const [letter, colour] of Object.entries({ ...art.palette, ...extra })) {
+    if (used.has(letter) || letter in REQUIRED_LETTERS) palette[letter] = colour;
   }
   return checkSprite({ palette, ...pieces });
 }
 
-const EXAMPLE = ariannaExample();
+/**
+ * Arianna's red thread runs outside her outline, off to one side: right on
+ * her, a bad habit to teach. In the example each pixel of it takes what its
+ * mirror pixel has, outline or nothing.
+ */
+function withoutThread(rows: readonly string[]): string[] {
+  return rows.map((line) => Array.from(line).map((letter, x) => (letter === 'r' ? (line[line.length - 1 - x] === 'o' ? 'o' : '.') : letter)).join(''));
+}
+
+/** The examples, each with the words that describe it. */
+export const EXAMPLES: readonly { about: string; spec: SpriteSpec }[] = [
+  { about: 'Arianna herself, the assistant: auburn hair, teal dress', spec: exampleOf(ARIANNA, {}, { E: ARIANNA.palette.S ?? '#c98f6c' }) },
+  // A robot has no skin: its hands are the grey of its arms.
+  { about: 'the Coder, an agent that writes code: a small grey robot with a dark visor, cyan eyes, an amber antenna and a cyan light on the chest', spec: exampleOf(CODER, { c: 'e', C: 'E' }, { e: '#4fd1c1', E: '#2a8f84', s: '#8fa3ad' }) },
+  { about: 'the user, a person: dark brown hair, amber hoodie, jeans', spec: exampleOf(USER, {}, { E: '#b9825e' }) },
+];
 
 export const SPRITE_PROMPT = [
   "You draw a pixel-art character for an agent of Arianna, a personal assistant that runs on the user's own computer. Each agent has a small character shown in the chat and in a pixel office. Code turns your answer into an animated sprite sheet: you draw the parts, the code makes the poses (walking, typing, reading, thinking, waiting, sleeping).",
@@ -62,8 +86,8 @@ export const SPRITE_PROMPT = [
   'Answer schema (no other field, at any level):',
   '{"palette": {"<letter>": "#rrggbb", ...}, "head": {"front": [10 rows], "side": [10 rows], "back": [10 rows]}, "body": {"front": [9 rows], "side": [9 rows], "back": [9 rows]}, "legs": {"front": [6 rows], "side": [6 rows], "stride": [6 rows]}}',
   '',
-  'Example, Arianna herself (auburn hair, teal dress, the red thread of Ariadne):',
-  JSON.stringify(EXAMPLE),
+  'Three examples drawn by hand, as you must answer. Study how they work: the outline closes every shape, the face has skin around the eyes, shades sit on one side of a colour, the side view is narrower than the front, and each character is recognisable from its colours and one or two details.',
+  ...EXAMPLES.flatMap(({ about, spec }) => ['', `Example, ${about}:`, JSON.stringify(spec)]),
 ].join('\n');
 
 /** What the page sends: the agent's own texts and the user's hint. */
@@ -91,4 +115,22 @@ export function spriteBrief(subject: SpriteSubject, persona?: Pick<Persona, 'ton
   if (specialization !== '') fragments.push({ text: `Specialization: ${specialization}`, label: SUBJECT_LABEL, source: `persona:${name}:specialization` });
   if (subject.hint.trim() !== '') fragments.push({ text: `User hint: ${subject.hint.trim()}`, label: SUBJECT_LABEL, source: 'user:sprite-hint' });
   return fragments;
+}
+
+/** The second pass (D-132): our words, L0, the same bytes at every request. */
+export const REVIEW_PROMPT = [
+  'Second pass. Below is your first drawing of this character: the JSON you answered, then the three views as the code composes them on the 16×32 frame (rows 0-6 are empty and not shown).',
+  'Look at it as a whole, as a pixel artist would: does it read as the agent described? Is each eye one pixel with face colour around it, the outline closed, the front and back symmetric, the side view consistent with the front (same colours, same hair or hat, narrower), the one or two details that make the character recognisable visible at this size?',
+  'Fix the problems the automatic check lists and anything else that looks wrong; keep what already works. Answer with the whole corrected JSON object, same schema, and nothing else.',
+].join('\n');
+
+/** The first drawing and its preview: the model's output on the agent's texts, so L1 like them. */
+export function draftFragment(spec: SpriteSpec, preview: string): BriefFragment {
+  return { text: `Your first drawing:\n${JSON.stringify(spec)}\n\nAs the code composes it:\n${preview}`, label: SUBJECT_LABEL, source: 'model:sprite-draft' };
+}
+
+/** What the code found, in its own words (quality.ts, spec.ts): L0. */
+export function checkFragment(lines: readonly string[], refused = false): BriefFragment {
+  const head = refused ? 'Your previous answer was refused, answer again following the schema. The check said:' : 'The automatic check found:';
+  return { text: `${head}\n${lines.length === 0 ? '- nothing' : lines.map((line) => `- ${line}`).join('\n')}`, label: 'L0', source: 'check:sprite' };
 }
