@@ -74,7 +74,7 @@ import {
   type Segment,
   type Simulation3,
 } from '../lib/graph3d.ts';
-import { LABEL_TEXT } from '../lib/labels.ts';
+import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 
@@ -241,7 +241,6 @@ const legend = computed(() => {
 const selectedNode = computed(() => nodes.value[selected.value]);
 const selectedNeighbours = computed(() => [...(adjacency[selected.value] ?? [])].map((index) => ({ index, node: nodes.value[index] })).filter((item) => item.node !== undefined));
 
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function folderVar(folder: string): string {
   const slot = slots.value.get(folder);
@@ -1634,7 +1633,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="mt-1.5 font-mono text-[11px] tracking-[0.04em] text-muted" aria-live="polite">
           <span class="text-ink">{{ counts.notes }}</span> note · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
-          <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (L3)
+          <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
         <p v-if="view3d" class="mt-1 font-mono text-[10.5px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
@@ -1709,7 +1708,7 @@ onBeforeUnmount(() => {
           </p>
           <h2 class="mt-1 font-hud text-[17px] leading-snug font-semibold break-words">{{ selectedNode.title }}</h2>
         </div>
-        <span class="lab mt-0.5" :class="labelClass[selectedNode.label]" :title="LABEL_TEXT[selectedNode.label]">{{ selectedNode.label }}</span>
+        <LabelBadge class="mt-0.5" :label="selectedNode.label" />
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi la nota" @click="select(-1)">
           <Icon name="close" :size="16" />
         </button>

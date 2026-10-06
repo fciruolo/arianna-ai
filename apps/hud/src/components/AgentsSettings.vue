@@ -13,7 +13,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { sheetUrl, type UploadedCharacter } from '../lib/api.ts';
 import { agentEntries, changedAgents, filterEntries, TAB_TEXT, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName } from '../lib/italian.ts';
-import { MODEL_TEXT } from '../lib/labels.ts';
+import { labelWord, MODEL_TEXT } from '../lib/labels.ts';
 import {
   ADDRESSES,
   characters as countCharacters,
@@ -517,7 +517,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
           <p v-if="current.description" class="max-w-[60ch] text-[13.5px] text-muted">{{ current.description }}</p>
           <div class="flex flex-wrap items-center gap-1.5">
             <span class="chip font-mono">modello: {{ modelText(current) }}</span>
-            <span v-if="current.view" class="chip font-mono">{{ current.view.card.maxLabel }} · {{ current.view.card.autonomy }}</span>
+            <span v-if="current.view" class="chip font-mono">{{ labelWord(current.view.card.maxLabel) }} · {{ current.view.card.autonomy }}</span>
             <button v-if="canChat" type="button" class="btn px-2.5 py-0.5 text-xs" @click="emit('chat', current.id)">Apri una chat</button>
           </div>
           <p v-if="!current.official && current.view" class="text-xs" :class="current.view.works === null ? 'text-warn' : 'text-muted'">
@@ -696,7 +696,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
         </template>
         <template v-else-if="current.view">
           <p class="rounded-[10px] border border-warn/40 bg-warn/7 px-3 py-2.5 text-[12.5px]">
-            Tetto finché resta fra i tuoi agenti: al massimo <b>L1</b> e <b>A1</b>, qualunque cosa dica la scheda.
+            Tetto finché resta fra i tuoi agenti: al massimo <b>Interno</b> e <b>A1</b>, qualunque cosa dica la scheda.
           </p>
           <div v-if="editingPermissions?.name === current.id && sources" class="flex flex-col gap-2.5 rounded-[10px] border border-line p-3">
             <PermissionsPicker v-model="editingPermissions.permissions" :sources="sources" :id-prefix="`edit-${current.id}`" />
@@ -730,14 +730,14 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
               </div>
             </div>
             <p class="text-xs text-muted">
-              {{ current.on ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano L1 per tua dichiarazione, possono
+              {{ current.on ? 'L’agente è attivo: i testi nuovi valgono dal prossimo lavoro che Arianna gli passa.' : 'Valgono da quando lo attivi.' }} Restano Interno per tua dichiarazione, possono
               arrivare a un esecutore cloud (non scriverci dati personali) e passano dagli stessi controlli della creazione.
             </p>
           </fieldset>
         </section>
         <section v-if="current.view" class="hud-card danger flex flex-col gap-3 px-4 py-4">
           <div class="flex flex-wrap items-center gap-3">
-            <span class="min-w-0 flex-1 text-[13px] font-medium">Promuovi a ufficiale<small class="block text-[11.5px] font-normal text-muted">passa in agents/, in git; cade il tetto L1/A1</small></span>
+            <span class="min-w-0 flex-1 text-[13px] font-medium">Promuovi a ufficiale<small class="block text-[11.5px] font-normal text-muted">passa in agents/, in git; cade il tetto Interno/A1</small></span>
             <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busyName !== '' || changedTexts.includes(current.id)"
               :title="changedTexts.includes(current.id) ? 'Prima salva o annulla descrizione e prompt' : undefined"
               @click="promoting = current.view!; error = ''"
@@ -780,9 +780,9 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
           La scheda passa da <code class="font-mono">data/agents</code> a <code class="font-mono">agents/</code>, la cartella del repository in git, e l’agente diventa attivo. Cosa cambia:
         </p>
         <ul class="list-disc pl-5 text-[13px]">
-          <li>il tetto L1 e A1 cade: valgono etichette, strumenti e azioni scritti nella scheda;</li>
+          <li>il tetto Interno e A1 cade: valgono etichette, strumenti e azioni scritti nella scheda;</li>
           <li>oggi la scheda dice: {{ permissionLines(promoting.card).slice(0, 2).join('; ') }};</li>
-          <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a L2;</li>
+          <li>chi modifica a mano <code class="font-mono">agents/{{ promoting.name }}.yaml</code> può dargli di più, fino a Privato;</li>
           <li>i file risultano nuovi in git: un commit li rende visibili a chi ha il repository, e un push li pubblica.</li>
         </ul>
         <p class="text-xs text-muted">Si torna indietro da questa pagina con «Riporta fra i miei», finché la scheda resta quella scritta qui.</p>
@@ -800,7 +800,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
         <h2 id="demote-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">Riportare {{ demoting.name }} fra i tuoi agenti?</h2>
         <ul class="list-disc pl-5 text-[13px]">
           <li>la scheda torna in <code class="font-mono">data/agents/disattivati</code>, fuori da git, e l’agente si ferma: Arianna non gli passa più lavoro finché non lo riattivi;</li>
-          <li>torna il tetto L1 e A1;</li>
+          <li>torna il tetto Interno e A1;</li>
           <li>se i file di <code class="font-mono">agents/{{ demoting.name }}</code> erano già in un commit, git li vedrà come tolti: il prossimo commit lo registra.</li>
         </ul>
         <p class="text-xs text-muted">Una scheda cambiata a mano oltre i permessi ammessi non può tornare: resta ufficiale.</p>

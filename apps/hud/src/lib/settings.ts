@@ -4,7 +4,7 @@
  * Italian texts of the confirmation card. Ordinary sections are saved one
  * card at a time; privacy ones are prepared, shown, then confirmed.
  */
-import { EXECUTOR_TEXT } from './labels.ts';
+import { EXECUTOR_TEXT, labelWord } from './labels.ts';
 import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
 
 export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
@@ -382,7 +382,7 @@ export interface ChangeLine {
 }
 
 function projectText(project: ProjectValues): string {
-  return `${project.name} (${project.label}, ${project.path})`;
+  return `${project.name} (${labelWord(project.label)}, ${project.path})`;
 }
 
 /** A command as the core runs it: an argument that is empty or holds spaces or quotes is quoted, so ["sh -c x"] never reads as ["sh", "-c", "x"]. */
@@ -428,7 +428,7 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
   if (changes.projects !== undefined) {
     for (const project of changes.projects.added) lines.push({ kind: 'add', text: `Progetto ${projectText(project)}` });
     for (const project of changes.projects.removed) lines.push({ kind: 'remove', text: `Progetto ${projectText(project)}` });
-    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${after.label}, ${after.path}` });
+    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${labelWord(after.label)}, ${after.path}` });
   }
   if (changes.endpoints !== undefined) {
     for (const endpoint of changes.endpoints.added) lines.push({ kind: 'add', text: `Server ${endpointText(endpoint)}` });
@@ -446,18 +446,18 @@ function chatsText(count: number): string {
 /** After the change, who may receive what: every exit, not only the changed ones. */
 export function exitLines(exits: PrivacyExits): string[] {
   const lines: string[] = [];
-  const projects = exits.projects.map((project) => `${project.name} (${project.label})`).join(', ');
+  const projects = exits.projects.map((project) => `${project.name} (${labelWord(project.label)})`).join(', ');
   for (const executor of exits.executors) {
     const name = EXECUTOR_TEXT[executor] ?? executor;
-    lines.push(projects === '' ? `${name} potrà ricevere testi L0-L1 dal gateway; nessun progetto.` : `${name} potrà ricevere testi L0-L1 dal gateway e lavorare in: ${projects}.`);
+    lines.push(projects === '' ? `${name} potrà ricevere testi Pubblici o Interni dal gateway; nessun progetto.` : `${name} potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: ${projects}.`);
   }
   if (exits.executors.length === 0) lines.push('Nessun esecutore cloud: niente esce verso Claude Code o Codex.');
-  lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo L1.`);
+  lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo Interno.`);
   for (const endpoint of exits.endpoints) {
     lines.push(
       endpoint.command === null
-        ? `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro.`
-        : `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
+        ? `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro.`
+        : `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
     );
   }
   return lines;
