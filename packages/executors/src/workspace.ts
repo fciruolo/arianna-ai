@@ -502,6 +502,112 @@ export async function committedFiles(path: string, commit: string, paths: readon
   return results;
 }
 
+/** A local branch of a project (D-134): its name, whether it is checked out, the time of its last commit. */
+export interface RepositoryBranch {
+  name: string;
+  current: boolean;
+  /** Seconds since the epoch of the branch's last commit. */
+  at: number;
+}
+
+/**
+ * The local branches of the repository at `path`, newest first (D-134, the
+ * page "Progetti"): `for-each-ref` reads refs only, no file content, no
+ * filter. A detached HEAD has no current branch.
+ */
+export async function repositoryBranches(path: string): Promise<RepositoryBranch[]> {
+  await checkedRepository(path);
+  const out = await git(path, ['for-each-ref', '--sort=-committerdate', '--count=200', '--format=%(refname:short)%00%(committerdate:unix)%00%(HEAD)', 'refs/heads']);
+  return out
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => {
+      const [name = '', at = '0', head = ''] = line.split('\0');
+      return { name, current: head === '*', at: /^\d+$/.test(at) ? Number(at) : 0 };
+    })
+    .filter((branch) => branch.name !== '');
+}
+
+/** A commit of the log (D-134): id, parents, author name, time and subject line. */
+export interface RepositoryCommit {
+  id: string;
+  parents: string[];
+  author: string;
+  /** Seconds since the epoch, author time. */
+  at: number;
+  subject: string;
+}
+
+/** Most commits `repositoryLog` gives. */
+export const MAX_LOG = 100;
+
+/**
+ * The last `limit` commits reachable from HEAD (D-134), newest first; empty
+ * in a repository without commits. `log` with a fixed format: no diff, no
+ * file content, no signature check (`--no-show-signature`, which would run gpg).
+ */
+export async function repositoryLog(path: string, limit: number): Promise<RepositoryCommit[]> {
+  await checkedRepository(path);
+  try {
+    await git(path, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  } catch {
+    return [];
+  }
+  const count = Math.max(1, Math.min(MAX_LOG, Math.floor(limit)));
+  const out = await git(path, ['log', '--no-show-signature', '--no-mailmap', '--no-color', `--max-count=${String(count)}`, '--format=%H%x1f%P%x1f%an%x1f%at%x1f%s%x1e', 'HEAD', '--']);
+  return out
+    .split('\x1e')
+    .map((record) => record.replace(/^\n/, ''))
+    .filter((record) => record !== '')
+    .flatMap((record) => {
+      const [id = '', parents = '', author = '', at = '0', subject = ''] = record.split('\x1f');
+      if (!COMMIT.test(id)) return [];
+      return [{ id, parents: parents.split(' ').filter((parent) => COMMIT.test(parent)), author, at: /^\d+$/.test(at) ? Number(at) : 0, subject }];
+    });
+}
+
+/**
+ * The files a commit changed against its first parent (all added for a root
+ * commit), with renames (D-134): `diff-tree` on the trees, which reads no
+ * work tree file and runs no filter or diff driver.
+ */
+export async function commitChanges(path: string, commit: string): Promise<{ parent: string | null; files: FileChange[] }> {
+  if (!COMMIT.test(commit)) throw new WorkspaceError('not a commit id');
+  await checkedRepository(path);
+  // A tree or a blob is well formed too: only a commit, exactly the one asked.
+  let peeled: string;
+  try {
+    peeled = (await git(path, ['rev-parse', '--verify', '--quiet', `${commit}^{commit}`])).trim();
+  } catch {
+    throw new WorkspaceError('not a commit');
+  }
+  if (peeled !== commit) throw new WorkspaceError('not a commit');
+  let parent: string | null;
+  try {
+    parent = (await git(path, ['rev-parse', '--verify', '--quiet', `${commit}^1^{commit}`])).trim();
+  } catch {
+    parent = null;
+  }
+  if (parent !== null && !COMMIT.test(parent)) throw new WorkspaceError('unexpected answer from git rev-parse');
+  const args = parent === null ? ['diff-tree', '--root', '-r', '-M', '--name-status', '-z', '--no-commit-id', '--no-ext-diff', '--no-textconv', commit] : ['diff-tree', '-r', '-M', '--name-status', '-z', '--no-ext-diff', '--no-textconv', parent, commit];
+  const fields = zList(await git(path, args));
+  const files: FileChange[] = [];
+  for (let index = 0; index < fields.length; ) {
+    const status = fields[index] ?? '';
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const from = fields[index + 1] ?? '';
+      const to = fields[index + 2] ?? '';
+      files.push(status.startsWith('R') ? { path: to, change: 'renamed', from } : { path: to, change: 'added' });
+      index += 3;
+      continue;
+    }
+    const item = fields[index + 1] ?? '';
+    files.push({ path: item, change: status === 'A' ? 'added' : status === 'D' ? 'deleted' : 'modified' });
+    index += 2;
+  }
+  return { parent, files: files.filter((file) => file.path !== '') };
+}
+
 /** Files git reads configuration and attributes from, as a relative list; all `.gitattributes` of the tree included. */
 async function gitConfigFiles(root: string): Promise<string[]> {
   const files = ['.git', '.git/config', '.git/info/attributes', '.git/info/exclude'];

@@ -10,8 +10,11 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Code2,
   Copy,
+  ExternalLink,
   FileText,
+  GitBranch,
   Focus,
   Folder,
   History,
@@ -113,6 +116,9 @@ export const ICONS = {
   pin: Pin,
   unpin: PinOff,
   bell: Bell,
+  branch: GitBranch,
+  external: ExternalLink,
+  code: Code2,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

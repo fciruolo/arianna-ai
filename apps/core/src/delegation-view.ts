@@ -203,7 +203,7 @@ async function loadDelegationRow(sql: Queryable, id: string): Promise<Delegation
 }
 
 /** The folder of the delegation's project, still approved at L1 or below and exactly the approved path. */
-async function approvedRoot(projects: readonly Project[], repo: string): Promise<string> {
+export async function approvedRoot(projects: readonly Project[], repo: string): Promise<string> {
   const project = projects.find((candidate) => candidate.name === repo);
   if (project === undefined) throw new DelegationFileError('not-approved', `the project ${repo} is no longer among the approved projects`);
   if (!isAtMost(project.label, 'L1')) throw new DelegationFileError('not-approved', `the project ${repo} is above L1`);
@@ -221,7 +221,7 @@ async function approvedRoot(projects: readonly Project[], repo: string): Promise
 }
 
 /** Bytes shown as text: UTF-8 without NUL, without a value of the vault. */
-function shownText(bytes: Uint8Array): string {
+export function shownText(bytes: Uint8Array): string {
   if (bytes.includes(0)) throw new DelegationFileError('binary', 'not a text file');
   let text: string;
   try {
@@ -247,7 +247,7 @@ async function readProjectText(root: string, path: string): Promise<{ text: stri
  * The bytes of `path` in the project folder `root`: inside it after resolving
  * links, not under `.git`, a regular file of at most `max` bytes.
  */
-async function readProjectBytes(root: string, path: string, max: number, refuseHidden = false): Promise<Buffer> {
+export async function readProjectBytes(root: string, path: string, max: number, refuseHidden = false): Promise<Buffer> {
   if (path === '' || isAbsolute(path) || path.includes('\0') || path.split('/').some((part) => part === '..' || isGitName(part))) {
     throw new DelegationFileError('refused', 'the path is not a file of the project');
   }
@@ -388,7 +388,7 @@ export function createOpenLinks(now: () => number = Date.now): OpenLinks {
 }
 
 /** A path "Apri" may serve: relative, without hidden files or folders (.env, .git, .claude) and of a known type. */
-function openPathProblem(path: string): string | undefined {
+export function openPathProblem(path: string): string | undefined {
   if (path === '' || isAbsolute(path) || path.includes('\0') || path.includes('\\')) return 'the path is not a file of the project';
   if (path.split('/').some((part) => part === '' || part.startsWith('.'))) return 'hidden files are not opened';
   if (OPEN_TYPES[extensionOf(path)] === undefined) return 'this kind of file is not opened';
@@ -414,7 +414,7 @@ export async function openDelegationFile(sql: Queryable, projects: readonly Proj
   return { url: `/api/open/${token}/${entry.path.split('/').map(encodeURIComponent).join('/')}` };
 }
 
-async function readOpenBytes(root: string, path: string): Promise<{ body: Buffer; type: string }> {
+export async function readOpenBytes(root: string, path: string): Promise<{ body: Buffer; type: string }> {
   const kind = OPEN_TYPES[extensionOf(path)];
   if (kind === undefined) throw new DelegationFileError('refused', 'this kind of file is not opened');
   const body = await readProjectBytes(root, path, MAX_OPEN_BYTES, true);

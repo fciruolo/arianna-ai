@@ -43,7 +43,9 @@ import {
   readDelegationDiff,
   readDelegationFile,
   readOpenFile,
+  type OpenLinks,
 } from '../delegation-view.ts';
+import { browsableProjects, listProjectDir, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit } from '../project-browser.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -730,9 +732,7 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
  * preview reads the file again from the approved project, as it is now; no
  * route opens Finder or runs `open` (the API has no authentication before 1.13).
  */
-function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]): Route[] {
-  // The links of "Apri" (D-117, tappa 3): in memory, gone with a restart.
-  const openLinks = createOpenLinks();
+function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks): Route[] {
   const delegationId = (params: Params): string => {
     const id = params.id ?? '';
     if (!/^[1-9]\d{0,17}$/.test(id)) throw new HttpError(404, 'not found');
@@ -786,9 +786,53 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule }: RouteOptions): Route[] {
+const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
+
+/**
+ * The page "Progetti" (D-134): an approved project read on this computer.
+ * Read only: folders, files, branches, changes, commits and their diff;
+ * "Apri" for a page or an image with the links of D-117. Nothing is written,
+ * nothing goes out.
+ */
+function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks): Route[] {
+  const projectParam = (params: Params): string => {
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  const pathParam = (url: URL, key: string, required: boolean): string => {
+    const value = url.searchParams.get(key) ?? '';
+    if (value.length > 4096 || (required && value === '')) throw new HttpError(400, `${key} must be a path of the project`);
+    return value;
+  };
   return [
-    ...delegationRoutes(sql, approvedProjects),
+    route('GET', '/api/browse', () => Promise.resolve({ body: { projects: browsableProjects(approvedProjects()) } })),
+    route('GET', '/api/browse/:project/tree', async (_request, url, params) => ({
+      body: await listProjectDir(approvedProjects(), projectParam(params), pathParam(url, 'dir', false)),
+    })),
+    route('GET', '/api/browse/:project/file', async (_request, url, params) => ({
+      body: { file: await readBrowsedFile(approvedProjects(), projectParam(params), pathParam(url, 'path', true)) },
+    })),
+    route('POST', '/api/browse/:project/open', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string' || body.path === '' || body.path.length > 4096) throw new HttpError(400, 'path must be a file of the project');
+      return { body: await openBrowsedFile(approvedProjects(), openLinks, name, body.path) };
+    }),
+    route('GET', '/api/browse/:project/git', async (_request, _url, params) => ({ body: { git: await readProjectGit(sql, approvedProjects(), projectParam(params)) } })),
+    route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => ({
+      body: { diff: await readCommitDiff(sql, approvedProjects(), projectParam(params), params.commit ?? '') },
+    })),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule }: RouteOptions): Route[] {
+  // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
+  const openLinks = createOpenLinks();
+  return [
+    ...delegationRoutes(sql, approvedProjects, openLinks),
+    ...projectBrowserRoutes(sql, approvedProjects, openLinks),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),

@@ -20,7 +20,7 @@ import PixelAgent from './PixelAgent.vue';
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office' | 'projects';
   theme: Theme;
   conversations: Conversation[];
   archived: Conversation[];
@@ -44,6 +44,7 @@ const emit = defineEmits<{
   create: [];
   thoughts: [];
   knowledge: [];
+  projects: [];
   office: [];
   call: [];
   settings: [];
@@ -122,6 +123,9 @@ function itemClass(on: boolean): string {
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'knowledge')" :aria-current="page === 'knowledge' ? 'page' : undefined" @click="emit('knowledge')">
         <Icon name="knowledge" :size="16" />Conoscenza
+      </button>
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'projects')" :aria-current="page === 'projects' ? 'page' : undefined" @click="emit('projects')">
+        <Icon name="project" :size="16" />Progetti
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'office')" :aria-current="page === 'office' ? 'page' : undefined" @click="emit('office')">
         <Icon name="office" :size="16" />Ufficio

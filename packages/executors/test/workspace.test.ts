@@ -8,6 +8,9 @@ import { after, describe, it } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 import {
+  commitChanges,
+  repositoryBranches,
+  repositoryLog,
   committedFiles,
   fileFingerprints,
   gitConfigFingerprint,
@@ -385,6 +388,65 @@ describe('openRepository (D-056)', () => {
       { path: 'e.ts', change: 'deleted' },
       { path: 'f.ts', change: 'deleted' },
     ]);
+  });
+
+  it('repositoryBranches, repositoryLog and commitChanges read refs, the log and the files of a commit (D-134)', async () => {
+    const repo = makeRepo('inplace-history', { 'a.ts': 'x\n', 'b.ts': 'y\n' });
+    const dir = join(HOME, repo);
+    write(dir, { 'a.ts': 'changed\n', 'c.ts': 'new\n' });
+    git(dir, 'mv', 'b.ts', 'd.ts');
+    git(dir, 'add', '--all');
+    git(dir, 'commit', '--quiet', '--message', 'Second: change, add, rename');
+    git(dir, 'branch', 'task/other');
+    const log = await repositoryLog(dir, 10);
+    assert.deepEqual(
+      log.map(({ subject, author, parents }) => ({ subject, author, parents: parents.length })),
+      [
+        { subject: 'Second: change, add, rename', author: 'Test', parents: 1 },
+        { subject: 'fixture', author: 'Test', parents: 0 },
+      ],
+    );
+    assert.equal((await repositoryLog(dir, 1)).length, 1);
+    const branches = await repositoryBranches(dir);
+    assert.deepEqual(branches.map(({ name, current }) => ({ name, current })).sort((x, y) => x.name.localeCompare(y.name)), [
+      { name: 'main', current: true },
+      { name: 'task/other', current: false },
+    ]);
+    const [second, first] = log;
+    assert.ok(second !== undefined && first !== undefined);
+    assert.deepEqual(await commitChanges(dir, second.id), {
+      parent: first.id,
+      files: [
+        { path: 'a.ts', change: 'modified' },
+        { path: 'c.ts', change: 'added' },
+        { path: 'd.ts', change: 'renamed', from: 'b.ts' },
+      ],
+    });
+    // The root commit: everything added, no parent.
+    assert.deepEqual(await commitChanges(dir, first.id), {
+      parent: null,
+      files: [
+        { path: 'a.ts', change: 'added' },
+        { path: 'b.ts', change: 'added' },
+      ],
+    });
+    // Not a commit id: refused before git runs.
+    await assert.rejects(commitChanges(dir, 'HEAD'), /not a commit id/);
+    await assert.rejects(commitChanges(dir, '--output=/tmp/x'), /not a commit id/);
+    // Well formed, but a tree or a blob: git refuses it, nothing is listed.
+    const tree = git(dir, 'rev-parse', `${second.id}^{tree}`).trim();
+    const blob = git(dir, 'rev-parse', `${second.id}:a.ts`).trim();
+    await assert.rejects(commitChanges(dir, tree));
+    await assert.rejects(commitChanges(dir, blob));
+  });
+
+  it('repositoryLog and repositoryBranches in a repository without commits: nothing; a subfolder is refused (D-134)', async () => {
+    const dir = join(HOME, 'repos', 'inplace-nolog');
+    mkdirSync(join(dir, 'sub'), { recursive: true });
+    git(dir, 'init', '--quiet', '--initial-branch=main');
+    assert.deepEqual(await repositoryLog(dir, 10), []);
+    assert.deepEqual(await repositoryBranches(dir), []);
+    await assert.rejects(repositoryLog(join(dir, 'sub'), 10), /not the top folder/);
   });
 
   it('repositoryChanges in a repository without commits: everything is added; a subfolder is refused', async () => {

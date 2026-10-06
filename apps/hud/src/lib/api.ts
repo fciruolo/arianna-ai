@@ -5,6 +5,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
+import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -532,4 +533,31 @@ export async function sendDevAnswer(key: string, text: string): Promise<{ key: s
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */
 export async function loadChangelog(): Promise<Changelog> {
   return (await call<{ changelog: Changelog }>('GET', '/api/changelog')).changelog;
+}
+
+// The page "Progetti" (D-134): an approved project, read only.
+const browse = (project: string): string => `/api/browse/${encodeURIComponent(project)}`;
+
+export async function listBrowsableProjects(): Promise<BrowsableProject[]> {
+  return (await call<{ projects: BrowsableProject[] }>('GET', '/api/browse')).projects;
+}
+
+export async function listProjectDir(project: string, dir: string): Promise<{ entries: TreeEntry[]; more: number }> {
+  return call('GET', `${browse(project)}/tree?${new URLSearchParams({ dir }).toString()}`);
+}
+
+export async function readProjectFile(project: string, path: string): Promise<ProjectFile> {
+  return (await call<{ file: ProjectFile }>('GET', `${browse(project)}/file?${new URLSearchParams({ path }).toString()}`)).file;
+}
+
+export async function openProjectFile(project: string, path: string): Promise<string> {
+  return (await call<{ url: string }>('POST', `${browse(project)}/open`, { path })).url;
+}
+
+export async function readProjectGit(project: string): Promise<ProjectGit> {
+  return (await call<{ git: ProjectGit }>('GET', `${browse(project)}/git`)).git;
+}
+
+export async function readCommitDiff(project: string, commit: string): Promise<CommitDiff> {
+  return (await call<{ diff: CommitDiff }>('GET', `${browse(project)}/commits/${encodeURIComponent(commit)}`)).diff;
 }
