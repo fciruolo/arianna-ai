@@ -64,7 +64,7 @@ Uno spostamento degli occhi che finirebbe su un contorno, sul trasparente o fuor
 
 ## Prompt
 
-**Parte fissa, L0** (`SPRITE_PROMPT` in `apps/core/src/sprites/prompt.ts`, in inglese come gli altri prompt): cosa disegnare, griglia e righe, lettere obbligatorie, regole dello stile pixel di Arianna e Coder (contorno scuro `o` di un pixel, 3–6 colori più ombre, niente sfumature, simmetria nella vista di fronte, testa grande), schema di risposta e un esempio completo (i pezzi di Arianna presi da `art/arianna.ts`, che il validatore accetta). È una costante: identica byte per byte a ogni richiesta, e un test ne fissa lo sha256 (cambiarla è una scelta, da rivedere).
+**Parte fissa, L0** (`SPRITE_PROMPT` in `apps/core/src/sprites/prompt.ts`, in inglese come gli altri prompt): cosa disegnare, griglia e righe, lettere obbligatorie, regole dello stile pixel di Arianna e Coder (contorno scuro `o` di un pixel, 3–6 colori più ombre, niente sfumature, simmetria nella vista di fronte, testa grande), schema di risposta e tre esempi completi (Arianna, Coder e utente da `apps/hud/characters/art/`, che il validatore accetta; D-132). È una costante: identica byte per byte a ogni richiesta, e un test ne fissa lo sha256 (cambiarla è una scelta, da rivedere).
 
 **Parte variabile, L1 per dichiarazione dell'utente**, un frammento per campo, ciascuno con la sua sorgente:
 
@@ -76,6 +76,10 @@ Uno spostamento degli occhi che finirebbe su un contorno, sul trasparente o fuor
 | `Tone: …` (da `[personas]`, se c'è) | `persona:<nome>:tone` | L1 |
 | `Specialization: …` (da `[personas]`, se c'è) | `persona:<nome>:specialization` | L1 |
 | `User hint: …` (facoltativo, al massimo 300 caratteri) | `user:sprite-hint` | L1 |
+| Solo nel nuovo tentativo: il motivo del rifiuto della prima risposta (D-132) | `check:sprite` | L0 |
+| Solo nella revisione: `REVIEW_PROMPT` (D-132) | `prompt:sprite-review` | L0 |
+| Solo nella revisione: il primo disegno in JSON e le tre viste composte in testo | `model:sprite-draft` | L1 |
+| Solo nella revisione: ciò che ha trovato `quality.ts` | `check:sprite` | L0 |
 
 Prima del gateway il core controlla ogni testo con lo scanner e con i valori del vault (`checkText` come per gli agenti utente): un ritrovamento rifiuta la richiesta con 400, nominando il campo e il tipo, mai il testo. Il gateway li ricontrolla verso il cloud (scansione pulita, al massimo L1, nessun valore del vault) e scrive la riga in `gateway_log`.
 
@@ -85,15 +89,15 @@ Prima del gateway il core controlla ogni testo con lo scanner e con i valori del
 
 ```toml
 [sprites]
-model = "sonnet"   # "sonnet" (predefinito), "opus" o "local"
+model = "opus"   # "opus" (predefinito da D-132), "sonnet" o "local"
 ```
 
-In Impostazioni → Modelli per ruolo una riga "Personaggi" con tre scelte: Claude Sonnet (predefinito), Claude Opus, modello locale. Se il modello scelto non è disponibile (Claude non attivo o il modello spento in `[cloud.models]`; per il locale nessun endpoint) la rotta risponde 409 e la pagina lo dice, senza ripiegare da sola su un altro modello.
+In Impostazioni → Modelli per ruolo una riga "Personaggi" con tre scelte: Claude Sonnet, Claude Opus (predefinito da D-132), modello locale. Se il modello scelto non è disponibile (Claude non attivo o il modello spento in `[cloud.models]`; per il locale nessun endpoint) la rotta risponde 409 e la pagina lo dice, senza ripiegare da sola su un altro modello.
 
 - **Claude**: `passGateway` verso `{ kind: 'executor', id: 'claude', locality: 'cloud' }` con contesto `createContext('L1', etichetta più alta dei frammenti)`, poi `executor.start` di `packages/executors` in una cartella vuota (`prepareEmptyWorkspace`, tolta dopo), **senza strumenti** (`tools: []`), al massimo 3 turni, 4 minuti. Stessa strada di Claude diretto (D-064), senza task: il brief è l'allow del gateway. L'uscita strutturata è il JSON chiesto dal prompt fisso e validato dal codice; il flag `--json-schema` del binario non si usa ancora, perché aggiunge uno strumento interno che il profilo di confinamento rifiuterebbe (il controllo di `init` vuole `tools` vuoto) e va prima provato con un eval dal vivo.
 - **Locale**: `passGateway` verso `{ kind: 'executor', id: 'local', locality: 'local' }`, poi `createLocalModel().chat` sull'alias `local-large` con lo schema JSON vincolato (`SPRITE_SCHEMA`, lo stesso schema del validatore), temperatura 0,7.
 
-Una risposta che non passa la validazione dà 502 con il motivo (campo e regola). Il quota di Claude esaurito dà 429 con l'ora di ripresa se nota.
+**Due passaggi (D-132).** Una risposta che non passa la validazione si chiede di nuovo una volta, con il motivo del rifiuto (le parole del validatore, mai il contenuto della risposta); se anche la seconda non passa, 502 con il motivo (campo e regola). Il risultato di Claude o il JSON del modello locale che non è nemmeno leggibile come risposta del modello (`bad-reply` del modello locale) non si ritenta. Poi la **revisione**: il modello riceve lo stesso brief, `REVIEW_PROMPT`, il primo disegno con le tre viste composte in testo e ciò che ha trovato il controllo di `apps/core/src/sprites/quality.ts` (simmetria, contorno, occhi, colori, centratura, proporzioni, pezzi che si toccano), e risponde con il disegno corretto. Si tiene la revisione salvo che non sia valida o abbia più difetti del primo; una revisione che fallisce (quota, gateway, risposta rotta) tiene il primo disegno, mentre una pagina che se ne va interrompe tutto prima del passaggio dopo. Ogni disegno costa quindi due richieste, tre con il nuovo tentativo. Il quota di Claude esaurito dà 429 con l'ora di ripresa se nota.
 
 ## Rotte
 
@@ -108,6 +112,7 @@ Una sola generazione alla volta: una seconda richiesta mentre la prima corre ris
 ## Etichette
 
 - Parte fissa L0; testi dell'agente, persona e suggerimento L1 per dichiarazione (D-107, D-119). Nessun dato L2 entra: i testi vengono dalla pagina o da `[personas]`, mai dalla knowledge base o dalle conversazioni.
+- Nella revisione il primo disegno è uscita di testi L1 e resta L1 (`model:sprite-draft`); il prompt della revisione e i messaggi del controllo sono nostri, L0 (D-132).
 - Il PNG generato eredita L1 (l'uscita di un modello eredita l'etichetta più alta degli ingressi), che è il tetto dei personaggi caricati: sta in `data/characters/miei`, servito solo alla chat locale.
 
 ## Casi di test
@@ -117,17 +122,17 @@ Una sola generazione alla volta: una seconda richiesta mentre la prima corre ris
 - **Prompt fisso**: identico a ogni chiamata, sha256 fissato nel test; non contiene nessun testo dell'agente.
 - **Parte variabile**: un frammento per campo con sorgente ed etichetta L1; persona solo quando c'è; suggerimento vuoto assente.
 - **Gateway**: un suggerimento con un IBAN o un codice fiscale è bloccato verso Claude (`gatewayCheck`, regola di scansione); un valore del vault è bloccato verso qualunque destinazione; un brief pulito passa con etichetta L1.
-- **Scelta del modello**: `[sprites]` assente → sonnet; `opus`, `local`; valore sconosciuto o chiave in più rifiutati da `parseConfig`; la pagina delle impostazioni lo legge e lo scrive come impostazione ordinaria.
+- **Scelta del modello**: `[sprites]` assente → opus (D-132); `sonnet`, `local`; valore sconosciuto o chiave in più rifiutati da `parseConfig`; la pagina delle impostazioni lo legge e lo scrive come impostazione ordinaria.
 - **Rotte con Claude finto** (`apps/core/test/sprites-route.test.ts`, binario finto in `apps/core/test/support/fake-claude-sprite.ts`): JSON valido → 200 con PNG; JSON rotto → 502; suggerimento con dato personale → 400 e il binario non parte; Claude non attivo → 409; campo in più → 400; modello locale finto (`fake-omlx`) → 200 con lo schema vincolato nella richiesta.
 
 ## Scostamenti dalla riga D-123 (riportati in DECISIONS)
 
 - **Uscita strutturata di Claude**: oggi è il JSON chiesto dal prompt fisso e validato dal codice, non il flag `--json-schema` (vedi sopra). Il modello locale usa invece lo schema vincolato.
 - **Eval di validità**: non c'è ancora un eval dei modelli; la validità è coperta dai test deterministici del validatore e delle rotte con Claude finto. Un eval `eval:live` che chieda un disegno vero e ne misuri la percentuale valida è il passo successivo.
-- **Il core importa due file della chat**: `apps/core/src/sprites/` importa `apps/hud/characters/compose.ts` e `art/arianna.ts` (codice puro, senza Vue). Finora la dipendenza andava solo dalla chat al core (il codificatore PNG è duplicato apposta); qui si è scelto di non duplicare la composizione delle pose. In alternativa si possono spostare in un pacchetto comune.
+- **Il core importa quattro file della chat**: `apps/core/src/sprites/` importa `apps/hud/characters/compose.ts` e `art/arianna.ts`, e da D-132 anche `art/coder.ts` e `art/user.ts` (codice puro, senza Vue). Finora la dipendenza andava solo dalla chat al core (il codificatore PNG è duplicato apposta); qui si è scelto di non duplicare la composizione delle pose. In alternativa si possono spostare in un pacchetto comune.
 
 ## Limiti noti
 
 - L'uso di Claude per i personaggi non passa dal router: niente scala dei modelli né attesa del quota; i limiti di frequenza che il binario riporta non entrano negli eventi del budget (non c'è un task a cui legarli).
 - Le pose ricavate sono semplici (mani e foglio di pochi pixel): per un personaggio curato resta il disegno a mano o il PNG caricato.
-- Consuma quota: ogni "Genera" o "Rigenera" con Sonnet o Opus è una richiesta al tuo abbonamento Claude (una risposta di circa 2–3 mila token).
+- Consuma quota: ogni "Genera" o "Rigenera" con Sonnet o Opus sono due richieste al tuo abbonamento Claude, disegno e revisione, tre se la prima risposta va ritentata (D-132; circa 2–3 mila token di risposta ciascuna).

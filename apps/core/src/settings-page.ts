@@ -97,7 +97,7 @@ export interface SettingsValues {
   personas: Record<string, Persona>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModel }>;
-  /** The model that draws a character (D-123): sonnet when the file has no [sprites]. */
+  /** The model that draws a character (D-123): opus when the file has no [sprites] (D-132). */
   sprites: SpriteModel;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   executors: string[];
