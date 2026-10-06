@@ -571,8 +571,8 @@ export async function serviceLog(project: string, service: string): Promise<Serv
   return (await call<{ run: ServiceLog | null }>('GET', `${browse(project)}/services/log?${new URLSearchParams({ service }).toString()}`)).run;
 }
 
-export async function startService(project: string, service: string): Promise<ServiceLog | null> {
-  return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/start`, { service })).run;
+export async function startService(project: string, service: string, fingerprint: string): Promise<ServiceLog | null> {
+  return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/start`, { service, fingerprint })).run;
 }
 
 export async function stopService(project: string, service: string): Promise<ServiceLog | null> {

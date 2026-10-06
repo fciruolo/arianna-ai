@@ -543,7 +543,7 @@ async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
   // The processes started from "Progetti" stop with the core (D-134 g); compose services stay with Docker.
-  services.stopAll();
+  await services.stopAll();
   settings.close();
   stopNotices();
   await telegram.close();

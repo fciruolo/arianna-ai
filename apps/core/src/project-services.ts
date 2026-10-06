@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -30,7 +31,7 @@ export interface ProjectService {
   name: string;
   /** What runs, as argv: never through a shell. */
   command: string[];
-  /** What the script says, for the page (package.json only). */
+  /** What the script or the recipe says, shown in the confirmation (package.json and Makefile). */
   script?: string;
   /** Ports on 127.0.0.1 that say the service is on. */
   ports: number[];
@@ -138,18 +139,57 @@ export function composeServices(text: string, file: string): ProjectService[] {
     });
 }
 
-/** The targets of a Makefile, special ones (`.PHONY`) and variables left out. */
+/** The targets of a Makefile with their recipe; special ones (`.PHONY`), variables, `define` blocks and file rules (`foo.o:`) left out. */
 export function makeServices(text: string): ProjectService[] {
-  const names = new Set<string>();
+  const recipes = new Map<string, string[]>();
+  let current: string[] | undefined;
+  let inDefine = false;
   for (const line of text.split('\n')) {
+    if (/^\s*define\b/.test(line)) inDefine = true;
+    if (inDefine) {
+      if (/^\s*endef\b/.test(line)) inDefine = false;
+      current = undefined;
+      continue;
+    }
+    if (line.startsWith('\t') && current !== undefined) {
+      if (current.length < 20) current.push(line.slice(1));
+      continue;
+    }
     const match = /^([A-Za-z0-9][\w.-]{0,63})\s*:(?![:=])/.exec(line);
-    if (match?.[1] !== undefined) names.add(match[1]);
+    const name = match?.[1];
+    if (name === undefined || /\.[A-Za-z]{1,4}$/.test(name)) {
+      current = undefined;
+      continue;
+    }
+    // A target written twice keeps the first recipe; its later lines are not shown as another's.
+    current = recipes.has(name) ? undefined : [];
+    if (current !== undefined) recipes.set(name, current);
   }
-  return [...names].slice(0, 100).map((name) => ({ id: `Makefile:${name}`, source: 'Makefile' as const, file: 'Makefile', name, command: ['make', name], ports: [], stays: false }));
+  return [...recipes.entries()].slice(0, 100).map(([name, recipe]) => ({
+    id: `Makefile:${name}`,
+    source: 'Makefile' as const,
+    file: 'Makefile',
+    name,
+    command: ['make', name],
+    script: recipe.join('\n'),
+    ports: [],
+    stays: false,
+  }));
+}
+
+/** A service as listed to the page: with the fingerprint of what it runs, sent back with a start. */
+export type ListedService = ProjectService & { fingerprint: string };
+
+/** What the confirmation showed, in 16 hex characters: the command and the script or recipe. */
+export function serviceFingerprint(service: ProjectService): string {
+  return createHash('sha256')
+    .update(JSON.stringify([service.command, service.script ?? '']))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 /** Every service the project declares, read now from its files. */
-export async function listServices(root: string): Promise<ProjectService[]> {
+export async function listServices(root: string): Promise<ListedService[]> {
   const services: ProjectService[] = [];
   const pkg = await projectText(root, 'package.json');
   if (pkg !== undefined) {
@@ -164,7 +204,7 @@ export async function listServices(root: string): Promise<ProjectService[]> {
   }
   const make = await projectText(root, 'Makefile');
   if (make !== undefined) services.push(...makeServices(make));
-  return services;
+  return services.map((service) => ({ ...service, fingerprint: serviceFingerprint(service) }));
 }
 
 /** Whether something listens on 127.0.0.1:`port`, within a short wait. */
@@ -187,7 +227,7 @@ export function listening(port: number, waitMs = 300): Promise<boolean> {
   });
 }
 
-export type ServiceErrorCode = 'unknown' | 'running' | 'not-running';
+export type ServiceErrorCode = 'unknown' | 'running' | 'not-running' | 'changed';
 
 export class ServiceError extends Error {
   override name = 'ServiceError';
@@ -197,6 +237,18 @@ export class ServiceError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/**
+ * The service the page asked for, from the list read now: unknown when the
+ * file no longer has it; `changed` when what it runs is not what the
+ * confirmation showed (a script edited in between, by hand or by a run).
+ */
+export function pickService(list: readonly ListedService[], id: string, fingerprint: string | undefined): ListedService {
+  const service = list.find((item) => item.id === id);
+  if (service === undefined) throw new ServiceError('unknown', 'no such service in the project');
+  if (fingerprint !== undefined && fingerprint !== service.fingerprint) throw new ServiceError('changed', 'the command changed since it was shown: confirm it again');
+  return service;
 }
 
 /** One run of a service: its log and how it ended. */
@@ -221,18 +273,19 @@ export interface ServiceManager {
   /** A run started here: stopped. A compose service: `docker compose stop` as a short run of its own. */
   stop(project: string, root: string, service: ProjectService): void;
   run(project: string, serviceId: string): ServiceRun | undefined;
-  /** At the end of the core: every process started here stops. */
-  stopAll(): void;
+  /** At the end of the core: every group started here gets SIGTERM, then SIGKILL after the grace; resolves when all are gone. */
+  stopAll(): Promise<void>;
 }
 
 /** The variables a command of the project gets: no secret of the core, no colours. */
 function serviceEnv(): NodeJS.ProcessEnv {
-  const { PATH, HOME, LANG, SHELL, USER } = process.env;
+  const { PATH, HOME, LANG, SHELL, USER, TMPDIR } = process.env;
   return {
     ...(PATH === undefined ? {} : { PATH }),
     ...(HOME === undefined ? {} : { HOME }),
     ...(SHELL === undefined ? {} : { SHELL }),
     ...(USER === undefined ? {} : { USER }),
+    ...(TMPDIR === undefined ? {} : { TMPDIR }),
     LANG: LANG ?? 'en_US.UTF-8',
     NO_COLOR: '1',
     FORCE_COLOR: '0',
@@ -243,87 +296,110 @@ function serviceEnv(): NodeJS.ProcessEnv {
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
+/** Whether any process of the group `pid` is still alive. */
+function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signalGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Already gone.
+  }
+}
+
+interface LiveRun extends ServiceRun {
+  pid?: number;
+  timers: ReturnType<typeof setTimeout>[];
+  stopping?: 'stopped' | 'time-limit';
+  /** The piece of a line not yet ended, per stream. */
+  partial: { out: string; err: string };
+}
+
 export function createServiceManager(options: ServiceManagerOptions = {}): ServiceManager {
   const spawn = options.spawn ?? nodeSpawn;
   const now = options.now ?? (() => new Date());
   const shortLimit = options.shortLimitMs ?? SHORT_LIMIT_MS;
   const grace = options.killGraceMs ?? KILL_GRACE_MS;
-  const runs = new Map<string, ServiceRun & { child?: ChildProcess; timers: ReturnType<typeof setTimeout>[]; stopping?: 'stopped' | 'time-limit' }>();
+  const runs = new Map<string, LiveRun>();
   const key = (project: string, id: string): string => `${project}\u0000${id}`;
 
-  function append(run: ServiceRun, text: string): void {
-    for (const raw of text.replace(ANSI, '').split(/\r?\n/)) {
-      if (raw === '') continue;
-      run.lines.push(raw.slice(0, MAX_LINE_CHARS));
-    }
+  function push(run: LiveRun, line: string): void {
+    run.lines.push(line.replace(ANSI, '').slice(0, MAX_LINE_CHARS));
     if (run.lines.length > MAX_LINES) run.lines.splice(0, run.lines.length - MAX_LINES);
   }
 
-  /** The group of the child: SIGTERM, then SIGKILL after the grace. */
-  function kill(run: ServiceRun & { child?: ChildProcess; timers: ReturnType<typeof setTimeout>[] }): void {
-    const pid = run.child?.pid;
+  /** A chunk of a stream: whole lines go to the log, the rest waits for the next chunk. */
+  function feed(run: LiveRun, stream: 'out' | 'err', text: string): void {
+    const parts = (run.partial[stream] + text).split(/\r?\n/);
+    run.partial[stream] = (parts.pop() ?? '').slice(0, MAX_LINE_CHARS);
+    for (const line of parts) if (line !== '') push(run, line);
+  }
+
+  /** SIGTERM to the group, then SIGKILL after the grace if anything of it is still alive (a child may outlive the leader). */
+  function kill(run: LiveRun): void {
+    const pid = run.pid;
     if (pid === undefined) return;
-    const signal = (name: NodeJS.Signals): void => {
-      try {
-        process.kill(-pid, name);
-      } catch {
-        // Already gone.
-      }
-    };
-    signal('SIGTERM');
+    signalGroup(pid, 'SIGTERM');
     const timer = setTimeout(() => {
-      if (run.running) signal('SIGKILL');
+      if (groupAlive(pid)) signalGroup(pid, 'SIGKILL');
     }, grace);
     timer.unref();
-    run.timers.push(timer);
   }
 
   function launch(project: string, root: string, id: string, command: string[], limit: number | null, event: string): void {
     const [file, ...args] = command;
     if (file === undefined) throw new ServiceError('unknown', 'empty command');
-    const run: ServiceRun & { child?: ChildProcess; timers: ReturnType<typeof setTimeout>[]; stopping?: 'stopped' | 'time-limit' } = {
-      startedAt: now().toISOString(),
-      running: true,
-      ended: null,
-      lines: [],
-      timers: [],
-    };
+    const run: LiveRun = { startedAt: now().toISOString(), running: true, ended: null, lines: [], timers: [], partial: { out: '', err: '' } };
     runs.set(key(project, id), run);
-    append(run, `$ ${command.join(' ')}`);
+    push(run, `$ ${command.join(' ')}`);
+    let started = false;
     const finish = (code: number | null, signal: string | null, reason: NonNullable<ServiceRun['ended']>['reason']): void => {
       if (!run.running) return;
       run.running = false;
       for (const timer of run.timers) clearTimeout(timer);
+      for (const stream of ['out', 'err'] as const) if (run.partial[stream] !== '') push(run, run.partial[stream]);
       run.ended = { at: now().toISOString(), code, signal, reason };
-      append(run, reason === 'time-limit' ? 'fermato: oltre il limite di tempo' : reason === 'stopped' ? 'fermato su tua richiesta' : `finito (codice ${String(code ?? signal ?? '?')})`);
-      options.onEvent?.('service.stopped', { project, service: event, reason, code });
+      push(run, reason === 'time-limit' ? 'fermato: oltre il limite di tempo' : reason === 'stopped' ? 'fermato su tua richiesta' : reason === 'error' ? 'non avviato' : `finito (codice ${String(code ?? signal ?? '?')})`);
+      // A command that never started has no stop in the chain: there was no start either.
+      if (started) options.onEvent?.('service.stopped', { project, service: event, reason, code });
     };
     let child: ChildProcess;
     try {
       // Its own process group, so that a stop reaches what the script started (vite, node…).
       child = spawn(file, args, { cwd: root, env: serviceEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true, shell: false });
     } catch (error) {
-      append(run, `non avviato: ${error instanceof Error ? error.message : String(error)}`);
+      push(run, `non avviato: ${error instanceof Error ? error.message : String(error)}`);
       finish(null, null, 'error');
       return;
     }
-    run.child = child;
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
     child.stdout?.on('data', (text: string) => {
-      append(run, text);
+      feed(run, 'out', text);
     });
     child.stderr?.on('data', (text: string) => {
-      append(run, text);
+      feed(run, 'err', text);
+    });
+    child.once('spawn', () => {
+      started = true;
+      if (child.pid !== undefined) run.pid = child.pid;
+      options.onEvent?.('service.started', { project, service: event });
     });
     child.once('error', (error) => {
-      append(run, `non avviato: ${error.message}`);
+      push(run, `non avviato: ${error.message}`);
       finish(null, null, 'error');
     });
-    child.once('exit', (code, signal) => {
+    // `close`, not `exit`: the last lines of the streams are in by then.
+    child.once('close', (code, signal) => {
       finish(code, signal, run.stopping ?? 'exit');
     });
-    options.onEvent?.('service.started', { project, service: event });
     if (limit !== null) {
       const timer = setTimeout(() => {
         run.stopping = 'time-limit';
@@ -337,7 +413,7 @@ export function createServiceManager(options: ServiceManagerOptions = {}): Servi
   return {
     start(project, root, service) {
       if (runs.get(key(project, service.id))?.running === true) throw new ServiceError('running', `${service.name} is already running`);
-      // `up -d` of compose ends at once: it is short, the service stays with Docker.
+      // `up -d` of compose ends at once: it is short (a slow pull is cut at the limit too), the service stays with Docker.
       launch(project, root, service.id, service.command, service.stays && service.source !== 'compose' ? null : shortLimit, service.id);
     },
     stop(project, root, service) {
@@ -359,18 +435,16 @@ export function createServiceManager(options: ServiceManagerOptions = {}): Servi
       if (run === undefined) return undefined;
       return { startedAt: run.startedAt, running: run.running, ended: run.ended, lines: [...run.lines] };
     },
-    stopAll() {
-      for (const run of runs.values()) {
-        if (!run.running) continue;
-        run.stopping = 'stopped';
-        const pid = run.child?.pid;
-        if (pid === undefined) continue;
-        try {
-          process.kill(-pid, 'SIGTERM');
-        } catch {
-          // Already gone.
-        }
-      }
+    async stopAll() {
+      const groups = [...runs.values()].flatMap((run) => {
+        if (run.pid === undefined || !groupAlive(run.pid)) return [];
+        if (run.running) run.stopping = 'stopped';
+        return [run.pid];
+      });
+      for (const pid of groups) signalGroup(pid, 'SIGTERM');
+      const until = Date.now() + grace;
+      while (groups.some(groupAlive) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 100));
+      for (const pid of groups) if (groupAlive(pid)) signalGroup(pid, 'SIGKILL');
     },
   };
 }

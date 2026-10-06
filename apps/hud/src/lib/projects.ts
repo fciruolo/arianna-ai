@@ -256,6 +256,9 @@ export function browseErrorText(cause: unknown): string {
   if (cause.status === 415) return FILE_ERROR_TEXT.binary ?? '';
   if (cause.status === 403 && /approved|does not exist/.test(cause.message)) return FILE_ERROR_TEXT['not-approved'] ?? '';
   if (cause.status === 403) return FILE_ERROR_TEXT.refused ?? '';
+  if (cause.status === 409 && /changed since/.test(cause.message)) return 'Il comando è cambiato nel file da quando l’hai visto: ricontrolla e conferma di nuovo.';
+  if (cause.status === 409 && /already running/.test(cause.message)) return 'È già avviato.';
+  if (cause.status === 409 && /not started from here/.test(cause.message)) return 'Non è stato avviato da qui: fermalo dove l’hai avviato.';
   if (cause.status === 409) return FILE_ERROR_TEXT.busy ?? '';
   if (cause.status === 404) return FILE_ERROR_TEXT['not-found'] ?? '';
   return errorText(cause);
@@ -277,6 +280,8 @@ export interface ServiceState {
   script?: string;
   ports: number[];
   stays: boolean;
+  /** Of the command and its script, sent back with a start: the core refuses one that changed since. */
+  fingerprint: string;
   on: boolean;
   run: ServiceRunInfo | null;
 }

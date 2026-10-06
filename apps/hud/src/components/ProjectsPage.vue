@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, serviceLog, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
@@ -99,7 +99,7 @@ async function confirmAction(): Promise<void> {
   const { service, stop } = confirming.value;
   acting.value = true;
   try {
-    const run = stop ? await stopService(project.value.name, service.id) : await startService(project.value.name, service.id);
+    const run = stop ? await stopService(project.value.name, service.id) : await startService(project.value.name, service.id, service.fingerprint);
     chosenService.value = service.id;
     log.value = run;
     confirming.value = null;
@@ -107,6 +107,7 @@ async function confirmAction(): Promise<void> {
   } catch (cause) {
     servicesProblem.value = browseErrorText(cause);
     confirming.value = null;
+    await loadServices();
   } finally {
     acting.value = false;
   }
@@ -118,6 +119,13 @@ const serviceGroups = computed(() => {
   return [...groups.entries()];
 });
 const shownService = computed(() => services.value?.find((item) => item.id === chosenService.value) ?? null);
+// The dialog takes the focus, so that Esc closes it at once.
+const cancelButton = ref<HTMLButtonElement | null>(null);
+watch(confirming, async (now) => {
+  if (now === null) return;
+  await nextTick();
+  cancelButton.value?.focus();
+});
 const confirmation = computed(() => (confirming.value === null ? null : confirmText(confirming.value.service, confirming.value.stop)));
 
 watch(chosenService, () => {
@@ -618,13 +626,17 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           </div>
         </div>
         <p class="mx-5 mt-4 rounded-lg bg-[#071013] px-3 py-2.5 font-mono text-[13px] text-[#cfe3df]"><span class="text-[#5d7774]">$ </span>{{ confirmation.command }}</p>
+        <div v-if="!confirming.stop && confirming.service.script" class="mx-5 mt-2">
+          <p class="mb-1 text-xs text-muted">{{ confirming.service.source === 'Makefile' ? 'La ricetta nel Makefile (make esegue anche gli obiettivi da cui dipende):' : 'Lo script in package.json (anche i suoi pre e post, se ci sono):' }}</p>
+          <pre class="max-h-40 overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12px] whitespace-pre-wrap">{{ confirming.service.script }}</pre>
+        </div>
         <dl class="mx-5 mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3.5 gap-y-1.5 text-[12.5px]">
           <dt class="text-muted">Scritto in</dt><dd class="font-mono break-all">{{ confirmation.from }}</dd>
           <dt class="text-muted">Cartella</dt><dd class="font-mono break-all">{{ project.absolute }}</dd>
           <dt class="text-muted">Durata</dt><dd>{{ confirmation.duration }}</dd>
         </dl>
         <div class="flex justify-end gap-2 px-5 pt-4 pb-5">
-          <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting" @click="confirming = null">Annulla</button>
+          <button ref="cancelButton" type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting" @click="confirming = null">Annulla</button>
           <button type="button" class="btn px-3 py-1 text-[13px] font-semibold" :class="confirming.stop ? 'btn-danger' : 'btn-primary'" :disabled="acting" @click="confirmAction">{{ confirming.stop ? 'Ferma' : 'Avvia' }}</button>
         </div>
       </div>

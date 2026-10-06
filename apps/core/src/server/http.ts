@@ -44,8 +44,8 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { browsableProjects, listProjectDir, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, serviceStates } from '../project-browser.ts';
-import { ServiceError, type ServiceManager } from '../project-services.ts';
+import { browsableProjects, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, serviceStates } from '../project-browser.ts';
+import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -809,7 +809,7 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
  * started or stopped by name after the user's confirmation in the page; the
  * log of a run, from memory. Never a command written in the request.
  */
-function projectServiceRoutes(approvedProjects: () => readonly Project[], services: ServiceManager | undefined): Route[] {
+function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project[], services: ServiceManager | undefined): Route[] {
   const need = (): ServiceManager => {
     if (services === undefined) throw new HttpError(404, 'not found');
     return services;
@@ -828,11 +828,16 @@ function projectServiceRoutes(approvedProjects: () => readonly Project[], servic
       const manager = need();
       const name = projectParam(params);
       const body = await readJson(request);
-      onlyFields(body, ['service']);
+      onlyFields(body, ['service', 'fingerprint']);
       const id = serviceParam(body.service);
+      // A start runs what the confirmation showed, or nothing: the fingerprint of the command and its script.
+      const fingerprint = body.fingerprint;
+      if (fingerprint !== undefined && (typeof fingerprint !== 'string' || !/^[0-9a-f]{16}$/.test(fingerprint))) throw new HttpError(400, 'fingerprint must be the one of the list');
+      if (verb === 'start' && fingerprint === undefined) throw new HttpError(400, 'fingerprint must be the one of the list');
       const { root, list } = await serviceStates(approvedProjects(), name, manager);
-      const service = list.find((item) => item.id === id);
-      if (service === undefined) throw new HttpError(404, 'no such service in the project');
+      const service = pickService(list, id, fingerprint);
+      // Never while the Coder works there: it may be rewriting the scripts.
+      if (verb === 'start') await notBusy(sql, name);
       if (verb === 'start') manager.start(name, root, service);
       else manager.stop(name, root, service);
       return { body: { run: manager.run(name, id) ?? null } };
@@ -860,7 +865,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks),
-    ...projectServiceRoutes(approvedProjects, services),
+    ...projectServiceRoutes(sql, approvedProjects, services),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
