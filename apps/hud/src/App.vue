@@ -13,6 +13,7 @@ import InstallationBadge from './components/InstallationBadge.vue';
 import LabelLegend from './components/LabelLegend.vue';
 import NewConversationDialog from './components/NewConversationDialog.vue';
 import OfficePage from './components/OfficePage.vue';
+import ProjectsPage from './components/ProjectsPage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
 import ChangelogPage from './components/ChangelogPage.vue';
@@ -32,6 +33,7 @@ import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type Draf
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
+import { isProjectsPath, PROJECTS_PATH } from './lib/projects.ts';
 import { callTarget } from './lib/sidebar.ts';
 import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
 import {
@@ -266,9 +268,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null) store.close();
@@ -345,6 +347,11 @@ function openOffice(): void {
   openPage('office', OFFICE_PATH, 'Ufficio');
 }
 
+/** An approved project, read only (D-134). */
+function openProjects(): void {
+  openPage('projects', PROJECTS_PATH, 'Progetti');
+}
+
 /** A "/" command of the chat (D-090). */
 function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): void {
   if (action.kind === 'search') {
@@ -418,6 +425,10 @@ function followAddress(): void {
   }
   if (isOfficePath(window.location.pathname)) {
     openOffice();
+    return;
+  }
+  if (isProjectsPath(window.location.pathname)) {
+    openProjects();
     return;
   }
   page.value = 'chat';
@@ -562,6 +573,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @thoughts="openThoughts"
       @knowledge="openKnowledge()"
       @office="openOffice"
+      @projects="openProjects"
       @call="callArianna"
       @settings="openSettings"
       @theme="(value) => (theme = value)"
@@ -610,6 +622,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
+          <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
         </p>
@@ -706,6 +719,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
+      <ProjectsPage v-else-if="page === 'projects'" />
       <OfficePage
         v-else-if="page === 'office'"
         :status="status"
