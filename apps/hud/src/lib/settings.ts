@@ -51,6 +51,8 @@ export interface SettingsValues {
   agents: Record<string, { model: CloudModelAlias }>;
   /** The model that draws a character (D-123): `[sprites] model`, opus when absent (D-132). */
   sprites: 'sonnet' | 'opus' | 'local';
+  /** Messages of the user before an idle agent leaves the conversation (I-8, D-130): `[participants] leave_after`; 0 never. */
+  participants: number;
   voice: VoiceValues | null;
   /** `[notifications]` (I-1); `quiet` "HH:MM-HH:MM" or null. */
   notifications: NotificationsValues;
@@ -116,7 +118,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'notifications';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'participants' | 'notifications';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -149,6 +151,7 @@ export const SECTION_TEXT: Record<string, string> = {
   personas: 'Personalità',
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
+  participants: 'Uscita degli agenti',
   voice: 'Voce',
   notifications: 'Notifiche',
   executors: 'Esecutori cloud',
@@ -515,4 +518,14 @@ export function voiceProblem(form: VoiceForm): string | undefined {
   if (numbers.some((value) => typeof value !== 'number' || !Number.isInteger(value))) return 'Un numero è vuoto o non intero.';
   if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche push servono chiave pubblica e contatto.';
   return undefined;
+}
+
+/** The largest `[participants] leave_after` the core takes (I-8, D-130). */
+export const MAX_LEAVE_AFTER = 100;
+
+/** A valid number of messages for an idle agent to leave: a whole number, 0 (never) to MAX_LEAVE_AFTER. */
+export function leaveAfterProblem(value: unknown): string | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_LEAVE_AFTER
+    ? undefined
+    : `Un numero intero da 0 (mai) a ${String(MAX_LEAVE_AFTER)}.`;
 }

@@ -178,6 +178,87 @@ export async function isEntryDelegation(sql: Queryable, delegationId: string): P
 }
 
 /**
+ * The goodbyes of an agent that leaves by itself (I-8, D-130): fixed, ours
+ * (L0), one at random, no model. Written after its name as a line of the chat.
+ */
+export const FAREWELLS: readonly string[] = [
+  'ragazzi io vado, non servo più',
+  'vi lascio lavorare, chiamatemi se serve',
+  'io qui ho finito: alla prossima',
+  'tolgo il disturbo, buon lavoro',
+  'vado a riposare i circuiti, a presto',
+  'esco in punta di piedi',
+  'mi faccio da parte: se torno utile, Arianna sa dove trovarmi',
+  'per oggi basta così, ciao a tutti',
+  'non vi servo più: vi saluto',
+  'lascio la sedia libera, a presto',
+  'io mi ritiro, è stato un piacere',
+  'vado, ma resto a un messaggio di distanza',
+  'chiudo il mio quaderno e vi saluto',
+  'missione compiuta, passo e chiudo',
+  'me ne vado prima di diventare un soprammobile',
+  'vi lascio in buone mani',
+  'esco dalla chat, non dalla squadra',
+  'stacco qui: chiamatemi alla prossima',
+  'faccio spazio agli altri, ciao',
+  'saluto e torno nel mio angolo dell\'ufficio',
+];
+
+export function farewellLine(agent: string, random: () => number = Math.random): string {
+  const index = Math.min(FAREWELLS.length - 1, Math.max(0, Math.floor(random() * FAREWELLS.length)));
+  return `${participantName(agent)}: ${FAREWELLS[index] ?? ''}`;
+}
+
+/** When an idle agent leaves (I-8): after this many messages of the user, 0 never; the label of each agent's name. */
+export interface LeaveRule {
+  after: number;
+  nameLabel: (agent: string) => Label;
+  random?: () => number;
+}
+
+/** The agent that never leaves by itself: it stays until the user takes it out (the user's choice for I-8). */
+export const STAYS = 'coder';
+
+/**
+ * After a message of the user (I-8, D-130): every agent in the conversation,
+ * except the Coder, that has had `after` messages of the user since it came
+ * in or since its last delegation here leaves, with a goodbye line on the
+ * task of that message and the event `participant.removed` (reason `idle`).
+ * Run it in the transaction that writes the message. It comes back at the
+ * next delegation, with the lines of D-125. The agents that left.
+ */
+export async function leaveIdle(tx: Queryable, conversationId: string, taskId: string, rule: LeaveRule): Promise<string[]> {
+  if (rule.after <= 0) return [];
+  const idle = await tx<{ id: string; agent: string; taskId: string | null }[]>`
+    SELECT p.id::text, p.agent, p.task_id::text AS "taskId" FROM conversation_participants p
+    WHERE p.conversation_id = ${conversationId} AND p.removed_at IS NULL AND p.agent <> ${STAYS}
+      AND (
+        SELECT count(*) FROM messages m
+        WHERE m.conversation_id = p.conversation_id AND m.role = 'user'
+          AND m.ts > greatest(p.added_at, coalesce((
+            SELECT max(d.created_at) FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+            WHERE t.conversation_id = p.conversation_id AND d.agent = p.agent), p.added_at))
+      ) >= ${rule.after}
+      -- Never while a delegation of its own is still waiting or at work here: its report would land after its goodbye.
+      AND NOT EXISTS (
+        SELECT FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+        WHERE t.conversation_id = p.conversation_id AND d.agent = p.agent AND d.status IN ('pending', 'running'))
+    ORDER BY p.added_at, p.id
+    FOR UPDATE OF p`;
+  for (const row of idle) {
+    await tx`UPDATE conversation_participants SET removed_at = now() WHERE id = ${row.id}`;
+    await appendEvent(tx, {
+      kind: 'participant.removed',
+      taskId,
+      label: 'L1',
+      payload: { conversationId, agent: row.agent, participantId: row.id, reason: 'idle' },
+    });
+    await systemLine(tx, conversationId, taskId, rule.nameLabel(row.agent), farewellLine(row.agent, rule.random));
+  }
+  return idle.map((row) => row.agent);
+}
+
+/**
  * The user takes an agent out of the conversation: the row ends, the event
  * `participant.removed` (L1, ids only) and the line "Hai tolto …", with the
  * task that brought the agent in (a line for the user only). Refused for a

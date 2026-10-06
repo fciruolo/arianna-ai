@@ -13,6 +13,7 @@ import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
+import { DEFAULT_LEAVE_AFTER } from './participants.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
 import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
@@ -58,6 +59,8 @@ export interface Settings {
   agents?: AgentsSettings;
   /** `[sprites] model` (D-123); absent, Claude Opus draws the characters (D-132). */
   sprites?: SpriteModel;
+  /** `[participants] leave_after` (I-8, D-130); absent, ten. */
+  leaveAfter?: number;
   /** `[notifications]` (I-1): written only when the file has it; absent, the defaults. */
   notifications?: NotificationsConfig;
   telegram?: { token: string; chats: number[] };
@@ -122,6 +125,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(Object.keys(config.agents).length === 0 ? {} : { agents: structuredClone(config.agents) }),
     // Absent when the file has no [sprites]: the default is not written in.
     ...(raw.sprites === undefined ? {} : { sprites: config.sprites.model }),
+    ...(raw.participants === undefined ? {} : { leaveAfter: config.participants.leaveAfter }),
     // Kept absent when the file has no section: saving another card does not add it.
     ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
@@ -396,6 +400,14 @@ export function renderSettings(settings: Settings): string {
     '# leaves is L1 by your declaration and passes the gateway. Not a privacy',
     '# setting: it never turns an executor on. Applies without a restart.',
     ...(settings.sprites === undefined ? ['#', '# [sprites]', `# model = ${str(DEFAULT_SPRITE_MODEL)}`] : ['[sprites]', `model = ${str(settings.sprites)}`]),
+    '',
+    '# Agents that leave by themselves (I-8, D-130): after `leave_after` messages',
+    '# of yours with no delegation to an agent, it says goodbye and leaves the',
+    '# conversation; it comes back at the next delegation. 0 means never. The',
+    '# Coder never leaves by itself. Applies without a restart.',
+    ...(settings.leaveAfter === undefined
+      ? ['#', '# [participants]', `# leave_after = ${String(DEFAULT_LEAVE_AFTER)}`]
+      : ['[participants]', `leave_after = ${String(settings.leaveAfter)}`]),
     '',
     '# API, WebSocket and web chat of the core (task 1.11). Loopback only: the',
     '# history holds L2 in clear and there is no authentication yet. Access from',

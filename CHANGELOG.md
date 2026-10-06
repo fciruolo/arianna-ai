@@ -8,6 +8,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Pagina "Progetti" nel menu: per ogni progetto approvato l'albero dei file, il contenuto con i colori del codice, "Apri" per pagine e immagini, "Apri in VS Code", e in Git branch, modifiche non salvate, ultimi commit con il loro diff; tutto in sola lettura e sul computer (D-134, tappa 1).
 
+## [0.20.0] - 2026-10-06
+
+### Aggiunto
+
+- "Salva in inbox" in cima alla chat salva tutta la conversazione come una nota di kb/inbox, con titolo e riassunto del modello locale; un secondo salvataggio aggiorna la stessa nota (D-131, idea I-7).
+
+## [0.19.0] - 2026-10-06
+
+### Aggiunto
+
+- Un agente entrato in una conversazione esce da solo dopo 10 tuoi messaggi senza lavori per lui, salutando con una frase; il numero si cambia in Impostazioni → Agenti, il Coder resta finché lo togli tu (D-130, idea I-8).
+
 ## [0.18.0] - 2026-10-06
 
 ### Cambiato

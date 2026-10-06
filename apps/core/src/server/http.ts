@@ -13,6 +13,7 @@ import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
+import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -62,7 +63,7 @@ import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import type { DirectPolicy } from '../direct-chat.ts';
-import { activeParticipants, removeParticipant } from '../participants.ts';
+import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -149,6 +150,8 @@ export interface ApiServerOptions {
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
   /** Who the user may talk with in place of Arianna (D-111d); undefined, nobody. */
   directAgents?: () => readonly DirectPolicy[];
+  /** When an idle agent leaves a conversation (I-8, D-130), read at each message; undefined, none leaves. */
+  leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
@@ -301,6 +304,7 @@ interface RouteOptions {
   approvedProjects: () => readonly Project[];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
+  leaveRule?: (() => LeaveRule | undefined) | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -578,10 +582,33 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (capture === undefined) throw new HttpError(404, 'not found');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
       const ids = [...savedMessageIds(capture.home, capture.rules)];
-      if (ids.length === 0) return { body: { messageIds: [] } };
+      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna".
+      const conversation = findConversationNote(capture.home, capture.rules, id) !== undefined;
+      if (ids.length === 0) return { body: { messageIds: [], conversation } };
       const rows = await sql<{ id: string }[]>`
         SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${ids}::bigint[]) ORDER BY id`;
-      return { body: { messageIds: rows.map((row) => row.id) } };
+      return { body: { messageIds: rows.map((row) => row.id), conversation } };
+    }),
+    // I-7 (D-131): the whole conversation in one note of kb/inbox, without the lines of the system; a second save replaces it.
+    route('POST', '/api/conversations/:id/save', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      if (capture === undefined) throw new HttpError(404, 'not found');
+      const conversation = await loadConversation(sql, id);
+      if (conversation === undefined) throw new HttpError(404, 'not found');
+      const lines = await sql<SavedLine[]>`
+        SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
+      const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
+      let organizing = false;
+      if (capture.organize !== undefined) {
+        try {
+          await capture.organize(note.path);
+          organizing = true;
+        } catch (error) {
+          onError(error);
+        }
+      }
+      return { status: 201, body: { path: note.path, label: note.label, replaced: note.replaced, organizing } };
     }),
     ...noteRoutes(capture),
     ...knowledgeRoutes(capture),
@@ -800,7 +827,7 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -964,7 +991,8 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const body = await readJson(request);
       onlyFields(body, ['body']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
-      const { message, task } = await postUserMessage(sql, id, body.body);
+      const leave = leaveRule?.();
+      const { message, task } = await postUserMessage(sql, id, body.body, leave === undefined ? {} : { leave });
       return { status: 201, body: { message, task } };
     }),
 
@@ -1428,6 +1456,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
+    leaveRule: options.leaveRule,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
