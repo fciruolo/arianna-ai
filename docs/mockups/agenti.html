@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impostazioni · Agenti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<!--
+  Anteprima della nuova pagina Impostazioni → Agenti (richiesta dell'utente
+  del 2026-10-06: "organizzata malissimo sia il singolo agente che l'insieme";
+  scelta: elenco a schede + dettaglio). Solo un file locale: dati inventati,
+  niente rete oltre ai caratteri. I personaggi sono disegnati dalle mappe di
+  apps/hud/characters/art (Arianna, Coder, utente); quelli degli agenti
+  dell'utente sono ricolorati a caso.
+-->
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #12232838; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #7f9b98; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c133;
+  --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0; --grid: #4fd1c10a;
+  --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
+  --font-hud: "Chakra Petch", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #fff; --glow: #23887c22;
+  --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 14px/1.55 var(--font-sans); color: var(--ink); background: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; min-height: 100vh;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus, textarea:focus, select:focus { outline: none; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+*:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+
+.hud { font: 600 11px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 8px; font: 500 10.5px/1.4 var(--font-mono); color: var(--muted); white-space: nowrap; }
+.chip.cloud { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.chip.local { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.off { color: var(--muted); }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 9px; padding: 5px 11px; font-size: 12.5px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.btn.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.field { width: 100%; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 8px; padding: 7px 9px; font-size: 13px; }
+textarea.field { resize: vertical; min-height: 76px; }
+
+/* Page frame: the settings menu on the left, as in the real page */
+.app { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+.menu { border-right: 1px solid var(--line); padding: 18px 12px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.menu h1 { margin: 0 8px 16px; }
+.menu a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13.5px; }
+.menu a.on { background: var(--glow); color: var(--ink); }
+.menu .group { margin: 14px 10px 6px; font-size: 10px; color: var(--muted); }
+
+main { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 18px; padding: 18px 22px 90px; align-items: start; }
+
+/* The list */
+.list { position: sticky; top: 18px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 36px); overflow-y: auto; padding-right: 4px; }
+.list-head { display: flex; align-items: center; gap: 8px; }
+.list-head .hud { flex: 1; font-size: 12px; }
+.filters { display: flex; gap: 6px; }
+.filters button { border: 1px solid var(--line-strong); background: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+.filters button[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); background: var(--glow); }
+.group-title { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.group-title .hud { font-size: 10px; color: var(--muted); }
+.group-title small { color: var(--muted); font-size: 11.5px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.card {
+  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 10px; align-items: center;
+  border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 9px 10px; text-align: left;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.card[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.card canvas { grid-row: span 2; width: 32px; height: 50px; image-rendering: pixelated; }
+.card .name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .where { display: flex; align-items: center; gap: 5px; font: 500 10.5px/1 var(--font-mono); color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.dot.off { background: transparent; border: 1.5px solid var(--muted); }
+.card.disabled { opacity: .62; }
+.card.disabled canvas { filter: grayscale(1); }
+.card.new { grid-template-columns: 1fr; place-items: center; border-style: dashed; color: var(--muted); min-height: 70px; background: transparent; }
+.card.new:hover { color: var(--accent); border-color: var(--accent); }
+.refused { border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+
+/* The detail */
+.detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--surface); position: relative; overflow: hidden; }
+.hero::after { content: ""; position: absolute; inset: auto -40px -60px auto; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(var(--glow), transparent 70%); pointer-events: none; }
+.stage { width: 112px; height: 132px; border-radius: 12px; display: grid; place-items: end center; padding-bottom: 8px;
+  background: linear-gradient(transparent 70%, color-mix(in srgb, var(--accent) 10%, transparent) 70%), repeating-linear-gradient(90deg, var(--grid) 0 7px, transparent 7px 14px); border: 1px solid var(--line); }
+.stage canvas { width: 80px; height: 125px; image-rendering: pixelated; animation: bob 1.6s steps(2) infinite; }
+@keyframes bob { 50% { transform: translateY(-2px); } }
+.hero h2 { margin: 0; font: 600 22px/1.1 var(--font-hud); letter-spacing: .06em; }
+.hero p { margin: 6px 0 10px; color: var(--muted); max-width: 60ch; }
+.hero .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.switch { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; background: none; border: 0; padding: 0; }
+.switch .track { width: 36px; height: 20px; border-radius: 999px; background: var(--line-strong); position: relative; transition: background .15s; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+.switch[aria-checked="true"] .track { background: var(--accent); }
+.switch[aria-checked="true"] .track::after { transform: translateX(16px); background: var(--accent-ink); }
+.switch[disabled] { opacity: .55; cursor: not-allowed; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; color: var(--muted); font: 600 11px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .badge { display: inline-block; margin-left: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
+
+section.panel { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; animation: rise .22s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+.row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 6px 16px; align-items: start; }
+.row > label, .row > .label { font-size: 13px; font-weight: 500; padding-top: 6px; }
+.row small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.tones { display: flex; flex-wrap: wrap; gap: 6px; }
+.tones button { border: 1px solid var(--line-strong); background: none; border-radius: 9px; padding: 4px 10px; font-size: 13px; color: var(--muted); }
+.tones button[aria-pressed="true"] { border-color: var(--accent); background: var(--glow); color: var(--ink); }
+.example { font-size: 12.5px; color: var(--muted); }
+.example i { color: var(--ink); }
+.counter { float: right; font: 500 10.5px var(--font-mono); color: var(--muted); }
+.note { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--warn); }
+.note.info { color: var(--muted); }
+.look { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; }
+.poses { display: flex; gap: 10px; flex-wrap: wrap; }
+.pose { display: flex; flex-direction: column; align-items: center; gap: 4px; font: 500 10px var(--font-mono); color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 6px; }
+.pose canvas { width: 48px; height: 75px; image-rendering: pixelated; }
+.pose.walk canvas { animation: walk .5s steps(2) infinite; }
+@keyframes walk { 50% { transform: translateX(2px); } }
+.gen { display: flex; flex-direction: column; gap: 8px; border: 1px dashed var(--line-strong); border-radius: 12px; padding: 12px; }
+.perm { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.perm li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+.perm .ico { font: 600 12px var(--font-mono); color: var(--accent); text-align: center; padding-top: 1px; }
+.perm b { font-weight: 600; font-size: 13px; }
+.perm span { display: block; font-size: 12px; color: var(--muted); }
+.ceiling { border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 7%, transparent); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.danger-zone .row { align-items: center; }
+.danger-zone .row > div { display: flex; justify-content: flex-end; }
+
+.savebar { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 120px); display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 10px 30px #0006, 0 0 0 4px var(--glow); border-radius: 12px; padding: 9px 12px 9px 16px; transition: transform .25s cubic-bezier(.2,.9,.3,1.2); z-index: 10; }
+.savebar.show { transform: translate(-50%, 0); }
+.legend { position: fixed; top: 12px; right: 14px; z-index: 20; display: flex; gap: 6px; }
+.legend button { font-size: 11px; padding: 3px 8px; }
+
+@media (max-width: 1080px) {
+  main { grid-template-columns: 1fr; }
+  .list { position: static; max-height: none; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .menu { display: none; }
+  main { padding: 14px 16px 90px; }
+  .row { grid-template-columns: 1fr; }
+  .row > label, .row > .label { padding-top: 0; }
+  .hero { grid-template-columns: 1fr; }
+  .look { grid-template-columns: 1fr; }
+  .switch { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="legend"><button class="btn" id="theme">Tema chiaro/scuro</button></div>
+<div class="app">
+  <nav class="menu" aria-label="Impostazioni">
+    <h1 class="hud" style="font-size:12px">Impostazioni</h1>
+    <div class="group hud">Arianna</div>
+    <a href="#">Modelli locali</a>
+    <a href="#">Modelli cloud</a>
+    <a href="#" class="on">Agenti</a>
+    <a href="#">Voce</a>
+    <div class="group hud">Uscite</div>
+    <a href="#">Esecutori cloud</a>
+    <a href="#">Progetti</a>
+    <div class="group hud">Altro</div>
+    <a href="#">Novità</a>
+    <a href="#">Sviluppo di Arianna</a>
+  </nav>
+
+  <main>
+    <aside class="list" aria-label="Elenco degli agenti">
+      <div class="list-head">
+        <span class="hud">Agenti</span>
+        <button class="btn primary" type="button">+ Nuovo agente</button>
+      </div>
+      <input class="field" type="search" placeholder="Cerca per nome o descrizione" id="search" aria-label="Cerca un agente">
+      <div class="filters" role="group" aria-label="Filtra">
+        <button type="button" aria-pressed="true" data-filter="all">Tutti</button>
+        <button type="button" aria-pressed="false" data-filter="on">Attivi</button>
+        <button type="button" aria-pressed="false" data-filter="off">Spenti</button>
+      </div>
+      <div id="groups"></div>
+      <div class="refused"><span class="mono">ricette</span> (in disattivati) non caricato: <span class="mono muted">tools: "shell" non ammesso</span> <button class="btn danger" style="margin-left:6px;padding:2px 8px;font-size:11.5px">Elimina…</button></div>
+    </aside>
+
+    <div class="detail" id="detail" aria-live="polite"></div>
+  </main>
+</div>
+
+<div class="savebar" id="savebar" role="status">
+  <span style="font-size:13px">Modifiche non salvate a <b id="savewho"></b></span>
+  <button class="btn" type="button" id="undo">Annulla</button>
+  <button class="btn primary" type="button" id="save">Salva</button>
+</div>
+
+<script>
+// Front views of the hand-drawn characters (Arianna, Coder, user), rows 7-31 of the 16×32 frame.
+const ART = [{"palette":{"o":"#1a1c2c","h":"#8a3b2a","H":"#b5523a","s":"#f2c6a0","e":"#1b1b2a","p":"#e88f86","m":"#b2504a","d":"#2fb3a3","D":"#1f7f74","k":"#2b2b3a","E":"#c98f6c"},"rows":["......oooo......","....oohhHhoo....","...ohhhHHhhho...","..ohhhhhhhhhho..","..ohhsssssshho..","..ohssssssssho..","..ohsessssesho..","..ohpsssssspho..","..ohsssmmsssho..","..ohhossssohho..","..ohhhossohhho..","..ohhoddddohho..","..ooddddddddoo..",".osDddddddddDso.",".osDddDddDddDso.",".osDddddddddDso.","..oDddddddddDo..",".oddddddddddddo.",".oooooooooooooo.","....oso..oso....","....oso..oso....","....oso..oso....","....oko..oko....","...okko..okko...","...oooo..oooo..."]},{"palette":{"o":"#1a1c2c","g":"#8fa3ad","G":"#5d707a","v":"#1d2b3a","c":"#4fd1c1","a":"#f2b34b","b":"#3b6f8f","B":"#2c5570","k":"#2b2b3a","e":"#4fd1c1","E":"#2a8f84","s":"#8fa3ad"},"rows":[".......ao.......",".......oo.......","....oooooooo....","...oggggggggo...","...ogvvvvvvgo...","...ogvevvevgo...","...ogvvvvvvgo...","...oggggggggo...","...ogGGGGGGgo...","....oooooooo....",".....oGGGGo.....","..oooooooooooo..",".ogobbbbbbbbogo.",".ogobbccbbbbogo.",".ogobbbbbbbbogo.",".okobbbbbbbboko.","...oGGGGGGGGo...","...oggggggggo...","...oooooooooo...","....ogo..ogo....","....ogo..ogo....","....ogo..ogo....","...oGGo..oGGo...","...okko..okko...","...oooo..oooo..."]},{"palette":{"o":"#1a1c2c","h":"#3a2a22","s":"#e8b48a","e":"#1b1b2a","m":"#b2504a","j":"#e0a040","J":"#b07a28","w":"#f4ecd8","n":"#3e5a8a","N":"#2c4268","k":"#2b2b3a","E":"#b9825e"},"rows":["......oooo......","....oohhhhoo....","...ohhhhhhhho...","..ohhhhhhhhhho..","..ohhhhhhhhhho..","..ohhsssssshho..","..ohsessssesho..","..oossssssssoo..","...osssmmssso...","....oossssoo....","...oojjwwjjoo...","..ojjjjjjjjjjo..",".ojjjjjjjjjjjjo.",".ojJjjjjjjjjJjo.",".ojJjjjjjjjjJjo.",".osJjjjjjjjjJso.","..oJJJJJJJJJJo..","...onnnnnnnno...","...onnnnnnnno...","....onno.onno...","....onno.onno...","....onNo.oNno...","....onno.onno...","...okkko.okkko..","...ooooo.ooooo.."]}];
+const [ARIANNA, CODER, USER] = ART;
+// The user's agents: the user's figure in other colours (invented for the preview).
+const recolour = (base, map) => ({ rows: base.rows, palette: { ...base.palette, ...map } });
+const LOOKS = {
+  arianna: ARIANNA,
+  coder: CODER,
+  traduttore: recolour(USER, { h: '#d9c27a', j: '#5b7fd1', J: '#3e5ca3', n: '#2e3b4e', N: '#1f2836' }),
+  revisore: recolour(USER, { h: '#2b2b33', j: '#c24a35', J: '#8f3426', n: '#4a4a4a', N: '#333' }),
+  oroscopo: recolour(USER, { h: '#6b3fa0', j: '#e8c547', J: '#b99a2a', n: '#3d2a5c', N: '#2a1d40' }),
+  grafico: recolour(USER, { h: '#7a4a2a', j: '#7cc796', J: '#4e9466', n: '#3e5a8a', N: '#2c4268' }),
+};
+
+const AGENTS = [
+  { id: 'arianna', name: 'Arianna', official: true, where: 'local', model: 'qwen3.8-27b-4bit', on: true, fixed: true,
+    description: 'L’assistente: parla con te, sceglie chi fa cosa e passa i lavori agli agenti.', tone: 'equilibrato', address: 'tu',
+    specialization: '', traits: 'Precisa e calma, va dritta al punto.', perms: [['L2', 'Legge fino ai dati privati', 'Solo con modelli locali: niente esce dal computer'], ['KB', 'Cerca nella conoscenza', 'kb/, la tua inbox e le note'], ['→', 'Passa lavori agli agenti', 'Il brief passa dal gateway']] },
+  { id: 'coder', name: 'Coder', official: true, where: 'cloud', model: 'automatico', on: true,
+    description: 'Scrive e modifica codice nei progetti che gli apri, con Claude Code.', tone: 'asciutto', address: 'tu',
+    specialization: 'Sviluppatore TypeScript, attento ai test.', traits: '', perms: [['L1', 'Vede al massimo dati di lavoro', 'Tutto quello che riceve va a Claude'], ['A2', 'Scrive nella cartella del progetto', 'Con il tuo permesso per conversazione'], ['$', 'Terminale nella sandbox', 'Niente rete oltre a Claude']] },
+  { id: 'traduttore', name: 'traduttore', official: false, where: 'local', model: 'solo locali', on: true,
+    description: 'Traduce testi fra italiano, inglese e spagnolo mantenendo il tono.', tone: 'equilibrato', address: 'tu',
+    specialization: 'Traduzioni di lavoro e corrispondenza.', traits: 'Fedele al testo, segnala le frasi ambigue.', perms: [['L1', 'Vede al massimo dati di lavoro', 'Tetto finché resta fra i tuoi agenti'], ['A1', 'Agisce solo nella sandbox', 'Nessun file tuo, nessuna azione esterna']] },
+  { id: 'revisore', name: 'revisore', official: false, where: 'local', model: 'solo locali', on: true,
+    description: 'Rilegge testi e segnala errori, ripetizioni e frasi poco chiare.', tone: 'asciutto', address: 'tu',
+    specialization: 'Revisione di testi in italiano.', traits: 'Breve, elenca prima gli errori veri.', perms: [['L1', 'Vede al massimo dati di lavoro', 'Tetto finché resta fra i tuoi agenti'], ['A1', 'Agisce solo nella sandbox', 'Nessun file tuo, nessuna azione esterna']] },
+  { id: 'oroscopo', name: 'oroscopo', official: false, where: 'local', model: 'solo locali', on: true,
+    description: 'Un oroscopo per gioco, Ariete se non dici altro, sempre nella stessa forma.', tone: 'scherzoso', address: 'tu',
+    specialization: 'Oroscopi inventati, per ridere.', traits: 'Teatrale, chiude con un consiglio assurdo.', perms: [['L0', 'Non vede dati tuoi', 'Lavora solo su ciò che gli chiedi'], ['A1', 'Agisce solo nella sandbox', 'Nessun file tuo, nessuna azione esterna']] },
+  { id: 'grafico', name: 'grafico', official: false, where: 'cloud', model: 'Claude Sonnet', on: false,
+    description: 'Propone un grafico da una tabella di dati di lavoro.', tone: 'equilibrato', address: 'tu',
+    specialization: '', traits: '', perms: [['L1', 'Vede al massimo dati di lavoro', 'Quello che riceve può andare a Claude'], ['A1', 'Agisce solo nella sandbox', 'Nessun file tuo, nessuna azione esterna']] },
+];
+const TONES = { equilibrato: 'Ecco il riassunto: tre punti, poi la scadenza.', asciutto: 'Tre punti. Scadenza venerdì.', scherzoso: 'Tre punti e una scadenza: venerdì, niente panico.', formale: 'Le riporto il riassunto in tre punti e la scadenza.' };
+
+function draw(canvas, look, { pose = 'idle', scale = 1 } = {}) {
+  const rows = look.rows.slice();
+  if (pose === 'blink') rows.forEach((line, y) => (rows[y] = line.replaceAll('e', 'E')));
+  canvas.width = 16 * scale; canvas.height = rows.length * scale;
+  const ctx = canvas.getContext('2d');
+  rows.forEach((line, y) => [...line].forEach((letter, x) => {
+    if (letter === '.') return;
+    ctx.fillStyle = look.palette[letter] ?? '#f0f';
+    ctx.fillRect(x * scale, y * scale, scale, scale);
+  }));
+}
+const sprite = (id, opts) => { const canvas = document.createElement('canvas'); draw(canvas, LOOKS[id], opts); return canvas; };
+const WHERE = { local: 'locale', cloud: 'Claude' };
+
+let selected = 'revisore';
+let filter = 'all';
+let tab = 'carattere';
+let dirty = new Set();
+
+function renderList() {
+  const query = document.getElementById('search').value.trim().toLowerCase();
+  const visible = AGENTS.filter((a) => (filter === 'all' || (filter === 'on') === a.on) && (query === '' || (a.name + a.description).toLowerCase().includes(query)));
+  const groups = document.getElementById('groups');
+  groups.innerHTML = '';
+  for (const [title, hint, official] of [['Ufficiali', 'nel repository, in agents/', true], ['I miei', 'in data/agents, fuori da git', false]]) {
+    const items = visible.filter((a) => a.official === official);
+    const head = document.createElement('div');
+    head.className = 'group-title';
+    head.innerHTML = `<span class="hud">${title}</span><small>${hint}</small>`;
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const agent of items) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `card${agent.on ? '' : ' disabled'}`;
+      card.setAttribute('aria-current', String(agent.id === selected));
+      card.append(sprite(agent.id, { scale: 2 }));
+      card.insertAdjacentHTML('beforeend', `<span class="name">${agent.name}${dirty.has(agent.id) ? ' <span style="color:var(--warn)">•</span>' : ''}</span>
+        <span class="where"><span class="dot${agent.on ? '' : ' off'}" title="${agent.on ? 'attivo' : 'spento'}"></span>${agent.on ? '' : 'spento · '}${WHERE[agent.where]}</span>`);
+      card.onclick = () => { selected = agent.id; renderList(); renderDetail(); };
+      grid.append(card);
+    }
+    if (!official) {
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'card new'; add.textContent = '+ Nuovo agente';
+      grid.append(add);
+    }
+    if (items.length > 0 || !official) groups.append(head, grid);
+  }
+}
+
+function renderDetail() {
+  const agent = AGENTS.find((a) => a.id === selected);
+  const detail = document.getElementById('detail');
+  const mine = !agent.official;
+  detail.innerHTML = `
+    <div class="hero">
+      <div class="stage" id="stage"></div>
+      <div>
+        <div class="chips" style="margin-bottom:6px">
+          <span class="chip">${agent.official ? 'ufficiale' : 'mio'}</span>
+          <span class="chip ${agent.where}">${agent.where === 'cloud' ? '☁ va a Claude' : '⌂ resta sul computer'}</span>
+          ${agent.on ? '<span class="chip local">● attivo</span>' : '<span class="chip off">○ spento</span>'}
+          <button class="switch" type="button" role="switch" aria-checked="${agent.on}" ${agent.fixed ? 'disabled title="Arianna è sempre attiva"' : ''} id="toggle"><span class="track"></span>${agent.on ? 'Attivo' : 'Spento'}</button>
+        </div>
+        <h2>${agent.name}</h2>
+        <p>${agent.description}</p>
+        <div class="chips">
+          <span class="chip mono">modello: ${agent.model}</span>
+          <span class="chip mono">${agent.perms[0][0]} · ${agent.perms[1]?.[0] ?? ''}</span>
+          ${agent.fixed ? '' : '<button class="btn" type="button" style="padding:3px 9px;font-size:12px">Apri una chat</button>'}
+        </div>
+      </div>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Sezioni dell’agente">
+      ${[['carattere', 'Personalità'], ['aspetto', 'Aspetto'], ['modello', 'Modello'], ['permessi', 'Permessi'], ...(mine ? [['scheda', 'Scheda e prompt']] : [])]
+        .map(([id, label]) => `<button role="tab" type="button" data-tab="${id}" aria-selected="${tab === id}">${label}${dirty.has(agent.id) && id === 'carattere' ? '<span class="badge"></span>' : ''}</button>`).join('')}
+    </div>
+    <div id="panel"></div>`;
+  document.getElementById('stage').append(sprite(agent.id, { scale: 5 }));
+  detail.querySelectorAll('[role="tab"]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; renderDetail(); }));
+  const toggle = document.getElementById('toggle');
+  toggle.onclick = () => { if (agent.fixed) return; agent.on = !agent.on; renderList(); renderDetail(); };
+  if (!mine && tab === 'scheda') tab = 'carattere';
+  renderPanel(agent);
+}
+
+function renderPanel(agent) {
+  const panel = document.getElementById('panel');
+  const mark = () => { dirty.add(agent.id); document.getElementById('savewho').textContent = agent.name; document.getElementById('savebar').classList.add('show'); renderList(); };
+  if (tab === 'carattere') {
+    panel.innerHTML = `<section class="panel">
+      <div class="row"><span class="label">Tono<small>come risponde</small></span>
+        <div><div class="tones">${Object.keys(TONES).map((t) => `<button type="button" aria-pressed="${agent.tone === t}" data-tone="${t}">${t}</button>`).join('')}</div>
+        <p class="example">Esempio: <i>«${TONES[agent.tone]}»</i></p></div></div>
+      <div class="row"><label for="address">Ti dà del</label><select id="address" class="field" style="max-width:160px"><option>tu</option><option>lei</option></select></div>
+      <div class="row"><label for="display">Nome visualizzato<small>in chat e nell’ufficio</small></label><input id="display" class="field" ${agent.fixed || agent.id === 'coder' ? 'disabled placeholder="non si cambia"' : `placeholder="${agent.name}"`}></div>
+      <div class="row"><label for="spec">Specializzazione<small>si aggiunge al ruolo della scheda</small></label><div><span class="counter">${agent.specialization.length}/600</span><textarea id="spec" class="field" placeholder="Es. sviluppatore senior TypeScript, attento ai test.">${agent.specialization}</textarea></div></div>
+      <div class="row"><label for="traits">Personalità<small>come parla</small></label><div><span class="counter">${agent.traits.length}/600</span><textarea id="traits" class="field" placeholder="Es. precisa e calma.">${agent.traits}</textarea></div></div>
+      <p class="note">⚠ Questi testi restano L1 e possono arrivare a un esecutore cloud: niente dati personali. Un testo con IBAN, codici fiscali, carte o chiavi viene rifiutato.</p>
+    </section>`;
+    panel.querySelectorAll('[data-tone]').forEach((b) => (b.onclick = () => { agent.tone = b.dataset.tone; mark(); renderPanel(agent); }));
+    panel.querySelectorAll('textarea, input, select').forEach((f) => (f.oninput = mark));
+  } else if (tab === 'aspetto') {
+    panel.innerHTML = `<section class="panel">
+      <div class="look">
+        <div class="poses" id="poses"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="gen">
+            <b style="font-size:13px">Genera personaggio</b>
+            <span class="muted" style="font-size:12px">Disegnato da Claude Opus in due passaggi (disegno, poi revisione). Escono nome, descrizione, prompt, tono e il suggerimento qui sotto.</span>
+            <input class="field" placeholder="Suggerimento, per es. «cappello rosso, occhiali tondi»">
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="button">Genera</button><button class="btn" type="button">Carica PNG…</button></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" type="button">Tutte le animazioni</button><button class="btn" type="button">Scarica PNG</button><button class="btn" type="button">Torna al predefinito</button></div>
+        </div>
+      </div>
+    </section>`;
+    const poses = document.getElementById('poses');
+    for (const [label, pose, cls] of [['fermo', 'idle', ''], ['occhi chiusi', 'blink', ''], ['cammina', 'idle', 'walk']]) {
+      const box = document.createElement('div'); box.className = `pose ${cls}`;
+      box.append(sprite(agent.id, { pose, scale: 3 })); box.insertAdjacentHTML('beforeend', label); poses.append(box);
+    }
+  } else if (tab === 'modello') {
+    panel.innerHTML = `<section class="panel">
+      ${agent.fixed
+        ? `<div class="row"><span class="label">Modello</span><div><span class="mono">${agent.model}</span> <span class="chip local">locale</span><p class="muted" style="font-size:12.5px;margin:6px 0 0">Si cambia in <a href="#" style="color:var(--accent)">Modelli locali</a>: per Arianna solo modelli locali.</p></div></div>`
+        : agent.where === 'cloud'
+          ? `<div class="row"><label for="model">Modello delle conversazioni nuove</label><div><select id="model" class="field" style="max-width:300px"><option>automatico (sceglie il router)</option><option>Claude Sonnet</option><option>Claude Opus</option><option>Claude Fable (spento in Modelli cloud)</option></select>
+             <p class="muted" style="font-size:12.5px;margin:6px 0 0">Il selettore della chat lo cambia per una conversazione. Un modello spento si può scegliere, ma vale solo quando è acceso.</p></div></div>`
+          : `<div class="row"><span class="label">Modello</span><div>solo modelli locali: sceglie il router<p class="muted" style="font-size:12.5px;margin:6px 0 0">La scheda non permette esecutori cloud.</p></div></div>`}
+    </section>`;
+    panel.querySelectorAll('select').forEach((f) => (f.oninput = mark));
+  } else if (tab === 'permessi') {
+    panel.innerHTML = `<section class="panel">
+      <ul class="perm">${agent.perms.map(([ico, title, sub]) => `<li><span class="ico">${ico}</span><div><b>${title}</b><span>${sub}</span></div></li>`).join('')}</ul>
+      ${agent.official ? '<p class="note info">Le schede ufficiali si cambiano in <span class="mono">agents/' + agent.id + '.yaml</span>.</p>'
+        : `<div class="ceiling">Tetto finché resta fra i tuoi agenti: al massimo <b>L1</b> e <b>A1</b>, qualunque cosa dica la scheda.</div>
+           <div style="display:flex;gap:8px"><button class="btn" type="button">Modifica permessi…</button><span class="muted" style="font-size:12px;align-self:center">Ti mostra cosa cambia prima di salvare.</span></div>`}
+    </section>`;
+  } else {
+    panel.innerHTML = `<section class="panel">
+      <div class="row"><label for="desc">Descrizione<small>una riga, la legge Arianna per scegliere</small></label><input id="desc" class="field" value="${agent.description}"></div>
+      <div class="row"><label for="prompt">Prompt<small>le istruzioni dell’agente</small></label><div><span class="counter">212/4000</span><textarea id="prompt" class="field" rows="7">Ricevi un testo in italiano. Elenca prima gli errori di ortografia e grammatica, poi le ripetizioni, poi le frasi poco chiare con una proposta. Non riscrivere tutto il testo.</textarea></div></div>
+      <p class="note info">Valgono dal prossimo lavoro che Arianna gli passa.</p>
+    </section>
+    <section class="panel danger-zone">
+      <div class="row"><span class="label">Promuovi a ufficiale<small>passa in agents/, in git; cade il tetto L1/A1</small></span><div><button class="btn warn" type="button">Promuovi…</button></div></div>
+      <div class="row"><span class="label">Elimina<small>solo da spento; va in data/agents/eliminati</small></span><div><button class="btn danger" type="button" ${agent.on ? 'disabled title="Prima spegnilo"' : ''}>Elimina…</button></div></div>
+    </section>`;
+    panel.querySelectorAll('textarea, input').forEach((f) => (f.oninput = mark));
+  }
+}
+
+document.getElementById('search').oninput = renderList;
+document.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => {
+  filter = b.dataset.filter;
+  document.querySelectorAll('[data-filter]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderList();
+}));
+const hideBar = () => { dirty = new Set(); document.getElementById('savebar').classList.remove('show'); renderList(); renderDetail(); };
+document.getElementById('undo').onclick = hideBar;
+document.getElementById('save').onclick = hideBar;
+document.getElementById('theme').onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+};
+renderList();
+renderDetail();
+</script>
+</body>
+</html>

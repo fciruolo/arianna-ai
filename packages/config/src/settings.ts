@@ -56,7 +56,7 @@ export interface Settings {
   personas?: Personas;
   /** `[agents.<id>]` (D-116); absent or empty, the router chooses for every agent. */
   agents?: AgentsSettings;
-  /** `[sprites] model` (D-123); absent, Claude Sonnet draws the characters. */
+  /** `[sprites] model` (D-123); absent, Claude Opus draws the characters (D-132). */
   sprites?: SpriteModel;
   /** `[notifications]` (I-1): written only when the file has it; absent, the defaults. */
   notifications?: NotificationsConfig;
@@ -391,7 +391,7 @@ export function renderSettings(settings: Settings): string {
     '',
     '# Characters drawn by a model (D-123): `model` is the one that draws the',
     '# character of an agent from its name, description, prompt and persona:',
-    '# sonnet (default), opus or local (the orchestrator of [roles]). Claude',
+    '# opus (default), sonnet or local (the orchestrator of [roles]). Claude',
     '# draws only while it is on in [cloud] executors and [cloud.models]; what',
     '# leaves is L1 by your declaration and passes the gateway. Not a privacy',
     '# setting: it never turns an executor on. Applies without a restart.',

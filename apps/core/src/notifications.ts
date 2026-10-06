@@ -26,14 +26,15 @@ export type NoticeOutcome = 'none' | 'off' | 'quiet' | 'pages' | 'push';
 
 /**
  * The kind of notice an event is, from its metadata only. A reply is a
- * message of Arianna's that ends a task: the report of a delegated agent and
+ * message of Arianna's that ends a task, or of the agent of a direct chat
+ * (`direct`, D-111d): the report of a delegated agent in Arianna's chat and
  * the lines of a call are not (in a call the user is listening already).
  */
 export function noticeOf(event: Pick<PublicEvent, 'kind' | 'taskId' | 'payload'>): { kind: NoticeKind; conversationId?: string; taskId?: string } | undefined {
   const payload = (typeof event.payload === 'object' && event.payload !== null ? event.payload : {}) as Record<string, unknown>;
   if (event.kind === 'message.created') {
     if (payload.role !== 'assistant' || typeof payload.conversationId !== 'string') return undefined;
-    if (payload.agent !== undefined || payload.callId !== undefined) return undefined;
+    if ((payload.agent !== undefined && payload.direct !== true) || payload.callId !== undefined) return undefined;
     return { kind: 'reply', conversationId: payload.conversationId };
   }
   if (event.taskId === null) return undefined;

@@ -27,7 +27,7 @@ import { pendingText } from './lib/dev-progress.ts';
 import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
-import { draftFromAddress, draftPath, draftProjectProblem } from './lib/draft.ts';
+import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
@@ -63,7 +63,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
@@ -150,13 +150,16 @@ function closePanel(): void {
 // "Cerca" (D-097) and "+ Nuovo": windows in the middle of the page.
 const showSearch = ref(false);
 const showNew = ref(false);
+/** The agent "+ Nuovo" opens on ("Apri una chat" in Impostazioni → Agenti, D-133); undefined: the usual first choice. */
+const newWith = ref<string | undefined>(undefined);
 function openSearch(): void {
   showSidebar.value = false;
   showSearch.value = true;
 }
-function openNew(): void {
+function openNew(agent?: string): void {
   showSidebar.value = false;
   void store.refreshProjects();
+  newWith.value = agent;
   showNew.value = true;
 }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -185,11 +188,11 @@ function focusComposer(): void {
   window.setTimeout(look, 0);
 }
 /** "Nuovo" and "/nuova" (D-108): a draft only in the page; the conversation is created with the first message. */
-function openDraft(mode: 'work' | 'private', project?: string, replace = false): void {
+function openDraft(choice: DraftChoice, replace = false): void {
   showSidebar.value = false;
   page.value = 'chat';
-  store.openDraft(mode, project);
-  const path = draftPath(mode, project);
+  store.openDraft(choice);
+  const path = draftPath(choice);
   if (`${window.location.pathname}${window.location.search}` !== path) {
     if (replace) window.history.replaceState(null, '', path);
     // A conversation born from a draft takes the place of the draft in the history: "back" does not reopen an empty draft.
@@ -354,7 +357,9 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): 
       error.value = 'Il progetto di questa conversazione non è più fra quelli approvati: apri la nuova conversazione dal pulsante e scegli il progetto.';
       return;
     }
-    openDraft(conversation.mode, conversation.mode === 'work' ? project : undefined);
+    openDraft(
+      conversation.mode === 'work' ? { mode: 'work', project, ...(conversation.agent !== null && project !== undefined ? { agent: conversation.agent } : {}) } : { mode: conversation.mode },
+    );
     return;
   }
   if (action.page === 'thoughts') openThoughts();
@@ -416,8 +421,8 @@ function followAddress(): void {
   const asked = draftFromAddress(window.location.pathname, window.location.search);
   if (asked !== undefined) {
     // From the address: the same entry of the history, written in its normal form (`/nuova` → `/nuova?tipo=privata`).
-    if (draft.value === null || draft.value.mode !== asked.mode || draft.value.project !== asked.project) openDraft(asked.mode, asked.project, true);
-    else if (`${window.location.pathname}${window.location.search}` !== draftPath(asked.mode, asked.project)) window.history.replaceState(null, '', draftPath(asked.mode, asked.project));
+    if (draft.value === null || !sameChoice(draft.value, asked)) openDraft(asked, true);
+    else if (`${window.location.pathname}${window.location.search}` !== draftPath(asked)) window.history.replaceState(null, '', draftPath(asked));
     return;
   }
   const id = conversationFromPath(window.location.pathname);
@@ -683,7 +688,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
       <ChangelogPage v-else-if="page === 'changelog'" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
@@ -698,7 +703,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :characters="characters"
         :signals="officeSignals"
         @open="openConversation"
-        @draft="(mode, project) => openDraft(mode, project)"
+        @draft="(mode, project) => openDraft({ mode, project })"
       />
       <DraftChat
         v-else-if="draft !== null"
@@ -708,6 +713,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :sending="sending"
         :send="store.sendDraft"
         :arianna="characters?.agents.arianna"
+        :characters="characters?.agents"
+        :agents="directAgents"
       />
       <ChatView
         v-else-if="chat !== null && current !== undefined"
@@ -726,6 +733,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :calls="calls"
         :participants="participants"
         :characters="characters?.agents"
+        :direct-agents="directAgents"
         @send="store.send"
         @remove-participant="store.removeParticipant"
         @call-when-done="store.callWhenDone"
@@ -773,6 +781,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"
+      :agents="directAgents"
+      :characters="characters?.agents"
+      :initial-agent="newWith"
       @close="showNew = false"
       @create="openDraft"
       @refresh="store.refreshProjects"

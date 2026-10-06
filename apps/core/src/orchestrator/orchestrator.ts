@@ -17,7 +17,7 @@ import { enabledCloudModels, type AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
-import { loadConversation, type DirectModel } from '../conversations.ts';
+import { CHAT_AGENT, loadConversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
 import { passGateway } from '../gateway.ts';
@@ -30,6 +30,7 @@ import {
   briefCeiling,
   delegateTargets,
   delegationRoute,
+  directChatOf,
   NO_PROJECT,
   planDelegation,
   repoFor,
@@ -313,11 +314,36 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     return isAtMost(label, 'L1') ? { model, label } : undefined;
   }
 
-  /** The step that follows a `task.delegate` call: planned by the router, or closed here. */
-  async function delegationPlanFor(task: Task, step: number): Promise<DelegationPlan | undefined> {
+  /**
+   * The step that follows a `task.delegate` call: planned by the router, or
+   * closed here. In the direct chat (D-111) the delegation was written with
+   * the user's message, at the task's first step: no local step comes before it.
+   */
+  async function delegationPlanFor(task: Task, step: number, direct: boolean): Promise<DelegationPlan | undefined> {
     const delegation = await openDelegation(sql, task.id);
-    if (delegation === undefined || delegation.step >= step) return undefined;
+    if (delegation === undefined || (delegation.step >= step && !direct)) return undefined;
     return planDelegation(env, task, delegation);
+  }
+
+  /** The task is a message of the direct chat with its assignee (D-111). */
+  async function isDirectChat(task: Task): Promise<boolean> {
+    return task.assignee !== CHAT_AGENT && (await directChatOf(sql, task, task.assignee)) !== undefined;
+  }
+
+  /**
+   * How a task of the direct chat ends (D-111): with the agent's message, or
+   * waiting for the user with why the delegation ended without one. Nobody
+   * else reads the result: the local model never runs in this chat.
+   */
+  async function directChatEnd(task: Task, outcome: StepOutcome): Promise<StepOutcome> {
+    if (outcome.kind !== 'continue') return outcome;
+    const usage = outcome.usage;
+    const delegation = (await loadDelegations(sql, task.id)).at(-1);
+    if (delegation?.status === 'ok' && delegation.messageId !== null) {
+      return { kind: 'answered', messageId: delegation.messageId, ...(usage === undefined ? {} : { usage }) };
+    }
+    const why = (delegation?.result ?? 'the delegation did not end').replace(/^error: [^:]+: /, '');
+    return { kind: 'wait-user', reason: `${task.assignee} could not answer: ${why}`, ...(usage === undefined ? {} : { usage }) };
   }
 
   /**
@@ -393,7 +419,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   return {
     async plan(task: Task, step: number): Promise<RunSpec> {
       const key = `${task.id}:${String(step)}`;
-      const planned = await delegationPlanFor(task, step);
+      const directChat = await isDirectChat(task);
+      const planned = await delegationPlanFor(task, step, directChat);
+      // Nothing left to run in the direct chat: the step only closes the task (directChatEnd). Its run row says
+      // local and no model, as for a delegation closed without running: no model is called.
+      if (planned === undefined && directChat) return { agent: task.assignee, executor: ORCHESTRATOR_EXECUTOR, locality: 'local' };
       if (planned === undefined) {
         const direct = await directFor(task);
         directs.set(key, direct?.model ?? null);
@@ -417,7 +447,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     async run(ctx: StepContext): Promise<StepOutcome> {
       const { task, step, runId } = ctx;
       const key = `${task.id}:${String(step)}`;
-      const planned = plans.get(key) ?? (await delegationPlanFor(task, step));
+      const directChat = await isDirectChat(task);
+      const planned = plans.get(key) ?? (await delegationPlanFor(task, step, directChat));
       plans.delete(key);
       const plannedDirect = directs.get(key);
       directs.delete(key);
@@ -426,10 +457,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         const decision = planned.kind === 'workspace' ? undefined : planned.decision;
         if (decision !== undefined) await recordRouteDecision(sql, decision, { taskId: task.id, runId, step });
         switch (planned.kind) {
-          case 'cloud':
-            return runDelegation(env, ctx, planned);
-          case 'local':
-            return runLocalDelegation(env, ctx, planned);
+          case 'cloud': {
+            const outcome = await runDelegation(env, ctx, planned);
+            return directChat ? directChatEnd(task, outcome) : outcome;
+          }
+          case 'local': {
+            const outcome = await runLocalDelegation(env, ctx, planned);
+            return directChat ? directChatEnd(task, outcome) : outcome;
+          }
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
             return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step, agent: planned.delegation.agent };
@@ -446,6 +481,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
             break;
         }
       }
+      // The direct chat never reaches the local model (D-111).
+      if (directChat) return directChatEnd(task, { kind: 'continue', usage: { steps: 0 } });
 
       const agent = options.agents.get(task.assignee);
       if (agent === undefined) return { kind: 'wait-user', reason: `no agent card for ${task.assignee}` };

@@ -4,13 +4,16 @@
 // no environment of its own): the example at the end of the fixed prompt is
 // the answer, unless the user's hint asks for a scenario
 // (`User hint: scenario-broken` → not JSON, `scenario-fenced` → in a code
-// fence, `scenario-quota` → a quota refusal).
+// fence, `scenario-quota` → a quota refusal; `scenario-review<name>` does it
+// only in the second pass, D-132).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const argv = process.argv.slice(2);
 const prompt = readFileSync(0, 'utf8');
-const scenario = /User hint: scenario-([a-z]+)/.exec(prompt)?.[1] ?? 'ok';
+const asked = /User hint: scenario-([a-z]+)/.exec(prompt)?.[1] ?? 'ok';
+const review = prompt.includes('Second pass.');
+const scenario = asked.startsWith('review') ? (review ? asked.slice('review'.length) : 'ok') : asked;
 const flag = (name: string): string | undefined => {
   const index = argv.indexOf(name);
   return index === -1 ? undefined : argv[index + 1];

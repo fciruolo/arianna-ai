@@ -90,6 +90,9 @@ test('noticeOf: the final reply of Arianna, an approval, a failed task; nothing 
     assert.equal(noticeOf({ ...reply, payload }), undefined, JSON.stringify(payload));
   }
   assert.equal(noticeOf({ ...approval, taskId: null }), undefined);
+  // The agent of a direct chat answers in its own conversation (D-111d): a reply, unless it is a line of a call.
+  assert.deepEqual(noticeOf({ ...reply, payload: { ...reply.payload, agent: 'coder', direct: true } }), { kind: 'reply', conversationId: CONVERSATION });
+  assert.equal(noticeOf({ ...reply, payload: { ...reply.payload, agent: 'coder', direct: true, callId: 'c1' } }), undefined);
   for (const kind of ['task.status', 'approval.decided', 'conversation.created', 'call.started']) assert.equal(noticeOf({ ...failure, kind }), undefined, kind);
 });
 
