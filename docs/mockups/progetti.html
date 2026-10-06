@@ -103,6 +103,8 @@ main { padding: 22px 26px 40px; display: flex; flex-direction: column; gap: 16px
 .menu-pop small { grid-column: 1; color: var(--muted); font: 400 11.5px var(--font-mono); }
 .menu-pop .add { display: block; font-size: 12px; color: var(--muted); padding: 8px 10px 4px; border-top: 1px solid var(--line); margin-top: 4px; }
 .where { font: 400 12px var(--font-mono); color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.where .small-vs { padding: 2px 8px; font: 500 12px var(--font-sans); color: var(--muted); }
+.where .small-vs:hover { color: var(--ink); }
 .where .lock { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .where .lock svg { width: 13px; height: 13px; }
 .stats { grid-row: span 2; display: flex; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
@@ -296,6 +298,7 @@ main { padding: 22px 26px 40px; display: flex; flex-direction: column; gap: 16px
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
 </svg>
 
@@ -328,7 +331,7 @@ main { padding: 22px 26px 40px; display: flex; flex-direction: column; gap: 16px
         <button class="stat" type="button" data-go="git"><span class="hud">Modifiche</span><b class="warn">4 file</b></button>
         <button class="stat" type="button" data-go="svc"><span class="hud">Servizi</span><b><span class="dot on"></span>2 accesi su 6</b></button>
       </div>
-      <div class="where"><span id="ppath">~/Sites/orto-condiviso</span><span>·</span><span>lettura Interno</span></div>
+      <div class="where"><span id="ppath">~/Sites/orto-condiviso</span><span>·</span><span>lettura Interno</span><a class="btn ghost small-vs" href="#" id="vsproj" onclick="return false" title="Apre la cartella del progetto in Visual Studio Code"><svg class="i" style="width:13px;height:13px"><use href="#i-code"/></svg>Apri in VS Code</a></div>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -350,6 +353,7 @@ main { padding: 22px 26px 40px; display: flex; flex-direction: column; gap: 16px
           <div class="pane-head">
             <div class="grow crumbs" id="crumbs"></div>
             <span class="meta" id="vsize"></span>
+            <a class="btn" href="#" id="vscode" onclick="return false" title="Apre questo file in Visual Studio Code, alla prima riga cambiata"><svg class="i" style="width:13px;height:13px"><use href="#i-code"/></svg>VS Code</a>
             <button class="btn" id="vopen" type="button" disabled><svg class="i" style="width:13px;height:13px"><use href="#i-ext"/></svg>Apri</button>
           </div>
           <div class="scroll" id="vbody" style="display:flex;flex-direction:column"></div>
@@ -505,6 +509,9 @@ const render = (key) => {
   const open = document.getElementById('vopen');
   open.disabled = !f.open;
   open.title = f.open ? 'Apre in una scheda nuova, servita dal computer' : 'Si aprono solo pagine e immagini';
+  const vs = document.getElementById('vscode');
+  vs.style.display = f.shut ? 'none' : '';
+  vs.title = 'Apre ' + f.name + ' in Visual Studio Code' + (f.chg ? ', alla riga ' + f.chg[0] : '');
   const body = document.getElementById('vbody');
   if (f.shut) body.innerHTML = `<div class="stage"><div class="shut-msg">${lockSvg}<b>Questo file resta chiuso</b><span>I file nascosti (che iniziano con il punto), la cartella .git e i file con valori del vault non si mostrano mai.</span></div></div>`;
   else if (f.image) body.innerHTML = '<div class="stage"><div><div class="pic" role="img" aria-label="Anteprima di orto.png"></div><div class="cap">orto.png · 1200 × 800</div></div></div>';
