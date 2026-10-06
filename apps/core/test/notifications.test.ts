@@ -24,8 +24,8 @@ const at = (clock: string): Date => {
   return new Date(2026, 9, 5, hours, minutes);
 };
 
-function harness(options: { config?: NotificationsConfig; visible?: number; focused?: number; push?: boolean; now?: Date; helpers?: number } = {}) {
-  let focused = options.focused ?? options.visible ?? 0;
+function harness(options: { config?: NotificationsConfig; visible?: number; push?: boolean; now?: Date; helpers?: number } = {}) {
+  let reading: string[] = [];
   const broadcasts: Notice[] = [];
   const helped: Notice[] = [];
   let helpers = options.helpers ?? 0;
@@ -42,7 +42,7 @@ function harness(options: { config?: NotificationsConfig; visible?: number; focu
       broadcasts.push(helpers > 0 ? { ...notice, helper } as Notice : notice);
     },
     helpers: () => helpers,
-    focusedPages: () => focused,
+    readingPages: (conversationId) => reading.filter((open) => open === conversationId).length,
     toHelpers: (notice) => helped.push(notice),
     push: () =>
       options.push === false
@@ -60,8 +60,8 @@ function harness(options: { config?: NotificationsConfig; visible?: number; focu
     helped,
     pushes,
     board,
-    setFocused: (next: number) => {
-      focused = next;
+    setReading: (next: string[]) => {
+      reading = next;
     },
     setHelpers: (next: number) => {
       helpers = next;
@@ -177,11 +177,14 @@ test('the board forgets a notice after an hour', () => {
 });
 
 test('visibilityOf: the only frame a page may send', () => {
-  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true}'), { visible: true, focused: true });
-  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false}'), { visible: false, focused: false });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true}'), { visible: true, focused: true, conversation: null });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false}'), { visible: false, focused: false, conversation: null });
   // D-128: in view but another app in front; never focused while hidden.
-  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true,"focused":false}'), { visible: true, focused: false });
-  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false,"focused":true}'), { visible: false, focused: false });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true,"focused":false}'), { visible: true, focused: false, conversation: null });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false,"focused":true}'), { visible: false, focused: false, conversation: null });
+  // The conversation open in the page: an id or null, nothing else.
+  assert.deepEqual(visibilityOf(`{"type":"visibility","visible":true,"focused":true,"conversation":"${CONVERSATION}"}`), { visible: true, focused: true, conversation: CONVERSATION });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true,"focused":true,"conversation":null}'), { visible: true, focused: true, conversation: null });
   for (const frame of [
     '',
     'x',
@@ -193,6 +196,8 @@ test('visibilityOf: the only frame a page may send', () => {
     '{"type":"visibility","visible":true,"text":"x"}',
     '{"type":"visibility","visible":true,"focused":"no"}',
     '{"type":"visibility","visible":true,"focused":true,"x":1}',
+    '{"type":"visibility","visible":true,"focused":true,"conversation":"la fattura"}',
+    '{"type":"visibility","visible":true,"conversation":7}',
   ]) {
     assert.equal(visibilityOf(frame), undefined, frame);
   }
@@ -259,8 +264,8 @@ test('a failed task without a conversation does not notify: nothing to open', as
   assert.deepEqual(pushes, []);
 });
 
-test('the helper of the Mac (D-128): the notice when no page is in view, and the pages are told not to show their own', async () => {
-  const { notifier, broadcasts, helped, pushes, setVisible, setFocused, setHelpers } = harness({ helpers: 1 });
+test('the helper of the Mac (D-128): the notice unless the user is reading that conversation, and the pages are told not to show their own', async () => {
+  const { notifier, broadcasts, helped, pushes, setVisible, setReading, setHelpers } = harness({ helpers: 1 });
   assert.equal(await notifier.handle(reply), 'push');
   assert.deepEqual(helped, [{ kind: 'reply', conversationId: CONVERSATION }]);
   assert.deepEqual(broadcasts, [{ kind: 'reply', conversationId: CONVERSATION, helper: true }]);
@@ -270,15 +275,19 @@ test('the helper of the Mac (D-128): the notice when no page is in view, and the
   setVisible(1);
   assert.equal(await notifier.handle(approval), 'pages');
   assert.equal(helped.length, 2);
-  // In view and in front: the user is looking, the helper says nothing.
-  setFocused(1);
+  // `approval` belongs to OTHER (its task's conversation). The chat in front on another conversation: still the notification of the system, one only.
+  setReading([CONVERSATION]);
   assert.equal(await notifier.handle(approval), 'pages');
-  assert.equal(helped.length, 2);
-  setFocused(0);
+  assert.equal(helped.length, 3);
+  // In front on that conversation: the user is reading it, the helper says nothing.
+  setReading([OTHER]);
+  assert.equal(await notifier.handle(approval), 'pages');
+  assert.equal(helped.length, 3);
+  setReading([]);
   // No helper: as before D-128.
   setVisible(0);
   setHelpers(0);
   assert.equal(await notifier.handle(failure), 'push');
-  assert.equal(helped.length, 2);
+  assert.equal(helped.length, 3);
   assert.deepEqual(broadcasts.at(-1), { kind: 'failure', conversationId: OTHER });
 });

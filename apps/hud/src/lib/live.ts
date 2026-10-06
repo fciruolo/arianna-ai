@@ -32,9 +32,12 @@ export interface LiveOptions {
 export interface LiveConnection {
   /** Id of the last event received, sent back on reconnection. */
   lastEventId(): string | undefined;
-  /** Tells the core whether the page is in view (I-1); dropped while the socket is not open. */
-  /** Whether the page is in view and, D-128, also the window in front. */
-  sendVisibility(visible: boolean, focused: boolean): void;
+  /**
+   * Tells the core whether the page is in view (I-1), also the window in
+   * front (D-128), and which conversation it has open (the helper of the Mac
+   * is silent only for that one); dropped while the socket is not open.
+   */
+  sendVisibility(visible: boolean, focused: boolean, conversation: string | null): void;
   close(): void;
 }
 
@@ -90,10 +93,10 @@ export function connectLive(options: LiveOptions): LiveConnection {
   open();
   return {
     lastEventId: () => lastId,
-    sendVisibility(visible, focused) {
+    sendVisibility(visible, focused, conversation) {
       // Sent once the backlog is out; until then the page counts as not in view.
       if (!ready) return;
-      socket?.send?.(JSON.stringify({ type: 'visibility', visible, focused }));
+      socket?.send?.(JSON.stringify({ type: 'visibility', visible, focused, conversation }));
     },
     close() {
       stopped = true;

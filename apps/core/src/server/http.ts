@@ -182,8 +182,8 @@ export interface ApiServer {
   clients(): number;
   /** Pages that said they are in view (I-1): with none, a notice goes by Web Push. */
   visiblePages(): number;
-  /** Pages in view and in front (D-128): with none, the helper of the Mac shows the notice. */
-  focusedPages(): number;
+  /** Pages in view and in front with this conversation open (D-128): with none, the helper of the Mac shows the notice. */
+  readingPages(conversationId: string): number;
   /** A notice (I-1) to every open page: a kind and a conversation id, never text; `helper` when the helper of the Mac shows it (D-128). */
   broadcast(notice: Notice & { kind: NoticeKind; helper?: boolean }): void;
   /** Native helpers connected (D-128, GET /api/notifications/stream). */
@@ -1339,12 +1339,16 @@ function participantRoutes(sql: Sql, agentOf: NonNullable<ApiServerOptions['part
   ];
 }
 
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /**
- * `{"type":"visibility","visible":true|false,"focused":true|false}`, the only
- * frame a page may send; undefined for anything else. `focused` (D-128): the
- * page is also the window in front; without it, as visible.
+ * `{"type":"visibility","visible":true|false,"focused":true|false,"conversation":"<id>"|null}`,
+ * the only frame a page may send; undefined for anything else. `focused`
+ * (D-128): the page is also the window in front; without it, as visible.
+ * `conversation`: the one open in the page, an id and nothing else; without
+ * it, none.
  */
-export function visibilityOf(frame: string): { visible: boolean; focused: boolean } | undefined {
+export function visibilityOf(frame: string): { visible: boolean; focused: boolean; conversation: string | null } | undefined {
   let value: unknown;
   try {
     value = JSON.parse(frame);
@@ -1353,11 +1357,12 @@ export function visibilityOf(frame: string): { visible: boolean; focused: boolea
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   const keys = Object.keys(value);
-  const { type, visible, focused } = value as { type?: unknown; visible?: unknown; focused?: unknown };
+  if (keys.some((key) => !['type', 'visible', 'focused', 'conversation'].includes(key))) return undefined;
+  const { type, visible, focused, conversation } = value as { type?: unknown; visible?: unknown; focused?: unknown; conversation?: unknown };
   if (type !== 'visibility' || typeof visible !== 'boolean') return undefined;
-  if (keys.length === 2) return { visible, focused: visible };
-  if (keys.length !== 3 || typeof focused !== 'boolean') return undefined;
-  return { visible, focused: visible && focused };
+  if (focused !== undefined && typeof focused !== 'boolean') return undefined;
+  if (conversation !== undefined && conversation !== null && (typeof conversation !== 'string' || !CONVERSATION_ID.test(conversation))) return undefined;
+  return { visible, focused: visible && (focused ?? true), conversation: typeof conversation === 'string' ? conversation : null };
 }
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
@@ -1420,8 +1425,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
-  /** The pages also in front (D-128): with none, the helper of the Mac shows the notice. */
-  const focused = new Set<WebSocket>();
+  /** The pages also in front (D-128), with the conversation each has open: the helper is silent only for that one. */
+  const focused = new Map<WebSocket, string | null>();
   /** To every open page; how many it reached. */
   function broadcastNotice(notice: Notice & { kind: NoticeKind; helper?: boolean }, trial = false): number {
     const frame = JSON.stringify({
@@ -1590,7 +1595,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       }
       if (shown.visible) visible.add(ws);
       else visible.delete(ws);
-      if (shown.focused) focused.add(ws);
+      if (shown.focused) focused.set(ws, shown.conversation);
       else focused.delete(ws);
     });
     let stop: (() => void) | undefined;
@@ -1634,7 +1639,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     port,
     clients: () => sockets.size,
     visiblePages: () => visible.size,
-    focusedPages: () => focused.size,
+    readingPages: (conversationId) => [...focused.values()].filter((open) => open === conversationId).length,
     broadcast(notice) {
       broadcastNotice(notice);
     },

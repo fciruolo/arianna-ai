@@ -54,18 +54,20 @@ export interface NoticeView {
 }
 
 /**
- * Where a notice shows: in the page (the toast of the chat) when the user is
- * looking at the chat but at another conversation; as a notification of the
- * system when the page is hidden or out of focus; nowhere when it is the
- * conversation being read. A trial (the buttons of Impostazioni → Notifiche)
- * shows both, to see them side by side. With the helper of the Mac connected
- * (D-128) the page never shows one of the system: the helper does.
+ * Where a notice shows: one place only (choice of the user, 2026-10-06: "the
+ * system's if available, the one in the app only if the system's is not
+ * possible"). Nowhere when it is the conversation being read; with the helper
+ * of the Mac connected (D-128) nowhere in the page, the helper shows it;
+ * else as a notification of the system when the browser allows it; else as
+ * the toast of the chat, if the page is in view. A trial (the buttons of
+ * Impostazioni → Notifiche) shows both, to see them side by side.
  */
 export function noticeWhere(conversationId: string | null, view: NoticeView, trial = false, helper = false): { toast: boolean; system: boolean } {
   if (trial) return { toast: true, system: view.permission === 'granted' && !helper };
-  // With the helper of the Mac connected the notification of the system is its own, in the name of Arianna (D-128).
-  if (view.hidden) return { toast: false, system: view.permission === 'granted' && !helper };
-  return { toast: conversationId === null || conversationId !== view.openConversation, system: false };
+  if (!view.hidden && conversationId !== null && conversationId === view.openConversation) return { toast: false, system: false };
+  if (helper) return { toast: false, system: false };
+  if (view.permission === 'granted') return { toast: false, system: true };
+  return { toast: !view.hidden, system: false };
 }
 
 /**

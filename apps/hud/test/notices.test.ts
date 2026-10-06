@@ -30,13 +30,14 @@ test('a notice frame: a known kind and a conversation id or null, nothing else',
   assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"trial":"yes"}'), { type: 'notice', kind: 'reply', conversationId: null });
 });
 
-test('noticeWhere: toast in the chat in view, system notification when hidden, nothing for the open conversation; a trial shows both', () => {
+test('noticeWhere: one place only, the system notification when allowed, the toast without it, nothing for the open conversation; a trial shows both', () => {
   const view = { hidden: false, openConversation: ID, permission: 'granted' as const };
   assert.deepEqual(noticeWhere(ID, view), { toast: false, system: false }, 'the user is reading it');
-  assert.deepEqual(noticeWhere(OTHER, view), { toast: true, system: false });
-  assert.deepEqual(noticeWhere(null, view), { toast: true, system: false });
-  assert.deepEqual(noticeWhere(OTHER, { ...view, permission: 'default' }), { toast: true, system: false }, 'a toast needs no permission');
-  assert.deepEqual(noticeWhere(ID, { ...view, hidden: true }), { toast: false, system: true });
+  assert.deepEqual(noticeWhere(OTHER, view), { toast: false, system: true }, 'the system notification, not both');
+  assert.deepEqual(noticeWhere(null, view), { toast: false, system: true });
+  assert.deepEqual(noticeWhere(OTHER, { ...view, permission: 'default' }), { toast: true, system: false }, 'without the permission, the toast');
+  assert.deepEqual(noticeWhere(OTHER, { ...view, permission: 'unsupported' }), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(ID, { ...view, hidden: true }), { toast: false, system: true }, 'hidden, it is not being read');
   assert.deepEqual(noticeWhere(ID, { ...view, hidden: true, permission: 'denied' }), { toast: false, system: false });
   assert.deepEqual(noticeWhere(null, view, true), { toast: true, system: true });
   assert.deepEqual(noticeWhere(null, { ...view, permission: 'default' }, true), { toast: true, system: false });
@@ -75,12 +76,15 @@ test('the page tells the core whether it is in view, only once the socket is rea
     clearTimer: () => undefined,
     random: () => 0,
   });
-  connection.sendVisibility(true, true);
+  connection.sendVisibility(true, true, null);
   assert.deepEqual(sent, [], 'not ready yet');
   socket?.onmessage?.({ data: '{"type":"ready"}' });
-  connection.sendVisibility(false, false);
-  connection.sendVisibility(true, false);
-  assert.deepEqual(sent, ['{"type":"visibility","visible":false,"focused":false}', '{"type":"visibility","visible":true,"focused":false}']);
+  connection.sendVisibility(false, false, null);
+  connection.sendVisibility(true, false, ID);
+  assert.deepEqual(sent, [
+    '{"type":"visibility","visible":false,"focused":false,"conversation":null}',
+    `{"type":"visibility","visible":true,"focused":false,"conversation":"${ID}"}`,
+  ]);
   connection.close();
 });
 
@@ -115,11 +119,12 @@ test('pushToast: on top, the same kind and conversation replaced, at most three'
   assert.deepEqual(pushToast(three, toast(4, 'reply', OTHER)).map(({ id }) => id), [2, 3, 4], 'the oldest goes');
 });
 
-test('with the helper of the Mac (D-128) the page never shows a notification of the system; the toast stays', () => {
+test('with the helper of the Mac (D-128) the page shows nothing of its own: the helper does', () => {
   const hidden = { hidden: true, openConversation: null, permission: 'granted' as const };
   assert.deepEqual(noticeWhere(ID, hidden, false, true), { toast: false, system: false });
   assert.deepEqual(noticeWhere(ID, hidden, true, true), { toast: true, system: false });
   const shown = { hidden: false, openConversation: null, permission: 'granted' as const };
-  assert.deepEqual(noticeWhere(ID, shown, false, true), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(ID, shown, false, true), { toast: false, system: false }, 'no toast next to the helper notification');
+  assert.deepEqual(noticeWhere(ID, { ...shown, permission: 'default' }, false, true), { toast: false, system: false });
   assert.deepEqual(noticeWhere(ID, hidden, false, false), { toast: false, system: true });
 });

@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
@@ -70,6 +70,7 @@ export function createChatStore() {
   const characters = ref<CharacterListing | null>(null);
   let statusTimer: number | undefined;
   let statusPoll: number | undefined;
+  let stopOpenWatch: (() => void) | undefined;
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
@@ -656,14 +657,14 @@ export function createChatStore() {
 
   function onLive(message: ServerMessage): void {
     if (message.type === 'ready') {
-      connection?.sendVisibility(pageInView(), document.hasFocus());
+      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
       // At every connection, also after a restart of the core, which keeps it in memory (D-128).
       void reportThisMac().catch(() => undefined);
       void refreshAll().catch(fail);
       return;
     }
     if (message.type === 'notice') {
-      // I-1: a toast in the chat in view, a system notification (fixed sentence and link) when it is hidden; nothing for the conversation being read.
+      // One place only: the helper of the Mac, else a system notification (fixed sentence and link), else a toast; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
       const where = noticeWhere(message.conversationId, view, message.trial === true, message.helper === true);
       if (where.system) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
@@ -796,12 +797,14 @@ export function createChatStore() {
 
   function start(): void {
     const tell = (): void => {
-      connection?.sendVisibility(pageInView(), document.hasFocus());
+      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
     };
     document.addEventListener('visibilitychange', tell);
     // Another app in front (D-128): the helper of the Mac shows the notices then.
     window.addEventListener('focus', tell);
     window.addEventListener('blur', tell);
+    // Another conversation open: the helper is silent only for the one being read.
+    stopOpenWatch = watch(() => chat.value?.conversationId ?? null, tell);
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);
@@ -857,6 +860,7 @@ export function createChatStore() {
   }
 
   function stop(): void {
+    stopOpenWatch?.();
     connection?.close();
     window.clearInterval(statusPoll);
     window.clearTimeout(statusTimer);

@@ -507,7 +507,7 @@ const notifier = createNotifier({
   broadcast: (notice) => {
     server.broadcast(notice);
   },
-  focusedPages: () => server.focusedPages(),
+  readingPages: (conversationId) => server.readingPages(conversationId),
   helpers: () => server.helpers(),
   toHelpers: (notice) => {
     server.notifyHelpers(notice);

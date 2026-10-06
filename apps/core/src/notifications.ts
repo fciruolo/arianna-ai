@@ -93,8 +93,12 @@ export interface NotifierOptions {
    * notification of the browser of its own.
    */
   broadcast: (notice: Notice & { kind: NoticeKind; helper: boolean }) => void;
-  /** Pages in view and in front (D-128): the helper shows the notice when none is, as the page would. */
-  focusedPages?: () => number;
+  /**
+   * Pages in view and in front with this conversation open (D-128): the
+   * helper shows the notice unless the user is reading it, also when the
+   * chat is in front on another conversation (one notification, the system's).
+   */
+  readingPages?: (conversationId: string) => number;
   /** Native helpers connected now (D-128, GET /api/notifications/stream); 0 without. */
   helpers?: () => number;
   /** To every helper: the notification of the system, in the name of Arianna. */
@@ -130,8 +134,8 @@ export function createNotifier(options: NotifierOptions): Notifier {
     const notice = { kind: found.kind, conversationId };
     const helper = (options.helpers?.() ?? 0) > 0;
     options.broadcast({ ...notice, helper });
-    // The helper shows it as the page would: only when no page of the chat is in view and in front (D-128).
-    if (helper && (options.focusedPages?.() ?? options.visiblePages()) === 0) options.toHelpers?.(notice);
+    // The helper shows it unless a page in front has this conversation open (D-128); the pages then show nothing of their own.
+    if (helper && (options.readingPages?.(conversationId) ?? 0) === 0) options.toHelpers?.(notice);
     const push = options.push();
     if (push === undefined || options.visiblePages() > 0) return 'pages';
     // Recorded before the push: the service worker asks for it as soon as the push arrives.
