@@ -1,6 +1,6 @@
 # I-4, modalità incognita: proposta di progetto
 
-Stato: **proposta di Claude, da decidere** (idea I-4 di `docs/PROPOSTE.md`, "Idee dell'utente del 2026-10-05 sera"; risposta dell'utente: "come una chat normale", stessi strumenti e agenti, ma niente salvato in Arianna). Nessun codice scritto. Quando l'utente avrà risposto alle domande in fondo, la proposta diventa una voce di `docs/DECISIONS.md` (id nuovo) e le tappe un ramo per tappa.
+Stato: **decisa come D-136** (2026-10-07); prima: proposta di Claude (idea I-4 di `docs/PROPOSTE.md`, "Idee dell'utente del 2026-10-05 sera"; risposta dell'utente: "come una chat normale", stessi strumenti e agenti, ma niente salvato in Arianna). Nessun codice scritto. Quando l'utente avrà risposto alle domande in fondo, la proposta diventa una voce di `docs/DECISIONS.md` (id nuovo) e le tappe un ramo per tappa.
 
 ## In una frase
 
@@ -71,7 +71,7 @@ Per ogni traccia lasciata oggi da una conversazione: dove sta, cosa contiene, e 
 
 ### 1. Dove vive la conversazione
 
-Nelle **tabelle di oggi**, con il motore di oggi, e un segno nuovo `conversations.incognito boolean NOT NULL DEFAULT false` (prossima migrazione libera; la `0026` è presa da D-125). Vincoli nel database: si sceglie alla creazione e non cambia (`conversations_guard`); vietato con `origin = 'system'` (una chat di sistema su un task incognito non si apre: l'errore si vede nella conversazione stessa); vietato per la conversazione di Telegram; vietate archiviazione e fissatura (`incognito → archived_at IS NULL AND pinned_at IS NULL`, salvo l'archiviazione fatta dal purge stesso), così un'incognita non finisce mai nell'elenco dell'archivio. Titolo della conversazione sempre `NULL` (vincolo), titolo dei task di quella conversazione sempre il testo fisso (vincolo o trigger).
+Nelle **tabelle di oggi**, con il motore di oggi, e un segno nuovo `conversations.incognito boolean NOT NULL DEFAULT false` (migrazione `0031`). Vincoli nel database: si sceglie alla creazione e non cambia (`conversations_guard`); vietato con `origin = 'system'` (una chat di sistema su un task incognito non si apre: l'errore si vede nella conversazione stessa); vietato per la conversazione di Telegram; vietate archiviazione e fissatura (`incognito → archived_at IS NULL AND pinned_at IS NULL`, salvo l'archiviazione fatta dal purge stesso), così un'incognita non finisce mai nell'elenco dell'archivio. Titolo della conversazione sempre `NULL` (vincolo), titolo dei task di quella conversazione sempre il testo fisso (vincolo o trigger).
 
 È la scelta che dà "stessi strumenti e agenti" senza duplicare nulla: orchestratore, gateway, router, deleghe e approvazioni non sanno nulla dell'incognito, salvo i punti elencati al punto 4. Il prezzo è che il testo tocca il disco del database finché la conversazione è aperta (vedi "Cosa resta su disco"); per chi vuole di più c'è la cifratura con chiave in memoria (domanda 2).
 
