@@ -137,6 +137,14 @@ codex = true
 # [sprites]
 # model = "opus"
 
+# Agents that leave by themselves (I-8, D-130): after `leave_after` messages
+# of yours with no delegation to an agent, it says goodbye and leaves the
+# conversation; it comes back at the next delegation. 0 means never. The
+# Coder never leaves by itself. Applies without a restart.
+#
+# [participants]
+# leave_after = 10
+
 # API, WebSocket and web chat of the core (task 1.11). Loopback only: the
 # history holds L2 in clear and there is no authentication yet. Access from
 # the phone over the VPN comes with a proxy and authentication (task 1.13).

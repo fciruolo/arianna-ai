@@ -8,9 +8,12 @@ import {
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
   CONFIG_FILE,
+  DEFAULT_LEAVE_AFTER,
   DEFAULT_SPRITE_MODEL,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_VOICE,
+  isLeaveAfter,
+  MAX_LEAVE_AFTER,
   diffConfig,
   LABELS_FILE,
   loadCatalog,
@@ -63,7 +66,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'notifications'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -110,6 +113,8 @@ export interface SettingsValues {
   agents: Record<string, { model: CloudModel }>;
   /** The model that draws a character (D-123): opus when the file has no [sprites] (D-132). */
   sprites: SpriteModel;
+  /** Messages of the user before an idle agent leaves (I-8, D-130): `[participants] leave_after`; 0 never, ten when absent. */
+  participants: number;
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   /** `[notifications]` (I-1); `quiet` as "HH:MM-HH:MM", null for none. The defaults when the file has no section. */
   notifications: NotificationsValues;
@@ -499,6 +504,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     personas: structuredClone(settings.personas ?? {}),
     agents: agentsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
+    participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
     voice: voiceOf(settings.voice),
     notifications: notificationsOf(settings.notifications),
     executors: [...settings.cloud.executors],
@@ -517,6 +523,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return agentsOf(settings);
     case 'sprites':
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
+    case 'participants':
+      return settings.leaveAfter ?? DEFAULT_LEAVE_AFTER;
     case 'notifications':
       return settings.notifications;
     case 'executors':
@@ -737,6 +745,10 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       if (given.sprites !== undefined) {
         if (typeof given.sprites !== 'string' || !(SPRITE_MODELS as readonly string[]).includes(given.sprites)) invalid(`sprites: one of ${SPRITE_MODELS.join(', ')}`);
         next.sprites = given.sprites as SpriteModel;
+      }
+      if (given.participants !== undefined) {
+        if (!isLeaveAfter(given.participants)) invalid(`participants: a whole number from 0 (never) to ${String(MAX_LEAVE_AFTER)}`);
+        next.leaveAfter = given.participants;
       }
       if (given.voice !== undefined) {
         const voice = voiceFromBody(given.voice, settings.voice);

@@ -48,6 +48,7 @@ test('Personaggi and Personalità are in Agenti (D-116): their old addresses ope
   assert.ok(!items.some((entry) => entry.id === 'characters' || entry.id === 'personas'));
   // Its card edits three parts: any of them makes it dirty.
   assert.equal(sectionDirty('agents', (section) => section === 'personas'), true);
+  assert.equal(sectionDirty('agents', (section) => section === 'participants'), true);
   assert.equal(sectionDirty('agents', (section) => section === 'roles'), false);
   assert.deepEqual(pendingTitles('roles', (section) => section === 'agents'), ['Agenti']);
 });

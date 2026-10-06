@@ -435,6 +435,8 @@ const server = await startApiServer({
   defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
   agents: () => [...agents.keys()],
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
+  // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
+  leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
   directAgents: () => directPolicies(agents, { claude: claude !== undefined && settings.current().cloud.executors.includes('claude') }),
   participantAgent: (name) => {
