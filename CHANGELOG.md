@@ -4,8 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Modalità incognita: in "+ Nuovo" la voce Incognito apre una conversazione privata o di lavoro che non compare in lista, ricerca e ufficio, con la scheda "Cosa resta fuori da Arianna" prima del primo messaggio e un'intestazione scura con "Termina" (D-136).
+- Chiusura di un'incognita con "Termina", dopo 10 minuti senza pagina aperta o al riavvio di Arianna: il lavoro in corso si ferma, i testi si cancellano e la scheda di chiusura dice quanti messaggi, passi e riassunti sono spariti e cosa resta fuori (file cambiati, invii a Claude) (D-136).
+
 ### Sicurezza
 
+- In un'incognita gli strumenti che salvano sono spenti ("Salva in inbox", /nota, note e carte scritte da Arianna), Telegram, chiamate e notifiche la saltano, e Claude Code lavora senza salvare la sessione sul disco (D-136).
 - Il wizard scrive `--log-level info` nel comando di oMLX e il doctor lo pretende (rifiuta il flag assente e ogni livello fuori da info, warning, error, critical: `trace` metterebbe i testi delle richieste nel log del modello locale; D-136, tappa 0).
 
 ## [0.24.0] - 2026-10-07
