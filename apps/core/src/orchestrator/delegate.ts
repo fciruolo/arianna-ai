@@ -510,8 +510,18 @@ export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?
   return { maxTurns: agent.card.limits.maxSteps, timeoutMs: agent.card.limits.maxMinutes * 60_000 };
 }
 
-/** The cloud step: the plan is `cloud`. */
-export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'cloud' }>): Promise<StepOutcome> {
+/**
+ * The cloud step: the plan is `cloud`. `persistSession` false runs `claude`
+ * without saving its session (`--no-session-persistence`, D-136): nothing is
+ * resumed, and the direct chat sends its latest exchanges at every message.
+ */
+// TODO(D-136): the core passes false for a run of an incognito conversation (I-4, tappa 2); every caller saves the session for now.
+export async function runDelegation(
+  env: DelegateEnv,
+  ctx: StepContext,
+  plan: Extract<DelegationPlan, { kind: 'cloud' }>,
+  persistSession = true,
+): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
   const { delegation } = plan;
   const { sql } = env;
@@ -558,7 +568,10 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];
   // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
-  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
+  // A session that was not saved (D-136) is never continued: its exchanges travel in the brief instead.
+  const session = persistSession && direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
+  const unsaved = !persistSession && direct && task.conversationId !== null ? await directChatHistory(sql, task.conversationId, delegation) : [];
+  const earlier = unsaved.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...unsaved];
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined) => runClaudeStep(sql, claude, ctx, {
@@ -567,6 +580,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
     brief,
     ...(sessionRef === undefined ? {} : { sessionRef }),
+    ...(persistSession ? {} : { persistSession: false }),
     workspace,
     model: plan.model,
     tools: claudeToolsOf(agent.card.tools),
@@ -591,7 +605,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       }
     },
   });
-  let result = await attempt(session === undefined ? [...opening, message] : [message], session);
+  let result = await attempt(session === undefined ? [...opening, ...earlier, message] : [message], session);
   // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
   if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
     const history = await directChatHistory(sql, task.conversationId, delegation);
@@ -642,7 +656,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         status: 'ok',
         result: text,
         resultLabel: result.result.label,
-        sessionRef: result.result.sessionRef,
+        // A session that was not saved is never offered for resume, nor kept as a trace (D-136).
+        ...(persistSession ? { sessionRef: result.result.sessionRef } : {}),
         ...(result.result.usage.context === undefined ? {} : { contextTokens: result.result.usage.context }),
         ...(messageId === undefined ? {} : { messageId }),
       });

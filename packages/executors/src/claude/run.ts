@@ -31,7 +31,10 @@ export type ClaudeErrorKind =
 export class ClaudeError extends Error {
   override name = 'ClaudeError';
   readonly kind: ClaudeErrorKind;
-  /** The session, when the binary had started one: the run can be resumed. */
+  /**
+   * The session, when the binary had started one: the run can be resumed,
+   * unless it was launched with `persistSession: false` (D-136).
+   */
   readonly sessionRef: string | undefined;
   /** Quota: when the subscription takes requests again, if the binary said it. */
   readonly resetsAt: Date | undefined;
@@ -99,6 +102,12 @@ export interface ClaudeLaunch {
   limits?: ClaudeLimits;
   /** Resume this session, from an earlier run in the same workspace (sessions are kept per folder). */
   sessionRef?: string;
+  /**
+   * False: the binary saves nothing of the session (`--no-session-persistence`,
+   * D-136, incognito), and the run cannot be resumed later; with `sessionRef`
+   * the launch is refused (`invalid-options`). Default true.
+   */
+  persistSession?: boolean;
 }
 
 export interface ClaudeStart extends Omit<ClaudeLaunch, 'sessionRef'> {
@@ -230,6 +239,10 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
 
   async function check(launch: ClaudeLaunch): Promise<Checked> {
     if (!enabled().includes(CLAUDE_EXECUTOR)) throw new ClaudeError('not-enabled', 'claude: not enabled in [cloud] executors');
+    // Said plainly before the profile refuses it too: the caller asked to continue what was never saved (D-136).
+    if (launch.persistSession === false && launch.sessionRef !== undefined) {
+      throw new ClaudeError('invalid-options', 'claude: the session was not saved (persistSession false), so it cannot be resumed');
+    }
     const modelName = options.modelName?.(launch.model);
     const profile = (workspace: string) => ({
       model: launch.model,
@@ -237,6 +250,7 @@ export function createClaudeExecutor(options: ClaudeExecutorOptions): ClaudeExec
       tools: launch.tools,
       sandbox: { workspace, ...folders },
       ...(launch.sessionRef === undefined ? {} : { resume: launch.sessionRef }),
+      ...(launch.persistSession === undefined ? {} : { persistSession: launch.persistSession }),
     });
     const build = (workspace: string): string[] => {
       try {

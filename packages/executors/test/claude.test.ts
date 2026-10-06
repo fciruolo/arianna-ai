@@ -130,6 +130,25 @@ describe('claude profile', () => {
     assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], resume: '--dangerously-skip-permissions', sandbox: SANDBOX }), /session id/);
   });
 
+  it('keeps the session off disk only when asked, and never resumes one that was not saved (D-136)', () => {
+    // Positive: the default saves the session as before; false adds the flag next to -p.
+    assert.ok(!claudeArgs({ model: 'sonnet', tools: [], sandbox: SANDBOX }).includes('--no-session-persistence'));
+    assert.ok(!claudeArgs({ model: 'sonnet', tools: [], persistSession: true, sandbox: SANDBOX }).includes('--no-session-persistence'));
+    const args = claudeArgs({ model: 'sonnet', tools: ['Read'], persistSession: false, sandbox: SANDBOX });
+    assert.ok(args.includes('--no-session-persistence') && args.includes('-p'));
+    assert.equal(args.filter((arg) => arg === '--no-session-persistence').length, 1);
+    // The rest of the profile is unchanged by it.
+    const saved = claudeArgs({ model: 'sonnet', tools: ['Read'], sandbox: SANDBOX });
+    assert.deepEqual(args.filter((arg) => arg !== '--no-session-persistence'), saved);
+    // A saved session still resumes.
+    assert.deepEqual(claudeArgs({ model: 'sonnet', tools: [], persistSession: true, resume: SESSION, sandbox: SANDBOX }).slice(-2), ['--resume', SESSION]);
+    // Negative: no resume of an unsaved session, and nothing but a boolean reads as the choice.
+    assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], persistSession: false, resume: SESSION, sandbox: SANDBOX }), /not saved cannot resume/);
+    for (const value of ['false', 0, null]) {
+      assert.throws(() => claudeArgs({ model: 'sonnet', tools: [], persistSession: value as never, sandbox: SANDBOX }), /must be a boolean/, String(value));
+    }
+  });
+
   it('passes the exact model name of [cloud.models] to --model, never one that reads as a flag (D-071)', () => {
     const model = (args: string[]) => args[args.indexOf('--model') + 1];
     assert.equal(model(claudeArgs({ model: 'opus', tools: [], sandbox: SANDBOX })), 'opus');
@@ -287,6 +306,31 @@ describe('claude executor', () => {
     name = '--dangerously-skip-permissions';
     const refused = await start('ok', {}, options);
     assert.equal((await failure(refused.run.result)).kind, 'invalid-options');
+  });
+
+  it('launches a run without saving its session, and refuses to resume it before spending the brief (D-136)', async () => {
+    const { prepared, path } = await workspace();
+    const first = await executor().start({ brief: brief('scenario: ok'), workspace: prepared, model: 'sonnet', tools: ['Read'], persistSession: false }).result;
+    assert.equal(first.text, 'ok');
+    const argv = received(path).argv;
+    assert.ok(argv.includes('--no-session-persistence') && argv.includes('-p') && !argv.includes('--resume'));
+    // The check refuses before the gateway, the resume before spending the brief, with a plain message.
+    const refused = await executor()
+      .check({ workspace: prepared, model: 'sonnet', tools: [], persistSession: false, sessionRef: first.sessionRef })
+      .then(() => undefined, (error: unknown) => error);
+    assert.ok(refused instanceof ClaudeError && refused.kind === 'invalid-options' && /not saved/.test(refused.message), String(refused));
+    const decision = brief('scenario: ok\nagain');
+    const resumed = await failure(executor().resume({ brief: decision, workspace: prepared, model: 'sonnet', tools: [], persistSession: false, sessionRef: first.sessionRef }).result);
+    assert.equal(resumed.kind, 'invalid-options');
+    assert.match(resumed.message, /cannot be resumed/);
+    // Not a boolean, with or without a session: refused as an option too, never read as "saved".
+    for (const persistSession of ['false', null] as never[]) {
+      await assert.rejects(executor().check({ workspace: prepared, model: 'sonnet', tools: [], persistSession, sessionRef: SESSION }), (error: unknown) => error instanceof ClaudeError && error.kind === 'invalid-options');
+      await assert.rejects(executor().check({ workspace: prepared, model: 'sonnet', tools: [], persistSession }), (error: unknown) => error instanceof ClaudeError && error.kind === 'invalid-options');
+    }
+    // Still unspent: a saved launch takes it, without the flag.
+    assert.equal((await executor().start({ brief: decision, workspace: prepared, model: 'sonnet', tools: [] }).result).text, 'ok');
+    assert.ok(!received(path).argv.includes('--no-session-persistence'));
   });
 
   it('resumes a session in the same workspace', async () => {
