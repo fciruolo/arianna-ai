@@ -12,16 +12,20 @@ import PixelAgent from './PixelAgent.vue';
 const props = defineProps<{ projects: ProjectInfo[]; agents: DirectAgent[]; characters?: Record<string, CharacterChoice> | undefined; initialAgent?: string | undefined }>();
 const emit = defineEmits<{ create: [choice: DraftChoice]; refresh: [] }>();
 /** Private or work with Arianna, or the direct chat with an agent (D-111d), as its card allows. */
-type Kind = 'private' | 'work' | 'agent';
+/** Incognito (D-136): with Arianna, private or work, its texts deleted when it closes. */
+type Kind = 'private' | 'work' | 'agent' | 'incognito';
 const kind = ref<Kind>(props.initialAgent === undefined ? 'private' : 'agent');
 const project = ref('');
 const agent = ref(props.initialAgent ?? '');
 const agentMode = ref<ConversationMode>('private');
-const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' }[] = [
+const incognitoMode = ref<ConversationMode>('private');
+const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' | 'incognito' }[] = [
   { id: 'private', text: MODE_TEXT.private, icon: 'private' },
   { id: 'work', text: MODE_TEXT.work, icon: 'work' },
   { id: 'agent', text: 'Con un agente', icon: 'coder' },
+  { id: 'incognito', text: 'Incognito', icon: 'incognito' },
 ];
+const modes: ConversationMode[] = ['private', 'work'];
 
 const policy = computed(() => props.agents.find((entry) => entry.agent === agent.value));
 /** The mode of the direct chat: the one chosen when the card allows both, else the only one. */
@@ -32,6 +36,9 @@ const mode = computed<ConversationMode>(() => {
 // An agent on Claude works in a project: no "Nessun progetto" there, the first project is chosen when the empty one was.
 const agentProject = computed(() => (policy.value?.project === true && project.value === '' ? (props.projects[0]?.name ?? '') : project.value));
 const hint = computed(() => {
+  if (kind.value === 'incognito') {
+    return `Come una conversazione ${incognitoMode.value === 'private' ? 'privata' : 'di lavoro'}, ma non compare nella lista e alla chiusura Arianna ne cancella i testi. Prima del primo messaggio vedi cosa resta fuori.`;
+  }
   if (kind.value !== 'agent') return MODE_HINT[kind.value];
   return 'Parli direttamente con un agente, senza Arianna in mezzo. Dove gira e che dati può leggere li decide la sua scheda.';
 });
@@ -69,6 +76,11 @@ function submit(): void {
     emit('create', { mode: mode.value, agent: chosen.agent, ...(withProject && mode.value === 'work' ? { project: agentProject.value } : {}) });
     return;
   }
+  if (kind.value === 'incognito') {
+    const mode = incognitoMode.value;
+    emit('create', { mode, ...(mode === 'work' && project.value !== '' ? { project: project.value } : {}), incognito: true });
+    return;
+  }
   if (kind.value === 'work' && project.value !== '') emit('create', { mode: 'work', project: project.value });
   else emit('create', { mode: kind.value });
 }
@@ -76,7 +88,7 @@ function submit(): void {
 
 <template>
   <form class="flex flex-col gap-2" @submit.prevent="submit">
-    <div class="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Con chi parli">
+    <div class="grid grid-cols-2 gap-1 rounded-[9px] sm:grid-cols-4 border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Con chi parli">
       <button
         v-for="option in kinds"
         :key="option.id"
@@ -91,6 +103,22 @@ function submit(): void {
       </button>
     </div>
     <p class="px-0.5 text-xs leading-snug text-muted">{{ hint }}</p>
+
+    <!-- Incognito (D-136): then private or work, as for a normal conversation. -->
+    <div v-if="kind === 'incognito'" class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità della conversazione incognita">
+      <button
+        v-for="option in modes"
+        :key="option"
+        type="button"
+        role="radio"
+        :aria-checked="incognitoMode === option"
+        class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition"
+        :class="incognitoMode === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
+        @click="incognitoMode = option"
+      >
+        <Icon :name="option" :size="13" />{{ MODE_TEXT[option] }}
+      </button>
+    </div>
 
     <template v-if="kind === 'agent'">
       <!-- One card per agent (the user's choice after the trial of D-111d): character, name, where it runs, what it does. -->
@@ -153,7 +181,7 @@ function submit(): void {
       </p>
     </template>
 
-    <template v-else-if="kind === 'work'">
+    <template v-else-if="kind === 'work' || (kind === 'incognito' && incognitoMode === 'work')">
       <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
         Progetto
         <select v-model="project" class="field px-2.5 py-1.5 text-[13px]">
@@ -172,7 +200,9 @@ function submit(): void {
       :disabled="!ready"
       class="flex w-full items-center gap-2 rounded-[9px] border border-line-strong bg-surface-2 px-3 py-2.5 text-left font-medium hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <Icon :name="kind === 'agent' ? 'coder' : 'new'" />{{ kind === 'agent' && policy !== undefined ? `Parla con ${agentName(policy.agent)}` : 'Nuova conversazione' }}
+      <Icon :name="kind === 'agent' ? 'coder' : kind === 'incognito' ? 'incognito' : 'new'" />{{
+        kind === 'agent' && policy !== undefined ? `Parla con ${agentName(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
+      }}
     </button>
   </form>
 </template>

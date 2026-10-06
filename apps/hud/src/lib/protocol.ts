@@ -1,3 +1,4 @@
+import { parseIncognitoFrame, type IncognitoSignal } from './incognito.ts';
 import type { Activity, ActivityKind, Delta, EditPiece, EditTool, LiveEvent } from './types.ts';
 
 /** What the core's WebSocket sends (apps/core/src/live.ts and server/http.ts). */
@@ -8,6 +9,8 @@ export type ServerMessage =
   | ({ type: 'edit' } & EditPiece)
   /** A notification (I-1): a kind and a conversation, never text; the page decides whether to show it. */
   | { type: 'notice'; kind: NoticeKind; conversationId: string | null; trial?: true; helper?: true }
+  /** An incognito conversation closed, or closes in a minute (D-136): its id and the cause, never text. */
+  | IncognitoSignal
   | { type: 'ready' };
 
 export type NoticeKind = 'reply' | 'approval' | 'failure';
@@ -95,6 +98,9 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
     }
     case 'edit':
       return parseEdit(value);
+    case 'conversation.incognito-closed':
+    case 'conversation.incognito-closing':
+      return parseIncognitoFrame(value);
     case 'notice': {
       const kind = NOTICE_KINDS.find((item) => item === value.kind);
       const { conversationId } = value;

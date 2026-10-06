@@ -66,6 +66,9 @@ export function reasonText(reason: string | null): string | undefined {
 
 const ERRORS: Record<string, string> = {
   'the message is empty': 'Il messaggio è vuoto.',
+  // Incognito (D-136): the saves are off, "Termina" only for an incognito conversation.
+  incognito: 'In una conversazione incognita non si salva niente in Arianna.',
+  'not incognito': 'Questa conversazione non è incognita: non si termina.',
   // The capture of "/nota" (D-080, apps/core/src/capture.ts).
   'text is empty': 'La nota è vuota.',
   'text holds a NUL character': 'La nota contiene un carattere non valido.',

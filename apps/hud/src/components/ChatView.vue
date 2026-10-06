@@ -10,6 +10,7 @@ import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { longMessageStep, toAgent } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
+import { NOTE_OFF_TEXT, SAVE_OFF_HINT } from '../lib/incognito.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
   inboxNodeId,
@@ -89,8 +90,12 @@ const emit = defineEmits<{
   openKnowledge: [nodeId: string];
 }>();
 
+/** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
+const incognito = computed(() => props.conversation.incognito === true);
+
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
 function canCallWhenDone(task: Task | undefined): boolean {
+  if (incognito.value) return false;
   if (task === undefined || !['ready', 'running', 'waiting_user', 'inbox'].includes(task.status)) return false;
   return !props.calls.some((call) => call.taskId === task.id && call.reason === 'task-done' && call.status === 'scheduled');
 }
@@ -183,7 +188,7 @@ const wholeWhen = computed(() => savedWhenText(wholeSavedAt.value, now.value));
 const wholeSaving = ref(false);
 const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
 async function saveWhole(): Promise<void> {
-  if (wholeSaving.value) return;
+  if (wholeSaving.value || incognito.value) return;
   const conversationId = props.chat.conversationId;
   wholeSaving.value = true;
   wholeNote.value = null;
@@ -211,6 +216,22 @@ function markSaved(messageId: string, note: string | null): void {
 }
 
 const draft = ref('');
+// Leaving an incognito conversation (D-136): its unsent text never follows into the next one, which keeps it.
+let onIncognito = incognito.value;
+watch(
+  () => props.chat.conversationId,
+  () => {
+    if (onIncognito) {
+      draft.value = '';
+      commandHint.value = null;
+      void nextTick(resize);
+    }
+    onIncognito = incognito.value;
+  },
+);
+watch(incognito, (value) => {
+  if (value) onIncognito = true;
+});
 const list = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
 
@@ -318,6 +339,11 @@ function submit(confirmed = false): void {
   const meaning = resolveDraft(body);
   if (meaning.kind === 'command' && meaning.command.action.kind !== 'note') {
     run(meaning.command);
+    return;
+  }
+  // "/nota" in incognito (D-136): said here, and the text stays in the field.
+  if (meaning.kind === 'command' && incognito.value) {
+    commandHint.value = NOTE_OFF_TEXT;
     return;
   }
   const step = longMessageStep(cloud.value, body, meaning.kind === 'message', { asking: confirmLong.value, confirmed });
@@ -460,6 +486,11 @@ onBeforeUnmount(() => clearInterval(clock));
                 class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-l1"
                 title="Ogni messaggio va così com'è a Claude (Anthropic): Arianna non lo filtra."
               ><Icon name="coder" :size="11" />va a Claude</span>
+              <span
+                v-if="incognito"
+                class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-incognito-ink"
+                title="Alla chiusura Arianna cancella i testi di questa conversazione"
+              ><Icon name="incognito" :size="11" />incognito</span>
             </h2>
             <p class="mt-1 flex items-center gap-2 text-[12.5px] text-muted">
               <span v-if="(directPose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
@@ -504,7 +535,13 @@ onBeforeUnmount(() => clearInterval(clock));
         </section>
 
         <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
-        <div v-if="chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <!-- Off in incognito (D-136): the same button, its reason over it; aria-disabled keeps the title under the pointer. -->
+        <div v-if="incognito && chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button type="button" class="btn cursor-not-allowed px-2.5 py-1 text-xs opacity-50" aria-disabled="true" :title="SAVE_OFF_HINT" :aria-label="`${SAVE_CONVERSATION_TEXT}: ${SAVE_OFF_HINT}`">
+            <Icon name="inbox" :size="14" />{{ SAVE_CONVERSATION_TEXT }}
+          </button>
+        </div>
+        <div v-else-if="chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
             class="btn px-2.5 py-1 text-xs"
@@ -615,7 +652,7 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" :save-off="incognito ? SAVE_OFF_HINT : undefined" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -655,7 +692,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" :save-off="incognito ? SAVE_OFF_HINT : undefined" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
@@ -681,6 +718,7 @@ onBeforeUnmount(() => clearInterval(clock));
                 :message="message"
                 :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
                 :can-save="message.role !== 'system' && canSaveToInbox(message.label)"
+                :save-off="incognito ? SAVE_OFF_HINT : undefined"
                 @saved="markSaved"
                 @open-knowledge="emit('openKnowledge', $event)"
               />
@@ -804,7 +842,8 @@ onBeforeUnmount(() => clearInterval(clock));
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
+        <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota e "Salva in inbox" spenti, "Copia" funziona</span>
+        <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span class="inline-flex flex-wrap items-center gap-1.5">
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? 'fino a Interno, ogni messaggio va così com\'è a Claude, senza Arianna. Niente dati privati.' : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
