@@ -86,10 +86,24 @@ export interface NotifierOptions {
   conversationOf: (taskId: string) => Promise<string | null>;
   /** Pages of the chat in view now: with any, no push (the user is looking). */
   visiblePages: () => number;
-  /** To every open page: each decides whether to show it. */
-  broadcast: (notice: Notice & { kind: NoticeKind }) => void;
-  /** The push of the moment, read at each event: undefined without `[voice.push]`. */
-  push: () => ((kind: PushKind) => Promise<unknown>) | undefined;
+  /**
+   * To every open page: each decides whether to show it. `helper`: the
+   * native helper of the Mac is connected (D-128), so no page shows a
+   * notification of the browser of its own.
+   */
+  broadcast: (notice: Notice & { kind: NoticeKind; helper: boolean }) => void;
+  /** Pages in view and in front (D-128): the helper shows the notice when none is, as the page would. */
+  focusedPages?: () => number;
+  /** Native helpers connected now (D-128, GET /api/notifications/stream); 0 without. */
+  helpers?: () => number;
+  /** To every helper: the notification of the system, in the name of Arianna. */
+  toHelpers?: (notice: Notice & { kind: NoticeKind }) => void;
+  /**
+   * The push of the moment, read at each event: undefined without
+   * `[voice.push]`. `helper`: the helper of the Mac shows this notice, so the
+   * browsers of the Mac are left out (D-128).
+   */
+  push: () => ((kind: PushKind, helper: boolean) => Promise<unknown>) | undefined;
   board: NoticeBoard;
   now?: () => Date;
   onError?: (error: unknown) => void;
@@ -113,12 +127,15 @@ export function createNotifier(options: NotifierOptions): Notifier {
     // A task without a conversation (the inbox sorting at start-up) does not notify: nothing to open, and many at once with the model off.
     if (conversationId === null) return 'none';
     const notice = { kind: found.kind, conversationId };
-    options.broadcast(notice);
+    const helper = (options.helpers?.() ?? 0) > 0;
+    options.broadcast({ ...notice, helper });
+    // The helper shows it as the page would: only when no page of the chat is in view and in front (D-128).
+    if (helper && (options.focusedPages?.() ?? options.visiblePages()) === 0) options.toHelpers?.(notice);
     const push = options.push();
     if (push === undefined || options.visiblePages() > 0) return 'pages';
     // Recorded before the push: the service worker asks for it as soon as the push arrives.
     options.board.record(notice);
-    await push(found.kind);
+    await push(found.kind, helper);
     return 'push';
   }
 

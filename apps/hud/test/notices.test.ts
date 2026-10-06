@@ -18,6 +18,8 @@ const SW = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 test('a notice frame: a known kind and a conversation id or null, nothing else', () => {
   assert.deepEqual(parseServerMessage(`{"type":"notice","kind":"reply","conversationId":"${ID}"}`), { type: 'notice', kind: 'reply', conversationId: ID });
   assert.deepEqual(parseServerMessage('{"type":"notice","kind":"failure","conversationId":null}'), { type: 'notice', kind: 'failure', conversationId: null });
+  assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"helper":true}'), { type: 'notice', kind: 'reply', conversationId: null, helper: true });
+  assert.deepEqual(parseServerMessage('{"type":"notice","kind":"reply","conversationId":null,"helper":"yes"}'), { type: 'notice', kind: 'reply', conversationId: null });
   // Extra fields are dropped: a text never reaches the notification.
   assert.deepEqual(parseServerMessage(`{"type":"notice","kind":"approval","conversationId":"${ID}","text":"la fattura"}`), { type: 'notice', kind: 'approval', conversationId: ID });
   for (const raw of ['{"type":"notice","kind":"call","conversationId":null}', '{"type":"notice","kind":"reply","conversationId":"../x"}', '{"type":"notice","kind":"reply"}', '{"type":"notice"}']) {
@@ -73,12 +75,12 @@ test('the page tells the core whether it is in view, only once the socket is rea
     clearTimer: () => undefined,
     random: () => 0,
   });
-  connection.sendVisibility(true);
+  connection.sendVisibility(true, true);
   assert.deepEqual(sent, [], 'not ready yet');
   socket?.onmessage?.({ data: '{"type":"ready"}' });
-  connection.sendVisibility(false);
-  connection.sendVisibility(true);
-  assert.deepEqual(sent, ['{"type":"visibility","visible":false}', '{"type":"visibility","visible":true}']);
+  connection.sendVisibility(false, false);
+  connection.sendVisibility(true, false);
+  assert.deepEqual(sent, ['{"type":"visibility","visible":false,"focused":false}', '{"type":"visibility","visible":true,"focused":false}']);
   connection.close();
 });
 
@@ -111,4 +113,13 @@ test('pushToast: on top, the same kind and conversation replaced, at most three'
   assert.deepEqual(pushToast(one, toast(2, 'reply', OTHER)).map(({ id }) => id), [1, 2], 'another conversation stays');
   const three = [toast(1, 'reply', ID), toast(2, 'approval', ID), toast(3, 'failure', null)];
   assert.deepEqual(pushToast(three, toast(4, 'reply', OTHER)).map(({ id }) => id), [2, 3, 4], 'the oldest goes');
+});
+
+test('with the helper of the Mac (D-128) the page never shows a notification of the system; the toast stays', () => {
+  const hidden = { hidden: true, openConversation: null, permission: 'granted' as const };
+  assert.deepEqual(noticeWhere(ID, hidden, false, true), { toast: false, system: false });
+  assert.deepEqual(noticeWhere(ID, hidden, true, true), { toast: true, system: false });
+  const shown = { hidden: false, openConversation: null, permission: 'granted' as const };
+  assert.deepEqual(noticeWhere(ID, shown, false, true), { toast: true, system: false });
+  assert.deepEqual(noticeWhere(ID, hidden, false, false), { toast: false, system: true });
 });

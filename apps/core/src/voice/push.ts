@@ -112,7 +112,7 @@ export interface Pusher {
   subscribe(subscription: Subscription): Promise<void>;
   unsubscribe(endpoint: string): Promise<void>;
   /** An empty push to every subscribed browser, after the gateway allowed the fixed sentence of `kind`. */
-  notify(kind: PushKind): Promise<number>;
+  notify(kind: PushKind, options?: { skip?: ReadonlySet<string> }): Promise<number>;
 }
 
 /** The fixed sentences the service worker shows (public/sw.js); what the gateway checks on channel `push`. */
@@ -147,8 +147,12 @@ export function createPusher(options: PusherOptions): Pusher {
     async unsubscribe(endpoint) {
       await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint} AND removed_at IS NULL`;
     },
-    async notify(kind) {
-      const subscriptions = await sql<{ endpoint: string }[]>`SELECT endpoint FROM push_subscriptions WHERE removed_at IS NULL ORDER BY id`;
+    async notify(kind, notifyOptions = {}) {
+      const skip = notifyOptions.skip ?? new Set<string>();
+      // The browsers of the Mac while its helper shows the notice (D-128): left out, never a call.
+      const subscriptions = (await sql<{ endpoint: string }[]>`SELECT endpoint FROM push_subscriptions WHERE removed_at IS NULL ORDER BY id`).filter(
+        ({ endpoint }) => kind === 'call' || !skip.has(endpoint),
+      );
       if (subscriptions.length === 0 || !(await options.gate(PUSH_TEXTS[kind], kind))) return 0;
       // A call is worth only while it rings; a notice waits a while, and a newer
       // one of the same kind replaces it at the push service (`topic`).

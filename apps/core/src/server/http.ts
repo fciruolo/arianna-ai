@@ -56,7 +56,7 @@ import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
 import { CallError, listCalls, liveCall, type CallEndReason, type Calls } from '../voice/calls.ts';
 import type { Notice, NoticeBoard, NoticeKind } from '../notifications.ts';
-import { parseSubscription, PushError, type Pusher } from '../voice/push.ts';
+import { isPushEndpoint, parseSubscription, PushError, type Pusher } from '../voice/push.ts';
 import { callWhenDone, cancelCall, scheduleCall, ScheduleError } from '../voice/ringer.ts';
 import { VoiceError, type VoiceService, type VoiceState } from '../voice/service.ts';
 import { CloneError, deleteClone, listClones, MAX_CLONE_BODY, parseClone, saveClone } from '../voice/clones.ts';
@@ -169,8 +169,16 @@ export interface ApiServer {
   clients(): number;
   /** Pages that said they are in view (I-1): with none, a notice goes by Web Push. */
   visiblePages(): number;
-  /** A notice (I-1) to every open page: a kind and a conversation id, never text. */
-  broadcast(notice: Notice & { kind: NoticeKind }): void;
+  /** Pages in view and in front (D-128): with none, the helper of the Mac shows the notice. */
+  focusedPages(): number;
+  /** A notice (I-1) to every open page: a kind and a conversation id, never text; `helper` when the helper of the Mac shows it (D-128). */
+  broadcast(notice: Notice & { kind: NoticeKind; helper?: boolean }): void;
+  /** Native helpers connected (D-128, GET /api/notifications/stream). */
+  helpers(): number;
+  /** A notice to every helper: kind and conversation id only. */
+  notifyHelpers(notice: Notice & { kind: NoticeKind }): number;
+  /** The push addresses the pages of this Mac said are theirs: skipped for notices while a helper is connected. */
+  macEndpoints(): ReadonlySet<string>;
   close(): Promise<void>;
 }
 
@@ -178,6 +186,10 @@ export interface ApiServer {
 export const MAX_BODY_BYTES = 128 * 1024;
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+/** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
+const MAX_HELPERS = 4;
+const MAX_MAC_ENDPOINTS = 8;
+const HELPER_BEAT_MS = 25_000;
 const PING_MS = 30_000;
 const PAGE_LIMIT = 200;
 
@@ -1280,8 +1292,12 @@ function participantRoutes(sql: Sql, agentOf: NonNullable<ApiServerOptions['part
   ];
 }
 
-/** `{"type":"visibility","visible":true|false}`, the only frame a page may send; undefined for anything else. */
-export function visibilityOf(frame: string): boolean | undefined {
+/**
+ * `{"type":"visibility","visible":true|false,"focused":true|false}`, the only
+ * frame a page may send; undefined for anything else. `focused` (D-128): the
+ * page is also the window in front; without it, as visible.
+ */
+export function visibilityOf(frame: string): { visible: boolean; focused: boolean } | undefined {
   let value: unknown;
   try {
     value = JSON.parse(frame);
@@ -1290,9 +1306,11 @@ export function visibilityOf(frame: string): boolean | undefined {
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   const keys = Object.keys(value);
-  const { type, visible } = value as { type?: unknown; visible?: unknown };
-  if (keys.length !== 2 || type !== 'visibility' || typeof visible !== 'boolean') return undefined;
-  return visible;
+  const { type, visible, focused } = value as { type?: unknown; visible?: unknown; focused?: unknown };
+  if (type !== 'visibility' || typeof visible !== 'boolean') return undefined;
+  if (keys.length === 2) return { visible, focused: visible };
+  if (keys.length !== 3 || typeof focused !== 'boolean') return undefined;
+  return { visible, focused: visible && focused };
 }
 
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
@@ -1325,7 +1343,26 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       onlyFields(body, ['kind']);
       const kind = body.kind;
       if (kind !== 'reply' && kind !== 'approval' && kind !== 'failure') throw new HttpError(400, 'kind must be reply, approval or failure');
-      return { body: { sent: kind, pages: broadcastNotice({ kind, conversationId: null }, true) } };
+      const helper = helpers.size > 0;
+      return { body: { sent: kind, pages: broadcastNotice({ kind, conversationId: null, helper }, true), helpers: noticeToHelpers({ kind, conversationId: null }) } };
+    }),
+  );
+  // Whether the helper of the Mac is connected (D-128): the page then leaves the notifications of the system to it.
+  table.push(route('GET', '/api/notifications/helper', () => Promise.resolve({ body: { connected: helpers.size > 0 } })));
+  // A page on this Mac says which push address is its own (D-128): while the helper is connected, notices skip it.
+  // In memory: the page says it again at every connection of the live feed.
+  table.push(
+    route('POST', '/api/notifications/this-mac', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['endpoint']);
+      const { endpoint } = body;
+      if (typeof endpoint !== 'string' || !isPushEndpoint(endpoint)) throw new HttpError(400, 'endpoint must be a push address');
+      if (!macEndpoints.has(endpoint) && macEndpoints.size >= MAX_MAC_ENDPOINTS) {
+        const oldest = macEndpoints.values().next().value;
+        if (oldest !== undefined) macEndpoints.delete(oldest);
+      }
+      macEndpoints.add(endpoint);
+      return { body: { ok: true } };
     }),
   );
   table.push(...changelogRoutes(options.changelog));
@@ -1335,13 +1372,60 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
+  /** The pages also in front (D-128): with none, the helper of the Mac shows the notice. */
+  const focused = new Set<WebSocket>();
   /** To every open page; how many it reached. */
-  function broadcastNotice(notice: Notice & { kind: NoticeKind }, trial = false): number {
-    const frame = JSON.stringify({ type: 'notice', kind: notice.kind, conversationId: notice.conversationId, ...(trial ? { trial: true } : {}) });
+  function broadcastNotice(notice: Notice & { kind: NoticeKind; helper?: boolean }, trial = false): number {
+    const frame = JSON.stringify({
+      type: 'notice',
+      kind: notice.kind,
+      conversationId: notice.conversationId,
+      ...(trial ? { trial: true } : {}),
+      ...(notice.helper === true ? { helper: true } : {}),
+    });
     let reached = 0;
     for (const ws of sockets) {
       if (ws.readyState !== ws.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) continue;
       ws.send(frame);
+      reached += 1;
+    }
+    return reached;
+  }
+  /**
+   * The native helpers of the Mac (D-128): events sent by the server, one
+   * per notice, kind and conversation id only. Same Host and Origin checks as
+   * every request; the header says it is the helper, which an EventSource of
+   * a page cannot send, so no page counts as one by mistake.
+   */
+  const helpers = new Set<ServerResponse>();
+  /** The push addresses of the browsers on this Mac (D-128). */
+  const macEndpoints = new Set<string>();
+  function openHelperStream(request: IncomingMessage, response: ServerResponse, headers: Record<string, string>): void {
+    if (request.headers['x-arianna-helper'] !== '1') {
+      sendJson(response, 400, { error: 'only the helper of the Mac reads this stream' }, headers);
+      return;
+    }
+    if (helpers.size >= MAX_HELPERS) {
+      sendJson(response, 429, { error: 'too many helpers' }, headers);
+      return;
+    }
+    response.writeHead(200, { ...headers, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive' });
+    response.write(': arianna\n\n');
+    helpers.add(response);
+    // A comment now and then: a dead connection shows up, and nothing in between closes an idle one.
+    const beat = setInterval(() => response.write(': beat\n\n'), HELPER_BEAT_MS);
+    response.on('close', () => {
+      clearInterval(beat);
+      helpers.delete(response);
+    });
+  }
+  /** To every helper; how many it reached. */
+  function noticeToHelpers(notice: Notice & { kind: NoticeKind }): number {
+    const frame = `event: notice\ndata: ${JSON.stringify({ kind: notice.kind, conversationId: notice.conversationId })}\n\n`;
+    let reached = 0;
+    for (const response of helpers) {
+      if (response.writableLength > MAX_BUFFERED_BYTES) continue;
+      response.write(frame);
       reached += 1;
     }
     return reached;
@@ -1360,6 +1444,10 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       return;
     }
     const url = new URL(request.url ?? '/', `http://${host}`);
+    if (request.method === 'GET' && url.pathname === '/api/notifications/stream') {
+      openHelperStream(request, response, headers);
+      return;
+    }
     try {
       if (url.pathname.startsWith('/api/')) {
         const matches = table.map((candidate) => ({ candidate, match: candidate.pattern.exec(url.pathname) })).filter(({ match }) => match !== null);
@@ -1452,14 +1540,17 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         ws.close(1008, 'read-only socket');
         return;
       }
-      if (shown) visible.add(ws);
+      if (shown.visible) visible.add(ws);
       else visible.delete(ws);
+      if (shown.focused) focused.add(ws);
+      else focused.delete(ws);
     });
     let stop: (() => void) | undefined;
     ws.on('close', () => {
       clearInterval(ping);
       sockets.delete(ws);
       visible.delete(ws);
+      focused.delete(ws);
       stop?.();
     });
     const send = (message: LiveMessage | { type: 'ready' }): void => {
@@ -1495,10 +1586,15 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     port,
     clients: () => sockets.size,
     visiblePages: () => visible.size,
+    focusedPages: () => focused.size,
     broadcast(notice) {
       broadcastNotice(notice);
     },
+    helpers: () => helpers.size,
+    macEndpoints: () => macEndpoints,
+    notifyHelpers: (notice) => noticeToHelpers(notice),
     async close() {
+      for (const response of helpers) response.end();
       for (const ws of sockets) ws.terminate();
       wss.close();
       server.closeAllConnections();

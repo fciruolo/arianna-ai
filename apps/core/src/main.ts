@@ -504,9 +504,14 @@ const notifier = createNotifier({
   broadcast: (notice) => {
     server.broadcast(notice);
   },
+  focusedPages: () => server.focusedPages(),
+  helpers: () => server.helpers(),
+  toHelpers: (notice) => {
+    server.notifyHelpers(notice);
+  },
   push: () => {
     const pusher = voice.pusher();
-    return pusher === undefined ? undefined : (kind) => pusher.notify(kind);
+    return pusher === undefined ? undefined : (kind, helper) => pusher.notify(kind, helper ? { skip: server.macEndpoints() } : {});
   },
   board: notices,
   onError: report,

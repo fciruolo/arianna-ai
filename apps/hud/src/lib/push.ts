@@ -1,4 +1,4 @@
-import { loadPushKey, subscribePush } from './api.ts';
+import { loadPushKey, subscribePush, tellThisMac } from './api.ts';
 
 /**
  * Web Push for the calls of Arianna (D-066): the browser asks its push
@@ -34,5 +34,25 @@ export async function enablePush(key: string): Promise<PushState> {
   await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
   await subscribePush(subscription.toJSON());
+  // A new address of this browser: on the Mac the core is told it is its own (D-128).
+  await reportThisMac().catch(() => undefined);
   return 'on';
+}
+
+/** This page runs on the Mac of the core: reached through the loopback address. */
+export function onThisMac(hostname: string): boolean {
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
+}
+
+/**
+ * On the Mac, the push address of this browser (D-128): while the helper is
+ * connected the core leaves it out of the notices, so that the helper's
+ * notification is not doubled by Chrome's. Calls still ring here.
+ */
+export async function reportThisMac(): Promise<void> {
+  if (!onThisMac(window.location.hostname) || !('serviceWorker' in navigator)) return;
+  const registration = await navigator.serviceWorker.getRegistration('/');
+  const subscription = await registration?.pushManager.getSubscription();
+  if (subscription === null || subscription === undefined) return;
+  await tellThisMac(subscription.endpoint);
 }

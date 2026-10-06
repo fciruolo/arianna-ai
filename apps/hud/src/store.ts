@@ -12,6 +12,7 @@ import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { reportThisMac } from './lib/push.ts';
 import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toast } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
@@ -650,14 +651,16 @@ export function createChatStore() {
 
   function onLive(message: ServerMessage): void {
     if (message.type === 'ready') {
-      connection?.sendVisibility(pageInView());
+      connection?.sendVisibility(pageInView(), document.hasFocus());
+      // At every connection, also after a restart of the core, which keeps it in memory (D-128).
+      void reportThisMac().catch(() => undefined);
       void refreshAll().catch(fail);
       return;
     }
     if (message.type === 'notice') {
       // I-1: a toast in the chat in view, a system notification (fixed sentence and link) when it is hidden; nothing for the conversation being read.
       const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
-      const where = noticeWhere(message.conversationId, view, message.trial === true);
+      const where = noticeWhere(message.conversationId, view, message.trial === true, message.helper === true);
       if (where.system) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
       if (where.toast) {
         // The title stays in this page, on this Mac: a toast may name the conversation, a system notification never.
@@ -785,9 +788,13 @@ export function createChatStore() {
   }
 
   function start(): void {
-    document.addEventListener('visibilitychange', () => {
-      connection?.sendVisibility(pageInView());
-    });
+    const tell = (): void => {
+      connection?.sendVisibility(pageInView(), document.hasFocus());
+    };
+    document.addEventListener('visibilitychange', tell);
+    // Another app in front (D-128): the helper of the Mac shows the notices then.
+    window.addEventListener('focus', tell);
+    window.addEventListener('blur', tell);
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);

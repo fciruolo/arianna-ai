@@ -413,6 +413,11 @@ export async function subscribePush(subscription: PushSubscriptionJSON): Promise
   await call('POST', '/api/push/subscribe', { subscription });
 }
 
+/** The push address of this browser, on the Mac of the core (D-128). */
+export async function tellThisMac(endpoint: string): Promise<void> {
+  await call('POST', '/api/notifications/this-mac', { endpoint });
+}
+
 /** The settings page (D-071): values, catalog, fingerprint, local servers. */
 export async function loadSettings(): Promise<SettingsView> {
   return call<SettingsView>('GET', '/api/settings');

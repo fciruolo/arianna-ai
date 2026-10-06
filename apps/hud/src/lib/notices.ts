@@ -58,11 +58,13 @@ export interface NoticeView {
  * looking at the chat but at another conversation; as a notification of the
  * system when the page is hidden or out of focus; nowhere when it is the
  * conversation being read. A trial (the buttons of Impostazioni → Notifiche)
- * shows both, to see them side by side.
+ * shows both, to see them side by side. With the helper of the Mac connected
+ * (D-128) the page never shows one of the system: the helper does.
  */
-export function noticeWhere(conversationId: string | null, view: NoticeView, trial = false): { toast: boolean; system: boolean } {
-  if (trial) return { toast: true, system: view.permission === 'granted' };
-  if (view.hidden) return { toast: false, system: view.permission === 'granted' };
+export function noticeWhere(conversationId: string | null, view: NoticeView, trial = false, helper = false): { toast: boolean; system: boolean } {
+  if (trial) return { toast: true, system: view.permission === 'granted' && !helper };
+  // With the helper of the Mac connected the notification of the system is its own, in the name of Arianna (D-128).
+  if (view.hidden) return { toast: false, system: view.permission === 'granted' && !helper };
   return { toast: conversationId === null || conversationId !== view.openConversation, system: false };
 }
 

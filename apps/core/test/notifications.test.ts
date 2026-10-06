@@ -24,8 +24,11 @@ const at = (clock: string): Date => {
   return new Date(2026, 9, 5, hours, minutes);
 };
 
-function harness(options: { config?: NotificationsConfig; visible?: number; push?: boolean; now?: Date } = {}) {
+function harness(options: { config?: NotificationsConfig; visible?: number; focused?: number; push?: boolean; now?: Date; helpers?: number } = {}) {
+  let focused = options.focused ?? options.visible ?? 0;
   const broadcasts: Notice[] = [];
+  const helped: Notice[] = [];
+  let helpers = options.helpers ?? 0;
   const pushes: PushKind[] = [];
   const board = createNoticeBoard();
   let config = options.config ?? DEFAULT_NOTIFICATIONS;
@@ -34,7 +37,13 @@ function harness(options: { config?: NotificationsConfig; visible?: number; push
     settings: () => config,
     conversationOf: (taskId) => Promise.resolve(taskId === TASK ? OTHER : null),
     visiblePages: () => visible,
-    broadcast: (notice) => broadcasts.push(notice),
+    // The pages' flag is checked by the tests of the helper; the others read kind and conversation.
+    broadcast: ({ helper, ...notice }) => {
+      broadcasts.push(helpers > 0 ? { ...notice, helper } as Notice : notice);
+    },
+    helpers: () => helpers,
+    focusedPages: () => focused,
+    toHelpers: (notice) => helped.push(notice),
     push: () =>
       options.push === false
         ? undefined
@@ -48,8 +57,15 @@ function harness(options: { config?: NotificationsConfig; visible?: number; push
   return {
     notifier,
     broadcasts,
+    helped,
     pushes,
     board,
+    setFocused: (next: number) => {
+      focused = next;
+    },
+    setHelpers: (next: number) => {
+      helpers = next;
+    },
     setConfig: (next: NotificationsConfig) => {
       config = next;
     },
@@ -158,9 +174,23 @@ test('the board forgets a notice after an hour', () => {
 });
 
 test('visibilityOf: the only frame a page may send', () => {
-  assert.equal(visibilityOf('{"type":"visibility","visible":true}'), true);
-  assert.equal(visibilityOf('{"type":"visibility","visible":false}'), false);
-  for (const frame of ['', 'x', '[]', 'null', '{"type":"visibility","visible":"yes"}', '{"type":"visibility"}', '{"type":"send","visible":true}', '{"type":"visibility","visible":true,"text":"x"}']) {
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true}'), { visible: true, focused: true });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false}'), { visible: false, focused: false });
+  // D-128: in view but another app in front; never focused while hidden.
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":true,"focused":false}'), { visible: true, focused: false });
+  assert.deepEqual(visibilityOf('{"type":"visibility","visible":false,"focused":true}'), { visible: false, focused: false });
+  for (const frame of [
+    '',
+    'x',
+    '[]',
+    'null',
+    '{"type":"visibility","visible":"yes"}',
+    '{"type":"visibility"}',
+    '{"type":"send","visible":true}',
+    '{"type":"visibility","visible":true,"text":"x"}',
+    '{"type":"visibility","visible":true,"focused":"no"}',
+    '{"type":"visibility","visible":true,"focused":true,"x":1}',
+  ]) {
     assert.equal(visibilityOf(frame), undefined, frame);
   }
 });
@@ -224,4 +254,28 @@ test('a failed task without a conversation does not notify: nothing to open', as
   assert.equal(await notifier.handle({ ...failure, taskId: randomUUID() }), 'none');
   assert.deepEqual(broadcasts, []);
   assert.deepEqual(pushes, []);
+});
+
+test('the helper of the Mac (D-128): the notice when no page is in view, and the pages are told not to show their own', async () => {
+  const { notifier, broadcasts, helped, pushes, setVisible, setFocused, setHelpers } = harness({ helpers: 1 });
+  assert.equal(await notifier.handle(reply), 'push');
+  assert.deepEqual(helped, [{ kind: 'reply', conversationId: CONVERSATION }]);
+  assert.deepEqual(broadcasts, [{ kind: 'reply', conversationId: CONVERSATION, helper: true }]);
+  // The Web Push of the phone does not change.
+  assert.deepEqual(pushes, ['reply']);
+  // A page in view but another app in front: the helper shows it, no push (the page is in view).
+  setVisible(1);
+  assert.equal(await notifier.handle(approval), 'pages');
+  assert.equal(helped.length, 2);
+  // In view and in front: the user is looking, the helper says nothing.
+  setFocused(1);
+  assert.equal(await notifier.handle(approval), 'pages');
+  assert.equal(helped.length, 2);
+  setFocused(0);
+  // No helper: as before D-128.
+  setVisible(0);
+  setHelpers(0);
+  assert.equal(await notifier.handle(failure), 'push');
+  assert.equal(helped.length, 2);
+  assert.deepEqual(broadcasts.at(-1), { kind: 'failure', conversationId: OTHER });
 });
