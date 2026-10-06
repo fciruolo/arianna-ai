@@ -4,6 +4,7 @@ export {
   loadCatalog,
   MODEL_ROLES,
   MODEL_RUNTIMES,
+  MAX_STRENGTHS,
   MODEL_STATUSES,
   modelSize,
   parseCatalog,
@@ -14,6 +15,20 @@ export {
   type ModelRuntime,
   type ModelStatus,
 } from './catalog.ts';
+export {
+  CLOUD_CATALOG_FILE,
+  CLOUD_MODEL_EXECUTOR,
+  EMPTY_CLOUD_CATALOG,
+  loadCloudCatalog,
+  parseCloudCatalog,
+  type ApiPrice,
+  type CloudCatalog,
+  type CloudCatalogEntry,
+  type CloudModelName,
+  type CloudSource,
+  type CloudStrength,
+  type QuotaRatio,
+} from './cloud-catalog.ts';
 export { LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, parseAgents, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';

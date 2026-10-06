@@ -17,6 +17,13 @@
 #     ram_min_gib: 20           # memory once loaded
 #     roles: [orchestrator]     # orchestrator | extractor | embedder | voice
 #     status: experimental      # experimental | verified
+#     # Optional, for the "Modelli" page (I-3), written by hand, never guessed:
+#     provider: "Example Lab"     # who makes it (and who converted it)
+#     context_tokens: 32768       # context as served, only when known
+#     strengths: ["A short line"] # 1-4 lines
+#     license: "Apache-2.0"
+#     notes: "Anything the card must say"
+#     source: https://example.org/example-model   # the page of the model
 #     files:
 #       - path: model.safetensors
 #         url: https://example.org/example-model/model.safetensors
@@ -34,6 +41,8 @@ models:
     ram_min_gib: 18
     roles: [orchestrator]
     status: experimental
+    provider: "Qwen (Alibaba); conversione MLX di mlx-community"
+    source: https://huggingface.co/mlx-community/Qwen3.8-27B-4bit
     files:
       - path: chat_template.jinja
         url: https://huggingface.co/mlx-community/Qwen3.8-27B-4bit/resolve/10c35caafbb80f7dc6a7a432cdd11af10a6d4818/chat_template.jinja
@@ -93,6 +102,8 @@ models:
     ram_min_gib: 18
     roles: [orchestrator]
     status: experimental
+    provider: "Qwen (Alibaba); variante MLX di orcarouter"
+    source: https://huggingface.co/orcarouter/Qwen3.8-27B-Uncensored-MLX
     files:
       - path: chat_template.jinja
         url: https://huggingface.co/orcarouter/Qwen3.8-27B-Uncensored-MLX/resolve/14963e70f886455cf93090ac95bdbf4c8730cbe1/chat_template.jinja
@@ -153,6 +164,8 @@ models:
     ram_min_gib: 7
     roles: [orchestrator]
     status: experimental
+    provider: "Qwen (Alibaba); conversione MLX di mlx-community"
+    source: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
     files:
       - path: chat_template.jinja
         url: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/938d8919941c6e7efd3c7150eff7fe9d12afa631/chat_template.jinja
@@ -206,6 +219,8 @@ models:
     ram_min_gib: 3
     roles: [extractor, voice]
     status: experimental
+    provider: "Qwen (Alibaba); conversione MLX di mlx-community"
+    source: https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit
     files:
       - path: added_tokens.json
         url: https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit/resolve/50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b/added_tokens.json
@@ -261,6 +276,8 @@ models:
     ram_min_gib: 3
     roles: [stt]
     status: experimental
+    provider: "NVIDIA; conversione MLX di mlx-community"
+    source: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3
     files:
       - path: config.json
         url: https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3/resolve/ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15/config.json
@@ -288,6 +305,8 @@ models:
     ram_min_gib: 1
     roles: [tts]
     status: experimental
+    provider: "hexgrad; conversione MLX di mlx-community"
+    source: https://huggingface.co/mlx-community/Kokoro-82M-bf16
     files:
       - path: config.json
         url: https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/a71e4d38b236d968966a2002c4c895dbd12b1c3c/config.json
@@ -313,6 +332,9 @@ models:
     ram_min_gib: 6
     roles: [tts]
     status: experimental
+    provider: "Qwen (Alibaba); conversione MLX di mlx-community"
+    license: "Apache-2.0"
+    source: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16
     files:
       - path: config.json
         url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16/resolve/52f4770fd9726457eae3d3b6aa92047a25a10776/config.json
@@ -369,6 +391,9 @@ models:
     ram_min_gib: 6
     roles: [tts]
     status: experimental
+    provider: "Qwen (Alibaba); conversione MLX di mlx-community"
+    license: "Apache-2.0"
+    source: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16
     files:
       - path: config.json
         url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16/resolve/a6eb4f68e4b056f1215157bb696209bc82a6db48/config.json
@@ -425,6 +450,9 @@ models:
     ram_min_gib: 10
     roles: [tts]
     status: experimental
+    provider: "Mistral AI; conversione MLX di mlx-community"
+    license: "CC BY-NC 4.0 (solo uso non commerciale, con attribuzione; D-067)"
+    source: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16
     files:
       - path: config.json
         url: https://huggingface.co/mlx-community/Voxtral-4B-TTS-2603-mlx-bf16/resolve/dd85c02adbae551f5bb29ded35ee60ccdfb90927/config.json

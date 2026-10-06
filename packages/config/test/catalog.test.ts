@@ -82,3 +82,42 @@ test('ids are folder names: lowercase and unique; unknown keys are rejected', ()
   assert.throws(() => parseCatalog(`${VALID}extra: true\n`), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('family: fake', 'family: fake\n    name: x')), ConfigError);
 });
+
+test('the card fields of I-3 are optional and read when given', () => {
+  const card = VALID.replace(
+    '    status: experimental\n',
+    '    status: experimental\n    provider: Fake Lab\n    context_tokens: 32768\n    strengths: [Quick, Small]\n    license: Apache-2.0\n    notes: Only fake\n    source: https://example.org/fake-model\n',
+  );
+  const [model] = parseCatalog(card).models;
+  assert.ok(model !== undefined);
+  assert.equal(model.provider, 'Fake Lab');
+  assert.equal(model.contextTokens, 32768);
+  assert.deepEqual(model.strengths, ['Quick', 'Small']);
+  assert.equal(model.license, 'Apache-2.0');
+  assert.equal(model.notes, 'Only fake');
+  assert.equal(model.source, 'https://example.org/fake-model');
+  const [plain] = parseCatalog(VALID).models;
+  assert.ok(plain !== undefined);
+  assert.equal('provider' in plain || 'strengths' in plain || 'source' in plain, false);
+});
+
+test('the card fields of I-3 are checked', () => {
+  const withField = (line: string): string => VALID.replace('    status: experimental\n', `    status: experimental\n    ${line}\n`);
+  assert.throws(() => parseCatalog(withField('provider: ""')), ConfigError);
+  assert.throws(() => parseCatalog(withField('context_tokens: 0')), ConfigError);
+  assert.throws(() => parseCatalog(withField('context_tokens: "32k"')), ConfigError);
+  assert.throws(() => parseCatalog(withField('strengths: []')), ConfigError);
+  assert.throws(() => parseCatalog(withField('strengths: [a, b, c, d, e]')), ConfigError);
+  assert.throws(() => parseCatalog(withField('strengths: "one string"')), ConfigError);
+  assert.throws(() => parseCatalog(withField(`strengths: ["${'x'.repeat(201)}"]`)), ConfigError);
+  assert.throws(() => parseCatalog(withField('source: http://example.org/fake')), ConfigError);
+  assert.throws(() => parseCatalog(withField('source: not a url')), ConfigError);
+  assert.throws(() => parseCatalog(withField('license: 3')), ConfigError);
+});
+
+test('every entry of the committed catalog has a provider and a source', () => {
+  for (const model of loadCatalog(resolveHome({})).models) {
+    assert.ok(model.provider !== undefined, model.id);
+    assert.ok(model.source?.startsWith('https://huggingface.co/'), model.id);
+  }
+});
