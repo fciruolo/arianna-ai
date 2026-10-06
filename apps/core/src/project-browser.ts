@@ -22,6 +22,7 @@ import {
   type OpenLinks,
 } from './delegation-view.ts';
 import { diffLines, MAX_CELLS, splitLines, type LineDiff } from './line-diff.ts';
+import { listening, listServices, type ProjectService, type ServiceManager, type ServiceRun } from './project-services.ts';
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer,
@@ -274,4 +275,22 @@ export async function readCommitDiff(sql: Queryable, projects: readonly Project[
     }
   }
   return { commit, parent: changed.parent, files };
+}
+
+/** A service as the tab Servizi shows it: on when a port answers or a run of ours is alive. */
+export type ServiceState = ProjectService & { on: boolean; run: Pick<ServiceRun, 'running' | 'startedAt' | 'ended'> | null };
+
+/** The services of a project, read now from its files, with their state (D-134, tappa 2). */
+export async function serviceStates(projects: readonly Project[], name: string, manager: ServiceManager): Promise<{ root: string; list: ServiceState[] }> {
+  const root = await rootOf(projects, name);
+  const services = await listServices(root);
+  const list = await Promise.all(
+    services.map(async (service) => {
+      const found = manager.run(name, service.id);
+      const ports = await Promise.all(service.ports.map((item) => listening(item)));
+      const run = found === undefined ? null : { running: found.running, startedAt: found.startedAt, ended: found.ended };
+      return { ...service, on: ports.some(Boolean) || found?.running === true, run };
+    }),
+  );
+  return { root, list };
 }

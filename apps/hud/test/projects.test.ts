@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { agoText, changeMark, childPath, fileBadge, firstChangedLine, highlightLine, isProjectsPath, sizeText, vscodeUrl } from '../src/lib/projects.ts';
+import { agoText, changeMark, childPath, commandText, confirmText, fileBadge, firstChangedLine, highlightLine, isProjectsPath, serviceStateText, sizeText, vscodeUrl, type ServiceState } from '../src/lib/projects.ts';
 
 test('the address of the page', () => {
   assert.equal(isProjectsPath('/progetti'), true);
@@ -83,4 +83,17 @@ test('the first changed line of a diff', () => {
   ];
   assert.equal(firstChangedLine(hunks), 5);
   assert.equal(firstChangedLine([]), undefined);
+});
+
+test('the confirmation of the tab Servizi: the command, its file, how long it may run', () => {
+  const dev: ServiceState = { id: 'package.json:dev', source: 'package.json', file: 'package.json', name: 'dev', command: ['pnpm', 'run', 'dev'], script: 'vite', ports: [5180], stays: true, on: false, run: null };
+  assert.deepEqual(confirmText(dev, false), { title: 'Avviare “dev”?', command: 'pnpm run dev', from: 'package.json → scripts.dev', duration: 'resta acceso finché lo fermi o chiudi Arianna' });
+  assert.equal(confirmText({ ...dev, stays: false, name: 'test' }, false).duration, 'si ferma da solo dopo 10 minuti');
+  const db: ServiceState = { ...dev, id: 'compose:db', source: 'compose', file: 'compose.yaml', name: 'db', command: ['docker', 'compose', '-f', 'compose.yaml', 'up', '-d', 'db'], ports: [], on: false };
+  assert.equal(confirmText(db, true).command, 'docker compose -f compose.yaml stop db');
+  assert.equal(confirmText(db, false).duration, 'resta acceso con Docker finché lo fermi');
+  assert.equal(commandText(['node', '-e', "console.log('x')"]), "node -e 'console.log('\\''x'\\'')'");
+  assert.equal(serviceStateText(db), 'stato sconosciuto');
+  assert.equal(serviceStateText({ ...dev, on: true }), 'acceso');
+  assert.equal(serviceStateText(dev), 'spento');
 });
