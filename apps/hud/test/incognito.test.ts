@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { choiceAgent, draftFromAddress, draftPath, sameChoice } from '../src/lib/draft.ts';
 import {
   assumedNotice,
+  closedCause,
   closedText,
   closingLines,
   closingSoonText,
@@ -19,6 +20,8 @@ import {
   parseEndResult,
   parseNotice,
   remainsText,
+  splitApprovals,
+  withoutIncognito,
   type EndResult,
 } from '../src/lib/incognito.ts';
 import { parseServerMessage } from '../src/lib/protocol.ts';
@@ -147,6 +150,29 @@ test('a conversation closed elsewhere says why, without its texts', () => {
   assert.match(closedText('lost'), /scollegata/);
   assert.match(closingSoonText(60), /fra 1 minuto/);
   assert.match(closingSoonText(300), /fra 5 minuti/);
+});
+
+test('the 404 of a closed incognito conversation carries its cause; any other 404 none', () => {
+  assert.equal(closedCause({ error: 'not found', closed: 'restart' }), 'restart');
+  assert.equal(closedCause({ error: 'not found', closed: 'idle' }), 'idle');
+  assert.equal(closedCause({ error: 'not found', closed: 'user' }), 'user');
+  assert.equal(closedCause({ error: 'not found' }), undefined);
+  assert.equal(closedCause({ error: 'not found', closed: 'boredom' }), undefined);
+  assert.equal(closedCause(null), undefined);
+});
+
+test("an incognito conversation's approvals are shown only in its page", () => {
+  const normal = { id: 'a', taskId: 't1', conversationId: OTHER };
+  const hidden = { id: 'b', taskId: 't2', incognito: true, conversationId: ID };
+  const oldCore = { id: 'c', taskId: 't3' };
+  assert.deepEqual(withoutIncognito([normal, hidden, oldCore]), [normal, oldCore]);
+  // On another page: the incognito one is neither in the chat nor elsewhere.
+  assert.deepEqual(splitApprovals([normal, hidden, oldCore], new Set(['t1']), OTHER), { inChat: [normal], elsewhere: [oldCore] });
+  // On its page: by its task, or by the id of the conversation before its task is read.
+  assert.deepEqual(splitApprovals([normal, hidden], new Set(['t2']), ID), { inChat: [hidden], elsewhere: [normal] });
+  assert.deepEqual(splitApprovals([normal, hidden], new Set(), ID), { inChat: [hidden], elsewhere: [normal] });
+  // No conversation open: nothing incognito anywhere.
+  assert.deepEqual(splitApprovals([hidden, oldCore], new Set(), null), { inChat: [], elsewhere: [oldCore] });
 });
 
 test('"/nota" is refused only in incognito', () => {

@@ -32,7 +32,7 @@ import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
 import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
-import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, type IncognitoEntry } from './lib/incognito.ts';
+import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitApprovals, withoutIncognito, type IncognitoEntry } from './lib/incognito.ts';
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
@@ -509,10 +509,12 @@ function followAddress(): void {
   }
 }
 watch(
-  () => chat.value?.conversationId ?? null,
-  (id) => {
+  () => [chat.value?.conversationId ?? null, current.value !== undefined] as const,
+  ([id, known]) => {
     if (id !== null) page.value = 'chat';
     else if (page.value !== 'chat') return;
+    // Not yet read (opened by id, in no list): the address waits, so an incognito id never reaches the history (D-136).
+    if (id !== null && !known) return;
     // A draft has its own address (/nuova?tipo=…): the root would lose it.
     if (id === null && draft.value !== null) return;
     // The card of a closed incognito conversation stays on its entry: "back" from the list finds it closed (D-136).
@@ -608,8 +610,10 @@ function poseFor(id: string): Pose {
 const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(tasks.value), chat.value?.conversationId, approvals.value), activeLine.value));
 
 /** Approvals of the open conversation's tasks are shown in the chat; the others in the panel. */
-const inChat = computed(() => approvals.value.filter((approval) => approval.taskId !== null && approval.taskId in tasks.value));
-const elsewhere = computed<Approval[]>(() => approvals.value.filter((approval) => !inChat.value.includes(approval)));
+/** An incognito conversation's approvals only in its own page, never elsewhere nor counted there (D-136). */
+const placed = computed(() => splitApprovals(approvals.value, new Set(Object.keys(tasks.value)), chat.value?.conversationId));
+const inChat = computed(() => placed.value.inChat);
+const elsewhere = computed<Approval[]>(() => placed.value.elsewhere);
 
 const crumb = computed(() => {
   const conversation = current.value;
@@ -825,7 +829,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <OfficePage
         v-else-if="page === 'office'"
         :status="status"
-        :approvals="approvals"
+        :approvals="withoutIncognito(approvals)"
         :projects="projects"
         :conversations="conversations"
         :characters="characters"

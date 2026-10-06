@@ -119,6 +119,9 @@ export interface Approval {
   requestedAt: string;
   decidedAt: string | null;
   decidedVia: 'web' | 'telegram' | 'phone' | null;
+  /** Of an incognito conversation (D-136): shown only in the page of that conversation. Optional: a core without it sends none. */
+  incognito?: boolean;
+  conversationId?: string | null;
 }
 
 /** An entry of the event log: ids and references only, never content. */

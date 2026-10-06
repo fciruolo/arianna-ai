@@ -17,10 +17,13 @@ import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel
 export class ApiError extends Error {
   override name = 'ApiError';
   readonly status: number;
+  /** The whole answer of the core, for the fields beside `error` (the cause of a closed incognito conversation, D-136). */
+  readonly body: Record<string, unknown>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -32,7 +35,7 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
   return data as T;
 }
 
@@ -101,7 +104,7 @@ export async function search(query: string, limit: number, signal?: AbortSignal)
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const response = await fetch(`/api/search?${params.toString()}`, { credentials: 'same-origin', ...(signal === undefined ? {} : { signal }) });
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
   return data as unknown as SearchResult;
 }
 

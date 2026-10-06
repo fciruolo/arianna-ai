@@ -9,7 +9,7 @@ import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
-import { closedText, closingLines, closingSoonText, incognitoAction, noteRefusal, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
+import { closedCause, closedText, closingLines, closingSoonText, incognitoAction, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -143,8 +143,9 @@ export function createChatStore() {
       conversation = await api.loadConversation(id);
     } catch (cause) {
       // An incognito conversation the core deleted meanwhile: its card, not an error.
-      if (gone(cause) && detached.value?.id === id && detached.value.incognito === true) {
-        closeIncognito(id, 'gone');
+      const incognito = (detached.value?.id === id && detached.value.incognito === true) || (cause instanceof api.ApiError && closedCause(cause.body) !== undefined);
+      if (gone(cause) && incognito) {
+        closeIncognito(id, causeOf(cause, 'gone'));
         return;
       }
       throw cause;
@@ -154,6 +155,11 @@ export function createChatStore() {
 
   function gone(cause: unknown): boolean {
     return cause instanceof api.ApiError && cause.status === 404;
+  }
+
+  /** The cause the core gives with the 404 of a closed incognito conversation, else what the page can say. */
+  function causeOf(cause: unknown, otherwise: 'gone' | 'lost'): CloseCause | 'gone' | 'lost' {
+    return (cause instanceof api.ApiError ? closedCause(cause.body) : undefined) ?? otherwise;
   }
 
   /** The open incognito conversation, or the one its draft already created. */
@@ -200,7 +206,7 @@ export function createChatStore() {
       discardIncognito();
       incognitoEnd.value = { kind: 'ended', lines: closingLines(result) };
     } catch (cause) {
-      if (gone(cause)) closeIncognito(id, 'gone');
+      if (gone(cause)) closeIncognito(id, causeOf(cause, 'gone'));
       else fail(cause);
     } finally {
       ending.value = false;
@@ -221,7 +227,7 @@ export function createChatStore() {
       const conversation = await api.loadConversation(id);
       await open(id, conversation);
     } catch (cause) {
-      if (gone(cause)) closeIncognito(id, 'gone');
+      if (gone(cause)) closeIncognito(id, causeOf(cause, 'gone'));
       else fail(cause);
     }
   }
@@ -233,7 +239,7 @@ export function createChatStore() {
     try {
       await api.loadConversation(id);
     } catch (cause) {
-      if (gone(cause) && current.value?.id === id) closeIncognito(id, 'lost');
+      if (gone(cause) && current.value?.id === id) closeIncognito(id, causeOf(cause, 'lost'));
     }
   }
 
@@ -366,7 +372,8 @@ export function createChatStore() {
       api.listDecidedApprovals('rejected'),
     ]);
     approvals.value = pending;
-    decided = [...approved, ...rejected];
+    // The notes of decisions taken elsewhere never name an incognito conversation's approval (D-136).
+    decided = withoutIncognito([...approved, ...rejected]);
     showNotes();
   }
 

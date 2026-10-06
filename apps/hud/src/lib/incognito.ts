@@ -192,6 +192,50 @@ export function closingSoonText(seconds: number): string {
   return `Questa conversazione incognita si chiude ${when} se nessuna pagina la tiene aperta: questa pagina l'ha appena segnalata ad Arianna.`;
 }
 
+/**
+ * The cause the core gives with the 404 of an incognito conversation it
+ * deleted (`closed` in the body); undefined for any other 404.
+ */
+export function closedCause(body: unknown): CloseCause | undefined {
+  if (!isRecord(body)) return undefined;
+  const { closed } = body;
+  return closed === 'user' || closed === 'idle' || closed === 'restart' ? closed : undefined;
+}
+
+/** What an approval says of its conversation (D-136): optional, a core without incognito sends neither. */
+interface ApprovalPlace {
+  taskId: string | null;
+  incognito?: boolean | undefined;
+  conversationId?: string | null | undefined;
+}
+
+/** Approvals with no incognito ones: for every place outside the page of their conversation ("Decisioni in attesa", the office, the notes). */
+export function withoutIncognito<T extends ApprovalPlace>(approvals: readonly T[]): T[] {
+  return approvals.filter((approval) => approval.incognito !== true);
+}
+
+/**
+ * The approvals of the open conversation (by its tasks, or by the id the core
+ * gives) and those shown elsewhere: an incognito one is never elsewhere, nor
+ * counted there.
+ */
+export function splitApprovals<T extends ApprovalPlace>(
+  approvals: readonly T[],
+  openTasks: ReadonlySet<string>,
+  openConversation: string | null | undefined,
+): { inChat: T[]; elsewhere: T[] } {
+  const inChat: T[] = [];
+  const elsewhere: T[] = [];
+  for (const approval of approvals) {
+    const here =
+      (approval.taskId !== null && openTasks.has(approval.taskId)) ||
+      (openConversation !== null && openConversation !== undefined && approval.conversationId === openConversation);
+    if (here) inChat.push(approval);
+    else if (approval.incognito !== true) elsewhere.push(approval);
+  }
+  return { inChat, elsewhere };
+}
+
 /** Why "Salva in inbox" and "/nota" are off in incognito: said over the button, and as the error of the command. */
 export const SAVE_OFF_HINT = 'Spento in incognito: niente di questa conversazione si salva in Arianna. "Copia" funziona.';
 export const NOTE_OFF_TEXT = 'In una conversazione incognita /nota è spento: niente si salva in kb/inbox. Usa "Copia" per tenere un testo.';
