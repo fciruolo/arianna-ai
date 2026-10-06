@@ -138,6 +138,15 @@ function received(): { prompt: string } {
   return JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
 }
 
+/** Agent and `direct` of the assistant messages of a conversation, as their events say. */
+async function answerEvents(conversationId: string): Promise<{ agent: string | null; direct: boolean | null }[]> {
+  const rows = await db().sql<{ agent: string | null; direct: boolean | null }[]>`
+    SELECT payload ->> 'agent' AS agent, (payload ->> 'direct')::boolean AS direct FROM events
+     WHERE kind = 'message.created' AND payload ->> 'conversationId' = ${conversationId} AND payload ->> 'role' = 'assistant'
+     ORDER BY id`;
+  return rows.map((row) => ({ agent: row.agent, direct: row.direct }));
+}
+
 test('a direct chat follows the card: mode and project as it allows, never Arianna (D-111d)', async () => {
   await assert.rejects(createConversation(db().sql, { mode: 'private', agent: CODER }), (error: unknown) => error instanceof ChatError && error.code === 'invalid');
   await assert.rejects(createConversation(db().sql, { mode: 'work', projects: PROJECTS, agent: CODER }), /needs a project/);
@@ -191,6 +200,8 @@ test('a message goes as it is to the Coder, with no local step, and the task end
       SELECT id::text, agent FROM messages WHERE conversation_id = ${direct.id} AND role = 'assistant'`;
     assert.deepEqual(answers.map((row) => row.agent), ['coder']);
     assert.deepEqual(done.evidence, [{ kind: 'message', ref: answers[0]?.id }]);
+    // The answer of the direct chat's own agent carries `direct`: it notifies as Arianna's does (D-126).
+    assert.deepEqual(await answerEvents(direct.id), [{ agent: 'coder', direct: true }]);
     // The brief went through the gateway towards claude, the user's message included.
     const [logged] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
     assert.ok((logged?.count ?? 0) > 0);
@@ -290,6 +301,8 @@ test('a conversation of Arianna keeps the consent per delegation: approved once,
     assert.ok(waiting?.waitingApprovalId !== null && waiting?.waitingApprovalId !== undefined);
     await recordDecision(db().sql, waiting.waitingApprovalId, 'approved', 'web');
     assert.deepEqual(await drain(first.task.id, orchestrator(model)), ['continued', 'answered']);
+    // The Coder's report in Arianna's conversation is not a direct answer: no `direct`, no notice.
+    assert.deepEqual((await answerEvents(plain.id)).filter((event) => event.agent === 'coder'), [{ agent: 'coder', direct: null }]);
     const second = await postUserMessage(db().sql, plain.id, 'Secondo.');
     assert.deepEqual(await drain(second.task.id, orchestrator(model)), ['continued', 'waiting-approval']);
   } finally {

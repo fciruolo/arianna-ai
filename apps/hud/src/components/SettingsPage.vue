@@ -37,6 +37,9 @@ import {
   endpointsForm,
   executorsBody,
   MODEL_ROLES,
+  notificationsBody,
+  notificationsForm,
+  notificationsProblem,
   ROLE_TEXT,
   roleOptions,
   rolesBody,
@@ -57,6 +60,7 @@ import {
   type EndpointForm,
   type LocalServerStatus,
   type ModelRole,
+  type NotificationsForm,
   type OrdinarySection,
   type PrivacyProposal,
   type PrivacySection,
@@ -73,6 +77,7 @@ import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
 import Icon from './Icon.vue';
 import ModelEvals from './ModelEvals.vue';
+import NotificationDevice from './NotificationDevice.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
 
@@ -114,6 +119,7 @@ interface Forms {
   agents: AgentsForm;
   sprites: SettingsValues['sprites'];
   voice: VoiceForm;
+  notifications: NotificationsForm;
   executors: string[];
   telegram: TelegramForm;
   projects: ProjectValues[];
@@ -129,6 +135,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     agents: agentsForm(values.agents, agentModels),
     sprites: values.sprites,
     voice: voiceForm(values.voice, defaults),
+    notifications: notificationsForm(values.notifications),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
     projects: values.projects.map((project) => ({ ...project })),
@@ -136,7 +143,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'notifications', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -241,6 +248,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   if (parts.includes('sprites')) values.sprites = current.sprites;
+  if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -827,6 +835,26 @@ watch(active, () => {
               </template>
               <p v-else class="text-sm text-muted">Le chiamate sono spente: accendile per scegliere voce, limiti e orari.</p>
             </SettingsCard>
+
+            <!-- Notifications (I-1): kinds and quiet hours in arianna.toml; this browser below -->
+            <SettingsCard v-if="active === 'notifications'" id="notifications" title="Notifiche" kind="now" :changed="changed('notifications')" :saved="saved === 'notifications'" :invalid="notificationsProblem(forms.notifications)" :busy="busy === 'notifications'" :error="errors.notifications" @cancel="reset('notifications')" @save="save('notifications')">
+              <p class="text-xs text-muted">Quando la chat risponde e non la stai guardando. Valgono per ogni browser e telefono che hai consentito qui sotto.</p>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte nelle chat</label>
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.approvals" type="checkbox" role="switch" class="switch" />Approvazioni in attesa</label>
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.failures" type="checkbox" role="switch" class="switch" />Lavori falliti</label>
+              </div>
+              <h3 class="hud-title mt-1 flex items-center gap-2">
+                Ore di silenzio
+                <input v-model="forms.notifications.quiet" type="checkbox" role="switch" class="switch" aria-label="Ore di silenzio accese" />
+              </h3>
+              <div v-if="forms.notifications.quiet" class="grid grid-cols-2 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.notifications.quietFrom" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.notifications.quietTo" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+              </div>
+              <p class="text-xs text-muted">{{ forms.notifications.quiet ? 'Ora locale; può passare la mezzanotte (per esempio dalle 22:00 alle 07:00).' : 'Nessuna ora di silenzio.' }} Le chiamate seguono i loro orari, in Voce.</p>
+            </SettingsCard>
+            <NotificationDevice v-if="active === 'notifications'" />
 
             <!-- Agents (D-116, D-133): the cards on the left, the chosen agent in tabs, one bar to save -->
             <AgentsSettings

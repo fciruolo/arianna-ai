@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
@@ -12,6 +12,8 @@ import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
+import { reportThisMac } from './lib/push.ts';
+import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toast } from './lib/notices.ts';
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
@@ -68,11 +70,15 @@ export function createChatStore() {
   const characters = ref<CharacterListing | null>(null);
   let statusTimer: number | undefined;
   let statusPoll: number | undefined;
+  let stopOpenWatch: (() => void) | undefined;
   const live = ref<LiveState>('connecting');
   const error = ref<string | null>(null);
   const sending = ref(false);
   /** "Nota salvata in kb/inbox/… (L2)" after a "/nota" (D-080): path and label, never the text. */
   const notice = ref<string | null>(null);
+  /** The notices shown inside the chat (I-1), newest last, at most three. */
+  const toasts = ref<Toast[]>([]);
+  let toastSeq = 0;
   /** Calls (D-066): the receipts of the open conversation, the state of the voice, the call in progress. */
   const calls = ref<CallInfo[]>([]);
   const voiceState = ref<string | null>(null);
@@ -651,7 +657,23 @@ export function createChatStore() {
 
   function onLive(message: ServerMessage): void {
     if (message.type === 'ready') {
+      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
+      // At every connection, also after a restart of the core, which keeps it in memory (D-128).
+      void reportThisMac().catch(() => undefined);
       void refreshAll().catch(fail);
+      return;
+    }
+    if (message.type === 'notice') {
+      // One place only: the helper of the Mac, else a system notification (fixed sentence and link), else a toast; nothing for the conversation being read.
+      const view = { hidden: !pageInView() || !document.hasFocus(), openConversation: chat.value?.conversationId ?? null, permission: permissionNow() };
+      const where = noticeWhere(message.conversationId, view, message.helper === true);
+      if (where.system) void showNotice(message.kind, message.conversationId, followLink).catch(() => undefined);
+      if (where.toast) {
+        // The title stays in this page, on this Mac: a toast may name the conversation, a system notification never.
+        const title = conversations.value.find((item) => item.id === message.conversationId)?.title ?? null;
+        toastSeq += 1;
+        toasts.value = pushToast(toasts.value, { id: toastSeq, kind: message.kind, conversationId: message.conversationId, title });
+      }
       return;
     }
     if (message.type === 'delta') {
@@ -751,7 +773,38 @@ export function createChatStore() {
     void Promise.all(work).catch(fail);
   }
 
+  /** The page is in view (I-1): the core pushes nothing while one is. */
+  function pageInView(): boolean {
+    return document.visibilityState === 'visible';
+  }
+
+  function dismissToast(id: number): void {
+    toasts.value = toasts.value.filter((item) => item.id !== id);
+  }
+
+  /** "Apri" on a toast: to its conversation (the home page for a trial). */
+  function openToast(id: number): void {
+    const toast = toasts.value.find((item) => item.id === id);
+    dismissToast(id);
+    if (toast !== undefined) followLink(noticeUrl(toast.conversationId));
+  }
+
+  /** A click on a notice of this page: the address changes and App.vue follows it as after Back. */
+  function followLink(path: string): void {
+    if (window.location.pathname !== path) window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   function start(): void {
+    const tell = (): void => {
+      connection?.sendVisibility(pageInView(), document.hasFocus(), chat.value?.conversationId ?? null);
+    };
+    document.addEventListener('visibilitychange', tell);
+    // Another app in front (D-128): the helper of the Mac shows the notices then.
+    window.addEventListener('focus', tell);
+    window.addEventListener('blur', tell);
+    // Another conversation open: the helper is silent only for the one being read.
+    stopOpenWatch = watch(() => chat.value?.conversationId ?? null, tell);
     // The gateway counts per hour move with the clock, not only with events.
     statusPoll = window.setInterval(() => {
       refreshStatus().catch(() => undefined);
@@ -779,6 +832,9 @@ export function createChatStore() {
           close: () => {
             ws.close();
           },
+          send: (data) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(data);
+          },
         };
         ws.onmessage = (event: MessageEvent) => socket.onmessage?.({ data: event.data });
         ws.onclose = () => socket.onclose?.();
@@ -804,12 +860,13 @@ export function createChatStore() {
   }
 
   function stop(): void {
+    stopOpenWatch?.();
     connection?.close();
     window.clearInterval(statusPoll);
     window.clearTimeout(statusTimer);
   }
 
-  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

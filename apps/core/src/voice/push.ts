@@ -4,11 +4,13 @@ import { request as httpsRequest } from 'node:https';
 import type { Sql } from '../db/client.ts';
 
 /**
- * Web Push without content (D-066, choice 7): the notification only says
- * "Arianna ti chiama", written by the service worker; the request carries no
+ * Web Push without content (D-066, choice 7; I-1): the request carries no
  * body, so no RFC 8291 encryption is needed, only the VAPID header (RFC 8292)
- * signed ES256 with node:crypto. The push services are cloud: the core sends
- * only after the gateway allowed the fixed L0 text on channel `push`.
+ * signed ES256 with node:crypto. The service worker writes the notification
+ * with a fixed sentence: it asks the core which kind it is (a call, a reply,
+ * an approval, a failed task) over the same connection the chat uses, never
+ * through the push service. The push services are cloud: the core sends only
+ * after the gateway allowed the fixed L0 sentence of that kind on channel `push`.
  */
 
 /** The push services of the browsers; any other endpoint is refused (no request to arbitrary hosts). */
@@ -102,16 +104,24 @@ export function isGone(status: number): boolean {
   return status === 404 || status === 410;
 }
 
+/** What a push is about: the service worker learns it from the core, never from the push. */
+export type PushKind = 'call' | 'reply' | 'approval' | 'failure';
+
 export interface Pusher {
   readonly publicKey: string;
   subscribe(subscription: Subscription): Promise<void>;
   unsubscribe(endpoint: string): Promise<void>;
-  /** "Arianna ti chiama" to every subscribed browser: an empty push after the gateway allowed the fixed text. */
-  notify(): Promise<number>;
+  /** An empty push to every subscribed browser, after the gateway allowed the fixed sentence of `kind`. */
+  notify(kind: PushKind, options?: { skip?: ReadonlySet<string> }): Promise<number>;
 }
 
-/** The fixed text the service worker shows; it is what the gateway checks on channel `push`. */
-export const PUSH_TEXT = 'Arianna ti chiama';
+/** The fixed sentences the service worker shows (public/sw.js); what the gateway checks on channel `push`. */
+export const PUSH_TEXTS: Readonly<Record<PushKind, string>> = {
+  call: 'Arianna ti chiama',
+  reply: 'Arianna ha risposto',
+  approval: 'Arianna aspetta una tua decisione',
+  failure: 'Un lavoro è fallito',
+};
 
 export interface PusherOptions {
   sql: Sql;
@@ -119,8 +129,8 @@ export interface PusherOptions {
   key: KeyObject;
   subject: string;
   post?: PushPoster;
-  /** The gateway pass on channel `push`; true when the fixed text may leave. */
-  gate: () => Promise<boolean>;
+  /** The gateway pass on channel `push` for the fixed sentence of a kind; true when it may leave. */
+  gate: (text: string, kind: PushKind) => Promise<boolean>;
   onError?: (error: unknown) => void;
 }
 
@@ -137,17 +147,23 @@ export function createPusher(options: PusherOptions): Pusher {
     async unsubscribe(endpoint) {
       await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint} AND removed_at IS NULL`;
     },
-    async notify() {
-      const subscriptions = await sql<{ endpoint: string }[]>`SELECT endpoint FROM push_subscriptions WHERE removed_at IS NULL ORDER BY id`;
-      if (subscriptions.length === 0 || !(await options.gate())) return 0;
+    async notify(kind, notifyOptions = {}) {
+      const skip = notifyOptions.skip ?? new Set<string>();
+      // The browsers of the Mac while its helper shows the notice (D-128): left out, never a call.
+      const subscriptions = (await sql<{ endpoint: string }[]>`SELECT endpoint FROM push_subscriptions WHERE removed_at IS NULL ORDER BY id`).filter(
+        ({ endpoint }) => kind === 'call' || !skip.has(endpoint),
+      );
+      if (subscriptions.length === 0 || !(await options.gate(PUSH_TEXTS[kind], kind))) return 0;
+      // A call is worth only while it rings; a notice waits a while, and a newer
+      // one of the same kind replaces it at the push service (`topic`).
+      const timing = kind === 'call' ? { ttl: '30', urgency: 'high' } : { ttl: '3600', urgency: 'normal', topic: `arianna-${kind}` };
       let sent = 0;
       for (const { endpoint } of subscriptions) {
         // The table only says https: the host is checked again before anything is sent.
         if (!isPushEndpoint(endpoint)) continue;
         try {
           const status = await post(endpoint, {
-            ttl: '30',
-            urgency: 'high',
+            ...timing,
             authorization: vapidHeader(endpoint, options.subject, options.publicKey, options.key),
           });
           if (isGone(status)) await sql`UPDATE push_subscriptions SET removed_at = now() WHERE endpoint = ${endpoint}`;

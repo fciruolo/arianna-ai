@@ -99,6 +99,9 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
   if (task === undefined) throw new Error(`task ${taskId} does not exist`);
   const conversationId = task.conversationId;
   if (conversationId === null) throw new Error(`task ${taskId} does not answer in a conversation`);
+  // The agent of a direct chat answers in its own conversation (D-111): its reply notifies as Arianna's does (D-126).
+  const [owner] = options.agent === undefined ? [] : await sql<{ agent: string | null }[]>`SELECT agent FROM conversations WHERE id = ${conversationId}`;
+  const direct = options.agent !== undefined && owner?.agent === options.agent;
   const id = randomUUID();
   let seq = 0;
   let finished = false;
@@ -150,7 +153,7 @@ export async function openReply(sql: Sql, taskId: string, options: { runId?: str
           taskId,
           ...(options.runId === undefined ? {} : { runId: options.runId }),
           label: 'L0',
-          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id, ...(options.agent === undefined ? {} : { agent: options.agent }), ...(options.model === undefined ? {} : { model: options.model }) },
+          payload: { conversationId, messageId: row.id, role: 'assistant', replyId: id, ...(options.agent === undefined ? {} : { agent: options.agent }), ...(direct ? { direct: true } : {}), ...(options.model === undefined ? {} : { model: options.model }) },
         });
         return row.id;
       });
