@@ -3,6 +3,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowUp,
+  Bell,
   BrainCircuit,
   Building2,
   Briefcase,
@@ -111,6 +112,7 @@ export const ICONS = {
   focus: Focus,
   pin: Pin,
   unpin: PinOff,
+  bell: Bell,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

@@ -25,6 +25,7 @@ import {
   type SearchTarget,
 } from '../lib/search.ts';
 import type { IconName } from '../icons.ts';
+import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 
 /**
@@ -59,7 +60,6 @@ const ready = computed(() => searchQuery(text.value) !== undefined);
 const announce = computed(() => resultsText(state.value, rows.value.length));
 
 const KIND_ICON: Record<SearchKind, IconName> = { conversation: 'chat', message: 'chat', note: 'thoughts', page: 'knowledge' };
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 let timer: number | undefined;
 let controller: AbortController | undefined;
@@ -154,7 +154,7 @@ function indexOf(row: SearchRow): number {
       </header>
 
       <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-2 py-2.5 text-[13.5px]">
-        <p v-if="!ready" class="px-2 py-4 text-center text-muted">Scrivi almeno 2 caratteri. Fino a L2, come la chat privata.</p>
+        <p v-if="!ready" class="px-2 py-4 text-center text-muted">Scrivi almeno 2 caratteri. Fino a Privato, come la chat privata.</p>
         <p v-else-if="problem !== null" role="alert" class="px-2 text-warn">Non riesco a cercare: {{ problem }}</p>
         <p v-else-if="result !== null && rows.length === 0 && !loading" class="px-2 py-4 text-center text-muted">Nessun risultato.</p>
 
@@ -178,7 +178,7 @@ function indexOf(row: SearchRow): number {
                 <span class="flex items-center gap-2">
                   <span class="min-w-0 flex-1 truncate font-medium">{{ row.title }}</span>
                   <span v-if="row.meta !== null" class="shrink-0 font-mono text-[10.5px] text-muted">{{ row.meta }}</span>
-                  <span class="lab shrink-0" :class="labelClass[row.label]">{{ row.label }}</span>
+                  <LabelBadge class="shrink-0" :label="row.label" />
                 </span>
                 <span v-if="row.snippet !== null" class="mt-0.5 line-clamp-2 block text-[12.5px] leading-snug text-muted">
                   <template v-for="(part, index) in highlightParts(row.snippet, row.highlight)" :key="index">

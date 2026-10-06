@@ -12,7 +12,6 @@ import {
   THOUGHT_STATE_HINT,
   THOUGHT_STATE_TEXT,
 } from '../lib/italian.ts';
-import { LABEL_TEXT } from '../lib/labels.ts';
 import {
   byteLength,
   displayTitle,
@@ -33,6 +32,7 @@ import {
   type NoteSummary,
   type StatusFilter,
 } from '../lib/thoughts.ts';
+import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
 
@@ -87,7 +87,6 @@ const STATUS_FILTERS: { value: StatusFilter; text: string }[] = [
   { value: 'organized', text: 'Riordinati' },
 ];
 
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 function stateOf(item: NoteSummary) {
   return thoughtState(item, now.value, marks.value[item.name]);
@@ -273,7 +272,7 @@ onBeforeUnmount(() => {
           <div class="mb-2.5 flex items-center gap-2">
             <Icon name="thoughts" :size="16" />
             <h1 id="thoughts-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Pensieri</h1>
-            <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">kb/inbox · L2 · resta qui</span>
+            <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">kb/inbox · Privato · resta qui</span>
           </div>
           <form @submit.prevent="save">
             <label for="thought" class="sr-only">Pensiero</label>
@@ -393,7 +392,7 @@ onBeforeUnmount(() => {
               </li>
             </ul>
           </div>
-          <p v-if="hidden > 0" class="font-mono text-[10.5px] text-muted">{{ hidden }} pensieri sopra L2 non sono mostrati.</p>
+          <p v-if="hidden > 0" class="font-mono text-[10.5px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
         </section>
       </div>
     </div>
@@ -415,7 +414,7 @@ onBeforeUnmount(() => {
             {{ note?.title ?? (selected === undefined ? selectedName : displayTitle(selected)) }}
           </h2>
         </div>
-        <span v-if="selected !== undefined" class="lab mt-0.5" :class="labelClass[selected.label]" :title="LABEL_TEXT[selected.label]">{{ selected.label }}</span>
+        <LabelBadge v-if="selected !== undefined" class="mt-0.5" :label="selected.label" />
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi il pensiero" @click="closePanel">
           <Icon name="close" :size="16" />
         </button>

@@ -4,7 +4,7 @@
  * Italian texts of the confirmation card. Ordinary sections are saved one
  * card at a time; privacy ones are prepared, shown, then confirmed.
  */
-import { EXECUTOR_TEXT } from './labels.ts';
+import { EXECUTOR_TEXT, labelWord } from './labels.ts';
 import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
 
 export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
@@ -19,6 +19,13 @@ export interface VoiceValues {
   limits: { callMinutes: number; warnSeconds: number; delegations: number; delegationSeconds: number };
   outgoing: { maxPerDay: number; quietFrom: string; quietTo: string; quietWeekend: boolean; ringSeconds: number; waitingMinutes: number };
   push: { publicKey: string; subject: string } | null;
+}
+
+export interface NotificationsValues {
+  replies: boolean;
+  approvals: boolean;
+  failures: boolean;
+  quiet: string | null;
 }
 
 export interface ProjectValues {
@@ -45,6 +52,8 @@ export interface SettingsValues {
   /** The model that draws a character (D-123): `[sprites] model`, opus when absent (D-132). */
   sprites: 'sonnet' | 'opus' | 'local';
   voice: VoiceValues | null;
+  /** `[notifications]` (I-1); `quiet` "HH:MM-HH:MM" or null. */
+  notifications: NotificationsValues;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectValues[];
@@ -107,7 +116,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'notifications';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -141,6 +150,7 @@ export const SECTION_TEXT: Record<string, string> = {
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
   voice: 'Voce',
+  notifications: 'Notifiche',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
   projects: 'Progetti',
@@ -265,6 +275,44 @@ export function voiceBody(form: VoiceForm): VoiceValues | null {
   return { ...copy(form.values), push: form.push ? { publicKey: form.publicKey.trim(), subject: form.subject.trim() } : null };
 }
 
+/** The Notifiche card (I-1): the three kinds and the quiet hours as two times. */
+export interface NotificationsForm {
+  replies: boolean;
+  approvals: boolean;
+  failures: boolean;
+  quiet: boolean;
+  quietFrom: string;
+  quietTo: string;
+}
+
+const DEFAULT_QUIET = { from: '22:00', to: '07:00' };
+const QUIET = /^(\d{2}:\d{2})-(\d{2}:\d{2})$/;
+
+export function notificationsForm(values: NotificationsValues): NotificationsForm {
+  const match = values.quiet === null ? null : QUIET.exec(values.quiet);
+  return {
+    replies: values.replies,
+    approvals: values.approvals,
+    failures: values.failures,
+    quiet: match !== null,
+    quietFrom: match?.[1] ?? DEFAULT_QUIET.from,
+    quietTo: match?.[2] ?? DEFAULT_QUIET.to,
+  };
+}
+
+export function notificationsBody(form: NotificationsForm): NotificationsValues {
+  return { replies: form.replies, approvals: form.approvals, failures: form.failures, quiet: form.quiet ? `${form.quietFrom}-${form.quietTo}` : null };
+}
+
+/** Why the Notifiche card cannot be saved: quiet hours without two different times. */
+export function notificationsProblem(form: NotificationsForm): string | undefined {
+  if (!form.quiet) return undefined;
+  const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!clock.test(form.quietFrom) || !clock.test(form.quietTo)) return 'Scrivi le due ore del silenzio.';
+  if (form.quietFrom === form.quietTo) return 'Le ore di silenzio devono iniziare e finire a ore diverse.';
+  return undefined;
+}
+
 export interface TelegramForm {
   enabled: boolean;
   chats: number[];
@@ -334,7 +382,7 @@ export interface ChangeLine {
 }
 
 function projectText(project: ProjectValues): string {
-  return `${project.name} (${project.label}, ${project.path})`;
+  return `${project.name} (${labelWord(project.label)}, ${project.path})`;
 }
 
 /** A command as the core runs it: an argument that is empty or holds spaces or quotes is quoted, so ["sh -c x"] never reads as ["sh", "-c", "x"]. */
@@ -380,7 +428,7 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
   if (changes.projects !== undefined) {
     for (const project of changes.projects.added) lines.push({ kind: 'add', text: `Progetto ${projectText(project)}` });
     for (const project of changes.projects.removed) lines.push({ kind: 'remove', text: `Progetto ${projectText(project)}` });
-    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${after.label}, ${after.path}` });
+    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${labelWord(after.label)}, ${after.path}` });
   }
   if (changes.endpoints !== undefined) {
     for (const endpoint of changes.endpoints.added) lines.push({ kind: 'add', text: `Server ${endpointText(endpoint)}` });
@@ -398,18 +446,18 @@ function chatsText(count: number): string {
 /** After the change, who may receive what: every exit, not only the changed ones. */
 export function exitLines(exits: PrivacyExits): string[] {
   const lines: string[] = [];
-  const projects = exits.projects.map((project) => `${project.name} (${project.label})`).join(', ');
+  const projects = exits.projects.map((project) => `${project.name} (${labelWord(project.label)})`).join(', ');
   for (const executor of exits.executors) {
     const name = EXECUTOR_TEXT[executor] ?? executor;
-    lines.push(projects === '' ? `${name} potrà ricevere testi L0-L1 dal gateway; nessun progetto.` : `${name} potrà ricevere testi L0-L1 dal gateway e lavorare in: ${projects}.`);
+    lines.push(projects === '' ? `${name} potrà ricevere testi Pubblici o Interni dal gateway; nessun progetto.` : `${name} potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: ${projects}.`);
   }
   if (exits.executors.length === 0) lines.push('Nessun esecutore cloud: niente esce verso Claude Code o Codex.');
-  lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo L1.`);
+  lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo Interno.`);
   for (const endpoint of exits.endpoints) {
     lines.push(
       endpoint.command === null
-        ? `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro.`
-        : `${endpoint.id} (${endpoint.url}) vede i dati L2 in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
+        ? `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro.`
+        : `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
     );
   }
   return lines;

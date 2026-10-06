@@ -97,8 +97,8 @@ export const PENDING_APPROVAL_ELSEWHERE = 'Serve la tua approvazione: la trovi n
 /** The waiting tasks above L2: counted, never shown. */
 export function hiddenText(count: number): string {
   return count === 1
-    ? 'Un altro task in attesa riguarda dati riservati (L3): non è mostrato qui.'
-    : `Altri ${String(count)} task in attesa riguardano dati riservati (L3): non sono mostrati qui.`;
+    ? 'Un altro task in attesa riguarda dati Segreti: non è mostrato qui.'
+    : `Altri ${String(count)} task in attesa riguardano dati Segreti: non sono mostrati qui.`;
 }
 
 // "Chiudi" on a row (D-109).

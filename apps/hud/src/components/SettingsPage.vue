@@ -37,6 +37,9 @@ import {
   endpointsForm,
   executorsBody,
   MODEL_ROLES,
+  notificationsBody,
+  notificationsForm,
+  notificationsProblem,
   ROLE_TEXT,
   roleOptions,
   rolesBody,
@@ -57,6 +60,7 @@ import {
   type EndpointForm,
   type LocalServerStatus,
   type ModelRole,
+  type NotificationsForm,
   type OrdinarySection,
   type PrivacyProposal,
   type PrivacySection,
@@ -73,6 +77,7 @@ import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
 import Icon from './Icon.vue';
 import ModelEvals from './ModelEvals.vue';
+import NotificationDevice from './NotificationDevice.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
 
@@ -114,6 +119,7 @@ interface Forms {
   agents: AgentsForm;
   sprites: SettingsValues['sprites'];
   voice: VoiceForm;
+  notifications: NotificationsForm;
   executors: string[];
   telegram: TelegramForm;
   projects: ProjectValues[];
@@ -129,6 +135,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     agents: agentsForm(values.agents, agentModels),
     sprites: values.sprites,
     voice: voiceForm(values.voice, defaults),
+    notifications: notificationsForm(values.notifications),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
     projects: values.projects.map((project) => ({ ...project })),
@@ -136,7 +143,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'voice', 'notifications', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -241,6 +248,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
   if (parts.includes('sprites')) values.sprites = current.sprites;
+  if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -717,7 +725,7 @@ watch(active, () => {
                 </select>
               </div>
               <p class="text-xs text-muted">
-                Con Claude, «Genera personaggio» manda verso il cloud, passando dal gateway, nome, descrizione e prompt dell’agente, tono e specializzazione e il tuo suggerimento (L1), e usa
+                Con Claude, «Genera personaggio» manda verso il cloud, passando dal gateway, nome, descrizione e prompt dell’agente, tono e specializzazione e il tuo suggerimento (Interno), e usa
                 la tua quota; serve Claude attivo fra gli esecutori cloud. Con il modello locale non esce nulla.
               </p>
               <p class="text-xs text-muted">
@@ -828,6 +836,26 @@ watch(active, () => {
               <p v-else class="text-sm text-muted">Le chiamate sono spente: accendile per scegliere voce, limiti e orari.</p>
             </SettingsCard>
 
+            <!-- Notifications (I-1): kinds and quiet hours in arianna.toml; this browser below -->
+            <SettingsCard v-if="active === 'notifications'" id="notifications" title="Notifiche" kind="now" :changed="changed('notifications')" :saved="saved === 'notifications'" :invalid="notificationsProblem(forms.notifications)" :busy="busy === 'notifications'" :error="errors.notifications" @cancel="reset('notifications')" @save="save('notifications')">
+              <p class="text-xs text-muted">Quando la chat risponde e non la stai guardando. Valgono per ogni browser e telefono che hai consentito qui sotto.</p>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte nelle chat</label>
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.approvals" type="checkbox" role="switch" class="switch" />Approvazioni in attesa</label>
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.failures" type="checkbox" role="switch" class="switch" />Lavori falliti</label>
+              </div>
+              <h3 class="hud-title mt-1 flex items-center gap-2">
+                Ore di silenzio
+                <input v-model="forms.notifications.quiet" type="checkbox" role="switch" class="switch" aria-label="Ore di silenzio accese" />
+              </h3>
+              <div v-if="forms.notifications.quiet" class="grid grid-cols-2 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.notifications.quietFrom" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.notifications.quietTo" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+              </div>
+              <p class="text-xs text-muted">{{ forms.notifications.quiet ? 'Ora locale; può passare la mezzanotte (per esempio dalle 22:00 alle 07:00).' : 'Nessuna ora di silenzio.' }} Le chiamate seguono i loro orari, in Voce.</p>
+            </SettingsCard>
+            <NotificationDevice v-if="active === 'notifications'" />
+
             <!-- Agents (D-116, D-133): the cards on the left, the chosen agent in tabs, one bar to save -->
             <AgentsSettings
               v-if="active === 'agents'"
@@ -862,7 +890,7 @@ watch(active, () => {
                   <input v-model="forms.executors" type="checkbox" :value="executor" />{{ EXECUTOR_TEXT[executor] ?? executor }}
                 </label>
               </div>
-              <p class="text-xs text-muted">Un esecutore acceso può ricevere testi L0-L1 passati dal gateway e lavorare nei progetti qui sotto. Una delega già partita finisce con i valori di prima.</p>
+              <p class="text-xs text-muted">Un esecutore acceso può ricevere testi Pubblici o Interni passati dal gateway e lavorare nei progetti qui sotto. Una delega già partita finisce con i valori di prima.</p>
             </SettingsCard>
 
             <!-- Telegram: off by the user's choice (D-110, question 12), not in the settings index, so unreachable; kept to turn back on -->
@@ -884,7 +912,7 @@ watch(active, () => {
                     <button type="submit" class="btn px-2.5 py-1 text-xs" :disabled="chatId(newChat) === undefined"><Icon name="new" :size="14" />Aggiungi</button>
                   </form>
                 </div>
-                <p class="text-xs text-muted">Il bot risponde solo a queste chat, al massimo con dati L1 (D-044). Il token del bot sta nel vault e non compare qui.</p>
+                <p class="text-xs text-muted">Il bot risponde solo a queste chat, al massimo con dati Interni (D-044). Il token del bot sta nel vault e non compare qui.</p>
               </template>
               <p v-else class="text-sm text-muted">Il bot di Telegram è spento.</p>
             </SettingsCard>
@@ -896,8 +924,8 @@ watch(active, () => {
                   <Icon name="project" :size="16" class="text-muted" />
                   <span class="font-medium">{{ project.name }}</span>
                   <select v-model="project.label" class="field px-1.5 py-0.5 font-mono text-[11px]" :aria-label="`Etichetta di ${project.name}`">
-                    <option value="L0">L0</option>
-                    <option value="L1">L1</option>
+                    <option value="L0">Pubblico</option>
+                    <option value="L1">Interno</option>
                   </select>
                   <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted" :title="project.path">{{ project.path }}</span>
                   <button type="button" class="btn px-2 py-1 text-xs" @click="forms.projects.splice(index, 1)"><Icon name="delete" :size="14" />Togli</button>
@@ -907,13 +935,13 @@ watch(active, () => {
                 <input v-model="newProject.name" class="field px-2 py-1.5 text-[13px]" placeholder="nome" aria-label="Nome del progetto" />
                 <input v-model="newProject.path" class="field px-2 py-1.5 font-mono text-xs" placeholder="~/Progetti/sito o repos/sito" aria-label="Cartella del progetto" />
                 <select v-model="newProject.label" class="field px-2 py-1.5 font-mono text-xs" aria-label="Etichetta del progetto">
-                  <option value="L0">L0</option>
-                  <option value="L1">L1</option>
+                  <option value="L0">Pubblico</option>
+                  <option value="L1">Interno</option>
                 </select>
                 <button type="submit" class="btn px-2.5 py-1.5 text-xs" :disabled="!projectAddable"><Icon name="new" :size="14" />Aggiungi</button>
               </form>
               <p class="text-xs text-muted">
-                Un esecutore cloud vede i file del progetto: l’etichetta dice quanto sono riservati (solo L0 o L1). Un progetto aggiunto da qui non crea il link
+                Un esecutore cloud vede i file del progetto: l’etichetta dice quanto sono riservati (solo Pubblico o Interno). Un progetto aggiunto da qui non crea il link
                 <code class="font-mono">repos/&lt;nome&gt;</code> del wizard: conta la cartella.
               </p>
             </SettingsCard>
@@ -979,7 +1007,7 @@ watch(active, () => {
               </div>
               <button type="button" class="btn self-start px-2.5 py-1 text-xs" @click="addEndpoint"><Icon name="new" :size="14" />Aggiungi un server</button>
               <p class="text-xs text-muted">
-                Un server locale vede i dati L2 in chiaro e il nucleo esegue il suo comando: il comando non deve contenere segreti, perché è mostrato qui. Cambiare indirizzo o comando
+                Un server locale vede i dati Privati in chiaro e il nucleo esegue il suo comando: il comando non deve contenere segreti, perché è mostrato qui. Cambiare indirizzo o comando
                 riavvia quel server.
               </p>
             </template>
@@ -989,7 +1017,7 @@ watch(active, () => {
           <SettingsCard v-if="active === 'labels'" id="labels" title="Regole di etichetta" kind="read">
             <p class="text-xs text-muted">Le regole di etichetta e il gateway si cambiano solo a mano, nel file <code class="font-mono">config/labels.toml</code>.</p>
             <pre v-if="view.labels !== null" class="max-h-[320px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap">{{ view.labels }}</pre>
-            <p v-else class="text-sm text-danger">Il file delle etichette non si legge: senza regole tutto è L2.</p>
+            <p v-else class="text-sm text-danger">Il file delle etichette non si legge: senza regole tutto è Privato.</p>
           </SettingsCard>
         </template>
 

@@ -54,7 +54,7 @@ test('pendingKindText names privacy, budget, folder; an action by its action, el
 
 test('pendingAskText never shows the declassified text', () => {
   const ask = pendingAskText({ kind: 'declassify', action: 'declassify', detail: { from: 'L2', to: 'L1', text: 'segreto di prova' } });
-  assert.equal(ask, 'Far uscire un testo declassato (L2 → L1) dalla macchina');
+  assert.equal(ask, 'Far uscire un testo declassato (Privato → Interno) dalla macchina');
   assert.ok(!ask.includes('segreto'));
   assert.equal(pendingAskText({ kind: 'declassify', action: 'declassify', detail: {} }), 'Far uscire un testo declassato dalla macchina');
 });
@@ -233,7 +233,7 @@ test('pendingItems: an approval without a conversation has no anchor; an untitle
 test('stoppedText and hiddenText', () => {
   assert.equal(stoppedText('finished without evidence'), 'Si è fermato: finito senza prove');
   assert.equal(stoppedText(null), 'Si è fermato e aspetta una tua risposta');
-  assert.match(hiddenText(1), /^Un altro task in attesa riguarda dati riservati \(L3\)/);
+  assert.match(hiddenText(1), /^Un altro task in attesa riguarda dati Segreti/);
   assert.match(hiddenText(2), /^Altri 2 task in attesa/);
 });
 
@@ -292,7 +292,7 @@ test('routerReasonText translates every wait of the router', () => {
 test('routerReasonText adds the notes it knows and leaves out the others', () => {
   assert.equal(
     routerReasonText(`${HEAD}; context not issued by the policy, read as L2; cloud excluded: privacy; local/qwen-large`),
-    'qwen-large su modello locale (contesto non etichettato dalla policy, trattato come L2; cloud escluso per privacy)',
+    'qwen-large su modello locale (contesto non etichettato dalla policy, trattato come Privato; cloud escluso per privacy)',
   );
   assert.equal(
     routerReasonText(`${HEAD}; preferred opus excluded: privacy; preferred fable not installed; something new; claude/sonnet`),

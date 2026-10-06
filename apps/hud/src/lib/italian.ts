@@ -104,7 +104,7 @@ const ERRORS: Record<string, string> = {
   'only a system chat takes the question of a task': 'Solo una chat di sistema può allegare la domanda di un task.',
   'the task has no question to attach': 'Questo task non ha una domanda da allegare.',
   // The notes of kb/inbox (D-086, the "Pensieri" page of D-090).
-  'note not found': 'Nota non trovata: forse è stata spostata o è sopra L2.',
+  'note not found': 'Nota non trovata: forse è stata spostata o è sopra Privato.',
   'the note is too large to read': 'La nota è troppo grande per essere letta qui.',
   'the note is already organized': 'La nota è già stata riordinata.',
   'notes cannot be organized now': 'Il riordino delle note non è disponibile adesso: manca il modello locale.',
@@ -141,7 +141,7 @@ export function errorText(cause: unknown): string {
   if (/^the trial is already /.test(cause.message)) return 'Questa prova è già finita.';
   const note = /^text is longer than (\d+) KiB$/.exec(cause.message);
   if (note?.[1] !== undefined) return `La nota supera ${note[1]} KiB.`;
-  if (/^kb\/inbox is labeled L\d: captures stop at L2$/.test(cause.message)) return 'La cartella kb/inbox è sopra L2: la nota non è stata salvata.';
+  if (/^kb\/inbox is labeled L\d: captures stop at L2$/.test(cause.message)) return 'La cartella kb/inbox è sopra Privato: la nota non è stata salvata.';
   if (cause.status === 403) return 'Il nucleo ha rifiutato la richiesta: apri la chat dal suo indirizzo.';
   if (cause.status >= 500) return 'Errore del nucleo: riprova fra poco.';
   return 'Richiesta non valida.';
@@ -411,7 +411,7 @@ export const COPY_TEXT: Record<'idle' | CopyResult, string> = {
 export const SAVE_TO_INBOX_TEXT = 'Salva in inbox';
 export const SAVE_TO_INBOX_HINT = 'Salva il testo di questo messaggio come nota in kb/inbox, senza modello';
 export const MESSAGE_TOO_LARGE_TEXT = 'Il messaggio è più lungo di 64 KiB: troppo per una nota, non l’ho salvato.';
-export const MESSAGE_ABOVE_L2_TEXT = 'Il messaggio è L3: kb/inbox arriva fino a L2, non l’ho salvato.';
+export const MESSAGE_ABOVE_L2_TEXT = 'Il messaggio è Segreto: kb/inbox arriva fino a Privato, non l’ho salvato.';
 export const MESSAGE_EMPTY_TEXT = 'Il messaggio è vuoto: non c’è niente da salvare.';
 
 /** The "Pensieri" page (D-090). */

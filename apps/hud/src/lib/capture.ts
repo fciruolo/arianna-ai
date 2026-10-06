@@ -1,5 +1,6 @@
 import { resolveDraft, stripLeading } from './commands.ts';
 import { MESSAGE_ABOVE_L2_TEXT, MESSAGE_EMPTY_TEXT, MESSAGE_TOO_LARGE_TEXT } from './italian.ts';
+import { labelWord } from './labels.ts';
 import type { Label } from './types.ts';
 
 /**
@@ -45,7 +46,7 @@ export function commandError(draft: string): string | undefined {
 
 /** What the chat says once the note is saved: path and label, never the text. */
 export function savedText(note: { path: string; label: string }): string {
-  return `Nota salvata in ${note.path} (${note.label})`;
+  return `Nota salvata in ${note.path} (${labelWord(note.label)})`;
 }
 
 /** The core's limit on a captured text (MAX_CAPTURE_BYTES in apps/core/src/capture.ts). */

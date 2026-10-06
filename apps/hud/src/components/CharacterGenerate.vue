@@ -127,7 +127,7 @@ async function keep(replace: boolean): Promise<void> {
     <div v-if="open" class="flex flex-col gap-2.5 rounded-[10px] border border-line-strong p-3">
       <p class="text-xs" :class="cloud ? 'text-warn' : 'text-muted'">
         <template v-if="cloud">
-          Verso {{ modelText }} escono, passando dal gateway: nome, descrizione e prompt dell’agente, tono e specializzazione della sua personalità e il tuo suggerimento (L1, nessun dato personale).
+          Verso {{ modelText }} escono, passando dal gateway: nome, descrizione e prompt dell’agente, tono e specializzazione della sua personalità e il tuo suggerimento (Interno, nessun dato personale).
           Ogni «Genera» o «Rigenera» usa la tua quota di Claude.
         </template>
         <template v-else>Disegna il modello locale: nome, descrizione, prompt, personalità e suggerimento restano su questo computer.</template>
@@ -142,7 +142,7 @@ async function keep(replace: boolean): Promise<void> {
             <PixelAgent :choice="previewChoice" :src="dataUrl" pose="idle" :scale="2" label="Anteprima, a riposo" />
             <PixelAgent :choice="previewChoice" :src="dataUrl" pose="working" :scale="2" label="Anteprima, al lavoro" />
           </div>
-          <span class="text-xs text-muted">Disegnato da {{ SPRITE_MODEL_TEXT[drawn.model] ?? drawn.model }} · L1</span>
+          <span class="text-xs text-muted">Disegnato da {{ SPRITE_MODEL_TEXT[drawn.model] ?? drawn.model }} · Interno</span>
         </div>
         <SheetPreview :src="dataUrl" :rows="drawn.rows" />
         <label class="flex flex-col gap-1 text-xs text-muted sm:max-w-xs">

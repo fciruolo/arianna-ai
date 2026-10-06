@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avvisi nella chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Tokens copied from apps/hud/src/style.css (dark theme first, light below). */
+  :root {
+    --bg: #0a1316; --surface: #0e1b1f; --raised: #12242a; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #7f9b98; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c133;
+    --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796;
+    --speech: #f4f1e8; --speech-ink: #24302e; --shadow: 0 18px 40px #00000073;
+    --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
+    --font-hud: "Chakra Petch", "Eurostile", "Arial Narrow", sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f4f0; --surface: #fbfaf7; --raised: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --accent: #23887c; --accent-ink: #ffffff; --glow: #23887c22;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466;
+    --speech: #ffffff; --speech-ink: #24302e; --shadow: 0 18px 40px #24302e29;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-sans); }
+  header.page { max-width: 1100px; margin: 0 auto; padding: 28px 16px 8px; }
+  h1 { font: 600 20px/1.2 var(--font-hud); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; }
+  p.lead { color: var(--muted); margin: 0 0 14px; max-width: 760px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { font: 500 13px var(--font-sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 9px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 60px; display: grid; gap: 22px; }
+  section.option { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+  section.option > header { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  section.option h2 { font: 600 13px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; margin: 0; }
+  section.option header p { margin: 0; color: var(--muted); font-size: 13.5px; flex: 1 1 320px; }
+  /* A fake chat behind each toast, so the toast is seen where it would live. */
+  .stage { position: relative; height: 300px; overflow: hidden; background:
+      linear-gradient(var(--bg), var(--bg)) padding-box; }
+  .fake-chat { position: absolute; inset: 0; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; opacity: .55; }
+  .fake-chat .msg { max-width: 60%; padding: 9px 13px; border-radius: 14px; background: var(--raised); border: 1px solid var(--line); font-size: 13.5px; }
+  .fake-chat .msg.me { align-self: flex-end; background: #2a8f84; color: #f1fbf9; border: 0; }
+  .note { padding: 10px 16px 14px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); }
+
+  /* The pixel head of Arianna: the first frame of her sheet (16×32), top half, scaled ×3. */
+  .head { width: 48px; height: 48px; flex: none; background: url("../../apps/hud/characters/originali/arianna.png") 0 0 / 336px 384px no-repeat; image-rendering: pixelated; }
+  .body { width: 48px; height: 96px; flex: none; background: url("../../apps/hud/characters/originali/arianna.png") 0 0 / 336px 384px no-repeat; image-rendering: pixelated; }
+
+  /* Kind colours. */
+  .reply { --kind: var(--accent); }
+  .approval { --kind: var(--warn); }
+  .failure { --kind: var(--danger); }
+
+  /* A: HUD card, bottom right, a bar that empties before it closes. */
+  .a { position: absolute; right: 18px; bottom: 18px; width: min(360px, calc(100% - 36px)); display: flex; gap: 12px; padding: 14px 14px 16px;
+       background: var(--raised); border: 1px solid var(--line-strong); border-left: 3px solid var(--kind); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 4px var(--glow);
+       animation: a-in .38s cubic-bezier(.2,.9,.3,1.2) both; overflow: hidden; }
+  .a .head { border-radius: 10px; background-color: color-mix(in srgb, var(--kind) 16%, transparent); }
+  .a .kicker { font: 600 10.5px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--kind); }
+  .a .title { font-weight: 600; margin: 5px 0 2px; }
+  .a .sub { color: var(--muted); font-size: 13px; }
+  .a .actions { display: flex; gap: 6px; margin-top: 10px; }
+  .a .actions .go { background: var(--kind); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .a .x { position: absolute; top: 8px; right: 8px; border: 0; background: none; color: var(--muted); padding: 4px 6px; }
+  .a .timer { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--kind); animation: drain 6s linear both; }
+  @keyframes a-in { from { transform: translateY(24px) scale(.96); opacity: 0; } }
+  @keyframes drain { from { width: 100%; } to { width: 0; } }
+
+  /* B: Arianna peeks in from the bottom right with a speech bubble. */
+  .b { position: absolute; right: 22px; bottom: 0; display: flex; align-items: flex-end; gap: 10px; animation: b-in .5s cubic-bezier(.2,.9,.3,1.3) both; }
+  .b .bubble { position: relative; margin-bottom: 60px; max-width: 260px; padding: 11px 14px; background: var(--speech); color: var(--speech-ink); border-radius: 14px 14px 4px 14px;
+               box-shadow: var(--shadow); font-size: 14px; border: 2px solid var(--kind); }
+  .b .bubble b { display: block; font: 600 10.5px/1 var(--font-hud); letter-spacing: .14em; text-transform: uppercase; color: var(--kind); margin-bottom: 5px; filter: brightness(.8); }
+  .b .bubble .link { display: inline-block; margin-top: 6px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .b .body { transform: scale(1.5); transform-origin: bottom right; animation: bob 1.6s ease-in-out infinite; }
+  @keyframes b-in { from { transform: translateY(110%); } }
+  @keyframes bob { 50% { transform: scale(1.5) translateY(-3px); } }
+
+  /* C: a pill at the top centre, like the island of a phone; wider on hover. */
+  .c { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 16px 6px 6px;
+       background: #0b1214; color: #e9f4f2; border-radius: 999px; box-shadow: var(--shadow); animation: c-in .45s cubic-bezier(.2,.9,.3,1.25) both; white-space: nowrap; }
+  .c .head { width: 32px; height: 32px; background-size: 224px 256px; border-radius: 50%; background-color: color-mix(in srgb, var(--kind) 30%, #0b1214); }
+  .c .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kind); box-shadow: 0 0 10px var(--kind); }
+  .c .more { color: #9fb8b5; font-size: 13px; max-width: 0; overflow: hidden; transition: max-width .3s; }
+  .c:hover .more { max-width: 260px; }
+  @keyframes c-in { from { transform: translateX(-50%) translateY(-40px) scale(.7); opacity: 0; } }
+
+  .stack { display: grid; gap: 10px; }
+  @media (max-width: 640px) { .stage { height: 340px; } .b .bubble { max-width: 190px; } }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Avvisi nella chat, I-1</h1>
+  <p class="lead">Tre stili per l'avviso che la chat mostra da sola quando è davanti a te (quando la scheda è nascosta resta la notifica di macOS). L'avviso non esce dal Mac, quindi può dire anche il <strong>titolo della conversazione</strong>: nella notifica di sistema invece non compare mai. Dati inventati.</p>
+  <div class="bar">
+    <span style="color:var(--muted);font-size:13px">Tipo:</span>
+    <button data-kind="reply">Risposta</button>
+    <button data-kind="approval">Approvazione</button>
+    <button data-kind="failure">Lavoro fallito</button>
+    <span style="width:14px"></span>
+    <button id="theme">Tema chiaro / scuro</button>
+  </div>
+</header>
+<main>
+  <section class="option">
+    <header><h2>A · Scheda HUD</h2><p>In basso a destra, nello stile delle schede della chat: testa pixel di Arianna, colore per tipo, pulsanti, barra che si svuota e la chiude dopo 6 secondi (si ferma al passaggio del mouse).</p></header>
+    <div class="stage" data-style="a"></div>
+    <div class="note">Sobria e leggibile; più avvisi si impilano uno sopra l'altro.</div>
+  </section>
+  <section class="option">
+    <header><h2>B · Arianna si affaccia</h2><p>Il personaggio sale dal bordo in basso e parla in un fumetto, come nell'ufficio pixel. Il testo cambia con il tipo e con il tono scelto per Arianna.</p></header>
+    <div class="stage" data-style="b"></div>
+    <div class="note">La più "viva"; occupa più spazio, meglio una alla volta.</div>
+  </section>
+  <section class="option">
+    <header><h2>C · Pillola in alto</h2><p>Una capsula scura al centro in alto, come l'isola del telefono: personaggio, puntino colorato, una riga. Passandoci sopra si allarga e mostra il titolo della conversazione.</p></header>
+    <div class="stage" data-style="c"></div>
+    <div class="note">La più discreta; non copre i messaggi.</div>
+  </section>
+</main>
+<script>
+  const TEXT = {
+    reply: { kicker: 'Risposta', title: 'Arianna ha risposto', conv: 'Preventivo cucina finta', say: 'Ho finito! Ti ho risposto in “Preventivo cucina finta”.', go: 'Apri' },
+    approval: { kicker: 'Approvazione', title: 'Arianna aspetta una tua decisione', conv: 'Email al fornitore finto', say: 'Mi serve un tuo sì per “Email al fornitore finto”.', go: 'Decidi' },
+    failure: { kicker: 'Lavoro fallito', title: 'Un lavoro è fallito', conv: 'Riordino delle note', say: 'Ops, “Riordino delle note” non è andato. Vuoi vedere?', go: 'Vedi' },
+  };
+  const FAKE = '<div class="fake-chat"><div class="msg">Ecco il riepilogo della settimana: tre note nuove, un promemoria.</div><div class="msg me">Grazie! Prepara anche il preventivo.</div><div class="msg">Ci lavoro.</div></div>';
+  const render = {
+    a: (k, t) => `<div class="a ${k}" role="status"><div class="head"></div><div><div class="kicker">${t.kicker} · ${t.conv}</div><div class="title">${t.title}</div><div class="sub">Adesso</div><div class="actions"><button class="go">${t.go}</button><button>Dopo</button></div></div><button class="x" aria-label="Chiudi">✕</button><div class="timer"></div></div>`,
+    b: (k, t) => `<div class="b ${k}" role="status"><div class="bubble"><b>${t.kicker}</b>${t.say}<br><span class="link">${t.go}</span></div><div class="body"></div></div>`,
+    c: (k, t) => `<div class="c ${k}" role="status"><div class="head"></div><span class="dot"></span><span>${t.title}</span><span class="more">· ${t.conv}</span></div>`,
+  };
+  function show(kind) {
+    for (const stage of document.querySelectorAll('.stage')) {
+      stage.innerHTML = FAKE + render[stage.dataset.style](kind, TEXT[kind]);
+    }
+  }
+  for (const button of document.querySelectorAll('[data-kind]')) button.addEventListener('click', () => show(button.dataset.kind));
+  document.getElementById('theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+  });
+  show('reply');
+</script>
+</body>
+</html>
