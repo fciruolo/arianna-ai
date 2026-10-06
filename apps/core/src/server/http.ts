@@ -45,7 +45,8 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { browsableProjects, listProjectDir, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit } from '../project-browser.ts';
+import { browsableProjects, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, serviceStates } from '../project-browser.ts';
+import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
@@ -136,6 +137,8 @@ export interface ApiServerOptions {
    * where the preview of a file changed by the Coder is read (D-082).
    */
   approvedProjects?: () => readonly Project[];
+  /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
+  services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
   devProgress?: DevProgressApi;
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
@@ -304,6 +307,7 @@ interface RouteOptions {
   approvedProjects: () => readonly Project[];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
+  services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   onError: (error: unknown) => void;
 }
@@ -827,12 +831,68 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule }: RouteOptions): Route[] {
+/**
+ * The tab Servizi (D-134, tappa 2): the commands the project declares, each
+ * started or stopped by name after the user's confirmation in the page; the
+ * log of a run, from memory. Never a command written in the request.
+ */
+function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project[], services: ServiceManager | undefined): Route[] {
+  const need = (): ServiceManager => {
+    if (services === undefined) throw new HttpError(404, 'not found');
+    return services;
+  };
+  const projectParam = (params: Params): string => {
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  const serviceParam = (value: unknown): string => {
+    if (typeof value !== 'string' || !/^(?:package\.json|compose|Makefile):[A-Za-z0-9][\w:.-]{0,63}$/.test(value)) throw new HttpError(400, 'service must be one of the project');
+    return value;
+  };
+  const act = (verb: 'start' | 'stop') =>
+    route('POST', `/api/browse/:project/services/${verb}`, async (request, _url, params) => {
+      const manager = need();
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['service', 'fingerprint']);
+      const id = serviceParam(body.service);
+      // A start runs what the confirmation showed, or nothing: the fingerprint of the command and its script.
+      const fingerprint = body.fingerprint;
+      if (fingerprint !== undefined && (typeof fingerprint !== 'string' || !/^[0-9a-f]{16}$/.test(fingerprint))) throw new HttpError(400, 'fingerprint must be the one of the list');
+      if (verb === 'start' && fingerprint === undefined) throw new HttpError(400, 'fingerprint must be the one of the list');
+      const { root, list } = await serviceStates(approvedProjects(), name, manager);
+      const service = pickService(list, id, fingerprint);
+      // Never while the Coder works there: it may be rewriting the scripts.
+      if (verb === 'start') await notBusy(sql, name);
+      if (verb === 'start') manager.start(name, root, service);
+      else manager.stop(name, root, service);
+      return { body: { run: manager.run(name, id) ?? null } };
+    });
+  return [
+    route('GET', '/api/browse/:project/services', async (_request, _url, params) => {
+      const manager = need();
+      const { list } = await serviceStates(approvedProjects(), projectParam(params), manager);
+      return { body: { services: list } };
+    }),
+    route('GET', '/api/browse/:project/services/log', (_request, url, params) => {
+      const manager = need();
+      const name = projectParam(params);
+      const id = serviceParam(url.searchParams.get('service'));
+      return Promise.resolve({ body: { run: manager.run(name, id) ?? null } });
+    }),
+    act('start'),
+    act('stop'),
+  ];
+}
+
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule, services }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks),
+    ...projectServiceRoutes(sql, approvedProjects, services),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1375,6 +1435,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { invalid: 400, 'not-found': 404, 'above-clearance': 403, conflict: 409, changed: 409, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };
@@ -1456,6 +1517,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
+    services: options.services,
     leaveRule: options.leaveRule,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));

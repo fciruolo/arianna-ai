@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { listBrowsableProjects, listProjectDir, openProjectFile, readCommitDiff, readProjectFile, readProjectGit } from '../lib/api.ts';
+import { listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, serviceLog, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   agoText,
   browseErrorText,
   changeMark,
   childPath,
+  confirmText,
+  endedText,
   extensionOf,
   FILE_ERROR_TEXT,
   fileBadge,
   firstChangedLine,
   highlightLine,
+  serviceStateText,
   SHUT_TEXT,
   sizeText,
   vscodeUrl,
@@ -20,6 +23,8 @@ import {
   type CommitDiff,
   type ProjectFile,
   type ProjectGit,
+  type ServiceLog,
+  type ServiceState,
   type TreeEntry,
 } from '../lib/projects.ts';
 import Icon from './Icon.vue';
@@ -35,7 +40,7 @@ const projects = ref<BrowsableProject[] | null>(null);
 const chosen = ref<string | null>(null);
 const project = computed(() => projects.value?.find((item) => item.name === chosen.value) ?? null);
 const switcherOpen = ref(false);
-const tab = ref<'file' | 'git'>('file');
+const tab = ref<'file' | 'git' | 'svc'>('file');
 const problem = ref<string | null>(null);
 
 // Files
@@ -54,6 +59,89 @@ const gitProblem = ref<string | null>(null);
 const commit = ref<string | null>(null);
 const diff = ref<CommitDiff | null>(null);
 const diffProblem = ref<string | null>(null);
+
+// Services (D-134, tappa 2): only what the project declares, each start and stop confirmed here.
+const services = ref<ServiceState[] | null>(null);
+const servicesProblem = ref<string | null>(null);
+const chosenService = ref<string | null>(null);
+const log = ref<ServiceLog | null>(null);
+const confirming = ref<{ service: ServiceState; stop: boolean } | null>(null);
+const acting = ref(false);
+let poll: number | undefined;
+
+async function loadServices(): Promise<void> {
+  if (project.value === null) return;
+  const name = project.value.name;
+  try {
+    const found = await listProjectServices(name);
+    if (chosen.value !== name) return;
+    services.value = found;
+    servicesProblem.value = null;
+    if (chosenService.value === null && found[0] !== undefined) chosenService.value = found.find((item) => item.run !== null)?.id ?? found[0].id;
+  } catch (cause) {
+    if (chosen.value === name) servicesProblem.value = browseErrorText(cause);
+  }
+}
+
+async function loadLog(): Promise<void> {
+  if (project.value === null || chosenService.value === null) return;
+  const id = chosenService.value;
+  try {
+    const found = await serviceLog(project.value.name, id);
+    if (chosenService.value === id) log.value = found;
+  } catch {
+    // The next tick tries again.
+  }
+}
+
+async function confirmAction(): Promise<void> {
+  if (project.value === null || confirming.value === null) return;
+  const { service, stop } = confirming.value;
+  acting.value = true;
+  try {
+    const run = stop ? await stopService(project.value.name, service.id) : await startService(project.value.name, service.id, service.fingerprint);
+    chosenService.value = service.id;
+    log.value = run;
+    confirming.value = null;
+    await loadServices();
+  } catch (cause) {
+    servicesProblem.value = browseErrorText(cause);
+    confirming.value = null;
+    await loadServices();
+  } finally {
+    acting.value = false;
+  }
+}
+
+const serviceGroups = computed(() => {
+  const groups = new Map<string, ServiceState[]>();
+  for (const service of services.value ?? []) groups.set(service.file, [...(groups.get(service.file) ?? []), service]);
+  return [...groups.entries()];
+});
+const shownService = computed(() => services.value?.find((item) => item.id === chosenService.value) ?? null);
+// The dialog takes the focus, so that Esc closes it at once.
+const cancelButton = ref<HTMLButtonElement | null>(null);
+watch(confirming, async (now) => {
+  if (now === null) return;
+  await nextTick();
+  cancelButton.value?.focus();
+});
+const confirmation = computed(() => (confirming.value === null ? null : confirmText(confirming.value.service, confirming.value.stop)));
+
+watch(chosenService, () => {
+  log.value = null;
+  void loadLog();
+});
+onMounted(() => {
+  poll = window.setInterval(() => {
+    if (tab.value !== 'svc' || document.hidden) return;
+    void loadLog();
+    void loadServices();
+  }, 2000);
+});
+onBeforeUnmount(() => {
+  window.clearInterval(poll);
+});
 
 const currentBranch = computed(() => git.value?.branches.find((branch) => branch.current)?.name ?? null);
 const changes = computed(() => git.value?.changes ?? []);
@@ -158,6 +246,9 @@ function choose(name: string): void {
   git.value = null;
   commit.value = null;
   diff.value = null;
+  services.value = null;
+  chosenService.value = null;
+  log.value = null;
   void loadFolder('');
   void loadGit();
 }
@@ -174,6 +265,7 @@ onMounted(async () => {
 
 watch(tab, (now) => {
   if (now === 'git') void loadGit();
+  if (now === 'svc') void loadServices();
 });
 
 /** The rows of the tree as they are open now: depth, path and entry. */
@@ -277,12 +369,19 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <span class="hud-title text-[10px]">Modifiche</span>
             <span class="font-mono text-[13px]" :class="changes.length > 0 ? 'text-warn' : ''">{{ git === null ? '…' : changes.length === 1 ? '1 file' : `${String(changes.length)} file` }}</span>
           </button>
+          <button type="button" class="grid gap-1 border-l border-line px-4 py-2 text-left hover:bg-surface-2" @click="tab = 'svc'">
+            <span class="hud-title text-[10px]">Servizi</span>
+            <span class="flex items-center gap-1.5 font-mono text-[13px]"
+              ><span class="size-2 rounded-full" :class="(services ?? []).some((item) => item.on) ? 'bg-ok' : 'bg-muted/50'"></span
+              >{{ services === null ? 'apri' : `${String(services.filter((item) => item.on).length)} accesi su ${String(services.length)}` }}</span
+            >
+          </button>
         </div>
       </header>
 
       <nav class="flex items-end gap-1 border-b border-line" role="tablist" aria-label="Schede del progetto">
         <button
-          v-for="item in [{ id: 'file', text: 'File' }, { id: 'git', text: 'Git' }] as const"
+          v-for="item in [{ id: 'file', text: 'File' }, { id: 'git', text: 'Git' }, { id: 'svc', text: 'Servizi' }] as const"
           :key="item.id"
           type="button"
           role="tab"
@@ -293,7 +392,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         >
           {{ item.text }}
         </button>
-        <span class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Sola lettura: niente modifiche, checkout né commit da qui</span>
+        <span v-if="tab === 'svc'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="play" :size="13" />Avvia e ferma con la tua conferma, ogni volta</span>
+        <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Sola lettura: niente modifiche, checkout né commit da qui</span>
       </nav>
 
       <!-- FILE: the tree and the file, one split pane -->
@@ -366,6 +466,73 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <pre v-else-if="file" class="m-0 py-3 font-mono text-[12.5px] leading-[1.7]"><span v-for="(line, at) in fileLines" :key="at" class="flex"><span class="w-12 shrink-0 border-r-2 pr-3.5 mr-3.5 text-right text-muted/70 select-none" :class="changedHere === 'A' ? 'border-ok' : 'border-transparent'">{{ at + 1 }}</span><span class="whitespace-pre pr-4"><span v-for="(token, index) in line" :key="index" :class="tokenClass[token.kind]">{{ token.text }}</span></span></span></pre>
           </div>
         </div>
+      </div>
+
+      <!-- SERVIZI: the cards by file on the left, the log of the chosen one on the right -->
+      <div v-else-if="tab === 'svc'" class="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]">
+        <div>
+          <p v-if="servicesProblem" class="mb-3 text-sm text-danger" role="alert">{{ servicesProblem }}</p>
+          <p v-if="services === null" class="text-sm text-muted">Leggo i servizi…</p>
+          <p v-else-if="services.length === 0" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm text-muted">
+            Questo progetto non dichiara servizi: niente script in package.json, niente docker-compose.yml, niente Makefile.
+          </p>
+          <div v-for="[fileName, list] in serviceGroups" :key="fileName" class="mb-5">
+            <p class="mb-2 flex items-center gap-2"><span class="font-mono text-[12px] font-medium">{{ fileName }}</span><span class="hud-title text-[10px]">{{ list[0]?.source === 'package.json' ? 'script' : list[0]?.source === 'compose' ? 'servizi' : 'obiettivi' }}</span></p>
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+              <div
+                v-for="service in list"
+                :key="service.id"
+                class="grid cursor-pointer gap-2 rounded-xl border bg-surface px-3 pt-3 pb-2.5"
+                :class="service.id === chosenService ? 'border-accent shadow-[0_0_0_3px_var(--color-glow,transparent)]' : 'border-line hover:border-line-strong'"
+                role="button"
+                tabindex="0"
+                :aria-pressed="service.id === chosenService"
+                @click="chosenService = service.id"
+                @keydown.enter.self="chosenService = service.id"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="size-2 rounded-full" :class="service.run?.running && !service.on ? 'animate-pulse bg-warn' : service.on ? 'bg-ok' : 'bg-muted/50'"></span>
+                  <span class="text-[14px] font-semibold">{{ service.name }}</span>
+                  <span class="ml-auto font-mono text-[11px]" :class="service.on ? 'text-ok' : 'text-muted'">{{ serviceStateText(service) }}</span>
+                </div>
+                <span class="truncate rounded-md border border-line bg-bg px-2 py-1 font-mono text-[11.5px] text-muted" :title="service.script ?? service.command.join(' ')">{{ service.script ?? service.command.join(' ') }}</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="mr-auto font-mono text-[11px] text-muted">{{ service.ports.map((item) => `:${String(item)}`).join(' ') }}</span>
+                  <a
+                    v-if="service.on && service.ports[0] !== undefined && service.source !== 'compose'"
+                    :href="`http://127.0.0.1:${String(service.ports[0])}/`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn inline-flex items-center gap-1 px-2 py-0.5 text-xs"
+                    @click.stop
+                    ><Icon name="external" :size="12" />Apri</a
+                  >
+                  <button
+                    v-if="service.run?.running || (service.on && service.source === 'compose')"
+                    type="button"
+                    class="btn btn-danger inline-flex items-center gap-1 px-2 py-0.5 text-xs"
+                    @click.stop="confirming = { service, stop: true }"
+                  >
+                    <Icon name="stop" :size="11" />Ferma
+                  </button>
+                  <button v-else type="button" class="btn inline-flex items-center gap-1 px-2 py-0.5 text-xs" @click.stop="confirming = { service, stop: false }"><Icon name="play" :size="11" />Avvia</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="overflow-hidden rounded-2xl border border-line bg-[#071013] text-[#cfe3df] lg:sticky lg:top-0" aria-label="Registro">
+          <div class="flex items-center gap-2.5 border-b border-white/10 px-3.5 py-2.5 text-[13px]">
+            <span class="size-2 rounded-full" :class="log?.running ? 'bg-ok' : 'bg-white/25'"></span>
+            <b>{{ shownService?.name ?? 'Registro' }}</b>
+            <span class="font-mono text-[11.5px] text-[#8aa3a0]">{{ log ? endedText(log) : shownService ? 'nessun avvio da qui' : '' }}</span>
+          </div>
+          <pre class="m-0 h-[300px] overflow-auto px-3.5 py-3 font-mono text-[12px] leading-[1.7] whitespace-pre-wrap">{{ log?.lines.join('\n') ?? '' }}</pre>
+          <div class="grid gap-1 border-t border-white/10 px-3.5 py-2.5 text-xs text-[#8aa3a0]">
+            <span>Si avviano <b class="font-medium text-[#cfe3df]">solo i comandi scritti nei file del progetto</b>, con la tua conferma ogni volta.</span>
+            <span>Test e build si fermano da soli dopo <b class="font-medium text-[#cfe3df]">10 minuti</b>; i servizi avviati da qui si fermano alla chiusura di Arianna. Il registro resta sul computer (ultime 2000 righe).</span>
+          </div>
+        </aside>
       </div>
 
       <!-- GIT: branches, changes, commits on the left; the diff on the right -->
@@ -447,5 +614,32 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         </div>
       </div>
     </template>
+
+    <!-- The confirmation of a start or a stop: in the page, never a dialog of the browser -->
+    <div v-if="confirming && confirmation && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="service-confirm-title" @keydown.esc="confirming = null">
+      <div class="w-full max-w-[480px] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_24px_70px_#0008]">
+        <div class="flex gap-3.5 px-5 pt-5">
+          <span class="grid size-9 shrink-0 place-items-center rounded-lg" :class="confirming.stop ? 'bg-danger/15 text-danger' : 'bg-accent/15 text-accent'"><Icon :name="confirming.stop ? 'stop' : 'play'" :size="16" /></span>
+          <div>
+            <h2 id="service-confirm-title" class="mt-0.5 mb-1 text-[16px] font-semibold">{{ confirmation.title }}</h2>
+            <p class="text-[13px] text-muted">{{ confirming.stop ? 'Arianna chiede al processo di chiudersi; se non risponde entro 10 secondi lo chiude lei.' : 'Arianna esegue questo comando sul tuo computer, nella cartella del progetto.' }}</p>
+          </div>
+        </div>
+        <p class="mx-5 mt-4 rounded-lg bg-[#071013] px-3 py-2.5 font-mono text-[13px] text-[#cfe3df]"><span class="text-[#5d7774]">$ </span>{{ confirmation.command }}</p>
+        <div v-if="!confirming.stop && confirming.service.script" class="mx-5 mt-2">
+          <p class="mb-1 text-xs text-muted">{{ confirming.service.source === 'Makefile' ? 'La ricetta nel Makefile (make esegue anche gli obiettivi da cui dipende):' : 'Lo script in package.json (anche i suoi pre e post, se ci sono):' }}</p>
+          <pre class="max-h-40 overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12px] whitespace-pre-wrap">{{ confirming.service.script }}</pre>
+        </div>
+        <dl class="mx-5 mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3.5 gap-y-1.5 text-[12.5px]">
+          <dt class="text-muted">Scritto in</dt><dd class="font-mono break-all">{{ confirmation.from }}</dd>
+          <dt class="text-muted">Cartella</dt><dd class="font-mono break-all">{{ project.absolute }}</dd>
+          <dt class="text-muted">Durata</dt><dd>{{ confirmation.duration }}</dd>
+        </dl>
+        <div class="flex justify-end gap-2 px-5 pt-4 pb-5">
+          <button ref="cancelButton" type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting" @click="confirming = null">Annulla</button>
+          <button type="button" class="btn px-3 py-1 text-[13px] font-semibold" :class="confirming.stop ? 'btn-danger' : 'btn-primary'" :disabled="acting" @click="confirmAction">{{ confirming.stop ? 'Ferma' : 'Avvia' }}</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>

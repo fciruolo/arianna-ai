@@ -5,7 +5,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
-import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, TreeEntry } from './projects.ts';
+import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -560,4 +560,21 @@ export async function readProjectGit(project: string): Promise<ProjectGit> {
 
 export async function readCommitDiff(project: string, commit: string): Promise<CommitDiff> {
   return (await call<{ diff: CommitDiff }>('GET', `${browse(project)}/commits/${encodeURIComponent(commit)}`)).diff;
+}
+
+// The tab Servizi (D-134, tappa 2): started or stopped by name, after the user's confirmation in the page.
+export async function listProjectServices(project: string): Promise<ServiceState[]> {
+  return (await call<{ services: ServiceState[] }>('GET', `${browse(project)}/services`)).services;
+}
+
+export async function serviceLog(project: string, service: string): Promise<ServiceLog | null> {
+  return (await call<{ run: ServiceLog | null }>('GET', `${browse(project)}/services/log?${new URLSearchParams({ service }).toString()}`)).run;
+}
+
+export async function startService(project: string, service: string, fingerprint: string): Promise<ServiceLog | null> {
+  return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/start`, { service, fingerprint })).run;
+}
+
+export async function stopService(project: string, service: string): Promise<ServiceLog | null> {
+  return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/stop`, { service })).run;
 }

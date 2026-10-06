@@ -256,7 +256,69 @@ export function browseErrorText(cause: unknown): string {
   if (cause.status === 415) return FILE_ERROR_TEXT.binary ?? '';
   if (cause.status === 403 && /approved|does not exist/.test(cause.message)) return FILE_ERROR_TEXT['not-approved'] ?? '';
   if (cause.status === 403) return FILE_ERROR_TEXT.refused ?? '';
+  if (cause.status === 409 && /changed since/.test(cause.message)) return 'Il comando è cambiato nel file da quando l’hai visto: ricontrolla e conferma di nuovo.';
+  if (cause.status === 409 && /already running/.test(cause.message)) return 'È già avviato.';
+  if (cause.status === 409 && /not started from here/.test(cause.message)) return 'Non è stato avviato da qui: fermalo dove l’hai avviato.';
   if (cause.status === 409) return FILE_ERROR_TEXT.busy ?? '';
   if (cause.status === 404) return FILE_ERROR_TEXT['not-found'] ?? '';
   return errorText(cause);
+}
+
+/** A service of the tab Servizi (D-134, tappa 2), as the core lists it. */
+export interface ServiceRunInfo {
+  startedAt: string;
+  running: boolean;
+  ended: { at: string; code: number | null; signal: string | null; reason: 'exit' | 'stopped' | 'time-limit' | 'error' } | null;
+}
+
+export interface ServiceState {
+  id: string;
+  source: 'package.json' | 'compose' | 'Makefile';
+  file: string;
+  name: string;
+  command: string[];
+  script?: string;
+  ports: number[];
+  stays: boolean;
+  /** Of the command and its script, sent back with a start: the core refuses one that changed since. */
+  fingerprint: string;
+  on: boolean;
+  run: ServiceRunInfo | null;
+}
+
+export type ServiceLog = ServiceRunInfo & { lines: string[] };
+
+/** The command as the confirmation shows it. */
+export function commandText(command: readonly string[]): string {
+  return command.map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : `'${part.replace(/'/g, "'\\''")}'`)).join(' ');
+}
+
+/** What the confirmation says before a start or a stop: the command, where it comes from, how long it may run. */
+export function confirmText(service: ServiceState, stop: boolean): { title: string; command: string; from: string; duration: string } {
+  const from = service.source === 'package.json' ? `package.json → scripts.${service.name}` : service.source === 'compose' ? `${service.file} → services.${service.name}` : `Makefile → ${service.name}`;
+  if (stop) {
+    const command = service.source === 'compose' && service.run?.running !== true ? `docker compose -f ${service.file} stop ${service.name}` : `arresto di “${service.name}”`;
+    return { title: `Fermare “${service.name}”?`, command, from, duration: 'arresto gentile, poi forzato dopo 10 secondi' };
+  }
+  const duration = service.source === 'compose' ? 'resta acceso con Docker finché lo fermi' : service.stays ? 'resta acceso finché lo fermi o chiudi Arianna' : 'si ferma da solo dopo 10 minuti';
+  return { title: `Avviare “${service.name}”?`, command: commandText(service.command), from, duration };
+}
+
+/** The state word of a card. */
+export function serviceStateText(service: ServiceState): string {
+  if (service.run?.running === true) return service.on && service.ports.length > 0 ? 'acceso' : 'in corso';
+  if (service.on) return 'acceso';
+  if (service.ports.length === 0 && service.source === 'compose') return 'stato sconosciuto';
+  return 'spento';
+}
+
+/** How a run ended, in Italian. */
+export function endedText(run: ServiceRunInfo): string {
+  if (run.running) return `avviato ${new Date(run.startedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+  const at = run.ended === null ? '' : new Date(run.ended.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const reason = run.ended?.reason;
+  if (reason === 'stopped') return `fermato alle ${at}`;
+  if (reason === 'time-limit') return `fermato alle ${at}: oltre 10 minuti`;
+  if (reason === 'error') return 'non avviato';
+  return `finito alle ${at} (codice ${String(run.ended?.code ?? run.ended?.signal ?? '?')})`;
 }

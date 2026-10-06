@@ -29,6 +29,7 @@ import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
 import { appendEvent } from './events.ts';
+import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
 import { createSpriteGenerator, spriteUnavailable } from './sprites/generate.ts';
 import { passGateway } from './gateway.ts';
@@ -422,6 +423,14 @@ const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
 const approvedProjects = () => settings.current().projects;
+// The tab Servizi of "Progetti" (D-134, tappa 2): each start and stop in the chain of events, project and service only.
+const services = createServiceManager({
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L1', payload }).catch((error: unknown) => {
+      console.error(`event ${kind}: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  },
+});
 const server = await startApiServer({
   sql,
   live,
@@ -430,6 +439,7 @@ const server = await startApiServer({
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
+  services,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => (claude === undefined ? [] : selectableModels(settings.current())),
   defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
@@ -534,6 +544,8 @@ console.log(`Arianna core on http://${host}:${String(server.port)}${existsSync(d
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
+  // The processes started from "Progetti" stop with the core (D-134 g); compose services stay with Docker.
+  await services.stopAll();
   settings.close();
   stopNotices();
   await telegram.close();
