@@ -39,8 +39,8 @@ export interface Ringer {
 
 type Candidate = { kind: 'row'; call: Call } | { kind: 'waiting'; taskId: string; conversationId: string };
 
-/** A conversation of the user, neither archived nor deleted (alias c). */
-const OPEN_CONVERSATION = "c.archived_at IS NULL AND c.purged_at IS NULL AND c.origin = 'user'";
+/** A conversation of the user, neither archived nor deleted nor incognito (alias c; D-136: Arianna never calls about one). */
+const OPEN_CONVERSATION = "c.archived_at IS NULL AND c.purged_at IS NULL AND c.origin = 'user' AND NOT c.incognito";
 
 async function nextCandidate(sql: Queryable, now: Date, waitingMinutes: number, due: Date): Promise<Candidate | undefined> {
   // A call the user scheduled, now due.
@@ -68,7 +68,7 @@ async function nextCandidate(sql: Queryable, now: Date, waitingMinutes: number, 
         (SELECT max(e.ts) FROM events e WHERE e.task_id = t.id AND e.kind = 'task.status' AND e.payload ->> 'to' = 'waiting_user'),
         t.updated_at) AS since
       FROM tasks t JOIN conversations c ON c.id = t.conversation_id
-      WHERE t.status = 'waiting_user' AND c.archived_at IS NULL AND c.purged_at IS NULL AND c.origin = 'user'
+      WHERE t.status = 'waiting_user' AND ${sql.unsafe(OPEN_CONVERSATION)}
     ) w
     WHERE w.since <= ${new Date(now.getTime() - waitingMinutes * 60_000)}
       AND NOT EXISTS (SELECT FROM calls k WHERE k.task_id = w.id AND k.reason = 'waiting' AND k.created_at >= w.since)

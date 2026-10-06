@@ -72,11 +72,13 @@ export async function loadStatus(sql: Queryable, agents: readonly string[]): Pro
       LEFT JOIN task_delegations d ON d.run_id = r.id
       LEFT JOIN tasks t ON t.id = r.task_id
       LEFT JOIN conversations c ON c.id = t.conversation_id
-      WHERE r.status = 'running'
+      WHERE r.status = 'running' AND NOT coalesce(c.incognito, false)
       ORDER BY r.id, d.id DESC
     ) AS running
     ORDER BY started_at DESC`;
-  const [waitingRow] = await sql<{ count: string }[]>`SELECT count(*) FROM tasks WHERE status = 'waiting_user'`;
+  const [waitingRow] = await sql<{ count: string }[]>`
+    SELECT count(*) FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.status = 'waiting_user' AND NOT coalesce(c.incognito, false)`;
   const waiting = Number(waitingRow?.count ?? 0);
 
   const states: AgentStatus[] = agents.map((id) => {

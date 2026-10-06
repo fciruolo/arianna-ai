@@ -85,6 +85,8 @@ export interface NotifierOptions {
   /** `[notifications]` now: read at each event, a change applies at once. */
   settings: () => NotificationsConfig;
   conversationOf: (taskId: string) => Promise<string | null>;
+  /** The conversation is incognito (D-136): no notice, not even without text, says something happened there. */
+  incognito?: (conversationId: string) => Promise<boolean>;
   /** Pages of the chat in view now: with any, no push (the user is looking). */
   visiblePages: () => number;
   /**
@@ -131,6 +133,7 @@ export function createNotifier(options: NotifierOptions): Notifier {
     const conversationId = found.conversationId ?? (found.taskId === undefined ? null : await options.conversationOf(found.taskId));
     // A task without a conversation (the inbox sorting at start-up) does not notify: nothing to open, and many at once with the model off.
     if (conversationId === null) return 'none';
+    if ((await options.incognito?.(conversationId)) === true) return 'none';
     const notice = { kind: found.kind, conversationId };
     const helper = (options.helpers?.() ?? 0) > 0;
     options.broadcast({ ...notice, helper });
