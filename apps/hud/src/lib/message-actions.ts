@@ -1,6 +1,7 @@
 import { ApiError } from './api.ts';
 import { messageNote } from './capture.ts';
 import { errorText } from './italian.ts';
+import { messageTime } from './message-time.ts';
 import type { Label } from './types.ts';
 
 /**
@@ -95,6 +96,8 @@ export async function saveMessage(message: { id: string; body: string; label: La
 export interface ConversationNote {
   saved: boolean;
   path: string | null;
+  /** When it was last saved (ISO), with the path: shown after a reload. */
+  savedAt: string | null;
 }
 
 /** What GET /api/conversations/:id/saved says, read once per conversation opened. */
@@ -110,17 +113,24 @@ export interface SavedState {
  * save, and a second save of a message gets 409, which also ends in "Salvato".
  */
 export async function loadSaved(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<SavedState> {
-  const none: SavedState = { messages: new Map(), conversation: { saved: false, path: null } };
+  const none: SavedState = { messages: new Map(), conversation: { saved: false, path: null, savedAt: null } };
   try {
     const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/saved`, { credentials: 'same-origin' });
     if (!response.ok) return none;
-    const data = (await response.json().catch(() => ({}))) as { messageIds?: unknown; notes?: unknown; conversation?: unknown; conversationNote?: unknown };
+    const data = (await response.json().catch(() => ({}))) as {
+      messageIds?: unknown;
+      notes?: unknown;
+      conversation?: unknown;
+      conversationNote?: unknown;
+      conversationSavedAt?: unknown;
+    };
     const names = typeof data.notes === 'object' && data.notes !== null ? (data.notes as Record<string, unknown>) : {};
     const ids = Array.isArray(data.messageIds) ? data.messageIds.filter((id): id is string => typeof id === 'string') : [];
     const saved = data.conversation === true;
+    const path = saved && typeof data.conversationNote === 'string' ? data.conversationNote : null;
     return {
       messages: new Map(ids.map((id) => [id, typeof names[id] === 'string' ? names[id] : null])),
-      conversation: { saved, path: saved && typeof data.conversationNote === 'string' ? data.conversationNote : null },
+      conversation: { saved, path, savedAt: path !== null && typeof data.conversationSavedAt === 'string' ? data.conversationSavedAt : null },
     };
   } catch {
     return none;
@@ -170,6 +180,18 @@ export const UPDATE_CONVERSATION_TEXT = 'Aggiorna in inbox';
 export const SAVE_CONVERSATION_HINT =
   'Salva tutta la conversazione come una nota in kb/inbox (i tuoi messaggi, quelli di Arianna e i rapporti degli agenti, senza le righe di sistema); il modello locale le dà titolo e riassunto.';
 export const UPDATE_CONVERSATION_HINT = 'Riscrive la nota di questa conversazione in kb/inbox con tutti i messaggi di adesso: una modifica fatta a mano alla nota si perde.';
+
+/**
+ * The line next to the buttons once the conversation is in kb/inbox, also
+ * after a reload: "Salvata in inbox alle 00:34", "… ieri alle 00:34", "… il
+ * 3 ott 07:31". Undefined without a time that is a date.
+ */
+export function savedWhenText(savedAt: string | null, now: Date): { text: string; full: string } | undefined {
+  const time = savedAt === null ? undefined : messageTime(savedAt, now);
+  if (time === undefined) return undefined;
+  const when = /^\d{2}:\d{2}$/.test(time.text) ? `alle ${time.text}` : time.text.startsWith('ieri ') ? `ieri alle ${time.text.slice(5)}` : `il ${time.text}`;
+  return { text: `Salvata in inbox ${when}`, full: time.full };
+}
 
 /** Saves the whole conversation; what the chat says after it and the note's path, never an exception. */
 export async function saveConversation(

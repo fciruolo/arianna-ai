@@ -587,11 +587,12 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (capture === undefined) throw new HttpError(404, 'not found');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
       const saved = savedMessageNotes(capture.home, capture.rules);
-      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path only up to L2.
+      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path and time only up to L2.
       const whole = findConversationNote(capture.home, capture.rules, id);
       const conversation = whole !== undefined;
       const conversationNote = whole?.visible === true ? whole.path : null;
-      if (saved.size === 0) return { body: { messageIds: [], notes: {}, conversation, conversationNote } };
+      const conversationSavedAt = whole?.visible === true ? whole.savedAt : null;
+      if (saved.size === 0) return { body: { messageIds: [], notes: {}, conversation, conversationNote, conversationSavedAt } };
       const rows = await sql<{ id: string }[]>`
         SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${[...saved.keys()]}::bigint[]) ORDER BY id`;
       const notes: Record<string, string> = {};
@@ -599,7 +600,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
         const name = saved.get(row.id);
         if (typeof name === 'string') notes[row.id] = name;
       }
-      return { body: { messageIds: rows.map((row) => row.id), notes, conversation, conversationNote } };
+      return { body: { messageIds: rows.map((row) => row.id), notes, conversation, conversationNote, conversationSavedAt } };
     }),
     // I-7 (D-131): the whole conversation in one note of kb/inbox, without the lines of the system; a second save replaces it.
     route('POST', '/api/conversations/:id/save', async (request, _url, params) => {

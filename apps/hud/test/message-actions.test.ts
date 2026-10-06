@@ -8,6 +8,7 @@ import {
   isSaved,
   inboxNodeId,
   loadSaved,
+  savedWhenText,
   mergeSavedNotes,
   MESSAGE_GONE_TEXT,
   messageCapture,
@@ -103,24 +104,33 @@ test('saveMessage reports a core that does not answer', async () => {
 
 test('loadSaved reads the saved messages of a conversation, with the names the core gives, and its whole note', async () => {
   const seen: Seen[] = [];
-  const state = await loadSaved('7', core(200, { messageIds: ['42', '43', 44], notes: { '42': 'a.md', '43': 3 }, conversation: true, conversationNote: 'kb/inbox/c.md' }, seen));
+  const state = await loadSaved('7', core(200, { messageIds: ['42', '43', 44], notes: { '42': 'a.md', '43': 3 }, conversation: true, conversationNote: 'kb/inbox/c.md', conversationSavedAt: '2026-10-07T00:34:35+02:00' }, seen));
   assert.deepEqual([...state.messages], [['42', 'a.md'], ['43', null]]);
-  assert.deepEqual(state.conversation, { saved: true, path: 'kb/inbox/c.md' });
+  assert.deepEqual(state.conversation, { saved: true, path: 'kb/inbox/c.md', savedAt: '2026-10-07T00:34:35+02:00' });
   assert.equal(seen.length, 1);
   assert.equal(seen.at(0)?.url, '/api/conversations/7/saved');
   // An older core without `notes` nor `conversationNote`: the ids only, no path.
   const older = await loadSaved('7', core(200, { messageIds: ['42'], conversation: true }));
-  assert.deepEqual([[...older.messages], older.conversation], [[['42', null]], { saved: true, path: null }]);
+  assert.deepEqual([[...older.messages], older.conversation], [[['42', null]], { saved: true, path: null, savedAt: null }]);
   // Saved but not named (above L2): no path; a path without `conversation: true` is not believed.
-  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversation: true, conversationNote: null }))).conversation, { saved: true, path: null });
-  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversationNote: 'kb/inbox/c.md' }))).conversation, { saved: false, path: null });
+  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversation: true, conversationNote: null, conversationSavedAt: '2026-10-07T00:34:35+02:00' }))).conversation, { saved: true, path: null, savedAt: null });
+  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversationNote: 'kb/inbox/c.md' }))).conversation, { saved: false, path: null, savedAt: null });
 });
 
 test('loadSaved says nothing saved when the core cannot say', async () => {
   for (const fetcher of [core(404, { error: 'not found' }), core(200, {}), () => Promise.reject(new TypeError('fetch failed'))] as Fetcher[]) {
     const state = await loadSaved('7', fetcher);
-    assert.deepEqual([state.messages.size, state.conversation], [0, { saved: false, path: null }]);
+    assert.deepEqual([state.messages.size, state.conversation], [0, { saved: false, path: null, savedAt: null }]);
   }
+});
+
+test('savedWhenText: when the conversation was saved, shorter the closer it is to today', () => {
+  const now = new Date(2026, 9, 7, 10, 0);
+  assert.equal(savedWhenText(new Date(2026, 9, 7, 0, 34).toISOString(), now)?.text, 'Salvata in inbox alle 00:34');
+  assert.equal(savedWhenText(new Date(2026, 9, 6, 23, 5).toISOString(), now)?.text, 'Salvata in inbox ieri alle 23:05');
+  assert.equal(savedWhenText(new Date(2026, 9, 3, 7, 31).toISOString(), now)?.text, 'Salvata in inbox il 3 ott 07:31');
+  assert.equal(savedWhenText(null, now), undefined);
+  assert.equal(savedWhenText('domani', now), undefined);
 });
 
 test('inboxNodeId gives the node of the graph from a path or a file name', () => {

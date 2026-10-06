@@ -20,6 +20,7 @@ import {
   SAVE_CONVERSATION_HINT,
   SAVE_CONVERSATION_TEXT,
   saveConversation,
+  savedWhenText,
   UPDATE_CONVERSATION_HINT,
   UPDATE_CONVERSATION_TEXT,
   withSaved,
@@ -158,6 +159,7 @@ watch(
     saved.value = new Map();
     wholeSaved.value = false;
     wholePath.value = null;
+    wholeSavedAt.value = null;
     wholeNote.value = null;
     const { messages, conversation: whole } = await loadSaved(conversationId);
     saved.value = mergeSavedNotes(saved.value, messages, conversationId, props.chat.conversationId);
@@ -165,6 +167,7 @@ watch(
     if (conversationId === props.chat.conversationId && !wholeSaved.value) {
       wholeSaved.value = whole.saved;
       wholePath.value = whole.path;
+      wholeSavedAt.value = whole.savedAt;
     }
   },
   { immediate: true },
@@ -174,6 +177,9 @@ watch(
 const wholeSaved = ref(false);
 /** The note's path in kb/inbox, for "Apri nella Conoscenza"; null when the core does not name it (above L2). A second save can change it. */
 const wholePath = ref<string | null>(null);
+/** When it was last saved, with the path: "Salvata in inbox alle …" stays after a reload. */
+const wholeSavedAt = ref<string | null>(null);
+const wholeWhen = computed(() => savedWhenText(wholeSavedAt.value, now.value));
 const wholeSaving = ref(false);
 const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
 async function saveWhole(): Promise<void> {
@@ -190,12 +196,14 @@ async function saveWhole(): Promise<void> {
     if (open !== props.chat.conversationId) return;
     wholeSaved.value = whole.saved;
     wholePath.value = whole.path;
+    wholeSavedAt.value = whole.savedAt;
     return;
   }
   wholeNote.value = outcome;
   if (outcome.ok) {
     wholeSaved.value = true;
     wholePath.value = outcome.path;
+    wholeSavedAt.value = new Date().toISOString();
   }
 }
 function markSaved(messageId: string, note: string | null): void {
@@ -517,6 +525,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <Icon name="knowledge" :size="14" />{{ OPEN_IN_KNOWLEDGE_TEXT }}
           </button>
           <span v-if="wholeNote !== null" role="status" :class="wholeNote.ok ? 'text-muted' : 'text-warn'">{{ wholeNote.text }}</span>
+          <span v-else-if="wholeSaved && wholeWhen !== undefined" class="text-muted" :title="wholePath === null ? wholeWhen.full : `${wholeWhen.full} · ${wholePath}`">{{ wholeWhen.text }}</span>
         </div>
 
         <!-- Who else is here (D-125): the agents Arianna brought in, each can be taken out -->

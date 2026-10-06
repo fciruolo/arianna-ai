@@ -51,13 +51,27 @@ export function conversationText(lines: readonly SavedLine[]): string {
   return `${CUT}\n\n${tail}`;
 }
 
-/** The note of kb/inbox saved from this conversation, if any; only a note up to L2 is named. */
-export function findConversationNote(home: string, rules: LabelRules, conversationId: string): { path: string; visible: boolean } | undefined {
+/** `captured_at` as capture.ts writes it: local time with its offset. */
+const CAPTURED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
+
+/**
+ * The note of kb/inbox saved from this conversation, if any; only a note up
+ * to L2 is named. `savedAt`: its `captured_at`, the time of the last save
+ * (a second save replaces the note, with a new captured_at), when it has the
+ * form capture.ts writes.
+ */
+export function findConversationNote(
+  home: string,
+  rules: LabelRules,
+  conversationId: string,
+): { path: string; visible: boolean; savedAt: string | null } | undefined {
   const needle = `conversation:${conversationId}`;
-  let found: { path: string; visible: boolean } | undefined;
+  let found: { path: string; visible: boolean; savedAt: string | null } | undefined;
   eachInboxNote(home, rules, (path, raw) => {
-    if (!raw.includes(needle) || CONVERSATION_SOURCE.exec(headerFields(raw).get('source') ?? '')?.[1] !== conversationId) return true;
-    found = { path, visible: isAtMost(noteLabel(rules, path, raw), 'L2') };
+    const fields = headerFields(raw);
+    if (!raw.includes(needle) || CONVERSATION_SOURCE.exec(fields.get('source') ?? '')?.[1] !== conversationId) return true;
+    const capturedAt = fields.get('captured_at') ?? '';
+    found = { path, visible: isAtMost(noteLabel(rules, path, raw), 'L2'), savedAt: CAPTURED_AT.test(capturedAt) ? capturedAt : null };
     return false;
   });
   return found;

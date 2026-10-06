@@ -1,7 +1,7 @@
 // I-7 (D-131): a whole conversation in one note of kb/inbox, replaced by a second save.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
@@ -65,7 +65,18 @@ test('saved once, then a second save replaces the same note; the label is the hi
   assert.doesNotMatch(raw, /Arianna aggiunge/);
   // The organizer keeps the source when it rewrites the note.
   assert.equal(keptCaptureFields(raw).source, `conversation:${ID}`);
-  assert.equal(findConversationNote(dir, RULES, ID)?.path, first.path);
+  const found = findConversationNote(dir, RULES, ID);
+  assert.ok(found !== undefined);
+  assert.equal(found.path, first.path);
+  // When it was saved, from captured_at; a header without a date gives none.
+  assert.equal(Date.parse(found.savedAt ?? ''), new Date(2026, 9, 6, 4, 0, 0).getTime());
+  const file = join(dir, first.path);
+  writeFileSync(file, raw.replace(/^captured_at: .*$/m, 'captured_at: domani'));
+  assert.equal(findConversationNote(dir, RULES, ID)?.savedAt, null);
+  // A bare number would pass as a date in Date.parse: refused too.
+  writeFileSync(file, raw.replace(/^captured_at: .*$/m, 'captured_at: 2026'));
+  assert.equal(findConversationNote(dir, RULES, ID)?.savedAt, null);
+  writeFileSync(file, raw);
 
   const second = saveConversation({
     home: dir,
