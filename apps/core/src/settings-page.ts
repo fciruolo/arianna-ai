@@ -588,7 +588,8 @@ function configMessage(error: unknown): string | undefined {
   return error instanceof Error && error.name === 'ConfigError' ? error.message : undefined;
 }
 
-function present(dataDir: string, id: string, files: readonly { path: string; sizeBytes: number }[]): boolean {
+/** Every file of the model in data/models/<id> with its size (sizes, not sha256). */
+export function present(dataDir: string, id: string, files: readonly { path: string; sizeBytes: number }[]): boolean {
   return files.every((file) => {
     try {
       return statSync(join(dataDir, 'models', id, file.path)).size === file.sizeBytes;

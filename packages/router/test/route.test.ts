@@ -5,7 +5,9 @@ import { createContext, recordRead, type Context, type Label } from '@arianna/po
 
 import {
   createRouterConfig,
+  needsBudgetApproval,
   route,
+  usesOf,
   type Budget,
   type Candidate,
   type RouteDecision,
@@ -390,5 +392,47 @@ describe('preferred model (task 1.10)', () => {
 
   it('an unknown preferred model is rejected', () => {
     assert.throws(() => route(coding({ preferredModel: 'gpt' as 'opus' }), ctx('L1'), FREE, CONFIG), /unknown preferred model/);
+  });
+});
+
+describe('typical use of a model (I-3)', () => {
+  const short = (model: string): string[] =>
+    usesOf(model).map((use) => `${use.kind}:${String(use.tier)}/${String(use.tiers)}${use.fallback === true ? ' fallback' : ''}`);
+
+  it('reads the cloud ladders: Sonnet first for coding, Codex or Sonnet first for review, Fable last', () => {
+    assert.deepEqual(short('sonnet'), ['coding:0/3', 'review:0/3']);
+    assert.deepEqual(short('opus'), ['coding:1/3', 'review:1/3']);
+    assert.deepEqual(short('codex'), ['coding:1/3', 'review:0/3']);
+    assert.deepEqual(short('fable'), ['coding:2/3', 'review:2/3']);
+  });
+
+  it('reads the local ladders, with the large model as the fallback of coding and review', () => {
+    assert.deepEqual(short('local-small'), ['extract:0/2', 'classify:0/2', 'summarize:0/2']);
+    assert.deepEqual(short('local-large'), ['extract:1/2', 'classify:1/2', 'summarize:1/2', 'plan:0/1', 'judge:0/1', 'coding:0/1 fallback', 'review:0/1 fallback']);
+  });
+
+  it('an alias outside the ladders takes no step', () => {
+    assert.deepEqual(usesOf('local-voice'), []);
+    assert.deepEqual(usesOf('gpt'), []);
+    assert.deepEqual(usesOf(''), []);
+  });
+
+  it('agrees with route: the first tier is what a normal step gets', () => {
+    const chosen = route(coding(), ctx('L1'), FREE, CONFIG);
+    assert.ok(chosen.decision === 'route');
+    assert.equal(usesOf(chosen.model).find((use) => use.kind === 'coding')?.tier, 0);
+    const local = route(coding(), ctx('L2'), FREE, CONFIG);
+    assert.ok(local.decision === 'route');
+    assert.equal(usesOf(local.model).find((use) => use.kind === 'coding')?.fallback, true);
+    const plan = route({ kind: 'plan', agent: ARIANNA }, ctx('L2'), FREE, CONFIG);
+    assert.ok(plan.decision === 'route');
+    assert.equal(usesOf(plan.model).find((use) => use.kind === 'plan')?.tier, 0);
+  });
+
+  it('only Fable needs a budget approval, as route asks', () => {
+    assert.equal(needsBudgetApproval('fable'), true);
+    for (const model of ['sonnet', 'opus', 'codex', 'local-large', 'local-small', 'gpt']) assert.equal(needsBudgetApproval(model), false, model);
+    const fable = route(coding({ preferredModel: 'fable' }), ctx('L1'), FREE, CONFIG);
+    assert.equal(fable.decision === 'route' && fable.approval, 'budget');
   });
 });

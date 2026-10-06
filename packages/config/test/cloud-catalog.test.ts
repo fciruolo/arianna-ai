@@ -97,6 +97,10 @@ test('names follow the rule of [cloud.models]: valid for --model and of the fami
 
 test('strengths, prices, ratios and unknown keys are checked', () => {
   assert.throws(() => parseCloudCatalog(VALID.replace('text: Fake strength', 'text: ""')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('    provider: Fake Other\n', '')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('    family: Fake Codex\n', '')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('    executor: codex\n', '    executor: codex\n    strengths: []\n')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('      - text: Fake strength\n', '      - Fake strength\n')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('input: 4,', 'input: -4,')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('input: 4,', 'input: "4",')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('relative_to: sonnet', 'relative_to: opus')), ConfigError);

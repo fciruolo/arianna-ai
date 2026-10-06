@@ -57,6 +57,7 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
+import type { ModelsOverview } from '../models-overview.ts';
 import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
@@ -130,6 +131,8 @@ export interface ApiServerOptions {
   capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean> };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
+  /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
+  modelsOverview?: () => Promise<ModelsOverview>;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -1589,6 +1592,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
+  // The "Modelli" page (I-3): one list, read only. /api/models stays the selector of a conversation.
+  table.push(
+    route('GET', '/api/models/overview', async () => {
+      if (options.modelsOverview === undefined) throw new HttpError(404, 'not found');
+      return { body: await options.modelsOverview() };
+    }),
+  );
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();

@@ -55,7 +55,7 @@ export interface CatalogEntry {
   files: ModelFile[];
   /**
    * What the "Modelli" page shows of the model (I-3), all optional and written
-   * by hand: who makes it, the context it was trained for, 1-4 short lines on
+   * by hand: who makes it, the context as the local server serves it, 1-4 short lines on
    * what it is good at, its license, a note, and the page of the model.
    * Never fetched at runtime.
    */
@@ -67,7 +67,7 @@ export interface CatalogEntry {
   source?: string;
 }
 
-/** At most this many lines of strengths for a model (I-3: 2-4 short lines). */
+/** At most this many lines of strengths for a model (I-3: 1-4 short lines, never padded). */
 export const MAX_STRENGTHS = 4;
 
 export interface ModelCatalog {

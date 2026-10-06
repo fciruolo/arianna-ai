@@ -5,7 +5,7 @@ import { parse as parseYaml } from 'yaml';
 
 import { asHttpsUrl, asStrengths } from './catalog.ts';
 import { CLOUD_MODEL_NAME, CLOUD_MODELS, inFamily, type CloudExecutor, type CloudModel } from './cloud.ts';
-import { asArray, asInteger, asOneOf, asString, asTable, ConfigError, onlyKeys, type Table } from './validate.ts';
+import { asArray, asInteger, asOneOf, asString, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 /**
  * The cards of the cloud models (I-3): a file in git written by hand, one
@@ -137,18 +137,14 @@ function parseEntry(raw: unknown, where: string, sourceOf: (value: unknown, wher
   });
   if (new Set(names.map(({ name }) => name)).size !== names.length) throw new ConfigError(`${where}.names: a name is listed twice`);
 
-  const strengths: CloudStrength[] = [];
-  if (entry.strengths !== undefined) {
-    const items = asArray(entry.strengths, `${where}.strengths`);
-    // Same limits as the local catalog: 1-4 short lines.
-    asStrengths(items.map((item, index) => asTable(item, `${where}.strengths[${String(index)}]`).text), `${where}.strengths`);
-    items.forEach((item, index) => {
-      const at = `${where}.strengths[${String(index)}]`;
-      const table = item as Table;
-      onlyKeys(table, ['text', 'source'], at);
-      strengths.push({ text: asString(table.text, `${at}.text`), source: sourceOf(table.source, `${at}.source`) });
-    });
-  }
+  const strengths: CloudStrength[] = asArray(entry.strengths ?? [], `${where}.strengths`).map((item, index) => {
+    const at = `${where}.strengths[${String(index)}]`;
+    const table = asTable(item, at);
+    onlyKeys(table, ['text', 'source'], at);
+    return { text: asString(table.text, `${at}.text`), source: sourceOf(table.source, `${at}.source`) };
+  });
+  // Same limits as the local catalog: 1-4 short lines.
+  if (entry.strengths !== undefined) asStrengths(strengths.map(({ text }) => text), `${where}.strengths`);
 
   const found: CloudCatalogEntry = {
     alias,

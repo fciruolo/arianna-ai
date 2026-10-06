@@ -13,14 +13,17 @@ export {
 export { estimateDifficulty, HARD_FILES, type DifficultyEstimate, type DifficultySignals } from './difficulty.ts';
 export {
   ATTEMPT_OUTCOMES,
+  needsBudgetApproval,
   route,
   STEP_KINDS,
+  usesOf,
   type Attempt,
   type AttemptOutcome,
   type Budget,
   type BudgetBlock,
   type CandidateOutcome,
   type Exclusion,
+  type ModelUse,
   type RouteDecision,
   type RouterAgent,
   type Step,
