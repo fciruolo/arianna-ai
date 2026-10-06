@@ -68,9 +68,21 @@ const insideRoot = (path: string, root: string): boolean => {
   return fromRoot === '' || (fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot));
 };
 
-/** The project's folder by name, approved and exactly its path, or 403/404. */
+/**
+ * Where a real path (links resolved) may not be opened from the page: out of
+ * the project, or through a hidden part or an excluded folder. One rule for
+ * the tree and the files, so that a link named `src2 -> .git` opens nothing.
+ */
+function shutReason(real: string, root: string): 'outside' | 'hidden' | 'excluded' | undefined {
+  if (!insideRoot(real, root)) return 'outside';
+  const parts = relative(root, real).split(sep).filter((part) => part !== '');
+  if (parts.some((part) => part.startsWith('.'))) return 'hidden';
+  if (parts.some((part) => EXCLUDED_DIRS.has(part))) return 'excluded';
+  return undefined;
+}
+
+/** The project's folder by name, approved and exactly its path, or 403. */
 async function rootOf(projects: readonly Project[], name: string): Promise<string> {
-  if (!browsableProjects(projects).some((project) => project.name === name)) throw new DelegationFileError('not-approved', `${name} is not an approved project`);
   return approvedRoot(projects, name);
 }
 
@@ -91,9 +103,11 @@ export async function listProjectDir(projects: readonly Project[], name: string,
   } catch {
     throw new DelegationFileError('deleted', 'the folder is no longer there');
   }
-  if (!insideRoot(real, root)) throw new DelegationFileError('refused', 'the folder leads out of the project');
-  if (!(await lstat(real)).isDirectory()) throw new DelegationFileError('refused', 'not a folder');
-  const found = await readdir(real, { withFileTypes: true });
+  if (shutReason(real, root) !== undefined) throw new DelegationFileError('refused', 'this folder is not opened');
+  if ((await lstat(real).catch(() => undefined))?.isDirectory() !== true) throw new DelegationFileError('refused', 'not a folder');
+  const found = await readdir(real, { withFileTypes: true }).catch(() => {
+    throw new DelegationFileError('refused', 'the folder cannot be read');
+  });
   const entries: TreeEntry[] = [];
   for (const item of found) {
     const path = join(real, item.name);
@@ -103,11 +117,11 @@ export async function listProjectDir(projects: readonly Project[], name: string,
     }
     let kind: 'dir' | 'file' | undefined;
     let size: number | null = null;
-    let outside = false;
+    let shut: TreeEntry['shut'];
     if (item.isSymbolicLink()) {
       const target = await realpath(path).catch(() => undefined);
-      if (target === undefined || !insideRoot(target, root) || relative(root, target).split(sep).some((part) => part.startsWith('.'))) outside = true;
-      else {
+      shut = target === undefined ? 'outside' : shutReason(target, root);
+      if (target !== undefined && shut === undefined) {
         const stats = await lstat(target).catch(() => undefined);
         kind = stats?.isDirectory() === true ? 'dir' : stats?.isFile() === true ? 'file' : undefined;
         size = stats?.isFile() === true ? stats.size : null;
@@ -117,7 +131,7 @@ export async function listProjectDir(projects: readonly Project[], name: string,
       kind = 'file';
       size = (await lstat(path).catch(() => undefined))?.size ?? null;
     }
-    if (outside) entries.push({ name: item.name, kind: 'file', size: null, shut: 'outside' });
+    if (shut !== undefined) entries.push({ name: item.name, kind: kind ?? 'file', size: null, shut });
     else if (kind === 'dir' && EXCLUDED_DIRS.has(item.name)) entries.push({ name: item.name, kind, size: null, shut: 'excluded' });
     else if (kind !== undefined) entries.push({ name: item.name, kind, size });
   }
@@ -135,8 +149,11 @@ export interface ProjectFile {
 
 /** The text of one file (D-134): the checks of D-117, hidden parts refused as for "Apri". */
 export async function readBrowsedFile(projects: readonly Project[], name: string, path: string): Promise<ProjectFile> {
-  if (path.split('/').some((part) => part.startsWith('.'))) throw new DelegationFileError('refused', 'hidden files are not shown');
+  if (path.split('/').some((part) => part.startsWith('.') || EXCLUDED_DIRS.has(part))) throw new DelegationFileError('refused', 'this file is not shown');
   const root = await rootOf(projects, name);
+  // The same rule as the tree on the real path: a link into node_modules or a hidden folder is not followed.
+  const real = await realpath(join(root, path)).catch(() => undefined);
+  if (real !== undefined && shutReason(real, root) !== undefined) throw new DelegationFileError('refused', 'this file is not shown');
   const bytes = await readProjectBytes(root, path, MAX_PREVIEW_BYTES, true);
   return { path, size: bytes.length, text: shownText(bytes), openable: OPENABLE.has(extensionOf(path)) };
 }
@@ -158,12 +175,12 @@ async function notBusy(sql: Queryable, name: string): Promise<void> {
   if (running !== undefined) throw new DelegationFileError('busy', `the Coder is working on ${name}: git is shown when it ends`);
 }
 
-/** git said the folder is not the top of a repository: the page says "no git" instead of an error. */
+/** git said the folder is not the top of a repository: the page says "no git"; any other failure stays an error. */
 async function gitOr<T>(fallback: T, read: () => Promise<T>): Promise<T> {
   try {
     return await read();
   } catch (error) {
-    if (error instanceof WorkspaceError) return fallback;
+    if (error instanceof WorkspaceError && /not the top folder/.test(error.message)) return fallback;
     throw error;
   }
 }
@@ -210,7 +227,7 @@ export async function readCommitDiff(sql: Queryable, projects: readonly Project[
     throw new DelegationFileError('not-found', 'no such commit');
   }
   const shown = changed.files.slice(0, MAX_DIFF_FILES);
-  const hidden = (path: string): boolean => path.split('/').some((part) => part.startsWith('.'));
+  const hidden = (path: string): boolean => path.split('/').some((part) => part.startsWith('.') || EXCLUDED_DIRS.has(part));
   const readable = shown.filter((entry) => !hidden(entry.path) && (entry.from === undefined || !hidden(entry.from)));
   const before = changed.parent === null ? [] : await committedFiles(root, changed.parent, readable.map((entry) => (entry.change === 'added' ? '' : (entry.from ?? entry.path))), MAX_PREVIEW_BYTES);
   const after = await committedFiles(root, commit, readable.map((entry) => (entry.change === 'deleted' ? '' : entry.path)), MAX_PREVIEW_BYTES);

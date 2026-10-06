@@ -433,6 +433,11 @@ describe('openRepository (D-056)', () => {
     // Not a commit id: refused before git runs.
     await assert.rejects(commitChanges(dir, 'HEAD'), /not a commit id/);
     await assert.rejects(commitChanges(dir, '--output=/tmp/x'), /not a commit id/);
+    // Well formed, but a tree or a blob: git refuses it, nothing is listed.
+    const tree = git(dir, 'rev-parse', `${second.id}^{tree}`).trim();
+    const blob = git(dir, 'rev-parse', `${second.id}:a.ts`).trim();
+    await assert.rejects(commitChanges(dir, tree));
+    await assert.rejects(commitChanges(dir, blob));
   });
 
   it('repositoryLog and repositoryBranches in a repository without commits: nothing; a subfolder is refused (D-134)', async () => {

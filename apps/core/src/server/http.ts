@@ -759,7 +759,7 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
   ];
 }
 
-const PROJECT_PARAM = /^[A-Za-z0-9._-]{1,100}$/;
+const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.

@@ -554,7 +554,7 @@ export async function repositoryLog(path: string, limit: number): Promise<Reposi
     return [];
   }
   const count = Math.max(1, Math.min(MAX_LOG, Math.floor(limit)));
-  const out = await git(path, ['log', '--no-show-signature', '--no-color', `--max-count=${String(count)}`, '--format=%H%x1f%P%x1f%an%x1f%at%x1f%s%x1e', 'HEAD', '--']);
+  const out = await git(path, ['log', '--no-show-signature', '--no-mailmap', '--no-color', `--max-count=${String(count)}`, '--format=%H%x1f%P%x1f%an%x1f%at%x1f%s%x1e', 'HEAD', '--']);
   return out
     .split('\x1e')
     .map((record) => record.replace(/^\n/, ''))
@@ -574,6 +574,14 @@ export async function repositoryLog(path: string, limit: number): Promise<Reposi
 export async function commitChanges(path: string, commit: string): Promise<{ parent: string | null; files: FileChange[] }> {
   if (!COMMIT.test(commit)) throw new WorkspaceError('not a commit id');
   await checkedRepository(path);
+  // A tree or a blob is well formed too: only a commit, exactly the one asked.
+  let peeled: string;
+  try {
+    peeled = (await git(path, ['rev-parse', '--verify', '--quiet', `${commit}^{commit}`])).trim();
+  } catch {
+    throw new WorkspaceError('not a commit');
+  }
+  if (peeled !== commit) throw new WorkspaceError('not a commit');
   let parent: string | null;
   try {
     parent = (await git(path, ['rev-parse', '--verify', '--quiet', `${commit}^1^{commit}`])).trim();

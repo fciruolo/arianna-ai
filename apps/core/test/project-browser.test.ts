@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { resolveHome, type Project } from '@arianna/config';
+import { Secret } from '@arianna/vault';
 
 import type { Queryable } from '../src/db/client.ts';
 import { createOpenLinks, DelegationFileError } from '../src/delegation-view.ts';
@@ -43,17 +44,33 @@ git('commit', '--quiet', '--message', 'Primo');
 write({ 'src/seasons.ts': "export const SEASONS = ['pomodori', 'zucchine'];\n", '.env': 'TOKEN=altro\n' });
 git('add', '--all');
 git('commit', '--quiet', '--message', 'Zucchine');
+// A value of the vault in a committed file, and a hidden file renamed to a visible one.
+const VAULT_VALUE = 'vault-browser-0f3c9a71d2';
+new Secret('test/browser', VAULT_VALUE);
+write({ 'config.ts': `export const KEY = '${VAULT_VALUE}';\n`, '.segreti.ts': 'export const NOTE = 1;\n' });
+git('add', '--all');
+git('commit', '--quiet', '--message', 'Chiave');
+git('mv', '.segreti.ts', 'pubblico.ts');
+git('commit', '--quiet', '--message', 'Rinomina');
 write({ 'README.md': '# Orto condiviso\n', 'node_modules/vue/index.js': 'x\n' });
 symlinkSync(join(OUTSIDE, 'secret.txt'), join(ROOT, 'fuori.txt'));
 symlinkSync('src', join(ROOT, 'codice'));
+symlinkSync('.git', join(ROOT, 'src2'));
+symlinkSync('node_modules/vue', join(ROOT, 'vue'));
+const PLAIN = join(HOME, 'repos', 'senza-git');
+mkdirSync(PLAIN, { recursive: true });
+writeFileSync(join(PLAIN, 'note.md'), '# Note\n');
 
-const PROJECTS: Project[] = [{ name: 'orto', path: 'repos/orto', absolute: ROOT, label: 'L1' }];
+const PROJECTS: Project[] = [
+  { name: 'orto', path: 'repos/orto', absolute: ROOT, label: 'L1' },
+  { name: 'senza-git', path: 'repos/senza-git', absolute: PLAIN, label: 'L1' },
+];
 const idle: Queryable = { unsafe: () => Promise.resolve([]) } as unknown as Queryable;
 const busy: Queryable = { unsafe: () => Promise.resolve([{ id: '1' }]) } as unknown as Queryable;
 const code = (error: unknown): string => (error instanceof DelegationFileError ? error.code : String(error));
 
 test('only approved projects, with their folder for "Apri in VS Code"', async () => {
-  assert.deepEqual(browsableProjects(PROJECTS), [{ name: 'orto', absolute: ROOT }]);
+  assert.deepEqual(browsableProjects(PROJECTS.slice(0, 1)), [{ name: 'orto', absolute: ROOT }]);
   await assert.rejects(listProjectDir(PROJECTS, 'altro', ''), (error) => code(error) === 'not-approved');
   await assert.rejects(readBrowsedFile([], 'orto', 'README.md'), (error) => code(error) === 'not-approved');
 });
@@ -66,6 +83,9 @@ test('a folder: folders first; hidden entries, node_modules and links leading ou
   assert.deepEqual(byName['.env'], { name: '.env', kind: 'file', size: null, shut: 'hidden' });
   assert.deepEqual(byName.node_modules, { name: 'node_modules', kind: 'dir', size: null, shut: 'excluded' });
   assert.deepEqual(byName['fuori.txt'], { name: 'fuori.txt', kind: 'file', size: null, shut: 'outside' });
+  // Links into .git or node_modules: listed shut, never opened as folders.
+  assert.equal(byName.src2?.shut, 'hidden');
+  assert.equal(byName.vue?.shut, 'excluded');
   // A link to a folder inside the project is a folder like the others.
   assert.deepEqual(
     entries.find((entry) => entry.name === 'codice'),
@@ -77,7 +97,7 @@ test('a folder: folders first; hidden entries, node_modules and links leading ou
     (await listProjectDir(PROJECTS, 'orto', 'src')).entries.map(({ name }) => name),
     ['seasons.ts'],
   );
-  for (const dir of ['.git', 'src/../..', '/etc', 'node_modules', 'src/', '..']) {
+  for (const dir of ['.git', 'src/../..', '/etc', 'node_modules', 'src/', '..', 'src2', 'src2/refs', 'vue']) {
     await assert.rejects(listProjectDir(PROJECTS, 'orto', dir), (error) => code(error) === 'refused', dir);
   }
 });
@@ -87,7 +107,7 @@ test('a file: its text and whether "Apri" serves it; hidden files, .git and link
   assert.equal(file.text, "export const SEASONS = ['pomodori', 'zucchine'];\n");
   assert.equal(file.openable, false);
   assert.equal((await readBrowsedFile(PROJECTS, 'orto', 'public/index.html')).openable, true);
-  for (const path of ['.env', '.git/config', 'fuori.txt', '../outside/secret.txt', 'src']) {
+  for (const path of ['.env', '.git/config', 'fuori.txt', '../outside/secret.txt', 'src', 'node_modules/vue/index.js', 'vue/index.js', 'src2/config', 'config.ts']) {
     await assert.rejects(readBrowsedFile(PROJECTS, 'orto', path), (error) => code(error) === 'refused' || code(error) === 'deleted', path);
   }
 });
@@ -106,6 +126,8 @@ test('git: branches, changes not committed and the log; nothing while the Coder 
   assert.deepEqual(
     found.log.map(({ subject, author }) => ({ subject, author })),
     [
+      { subject: 'Rinomina', author: 'Marta' },
+      { subject: 'Chiave', author: 'Marta' },
       { subject: 'Zucchine', author: 'Marta' },
       { subject: 'Primo', author: 'Marta' },
     ],
@@ -114,8 +136,33 @@ test('git: branches, changes not committed and the log; nothing while the Coder 
   await assert.rejects(readProjectGit(busy, PROJECTS, 'orto'), (error) => code(error) === 'busy');
 });
 
+test('a project without git: said, not an error', async () => {
+  assert.deepEqual(await readProjectGit(idle, PROJECTS, 'senza-git'), { repository: false, branches: [], changes: [], log: [] });
+});
+
+test('a commit diff: a value of the vault and a file renamed from a hidden one are listed, never shown', async () => {
+  const [renamed, keyed] = (await readProjectGit(idle, PROJECTS, 'orto')).log;
+  assert.ok(renamed !== undefined && keyed !== undefined);
+  const rename = await readCommitDiff(idle, PROJECTS, 'orto', renamed.id);
+  assert.deepEqual(rename.files, [{ path: 'pubblico.ts', change: 'renamed', from: '.segreti.ts', error: 'refused' }]);
+  const key = await readCommitDiff(idle, PROJECTS, 'orto', keyed.id);
+  assert.ok(key.files.some((file) => file.path === 'config.ts' && 'error' in file && file.error === 'refused'));
+  assert.ok(!JSON.stringify(key.files).includes(VAULT_VALUE));
+  assert.ok(!JSON.stringify(key.files).includes('NOTE'));
+});
+
+test('the root commit: everything added, against nothing', async () => {
+  const log = (await readProjectGit(idle, PROJECTS, 'orto')).log;
+  const root = log.at(-1);
+  assert.ok(root !== undefined);
+  const { parent, files } = await readCommitDiff(idle, PROJECTS, 'orto', root.id);
+  assert.equal(parent, null);
+  assert.ok(files.every((file) => file.change === 'added'));
+  assert.ok(files.some((file) => file.path === 'README.md' && 'hunks' in file && file.added === 1));
+});
+
 test('a commit diff: the code shown, a hidden file listed but never shown, a bad id refused', async () => {
-  const [last] = (await readProjectGit(idle, PROJECTS, 'orto')).log;
+  const last = (await readProjectGit(idle, PROJECTS, 'orto')).log.find((item) => item.subject === 'Zucchine');
   assert.ok(last !== undefined);
   const { files, parent } = await readCommitDiff(idle, PROJECTS, 'orto', last.id);
   assert.notEqual(parent, null);
