@@ -9,6 +9,7 @@ import type { AgentsSettings } from './agents.ts';
 import { MODEL_ROLES, type ModelCatalog, type ModelRole } from './catalog.ts';
 import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, type CloudModelSetting } from './cloud.ts';
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
+import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
@@ -57,6 +58,8 @@ export interface Settings {
   agents?: AgentsSettings;
   /** `[sprites] model` (D-123); absent, Claude Opus draws the characters (D-132). */
   sprites?: SpriteModel;
+  /** `[notifications]` (I-1): written only when the file has it; absent, the defaults. */
+  notifications?: NotificationsConfig;
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -119,6 +122,8 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(Object.keys(config.agents).length === 0 ? {} : { agents: structuredClone(config.agents) }),
     // Absent when the file has no [sprites]: the default is not written in.
     ...(raw.sprites === undefined ? {} : { sprites: config.sprites.model }),
+    // Kept absent when the file has no section: saving another card does not add it.
+    ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -193,6 +198,17 @@ function agentsSection(agents: AgentsSettings | undefined): string[] {
   const chosen = Object.entries(agents ?? {}).filter((entry): entry is [string, Required<AgentsSettings[string]>] => entry[1].model !== undefined);
   if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"'];
   return chosen.flatMap(([agent, { model }], index) => [...(index === 0 ? [] : ['']), `[agents.${agent}]`, `model = ${str(model)}`]);
+}
+
+function notificationsSection(notifications: NotificationsConfig | undefined): string[] {
+  if (notifications === undefined) return ['#', '# [notifications]', '# replies = true', '# approvals = true', '# failures = true', '# quiet = "22:00-07:00"'];
+  return [
+    '[notifications]',
+    `replies = ${String(notifications.replies)}`,
+    `approvals = ${String(notifications.approvals)}`,
+    `failures = ${String(notifications.failures)}`,
+    ...(notifications.quiet === undefined ? [] : [`quiet = ${str(quietText(notifications.quiet))}`]),
+  ];
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -410,6 +426,16 @@ export function renderSettings(settings: Settings): string {
     '# the private key stays in the vault (key vapid-private-key). Applies without',
     '# a restart, once no call is in progress.',
     ...voiceSection(settings.voice),
+    '',
+    '# Notifications of the web chat (I-1): a reply, an approval waiting, a',
+    '# failed task. Never the text or the title of a conversation: only a fixed',
+    '# sentence and the link. In a browser tab that is open but not in view, the',
+    '# page shows them; with the chat closed, Web Push of [voice.push], only',
+    '# while no page of the chat is in view. Each browser asks for permission',
+    '# from Impostazioni -> Notifiche. `quiet` is "HH:MM-HH:MM" local time',
+    '# (across midnight too); without it, no quiet hours. Absent: every kind on.',
+    '# Applies without a restart.',
+    ...notificationsSection(settings.notifications),
     '',
     '# What the web chat says this installation is (D-089): development while the',
     '# database uses the development passwords or while mode = "development";',

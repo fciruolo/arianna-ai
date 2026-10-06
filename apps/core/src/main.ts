@@ -36,6 +36,7 @@ import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
+import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
@@ -49,7 +50,7 @@ import { createBotApi } from './telegram/api.ts';
 import { startTelegram } from './telegram/channel.ts';
 import { createTelegramSwitch } from './telegram/switch.ts';
 import { createCalls, liveCall } from './voice/calls.ts';
-import { createPusher, PUSH_TEXT, vapidKey } from './voice/push.ts';
+import { createPusher, vapidKey } from './voice/push.ts';
 import { createRinger } from './voice/ringer.ts';
 import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
@@ -159,9 +160,9 @@ const voice = createVoiceSwitch({
       publicKey: push.publicKey,
       key: vapidKey(push.publicKey, privateKey.reveal()),
       subject: push.subject,
-      // The fixed text, the only thing that leaves, goes through the gateway on channel push.
-      gate: async () =>
-        (await passGateway(sql, [{ value: PUSH_TEXT, label: 'L0', source: 'call:push' }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
+      // The fixed sentence of the kind, all that leaves, goes through the gateway on channel push.
+      gate: async (text, kind) =>
+        (await passGateway(sql, [{ value: text, label: 'L0', source: `${kind}:push` }], createContext('L0'), { kind: 'channel', id: 'push' })).decision === 'allow',
       onError: report,
     });
   },
@@ -418,6 +419,8 @@ const sprites = createSpriteGenerator({
   dataDir: config.paths.data,
 });
 const dist = join(config.home, 'apps', 'hud', 'dist');
+// The last notice pushed (I-1): the service worker asks for its kind and conversation.
+const notices = createNoticeBoard();
 const approvedProjects = () => settings.current().projects;
 const server = await startApiServer({
   sql,
@@ -445,6 +448,7 @@ const server = await startApiServer({
   voice: { service: voice.service, voice: () => voiceSettings().voice, models: candidates, clones: voiceDirs.clones },
   calls,
   pusher: () => voice.pusher(),
+  notices,
   settings: settingsPage,
   userAgents,
   sprites,
@@ -482,11 +486,40 @@ const ringer = createRinger({
   // Read at each ring: [voice.push] changes without a restart.
   notify: () => {
     const pusher = voice.pusher();
-    return pusher === undefined ? undefined : async () => { await pusher.notify(); };
+    return pusher === undefined
+      ? undefined
+      : async () => {
+          notices.record({ kind: 'call', conversationId: null });
+          await pusher.notify('call');
+        };
   },
   clientsOnline: () => server.clients(),
   onError: report,
 });
+
+// Notifications of the web chat (I-1): a reply, an approval waiting, a failed
+// task, as [notifications] allows, to the open pages and, with none in view,
+// by Web Push. Kind and conversation only, never text.
+const notifier = createNotifier({
+  settings: () => settings.current().notifications,
+  conversationOf: (taskId) => conversationOfTask(sql, taskId),
+  visiblePages: () => server.visiblePages(),
+  broadcast: (notice) => {
+    server.broadcast(notice);
+  },
+  readingPages: (conversationId) => server.readingPages(conversationId),
+  helpers: () => server.helpers(),
+  toHelpers: (notice) => {
+    server.notifyHelpers(notice);
+  },
+  push: () => {
+    const pusher = voice.pusher();
+    return pusher === undefined ? undefined : (kind, helper) => pusher.notify(kind, helper ? { skip: server.macEndpoints() } : {});
+  },
+  board: notices,
+  onError: report,
+});
+const stopNotices = await live.subscribe(notifier.subscriber);
 
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
@@ -500,6 +533,7 @@ async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
   settings.close();
+  stopNotices();
   await telegram.close();
   await server.close();
   ringer.stop();

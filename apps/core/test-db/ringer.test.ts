@@ -307,18 +307,24 @@ test('Web Push: subscriptions are kept, a push goes only after the gateway, a go
   await pusher.subscribe(sub('https://fcm.googleapis.com/fcm/send/ok'));
   await pusher.subscribe(sub('https://fcm.googleapis.com/fcm/send/ok'));
   await pusher.subscribe(sub('https://web.push.apple.com/gone'));
-  assert.equal(await pusher.notify(), 1);
+  // The browser of the Mac while its helper shows the notice (D-128): skipped for a notice, never for a call.
+  const mac = new Set(['https://fcm.googleapis.com/fcm/send/ok']);
+  assert.equal(await pusher.notify('reply', { skip: mac }), 0);
+  assert.deepEqual(posted.map((item) => item.endpoint), ['https://web.push.apple.com/gone']);
+  await pusher.subscribe(sub('https://web.push.apple.com/gone'));
+  posted.length = 0;
+  assert.equal(await pusher.notify('call', { skip: mac }), 1);
   assert.equal(posted.length, 2);
   assert.match(posted[0]?.headers.authorization ?? '', /^vapid t=.+, k=/);
   assert.equal(posted[0]?.headers.ttl, '30');
   const [{ count } = { count: -1 }] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM push_subscriptions WHERE removed_at IS NULL`;
   assert.equal(count, 1, 'the gone one is forgotten');
   allow = false;
-  assert.equal(await pusher.notify(), 0);
+  assert.equal(await pusher.notify('call'), 0);
   assert.equal(posted.length, 2, 'blocked by the gateway: nothing sent');
   await pusher.unsubscribe('https://fcm.googleapis.com/fcm/send/ok');
   allow = true;
-  assert.equal(await pusher.notify(), 0, 'nobody left');
+  assert.equal(await pusher.notify('call'), 0, 'nobody left');
   await pusher.subscribe(sub('https://web.push.apple.com/gone'));
-  assert.equal(await pusher.notify(), 0, 'subscribed again, and gone again');
+  assert.equal(await pusher.notify('call'), 0, 'subscribed again, and gone again');
 });

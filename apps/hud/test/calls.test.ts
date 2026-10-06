@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { callBlocker, callErrorText, clock, inAnHour, localDateTime, receiptAnchors, receiptText, RING_TEXT, type CallInfo } from '../src/lib/calls.ts';
-import { keyBytes } from '../src/lib/push.ts';
+import { keyBytes, onThisMac } from '../src/lib/push.ts';
 
 const call = (fields: Partial<CallInfo>): CallInfo => ({
   id: 'x',
@@ -64,4 +64,11 @@ test('push: the VAPID key in base64url becomes the 65 bytes the browser wants', 
   const point = Buffer.alloc(65, 7);
   point[0] = 4;
   assert.deepEqual([...keyBytes(point.toString('base64url'))], [...point]);
+});
+
+test('the page is on the Mac of the core only through the loopback address (D-128)', () => {
+  assert.equal(onThisMac('127.0.0.1'), true);
+  assert.equal(onThisMac('localhost'), true);
+  assert.equal(onThisMac('arianna.tail1234.ts.net'), false);
+  assert.equal(onThisMac('192.168.1.20'), false);
 });

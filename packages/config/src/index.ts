@@ -55,6 +55,15 @@ export {
   type ProjectLabel,
 } from './projects.ts';
 export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
+export {
+  DEFAULT_NOTIFICATIONS,
+  inQuiet,
+  parseNotifications,
+  parseQuiet,
+  quietText,
+  type NotificationsConfig,
+  type QuietHours,
+} from './notifications.ts';
 export { type TelegramConfig } from './telegram.ts';
 export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
 export { ConfigError } from './validate.ts';
