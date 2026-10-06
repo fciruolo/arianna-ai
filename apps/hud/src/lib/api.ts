@@ -3,6 +3,7 @@ import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
+import type { ModelsOverview } from './models-page.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
@@ -277,8 +278,14 @@ export async function generateSprite(subject: { name: string; description: strin
 }
 
 /** The trials of catalog models, newest first (D-081). */
-export async function listModelEvals(limit = 20): Promise<ModelEval[]> {
-  return (await call<{ evals: ModelEval[] }>('GET', `/api/model-evals?limit=${String(limit)}`)).evals;
+export async function listModelEvals(limit = 20, modelId?: string): Promise<ModelEval[]> {
+  const model = modelId === undefined ? '' : `&modelId=${encodeURIComponent(modelId)}`;
+  return (await call<{ evals: ModelEval[] }>('GET', `/api/model-evals?limit=${String(limit)}${model}`)).evals;
+}
+
+/** Every model, local and cloud, for Impostazioni → Modelli (I-3); read only and L0. */
+export async function loadModelsOverview(): Promise<ModelsOverview> {
+  return call<ModelsOverview>('GET', '/api/models/overview');
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

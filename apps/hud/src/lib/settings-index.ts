@@ -40,11 +40,8 @@ export const PRIVACY_HINT = 'Fa uscire dati: chiede conferma';
 export const SETTINGS_INDEX: readonly IndexGroup[] = [
   {
     group: 'Modelli',
-    items: [
-      { id: 'roles', slug: 'modelli-locali', title: 'Modelli locali', behaviour: 'now' },
-      { id: 'model-evals', slug: 'prove-dei-modelli', title: 'Prove dei modelli', behaviour: 'action' },
-      { id: 'cloud-models', slug: 'modelli-cloud', title: 'Modelli cloud', behaviour: 'now' },
-    ],
+    // One page for every model (I-3, D-137): it took the place of Modelli locali, Prove dei modelli and Modelli cloud.
+    items: [{ id: 'models', slug: 'modelli', title: 'Modelli', behaviour: 'now' }],
   },
   {
     group: 'Agenti e voce',
@@ -85,8 +82,18 @@ export interface ChosenSection {
   explicit: boolean;
 }
 
-/** Addresses of sections that became part of another (D-116): Personaggi and Personalità are in Agenti. */
-const MOVED: Record<string, string> = { personaggi: 'agenti', personalita: 'agenti' };
+/**
+ * Addresses of sections that became part of another: Personaggi and
+ * Personalità are in Agenti (D-116); Modelli locali, Prove dei modelli and
+ * Modelli cloud are in Modelli (D-137).
+ */
+const MOVED: Record<string, string> = {
+  personaggi: 'agenti',
+  personalita: 'agenti',
+  'modelli-locali': 'modelli',
+  'prove-dei-modelli': 'modelli',
+  'modelli-cloud': 'modelli',
+};
 
 /** The section of a slug; none, unknown or a page of its own gives the first section. */
 export function resolveSection(slug: string | undefined): ChosenSection {
@@ -104,8 +111,7 @@ export function hrefOf(item: IndexItem): string {
 
 /** The parts of the settings (the `Section`s of lib/settings.ts) a section edits, if any. */
 export const EDITED_BY: Record<string, readonly string[]> = {
-  roles: ['roles', 'sprites'],
-  'cloud-models': ['cloudModels'],
+  models: ['roles', 'sprites', 'cloudModels'],
   agents: ['characters', 'personas', 'agents', 'participants'],
   voice: ['voice'],
   notifications: ['notifications'],
