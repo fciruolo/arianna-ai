@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 
 import { resolveHome } from '@arianna/config';
 
-import { DATA_LAYOUT, ensureLayout, layoutCheck, systemChecks, voiceCheck, type Runner } from '../src/system.ts';
+import { DATA_LAYOUT, ensureLayout, layoutCheck, omlxLogChecks, systemChecks, voiceCheck, type Runner } from '../src/system.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `home-${randomUUID()}`);
 
@@ -90,4 +90,42 @@ test('an ARIANNA_HOME reached through a link does not make its own links look ou
   } finally {
     rmSync(alias);
   }
+});
+
+test('omlxLogChecks refuses the oMLX levels that log the prompts, and only for oMLX servers (D-136)', () => {
+  const serve = (...extra: string[]): string[] => ['omlx', 'serve', '--model-dir', 'data/models', ...extra];
+  const checks = omlxLogChecks([
+    { id: 'a', command: serve('--log-level', 'info') },
+    { id: 'b', command: serve('--log-level', 'trace') },
+    { id: 'c', command: serve('--log-level=DEBUG') },
+    { id: 'd', command: serve() },
+    { id: 'e', command: ['/srv/bin/omlx', 'serve', '--log-level', 'warning'] },
+    { id: 'f', command: ['llama-server', '--log-level', 'trace'] },
+    { id: 'g' },
+    // The last value counts, as the parser of oMLX applies it.
+    { id: 'h', command: serve('--log-level', 'info', '--log-level', 'trace') },
+    { id: 'i', command: serve('--log-level', 'trace', '--log-level=info') },
+    // A flag without a value, an unknown level, a launcher in front.
+    { id: 'j', command: serve('--log-level') },
+    { id: 'k', command: serve('--log-level', 'verbose') },
+    { id: 'l', command: ['uvx', 'omlx', 'serve', '--log-level', 'trace'] },
+  ]);
+  assert.deepEqual(
+    checks.map((check) => [check.id, check.ok]),
+    [
+      ['local.a.log-level', true],
+      ['local.b.log-level', false],
+      ['local.c.log-level', false],
+      ['local.d.log-level', false],
+      ['local.e.log-level', true],
+      ['local.h.log-level', false],
+      ['local.i.log-level', true],
+      ['local.j.log-level', false],
+      ['local.k.log-level', false],
+      ['local.l.log-level', false],
+    ],
+  );
+  assert.match(checks[1]?.detail ?? '', /data\/b\.log/);
+  assert.match(checks[3]?.detail ?? '', /add --log-level info/);
+  assert.match(checks[7]?.detail ?? '', /without a value/);
 });

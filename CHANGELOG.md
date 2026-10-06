@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Sicurezza
+
+- Il wizard scrive `--log-level info` nel comando di oMLX e il doctor lo pretende (rifiuta il flag assente e ogni livello fuori da info, warning, error, critical: `trace` metterebbe i testi delle richieste nel log del modello locale; D-136, tappa 0).
+
 ## [0.24.0] - 2026-10-07
 
 ### Aggiunto
