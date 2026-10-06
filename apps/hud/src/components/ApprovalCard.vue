@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, LABEL_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import type { Approval } from '../lib/types.ts';
+import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 
 const props = defineProps<{ approval: Approval; decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void> }>();
@@ -28,7 +29,6 @@ const budget = computed(() => {
 const text = computed(() => (typeof props.approval.detail.text === 'string' ? props.approval.detail.text : undefined));
 const labels = computed(() => declassifyLabels(props.approval.detail));
 const detail = computed(() => JSON.stringify(props.approval.detail, null, 2));
-const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: 'text-l2', L3: 'text-l3' };
 
 async function choose(state: 'approved' | 'rejected'): Promise<void> {
   busy.value = true;
@@ -46,7 +46,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       <span class="text-warn"><Icon name="warning" /></span>
       <h3 class="min-w-0 flex-1 truncate font-semibold">{{ title }}</h3>
       <span v-if="labels" class="lab text-warn">{{ labels }}</span>
-      <span class="lab" :class="labelClass[approval.label]" :title="LABEL_TEXT[approval.label]">{{ approval.label }}</span>
+      <LabelBadge :label="approval.label" />
       <span class="font-mono text-[10.5px] tracking-[0.08em] whitespace-nowrap text-warn uppercase">In attesa</span>
     </header>
 

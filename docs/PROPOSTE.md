@@ -2477,7 +2477,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | # | Idea | Tipo | Stima | Dipende da | Stato |
 | --- | --- | --- | --- | --- | --- |
 | I-2 | I pulsanti "Copia" e "Salva in inbox" spostano lo stato del messaggio | difetto | fatto | — | ramo `task/fix-azioni-messaggio`, da far vedere all'utente |
-| I-1 | Notifica quando una chat risponde, anche se non è aperta | funzione | 4-6 h | Web Push di D-066 | da decidere (domanda N1) |
+| I-1 | Notifica quando una chat risponde, anche se non è aperta | funzione | 4-6 h | Web Push di D-066 | D-126, in prova |
 | I-4 | Modalità incognita: una conversazione che non salva niente | funzione di privacy | 13-17 h | decisione D- | proposta `docs/I-4-incognito.md` (ramo `task/i4-incognito-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-3 | Una pagina "Modelli" sola, locali e cloud, con le schede | funzione | 28-41 h (tappe M1-M6) | task 1.16 per M6 | proposta `docs/I-3-modelli.md` (ramo `task/i3-modelli-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | ricerca in corso (sistemi esistenti), poi proposta e domande |

@@ -44,6 +44,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     characters: {},
     personas: {},
     agents: {},
+    notifications: { replies: true, approvals: true, failures: true },
     sprites: { model: 'opus' },
     participants: { leaveAfter: 10 },
   });

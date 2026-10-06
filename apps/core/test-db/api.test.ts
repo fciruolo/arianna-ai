@@ -404,6 +404,92 @@ test('the socket accepts nothing from the client', async () => {
   assert.equal(await closed, 1008);
 });
 
+test('notifications (I-1): a page says whether it is in view, notices reach every page, nothing else is accepted', async () => {
+  const socket = await openSocket('/api/ws');
+  try {
+    await socket.until((message) => message.type === 'ready');
+    assert.equal(server.visiblePages(), 0);
+    socket.ws.send('{"type":"visibility","visible":true}');
+    const deadline = Date.now() + 5_000;
+    while (server.visiblePages() !== 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(server.visiblePages(), 1);
+    server.broadcast({ kind: 'reply', conversationId: '11111111-2222-4333-8444-555555555555' });
+    const notice = await socket.until((message) => message.type === 'notice');
+    assert.deepEqual(notice, { type: 'notice', kind: 'reply', conversationId: '11111111-2222-4333-8444-555555555555' });
+    socket.ws.send('{"type":"visibility","visible":false}');
+    while (server.visiblePages() !== 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(server.visiblePages(), 0);
+    const closed = new Promise<number>((resolve) => socket.ws.on('close', (code) => { resolve(code); }));
+    socket.ws.send('{"type":"visibility","visible":true,"text":"x"}');
+    assert.equal(await closed, 1008);
+    assert.equal(server.visiblePages(), 0);
+  } finally {
+    socket.ws.close();
+  }
+  // Without a board: nothing recent to tell the service worker.
+  const response = await fetch(`${origin}/api/notifications/latest`);
+  assert.deepEqual(await response.json(), { notice: null });
+});
+
+test('notifications (I-1): a trial notice reaches the open pages with no conversation; another kind or field is refused', async () => {
+  const socket = await openSocket('/api/ws');
+  try {
+    await socket.until((message) => message.type === 'ready');
+    const sent = await fetch(`${origin}/api/notifications/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"kind":"approval"}' });
+    assert.equal(sent.status, 200);
+    assert.deepEqual(await sent.json(), { sent: 'approval', pages: 1, helpers: 0 });
+    assert.deepEqual(await socket.until((message) => message.type === 'notice'), { type: 'notice', kind: 'approval', conversationId: null, trial: true });
+  } finally {
+    socket.ws.close();
+  }
+  for (const body of ['{"kind":"call"}', '{"kind":"reply","text":"x"}', '{}']) {
+    const refused = await fetch(`${origin}/api/notifications/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    assert.equal(refused.status, 400, body);
+  }
+});
+
+test('the helper of the Mac (D-128): a stream of notices, kind and conversation only, for the helper alone', async () => {
+  // Without the header of the helper (an EventSource of a page), or from another site: refused.
+  assert.equal((await fetch(`${origin}/api/notifications/stream`)).status, 400);
+  const evil = await fetch(`${origin}/api/notifications/stream`, { headers: { 'x-arianna-helper': '1', origin: 'http://evil.example' } });
+  assert.equal(evil.status, 403);
+  assert.deepEqual(await (await fetch(`${origin}/api/notifications/helper`)).json(), { connected: false });
+  // The push address of a page of this Mac: only a push service, only that field.
+  const mac = (body: string) => fetch(`${origin}/api/notifications/this-mac`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  assert.equal((await mac('{"endpoint":"https://fcm.googleapis.com/fcm/send/mac"}')).status, 200);
+  assert.equal((await mac('{"endpoint":"https://evil.example/x"}')).status, 400);
+  assert.equal((await mac('{"endpoint":"https://fcm.googleapis.com/fcm/send/mac","x":1}')).status, 400);
+
+  const controller = new AbortController();
+  const stream = await fetch(`${origin}/api/notifications/stream`, { headers: { 'x-arianna-helper': '1' }, signal: controller.signal });
+  try {
+    assert.equal(stream.status, 200);
+    assert.match(stream.headers.get('content-type') ?? '', /^text\/event-stream/);
+    assert.ok(stream.body !== null);
+    const reader = (stream.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let received = decoder.decode((await reader.read()).value);
+    assert.match(received, /^: arianna/);
+    assert.deepEqual(await (await fetch(`${origin}/api/notifications/helper`)).json(), { connected: true });
+    const sent = await fetch(`${origin}/api/notifications/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"kind":"reply"}' });
+    assert.equal(((await sent.json()) as { helpers: number }).helpers, 1);
+    while (!received.includes('\n\nevent: notice') && !received.startsWith('event: notice')) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      received += decoder.decode(chunk.value);
+    }
+    assert.match(received, /event: notice\ndata: \{"kind":"reply","conversationId":null\}\n\n/);
+  } finally {
+    controller.abort();
+  }
+  // Closed: no helper any more.
+  for (let tries = 0; tries < 50; tries += 1) {
+    if (!((await (await fetch(`${origin}/api/notifications/helper`)).json()) as { connected: boolean }).connected) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.deepEqual(await (await fetch(`${origin}/api/notifications/helper`)).json(), { connected: false });
+});
+
 /** A step executor for the declassification path: ask, then use the decided approval. */
 function declassifier(): StepExecutor & { seen: StepContext[] } {
   const seen: StepContext[] = [];

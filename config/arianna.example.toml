@@ -198,6 +198,21 @@ port = 7420
 # private_key = "vault://vapid-private-key"
 # subject = "mailto:you@example.org"
 
+# Notifications of the web chat (I-1): a reply, an approval waiting, a
+# failed task. Never the text or the title of a conversation: only a fixed
+# sentence and the link. In a browser tab that is open but not in view, the
+# page shows them; with the chat closed, Web Push of [voice.push], only
+# while no page of the chat is in view. Each browser asks for permission
+# from Impostazioni -> Notifiche. `quiet` is "HH:MM-HH:MM" local time
+# (across midnight too); without it, no quiet hours. Absent: every kind on.
+# Applies without a restart.
+#
+# [notifications]
+# replies = true
+# approvals = true
+# failures = true
+# quiet = "22:00-07:00"
+
 # What the web chat says this installation is (D-089): development while the
 # database uses the development passwords or while mode = "development";
 # production only with real passwords and no such line. Applies without a

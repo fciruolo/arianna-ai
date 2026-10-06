@@ -14,7 +14,7 @@ const emit = defineEmits<{ 'update:modelValue': [UserPermissions] }>();
 
 const EXECUTORS = {
   local: { title: 'Modello locale', text: 'Risponde soltanto, senza strumenti. Niente esce dal Mac.' },
-  claude: { title: 'Claude Code', text: 'Lavora nella cartella del progetto della conversazione. Il prompt e l’incarico vanno al cloud dal gateway, al massimo L1.' },
+  claude: { title: 'Claude Code', text: 'Lavora nella cartella del progetto della conversazione. Il prompt e l’incarico vanno al cloud dal gateway, al massimo Interno.' },
 } as const;
 
 const TOOLS: Record<string, { title: string; text: string }> = {

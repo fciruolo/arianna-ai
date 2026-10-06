@@ -205,7 +205,7 @@ export function moveSelection(current: number, count: number, step: 1 | -1): num
 /** The note at the foot of the window: what was not searched or not finished, never what it holds. */
 export function searchFootnote(result: Pick<SearchResult, 'hidden' | 'truncated'>): string | null {
   const parts: string[] = [];
-  if (result.hidden > 0) parts.push(`${String(result.hidden)} ${result.hidden === 1 ? 'elemento sopra L2 non è cercato' : 'elementi sopra L2 non sono cercati'}`);
+  if (result.hidden > 0) parts.push(`${String(result.hidden)} ${result.hidden === 1 ? 'elemento sopra Privato non è cercato' : 'elementi sopra Privato non sono cercati'}`);
   if (result.truncated) parts.push('la ricerca si è fermata dopo 2 secondi: potrebbe mancare qualcosa');
   if (parts.length === 0) return null;
   const text = parts.join('; ');

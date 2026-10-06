@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { renderSheet } from '../../characters/compose.ts';
 import { USER } from '../../characters/art/user.ts';
 import { sheetUrl } from '../lib/api.ts';
+import { LABEL_TEXT } from '../lib/labels.ts';
 import { drawOffice, readColors, type Colors, type Figure } from '../lib/office/draw.ts';
 import {
   archivePoint,
@@ -580,7 +581,7 @@ defineExpose({ goTo, focus });
           class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[11px] leading-[14px] whitespace-nowrap"
           :class="tag.muted ? 'text-muted' : 'text-ink'"
           :style="{ transform: `translate(${String(tag.x * scale)}px, ${String(tag.y * scale)}px) translateY(-100%)` }"
-        >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 font-mono text-[10px] font-semibold" :class="labelClass[tag.label]">{{ tag.label }}</span></span>
+        >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[10px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
         <span
           v-for="agent in snapshot.agents"
           :key="agent.id"

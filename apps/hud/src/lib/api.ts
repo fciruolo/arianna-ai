@@ -34,6 +34,11 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
   return data as T;
 }
 
+/** A trial notice from the core (I-1), the same way as a real one: every open page shows it. How many pages it reached. */
+export async function testNotice(kind: 'reply' | 'approval' | 'failure'): Promise<number> {
+  return (await call<{ sent: string; pages: number }>('POST', '/api/notifications/test', { kind })).pages;
+}
+
 /** The list, or the archived conversations (up to 200, the most the core gives in one page). */
 export async function listConversations(archived = false): Promise<Conversation[]> {
   return (await call<{ conversations: Conversation[] }>('GET', archived ? '/api/conversations?archived=1&limit=200' : '/api/conversations')).conversations;
@@ -411,6 +416,11 @@ export async function loadPushKey(): Promise<string | null> {
 
 export async function subscribePush(subscription: PushSubscriptionJSON): Promise<void> {
   await call('POST', '/api/push/subscribe', { subscription });
+}
+
+/** The push address of this browser, on the Mac of the core (D-128). */
+export async function tellThisMac(endpoint: string): Promise<void> {
+  await call('POST', '/api/notifications/this-mac', { endpoint });
 }
 
 /** The settings page (D-071): values, catalog, fingerprint, local servers. */

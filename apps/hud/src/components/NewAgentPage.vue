@@ -244,7 +244,7 @@ function another(): void {
           <a href="/impostazioni/agenti" class="ml-auto text-xs text-accent hover:underline" @click.prevent="emit('done')">Torna agli agenti</a>
         </div>
         <p class="mt-2 text-[13px] text-muted">
-          Un agente nuovo nasce disattivato in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (L1) e agisce solo nella sandbox (A1),
+          Un agente nuovo nasce disattivato in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (Interno) e agisce solo nella sandbox (A1),
           qualunque cosa dica la sua scheda. Lo attivi tu, qui alla fine o dalla pagina Agenti.
         </p>
         <p v-if="loadError" role="alert" class="mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ loadError }}</p>
@@ -309,7 +309,7 @@ function another(): void {
             </label>
           </fieldset>
           <PermissionsPicker v-if="sources" v-model="form.permissions" :sources="sources" id-prefix="new-agent" />
-          <p class="text-xs text-muted">Dati che legge: al massimo dati di lavoro (L1), come il prompt che gli scrivi. Mai deleghe ad altri agenti, canali esterni o azioni che chiedono approvazione.</p>
+          <p class="text-xs text-muted">Dati che legge: al massimo dati di lavoro (Interno), come il prompt che gli scrivi. Mai deleghe ad altri agenti, canali esterni o azioni che chiedono approvazione.</p>
         </section>
 
         <!-- 2. Who it is: name, description, prompt -->
@@ -340,7 +340,7 @@ function another(): void {
           </p>
           <p class="flex items-start gap-2 text-xs text-warn">
             <Icon name="gateway" :size="14" class="mt-px" />
-            Nome, descrizione e prompt valgono come L1 per tua dichiarazione e possono arrivare a un esecutore cloud: non scriverci dati personali. Un testo con IBAN, codici fiscali, carte,
+            Nome, descrizione e prompt valgono come Interno per tua dichiarazione e possono arrivare a un esecutore cloud: non scriverci dati personali. Un testo con IBAN, codici fiscali, carte,
             chiavi o valori del vault viene rifiutato.
           </p>
         </section>

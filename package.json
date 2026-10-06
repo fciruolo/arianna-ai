@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.16.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -29,6 +29,7 @@
     "voice:lock": "node scripts/voice.ts lock",
     "test:voice": "node scripts/voice.ts test",
     "voice:vapid": "node scripts/voice.ts vapid",
+    "notifier:build": "node apps/notifier/src/cli.ts",
     "kb:capture": "node scripts/kb-capture.ts",
     "agency:import": "node scripts/agency-import.ts",
     "start": "node apps/core/src/main.ts",

@@ -10,6 +10,7 @@ import { parseCharacters, type CharacterChoices } from './characters.ts';
 import { legacyDefaultModel, parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
+import { parseNotifications, type NotificationsConfig } from './notifications.ts';
 import { parsePersonas, type Personas } from './personas.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
@@ -76,6 +77,8 @@ export interface AriannaConfig {
   sprites: SpritesConfig;
   /** `[participants]` (I-8, D-130): when an agent leaves a conversation by itself. */
   participants: ParticipantsConfig;
+  /** `[notifications]` (I-1): kinds and quiet hours; absent, the defaults. Applied without a restart. */
+  notifications: NotificationsConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
@@ -104,7 +107,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -145,6 +148,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),
     sprites: parseSprites(root.sprites),
     participants: parseParticipants(root.participants),
+    notifications: parseNotifications(root.notifications),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
     ...(installation === undefined ? {} : { installation }),
