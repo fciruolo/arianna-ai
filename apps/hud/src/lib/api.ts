@@ -550,6 +550,16 @@ export async function readProjectFile(project: string, path: string): Promise<Pr
   return (await call<{ file: ProjectFile }>('GET', `${browse(project)}/file?${new URLSearchParams({ path }).toString()}`)).file;
 }
 
+/** "Mostra" (D-135): a covered secret with its text, once; an event in the chain. */
+export async function revealProjectFile(project: string, path: string): Promise<ProjectFile> {
+  return (await call<{ file: ProjectFile }>('POST', `${browse(project)}/reveal`, { path })).file;
+}
+
+/** "Mostra nascosti" (D-135): the consent for this project, kept until it is turned off. */
+export async function setProjectHidden(project: string, on: boolean): Promise<void> {
+  await call('POST', `${browse(project)}/hidden`, { on });
+}
+
 export async function openProjectFile(project: string, path: string): Promise<string> {
   return (await call<{ url: string }>('POST', `${browse(project)}/open`, { path })).url;
 }

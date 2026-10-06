@@ -243,12 +243,34 @@ async function readProjectText(root: string, path: string): Promise<{ text: stri
   return { text: shownText(bytes), size: bytes.length };
 }
 
+/** Names whose text is covered until "Mostra" (D-135), hidden or not; "Apri" never serves them. */
+const SECRET_NAMES = new Set(['.npmrc', '.pypirc', '.netrc', '.git-credentials', '.htpasswd', 'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519']);
+const SECRET_EXTENSIONS = new Set(['pem', 'key', 'p12', 'pfx', 'jks', 'keystore']);
+const ENV_EXAMPLES = new Set(['.env.example', '.env.sample', '.env.template', '.env.dist']);
+
+/** A file that may hold a secret: `.env`, keys, credentials, `.git/config` (D-135). */
+export function isSecretPath(path: string): boolean {
+  const parts = path.split(/[/\\]/).filter((part) => part !== '');
+  const base = (parts.at(-1) ?? '').toLowerCase();
+  if (base === 'config' && parts.slice(0, -1).some((part) => part.toLowerCase() === '.git')) return true;
+  if ((base === '.env' || base.startsWith('.env.')) && !ENV_EXAMPLES.has(base)) return true;
+  if (SECRET_NAMES.has(base)) return true;
+  const dot = base.lastIndexOf('.');
+  return dot > 0 && SECRET_EXTENSIONS.has(base.slice(dot + 1));
+}
+
 /**
  * The bytes of `path` in the project folder `root`: inside it after resolving
- * links, not under `.git`, a regular file of at most `max` bytes.
+ * links, not under `.git` (unless `allowGit`: the page "Progetti" with the
+ * user's consent, D-135), a regular file of at most `max` bytes.
  */
-export async function readProjectBytes(root: string, path: string, max: number, refuseHidden = false): Promise<Buffer> {
-  if (path === '' || isAbsolute(path) || path.includes('\0') || path.split('/').some((part) => part === '..' || isGitName(part))) {
+export async function readProjectBytes(root: string, path: string, max: number, refuseHidden = false, allowGit = false): Promise<Buffer> {
+  return (await readProjectBytesAt(root, path, max, refuseHidden, allowGit)).bytes;
+}
+
+/** As `readProjectBytes`, with the path relative to `root` of the file really read (links resolved). */
+export async function readProjectBytesAt(root: string, path: string, max: number, refuseHidden = false, allowGit = false): Promise<{ bytes: Buffer; real: string }> {
+  if (path === '' || isAbsolute(path) || path.includes('\0') || path.split('/').some((part) => part === '..' || (!allowGit && isGitName(part)))) {
     throw new DelegationFileError('refused', 'the path is not a file of the project');
   }
   const candidate = join(root, path);
@@ -261,7 +283,7 @@ export async function readProjectBytes(root: string, path: string, max: number, 
   }
   // A link may point anywhere: only what stays inside the project, and never into .git.
   // `.git` in any case: on a case-insensitive disk `.GIT/config` is the git configuration.
-  if (!inside(real, root) || relative(root, real).split(sep).some(isGitName)) {
+  if (!inside(real, root) || (!allowGit && relative(root, real).split(sep).some(isGitName))) {
     throw new DelegationFileError('refused', 'the file leads out of the project');
   }
   // "Apri": a link named page.html must not lead to .env either.
@@ -287,7 +309,7 @@ export async function readProjectBytes(root: string, path: string, max: number, 
     const buffer = Buffer.alloc(max + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     if (bytesRead > max) throw new DelegationFileError('too-large', `the file is larger than ${String(max / 1024)} KiB`);
-    return buffer.subarray(0, bytesRead);
+    return { bytes: buffer.subarray(0, bytesRead), real: relative(root, real).split(sep).join('/') };
   } finally {
     await handle.close();
   }
@@ -417,7 +439,9 @@ export async function openDelegationFile(sql: Queryable, projects: readonly Proj
 export async function readOpenBytes(root: string, path: string): Promise<{ body: Buffer; type: string }> {
   const kind = OPEN_TYPES[extensionOf(path)];
   if (kind === undefined) throw new DelegationFileError('refused', 'this kind of file is not opened');
-  const body = await readProjectBytes(root, path, MAX_OPEN_BYTES, true);
+  const { bytes: body, real } = await readProjectBytesAt(root, path, MAX_OPEN_BYTES, true);
+  // A link named logo.svg must not serve a key (D-135): a secret is never opened.
+  if (isSecretPath(path) || isSecretPath(real)) throw new DelegationFileError('refused', 'a file that may hold a secret is not opened');
   // A page, a style or a script with a value of the vault in it is not served.
   if (kind.text && knownSecrets.find(body.toString('utf8')).length > 0) throw new DelegationFileError('refused', 'the file holds a value of the vault');
   return { body, type: kind.type };

@@ -11,7 +11,7 @@ import { Secret } from '@arianna/vault';
 
 import type { Queryable } from '../src/db/client.ts';
 import { createOpenLinks, DelegationFileError } from '../src/delegation-view.ts';
-import { browsableProjects, listProjectDir, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit } from '../src/project-browser.ts';
+import { browsableProjects, isSecretPath, listProjectDir, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit } from '../src/project-browser.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `browser-${randomUUID()}`);
 const ROOT = join(HOME, 'repos', 'orto');
@@ -57,6 +57,17 @@ symlinkSync(join(OUTSIDE, 'secret.txt'), join(ROOT, 'fuori.txt'));
 symlinkSync('src', join(ROOT, 'codice'));
 symlinkSync('.git', join(ROOT, 'src2'));
 symlinkSync('node_modules/vue', join(ROOT, 'vue'));
+// D-135: entries the consent shows, secrets covered hidden or not, a link to a secret.
+write({
+  '.github/ci.yml': 'name: ci\n',
+  '.env.example': 'TOKEN=\n',
+  'certs/server.key': 'chiave finta\n',
+  '.ombra.html': '<p>ombra</p>\n',
+  '.vault-note': `nota ${VAULT_VALUE}\n`,
+});
+symlinkSync('.env', join(ROOT, 'note.txt'));
+symlinkSync('certs/server.key', join(ROOT, 'chiave.txt'));
+symlinkSync('certs/server.key', join(ROOT, 'logo.svg'));
 const PLAIN = join(HOME, 'repos', 'senza-git');
 mkdirSync(PLAIN, { recursive: true });
 writeFileSync(join(PLAIN, 'note.md'), '# Note\n');
@@ -70,7 +81,9 @@ const busy: Queryable = { unsafe: () => Promise.resolve([{ id: '1' }]) } as unkn
 const code = (error: unknown): string => (error instanceof DelegationFileError ? error.code : String(error));
 
 test('only approved projects, with their folder for "Apri in VS Code"', async () => {
-  assert.deepEqual(browsableProjects(PROJECTS.slice(0, 1)), [{ name: 'orto', absolute: ROOT }]);
+  assert.deepEqual(browsableProjects(PROJECTS.slice(0, 1)), [{ name: 'orto', absolute: ROOT, hidden: false }]);
+  // D-135: the consent counts only for the folder it was given for.
+  assert.deepEqual(browsableProjects(PROJECTS, new Map([['orto', ROOT], ['senza-git', '/srv/altrove']])).map(({ hidden }) => hidden), [true, false]);
   await assert.rejects(listProjectDir(PROJECTS, 'altro', ''), (error) => code(error) === 'not-approved');
   await assert.rejects(readBrowsedFile([], 'orto', 'README.md'), (error) => code(error) === 'not-approved');
 });
@@ -117,6 +130,9 @@ test('"Apri" gives a link for a page or an image only', async () => {
   const { url } = await openBrowsedFile(PROJECTS, links, 'orto', 'public/index.html');
   assert.match(url, /^\/api\/open\/[A-Za-z0-9_-]{32}\/public\/index\.html$/);
   await assert.rejects(openBrowsedFile(PROJECTS, links, 'orto', 'src/seasons.ts'), (error) => code(error) === 'refused');
+  // D-135: a link named like an image never serves a secret.
+  await assert.rejects(openBrowsedFile(PROJECTS, links, 'orto', 'logo.svg'), (error) => code(error) === 'refused');
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', 'logo.svg')).openable, false);
 });
 
 test('git: branches, changes not committed and the log; nothing while the Coder works there', async () => {
@@ -167,7 +183,7 @@ test('a commit diff: the code shown, a hidden file listed but never shown, a bad
   const { files, parent } = await readCommitDiff(idle, PROJECTS, 'orto', last.id);
   assert.notEqual(parent, null);
   const env = files.find((file) => file.path === '.env');
-  assert.deepEqual(env, { path: '.env', change: 'modified', error: 'refused' });
+  assert.deepEqual(env, { path: '.env', change: 'modified', error: 'covered' });
   const seasons = files.find((file) => file.path === 'src/seasons.ts');
   assert.ok(seasons !== undefined && 'hunks' in seasons);
   const lines = seasons.hunks.flatMap((hunk) => hunk.lines.map((line) => `${line.kind}:${line.text}`));
@@ -175,4 +191,78 @@ test('a commit diff: the code shown, a hidden file listed but never shown, a bad
   assert.ok(!JSON.stringify(files).includes('TOKEN'));
   await assert.rejects(readCommitDiff(idle, PROJECTS, 'orto', 'HEAD'), (error) => code(error) === 'not-found');
   await assert.rejects(readCommitDiff(idle, PROJECTS, 'orto', 'f'.repeat(40)), (error) => code(error) === 'not-found');
+});
+
+test('isSecretPath (D-135): .env, keys, credentials and .git/config; examples and ordinary files are not', () => {
+  for (const path of ['.env', '.env.local', 'app/.env.production', '.npmrc', '.netrc', '.git-credentials', 'id_rsa', 'home/id_ed25519', 'certs/server.key', 'a.PEM', 'store.p12', 'release.jks', '.git/config', '.git/modules/lib/config', '.GIT/config']) {
+    assert.equal(isSecretPath(path), true, path);
+  }
+  for (const path of ['.env.example', '.env.sample', '.env.template', '.env.dist', 'README.md', 'src/env.ts', 'config', 'src/config', 'id_rsa.pub', 'keys.ts', '.key', 'environment.md', '.github/ci.yml']) {
+    assert.equal(isSecretPath(path), false, path);
+  }
+});
+
+test('a folder with the consent (D-135): hidden entries, node_modules and .git open; links out stay shut; secrets marked', async () => {
+  const byName = Object.fromEntries((await listProjectDir(PROJECTS, 'orto', '', true)).entries.map((entry) => [entry.name, entry]));
+  assert.deepEqual(byName['.git'], { name: '.git', kind: 'dir', size: null });
+  assert.equal(byName['.github']?.shut, undefined);
+  assert.equal(byName.node_modules?.shut, undefined);
+  assert.equal(byName['.env']?.secret, true);
+  assert.equal(byName['.env.example']?.secret, undefined);
+  assert.equal(byName['fuori.txt']?.shut, 'outside');
+  assert.equal(byName.src2?.shut, undefined);
+  assert.equal((await listProjectDir(PROJECTS, 'orto', 'certs')).entries[0]?.secret, true);
+  // A link is marked by where it leads; an ordinary file is not marked.
+  assert.equal(byName['note.txt']?.secret, true);
+  assert.equal(byName['chiave.txt']?.secret, true);
+  assert.equal(byName['README.md']?.secret, undefined);
+  assert.equal((await listProjectDir(PROJECTS, 'orto', '')).entries.find((entry) => entry.name === 'chiave.txt')?.secret, true);
+  for (const dir of ['.git', '.git/refs', 'node_modules/vue', 'src2', '.github']) {
+    assert.ok((await listProjectDir(PROJECTS, 'orto', dir, true)).entries.length > 0, dir);
+  }
+  for (const dir of ['..', 'src/../..', '/etc', 'src/']) {
+    await assert.rejects(listProjectDir(PROJECTS, 'orto', dir, true), (error) => code(error) === 'refused', dir);
+  }
+});
+
+test('a file with the consent (D-135): hidden files and .git read, secrets covered until reveal, vault values never', async () => {
+  const shown = { showHidden: true };
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', '.github/ci.yml', shown)).text, 'name: ci\n');
+  assert.match((await readBrowsedFile(PROJECTS, 'orto', '.git/HEAD', shown)).text, /refs\/heads\/main/);
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', 'node_modules/vue/index.js', shown)).text, 'x\n');
+  // "Apri" never serves a hidden file, consent or not.
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', '.ombra.html', shown)).openable, false);
+  for (const path of ['.env', '.git/config', 'note.txt', 'src2/config']) {
+    const covered = await readBrowsedFile(PROJECTS, 'orto', path, shown);
+    assert.equal(covered.covered, true, path);
+    assert.equal(covered.text, '', path);
+  }
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', '.env', { showHidden: true, reveal: true })).text, 'TOKEN=altro\n');
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', '.env', { showHidden: true, reveal: true })).covered, undefined);
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', '.env.example', shown)).covered, undefined);
+  // A secret that is not hidden is covered without the consent too.
+  const key = await readBrowsedFile(PROJECTS, 'orto', 'certs/server.key');
+  assert.deepEqual([key.covered, key.text], [true, '']);
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', 'certs/server.key', { reveal: true })).text, 'chiave finta\n');
+  await assert.rejects(readBrowsedFile(PROJECTS, 'orto', '.vault-note', shown), (error) => code(error) === 'refused');
+  // Without the consent a link to a hidden secret is refused, never covered.
+  await assert.rejects(readBrowsedFile(PROJECTS, 'orto', 'note.txt'), (error) => code(error) === 'refused');
+  await assert.rejects(readBrowsedFile(PROJECTS, 'orto', 'src2/config'), (error) => code(error) === 'refused');
+  // A link with an ordinary name to a secret that is not hidden: covered without the consent too.
+  const linked = await readBrowsedFile(PROJECTS, 'orto', 'chiave.txt');
+  assert.deepEqual([linked.covered, linked.text], [true, '']);
+  assert.equal((await readBrowsedFile(PROJECTS, 'orto', 'README.md', { reveal: true })).secret, undefined);
+  await assert.rejects(readBrowsedFile(PROJECTS, 'orto', 'fuori.txt', shown), (error) => code(error) === 'refused');
+});
+
+test('a commit diff with the consent (D-135): a file renamed from a hidden one shown, a secret still covered', async () => {
+  const log = (await readProjectGit(idle, PROJECTS, 'orto')).log;
+  const renamed = log.find((item) => item.subject === 'Rinomina');
+  const zucchine = log.find((item) => item.subject === 'Zucchine');
+  assert.ok(renamed !== undefined && zucchine !== undefined);
+  const [rename] = (await readCommitDiff(idle, PROJECTS, 'orto', renamed.id, true)).files;
+  assert.ok(rename !== undefined && 'hunks' in rename);
+  const { files } = await readCommitDiff(idle, PROJECTS, 'orto', zucchine.id, true);
+  assert.deepEqual(files.find((file) => file.path === '.env'), { path: '.env', change: 'modified', error: 'covered' });
+  assert.ok(!JSON.stringify(files).includes('TOKEN'));
 });
