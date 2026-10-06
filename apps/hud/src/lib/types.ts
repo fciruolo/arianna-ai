@@ -2,6 +2,20 @@
 export type Label = 'L0' | 'L1' | 'L2' | 'L3';
 export type ConversationMode = 'work' | 'private';
 
+/** The agent a conversation has in place of Arianna (D-111d): any agent id but Arianna's. */
+export type ConversationAgent = string;
+
+/** An agent the user may talk with directly (GET /api/direct-agents, D-111d): what its card allows. */
+export interface DirectAgent {
+  agent: string;
+  description: string;
+  /** Every message goes to Claude: the warning, "va a Claude", the context indicator. */
+  cloud: boolean;
+  modes: ConversationMode[];
+  /** The conversation needs an approved project. */
+  project: boolean;
+}
+
 export interface Conversation {
   id: string;
   mode: ConversationMode;
@@ -10,6 +24,10 @@ export interface Conversation {
   workspace: string | null;
   /** The cloud model chosen for delegated steps (work only); null lets the router choose. */
   model: string | null;
+  /** Who answers (D-111): null is Arianna, 'coder' the direct chat with the Coder; chosen at creation. */
+  agent: ConversationAgent | null;
+  /** Direct chat only: tokens in the Coder's session after its latest answer, for the context indicator. */
+  contextTokens: number | null;
   /** From the first message or the user; null until the first message (D-057). */
   title: string | null;
   /** When it was archived; null while it is in the list. */

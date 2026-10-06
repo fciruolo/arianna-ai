@@ -6,7 +6,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
 import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationMode, DelegationDiff, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -104,9 +104,14 @@ export async function loadInstallation(): Promise<InstallationInfo | undefined> 
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
-export async function createConversation(mode: ConversationMode, project?: string): Promise<Conversation> {
-  const body = project === undefined || project === '' ? { mode } : { mode, project };
+export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent): Promise<Conversation> {
+  const body = { mode, ...(project === undefined || project === '' ? {} : { project }), ...(agent === undefined ? {} : { agent }) };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
+}
+
+/** The agents the user may talk with directly now (D-111d). */
+export async function listDirectAgents(): Promise<DirectAgent[]> {
+  return (await call<{ agents: DirectAgent[] }>('GET', '/api/direct-agents')).agents;
 }
 
 /** The projects the user approved, which a new work conversation may choose. */

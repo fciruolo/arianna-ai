@@ -10,6 +10,11 @@ export interface ClaudeUsage {
   tokensOut: number;
   /** Model responses in the run (each tool round trip is one). */
   turns: number;
+  /**
+   * How full the session's context is after the run: input and output of its
+   * latest model response (D-111, the context indicator of the direct chat).
+   */
+  context?: number;
 }
 
 /** One replacement of a file edit: `before` is empty when the tool wrote the whole file. */
@@ -128,6 +133,7 @@ export class ClaudeStream {
   /** Usage per model response: a response can come in several messages with the same id. */
   readonly #responses = new Map<string, { in: number; out: number }>();
   #final: ClaudeUsage | undefined;
+  #context: number | undefined;
   #rejected = false;
 
   /** `sessionRef`: the session a resume asked for; the binary must continue that one, not start another. */
@@ -137,14 +143,14 @@ export class ClaudeStream {
 
   /** Usage so far: the final count when the binary gave one, else the sum of the responses seen. */
   get usage(): ClaudeUsage {
-    if (this.#final !== undefined) return this.#final;
+    if (this.#final !== undefined) return this.#context === undefined ? this.#final : { ...this.#final, context: this.#context };
     let tokensIn = 0;
     let tokensOut = 0;
     for (const response of this.#responses.values()) {
       tokensIn += response.in;
       tokensOut += response.out;
     }
-    return { tokensIn, tokensOut, turns: this.#responses.size };
+    return { tokensIn, tokensOut, turns: this.#responses.size, ...(this.#context === undefined ? {} : { context: this.#context }) };
   }
 
   feed(line: string): ClaudeEvent[] {
@@ -210,7 +216,9 @@ export class ClaudeStream {
     }
     if (isRecord(body.usage)) {
       const id = typeof body.id === 'string' ? body.id : `response-${String(this.#responses.size)}`;
-      this.#responses.set(id, { in: tokensIn(body.usage), out: count(body.usage.output_tokens) });
+      const response = { in: tokensIn(body.usage), out: count(body.usage.output_tokens) };
+      this.#responses.set(id, response);
+      this.#context = response.in + response.out;
       events.push({ type: 'usage', usage: this.usage });
     }
     return events;

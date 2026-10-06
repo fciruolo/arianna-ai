@@ -49,6 +49,7 @@ import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
+import type { DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant } from '../participants.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -131,6 +132,8 @@ export interface ApiServerOptions {
    * longer active. Without it every agent reads as gone (executor null, L1).
    */
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
+  /** Who the user may talk with in place of Arianna (D-111d); undefined, nobody. */
+  directAgents?: () => readonly DirectPolicy[];
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
@@ -266,6 +269,7 @@ interface RouteOptions {
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
   installation: ApiServerOptions['installation'];
+  directAgents?: (() => readonly DirectPolicy[]) | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -700,7 +704,7 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[]):
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents }: RouteOptions): Route[] {
   return [
     ...delegationRoutes(sql, approvedProjects),
     ...modelEvalRoutes(modelEvals),
@@ -764,17 +768,24 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       return { body: { conversations: await listConversations(sql, limitParam(url), options) } };
     }),
 
+    // The agents the user may talk with directly now (D-111d), with what each one allows: no prompt, no permission.
+    route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [] } })),
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'project']);
+      onlyFields(body, ['mode', 'project', 'agent']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
       if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
+      // Who answers in place of Arianna (D-111d): only here, at creation; no route changes it later. Its card says how.
+      const policy = body.agent === undefined ? undefined : (directAgents?.() ?? []).find((item) => item.agent === body.agent);
+      if (body.agent !== undefined && policy === undefined) throw new HttpError(400, 'agent is not one the user may talk with now');
+      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
       const model = body.mode === 'work' ? defaultModel() : undefined;
       const conversation = await createConversation(sql, {
         mode: body.mode,
         ...(body.project === undefined ? {} : { project: body.project }),
+        ...(agent === undefined ? {} : { agent }),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
@@ -1291,6 +1302,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     approvedProjects: options.approvedProjects ?? (() => []),
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
+    directAgents: options.directAgents,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   table.push(...changelogRoutes(options.changelog));

@@ -4,6 +4,7 @@ import type { Queryable, Sql } from './db/client.ts';
 import { scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import type { TaskStatus } from './task-status.ts';
+import { createDelegation } from './orchestrator/delegations.ts';
 import { createTask, TaskError, type Task } from './tasks.ts';
 import { closeSupersededWaits } from './waiting.ts';
 
@@ -21,6 +22,13 @@ export interface Conversation {
   workspace: string | null;
   /** The cloud model the user chose for delegated steps (router alias), work conversations only; null lets the router choose. */
   model: string | null;
+  /** Who answers (D-111): null is Arianna; 'coder' the direct chat with the Coder. Chosen at creation, never changed. */
+  agent: ConversationAgent | null;
+  /**
+   * Direct chat only (D-111, tappa A2): tokens in the agent's session after
+   * its latest answer, for the context indicator; null before it or elsewhere.
+   */
+  contextTokens: number | null;
   /** One line, from the first user message or the user; null until the first message. Carries the clearance. */
   title: string | null;
   /** When the user archived it; null while it is in the list. */
@@ -46,6 +54,8 @@ export interface Conversation {
 }
 
 export type ConversationOrigin = 'user' | 'system';
+/** The agent a conversation has in place of Arianna (D-111d): any agent id but Arianna's, as its card allows. */
+export type ConversationAgent = string;
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type MessageChannel = 'web' | 'telegram' | 'voice';
 
@@ -89,7 +99,7 @@ export class ChatError extends Error {
   }
 }
 
-const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model,
+const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram,
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
@@ -97,7 +107,9 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   c.question_attached AS "questionAttached",
   (SELECT s.status FROM tasks s WHERE s.id = c.source_task_id) AS "sourceTaskStatus",
   c.created_at AS "createdAt",
-  (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"`;
+  (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
+  CASE WHEN c.agent IS NULL THEN NULL ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+    WHERE t.conversation_id = c.id AND d.status = 'ok' ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
   task_id::text AS "taskId", agent, model`;
@@ -117,6 +129,11 @@ export interface NewConversation {
   project?: string;
   projects?: readonly string[];
   model?: string;
+  /**
+   * Who answers in place of Arianna (D-111d), with what its card allows
+   * (direct-chat.ts): the caller reads the card, this checks mode and project.
+   */
+  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
 }
 
 /**
@@ -139,12 +156,22 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
     if (!(options.projects ?? []).includes(options.project)) throw new ChatError('invalid', 'project is not among the approved projects');
   }
   if (options.model !== undefined && options.mode !== 'work') throw new ChatError('invalid', 'only a work conversation chooses a cloud model');
+  if (options.agent !== undefined) {
+    // An agent on Claude only in a work conversation on a project; a local one where its card may read (D-111d).
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(options.agent.name) || options.agent.name === CHAT_AGENT) throw new ChatError('invalid', 'agent is not one the user may talk with');
+    if (!options.agent.modes.includes(options.mode)) throw new ChatError('invalid', `${options.agent.name} does not answer a ${options.mode} conversation`);
+    if (options.agent.project && options.project === undefined) throw new ChatError('invalid', `the direct chat with ${options.agent.name} needs a project`);
+  }
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null})
+    INSERT INTO conversations (mode, clearance, workspace, model, agent)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
-  await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: row.id, mode: options.mode } });
+  await appendEvent(tx, {
+    kind: 'conversation.created',
+    label: 'L0',
+    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }) },
+  });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');
   return created;
@@ -366,6 +393,24 @@ export async function loadMessage(sql: Queryable, id: string): Promise<Message |
   return row;
 }
 
+/** The step of the delegation a direct-chat message opens (task_delegations.step is never 0). */
+export const DIRECT_STEP = 1;
+
+/**
+ * A task of the direct chat is still at work: ready, running, or waiting for
+ * an approval the user has not decided (workspace, budget). One at a time,
+ * since they work in the same project folder (D-111).
+ */
+async function directChatBusy(tx: Queryable, conversationId: string): Promise<boolean> {
+  const [row] = await tx<{ busy: boolean }[]>`
+    SELECT EXISTS (
+      SELECT FROM tasks t WHERE t.conversation_id = ${conversationId}
+        AND (t.status IN ('ready', 'running')
+          OR (t.status = 'waiting_user' AND EXISTS (SELECT FROM approvals a WHERE a.task_id = t.id AND a.state = 'pending')))
+    ) AS busy`;
+  return row?.busy === true;
+}
+
 /** Validates the text of a user message; returns it unchanged. */
 export function checkMessageBody(body: unknown): string {
   if (typeof body !== 'string' || body.trim() === '') throw new ChatError('invalid', 'the message is empty');
@@ -411,9 +456,11 @@ export async function writeUserMessage(
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
-    ? (await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived FROM conversations
-        WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`)[0]
+    ? (
+        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null }[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace FROM conversations
+        WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
+      )[0]
     : undefined;
   if (conversation === undefined) throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
   if (conversation.archived) throw new ChatError('archived', 'the conversation is archived: restore it to write');
@@ -423,6 +470,11 @@ export async function writeUserMessage(
     if (kinds.length > 0) {
       throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
     }
+  }
+
+  // The direct chat runs one Coder at a time in the project folder (D-111): the next message waits for the answer.
+  if (conversation.agent !== null && (await directChatBusy(tx, conversationId))) {
+    throw new ChatError('busy', 'the Coder is still working on the previous message: wait for the answer, or stop it');
   }
 
   // The user went on: the waits of this conversation without a pending approval close (D-109).
@@ -435,9 +487,20 @@ export async function writeUserMessage(
     label,
     clearance: conversation.clearance,
     effectiveLabel: label,
-    assignee: CHAT_AGENT,
+    assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
+  // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
+  if (conversation.agent !== null) {
+    await createDelegation(tx, {
+      taskId: task.id,
+      step: DIRECT_STEP,
+      agent: conversation.agent,
+      brief: body,
+      label,
+      ...(conversation.workspace === null ? {} : { repo: conversation.workspace }),
+    });
+  }
   if (!(await scheduleTask(tx, task.id))) throw new TaskError(`task ${task.id} already has an active step job`);
 
   const [row] = await tx<{ id: string }[]>`
