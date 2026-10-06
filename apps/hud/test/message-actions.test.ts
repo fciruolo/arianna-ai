@@ -6,8 +6,9 @@ import { MESSAGE_ABOVE_L2_TEXT, MESSAGE_EMPTY_TEXT, MESSAGE_TOO_LARGE_TEXT } fro
 import {
   captureOutcome,
   isSaved,
-  loadSavedIds,
-  mergeSavedIds,
+  inboxNodeId,
+  loadSaved,
+  mergeSavedNotes,
   MESSAGE_GONE_TEXT,
   messageCapture,
   saveMessage,
@@ -100,17 +101,31 @@ test('saveMessage reports a core that does not answer', async () => {
   assert.deepEqual(await saveMessage(message, down), { kind: 'failed', text: 'Il nucleo non risponde: controlla che sia avviato.' });
 });
 
-test('loadSavedIds reads the ids of a conversation', async () => {
+test('loadSaved reads the saved messages of a conversation, with the names the core gives, and its whole note', async () => {
   const seen: Seen[] = [];
-  const ids = await loadSavedIds('7', core(200, { messageIds: ['42', '43', 44] }, seen));
-  assert.deepEqual([...ids], ['42', '43']);
+  const state = await loadSaved('7', core(200, { messageIds: ['42', '43', 44], notes: { '42': 'a.md', '43': 3 }, conversation: true, conversationNote: 'kb/inbox/c.md' }, seen));
+  assert.deepEqual([...state.messages], [['42', 'a.md'], ['43', null]]);
+  assert.deepEqual(state.conversation, { saved: true, path: 'kb/inbox/c.md' });
+  assert.equal(seen.length, 1);
   assert.equal(seen.at(0)?.url, '/api/conversations/7/saved');
+  // An older core without `notes` nor `conversationNote`: the ids only, no path.
+  const older = await loadSaved('7', core(200, { messageIds: ['42'], conversation: true }));
+  assert.deepEqual([[...older.messages], older.conversation], [[['42', null]], { saved: true, path: null }]);
+  // Saved but not named (above L2): no path; a path without `conversation: true` is not believed.
+  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversation: true, conversationNote: null }))).conversation, { saved: true, path: null });
+  assert.deepEqual((await loadSaved('7', core(200, { messageIds: [], conversationNote: 'kb/inbox/c.md' }))).conversation, { saved: false, path: null });
 });
 
-test('loadSavedIds is empty when the core cannot say', async () => {
-  assert.equal((await loadSavedIds('7', core(404, { error: 'not found' }))).size, 0);
-  assert.equal((await loadSavedIds('7', core(200, {}))).size, 0);
-  assert.equal((await loadSavedIds('7', () => Promise.reject(new TypeError('fetch failed')))).size, 0);
+test('loadSaved says nothing saved when the core cannot say', async () => {
+  for (const fetcher of [core(404, { error: 'not found' }), core(200, {}), () => Promise.reject(new TypeError('fetch failed'))] as Fetcher[]) {
+    const state = await loadSaved('7', fetcher);
+    assert.deepEqual([state.messages.size, state.conversation], [0, { saved: false, path: null }]);
+  }
+});
+
+test('inboxNodeId gives the node of the graph from a path or a file name', () => {
+  assert.equal(inboxNodeId('kb/inbox/2026-10-06-a.md'), 'inbox/2026-10-06-a.md');
+  assert.equal(inboxNodeId('2026-10-06-a.md'), 'inbox/2026-10-06-a.md');
 });
 
 test('withSaved adds a message to a new map, keeping a known file name', () => {
@@ -123,29 +138,29 @@ test('withSaved adds a message to a new map, keeping a known file name', () => {
   assert.equal(withSaved(before, '1', null).get('1'), 'a.md');
 });
 
-test('mergeSavedIds adds the ids read and keeps the saves made while reading', () => {
-  const current = new Map([['5', 'nuova.md']]);
-  const merged = mergeSavedIds(current, new Set(['3', '5']), '7', '7');
-  assert.deepEqual([...merged].sort(), [['3', null], ['5', 'nuova.md']]);
-  assert.deepEqual([...current], [['5', 'nuova.md']]);
+test('mergeSavedNotes adds the notes read and keeps the saves made while reading', () => {
+  const current = new Map<string, string | null>([['5', 'nuova.md'], ['6', null]]);
+  const merged = mergeSavedNotes(current, new Map([['3', null], ['5', 'vecchia.md'], ['6', 'sei.md']]), '7', '7');
+  assert.deepEqual([...merged].sort(), [['3', null], ['5', 'nuova.md'], ['6', 'sei.md']]);
+  assert.deepEqual([...current], [['5', 'nuova.md'], ['6', null]]);
 });
 
-test('mergeSavedIds drops the answer for a conversation no longer open', () => {
+test('mergeSavedNotes drops the answer for a conversation no longer open', () => {
   const current = new Map([['9', null]]);
-  const merged = mergeSavedIds(current, new Set(['3']), '7', '8');
+  const merged = mergeSavedNotes(current, new Map([['3', null]]), '7', '8');
   assert.equal(merged, current);
   assert.equal(merged.has('3'), false);
 });
 
-test('the whole conversation (I-7, D-131): saved or not from the core, and what the chat says after a save', async () => {
-  const { loadConversationSaved, saveConversation } = await import('../src/lib/message-actions.ts');
+test('the whole conversation (I-7, D-131): what the chat says after a save, and the note path', async () => {
+  const { saveConversation } = await import('../src/lib/message-actions.ts');
   const reply = (status: number, body: unknown) => () => Promise.resolve({ status, ok: status < 400, json: () => Promise.resolve(body) });
-  assert.equal(await loadConversationSaved('c1', reply(200, { messageIds: [], conversation: true })), true);
-  assert.equal(await loadConversationSaved('c1', reply(200, { messageIds: [] })), false);
-  assert.equal(await loadConversationSaved('c1', reply(404, {})), false);
-  assert.equal(await loadConversationSaved('c1', () => Promise.reject(new Error('down'))), false);
-  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/a.md', replaced: false })), { ok: true, text: 'Conversazione salvata in kb/inbox/a.md' });
-  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/b.md', replaced: true })), { ok: true, text: 'Nota aggiornata in kb/inbox/b.md' });
+  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/a.md', replaced: false })), {
+    ok: true,
+    text: 'Conversazione salvata in kb/inbox/a.md',
+    path: 'kb/inbox/a.md',
+  });
+  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/b.md', replaced: true })), { ok: true, text: 'Nota aggiornata in kb/inbox/b.md', path: 'kb/inbox/b.md' });
   const refused = await saveConversation('c1', reply(403, { error: 'kb/inbox is labeled L3: captures stop at L2' }));
   assert.equal(refused.ok, false);
 });

@@ -252,9 +252,15 @@ test('a message is saved in kb/inbox once: two saves together give one note and 
   assert.match(raw, /^label: L2$/m);
 
   const saved = await call('GET', `/api/conversations/${chat.id}/saved`);
-  assert.deepEqual(saved.body, { messageIds: [message.id], conversation: false });
-  assert.deepEqual((await call('GET', `/api/conversations/${other.id}/saved`)).body, { messageIds: [], conversation: false });
+  assert.deepEqual(saved.body, { messageIds: [message.id], notes: { [message.id]: path.split('/').at(-1) }, conversation: false, conversationNote: null });
+  assert.deepEqual((await call('GET', `/api/conversations/${other.id}/saved`)).body, { messageIds: [], notes: {}, conversation: false, conversationNote: null });
   assert.equal((await call('GET', `/api/conversations/${randomUUID()}/saved`)).status, 404);
+  // A note raised above L2 by hand: the message stays saved, its name is not given.
+  const messageNote = join(home, path);
+  const kept = readFileSync(messageNote, 'utf8');
+  writeFileSync(messageNote, kept.replace(/^label: L2$/m, 'label: L3'));
+  assert.deepEqual((await call('GET', `/api/conversations/${chat.id}/saved`)).body, { messageIds: [message.id], notes: {}, conversation: false, conversationNote: null });
+  writeFileSync(messageNote, kept);
 
   // A sent text is kept; a missing or malformed message is refused before anything is written.
   assert.equal((await call('POST', '/api/capture', { body: { messageId: elsewhere.id, text: 'Testo scelto' } })).status, 201);
@@ -331,13 +337,19 @@ test('I-7 (D-131): the whole conversation saved in kb/inbox, replaced by a secon
   assert.equal(first.status, 201);
   const firstBody = first.body as { path: string; label: string; replaced: boolean };
   assert.deepEqual([firstBody.label, firstBody.replaced], ['L2', false]);
-  assert.deepEqual((await call('GET', `/api/conversations/${chat.id}/saved`)).body, { messageIds: [], conversation: true });
+  assert.deepEqual((await call('GET', `/api/conversations/${chat.id}/saved`)).body, { messageIds: [], notes: {}, conversation: true, conversationNote: firstBody.path });
   await postUserMessage(sql, chat.id, 'Seconda parte.');
   const second = await call('POST', `/api/conversations/${chat.id}/save`, { body: {} });
   const secondBody = second.body as { path: string; replaced: boolean };
   assert.deepEqual([second.status, secondBody.replaced], [201, true]);
   assert.match(readFileSync(join(home, secondBody.path), 'utf8'), /Seconda parte\./);
   assert.equal(existsSync(join(home, firstBody.path)) && firstBody.path !== secondBody.path, false);
+  // "Apri nella Conoscenza" follows the newest path; a note raised above L2 by hand is saved but not named.
+  assert.equal((await call('GET', `/api/conversations/${chat.id}/saved`)).body.conversationNote, secondBody.path);
+  const notePath = join(home, secondBody.path);
+  writeFileSync(notePath, readFileSync(notePath, 'utf8').replace(/^label: L2$/m, 'label: L3'));
+  assert.deepEqual((await call('GET', `/api/conversations/${chat.id}/saved`)).body, { messageIds: [], notes: {}, conversation: true, conversationNote: null });
+  rmSync(notePath);
 
   assert.equal((await call('POST', `/api/conversations/${randomUUID()}/save`, { body: {} })).status, 404);
   assert.equal((await call('POST', `/api/conversations/${chat.id}/save`, { body: { all: true } })).status, 400);

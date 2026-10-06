@@ -12,9 +12,11 @@ import { longMessageStep, toAgent } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
-  loadConversationSaved,
-  loadSavedIds,
-  mergeSavedIds,
+  inboxNodeId,
+  loadSaved,
+  mergeSavedNotes,
+  OPEN_IN_KNOWLEDGE_HINT,
+  OPEN_IN_KNOWLEDGE_TEXT,
   SAVE_CONVERSATION_HINT,
   SAVE_CONVERSATION_TEXT,
   saveConversation,
@@ -82,6 +84,8 @@ const emit = defineEmits<{
   removeParticipant: [agent: string];
   /** A "/" command the page carries out (D-090): open a page, a new conversation. */
   command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
+  /** "Apri nella Conoscenza" after "Salva in inbox": the note selected in the graph of kb/. */
+  openKnowledge: [nodeId: string];
 }>();
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
@@ -153,16 +157,23 @@ watch(
   async (conversationId) => {
     saved.value = new Map();
     wholeSaved.value = false;
+    wholePath.value = null;
     wholeNote.value = null;
-    const [ids, whole] = await Promise.all([loadSavedIds(conversationId), loadConversationSaved(conversationId)]);
-    saved.value = mergeSavedIds(saved.value, ids, conversationId, props.chat.conversationId);
-    if (conversationId === props.chat.conversationId) wholeSaved.value = whole;
+    const { messages, conversation: whole } = await loadSaved(conversationId);
+    saved.value = mergeSavedNotes(saved.value, messages, conversationId, props.chat.conversationId);
+    // A save made on the page while reading wins: it has the newest path.
+    if (conversationId === props.chat.conversationId && !wholeSaved.value) {
+      wholeSaved.value = whole.saved;
+      wholePath.value = whole.path;
+    }
   },
   { immediate: true },
 );
 
 // I-7 (D-131): the whole conversation in one note of kb/inbox; a second save replaces it.
 const wholeSaved = ref(false);
+/** The note's path in kb/inbox, for "Apri nella Conoscenza"; null when the core does not name it (above L2). A second save can change it. */
+const wholePath = ref<string | null>(null);
 const wholeSaving = ref(false);
 const wholeNote = ref<{ ok: boolean; text: string } | null>(null);
 async function saveWhole(): Promise<void> {
@@ -174,11 +185,18 @@ async function saveWhole(): Promise<void> {
   wholeSaving.value = false;
   // Another conversation is open now: it reads its own state again.
   if (conversationId !== props.chat.conversationId) {
-    wholeSaved.value = await loadConversationSaved(props.chat.conversationId);
+    const open = props.chat.conversationId;
+    const whole = (await loadSaved(open)).conversation;
+    if (open !== props.chat.conversationId) return;
+    wholeSaved.value = whole.saved;
+    wholePath.value = whole.path;
     return;
   }
   wholeNote.value = outcome;
-  if (outcome.ok) wholeSaved.value = true;
+  if (outcome.ok) {
+    wholeSaved.value = true;
+    wholePath.value = outcome.path;
+  }
 }
 function markSaved(messageId: string, note: string | null): void {
   saved.value = withSaved(saved.value, messageId, note);
@@ -488,6 +506,16 @@ onBeforeUnmount(() => clearInterval(clock));
           >
             <Icon name="inbox" :size="14" />{{ wholeSaving ? 'Salvo…' : wholeSaved ? UPDATE_CONVERSATION_TEXT : SAVE_CONVERSATION_TEXT }}
           </button>
+          <button
+            v-if="wholeSaved && wholePath !== null"
+            type="button"
+            class="btn px-2.5 py-1 text-xs"
+            :disabled="wholeSaving"
+            :title="`${OPEN_IN_KNOWLEDGE_HINT}: ${wholePath}`"
+            @click="emit('openKnowledge', inboxNodeId(wholePath))"
+          >
+            <Icon name="knowledge" :size="14" />{{ OPEN_IN_KNOWLEDGE_TEXT }}
+          </button>
           <span v-if="wholeNote !== null" role="status" :class="wholeNote.ok ? 'text-muted' : 'text-warn'">{{ wholeNote.text }}</span>
         </div>
 
@@ -578,7 +606,7 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -618,7 +646,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
@@ -645,6 +673,7 @@ onBeforeUnmount(() => clearInterval(clock));
                 :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
                 :can-save="message.role !== 'system' && canSaveToInbox(message.label)"
                 @saved="markSaved"
+                @open-knowledge="emit('openKnowledge', $event)"
               />
             </div>
             <div v-if="message.role === 'system'" class="break-words whitespace-pre-wrap">{{ message.body }}</div>

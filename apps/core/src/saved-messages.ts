@@ -43,17 +43,20 @@ export function findSavedNote(home: string, rules: LabelRules, messageId: string
   return found;
 }
 
-/** The ids of every message with a note in kb/inbox. */
-export function savedMessageIds(home: string, rules: LabelRules): Set<string> {
-  const ids = new Set<string>();
-  eachInboxNote(home, rules, (_path, raw) => {
+/**
+ * Every message with a note in kb/inbox: id → the note's file name, or null
+ * when the note is above L2 by its own label (it is not named).
+ */
+export function savedMessageNotes(home: string, rules: LabelRules): Map<string, string | null> {
+  const notes = new Map<string, string | null>();
+  eachInboxNote(home, rules, (path, raw) => {
     if (raw.includes('message:')) {
       const id = messageIdOf(raw);
-      if (id !== undefined) ids.add(id);
+      if (id !== undefined && !notes.has(id)) notes.set(id, isAtMost(noteLabel(rules, path, raw), 'L2') ? (path.split('/').at(-1) ?? path) : null);
     }
     return true;
   });
-  return ids;
+  return notes;
 }
 
 /**

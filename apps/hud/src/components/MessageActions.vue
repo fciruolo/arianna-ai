@@ -3,7 +3,17 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 
 import { copyText, COPY_FEEDBACK_MS, type ClipboardLike, type CopyResult } from '../lib/clipboard.ts';
 import { COPY_TEXT, SAVE_TO_INBOX_HINT, SAVE_TO_INBOX_TEXT } from '../lib/italian.ts';
-import { COPY_HINT, isSaved, SAVED_HINT, SAVED_TEXT, SAVING_TEXT, saveMessage } from '../lib/message-actions.ts';
+import {
+  COPY_HINT,
+  inboxNodeId,
+  isSaved,
+  OPEN_IN_KNOWLEDGE_HINT,
+  OPEN_IN_KNOWLEDGE_TEXT,
+  SAVED_HINT,
+  SAVED_TEXT,
+  SAVING_TEXT,
+  saveMessage,
+} from '../lib/message-actions.ts';
 import type { Message } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
@@ -15,7 +25,9 @@ import Icon from './Icon.vue';
  * the message id, and once saved (now, before, or 409) says "Salvato". The
  * save button stays the same element, focusable, when it turns into
  * "Salvato" (aria-disabled, never `disabled`), so the keyboard focus does not
- * fall back to the page. One announcement for screen readers: the hidden
+ * fall back to the page. Once saved, and when the note has a name (up to
+ * L2), "Apri nella Conoscenza" opens it selected in the graph (D-090); like
+ * the save, not for a message whose save is not offered. One announcement for screen readers: the hidden
  * `role="status"` line; the visible texts carry no live region of their own.
  */
 const props = defineProps<{
@@ -27,7 +39,11 @@ const props = defineProps<{
   /** Whether "Salva in inbox" is offered: not for system lines nor above L2. */
   canSave: boolean;
 }>();
-const emit = defineEmits<{ saved: [messageId: string, note: string | null] }>();
+const emit = defineEmits<{
+  saved: [messageId: string, note: string | null];
+  /** "Apri nella Conoscenza": the node of the saved note in the graph of kb/. */
+  openKnowledge: [nodeId: string];
+}>();
 
 /** How long the reason of a failed save stays next to the button. */
 const ERROR_MS = 6000;
@@ -96,6 +112,9 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
       @click="save"
     >
       <Icon :name="saved ? 'saved' : 'inbox'" :size="12" />{{ saved ? SAVED_TEXT : saving ? SAVING_TEXT : SAVE_TO_INBOX_TEXT }}
+    </button>
+    <button v-if="canSave && saved && note !== null" type="button" class="action" :title="`${OPEN_IN_KNOWLEDGE_HINT}: ${note}`" @click="emit('openKnowledge', inboxNodeId(note))">
+      <Icon name="knowledge" :size="12" />{{ OPEN_IN_KNOWLEDGE_TEXT }}
     </button>
     <span v-if="error !== null" class="text-warn">{{ error }}</span>
     <span role="status" class="sr-only">{{ announcement }}</span>

@@ -91,20 +91,39 @@ export async function saveMessage(message: { id: string; body: string; label: La
   }
 }
 
+/** The note of the whole conversation: whether there is one, and its path when the core names it (up to L2). */
+export interface ConversationNote {
+  saved: boolean;
+  path: string | null;
+}
+
+/** What GET /api/conversations/:id/saved says, read once per conversation opened. */
+export interface SavedState {
+  /** The saved messages: id → file name of the note, null when the core does not name it (above L2). */
+  messages: Map<string, string | null>;
+  conversation: ConversationNote;
+}
+
 /**
- * The ids of the messages of a conversation already saved in kb/inbox. An
- * empty set when the core cannot say (no capture configured, core down): the
- * button then offers the save, and a second save gets 409, which also ends in
- * "Salvato".
+ * What of a conversation is already in kb/inbox. Nothing saved when the core
+ * cannot say (no capture configured, core down): the buttons then offer the
+ * save, and a second save of a message gets 409, which also ends in "Salvato".
  */
-export async function loadSavedIds(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<Set<string>> {
+export async function loadSaved(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<SavedState> {
+  const none: SavedState = { messages: new Map(), conversation: { saved: false, path: null } };
   try {
     const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/saved`, { credentials: 'same-origin' });
-    if (!response.ok) return new Set();
-    const data = (await response.json().catch(() => ({}))) as { messageIds?: unknown };
-    return new Set(Array.isArray(data.messageIds) ? data.messageIds.filter((id): id is string => typeof id === 'string') : []);
+    if (!response.ok) return none;
+    const data = (await response.json().catch(() => ({}))) as { messageIds?: unknown; notes?: unknown; conversation?: unknown; conversationNote?: unknown };
+    const names = typeof data.notes === 'object' && data.notes !== null ? (data.notes as Record<string, unknown>) : {};
+    const ids = Array.isArray(data.messageIds) ? data.messageIds.filter((id): id is string => typeof id === 'string') : [];
+    const saved = data.conversation === true;
+    return {
+      messages: new Map(ids.map((id) => [id, typeof names[id] === 'string' ? names[id] : null])),
+      conversation: { saved, path: saved && typeof data.conversationNote === 'string' ? data.conversationNote : null },
+    };
   } catch {
-    return new Set();
+    return none;
   }
 }
 
@@ -126,14 +145,23 @@ export function withSaved(saved: SavedNotes, id: string, note: string | null): M
  * The saved messages once GET /api/conversations/:id/saved has answered.
  * `asked` is the conversation the read was for, `open` the one on screen now:
  * when they differ the answer is dropped and `current` stays. Otherwise the
- * ids read are added to `current`, which keeps the saves made on the page
+ * notes read are added to `current`, which keeps the saves made on the page
  * while the read was in flight, with their file names.
  */
-export function mergeSavedIds(current: SavedNotes, read: ReadonlySet<string>, asked: string, open: string): SavedNotes {
+export function mergeSavedNotes(current: SavedNotes, read: SavedNotes, asked: string, open: string): SavedNotes {
   if (asked !== open) return current;
   const next = new Map(current);
-  for (const id of read) if (!next.has(id)) next.set(id, null);
+  for (const [id, note] of read) if (next.get(id) == null) next.set(id, note);
   return next;
+}
+
+/** "Apri nella Conoscenza" after a save: the note in the graph of kb/ (D-090), selected. */
+export const OPEN_IN_KNOWLEDGE_TEXT = 'Apri nella Conoscenza';
+export const OPEN_IN_KNOWLEDGE_HINT = 'Apri la nota salvata nella pagina Conoscenza';
+
+/** The node of the graph of a note of kb/inbox, from its path (`kb/inbox/x.md`) or its file name (`x.md`): `inbox/x.md`. */
+export function inboxNodeId(note: string): string {
+  return note.startsWith('kb/') ? note.slice(3) : `inbox/${note}`;
 }
 
 /** "Salva in inbox" of the whole conversation (I-7, D-131): the label of the button, before and after a first save. */
@@ -143,20 +171,11 @@ export const SAVE_CONVERSATION_HINT =
   'Salva tutta la conversazione come una nota in kb/inbox (i tuoi messaggi, quelli di Arianna e i rapporti degli agenti, senza le righe di sistema); il modello locale le dà titolo e riassunto.';
 export const UPDATE_CONVERSATION_HINT = 'Riscrive la nota di questa conversazione in kb/inbox con tutti i messaggi di adesso: una modifica fatta a mano alla nota si perde.';
 
-/** Whether the whole conversation already has its note in kb/inbox; false when the core cannot say. */
-export async function loadConversationSaved(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<boolean> {
-  try {
-    const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/saved`, { credentials: 'same-origin' });
-    if (!response.ok) return false;
-    const data = (await response.json().catch(() => ({}))) as { conversation?: unknown };
-    return data.conversation === true;
-  } catch {
-    return false;
-  }
-}
-
-/** Saves the whole conversation; what the chat says after it, never an exception. */
-export async function saveConversation(conversationId: string, fetcher: Fetcher = defaultFetch): Promise<{ ok: true; text: string } | { ok: false; text: string }> {
+/** Saves the whole conversation; what the chat says after it and the note's path, never an exception. */
+export async function saveConversation(
+  conversationId: string,
+  fetcher: Fetcher = defaultFetch,
+): Promise<{ ok: true; text: string; path: string } | { ok: false; text: string }> {
   try {
     const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}/save`, {
       method: 'POST',
@@ -166,7 +185,7 @@ export async function saveConversation(conversationId: string, fetcher: Fetcher 
     });
     const data = (await response.json().catch(() => ({}))) as { path?: unknown; replaced?: unknown; error?: unknown };
     if (response.status === 201 && typeof data.path === 'string') {
-      return { ok: true, text: `${data.replaced === true ? 'Nota aggiornata' : 'Conversazione salvata'} in ${data.path}` };
+      return { ok: true, text: `${data.replaced === true ? 'Nota aggiornata' : 'Conversazione salvata'} in ${data.path}`, path: data.path };
     }
     return { ok: false, text: errorText(new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`)) };
   } catch (cause) {

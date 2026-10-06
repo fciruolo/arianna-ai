@@ -61,7 +61,7 @@ import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../know
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
-import { AlreadySavedError, captureMessage, savedMessageIds } from '../saved-messages.ts';
+import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import type { DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
@@ -580,18 +580,26 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       }
       return { status: 201, body: { path: note.path, label: note.label, organizing } };
     }),
-    // The messages of a conversation already saved in kb/inbox (D-089): the chat shows "Salvato" after a reload.
+    // The messages of a conversation already saved in kb/inbox (D-089): the chat shows "Salvato" after a reload,
+    // and "Apri nella Conoscenza" with the file names of the notes up to L2 (`notes`, id → name).
     route('GET', '/api/conversations/:id/saved', async (_request, _url, params) => {
       const id = idParam(params, 'id');
       if (capture === undefined) throw new HttpError(404, 'not found');
       if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
-      const ids = [...savedMessageIds(capture.home, capture.rules)];
-      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna".
-      const conversation = findConversationNote(capture.home, capture.rules, id) !== undefined;
-      if (ids.length === 0) return { body: { messageIds: [], conversation } };
+      const saved = savedMessageNotes(capture.home, capture.rules);
+      // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path only up to L2.
+      const whole = findConversationNote(capture.home, capture.rules, id);
+      const conversation = whole !== undefined;
+      const conversationNote = whole?.visible === true ? whole.path : null;
+      if (saved.size === 0) return { body: { messageIds: [], notes: {}, conversation, conversationNote } };
       const rows = await sql<{ id: string }[]>`
-        SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${ids}::bigint[]) ORDER BY id`;
-      return { body: { messageIds: rows.map((row) => row.id), conversation } };
+        SELECT id::text FROM messages WHERE conversation_id = ${id} AND id = ANY (${[...saved.keys()]}::bigint[]) ORDER BY id`;
+      const notes: Record<string, string> = {};
+      for (const row of rows) {
+        const name = saved.get(row.id);
+        if (typeof name === 'string') notes[row.id] = name;
+      }
+      return { body: { messageIds: rows.map((row) => row.id), notes, conversation, conversationNote } };
     }),
     // I-7 (D-131): the whole conversation in one note of kb/inbox, without the lines of the system; a second save replaces it.
     route('POST', '/api/conversations/:id/save', async (request, _url, params) => {

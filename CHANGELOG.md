@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- "Apri nella Conoscenza" dopo "Salva in inbox", per la conversazione intera e per il singolo messaggio: apre la pagina Conoscenza con la nota appena salvata selezionata, anche dopo aver ricaricato la chat (D-131, D-099).
+
 ## [0.23.0] - 2026-10-06
 
 ### Aggiunto

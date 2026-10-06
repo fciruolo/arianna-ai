@@ -13,7 +13,7 @@ import { captureNote, CaptureError } from '../src/capture.ts';
 import { installationInfo, installationMode, readVersion } from '../src/installation.ts';
 import { keptCaptureFields, listNotes } from '../src/notes.ts';
 import { composeOrganized } from '../src/organize.ts';
-import { AlreadySavedError, captureMessage, findSavedNote, savedMessageIds } from '../src/saved-messages.ts';
+import { AlreadySavedError, captureMessage, findSavedNote, savedMessageNotes } from '../src/saved-messages.ts';
 import { checkQuery, foldText, likePattern, MAX_SNIPPET, SearchError, snippetAround } from '../src/search.ts';
 
 const scratch = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
@@ -82,7 +82,8 @@ describe('a message saved once in kb/inbox', () => {
     });
     assert.equal(results.filter((result) => result === 'refused').length, 1);
     assert.equal(readdirSync(join(dir, 'kb', 'inbox')).length, 2);
-    assert.deepEqual([...savedMessageIds(dir, RULES)].sort(), ['42', '43']);
+    assert.deepEqual([...savedMessageNotes(dir, RULES).keys()].sort(), ['42', '43']);
+    assert.equal(savedMessageNotes(dir, RULES).get('42'), first.path.split('/').at(-1));
     // Another message, or a capture without one, is never taken for it.
     assert.equal(findSavedNote(dir, RULES, '4'), undefined);
     captureNote({ home: dir, rules: RULES, text: 'message:44 nel testo', kind: 'note', source: { channel: 'hud', id: 'x' } });
@@ -97,7 +98,8 @@ describe('a message saved once in kb/inbox', () => {
       (error: unknown) => error instanceof AlreadySavedError && error.note === null,
     );
     assert.throws(() => captureMessage({ home: dir, rules: RULES, text: 'x', kind: 'note', messageId: '0x1' }), CaptureError);
-    // The listing still hides it.
+    // Saved, but not named; the listing still hides it.
+    assert.deepEqual([...savedMessageNotes(dir, RULES)], [['7', null]]);
     assert.deepEqual(listNotes(dir, RULES, { limit: 10 }), { notes: [], hidden: 1 });
   });
 
