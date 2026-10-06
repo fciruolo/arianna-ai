@@ -9,6 +9,9 @@ import {
   closingLines,
   closingSoonText,
   deletedText,
+  END_RETRIES,
+  END_RETRY_MS,
+  endRetryDelay,
   entryFromState,
   incognitoAction,
   incognitoState,
@@ -173,6 +176,16 @@ test("an incognito conversation's approvals are shown only in its page", () => {
   assert.deepEqual(splitApprovals([normal, hidden], new Set(), ID), { inChat: [hidden], elsewhere: [normal] });
   // No conversation open: nothing incognito anywhere.
   assert.deepEqual(splitApprovals([hidden, oldCore], new Set(), null), { inChat: [], elsewhere: [oldCore] });
+});
+
+test('"Termina" is asked again only while the work is stopping, a few times', () => {
+  const busy = 'the conversation is still at work: try again in a moment';
+  assert.equal(endRetryDelay(409, busy, 0), END_RETRY_MS);
+  assert.equal(endRetryDelay(409, busy, END_RETRIES - 1), END_RETRY_MS);
+  assert.equal(endRetryDelay(409, busy, END_RETRIES), undefined);
+  assert.equal(endRetryDelay(409, 'not incognito', 0), undefined);
+  assert.equal(endRetryDelay(500, busy, 0), undefined);
+  assert.equal(endRetryDelay(404, 'not found', 0), undefined);
 });
 
 test('"/nota" is refused only in incognito', () => {

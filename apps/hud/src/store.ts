@@ -9,7 +9,7 @@ import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
-import { closedCause, closedText, closingLines, closingSoonText, incognitoAction, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
+import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, incognitoAction, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
 import { connectLive, type LiveConnection, type LiveState, type SocketLike } from './lib/live.ts';
 import { payloadString, type ServerMessage } from './lib/protocol.ts';
@@ -201,7 +201,18 @@ export function createChatStore() {
     error.value = null;
     ending.value = true;
     try {
-      const result = await api.endIncognito(id);
+      let result: Awaited<ReturnType<typeof api.endIncognito>>;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          result = await api.endIncognito(id);
+          break;
+        } catch (cause) {
+          // The work is stopping (409 "still at work"): asked again a few times, then the error is said.
+          const wait = cause instanceof api.ApiError ? endRetryDelay(cause.status, cause.message, attempt) : undefined;
+          if (wait === undefined) throw cause;
+          await new Promise((resolve) => window.setTimeout(resolve, wait));
+        }
+      }
       endedIncognito.add(id);
       discardIncognito();
       incognitoEnd.value = { kind: 'ended', lines: closingLines(result) };
@@ -676,7 +687,8 @@ export function createChatStore() {
     try {
       // "/nota ..." does not reach Arianna: a note in kb/inbox, without a model (D-080).
       if (note !== undefined) {
-        notice.value = savedText(await api.captureNote(note));
+        // With the conversation: the core refuses "/nota" from an incognito one too (D-136), whatever the page knows.
+        notice.value = savedText(await api.captureNote({ ...note, conversationId: state.conversationId }));
         return true;
       }
       // Whatever is left must be a message: a command never reaches Arianna.

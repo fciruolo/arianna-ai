@@ -69,6 +69,7 @@ const ERRORS: Record<string, string> = {
   // Incognito (D-136): the saves are off, "Termina" only for an incognito conversation.
   incognito: 'In una conversazione incognita non si salva niente in Arianna.',
   'not incognito': 'Questa conversazione non è incognita: non si termina.',
+  'the conversation is still at work: try again in a moment': 'Il lavoro in corso non si è ancora fermato: riprova "Termina" fra qualche secondo.',
   // The capture of "/nota" (D-080, apps/core/src/capture.ts).
   'text is empty': 'La nota è vuota.',
   'text holds a NUL character': 'La nota contiene un carattere non valido.',
