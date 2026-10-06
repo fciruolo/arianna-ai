@@ -840,7 +840,7 @@ watch(active, () => {
             <SettingsCard v-if="active === 'notifications'" id="notifications" title="Notifiche" kind="now" :changed="changed('notifications')" :saved="saved === 'notifications'" :invalid="notificationsProblem(forms.notifications)" :busy="busy === 'notifications'" :error="errors.notifications" @cancel="reset('notifications')" @save="save('notifications')">
               <p class="text-xs text-muted">Quando la chat risponde e non la stai guardando. Valgono per ogni browser e telefono che hai consentito qui sotto.</p>
               <div class="flex flex-col gap-2">
-                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte di Arianna</label>
+                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte nelle chat</label>
                 <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.approvals" type="checkbox" role="switch" class="switch" />Approvazioni in attesa</label>
                 <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.failures" type="checkbox" role="switch" class="switch" />Lavori falliti</label>
               </div>
