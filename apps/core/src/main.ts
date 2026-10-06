@@ -36,9 +36,11 @@ import { passGateway } from './gateway.ts';
 import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
-import { createModelEvals } from './model-evals.ts';
+import { createModelActions } from './model-actions.ts';
+import { createModelEvals, trialOpen } from './model-evals.ts';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
+import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
 import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
@@ -389,6 +391,33 @@ const modelEvals = createModelEvals({
     ),
   onError: report,
 });
+// The actions of the "Modelli" page on a local model (I-3, stage M4):
+// downloads from the catalog URLs only, verifications, removal into the bin
+// data/models/eliminati, unloading from oMLX. Events: model id and outcome (L0).
+const modelActions = createModelActions({
+  catalog: () => loadCatalog(config.home),
+  dataDir: config.paths.data,
+  roles: () => settings.current().roles,
+  fetch: createFetcher(),
+  loaded: (modelId) => memory.snapshot().loaded.filter(({ model }) => model === modelId),
+  unload: async (modelId) => {
+    const endpoints = settings.current().local.endpoints;
+    const places = memory.snapshot().loaded.filter(({ model }) => model === modelId);
+    let outcome: 'unloaded' | 'busy' | 'failed' = 'unloaded';
+    for (const place of places) {
+      const endpoint = endpoints.find(({ id }) => id === place.endpoint);
+      if (endpoint === undefined) continue;
+      const result = await memory.unloadNow(endpoint, modelId);
+      if (result !== 'unloaded') outcome = result;
+    }
+    return outcome;
+  },
+  trialOpen: (modelId) => trialOpen(sql, modelId),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  onError: report,
+});
 // Captured notes organized by the local model in the background (D-086), one
 // at a time, giving way to calls and task steps; the raw note is saved first.
 // No note starts while oMLX is on its way up: at start it loads for minutes (D-100).
@@ -481,7 +510,9 @@ const server = await startApiServer({
       config: () => settings.current(),
       memory: () => memory.snapshot(),
       adapters: () => ({ claude: claude !== undefined, codex: false }),
+      actions: modelActions,
     }),
+  modelActions,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home },
   // "Novità": CHANGELOG.md at the root of the home, read only.
@@ -564,6 +595,7 @@ async function shutdown(): Promise<void> {
   await calls.close();
   await voice.close();
   await modelEvals.stop();
+  await modelActions.stop();
   await organizer.stop();
   await worker.stop();
   memory.stop();

@@ -30,7 +30,7 @@ export interface FileStatus {
   state: FileState;
 }
 
-export type ModelErrorCode = 'http-status' | 'too-large' | 'wrong-size' | 'wrong-hash' | 'redirects' | 'insecure-url' | 'network';
+export type ModelErrorCode = 'http-status' | 'too-large' | 'wrong-size' | 'wrong-hash' | 'redirects' | 'insecure-url' | 'network' | 'aborted';
 
 /** Messages name the model file and a code, never a response body. */
 export class ModelError extends Error {
@@ -51,7 +51,7 @@ export interface Download {
   contentRange?: string;
 }
 
-/** Opens `url` from byte `offset`; the default is `httpsGet` (src/http.ts). */
+/** Opens `url` from byte `offset`; the default is `createFetcher` (model-http.ts). */
 export type Fetcher = (url: string, offset: number) => Promise<Download>;
 
 export function fileTarget(data: string, model: string, file: ModelFile): string {
@@ -103,6 +103,8 @@ export interface PullOptions {
   fetch: Fetcher;
   /** Called with the bytes written so far for the current file. */
   onProgress?: (status: FileStatus, bytes: number) => void;
+  /** Stops the download; the .part stays and the next pull resumes from it. */
+  signal?: AbortSignal;
 }
 
 /** Downloads one file to its target, resuming a `.part` left by an earlier attempt. */
@@ -117,7 +119,10 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
     rmSync(part);
     offset = 0;
   }
+  // A function: the signal changes while the download runs.
+  const stopped = (): boolean => options.signal?.aborted === true;
   if (offset < file.sizeBytes) {
+    if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
     let download = await options.fetch(file.url, offset);
     if (download.status === 206 && rangeStart(download.contentRange) !== offset) {
       // Bytes from somewhere else would only be thrown away by the hash check: start over.
@@ -146,9 +151,10 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
       }
     };
     try {
-      await pipeline(download.body, counted, createWriteStream(part, { flags: offset === 0 ? 'w' : 'a' }));
+      await pipeline(download.body, counted, createWriteStream(part, { flags: offset === 0 ? 'w' : 'a' }), options.signal === undefined ? {} : { signal: options.signal });
     } catch (error) {
       if (error instanceof ModelError) throw error;
+      if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
       // The .part stays: the next pull resumes from it.
       throw new ModelError('network', `${label}: download interrupted, run pull again`);
     }

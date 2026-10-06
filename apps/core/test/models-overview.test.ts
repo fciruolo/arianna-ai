@@ -198,6 +198,24 @@ describe('buildModelsOverview', () => {
     assert.equal(buildModelsOverview(inputs({ memory: undefined })).local[0]?.state, 'on-disk');
   });
 
+  it('puts on each local model what is on the disk and its last action, and carries the bin (I-3, M4)', () => {
+    const plain = buildModelsOverview(inputs());
+    assert.equal(plain.trash, null);
+    assert.deepEqual(
+      plain.local.map(({ id, hasFiles, missingBytes, action }) => ({ id, hasFiles, missingBytes, action })),
+      plain.local.map(({ id, present }) => ({ id, hasFiles: present, missingBytes: present ? 0 : 25, action: null })),
+    );
+    const action = { modelId: 'fake-spare', kind: 'download' as const, status: 'running' as const, bytesDone: 5, bytesTotal: 25, startedAt: '2026-10-07T21:00:00.000Z', finishedAt: null, error: null, bad: [] };
+    const trash = { folder: 'data/models/eliminati', entries: [{ name: '2026-10-07T21-00-00-000Z-fake-old', sizeBytes: 9 }], sizeBytes: 9 };
+    const overview = buildModelsOverview(inputs({ actions: [action], trash, disk: (model) => ({ hasFiles: model.id !== 'fake-small', missingBytes: model.id === 'fake-spare' ? 20 : 0 }) }));
+    const spare = overview.local.find(({ id }) => id === 'fake-spare');
+    assert.deepEqual(spare?.action, action);
+    assert.equal(spare.missingBytes, 20);
+    assert.equal(overview.local.find(({ id }) => id === 'fake-small')?.hasFiles, false);
+    assert.equal(overview.local.find(({ id }) => id === 'fake-large')?.action, null);
+    assert.deepEqual(overview.trash, trash);
+  });
+
   it('carries the sources of the cards and no error by default', () => {
     const overview = buildModelsOverview(inputs());
     assert.deepEqual(overview.sources, [{ id: 'fake-page', url: 'https://example.org/models', read: '2026-10-01' }]);

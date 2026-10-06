@@ -237,7 +237,7 @@ export async function readSwap(platform: NodeJS.Platform = process.platform): Pr
 // ---- The account ----------------------------------------------------------
 
 export type ModelMemoryEvent =
-  | { type: 'unloaded'; endpoint: string; model: string; reason: 'role-changed' | 'budget' }
+  | { type: 'unloaded'; endpoint: string; model: string; reason: 'role-changed' | 'budget' | 'user' }
   | { type: 'refused'; endpoint: string; model: string; needGib: number; busyGib: number; budgetGib: number }
   | { type: 'swap'; level: SwapLevel; previous: SwapLevel; usedGib: number; pressure: number | null };
 
@@ -279,6 +279,13 @@ export interface ModelMemory {
   wrap(model: LocalModel, endpoints: readonly LocalEndpointConfig[]): LocalModel;
   /** After a change of roles or model names: unloads what no alias serves any more, once idle. */
   modelsChanged(before: readonly LocalEndpointConfig[], after: readonly LocalEndpointConfig[]): Promise<void>;
+  /**
+   * "Scarica dalla memoria" of the Modelli page (I-3, stage M4): unloads one
+   * model now, in the queue with the admissions. `busy` when a request uses it
+   * or a call holds it; `failed` when the server did not confirm, and then the
+   * model stays in the account.
+   */
+  unloadNow(endpoint: LocalEndpointConfig, name: string): Promise<'unloaded' | 'busy' | 'failed'>;
   /** The server of `endpoint` started or exited: it holds nothing. */
   serverReset(endpoint: string): void;
   snapshot(): MemorySnapshot;
@@ -372,7 +379,7 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
   }
 
   /** Takes the model out of the account at once and unloads it; the promise ends with the unload. */
-  function drop(endpoint: LocalEndpointConfig, name: string, reason: 'role-changed' | 'budget'): Promise<void> {
+  function drop(endpoint: LocalEndpointConfig, name: string, reason: 'role-changed' | 'budget' | 'user'): Promise<void> {
     const id = key(endpoint.id, name);
     const gib = loaded.get(id)?.gib ?? ramOf(name);
     loaded.delete(id);
@@ -518,9 +525,36 @@ export function createModelMemory(options: ModelMemoryOptions): ModelMemory {
   timer?.unref();
   if (timer !== undefined) checkSwap().catch(fail);
 
+  function unloadNow(endpoint: LocalEndpointConfig, name: string): Promise<'unloaded' | 'busy' | 'failed'> {
+    return serial(async () => {
+      if (stopped) return 'failed';
+      const id = key(endpoint.id, name);
+      await unloading.get(id);
+      const entry = loaded.get(id);
+      if ((entry?.busy ?? 0) > 0 || isPinned({ endpoint: endpoint.id, name })) return 'busy';
+      const gib = entry?.gib ?? ramOf(name);
+      loaded.delete(id);
+      pending.delete(id);
+      let done = false;
+      try {
+        done = await unloadWithin(endpoint, name);
+      } catch (error) {
+        fail(error);
+      }
+      if (done) {
+        emit({ type: 'unloaded', endpoint: endpoint.id, model: shown(name, gib), reason: 'user' });
+        return 'unloaded';
+      }
+      // Not confirmed: the server may still hold it, the account keeps it.
+      if (entry !== undefined && !loaded.has(id)) loaded.set(id, entry);
+      return 'failed';
+    });
+  }
+
   return {
     wrap,
     modelsChanged,
+    unloadNow,
     serverReset(endpoint) {
       for (const [id, entry] of loaded) if (entry.endpoint === endpoint) loaded.delete(id);
       for (const id of pending.keys()) if (id.startsWith(`${endpoint}\u0000`)) pending.delete(id);

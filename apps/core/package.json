@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./doctor": "./src/doctor.ts"
+    "./doctor": "./src/doctor.ts",
+    "./model-files": "./src/model-files.ts",
+    "./model-http": "./src/model-http.ts"
   },
   "dependencies": {
     "@arianna/agents": "workspace:*",

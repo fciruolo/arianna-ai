@@ -4,7 +4,7 @@
 import http from 'node:http';
 import https from 'node:https';
 
-import { ModelError, type Download, type Fetcher } from './models.ts';
+import { ModelError, type Download, type Fetcher } from './model-files.ts';
 
 const MAX_REDIRECTS = 5;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
