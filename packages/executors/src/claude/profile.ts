@@ -1,7 +1,7 @@
 // The confinement profile of `claude -p` (docs/PRIVACY-POLICY-SPEC.md, tasks
 // 1.5 and 1.6, D-049 and D-050): the flags, the sandbox settings, the
 // environment and what the binary must report in its `init` message. Checked
-// on `claude --help` of 2.1.288 and with real runs; the live contract and
+// on `claude --help` of 2.1.288 (`--no-session-persistence` on 2.1.292) and with real runs; the live contract and
 // canary evals check them again.
 import { isAbsolute, resolve, sep } from 'node:path';
 
@@ -47,6 +47,13 @@ export interface ProfileOptions {
   modelName?: string;
   tools: readonly ClaudeTool[];
   resume?: string;
+  /**
+   * False: the binary keeps no session on disk (`--no-session-persistence`,
+   * with `-p` only, which every launch has), so nothing of the run stays in
+   * the `projects` folder of the user's profile; such a session cannot be
+   * resumed (D-136, incognito). Absent or true: saved, as before (D-049).
+   */
+  persistSession?: boolean;
   sandbox: SandboxPaths;
 }
 
@@ -112,6 +119,8 @@ export function claudeSettings(paths: SandboxPaths): string {
  *   with an empty `--mcp-config` drops every MCP server, the personal connectors
  *   included.
  * - `--settings` carries the sandbox and the read block (`claudeSettings`).
+ * - `--no-session-persistence` when the session must not be saved (D-136):
+ *   never together with `--resume`.
  * - Never `--bare`: it needs an API key, and Arianna uses the subscription (D-002).
  */
 export function claudeArgs(options: ProfileOptions): string[] {
@@ -152,6 +161,14 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--disable-slash-commands',
     '--no-chrome',
   );
+  const persist: unknown = options.persistSession === undefined ? true : options.persistSession;
+  // Types do not hold at runtime: a value that is not a boolean must not read as "saved".
+  if (typeof persist !== 'boolean') throw new TypeError('claude: persistSession must be a boolean');
+  if (!persist) {
+    // Nothing was saved to resume, and the run must not save the session it would resume into (D-136).
+    if (options.resume !== undefined) throw new TypeError('claude: a run whose session is not saved cannot resume a session');
+    args.push('--no-session-persistence');
+  }
   if (options.resume !== undefined) {
     if (!SESSION_REF.test(options.resume)) throw new TypeError('claude: the session to resume is not a session id');
     args.push('--resume', options.resume);

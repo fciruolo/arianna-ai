@@ -19,3 +19,11 @@ test('null starts a new session, even after a crash; nothing asked and no crash 
   assert.equal(sessionToResume({}, { sessionRef: null }), undefined);
   assert.equal(sessionToResume({}, {}), undefined);
 });
+
+test('a run that saves no session starts again after a crash, and passes on a session asked for, to be refused (D-136)', () => {
+  assert.equal(sessionToResume(CRASHED, { persistSession: false }), undefined);
+  assert.equal(sessionToResume({}, { persistSession: false }), undefined);
+  assert.equal(sessionToResume(CRASHED, { sessionRef: 'chat-session', persistSession: false }), 'chat-session');
+  // Saved, as before: the crashed session goes on.
+  assert.equal(sessionToResume(CRASHED, { persistSession: true }), 'crashed-session');
+});
