@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arianna · Progetti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<!--
+  Anteprima della pagina "Progetti" del menu (D-134), seconda versione
+  (l'utente: "a livello logico va bene, esteticamente rivedi ux-ui").
+  Solo un file locale: dati inventati (progetti "orto-condiviso" e
+  "ricette-di-casa"), niente rete oltre ai caratteri. Tre schede: File e Git
+  in sola lettura, Servizi con avvia/ferma e conferma ogni volta. Stessi
+  token di colore della chat.
+-->
+<style>
+:root {
+  --bg: #0a1316; --surface: #0e1b1f; --surface-2: #112227; --line: #1e363c; --line-strong: #2b4c53;
+  --ink: #dcebe8; --muted: #7f9b98; --faint: #4f6a68; --accent: #4fd1c1; --accent-ink: #062a26; --glow: #4fd1c124;
+  --warn: #f2b34b; --danger: #e2614b; --ok: #7cc796; --info: #7fb4f0; --grid: #4fd1c10a;
+  --term: #071013; --term-ink: #cfe3df;
+  --code-kw: #c49cf0; --code-str: #9fd38a; --code-num: #f2b34b; --code-com: #5f7a77; --code-fn: #7fb4f0;
+  --add: #7cc7961c; --del: #e2614b1c;
+  --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
+  --font-hud: "Chakra Petch", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #687673; --faint: #a3adaa; --accent: #23887c; --accent-ink: #fff; --glow: #23887c1a;
+    --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d;
+    --term: #1b2624; --term-ink: #dfeae7;
+    --code-kw: #8a4fc4; --code-str: #3f7f2e; --code-num: #a8701a; --code-com: #8a9794; --code-fn: #2f62a0;
+    --add: #4e94661c; --del: #c24a351c; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #f1efe9; --line: #e3e4df; --line-strong: #cfd5d0;
+  --ink: #24302e; --muted: #687673; --faint: #a3adaa; --accent: #23887c; --accent-ink: #fff; --glow: #23887c1a;
+  --warn: #b9801c; --danger: #c24a35; --ok: #4e9466; --info: #3f6fa8; --grid: #23887c0d;
+  --term: #1b2624; --term-ink: #dfeae7;
+  --code-kw: #8a4fc4; --code-str: #3f7f2e; --code-num: #a8701a; --code-com: #8a9794; --code-fn: #2f62a0;
+  --add: #4e94661c; --del: #c24a351c; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 14px/1.55 var(--font-sans); color: var(--ink); background: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; min-height: 100vh;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus { outline: none; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+*:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+svg.i { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.hud { font: 600 10.5px/1 var(--font-hud); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 5px 11px; font-size: 12.5px; white-space: nowrap; text-decoration: none; color: var(--ink); }
+.btn:hover:not([disabled]) { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.btn.danger.solid { background: var(--danger); color: #fff; border-color: var(--danger); font-weight: 600; }
+.btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+.btn.ghost:hover:not([disabled]) { color: var(--ink); border-color: var(--line-strong); }
+.btn[disabled] { opacity: .4; cursor: not-allowed; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; display: inline-block; }
+.dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.dot.busy { background: var(--warn); animation: pulse .8s infinite alternate; }
+@keyframes pulse { to { opacity: .3; } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* Frame: the chat's side bar, as in the real app */
+.app { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
+.side { border-right: 1px solid var(--line); padding: 16px 10px; background: color-mix(in srgb, var(--surface) 75%, transparent); display: flex; flex-direction: column; gap: 1px; position: sticky; top: 0; height: 100vh; }
+.side .brand { margin: 4px 10px 18px; font-size: 12px; color: var(--ink); }
+.side a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13.5px; }
+.side a:hover { color: var(--ink); }
+.side a.on { background: var(--glow); color: var(--ink); }
+.side .spacer { flex: 1; }
+
+main { padding: 22px 26px 40px; display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 1480px; animation: rise .35s ease-out; }
+
+/* Masthead: who, where, how it stands */
+.mast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; }
+.mono-tile { grid-row: span 2; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font: 600 17px var(--font-hud); color: var(--accent); background: var(--glow); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.switch { position: relative; }
+.switch > button { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; font: 600 22px/1.15 var(--font-hud); letter-spacing: .02em; }
+.switch > button svg { width: 16px; height: 16px; color: var(--muted); }
+.menu-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 4; min-width: 280px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 6px; box-shadow: 0 14px 40px #0006; display: none; }
+.menu-pop.on { display: block; animation: rise .15s ease-out; }
+.menu-pop button { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 8px; }
+.menu-pop button:hover, .menu-pop button.on { background: var(--glow); }
+.menu-pop small { grid-column: 1; color: var(--muted); font: 400 11.5px var(--font-mono); }
+.menu-pop .add { display: block; font-size: 12px; color: var(--muted); padding: 8px 10px 4px; border-top: 1px solid var(--line); margin-top: 4px; }
+.where { font: 400 12px var(--font-mono); color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.where .lock { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.where .lock svg { width: 13px; height: 13px; }
+.stats { grid-row: span 2; display: flex; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.stat { padding: 8px 16px; display: grid; gap: 3px; min-width: 110px; border: 0; background: none; text-align: left; }
+.stat + .stat { border-left: 1px solid var(--line); }
+.stat:hover { background: var(--surface-2); }
+.stat b { font: 500 13px var(--font-mono); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.stat .warn { color: var(--warn); }
+
+.tabs { display: flex; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px 10px; color: var(--muted); font-size: 13.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .n { font: 500 10.5px var(--font-mono); color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
+.tabs .right { margin-left: auto; padding-bottom: 9px; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.tabs .right svg { width: 13px; height: 13px; }
+
+.panel { display: none; }
+.panel.on { display: block; animation: rise .2s ease-out; }
+
+/* One workbench: a split pane, not separate boxes */
+.bench { display: grid; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; height: calc(100vh - 220px); min-height: 460px; }
+.files.bench { grid-template-columns: 264px minmax(0, 1fr); }
+.git.bench { grid-template-columns: 340px minmax(0, 1fr); }
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane + .pane { border-left: 1px solid var(--line); }
+.pane-head { display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 44px; flex: none; border-bottom: 1px solid var(--line); }
+.pane-head .grow { flex: 1; min-width: 0; }
+.scroll { overflow: auto; flex: 1; min-height: 0; }
+.search { display: flex; align-items: center; gap: 8px; width: 100%; color: var(--muted); }
+.search input { border: 0; background: none; width: 100%; font-size: 13px; color: var(--ink); }
+
+/* Tree */
+.tree { padding: 6px 6px 12px; font: 400 12.5px/1 var(--font-mono); }
+.tree .row { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.tree .row:hover { background: color-mix(in srgb, var(--line) 55%, transparent); }
+.tree .row.on { background: var(--glow); box-shadow: inset 2px 0 0 var(--accent); }
+.tree .row .chev { width: 10px; color: var(--muted); font-size: 9px; transition: transform .15s; }
+.tree .row.closed .chev { transform: rotate(-90deg); }
+.tree .row .name.M { color: var(--warn); }
+.tree .row .name.A { color: var(--ok); }
+.tree .row .st { margin-left: auto; font-size: 10.5px; font-weight: 500; }
+.tree .row .st.M { color: var(--warn); } .tree .row .st.A { color: var(--ok); }
+.tree .row.shut { color: var(--faint); cursor: default; }
+.tree .row.shut:hover { background: none; }
+.tree .row.shut svg { width: 11px; height: 11px; margin-left: auto; }
+.tree .kids { padding-left: 13px; margin-left: 9px; border-left: 1px solid var(--line); }
+.tree .kids.closed { display: none; }
+.ft { width: 22px; height: 15px; border-radius: 3px; display: grid; place-items: center; font: 600 7.5px/1 var(--font-mono); letter-spacing: .02em; flex: none; color: var(--bg); }
+.ft.vue { background: #5fbf8f; } .ft.ts { background: #6aa0e0; } .ft.json { background: #d8b45a; } .ft.md { background: #9aa8a6; }
+.ft.yml { background: #c98ad6; } .ft.html { background: #e08a5f; } .ft.img { background: #7fc6c0; } .ft.env { background: var(--faint); }
+.ft.dir { background: none; color: var(--muted); font-size: 12px; }
+.tree-foot { flex: none; border-top: 1px solid var(--line); padding: 8px 12px; font-size: 11.5px; color: var(--muted); display: flex; gap: 12px; }
+.tree-foot span { display: inline-flex; gap: 5px; align-items: center; }
+.tree-foot i { font-style: normal; font: 500 10.5px var(--font-mono); }
+
+/* Viewer */
+.crumbs { font: 400 12.5px var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.crumbs .sep { color: var(--faint); }
+.crumbs .dim { color: var(--muted); }
+.meta { font: 400 11.5px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.code { margin: 0; padding: 12px 0 20px; font: 400 12.5px/1.7 var(--font-mono); counter-reset: ln; }
+.code .l { display: block; white-space: pre; padding-right: 18px; }
+.code .l::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 52px; padding-right: 18px; text-align: right; color: var(--faint); user-select: none; border-right: 2px solid transparent; margin-right: 14px; }
+.code .l.chg::before { border-right-color: var(--warn); }
+.code .l.new::before { border-right-color: var(--ok); }
+.k { color: var(--code-kw); } .s { color: var(--code-str); } .n { color: var(--code-num); } .c { color: var(--code-com); font-style: italic; } .f { color: var(--code-fn); }
+.stage { flex: 1; display: grid; place-items: center; padding: 30px; }
+.stage .pic { width: min(420px, 90%); aspect-ratio: 3 / 2; border-radius: 12px; background:
+  radial-gradient(circle at 74% 28%, #f2b34b 0 7%, transparent 7.3%),
+  linear-gradient(172deg, #9cc6ef 0 52%, #7cc796 52% 70%, #5aa77a 70% 84%, #4e8a5f 84%);
+  border: 1px solid var(--line-strong); box-shadow: 0 10px 30px #0004; }
+.stage .cap { margin-top: 12px; font: 400 12px var(--font-mono); color: var(--muted); text-align: center; }
+.shut-msg { text-align: center; max-width: 360px; color: var(--muted); font-size: 13px; display: grid; gap: 10px; justify-items: center; }
+.shut-msg svg { width: 28px; height: 28px; color: var(--faint); }
+.shut-msg b { color: var(--ink); font-weight: 600; }
+
+/* Git */
+.branch-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: 8px; padding: 4px 9px; font: 500 12px var(--font-mono); max-width: 100%; }
+.branch-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ahead { font: 400 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.section-t { display: flex; align-items: center; gap: 8px; padding: 14px 14px 6px; }
+.section-t .grow { flex: 1; }
+.wt .r { display: flex; align-items: center; gap: 8px; padding: 4px 14px; font: 400 12px/1.5 var(--font-mono); }
+.wt .r .s { width: 14px; font-weight: 600; text-align: center; }
+.wt .r .s.M { color: var(--warn); } .wt .r .s.A { color: var(--ok); } .wt .r .s.U { color: var(--faint); }
+.wt .r .p { color: var(--muted); } .wt .r .nm { color: var(--ink); }
+.wt .r .ln { margin-left: auto; font-size: 11px; white-space: nowrap; }
+.wt .r .ln .p2 { color: var(--ok); } .wt .r .ln .m2 { color: var(--danger); }
+.timeline { padding: 4px 8px 14px; }
+.cm { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 8px; padding: 9px 8px; border-radius: 9px; cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+.cm::before { content: ""; position: absolute; left: 18px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.cm:first-child::before { top: 18px; }
+.cm:last-child::before { bottom: calc(100% - 18px); }
+.cm:hover { background: color-mix(in srgb, var(--line) 45%, transparent); }
+.cm.on { background: var(--glow); }
+.cm .node { position: relative; z-index: 1; width: 10px; height: 10px; margin: 5px 0 0 5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.cm.merge .node { border-color: var(--info); }
+.cm.on .node { background: var(--accent); }
+.cm .msg { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm .by { grid-column: 2; font: 400 11.5px var(--font-mono); color: var(--muted); display: flex; gap: 8px; }
+.cm .by .p2 { color: var(--ok); } .cm .by .m2 { color: var(--danger); }
+.ch-head { display: flex; align-items: baseline; gap: 10px; }
+.ch-head .t { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.diff { padding: 0 0 20px; font: 400 12.5px/1.65 var(--font-mono); }
+.dfile { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); font-weight: 500; font-size: 12px; }
+.dfile:first-child { border-top: 0; }
+.dfile .ln { margin-left: auto; color: var(--muted); font-weight: 400; }
+.d { display: grid; grid-template-columns: 40px 40px minmax(0, 1fr); white-space: pre; }
+.d i { font-style: normal; color: var(--faint); text-align: right; padding-right: 10px; user-select: none; }
+.d span { padding-left: 10px; }
+.d.add { background: var(--add); } .d.add span { box-shadow: inset 2px 0 0 var(--ok); }
+.d.del { background: var(--del); } .d.del span { box-shadow: inset 2px 0 0 var(--danger); }
+.d.hunk { color: var(--info); background: color-mix(in srgb, var(--info) 7%, transparent); }
+.d.hunk span { padding: 2px 10px; }
+
+/* Services */
+.svc-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); gap: 16px; align-items: start; }
+.src { margin-bottom: 18px; }
+.src-t { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; }
+.src-t .f { font: 500 12px var(--font-mono); color: var(--ink); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.card { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 12px 10px; display: grid; gap: 8px; cursor: pointer; transition: border-color .15s, transform .15s; text-align: left; }
+.card:hover { border-color: var(--line-strong); }
+.card.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.card .top { display: flex; align-items: center; gap: 9px; }
+.card .nm { font-weight: 600; font-size: 14px; }
+.card .state { margin-left: auto; font: 500 11px var(--font-mono); color: var(--muted); }
+.card .state.on { color: var(--ok); }
+.card .cmd { font: 400 11.5px var(--font-mono); color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .acts { display: flex; align-items: center; gap: 6px; }
+.card .acts .port { font: 400 11px var(--font-mono); color: var(--muted); margin-right: auto; }
+.term { border-radius: 14px; background: var(--term); border: 1px solid var(--line); overflow: hidden; position: sticky; top: 16px; }
+.term-head { display: flex; align-items: center; gap: 9px; padding: 10px 14px; border-bottom: 1px solid #ffffff10; color: var(--term-ink); font-size: 13px; }
+.term-head .sub { color: #8aa3a0; font: 400 11.5px var(--font-mono); }
+.term-head .grow { flex: 1; }
+.term-head .btn { background: none; color: #8aa3a0; border-color: #ffffff1a; }
+.log { margin: 0; padding: 12px 14px; font: 400 12px/1.7 var(--font-mono); color: var(--term-ink); height: 300px; overflow: auto; white-space: pre-wrap; }
+.log .t { color: #5d7774; }
+.log .ok { color: #7cc796; } .log .w { color: #f2b34b; }
+.term-foot { padding: 10px 14px 12px; border-top: 1px solid #ffffff10; font-size: 12px; color: #8aa3a0; display: grid; gap: 4px; }
+.term-foot b { color: var(--term-ink); font-weight: 500; }
+
+/* Confirmation, in the page (never a browser dialog) */
+.veil { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 65%, transparent); backdrop-filter: blur(4px); display: none; place-items: center; padding: 16px; z-index: 9; }
+.veil.on { display: grid; }
+.confirm { width: min(480px, 100%); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; box-shadow: 0 24px 70px #0008; overflow: hidden; animation: rise .18s ease-out; }
+.confirm .top { padding: 20px 20px 0; display: flex; gap: 14px; }
+.confirm .badge { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--glow); color: var(--accent); flex: none; }
+.confirm .badge.stop { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.confirm h2 { margin: 2px 0 4px; font-size: 16.5px; }
+.confirm p { margin: 0; color: var(--muted); font-size: 13px; }
+.confirm .cmdline { margin: 16px 20px 0; font: 500 13px var(--font-mono); background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 10px 12px; }
+.confirm .cmdline::before { content: "$ "; color: #5d7774; }
+.confirm dl { margin: 12px 20px 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 12.5px; }
+.confirm dt { color: var(--muted); }
+.confirm dd { margin: 0; overflow-wrap: anywhere; }
+.confirm .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 18px; }
+
+@media (max-width: 1000px) {
+  .svc-layout { grid-template-columns: 1fr; }
+  .term { position: static; }
+}
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; }
+  .side { display: none; }
+  main { padding: 14px 16px 40px; }
+  .mast { grid-template-columns: auto minmax(0, 1fr); }
+  .stats { grid-column: 1 / -1; grid-row: auto; overflow-x: auto; }
+  .bench { height: auto; }
+  .files.bench, .git.bench { grid-template-columns: 1fr; }
+  .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+  .scroll { max-height: 420px; }
+  .tabs .right { display: none; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-office" viewBox="0 0 24 24"><path d="M4 21V8l8-5 8 5v13M9 21v-6h6v6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 4-12 7"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+</svg>
+
+<div class="app">
+  <nav class="side" aria-label="Menu">
+    <div class="brand hud">Arianna</div>
+    <a href="#"><svg class="i"><use href="#i-chat"/></svg>Nuova conversazione</a>
+    <a href="#"><svg class="i"><use href="#i-bulb"/></svg>Pensieri</a>
+    <a href="#"><svg class="i"><use href="#i-book"/></svg>Conoscenza</a>
+    <a href="#" class="on"><svg class="i"><use href="#i-folder"/></svg>Progetti</a>
+    <a href="#"><svg class="i"><use href="#i-office"/></svg>Ufficio</a>
+    <a href="#"><svg class="i"><use href="#i-phone"/></svg>Chiama</a>
+    <div class="spacer"></div>
+    <a href="#"><svg class="i"><use href="#i-gear"/></svg>Impostazioni</a>
+  </nav>
+
+  <main>
+    <header class="mast">
+      <div class="mono-tile" id="tile">OC</div>
+      <div class="switch">
+        <button type="button" id="switch" aria-haspopup="true" aria-expanded="false"><span id="pname">orto-condiviso</span><svg class="i"><use href="#i-down"/></svg></button>
+        <div class="menu-pop" id="pop" role="menu">
+          <button class="on" type="button" data-p="orto-condiviso" data-t="OC"><span>orto-condiviso</span><span class="dot on"></span><small>~/Sites/orto-condiviso</small></button>
+          <button type="button" data-p="ricette-di-casa" data-t="RC"><span>ricette-di-casa</span><span class="dot"></span><small>~/Sites/ricette-di-casa</small></button>
+          <span class="add">Altri progetti si approvano in Impostazioni → Progetti.</span>
+        </div>
+      </div>
+      <div class="stats">
+        <button class="stat" type="button" data-go="git"><span class="hud">Branch</span><b><svg class="i" style="width:13px;height:13px"><use href="#i-branch"/></svg>task/calendario-semine</b></button>
+        <button class="stat" type="button" data-go="git"><span class="hud">Modifiche</span><b class="warn">4 file</b></button>
+        <button class="stat" type="button" data-go="svc"><span class="hud">Servizi</span><b><span class="dot on"></span>2 accesi su 6</b></button>
+      </div>
+      <div class="where"><span id="ppath">~/Sites/orto-condiviso</span><span>·</span><span>lettura Interno</span></div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="on" type="button" role="tab" data-tab="file">File <span class="n">48</span></button>
+      <button type="button" role="tab" data-tab="git">Git <span class="n">4</span></button>
+      <button type="button" role="tab" data-tab="svc">Servizi <span class="n">2/6</span></button>
+      <span class="right" id="tabnote"><svg class="i"><use href="#i-lock"/></svg>Sola lettura: niente modifiche, checkout né commit da qui</span>
+    </nav>
+
+    <!-- FILE -->
+    <section class="panel on" id="p-file">
+      <div class="files bench">
+        <div class="pane">
+          <div class="pane-head"><label class="search"><svg class="i"><use href="#i-search"/></svg><input type="search" placeholder="Cerca un file" aria-label="Cerca un file"></label></div>
+          <div class="scroll tree" id="tree"></div>
+          <div class="tree-foot"><span><i style="color:var(--warn)">M</i> modificato</span><span><i style="color:var(--ok)">A</i> nuovo</span><span><svg class="i" style="width:11px;height:11px"><use href="#i-lock"/></svg> chiuso</span></div>
+        </div>
+        <div class="pane">
+          <div class="pane-head">
+            <div class="grow crumbs" id="crumbs"></div>
+            <span class="meta" id="vsize"></span>
+            <button class="btn" id="vopen" type="button" disabled><svg class="i" style="width:13px;height:13px"><use href="#i-ext"/></svg>Apri</button>
+          </div>
+          <div class="scroll" id="vbody" style="display:flex;flex-direction:column"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GIT -->
+    <section class="panel" id="p-git">
+      <div class="git bench">
+        <div class="pane">
+          <div class="pane-head">
+            <button class="branch-btn" type="button" title="Altri branch: main, task/mappa-aiuole, task/prestito-attrezzi"><svg class="i" style="width:13px;height:13px"><use href="#i-branch"/></svg><span>task/calendario-semine</span><svg class="i" style="width:12px;height:12px;color:var(--muted)"><use href="#i-down"/></svg></button>
+            <span class="grow"></span><span class="ahead">↑2 su main</span>
+          </div>
+          <div class="scroll">
+            <div class="section-t"><span class="hud">Non salvato in un commit</span><span class="grow"></span><span class="ahead">4 + 1</span></div>
+            <div class="wt">
+              <div class="r"><span class="s M">M</span><span><span class="p">src/components/</span><span class="nm">SowingCalendar.vue</span></span><span class="ln"><span class="p2">+5</span> <span class="m2">−1</span></span></div>
+              <div class="r"><span class="s M">M</span><span><span class="p">src/</span><span class="nm">api.ts</span></span><span class="ln"><span class="p2">+2</span> <span class="m2">−2</span></span></div>
+              <div class="r"><span class="s M">M</span><span class="nm">README.md</span><span class="ln"><span class="p2">+1</span></span></div>
+              <div class="r"><span class="s A">A</span><span><span class="p">src/</span><span class="nm">seasons.ts</span></span><span class="ln"><span class="p2">+6</span></span></div>
+              <div class="r"><span class="s U">?</span><span><span class="p">notes/</span><span class="nm" style="color:var(--muted)">idee-aiuole.md</span></span><span class="ln muted">non seguito</span></div>
+            </div>
+            <div class="section-t" style="padding-top:20px"><span class="hud">Commit</span></div>
+            <div class="timeline" id="commits">
+              <button class="cm on" type="button" data-c="0"><span class="node"></span><span class="msg">Calendario delle semine per mese</span><span class="by">a41c9e2 · Marta R. · 2 ore fa <span class="p2">+64</span><span class="m2">−12</span></span></button>
+              <button class="cm" type="button" data-c="1"><span class="node"></span><span class="msg">Stagioni come dati, non nel componente</span><span class="by">7be0d13 · Marta R. · ieri <span class="p2">+31</span><span class="m2">−2</span></span></button>
+              <button class="cm merge" type="button" data-c="2"><span class="node"></span><span class="msg">Unione di mappa-aiuole</span><span class="by">c02f5aa · Luca B. · 3 giorni fa <span class="p2">+118</span><span class="m2">−40</span></span></button>
+              <button class="cm" type="button" data-c="3"><span class="node"></span><span class="msg">README: come avviare in locale</span><span class="by">19d7e48 · Luca B. · 5 giorni fa <span class="p2">+9</span><span class="m2">−1</span></span></button>
+            </div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><div class="grow ch-head"><span class="t" id="dmsg"></span><span class="meta" id="dsha"></span></div><span class="meta" id="dfiles"></span></div>
+          <div class="scroll diff" id="diff"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SERVICES -->
+    <section class="panel" id="p-svc">
+      <div class="svc-layout">
+        <div id="sources"></div>
+        <aside class="term" aria-label="Registro">
+          <div class="term-head"><span class="dot on" id="logdot"></span><b id="logname">dev</b><span class="sub" id="logsub">acceso da 42 min</span><span class="grow"></span><button class="btn" type="button"><svg class="i" style="width:13px;height:13px"><use href="#i-copy"/></svg>Copia</button></div>
+          <pre class="log" id="log"></pre>
+          <div class="term-foot">
+            <span>Si avviano <b>solo i comandi scritti nei file del progetto</b>, con la tua conferma ogni volta.</span>
+            <span>Test e build si fermano da soli dopo <b>10 minuti</b>; i servizi avviati da qui si fermano alla chiusura di Arianna. Il registro resta sul computer (ultime 2000 righe).</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="ctitle">
+  <div class="confirm">
+    <div class="top">
+      <div class="badge" id="cbadge"><svg class="i" style="width:18px;height:18px"><use href="#i-play"/></svg></div>
+      <div><h2 id="ctitle">Avviare “test”?</h2><p id="cdesc">Arianna esegue questo comando sul tuo computer, nella cartella del progetto.</p></div>
+    </div>
+    <div class="cmdline" id="ccmd">pnpm run test</div>
+    <dl>
+      <dt>Scritto in</dt><dd class="mono" id="cfrom">package.json → scripts.test</dd>
+      <dt>Cartella</dt><dd class="mono">~/Sites/orto-condiviso</dd>
+      <dt>Durata</dt><dd id="climit">si ferma da solo dopo 10 minuti</dd>
+    </dl>
+    <div class="foot">
+      <button class="btn ghost" type="button" id="cno">Annulla</button>
+      <button class="btn primary" type="button" id="cyes">Avvia</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const lockSvg = '<svg class="i"><use href="#i-lock"/></svg>';
+
+/* File tree: [name, type, status, children | fileKey] */
+const tree = [
+  ['.git', 'dir', 'shut'], ['node_modules', 'dir', 'shut'],
+  ['src', 'dir', '', [
+    ['components', 'dir', '', [['SowingCalendar.vue', 'vue', 'M', 'calendar'], ['PlotCard.vue', 'vue', '', 'plot']]],
+    ['api.ts', 'ts', 'M', 'api'], ['seasons.ts', 'ts', 'A', 'seasons'],
+  ]],
+  ['public', 'dir', '', [['orto.png', 'img', '', 'img'], ['index.html', 'html', '', 'html']]],
+  ['.env', 'env', 'shut', 'env'], ['docker-compose.yml', 'yml', '', 'compose'], ['package.json', 'json', '', 'pkg'], ['README.md', 'md', 'M', 'readme'],
+];
+const label = { vue: 'VUE', ts: 'TS', json: '{ }', md: 'MD', yml: 'YML', html: '&lt;/&gt;', img: 'IMG', env: '•••' };
+const drawTree = (items) => items.map(([name, type, st, rest]) => {
+  if (type === 'dir') {
+    if (st === 'shut') return `<div class="row shut" title="Non si mostra"><span class="chev">▾</span><span class="ft dir">▸</span>${name}${lockSvg}</div>`;
+    return `<div class="row dir"><span class="chev">▾</span>${name}</div><div class="kids">${drawTree(rest)}</div>`;
+  }
+  if (st === 'shut') return `<div class="row shut" data-file="${rest}"><span class="chev"></span><span class="ft env">${label[type]}</span>${name}${lockSvg}</div>`;
+  return `<div class="row" data-file="${rest}"><span class="chev"></span><span class="ft ${type}">${label[type]}</span><span class="name ${st}">${name}</span>${st ? `<span class="st ${st}">${st}</span>` : ''}</div>`;
+}).join('');
+document.getElementById('tree').innerHTML = drawTree(tree);
+
+const files = {
+  calendar: { path: ['src', 'components'], name: 'SowingCalendar.vue', size: '2,1 kB · 18 righe', chg: [8, 9, 10, 11], lines: [
+    '<c>&lt;!-- Monthly sowing calendar for the shared plots --&gt;</c>',
+    '&lt;script setup lang=<s>"ts"</s>&gt;',
+    '<k>import</k> { computed } <k>from</k> <s>\'vue\'</s>;',
+    '<k>import</k> { SEASONS } <k>from</k> <s>\'../seasons\'</s>;', '',
+    '<k>const</k> props = <f>defineProps</f>&lt;{ month: <k>number</k> }&gt;();', '',
+    '<k>const</k> crops = <f>computed</f>(() =&gt;',
+    '  SEASONS.<f>filter</f>((s) =&gt; s.months.<f>includes</f>(props.month))',
+    '         .<f>map</f>((s) =&gt; s.crop),', ');',
+    '&lt;/script&gt;', '', '&lt;template&gt;',
+    '  &lt;ul class=<s>"calendar"</s>&gt;',
+    '    &lt;li v-for=<s>"crop in crops"</s> :key=<s>"crop"</s>&gt;{{ crop }}&lt;/li&gt;',
+    '  &lt;/ul&gt;', '&lt;/template&gt;'] },
+  plot: { path: ['src', 'components'], name: 'PlotCard.vue', size: '1,4 kB · 9 righe', lines: [
+    '&lt;script setup lang=<s>"ts"</s>&gt;', '<f>defineProps</f>&lt;{ name: <k>string</k>; area: <k>number</k> }&gt;();', '&lt;/script&gt;', '',
+    '&lt;template&gt;', '  &lt;article class=<s>"plot"</s>&gt;', '    &lt;h3&gt;{{ name }}&lt;/h3&gt;&lt;p&gt;{{ area }} m²&lt;/p&gt;', '  &lt;/article&gt;', '&lt;/template&gt;'] },
+  api: { path: ['src'], name: 'api.ts', size: '0,9 kB · 10 righe', chg: [5, 6], lines: [
+    '<c>// Tiny client for the plots API</c>', '<k>const</k> BASE = <s>\'/api\'</s>;', '',
+    '<k>export async function</k> <f>listPlots</f>(): <k>Promise</k>&lt;Plot[]&gt; {',
+    '  <k>const</k> res = <k>await</k> <f>fetch</f>(<s>`${BASE}/plots`</s>);',
+    '  <k>if</k> (!res.ok) <k>throw new</k> <f>Error</f>(<s>`plots: ${res.status}`</s>);',
+    '  <k>return</k> res.<f>json</f>();', '}', '',
+    '<k>export type</k> Plot = { id: <k>number</k>; name: <k>string</k>; area: <k>number</k> };'] },
+  seasons: { path: ['src'], name: 'seasons.ts', size: '0,6 kB · 6 righe', isNew: true, lines: [
+    '<k>export const</k> SEASONS = [',
+    '  { crop: <s>\'pomodori\'</s>, months: [<n>3</n>, <n>4</n>, <n>5</n>] },',
+    '  { crop: <s>\'zucchine\'</s>, months: [<n>4</n>, <n>5</n>] },',
+    '  { crop: <s>\'lattuga\'</s>, months: [<n>2</n>, <n>3</n>, <n>9</n>, <n>10</n>] },',
+    '  { crop: <s>\'fave\'</s>, months: [<n>10</n>, <n>11</n>] },', '] <k>as const</k>;'] },
+  pkg: { path: [], name: 'package.json', size: '0,5 kB · 10 righe', lines: [
+    '{', '  <s>"name"</s>: <s>"orto-condiviso"</s>,', '  <s>"version"</s>: <s>"0.4.0"</s>,', '  <s>"scripts"</s>: {',
+    '    <s>"dev"</s>: <s>"vite --port 5180"</s>,', '    <s>"test"</s>: <s>"vitest run"</s>,', '    <s>"build"</s>: <s>"vite build"</s>', '  },',
+    '  <s>"dependencies"</s>: { <s>"vue"</s>: <s>"3.5.12"</s> }', '}'] },
+  compose: { path: [], name: 'docker-compose.yml', size: '0,4 kB · 7 righe', lines: [
+    '<k>services</k>:', '  <k>db</k>:', '    <k>image</k>: <s>postgres:16</s>', '    <k>ports</k>: [<s>"127.0.0.1:55432:5432"</s>]',
+    '  <k>mail</k>:', '    <k>image</k>: <s>axllent/mailpit</s>', '    <k>ports</k>: [<s>"127.0.0.1:8025:8025"</s>]'] },
+  readme: { path: [], name: 'README.md', size: '0,7 kB · 7 righe', chg: [3], lines: [
+    '<k># Orto condiviso</k>', '', 'Prenotazione delle aiuole e calendario delle semine del quartiere.', '',
+    '<k>## Avvio in locale</k>', '', '<s>`docker compose up -d db`</s> poi <s>`pnpm dev`</s>.'] },
+  html: { path: ['public'], name: 'index.html', size: '0,3 kB · 6 righe', open: true, lines: [
+    '&lt;!doctype html&gt;', '&lt;html lang=<s>"it"</s>&gt;', '&lt;title&gt;Orto condiviso&lt;/title&gt;',
+    '&lt;div id=<s>"app"</s>&gt;&lt;/div&gt;', '&lt;script type=<s>"module"</s> src=<s>"/src/main.ts"</s>&gt;&lt;/script&gt;', '&lt;/html&gt;'] },
+  img: { path: ['public'], name: 'orto.png', size: '84 kB · 1200×800', open: true, image: true },
+  env: { path: [], name: '.env', size: '', shut: true },
+};
+const render = (key) => {
+  const f = files[key];
+  document.querySelectorAll('#tree .row[data-file]').forEach((r) => r.classList.toggle('on', r.dataset.file === key));
+  document.getElementById('crumbs').innerHTML = ['orto-condiviso', ...f.path].map((p, i) => `<span class="${i === 0 ? 'dim' : 'dim'}">${p}</span><span class="sep">/</span>`).join('') + `<span>${esc(f.name)}</span>`;
+  document.getElementById('vsize').textContent = f.size;
+  const open = document.getElementById('vopen');
+  open.disabled = !f.open;
+  open.title = f.open ? 'Apre in una scheda nuova, servita dal computer' : 'Si aprono solo pagine e immagini';
+  const body = document.getElementById('vbody');
+  if (f.shut) body.innerHTML = `<div class="stage"><div class="shut-msg">${lockSvg}<b>Questo file resta chiuso</b><span>I file nascosti (che iniziano con il punto), la cartella .git e i file con valori del vault non si mostrano mai.</span></div></div>`;
+  else if (f.image) body.innerHTML = '<div class="stage"><div><div class="pic" role="img" aria-label="Anteprima di orto.png"></div><div class="cap">orto.png · 1200 × 800</div></div></div>';
+  else {
+    const chg = new Set(f.chg || []);
+    body.innerHTML = '<pre class="code">' + f.lines.map((l, i) => {
+      const cls = f.isNew ? 'new' : chg.has(i + 1) ? 'chg' : '';
+      return `<span class="l ${cls}">${l.replace(/<([kscnf])>/g, '<span class="$1">').replace(/<\/[kscnf]>/g, '</span>') || ' '}</span>`;
+    }).join('') + '</pre>';
+  }
+};
+document.getElementById('tree').addEventListener('click', (e) => {
+  const row = e.target.closest('.row');
+  if (!row || (row.classList.contains('shut') && !row.dataset.file)) return;
+  if (row.dataset.file) render(row.dataset.file);
+  if (row.classList.contains('dir')) {
+    row.classList.toggle('closed');
+    row.nextElementSibling.classList.toggle('closed');
+  }
+});
+render('calendar');
+
+/* Git */
+const commits = [
+  { msg: 'Calendario delle semine per mese', sha: 'a41c9e2 · Marta R. · 2 ore fa', files: [
+    ['src/components/SowingCalendar.vue', '+5 −1', [['@@ -6,8 +6,11 @@'], [' ', 6, 6, 'const props = defineProps<{ month: number }>();'], [' ', 7, 7, ''], ['-', 8, '', 'const crops = SEASONS_BY_MONTH[props.month];'], ['+', '', 8, 'const crops = computed(() =>'], ['+', '', 9, '  SEASONS.filter((s) => s.months.includes(props.month))'], ['+', '', 10, '         .map((s) => s.crop),'], ['+', '', 11, ');'], [' ', 9, 12, '<\/script>']]],
+    ['README.md', '+1', [['@@ -3,3 +3,4 @@'], [' ', 3, 3, 'Prenotazione delle aiuole e calendario delle semine.'], ['+', '', 4, 'Il calendario mostra cosa seminare mese per mese.']]],
+  ] },
+  { msg: 'Stagioni come dati, non nel componente', sha: '7be0d13 · Marta R. · ieri', files: [
+    ['src/seasons.ts', '+6', [['@@ -0,0 +1,6 @@'], ['+', '', 1, 'export const SEASONS = ['], ['+', '', 2, "  { crop: 'pomodori', months: [3, 4, 5] },"], ['+', '', 3, "  { crop: 'zucchine', months: [4, 5] },"], ['+', '', 4, '] as const;']]],
+  ] },
+  { msg: 'Unione di mappa-aiuole', sha: 'c02f5aa · Luca B. · 3 giorni fa', files: [
+    ['src/components/PlotCard.vue', '+3 −1', [['@@ -1,4 +1,6 @@'], ['-', 2, '', 'defineProps<{ name: string }>();'], ['+', '', 2, 'defineProps<{ name: string; area: number }>();'], [' ', 3, 3, '<\/script>'], ['+', '', 7, '    <p>{{ area }} m²</p>']]],
+  ] },
+  { msg: 'README: come avviare in locale', sha: '19d7e48 · Luca B. · 5 giorni fa', files: [
+    ['README.md', '+4', [['@@ -1,2 +1,6 @@'], [' ', 1, 1, '# Orto condiviso'], ['+', '', 3, '## Avvio in locale'], ['+', '', 4, ''], ['+', '', 5, '`docker compose up -d db` poi `pnpm dev`.']]],
+  ] },
+];
+const showDiff = (i) => {
+  const c = commits[i];
+  document.querySelectorAll('#commits .cm').forEach((el) => el.classList.toggle('on', +el.dataset.c === i));
+  document.getElementById('dmsg').textContent = c.msg;
+  document.getElementById('dsha').textContent = c.sha;
+  document.getElementById('dfiles').textContent = c.files.length === 1 ? '1 file' : `${c.files.length} file`;
+  document.getElementById('diff').innerHTML = c.files.map(([name, n, lines]) =>
+    `<div class="dfile">${esc(name)}<span class="ln">${n}</span></div>` + lines.map((l) => {
+      if (l.length === 1) return `<div class="d hunk"><i></i><i></i><span>${esc(l[0])}</span></div>`;
+      const [sign, a, b, text] = l;
+      const cls = sign === '+' ? 'add' : sign === '-' ? 'del' : '';
+      return `<div class="d ${cls}"><i>${a}</i><i>${b}</i><span>${sign === ' ' ? ' ' : sign}${esc(text)}</span></div>`;
+    }).join('')).join('');
+};
+document.getElementById('commits').addEventListener('click', (e) => { const c = e.target.closest('.cm'); if (c) showDiff(+c.dataset.c); });
+showDiff(0);
+
+/* Services */
+const sources = [
+  ['package.json', 'script', [
+    { key: 'dev', cmd: 'pnpm run dev', from: 'scripts.dev', port: 5180, on: true, since: 'acceso da 42 min', keep: true },
+    { key: 'test', cmd: 'pnpm run test', from: 'scripts.test' },
+    { key: 'build', cmd: 'pnpm run build', from: 'scripts.build' },
+  ]],
+  ['docker-compose.yml', 'servizi', [
+    { key: 'db', cmd: 'docker compose up -d db', from: 'services.db', port: 55432, on: true, since: 'acceso da 3 ore', keep: true, noOpen: true },
+    { key: 'mail', cmd: 'docker compose up -d mail', from: 'services.mail', port: 8025, keep: true },
+  ]],
+  ['Makefile', 'obiettivi', [{ key: 'seed', cmd: 'make seed', from: 'seed' }]],
+];
+const all = {};
+sources.forEach(([file, , list]) => list.forEach((s) => { s.file = file; all[s.key] = s; }));
+const logs = {
+  dev: ['10:34:12|&gt; orto-condiviso@0.4.0 dev', '10:34:12|&gt; vite --port 5180', '10:34:13|<span class="ok">VITE v5.4.2  ready in 412 ms</span>', '10:34:13|  ➜  Local:   http://127.0.0.1:5180/', '10:51:40|<span class="w">[vite] hmr update /src/components/SowingCalendar.vue</span>', '11:02:05|[vite] page reload src/api.ts'],
+  db: ['08:12:01|database system is ready to accept connections'],
+};
+let selected = 'dev';
+const drawSources = () => {
+  document.getElementById('sources').innerHTML = sources.map(([file, kind, list]) => `
+    <div class="src"><div class="src-t"><span class="f">${file}</span><span class="hud">${kind}</span></div><div class="cards">
+    ${list.map((s) => `
+      <div class="card ${s.key === selected ? 'sel' : ''}" data-svc="${s.key}" tabindex="0">
+        <div class="top"><span class="dot ${s.busy ? 'busy' : s.on ? 'on' : ''}"></span><span class="nm">${s.key}</span><span class="state ${s.on ? 'on' : ''}">${s.busy ? 'in avvio' : s.on ? 'acceso' : 'spento'}</span></div>
+        <div class="cmd" title="${esc(s.cmd)}">${esc(s.cmd)}</div>
+        <div class="acts"><span class="port">${s.port ? ':' + s.port : ''}</span>
+          ${s.on && s.port && !s.noOpen ? '<a class="btn" href="#" onclick="return false"><svg class="i" style="width:13px;height:13px"><use href="#i-ext"/></svg>Apri</a>' : ''}
+          ${s.on || s.busy ? '<button class="btn danger" data-act="stop" type="button"><svg class="i" style="width:12px;height:12px"><use href="#i-stop"/></svg>Ferma</button>' : '<button class="btn" data-act="start" type="button"><svg class="i" style="width:12px;height:12px"><use href="#i-play"/></svg>Avvia</button>'}
+        </div>
+      </div>`).join('')}</div></div>`).join('');
+};
+const drawLog = () => {
+  const s = all[selected];
+  document.getElementById('logname').textContent = s.key;
+  document.getElementById('logdot').className = 'dot ' + (s.busy ? 'busy' : s.on ? 'on' : '');
+  document.getElementById('logsub').textContent = s.busy ? 'in avvio' : s.on ? (s.since || 'acceso ora') : (s.stoppedAt || 'spento, nessun registro recente');
+  document.getElementById('log').innerHTML = (logs[s.key] || []).map((l) => { const [t, x] = l.split('|'); return `<span class="t">${t}</span>  ${x}`; }).join('\n');
+};
+drawSources(); drawLog();
+
+let pending = null;
+const veil = document.getElementById('veil');
+document.getElementById('sources').addEventListener('click', (e) => {
+  const card = e.target.closest('.card');
+  if (!card) return;
+  selected = card.dataset.svc;
+  const b = e.target.closest('button[data-act]');
+  if (!b) { drawSources(); drawLog(); return; }
+  const s = all[selected]; const stop = b.dataset.act === 'stop';
+  pending = { s, stop };
+  document.getElementById('ctitle').textContent = `${stop ? 'Fermare' : 'Avviare'} “${s.key}”?`;
+  document.getElementById('cdesc').textContent = stop ? 'Arianna chiede al processo di chiudersi; se non risponde entro 10 secondi lo chiude lei.' : 'Arianna esegue questo comando sul tuo computer, nella cartella del progetto.';
+  document.getElementById('ccmd').textContent = stop ? (s.cmd.startsWith('docker') ? `docker compose stop ${s.key}` : `arresto di “${s.key}”`) : s.cmd;
+  document.getElementById('cfrom').textContent = `${s.file} → ${s.from}`;
+  document.getElementById('climit').textContent = stop ? 'arresto gentile, poi forzato dopo 10 secondi' : s.keep ? 'resta acceso finché lo fermi o chiudi Arianna' : 'si ferma da solo dopo 10 minuti';
+  const badge = document.getElementById('cbadge');
+  badge.className = 'badge' + (stop ? ' stop' : '');
+  badge.innerHTML = `<svg class="i" style="width:18px;height:18px"><use href="#i-${stop ? 'stop' : 'play'}"/></svg>`;
+  const yes = document.getElementById('cyes');
+  yes.textContent = stop ? 'Ferma' : 'Avvia';
+  yes.className = stop ? 'btn danger solid' : 'btn primary';
+  drawSources(); drawLog();
+  veil.classList.add('on'); yes.focus();
+});
+const close = () => { veil.classList.remove('on'); pending = null; };
+document.getElementById('cno').addEventListener('click', close);
+veil.addEventListener('click', (e) => { if (e.target === veil) close(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); pop.classList.remove('on'); } });
+document.getElementById('cyes').addEventListener('click', () => {
+  if (!pending) return;
+  const { s, stop } = pending; close();
+  const now = new Date().toTimeString().slice(0, 8);
+  logs[s.key] = logs[s.key] || [];
+  if (stop) {
+    s.on = false; s.busy = false; s.stoppedAt = 'fermato alle ' + now.slice(0, 5);
+    logs[s.key].push(`${now}|<span class="w">arresto chiesto dall'utente</span>`, `${now}|processo chiuso (codice 0)`);
+  } else {
+    s.busy = true;
+    logs[s.key].push(`${now}|$ ${esc(s.cmd)}`);
+    setTimeout(() => {
+      s.busy = false;
+      if (s.keep) { s.on = true; s.since = 'acceso ora'; logs[s.key].push(`${now}|<span class="ok">pronto</span>`); }
+      else { s.stoppedAt = 'finito alle ' + now.slice(0, 5); logs[s.key].push(`${now}|<span class="ok">✓ 12 test passati</span>`, `${now}|finito (codice 0)`); }
+      drawSources(); drawLog();
+    }, 1400);
+  }
+  drawSources(); drawLog();
+});
+
+/* Tabs and project switcher */
+const go = (tab) => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.id === 'p-' + tab));
+  document.getElementById('tabnote').innerHTML = tab === 'svc'
+    ? '<svg class="i"><use href="#i-play"/></svg>Avvia e ferma con la tua conferma, ogni volta'
+    : '<svg class="i"><use href="#i-lock"/></svg>Sola lettura: niente modifiche, checkout né commit da qui';
+};
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
+document.querySelectorAll('.stat').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+const pop = document.getElementById('pop');
+const sw = document.getElementById('switch');
+sw.addEventListener('click', () => { const on = pop.classList.toggle('on'); sw.setAttribute('aria-expanded', on); });
+pop.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  pop.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+  document.getElementById('pname').textContent = b.dataset.p;
+  document.getElementById('tile').textContent = b.dataset.t;
+  document.getElementById('ppath').textContent = '~/Sites/' + b.dataset.p;
+  pop.classList.remove('on');
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.switch')) pop.classList.remove('on'); });
+</script>
+</body>
+</html>
