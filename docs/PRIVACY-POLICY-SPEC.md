@@ -46,6 +46,25 @@ Il nodo più delicato è l'orchestratore: è locale, legge L2 e scrive i brief p
 - **Chat diretta con un agente** (D-111d): vale quello che segue per il Coder per ogni agente su Claude; un agente locale risponde con il modello locale, quindi nulla esce dal Mac, e una conversazione privata con lui è ammessa solo se la sua scheda può leggere Privato (altrimenti il brief chiederebbe un declassamento). Modo e progetto li decide la scheda, nel codice; il database ammette solo un id di agente diverso da Arianna in una conversazione dell'utente.
 - **Chat diretta con il Coder** (D-111, `conversations.agent = 'coder'`): una conversazione di lavoro (L1) su un progetto approvato in cui l'orchestratore non c'è. Ogni messaggio dell'utente è il brief, così com'è: scanner al salvataggio come in ogni conversazione di lavoro, poi gateway verso `claude` a ogni messaggio; il modello locale non legge e non scrive nulla. Si sceglie alla nascita e non cambia (trigger `conversations_agent_fixed`): una storia scritta per Arianna non passa mai al cloud. L'utente vede un avviso fisso alla creazione, il segno "va a Claude" nell'intestazione e una conferma oltre 4000 caratteri (lo scanner non riconosce i dati personali in prosa). **La sessione cloud è per conversazione:** dal secondo messaggio il run riprende con `--resume` la sessione dell'ultima risposta della stessa conversazione, stesso agente e progetto, e ha quindi letto i messaggi precedenti, le sue risposte e i file aperti prima. È accettabile perché quella sessione resta L1 (nessun declassamento possibile in una conversazione di lavoro), su un solo progetto, ogni testo entrato ha la sua riga in `gateway_log` e nessun pezzo di Arianna o di altre conversazioni vi entra; un messaggio bloccato dal gateway non entra mai. Se la sessione non c'è più, il ripiego rimanda dal gateway gli ultimi scambi con una risposta, ciascuno con la sua etichetta (D-111b). Claude Code tiene una copia della sessione nella home dell'utente: eliminare la conversazione in Arianna non la cancella, e la finestra di eliminazione lo dice.
 
+### Conversazioni incognite (D-136)
+
+Un'incognita è una conversazione privata o di lavoro con un segno fissato alla nascita (`conversations.incognito`, immutabile). **Non cambia nessuna etichetta né uscita:** clearance, scanner, gateway, approvazioni e declassamenti funzionano come nella conversazione corrispondente; il segno dice **quanto a lungo** si tiene un dato, non quanto è riservato, e `packages/policy` non lo conosce. Cambia la durata: alla chiusura ("Termina", 10 minuti senza pagina aperta, riavvio del core) il lavoro in corso si ferma e `purge_incognito` cancella i testi.
+
+| Traccia | Esito |
+| --- | --- |
+| Messaggi, turni e ragionamento, deleghe (brief e rapporti), riassunti, righe di attività, partecipanti | Cancellati alla chiusura |
+| Titolo della conversazione e dei task | Mai scritti (`NULL` e "Incognito" fisso) |
+| Note in `kb/inbox/`, carte figlie (`kb.write`, `task.create`, `task.update`, "Salva in inbox", `/nota`) | Mai scritte: strumenti spenti, rotte 409 |
+| Sessioni di Claude Code nella home dell'utente | Non salvate (`--no-session-persistence`); altre cartelle del profilo da verificare dal vivo |
+| Telegram, chiamate in uscita, notifiche | Saltate |
+| `events`, `gateway_log`, `router_decisions`, `runs` (senza `session_ref` né cartella), `label_changes`, `task_errors`, `jobs`, riga scheletro della conversazione e dei task | Restano, senza contenuto: dicono se e verso chi qualcosa è uscito, mai cosa |
+| Ciò che il fornitore cloud ha ricevuto (solo incognite di lavoro) | Resta presso il fornitore, secondo l'abbonamento |
+| File cambiati dal Coder nel progetto | Restano: elencati nella scheda di chiusura |
+| Byte cancellati nelle pagine del database, nel WAL e nella coda di `pg_notify` | Restano illeggibili ad Arianna fino alla sovrascrittura; li protegge la cifratura del disco |
+| Log di oMLX | Senza testi al livello `info`, che il wizard scrive e il doctor pretende; la cache su SSD (se accesa) tiene blocchi derivati dai prompt fino allo sfratto |
+
+L'utente vede questo elenco prima del primo messaggio e di nuovo alla chiusura, con i numeri veri di quella conversazione. Una memoria a lungo termine (Fase 2) dovrà escludere le incognite.
+
 ## Confinamento degli esecutori cloud
 
 Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag si verificano su `claude --help` e `codex --help` nei task 1.5 e 1.16 e si fissano nel test di contratto.
