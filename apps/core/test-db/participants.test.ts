@@ -22,7 +22,7 @@ import { LOCAL_REPORT_SCHEMA_NAME } from '../src/orchestrator/delegate.ts';
 import { createDelegation } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
-import { activeParticipants, ENTRY_TEXT, removeParticipant } from '../src/participants.ts';
+import { activeParticipants, ENTRY_TEXT, farewellLine, FAREWELLS, removeParticipant } from '../src/participants.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { loadTask } from '../src/tasks.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -340,4 +340,78 @@ test('the routes of the chat: the participants with where they run, and the user
     await server.close();
     await live.close();
   }
+});
+
+test('I-8 (D-130): after N messages of the user with no delegation an agent says goodbye and leaves; the Coder stays', async () => {
+  const { sql } = db();
+  const conversation = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'] });
+  for (const agent of ['revisore', 'traduttore', 'coder']) {
+    await sql`INSERT INTO conversation_participants (conversation_id, agent, added_by) VALUES (${conversation.id}, ${agent}, 'user')`;
+  }
+  const leave = { after: 3, nameLabel: () => 'L1' as const, random: () => 0 };
+  const post = (body: string, rule = leave) => postUserMessage(sql, conversation.id, body, { leave: rule });
+  await post('Uno.');
+  const second = await post('Due.');
+  // A delegation to the translator: its count starts again from here. Ended, so that it does not hold it here.
+  const delegation = await sql.begin((tx) => createDelegation(tx, { taskId: second.task.id, step: 1, agent: 'traduttore', brief: 'x', label: 'L1' }));
+  await sql`UPDATE task_delegations SET status = 'refused', result = 'x', result_label = 'L1', ended_at = now() WHERE id = ${delegation.id}::bigint`;
+  // Never with the rule off.
+  await post('Tre, senza regola.', { ...leave, after: 0 });
+  assert.deepEqual((await activeParticipants(sql, conversation.id)).map((row) => row.agent).sort(), ['coder', 'revisore', 'traduttore']);
+
+  const fourth = await post('Quattro.');
+  assert.deepEqual((await activeParticipants(sql, conversation.id)).map((row) => row.agent).sort(), ['coder', 'traduttore']);
+  assert.deepEqual(await linesOf(fourth.task.id), [[`revisore: ${FAREWELLS[0] ?? ''}`, 'L1']]);
+  const [event] = await sql<{ label: string; payload: Record<string, unknown> }[]>`
+    SELECT label, payload FROM events WHERE kind = 'participant.removed' AND payload ->> 'conversationId' = ${conversation.id} ORDER BY id`;
+  assert.deepEqual([event?.label, event?.payload.agent, event?.payload.reason], ['L1', 'revisore', 'idle']);
+
+  // The translator's count started at its delegation: two more messages and it leaves too.
+  await post('Cinque.');
+  assert.deepEqual((await activeParticipants(sql, conversation.id)).map((row) => row.agent).sort(), ['coder']);
+  // The Coder never leaves by itself.
+  for (const body of ['Sei.', 'Sette.', 'Otto.']) await post(body);
+  assert.deepEqual((await activeParticipants(sql, conversation.id)).map((row) => row.agent), ['coder']);
+});
+
+test('the goodbyes: twenty fixed sentences, one at random, after the name', () => {
+  assert.equal(FAREWELLS.length, 20);
+  assert.equal(new Set(FAREWELLS).size, 20);
+  assert.equal(farewellLine('coder', () => 0), `Coder: ${FAREWELLS[0] ?? ''}`);
+  assert.equal(farewellLine('revisore', () => 0.9999), `revisore: ${FAREWELLS[19] ?? ''}`);
+  for (const phrase of FAREWELLS) assert.ok(phrase.length > 5 && phrase.length < 80, phrase);
+});
+
+test('I-8: an agent with a delegation still waiting or at work here never leaves', async () => {
+  const { sql } = db();
+  const conversation = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'] });
+  await sql`INSERT INTO conversation_participants (conversation_id, agent, added_by) VALUES (${conversation.id}, 'revisore', 'user')`;
+  const leave = { after: 1, nameLabel: () => 'L1' as const };
+  const first = await postUserMessage(sql, conversation.id, 'Uno.');
+  await sql.begin((tx) => createDelegation(tx, { taskId: first.task.id, step: 1, agent: 'revisore', brief: 'x', label: 'L1' }));
+  await postUserMessage(sql, conversation.id, 'Due.', { leave });
+  assert.deepEqual((await activeParticipants(sql, conversation.id)).map((row) => row.agent), ['revisore']);
+});
+
+test('I-8 through the route of the chat: the rule of the core makes an idle agent leave; without it nobody leaves', async () => {
+  const { sql } = db();
+  const live = await startLiveFeed(sql);
+  for (const rule of [undefined, { after: 1, nameLabel: () => 'L1' as const }]) {
+    const conversation = await createConversation(sql, { mode: 'work', project: 'site', projects: ['site'] });
+    await sql`INSERT INTO conversation_participants (conversation_id, agent, added_by) VALUES (${conversation.id}, 'revisore', 'user')`;
+    const server = await startApiServer({ sql, live, host: '127.0.0.1', port: 0, ...(rule === undefined ? {} : { leaveRule: () => rule }) });
+    try {
+      const sent = await fetch(`http://127.0.0.1:${String(server.port)}/api/conversations/${conversation.id}/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'Ciao.' }),
+      });
+      assert.equal(sent.status, 201);
+      const left = (await activeParticipants(sql, conversation.id)).length === 0;
+      assert.equal(left, rule !== undefined);
+    } finally {
+      await server.close();
+    }
+  }
+  await live.close();
 });

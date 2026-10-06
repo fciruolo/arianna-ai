@@ -36,6 +36,8 @@ export class NoteError extends Error {
 
 /** `source: message:<id>` (D-089): a note saved from a message of the chat. */
 export const MESSAGE_SOURCE = /^message:([1-9]\d{0,18})$/;
+/** A whole conversation saved in the inbox (I-7, D-131). */
+export const CONVERSATION_SOURCE = /^conversation:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,200}\.md$/;
 
@@ -292,7 +294,7 @@ export function keptCaptureFields(raw: string): { source?: string; capturedAt?: 
   const kept: { source?: string; capturedAt?: string; capturedKind?: string; url?: string } = {};
   const source = fields.get('source');
   const channels = CAPTURE_CHANNELS.join('|');
-  if (source !== undefined && (new RegExp(`^capture:(${channels}):[A-Za-z0-9_-]{1,64}$`).test(source) || MESSAGE_SOURCE.test(source))) kept.source = source;
+  if (source !== undefined && (new RegExp(`^capture:(${channels}):[A-Za-z0-9_-]{1,64}$`).test(source) || MESSAGE_SOURCE.test(source) || CONVERSATION_SOURCE.test(source))) kept.source = source;
   const capturedAt = fields.get('captured_at');
   if (capturedAt !== undefined && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(capturedAt)) kept.capturedAt = capturedAt;
   const kind = fields.get('kind');

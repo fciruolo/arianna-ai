@@ -136,3 +136,16 @@ test('mergeSavedIds drops the answer for a conversation no longer open', () => {
   assert.equal(merged, current);
   assert.equal(merged.has('3'), false);
 });
+
+test('the whole conversation (I-7, D-131): saved or not from the core, and what the chat says after a save', async () => {
+  const { loadConversationSaved, saveConversation } = await import('../src/lib/message-actions.ts');
+  const reply = (status: number, body: unknown) => () => Promise.resolve({ status, ok: status < 400, json: () => Promise.resolve(body) });
+  assert.equal(await loadConversationSaved('c1', reply(200, { messageIds: [], conversation: true })), true);
+  assert.equal(await loadConversationSaved('c1', reply(200, { messageIds: [] })), false);
+  assert.equal(await loadConversationSaved('c1', reply(404, {})), false);
+  assert.equal(await loadConversationSaved('c1', () => Promise.reject(new Error('down'))), false);
+  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/a.md', replaced: false })), { ok: true, text: 'Conversazione salvata in kb/inbox/a.md' });
+  assert.deepEqual(await saveConversation('c1', reply(201, { path: 'kb/inbox/b.md', replaced: true })), { ok: true, text: 'Nota aggiornata in kb/inbox/b.md' });
+  const refused = await saveConversation('c1', reply(403, { error: 'kb/inbox is labeled L3: captures stop at L2' }));
+  assert.equal(refused.ok, false);
+});
