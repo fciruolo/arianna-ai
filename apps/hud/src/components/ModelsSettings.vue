@@ -402,19 +402,20 @@ onBeforeUnmount(() => {
           v-for="entry in visible"
           :key="entry.key"
           type="button"
-          class="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 border-t border-line px-3.5 py-2.5 text-left first-of-type:border-t-0 hover:bg-surface-2 sm:grid-cols-[34px_minmax(0,1fr)_auto]"
+          class="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 border-t border-line px-3.5 py-2.5 text-left first-of-type:border-t-0 hover:bg-surface-2"
           :class="entry.key === currentKey ? 'bg-surface-2 shadow-[inset_3px_0_0_var(--accent)]' : ''"
           :aria-current="entry.key === currentKey ? 'true' : undefined"
           @click="choose(entry.key)"
         >
           <span class="grid size-[34px] place-items-center rounded-[9px] border border-line-strong bg-surface-2 font-hud text-xs font-semibold" :class="badgeClass(entry.view)">{{ entry.badge }}</span>
           <span class="min-w-0">
-            <span class="block truncate font-medium" :class="entry.view.locality === 'local' ? 'font-mono text-[12.5px]' : ''">
-              {{ entry.name }}<span v-if="unsaved.has(entry.key)" class="text-warn" title="Modifiche non salvate" aria-label="modifiche non salvate"> •</span>
+            <!-- The whole id, wrapped: the chips sit on their own line below, so a long id is never cut or squeezed out. -->
+            <span class="block font-medium [overflow-wrap:anywhere]" :class="entry.view.locality === 'local' ? 'font-mono text-[12.5px]' : ''">
+              {{ entry.name }}<span v-if="unsaved.has(entry.key)" class="text-warn" title="Modifiche non salvate">&nbsp;<span aria-hidden="true">•</span><span class="sr-only">modifiche non salvate</span></span>
             </span>
             <span class="block truncate text-xs text-muted">{{ entry.sub }}</span>
           </span>
-          <span class="col-start-2 flex flex-wrap gap-1 sm:col-start-auto sm:justify-end">
+          <span class="col-start-2 flex flex-wrap gap-1">
             <span class="chip" :class="TONE_CLASS[entry.state.tone]">{{ entry.state.text }}</span>
             <span v-for="role in entry.roles" :key="role" class="chip text-accent">{{ ROLE_NAME[role].toLowerCase() }}</span>
             <span v-if="entry.view.locality === 'local' && entry.view.lastEval !== null" class="chip" :class="TRIAL_CLASS[entry.view.lastEval.status]" title="Ultima prova">
