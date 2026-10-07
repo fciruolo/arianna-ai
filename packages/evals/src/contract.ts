@@ -1,7 +1,8 @@
-// Contract of the claude -p adapter against the real binary (task 1.5,
-// docs/EVALS.md): a trivial task, a file read in the workspace, a resumed
-// session, a timeout. Consumes quota: `pnpm eval:live` only. The quota error
-// cannot be caused on purpose; the tests check it on a recorded stream.
+// Contract of the claude -p and codex exec adapters against the real binaries
+// (tasks 1.5 and 1.16, docs/EVALS.md): a trivial task, a file read in the
+// workspace, a resumed session, a timeout. Consumes quota: `pnpm eval:live`
+// only. The quota error cannot be caused on purpose; the tests check it on a
+// recorded stream.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,25 +11,55 @@ import { join } from 'node:path';
 import { loadConfig } from '@arianna/config';
 import {
   ClaudeError,
+  CodexError,
   createClaudeExecutor,
+  createCodexExecutor,
   prepareWorkspace,
   type ClaudeExecutor,
   type ClaudeTool,
+  type CodexAccess,
+  type CodexExecutor,
   type PreparedWorkspace,
 } from '@arianna/executors';
-import { createContext, createLabelRules, gatewayCheck, markLogged, secretMatcher } from '@arianna/policy';
+import { createContext, createLabelRules, gatewayCheck, markLogged, secretMatcher, type Target } from '@arianna/policy';
 
 import type { Evaluate } from './types.ts';
 
+/** The cloud executors the live evals run. */
+export const LIVE_EXECUTORS = ['claude', 'codex'] as const;
+export type LiveExecutor = (typeof LIVE_EXECUTORS)[number];
+
+export const liveTarget = (id: LiveExecutor): Target => ({ kind: 'executor', id, locality: 'cloud' });
+
+/** A failure of either adapter, with what the evals read of it. */
+export const isRunError = (error: unknown): error is ClaudeError | CodexError => error instanceof ClaudeError || error instanceof CodexError;
+
+/** What the live evals read of arianna.toml: the enabled executors, ARIANNA_HOME and the data folder. */
+export function liveConfig(): { executors: readonly string[]; home: string; data: string } {
+  const config = loadConfig();
+  return { executors: config.cloud.executors, home: config.home, data: config.paths.data };
+}
+
+export function requireEnabled(executors: readonly string[], id: LiveExecutor): void {
+  if (!executors.includes(id)) {
+    throw new Error(`${id} is not in [cloud] executors of config/arianna.toml: enable it with pnpm arianna:init --reconfigure`);
+  }
+}
+
 export interface ContractStep {
   prompt: string;
+  /** claude: the tools of the step. */
   tools?: ClaudeTool[];
+  /** codex: what the step may do in the workspace; default read. */
+  access?: CodexAccess;
   /** Resume the session of the previous step. */
   resume?: boolean;
   timeoutMs?: number;
 }
 
 export interface ContractInput {
+  /** Default claude. */
+  executor?: LiveExecutor;
   steps: ContractStep[];
 }
 
@@ -94,10 +125,16 @@ function changed(workspace: string): boolean {
   return status.trim() !== '';
 }
 
+/** How the evaluator reaches each executor: built on first use, so that a disabled one fails only its own cases. */
+export interface LiveExecutors {
+  claude: () => ClaudeExecutor;
+  codex?: () => CodexExecutor;
+}
+
 /** Runs the steps in one workspace, each prompt through the gateway as an L1 brief. */
-export function createContractEvaluator(executor: () => ClaudeExecutor, data: () => string): Evaluate {
+export function createContractEvaluator(reach: LiveExecutors, data: () => string): Evaluate {
   return async (input) => {
-    const { steps } = input as ContractInput;
+    const { steps, executor: id = 'claude' } = input as ContractInput;
     const scratch = scratchWorkspace(data());
     try {
       const workspace = await scratch.prepare();
@@ -106,23 +143,26 @@ export function createContractEvaluator(executor: () => ClaudeExecutor, data: ()
       const actual: ContractStepActual[] = [];
       let sessionRef: string | undefined;
       for (const step of steps) {
-        const brief = gatewayCheck([{ value: step.prompt, label: 'L1', source: 'eval:contract' }], createContext('L1'), { kind: 'executor', id: 'claude', locality: 'cloud' }, secretMatcher([]));
+        const brief = gatewayCheck([{ value: step.prompt, label: 'L1', source: 'eval:contract' }], createContext('L1'), liveTarget(id), secretMatcher([]));
         // No database here: the eval stands in for passGateway's row.
         markLogged(brief);
-        const options = {
-          brief,
-          workspace,
-          model: 'sonnet' as const,
-          tools: step.tools ?? [],
-          limits: { timeoutMs: step.timeoutMs ?? 180_000, maxTurns: 10 },
-        };
+        const limits = { timeoutMs: step.timeoutMs ?? 180_000, maxTurns: 10 };
         const resume = step.resume === true ? sessionRef : undefined;
         try {
-          const result = await (resume === undefined ? executor().start(options) : executor().resume({ ...options, sessionRef: resume })).result;
+          let result: { sessionRef: string; text: string };
+          if (id === 'codex') {
+            const codex = reach.codex?.();
+            if (codex === undefined) throw new Error('the contract evaluator has no codex executor');
+            const options = { brief, workspace, model: 'codex' as const, access: step.access ?? ('read' as const), limits };
+            result = await (resume === undefined ? codex.start(options) : codex.resume({ ...options, sessionRef: resume })).result;
+          } else {
+            const options = { brief, workspace, model: 'sonnet' as const, tools: step.tools ?? [], limits };
+            result = await (resume === undefined ? reach.claude().start(options) : reach.claude().resume({ ...options, sessionRef: resume })).result;
+          }
           sessionRef = result.sessionRef;
           actual.push({ ok: true, changed: changed(path), text: result.text });
         } catch (error) {
-          if (!(error instanceof ClaudeError)) throw error;
+          if (!isRunError(error)) throw error;
           sessionRef = error.sessionRef ?? sessionRef;
           actual.push({ ok: false, changed: changed(path), error: error.kind, ...(error.violations.length === 0 ? {} : { violations: [...error.violations] }) });
         }
@@ -134,25 +174,27 @@ export function createContractEvaluator(executor: () => ClaudeExecutor, data: ()
   };
 }
 
-/** The real binary, enabled only if `[cloud] executors` names it. */
+/** The real binaries, each enabled only if `[cloud] executors` names it. */
 export function contract(): Evaluate {
-  let executor: ClaudeExecutor | undefined;
-  let data = '';
-  const ready = () => {
-    if (executor === undefined) {
-      const config = loadConfig();
-      if (!config.cloud.executors.includes('claude')) {
-        throw new Error('claude is not in [cloud] executors of config/arianna.toml: enable it with pnpm arianna:init --reconfigure');
-      }
-      executor = createClaudeExecutor({ enabled: config.cloud.executors, home: config.home });
-      data = config.paths.data;
-    }
-    return executor;
-  };
-  return createContractEvaluator(ready, () => {
-    ready();
-    return data;
-  });
+  let config: ReturnType<typeof liveConfig> | undefined;
+  let claude: ClaudeExecutor | undefined;
+  let codex: CodexExecutor | undefined;
+  const ready = () => (config ??= liveConfig());
+  return createContractEvaluator(
+    {
+      claude: () => {
+        const { executors, home } = ready();
+        requireEnabled(executors, 'claude');
+        return (claude ??= createClaudeExecutor({ enabled: executors, home }));
+      },
+      codex: () => {
+        const { executors, home } = ready();
+        requireEnabled(executors, 'codex');
+        return (codex ??= createCodexExecutor({ enabled: executors, home }));
+      },
+    },
+    () => ready().data,
+  );
 }
 
 const normalize = (text: string): string => text.trim().replace(/[.!]+$/, '').toLowerCase();
