@@ -261,6 +261,42 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
   }
 });
 
+test('a delegation of an incognito conversation runs claude without saving its session (D-136); a normal one saves it', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], incognito: true });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Aggiungi una riga al README.');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
+  const { argv } = received();
+  assert.ok(argv.includes('--no-session-persistence'));
+  assert.ok(!argv.includes('--resume'));
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.status, 'ok');
+  // No session to resume is kept, neither on the delegation nor on its run.
+  assert.equal(delegation.sessionRef, null);
+  const [run] = await db().sql<{ session: string | null }[]>`SELECT session_ref AS session FROM runs WHERE id = ${delegation.runId ?? ''}`;
+  assert.equal(run?.session, null);
+
+  const normal = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(normal.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]) })), ['continued', 'continued', 'answered']);
+  assert.ok(!received().argv.includes('--no-session-persistence'));
+});
+
+test('a resumed run of an incognito conversation saves no session either and resumes none (D-136)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], incognito: true });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Aggiungi una riga al README.');
+  const executor = orchestrator({ model: scripted([DELEGATE, REPLY]) });
+  // The step of Arianna that opens the delegation, then a run of the Coder left interrupted with a session, as after a crash.
+  assert.deepEqual(await drain(task.id, executor, 1), ['continued']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.ok(delegation !== undefined);
+  await db().owner`
+    INSERT INTO runs (task_id, step, agent, executor, locality, model, status, ended_at, session_ref, effective_label)
+    VALUES (${task.id}, ${delegation.step + 1}, 'coder', 'claude', 'cloud', 'sonnet', 'interrupted', now(), 'sessione-vecchia', 'L1')`;
+  assert.deepEqual(await drain(task.id, executor), ['continued', 'answered']);
+  const { argv } = received();
+  assert.ok(argv.includes('--no-session-persistence'));
+  assert.ok(!argv.includes('--resume') && !argv.includes('sessione-vecchia'));
+});
+
 test('the model chosen for the conversation is the one the step runs on', async () => {
   const { conversation, task } = await ask('work', 'Rinomina una variabile.', 'site');
   await setConversationModel(db().sql, conversation.id, 'opus', ['sonnet', 'opus', 'fable']);

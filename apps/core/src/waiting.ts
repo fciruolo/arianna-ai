@@ -9,7 +9,8 @@ import { moveTask, TaskError, type Task } from './tasks.ts';
  * attesa" window of the web chat (D-091). Only tasks up to L2: a task whose
  * label, context, question or approval is above L2 is only counted in
  * `hidden`, never shown. Tasks of a deleted conversation are left out (their
- * tasks fail with the purge anyway); those of an archived one are marked.
+ * tasks fail with the purge anyway); those of an archived one are marked, and
+ * so are those of an incognito one (D-136), which the chat shows only there.
  */
 
 /** Longest question shown, in characters. */
@@ -25,6 +26,8 @@ export interface WaitingTask {
   /** work | private; null without a conversation. */
   mode: string | null;
   archived: boolean;
+  /** Its conversation is incognito (D-136): the chat shows it only in that conversation's page. */
+  incognito: boolean;
   title: string;
   /** When the task last moved to waiting_user. */
   since: Date;
@@ -51,6 +54,7 @@ interface Row {
   conversationTitle: string | null;
   mode: string | null;
   archived: boolean | null;
+  incognito: boolean | null;
   title: string;
   since: Date;
   waitingReason: string;
@@ -75,7 +79,7 @@ export function shortText(text: string, max = WAITING_QUESTION_MAX): string {
 export async function listWaitingTasks(sql: Queryable): Promise<WaitingListing> {
   const rows = await sql<Row[]>`
     SELECT t.id::text, t.conversation_id::text AS "conversationId", c.title AS "conversationTitle", c.mode,
-      c.archived_at IS NOT NULL AS archived, t.title, t.waiting_reason AS "waitingReason",
+      c.archived_at IS NOT NULL AS archived, c.incognito, t.title, t.waiting_reason AS "waitingReason",
       coalesce(
         (SELECT max(e.ts) FROM events e WHERE e.task_id = t.id AND e.kind = 'task.status' AND e.payload ->> 'to' = 'waiting_user'),
         t.updated_at) AS since,
@@ -114,6 +118,7 @@ export async function listWaitingTasks(sql: Queryable): Promise<WaitingListing> 
       conversationTitle: row.conversationTitle,
       mode: row.mode,
       archived: row.archived === true,
+      incognito: row.incognito === true,
       title: row.title,
       since: row.since,
       reason: approval ? 'approval' : question ? 'question' : 'other',

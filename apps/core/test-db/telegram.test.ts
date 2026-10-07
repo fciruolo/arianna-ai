@@ -212,6 +212,18 @@ test('the title of an L2 task stays home: the notice carries the action only', a
   assert.deepEqual(logged, { label: 'L0', decision: 'allow', summary: 'approval notice' });
 });
 
+test('an approval of an incognito conversation never reaches the phone (D-136); the next one does', async () => {
+  const hidden = await createConversation(db().sql, { mode: 'work', incognito: true });
+  const quiet = await waitingApproval(db().sql, { conversationId: hidden.id, title: 'Incognito', label: 'L1', kind: 'action', detail: { to: 'x' } });
+  const work = await createConversation(db().sql, { mode: 'work' });
+  const { approvalId } = await waitingApproval(db().sql, { conversationId: work.id, title: 'Dopo', label: 'L1', kind: 'action', detail: { to: 'y' } });
+  // Events are handled in order: once the second is on the phone, the first was skipped.
+  await eventually(() => fake.sent().find((entry) => JSON.stringify(entry.body).includes(approvalId)));
+  assert.ok(!fake.sent().some((entry) => JSON.stringify(entry.body).includes(quiet.approvalId)));
+  const logged = await db().sql`SELECT 1 FROM gateway_log WHERE target = 'telegram' AND task_id = ${quiet.taskId}`;
+  assert.equal(logged.length, 0);
+});
+
 test('a button press decides the approval via telegram and resumes the task; a second press does not', async () => {
   const work = await createConversation(db().sql, { mode: 'work' });
   const { taskId, approvalId } = await waitingApproval(db().sql, {

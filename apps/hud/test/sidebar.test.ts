@@ -69,6 +69,9 @@ test('"Chiama" calls in the open private conversation, otherwise in a new privat
   assert.equal(callTarget(conversation('w', null, { mode: 'work' }), true), 'new');
   assert.equal(callTarget(conversation('x', null, { archivedAt: '2026-10-02T10:00:00.000Z' }), true), 'new');
   assert.equal(callTarget(conversation('s', null, { origin: 'system' }), true), 'new');
+  // Never in an incognito conversation (D-136).
+  assert.equal(callTarget(conversation('i', null, { incognito: true }), true), 'new');
+  assert.deepEqual(callTarget(conversation('n', null, { incognito: false }), true), { here: 'n' });
 });
 
 test('the active agents are said in Italian', () => {

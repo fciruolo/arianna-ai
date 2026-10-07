@@ -541,6 +541,8 @@ export function createCalls(options: CallsOptions): Calls {
       const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
       if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
       if (conversation.archivedAt !== null) throw new CallError('archived', 'the conversation is archived: restore it to call');
+      // An incognito conversation has no calls (D-136): a ChatError, the same 409 `incognito` as every refusal of an incognito.
+      if (conversation.incognito) throw new ChatError('incognito', 'incognito');
       // The voice answers on the local model: never in a direct chat, where only the Coder answers (D-111).
       if (conversation.agent !== null) throw new CallError('invalid', 'a direct chat with the Coder has no calls');
       // The check and the row together: the service is not replaced in between (D-071).

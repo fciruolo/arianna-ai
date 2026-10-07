@@ -544,7 +544,18 @@ export interface WorkerOptions extends EngineOptions {
  * timeout, it takes back the jobs of dead workers: this is what makes a task
  * resume after `kill -9` of the core.
  */
-export function createWorker(options: WorkerOptions): { start(): Promise<void>; stop(): Promise<void> } {
+export interface Worker {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  /**
+   * Stops the step of `taskId` this worker is running now, for good (D-136,
+   * cause `incognito`): the run ends `interrupted` and the job fails with the
+   * code `incognito`, never back in the queue. False when no step of it runs here.
+   */
+  stopTask(taskId: string, cause: 'incognito'): boolean;
+}
+
+export function createWorker(options: WorkerOptions): Worker {
   const { sql } = options;
   const queue: JobQueue = createJobQueue(sql);
   const worker = options.workerId ?? `worker-${randomUUID()}`;
@@ -552,6 +563,8 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
   const pollMs = options.pollMs ?? 1_000;
   const controller = new AbortController();
   let loop: Promise<void> | undefined;
+  /** The step running now for each task, with the switch that stops it for good. */
+  const halts = new Map<string, AbortController>();
 
   async function handle(job: Job): Promise<void> {
     const taskId = typeof job.payload.taskId === 'string' ? job.payload.taskId : undefined;
@@ -574,11 +587,19 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
         })
         .catch((error: unknown) => options.onError?.(error));
     }, Math.max(10, Math.floor(lockTimeoutMs / 3)));
+    const halt = new AbortController();
+    if (taskId !== undefined) halts.set(taskId, halt);
     try {
-      const result = await processStepJob(sql, options.executor, job, worker, options, AbortSignal.any([controller.signal, lost.signal]));
+      const result = await processStepJob(sql, options.executor, job, worker, options, AbortSignal.any([controller.signal, lost.signal, halt.signal]));
+      // Stopped for good (D-136): the job fails without another attempt, so the step never runs again.
+      if (halt.signal.aborted && !lost.signal.aborted) await failJob(sql, job.id, worker, 'incognito', null);
       // Stopped on purpose: give the job back now instead of after the lock timeout.
-      if (result === 'interrupted' && controller.signal.aborted && !lost.signal.aborted) await queue.release(job.id, worker);
+      else if (result === 'interrupted' && controller.signal.aborted && !lost.signal.aborted) await queue.release(job.id, worker);
     } catch (error) {
+      if (halt.signal.aborted && !lost.signal.aborted) {
+        await failJob(sql, job.id, worker, 'incognito', null);
+        return;
+      }
       options.onError?.(error);
       // The job and the task change together: a crash between the two would leave the task hanging.
       await sql.begin(async (tx) => {
@@ -593,6 +614,7 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
       });
     } finally {
       clearInterval(beat);
+      if (taskId !== undefined && halts.get(taskId) === halt) halts.delete(taskId);
     }
   }
 
@@ -635,6 +657,12 @@ export function createWorker(options: WorkerOptions): { start(): Promise<void>; 
       // A step that ignores its signal is left behind: its job comes back after the lock timeout.
       const grace = new Promise<void>((resolve) => setTimeout(resolve, options.stopGraceMs ?? 10_000).unref());
       await Promise.race([loop, grace]);
+    },
+    stopTask(taskId, cause) {
+      const halt = halts.get(taskId);
+      if (halt === undefined || halt.signal.aborted) return false;
+      halt.abort(cause);
+      return true;
     },
   };
 }

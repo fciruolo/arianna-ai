@@ -48,6 +48,11 @@ export interface Conversation {
   lastMessageAt: string | null;
   /** When the user pinned it at the top of the list (D-089); null when not pinned, always null while archived. */
   pinnedAt: string | null;
+  /**
+   * An incognito conversation (D-136): chosen at creation, never in a list,
+   * its texts deleted when it closes. Optional: a core without it sends none.
+   */
+  incognito?: boolean;
 }
 
 /** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */
@@ -114,6 +119,9 @@ export interface Approval {
   requestedAt: string;
   decidedAt: string | null;
   decidedVia: 'web' | 'telegram' | 'phone' | null;
+  /** Of an incognito conversation (D-136): shown only in the page of that conversation. Optional: a core without it sends none. */
+  incognito?: boolean;
+  conversationId?: string | null;
 }
 
 /** An entry of the event log: ids and references only, never content. */

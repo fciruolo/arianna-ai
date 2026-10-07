@@ -214,7 +214,7 @@ export async function searchAll(sql: Sql, rawQuery: unknown, options: SearchOpti
            c.archived_at IS NOT NULL AS archived, c.pinned_at IS NOT NULL AS pinned,
            (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt"
          FROM conversations c
-         WHERE c.purged_at IS NULL AND c.title IS NOT NULL
+         WHERE c.purged_at IS NULL AND NOT c.incognito AND c.title IS NOT NULL
            AND translate(lower(c.title), $2, $3) LIKE $1 ESCAPE '\\'
          ORDER BY c.archived_at IS NOT NULL, c.pinned_at DESC NULLS LAST, c.created_at DESC
          LIMIT $4`,
@@ -229,7 +229,7 @@ export async function searchAll(sql: Sql, rawQuery: unknown, options: SearchOpti
       `SELECT m.id::text AS "messageId", m.conversation_id::text AS "conversationId", c.title, m.role, m.ts AS at,
          m.label, c.archived_at IS NOT NULL AS archived, m.body
        FROM messages m JOIN conversations c ON c.id = m.conversation_id
-       WHERE c.purged_at IS NULL AND m.label <= 'L2'
+       WHERE c.purged_at IS NULL AND NOT c.incognito AND m.label <= 'L2'
          AND translate(lower(m.body), $2, $3) LIKE $1 ESCAPE '\\'
        ORDER BY m.id DESC
        LIMIT $4`,
@@ -237,7 +237,7 @@ export async function searchAll(sql: Sql, rawQuery: unknown, options: SearchOpti
     );
     const [above] = await tx<{ count: string }[]>`
       SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
-      WHERE c.purged_at IS NULL AND m.label > 'L2'`;
+      WHERE c.purged_at IS NULL AND NOT c.incognito AND m.label > 'L2'`;
     hidden += Number(above?.count ?? 0);
     return rows.map(({ body, ...row }) => ({ ...row, ...snippetAround(body, folded) }));
   });

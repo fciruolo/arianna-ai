@@ -67,6 +67,7 @@ import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-m
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import type { DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
+import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -163,6 +164,15 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
+  /**
+   * Closes an incognito conversation (D-136) stopping its work in progress;
+   * without it the route closes it without stopping a step of the worker.
+   */
+  incognito?: {
+    close: (conversationId: string, cause: IncognitoCause) => Promise<IncognitoReceipt>;
+    /** A local server keeps a cache of the prompts on the SSD (`--paged-ssd-cache-dir`, D-136): the opening card names it. Read at each request. */
+    localCache?: () => boolean;
+  };
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -206,6 +216,10 @@ export interface ApiServer {
   notifyHelpers(notice: Notice & { kind: NoticeKind }): number;
   /** The push addresses the pages of this Mac said are theirs: skipped for notices while a helper is connected. */
   macEndpoints(): ReadonlySet<string>;
+  /** Pages that said this conversation is open in them, in view or not (D-136: an incognito with none closes). */
+  pagesOn(conversationId: string): number;
+  /** `conversation.incognito-closing` to every open page (D-136): an id and the seconds left, nothing else. */
+  incognitoClosing(conversationId: string, inSeconds: number): void;
   close(): Promise<void>;
 }
 
@@ -315,6 +329,7 @@ interface RouteOptions {
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
+  incognito?: ApiServerOptions['incognito'];
   onError: (error: unknown) => void;
 }
 
@@ -351,7 +366,10 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       onlyFields(body, ['conversationId', 'sdp', 'type']);
       const { conversationId, sdp, type } = body;
       if (typeof conversationId !== 'string' || typeof sdp !== 'string' || typeof type !== 'string') throw new HttpError(400, 'conversationId, sdp and type are required');
-      return { status: 201, body: await need().start(conversationId, { sdp, type }) };
+      const started = need();
+      // An incognito conversation has no calls (D-136); with the voice off the 503 comes first, as for any call.
+      if (await isIncognitoConversation(sql, conversationId)) return { status: 409, body: { error: 'incognito' } };
+      return { status: 201, body: await started.start(conversationId, { sdp, type }) };
     }),
     route('POST', '/api/calls/:id/end', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
@@ -374,6 +392,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       const body = await readJson(request);
       onlyFields(body, ['conversationId', 'at']);
       need();
+      if (typeof body.conversationId === 'string' && (await isIncognitoConversation(sql, body.conversationId))) return { status: 409, body: { error: 'incognito' } };
       const { conversationId, at } = body;
       if (typeof conversationId !== 'string' || !isUuid(conversationId) || typeof at !== 'string') throw new HttpError(400, 'conversationId and at (ISO time) are required');
       return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at)) } };
@@ -381,6 +400,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
     route('POST', '/api/tasks/:id/call-when-done', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       need();
+      if (await isIncognitoTask(sql, idParam(params, 'id'))) return { status: 409, body: { error: 'incognito' } };
       return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id')) } };
     }),
     route('POST', '/api/calls/:id/cancel', async (request, _url, params) => {
@@ -540,14 +560,18 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
         if (error instanceof HttpError && error.status === 413) throw new HttpError(413, `text is longer than ${String(MAX_CAPTURE_BYTES / 1024)} KiB`);
         throw error;
       }
-      onlyFields(body, ['text', 'kind', 'url', 'title', 'from', 'messageId']);
-      const { kind, url, title, from, messageId } = body;
+      onlyFields(body, ['text', 'kind', 'url', 'title', 'from', 'messageId', 'conversationId']);
+      const { kind, url, title, from, messageId, conversationId } = body;
+      // "/nota" from an incognito conversation (D-136): nothing it says is kept.
+      if (conversationId !== undefined && (typeof conversationId !== 'string' || !isUuid(conversationId))) throw new HttpError(400, 'conversationId must be a conversation id');
+      if (conversationId !== undefined && (await isIncognitoConversation(sql, conversationId))) return { status: 409, body: { error: 'incognito' } };
       // A message of the chat saved once (D-089): its label and, without `text`, its text come from the database.
       if (messageId !== undefined && (typeof messageId !== 'string' || !/^[1-9]\d{0,18}$/.test(messageId))) {
         throw new HttpError(400, 'messageId must be a message id');
       }
       const message = messageId === undefined ? undefined : await loadMessage(sql, messageId);
       if (messageId !== undefined && message === undefined) throw new HttpError(404, 'message not found');
+      if (message !== undefined && (await isIncognitoConversation(sql, message.conversationId))) return { status: 409, body: { error: 'incognito' } };
       const text = body.text ?? message?.body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
@@ -591,7 +615,10 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
     route('GET', '/api/conversations/:id/saved', async (_request, _url, params) => {
       const id = idParam(params, 'id');
       if (capture === undefined) throw new HttpError(404, 'not found');
-      if ((await loadConversation(sql, id)) === undefined) throw new HttpError(404, 'not found');
+      const loaded = await loadConversation(sql, id);
+      if (loaded === undefined) throw new HttpError(404, 'not found');
+      // Nothing of an incognito conversation is ever saved (D-136): read as one without saves.
+      if (loaded.incognito) return { body: { messageIds: [], notes: {}, conversation: false, conversationNote: null, conversationSavedAt: null } };
       const saved = savedMessageNotes(capture.home, capture.rules);
       // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path and time only up to L2.
       const whole = findConversationNote(capture.home, capture.rules, id);
@@ -615,6 +642,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (capture === undefined) throw new HttpError(404, 'not found');
       const conversation = await loadConversation(sql, id);
       if (conversation === undefined) throw new HttpError(404, 'not found');
+      if (conversation.incognito) return { status: 409, body: { error: 'incognito' } };
       const lines = await sql<SavedLine[]>`
         SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
       const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
@@ -966,7 +994,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule, services }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule, services, incognito }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -1038,8 +1066,11 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [] } })),
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'project', 'agent']);
+      onlyFields(body, ['mode', 'project', 'agent', 'incognito']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
+      if (body.incognito !== undefined && typeof body.incognito !== 'boolean') throw new HttpError(400, 'incognito must be true or false');
+      // An incognito conversation is answered by Arianna (D-136): a direct chat keeps its agent's session.
+      if (body.incognito === true && body.agent !== undefined) throw new HttpError(400, 'an incognito conversation has no direct agent');
       if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
       // Who answers in place of Arianna (D-111d): only here, at creation; no route changes it later. Its card says how.
       const policy = body.agent === undefined ? undefined : (directAgents?.() ?? []).find((item) => item.agent === body.agent);
@@ -1052,6 +1083,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
         mode: body.mode,
         ...(body.project === undefined ? {} : { project: body.project }),
         ...(agent === undefined ? {} : { agent }),
+        ...(body.incognito === true ? { incognito: true } : {}),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
@@ -1059,8 +1091,14 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     }),
 
     route('GET', '/api/conversations/:id', async (_request, _url, params) => {
-      const conversation = await loadConversation(sql, idParam(params, 'id'));
-      if (conversation === undefined) throw new HttpError(404, 'not found');
+      const id = idParam(params, 'id');
+      const conversation = await loadConversation(sql, id);
+      if (conversation === undefined) {
+        // A closed incognito conversation says why it closed (D-136), so a page left open on it can tell.
+        const closed = await incognitoClosedCause(sql, id);
+        if (closed !== undefined) return { status: 404, body: { error: 'not found', closed } };
+        throw new HttpError(404, 'not found');
+      }
       return { body: { conversation } };
     }),
 
@@ -1108,6 +1146,31 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       onlyFields(await readJson(request), []);
       await purgeConversation(sql, id);
       return { body: { purged: id } };
+    }),
+
+    // "Termina" of an incognito conversation (D-136): its work stops, its texts are deleted; the answer is the closing card.
+    route('POST', '/api/conversations/:id/end', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      try {
+        return { body: incognito === undefined ? await closeIncognito(sql, id, 'user') : await incognito.close(id, 'user') };
+      } catch (error) {
+        if (error instanceof ChatError && error.code === 'not-incognito') return { status: 409, body: { error: 'not incognito' } };
+        // The work did not stop in time, or the conversation was in use: a stable code, the chat tries again.
+        if (error instanceof ChatError && error.code === 'busy') return { status: 409, body: { error: 'busy' } };
+        throw error;
+      }
+    }),
+    // What the opening card of an incognito conversation needs (D-136): whether anything may reach the cloud, and the project.
+    route('GET', '/api/incognito/notice', (_request, url) => {
+      const mode = url.searchParams.get('mode');
+      if (mode !== 'private' && mode !== 'work') throw new HttpError(400, 'mode must be private or work');
+      const project = url.searchParams.get('project');
+      if (project !== null && mode !== 'work') throw new HttpError(400, 'only a work conversation has a project');
+      if (project !== null && !projects().some((item) => item.name === project)) throw new HttpError(400, 'project is not among the approved projects');
+      // A private conversation never leaves the Mac; a work one reaches Claude only while a cloud model can take a step.
+      // `localCache`: a local server writes blocks of the prompts to the SSD; they stay until evicted.
+      return Promise.resolve({ body: { cloud: mode === 'work' && models().length > 0, project, localCache: incognito?.localCache?.() ?? false } });
     }),
 
     // Attaches the question of the failed task to its system chat: only when the user asks (D-064).
@@ -1197,7 +1260,10 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       const state = url.searchParams.get('state') ?? 'pending';
       const known = APPROVAL_STATES.find((candidate) => candidate === state);
       if (known === undefined) throw new HttpError(400, 'unknown state');
-      return { body: { approvals: await listApprovals(sql, known, limitParam(url)) } };
+      // Each with its conversation and `incognito` (D-136: the chat shows those of an incognito only in its page); `conversation` keeps one.
+      const conversation = url.searchParams.get('conversation');
+      if (conversation !== null && !isUuid(conversation)) throw new HttpError(400, 'conversation must be a conversation id');
+      return { body: { approvals: await listApprovals(sql, known, limitParam(url), conversation === null ? {} : { conversationId: conversation }) } };
     }),
 
     route('GET', '/api/approvals/:id', async (_request, _url, params) => {
@@ -1494,7 +1560,14 @@ function sendJson(response: ServerResponse, status: number, body: unknown, heade
 function errorStatus(error: unknown): { status: number; message: string } | undefined {
   if (error instanceof HttpError) return { status: error.status, message: error.message };
   if (error instanceof ChatError) {
-    const status = error.code === 'not-found' ? 404 : error.code === 'scanner' ? 422 : error.code === 'archived' || error.code === 'busy' ? 409 : 400;
+    const status =
+      error.code === 'not-found'
+        ? 404
+        : error.code === 'scanner'
+          ? 422
+          : error.code === 'archived' || error.code === 'busy' || error.code === 'incognito' || error.code === 'not-incognito'
+            ? 409
+            : 400;
     return { status, message: error.message };
   }
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
@@ -1579,6 +1652,17 @@ export function visibilityOf(frame: string): { visible: boolean; focused: boolea
   return { visible, focused: visible && (focused ?? true), conversation: typeof conversation === 'string' ? conversation : null };
 }
 
+const INCOGNITO_CAUSES: readonly IncognitoCause[] = ['user', 'idle', 'restart'];
+
+/** `{"type":"conversation.incognito-closed","conversationId","cause"}` for the event of the same kind (D-136); undefined for any other. */
+export function incognitoClosedFrame(event: { kind: string; payload: unknown }): { type: 'conversation.incognito-closed'; conversationId: string; cause: IncognitoCause } | undefined {
+  if (event.kind !== 'conversation.incognito-closed') return undefined;
+  const payload = (typeof event.payload === 'object' && event.payload !== null ? event.payload : {}) as { conversationId?: unknown; cause?: unknown };
+  const cause = INCOGNITO_CAUSES.find((item) => item === payload.cause);
+  if (typeof payload.conversationId !== 'string' || cause === undefined) return undefined;
+  return { type: 'conversation.incognito-closed', conversationId: payload.conversationId, cause };
+}
+
 export async function startApiServer(options: ApiServerOptions): Promise<ApiServer> {
   const { sql, live } = options;
   const table = routes(sql, {
@@ -1600,6 +1684,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     directAgents: options.directAgents,
     services: options.services,
     leaveRule: options.leaveRule,
+    incognito: options.incognito,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.
@@ -1651,6 +1736,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   const visible = new Set<WebSocket>();
   /** The pages also in front (D-128), with the conversation each has open: the helper is silent only for that one. */
   const focused = new Map<WebSocket, string | null>();
+  /** The conversation each page said it has open, in view or not (D-136). */
+  const openOn = new Map<WebSocket, string>();
   /** To every open page; how many it reached. */
   function broadcastNotice(notice: Notice & { kind: NoticeKind; helper?: boolean }, trial = false): number {
     const frame = JSON.stringify({
@@ -1821,6 +1908,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       else visible.delete(ws);
       if (shown.focused) focused.set(ws, shown.conversation);
       else focused.delete(ws);
+      if (shown.conversation !== null) openOn.set(ws, shown.conversation);
+      else openOn.delete(ws);
     });
     let stop: (() => void) | undefined;
     ws.on('close', () => {
@@ -1828,6 +1917,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       sockets.delete(ws);
       visible.delete(ws);
       focused.delete(ws);
+      openOn.delete(ws);
       stop?.();
     });
     const send = (message: LiveMessage | { type: 'ready' }): void => {
@@ -1837,6 +1927,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         return;
       }
       ws.send(JSON.stringify(message));
+      // The closing of an incognito conversation (D-136), also from the backlog after a restart: its own frame for the chat.
+      const closed = message.type === 'event' ? incognitoClosedFrame(message.event) : undefined;
+      if (closed !== undefined) ws.send(JSON.stringify(closed));
     };
     try {
       stop = await live.subscribe({ send }, after);
@@ -1870,6 +1963,14 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     helpers: () => helpers.size,
     macEndpoints: () => macEndpoints,
     notifyHelpers: (notice) => noticeToHelpers(notice),
+    pagesOn: (conversationId) => [...openOn.values()].filter((open) => open === conversationId).length,
+    incognitoClosing(conversationId, inSeconds) {
+      const frame = JSON.stringify({ type: 'conversation.incognito-closing', conversationId, inSeconds });
+      for (const ws of sockets) {
+        if (ws.readyState !== ws.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) continue;
+        ws.send(frame);
+      }
+    },
     async close() {
       for (const response of helpers) response.end();
       for (const ws of sockets) ws.terminate();

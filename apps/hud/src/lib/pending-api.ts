@@ -1,4 +1,5 @@
 import { ApiError, listPendingApprovals, loadConversation, loadTask } from './api.ts';
+import { withoutIncognito } from './incognito.ts';
 import type { WaitingTask } from './pending.ts';
 import type { Approval, Task } from './types.ts';
 
@@ -25,7 +26,10 @@ async function listWaitingTasks(): Promise<{ tasks: WaitingTask[]; hidden: numbe
 }
 
 export async function loadPending(): Promise<PendingData> {
-  const [approvals, waiting] = await Promise.all([listPendingApprovals(), listWaitingTasks()]);
+  const [listed, read] = await Promise.all([listPendingApprovals(), listWaitingTasks()]);
+  // Every reader of this is outside the conversations: an incognito one's approvals and waiting tasks are never here (D-136).
+  const approvals = withoutIncognito(listed);
+  const waiting = { tasks: withoutIncognito(read.tasks), hidden: read.hidden };
   const known = new Set(waiting.tasks.map((task) => task.id));
   const taskIds = [...new Set(approvals.map((approval) => approval.taskId).filter((id): id is string => id !== null && !known.has(id)))];
   const tasks: Record<string, Task> = {};

@@ -78,6 +78,57 @@ export function voiceCheck(python: string): DoctorCheck {
 }
 
 /**
+ * oMLX log levels that keep the text of the requests out of its log; `trace`
+ * "includes full message content", and a level not listed here is refused
+ * (default-deny: a future level may log more).
+ */
+const OMLX_QUIET_LEVELS = new Set(['info', 'warning', 'error', 'critical']);
+
+/**
+ * The value of `--log-level` in a command (`--log-level x` or
+ * `--log-level=x`): the last one, as a command-line parser applies it; null
+ * for a flag without a value; undefined without the flag.
+ */
+function logLevelOf(command: readonly string[]): string | null | undefined {
+  let level: string | null | undefined;
+  for (const [index, arg] of command.entries()) {
+    if (arg === '--log-level') {
+      const next = command[index + 1];
+      level = next === undefined || next.startsWith('-') ? null : next;
+    } else if (arg.startsWith('--log-level=')) {
+      const value = arg.slice('--log-level='.length);
+      level = value === '' ? null : value;
+    }
+  }
+  return level;
+}
+
+/** Whether a command starts oMLX: `omlx serve`, by path or through a launcher (`uvx omlx serve`). */
+function startsOmlx(command: readonly string[]): boolean {
+  const serve = command.indexOf('serve');
+  return serve > 0 && command.slice(0, serve).some((arg) => /(^|\/)omlx$/.test(arg));
+}
+
+/**
+ * The log level of every local oMLX server (D-136, stage 0): only the
+ * levels that keep the prompts out of data/<id>.log pass. Without
+ * `--log-level` the level comes from oMLX's own settings, outside
+ * ARIANNA_HOME, so the check fails: the wizard writes `--log-level info`.
+ */
+export function omlxLogChecks(endpoints: readonly { id: string; command?: readonly string[] }[]): DoctorCheck[] {
+  return endpoints
+    .filter((endpoint) => endpoint.command !== undefined && startsOmlx(endpoint.command))
+    .map((endpoint) => {
+      const level = logLevelOf(endpoint.command ?? []);
+      const id = `local.${endpoint.id}.log-level`;
+      if (level === undefined) return { id, ok: false, detail: 'no --log-level: the level comes from the settings of oMLX, which may log the prompts; add --log-level info' };
+      if (level === null) return { id, ok: false, detail: '--log-level without a value: add info' };
+      if (!OMLX_QUIET_LEVELS.has(level.toLowerCase())) return { id, ok: false, detail: `--log-level ${level} may write the prompts into data/${endpoint.id}.log: use info` };
+      return { id, ok: true, detail: `--log-level ${level}, without texts` };
+    });
+}
+
+/**
  * Creates data/ and its subfolders. data/ and the vault are readable by this
  * user only: an existing one that is looser is tightened, and reported.
  */

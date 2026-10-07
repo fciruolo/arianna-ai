@@ -51,6 +51,11 @@ export interface ClaudeStepInput {
    * when the engine has one, comes first; absent, only that one is resumed.
    */
   sessionRef?: string | null;
+  /**
+   * False: the binary keeps nothing of the session on disk and it cannot be
+   * resumed (`--no-session-persistence`, D-136, incognito). Default true.
+   */
+  persistSession?: boolean;
 }
 
 export type ClaudeStepResult =
@@ -68,10 +73,13 @@ export type ClaudeStepResult =
 /**
  * The session a step continues: none when the caller asks for a new one
  * (null); else the interrupted run's, when the engine has one; else the
- * caller's (D-111, tappa A2).
+ * caller's (D-111, tappa A2). A run that saves no session (D-136) never
+ * continues the interrupted one, which was not saved either: it starts again;
+ * a session the caller names is still passed on, for the executor to refuse.
  */
-export function sessionToResume(step: Pick<StepContext, 'resume'>, input: Pick<ClaudeStepInput, 'sessionRef'>): string | undefined {
+export function sessionToResume(step: Pick<StepContext, 'resume'>, input: Pick<ClaudeStepInput, 'sessionRef' | 'persistSession'>): string | undefined {
   if (input.sessionRef === null) return undefined;
+  if (input.persistSession === false) return input.sessionRef;
   return step.resume?.sessionRef ?? input.sessionRef ?? undefined;
 }
 
@@ -116,6 +124,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     workspace: input.workspace,
     model: input.model,
     tools: input.tools,
+    ...(input.persistSession === undefined ? {} : { persistSession: input.persistSession }),
     limits: { ...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }) },
   };
   // Before the gateway: no allow is logged for a run that cannot start.
@@ -141,7 +150,8 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
     signal: step.signal,
     onEvent: async (event: ClaudeEvent) => {
       if (event.type === 'init') {
-        await step.setSessionRef(event.sessionRef);
+        // A session that was not saved is not written either: there is nothing to resume (D-136).
+        if (input.persistSession !== false) await step.setSessionRef(event.sessionRef);
         // The model that actually runs: an exact name of [cloud.models] changes live and runs keep the alias (D-071).
         await appendEvent(sql, {
           ...ids,

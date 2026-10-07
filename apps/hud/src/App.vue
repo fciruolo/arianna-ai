@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
+import IncognitoClosed from './components/IncognitoClosed.vue';
+import IncognitoEndDialog from './components/IncognitoEndDialog.vue';
 import IncomingCall from './components/IncomingCall.vue';
 import NoticeToasts from './components/NoticeToasts.vue';
 import KnowledgePage from './components/KnowledgePage.vue';
@@ -30,6 +32,7 @@ import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
 import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
+import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitApprovals, withoutIncognito, type IncognitoEntry } from './lib/incognito.ts';
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
@@ -68,6 +71,37 @@ import { createChatStore } from './store.ts';
 const store = createChatStore();
 const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
+const { incognitoEnd, incognitoSoon, ending } = store;
+
+/** The open conversation is incognito (D-136): dark header, "Termina", the address `/incognito`. */
+const incognitoOpen = computed(() => current.value?.incognito === true);
+/** The dark header: on an incognito conversation, its draft, or the card of one that closed. */
+const incognitoHeader = computed(() => page.value === 'chat' && (incognitoOpen.value || draft.value?.incognito === true || incognitoEnd.value !== null));
+const incognitoMode = computed(() => (incognitoOpen.value ? current.value?.mode : draft.value?.incognito === true ? draft.value.mode : undefined));
+/** The project by name, as the core's notice and "+ Nuovo" call it; the folder's name when it is no longer approved. */
+const incognitoProject = computed(() => {
+  if (draft.value?.incognito === true) return draft.value.project;
+  const workspace = incognitoOpen.value ? current.value?.workspace : undefined;
+  if (workspace === undefined || workspace === null) return undefined;
+  return projects.value.find((entry) => entry.path === workspace)?.name ?? workspace.split('/').at(-1);
+});
+/** "Termina" asks first. */
+const showEnd = ref(false);
+async function confirmEnd(): Promise<void> {
+  await store.endIncognito();
+  showEnd.value = false;
+}
+/** The address of an incognito conversation or draft (D-136): always `/incognito`, the rest in the state of the entry. */
+function writeIncognito(entry: IncognitoEntry, how: 'push' | 'replace'): void {
+  if (how === 'push') window.history.pushState(incognitoState(entry), '', INCOGNITO_PATH);
+  else window.history.replaceState(incognitoState(entry), '', INCOGNITO_PATH);
+}
+/** From the card of a closed incognito conversation: the list, a new entry, so "back" finds it closed. */
+function leaveClosed(): void {
+  store.close();
+  window.history.pushState(null, '', '/');
+  setTitle(undefined);
+}
 
 // "Chiamami alle…" (D-066): a small form under the clock button.
 const showSchedule = ref(false);
@@ -197,6 +231,17 @@ function openDraft(choice: DraftChoice, replace = false): void {
   showSidebar.value = false;
   page.value = 'chat';
   store.openDraft(choice);
+  if (choice.incognito === true) {
+    // The choice in the state of the entry, never in the address; a draft's entry is taken over, as below.
+    const entry: IncognitoEntry = { draft: { mode: choice.mode, ...(choice.mode === 'work' && choice.project !== undefined ? { project: choice.project } : {}) } };
+    const here = entryFromState(window.history.state);
+    const onDraft =
+      draftFromAddress(window.location.pathname, window.location.search) !== undefined || (isIncognitoPath(window.location.pathname) && here !== undefined && 'draft' in here);
+    writeIncognito(entry, replace || onDraft ? 'replace' : 'push');
+    setTitle('Incognito');
+    focusComposer();
+    return;
+  }
   const path = draftPath(choice);
   if (`${window.location.pathname}${window.location.search}` !== path) {
     if (replace) window.history.replaceState(null, '', path);
@@ -273,7 +318,7 @@ const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' 
 function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
-  if (chat.value !== null || draft.value !== null) store.close();
+  if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
   if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState(null, '', path);
   setTitle(title);
 }
@@ -367,8 +412,12 @@ function runCommand(action: Exclude<CommandAction, { kind: 'note' | 'help' }>): 
       error.value = 'Il progetto di questa conversazione non è più fra quelli approvati: apri la nuova conversazione dal pulsante e scegli il progetto.';
       return;
     }
+    // From an incognito conversation (D-136), a new one is incognito too.
+    const incognito = conversation.incognito === true ? { incognito: true } : {};
     openDraft(
-      conversation.mode === 'work' ? { mode: 'work', project, ...(conversation.agent !== null && project !== undefined ? { agent: conversation.agent } : {}) } : { mode: conversation.mode },
+      conversation.mode === 'work'
+        ? { mode: 'work', project, ...(conversation.agent !== null && project !== undefined ? { agent: conversation.agent } : {}), ...incognito }
+        : { mode: conversation.mode, ...incognito },
     );
     return;
   }
@@ -432,6 +481,18 @@ function followAddress(): void {
     return;
   }
   page.value = 'chat';
+  // Incognito (D-136): the address never names the conversation; its entry's state does.
+  if (isIncognitoPath(window.location.pathname)) {
+    const entry = entryFromState(window.history.state);
+    if (entry !== undefined && 'conversationId' in entry) {
+      if (chat.value?.conversationId !== entry.conversationId) void store.openIncognito(entry.conversationId);
+      return;
+    }
+    // A draft, or the bare address: a new private incognito draft.
+    const choice = { ...(entry?.draft ?? { mode: 'private' as const }), incognito: true };
+    if (draft.value === null || !sameChoice(draft.value, choice)) openDraft(choice, true);
+    return;
+  }
   const asked = draftFromAddress(window.location.pathname, window.location.search);
   if (asked !== undefined) {
     // From the address: the same entry of the history, written in its normal form (`/nuova` → `/nuova?tipo=privata`).
@@ -441,19 +502,30 @@ function followAddress(): void {
   }
   const id = conversationFromPath(window.location.pathname);
   if (id === undefined) {
-    if (chat.value !== null || draft.value !== null) store.close();
+    if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
     if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
   } else if (chat.value?.conversationId !== id) {
     void store.open(id);
   }
 }
 watch(
-  () => chat.value?.conversationId ?? null,
-  (id) => {
+  () => [chat.value?.conversationId ?? null, current.value !== undefined] as const,
+  ([id, known]) => {
     if (id !== null) page.value = 'chat';
     else if (page.value !== 'chat') return;
+    // Not yet read (opened by id, in no list): the address waits, so an incognito id never reaches the history (D-136).
+    if (id !== null && !known) return;
     // A draft has its own address (/nuova?tipo=…): the root would lose it.
     if (id === null && draft.value !== null) return;
+    // The card of a closed incognito conversation stays on its entry: "back" from the list finds it closed (D-136).
+    if (id === null && incognitoEnd.value !== null) return;
+    // An incognito conversation: `/incognito`, its id only in the entry's state; born from its draft, it takes the draft's entry.
+    if (id !== null && incognitoOpen.value) {
+      const here = isIncognitoPath(window.location.pathname) ? entryFromState(window.history.state) : undefined;
+      if (here !== undefined && 'conversationId' in here && here.conversationId === id) return;
+      writeIncognito({ conversationId: id }, here !== undefined && 'draft' in here ? 'replace' : 'push');
+      return;
+    }
     const path = pathFor(id);
     if (window.location.pathname === path) return;
     if (id === null) window.history.replaceState(null, '', path);
@@ -461,12 +533,19 @@ watch(
   },
 );
 watch(
-  () => current.value?.title,
-  (title) => {
-    if (page.value === 'chat') setTitle(draft.value !== null ? 'Nuova conversazione' : title);
+  () => [current.value?.title, incognitoOpen.value, incognitoEnd.value !== null] as const,
+  ([title, incognito, closed]) => {
+    if (page.value !== 'chat') return;
+    if (incognito || closed || draft.value?.incognito === true) setTitle('Incognito');
+    else setTitle(draft.value !== null ? 'Nuova conversazione' : title);
   },
   { immediate: true },
 );
+// An incognito conversation reached by its id (a link, a notice): the address loses the id at once.
+watch(incognitoOpen, (incognito) => {
+  const id = chat.value?.conversationId;
+  if (incognito && id !== undefined && !isIncognitoPath(window.location.pathname)) writeIncognito({ conversationId: id }, 'replace');
+});
 
 onMounted(() => {
   followAddress();
@@ -501,8 +580,8 @@ async function createConversation(mode: 'work' | 'private', project?: string): P
 }
 
 function openChat(): void {
-  if (page.value === 'chat' && draft.value === null) return;
-  if (draft.value !== null) store.close();
+  if (page.value === 'chat' && draft.value === null && incognitoEnd.value === null) return;
+  if (draft.value !== null || incognitoEnd.value !== null) store.close();
   page.value = 'chat';
   window.history.pushState(null, '', '/');
   setTitle(undefined);
@@ -531,8 +610,10 @@ function poseFor(id: string): Pose {
 const ariannaHere = computed<Pose>(() => poseOf(conversationState(Object.values(tasks.value), chat.value?.conversationId, approvals.value), activeLine.value));
 
 /** Approvals of the open conversation's tasks are shown in the chat; the others in the panel. */
-const inChat = computed(() => approvals.value.filter((approval) => approval.taskId !== null && approval.taskId in tasks.value));
-const elsewhere = computed<Approval[]>(() => approvals.value.filter((approval) => !inChat.value.includes(approval)));
+/** An incognito conversation's approvals only in its own page, never elsewhere nor counted there (D-136). */
+const placed = computed(() => splitApprovals(approvals.value, new Set(Object.keys(tasks.value)), chat.value?.conversationId));
+const inChat = computed(() => placed.value.inChat);
+const elsewhere = computed<Approval[]>(() => placed.value.elsewhere);
 
 const crumb = computed(() => {
   const conversation = current.value;
@@ -587,7 +668,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
     <!-- Main -->
     <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">
-      <header class="flex h-[60px] shrink-0 items-center gap-3.5 border-b border-line bg-bg/85 px-4 backdrop-blur-sm md:px-5.5">
+      <header
+        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5"
+        :class="incognitoHeader ? 'border-incognito-line bg-incognito text-incognito-ink' : 'border-line bg-bg/85'"
+      >
         <button
           type="button"
           class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 md:hidden"
@@ -609,7 +693,13 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <Icon name="sidebar-expand" />
           <span v-if="devPendingText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
-        <p class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
+        <!-- Incognito (D-136): the mask and the word, never a title. -->
+        <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[12.5px]">
+          <Icon name="incognito" :size="18" />
+          <b class="font-hud text-[13px] font-semibold tracking-[0.08em]">Incognito</b>
+          <span v-if="incognitoMode !== undefined" class="truncate opacity-80">· {{ MODE_TEXT[incognitoMode] }}<template v-if="incognitoProject"> · {{ incognitoProject }}</template></span>
+        </p>
+        <p v-else class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
           <template v-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
@@ -638,7 +728,19 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <i class="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[current.clearance] }} · {{ current.mode === 'work' ? 'può uscire' : 'resta qui' }}
         </button>
-        <div v-if="current !== undefined && page === 'chat'" class="relative">
+        <button
+          v-if="incognitoOpen && page === 'chat'"
+          type="button"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-incognito-line px-2.5 py-1 text-[12.5px] font-medium text-incognito-ink hover:bg-white/10 disabled:opacity-60"
+          :disabled="ending"
+          title="Termina: Arianna ferma il lavoro in corso e cancella testi, riassunti e attività"
+          aria-haspopup="dialog"
+          @click="showEnd = true"
+        >
+          <Icon name="close" :size="14" />{{ ending ? 'Cancello…' : 'Termina' }}
+        </button>
+        <!-- No call later from an incognito conversation (D-136): the core skips its outgoing calls. -->
+        <div v-if="current !== undefined && page === 'chat' && !incognitoOpen" class="relative">
           <button
             type="button"
             class="grid size-8 shrink-0 place-items-center rounded-lg text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink disabled:opacity-60"
@@ -705,6 +807,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <span class="flex-1">{{ callError }}</span>
         <button type="button" class="rounded-md p-1 hover:bg-danger/20" aria-label="Chiudi" @click="callError = null"><Icon name="close" :size="14" /></button>
       </p>
+      <p v-if="incognitoSoon !== null && (incognitoOpen || draft?.incognito === true)" role="alert" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm text-warn">
+        <Icon name="incognito" :size="14" />
+        <span class="flex-1">{{ incognitoSoon }}</span>
+      </p>
       <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo Arianna… la prima volta i modelli si caricano.</p>
       <p v-if="strayCall !== null && callSession === null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">
         <Icon name="phone" :size="14" />
@@ -723,7 +829,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <OfficePage
         v-else-if="page === 'office'"
         :status="status"
-        :approvals="approvals"
+        :approvals="withoutIncognito(approvals)"
         :projects="projects"
         :conversations="conversations"
         :characters="characters"
@@ -731,6 +837,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @open="openConversation"
         @draft="(mode, project) => openDraft({ mode, project })"
       />
+      <IncognitoClosed v-else-if="incognitoEnd !== null" :end="incognitoEnd" @back="leaveClosed" />
       <DraftChat
         v-else-if="draft !== null"
         :key="draft.key"
@@ -807,6 +914,14 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
     <SearchDialog v-if="showSearch" @close="showSearch = false" @go="goTo" />
     <LabelLegend v-if="showLegend" @close="showLegend = false" />
+    <IncognitoEndDialog
+      v-if="showEnd && incognitoOpen && current !== undefined"
+      :mode="current.mode"
+      :project="incognitoProject"
+      :ending="ending"
+      @close="showEnd = false"
+      @confirm="confirmEnd"
+    />
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"

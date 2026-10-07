@@ -29,7 +29,7 @@ import { createFetcher } from '@arianna/core/model-http';
 
 import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
 import { folderProblem, projectChecks, syncProjectLinks } from './projects.ts';
-import { ensureLayout, freeBytes, layoutCheck, systemChecks, voiceCheck } from './system.ts';
+import { ensureLayout, freeBytes, layoutCheck, omlxLogChecks, systemChecks, voiceCheck } from './system.ts';
 import { runWizard, type Prompter } from './wizard.ts';
 
 // Room left on the disk after the downloads, for the database and the archive.
@@ -78,6 +78,7 @@ async function doctor(config: AriannaConfig): Promise<number> {
     ...(await systemChecks({ voice: config.voice !== undefined })),
     ...layoutCheck(config.home, config.paths.data),
     ...(config.voice === undefined ? [] : [voiceCheck(voicePaths(config.home, config.paths.data).python)]),
+    ...omlxLogChecks(config.local.endpoints),
     ...(await modelsChecks(config)),
     ...projectChecks(config.home, config.projects),
     ...(await runDoctor({ config })),

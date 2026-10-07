@@ -43,6 +43,10 @@
   --graph-4: #f2b34b;
   --graph-5: #c08bf0;
   --graph-6: #f07fa8;
+  /* The header of an incognito conversation (D-136): dark in both themes, so it is never mistaken for another. */
+  --incognito: #17141f;
+  --incognito-ink: #ece8f4;
+  --incognito-line: #3a3349;
   /* The office (D-106): furniture and floor of the canvas, read by lib/office/draw.ts. */
   --office-floor: #0f1d21; --office-floor-alt: #112227; --office-wall-top: #070e10; --office-wall-face: #16292e; --office-wall-line: #24434a;
   --office-window: #1b3a42; --office-window-light: #2c5d66; --office-desk: #24383d; --office-desk-top: #34525a; --office-desk-shadow: #050b0d;
@@ -150,6 +154,9 @@
   --color-l1: var(--l1);
   --color-l2: var(--l2);
   --color-l3: var(--l3);
+  --color-incognito: var(--incognito);
+  --color-incognito-ink: var(--incognito-ink);
+  --color-incognito-line: var(--incognito-line);
   --font-sans: "Figtree", -apple-system, "Segoe UI", sans-serif;
   --font-hud: "Chakra Petch", "Eurostile", "Arial Narrow", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
