@@ -7,6 +7,7 @@
  * asks the core and draws, the rules are here.
  */
 import { agentName } from './italian.ts';
+import type { ModelAction, TrashView } from './model-actions.ts';
 import type { ModelEvalStatus } from './model-evals.ts';
 import { MODEL_ROLES, ROLE_TEXT, type CloudModelAlias, type CloudModelsForm, type ModelRole } from './settings.ts';
 
@@ -59,6 +60,12 @@ export interface LocalModelView {
   uses: ModelUse[];
   present: boolean;
   state: LocalState;
+  /** A folder data/models/<id> exists, complete or not. */
+  hasFiles: boolean;
+  /** Bytes still to download. */
+  missingBytes: number;
+  /** The download or verification in progress, or the last one (I-3, M4). */
+  action: ModelAction | null;
   loaded: { endpoint: string; gib: number | null; busy: boolean }[];
   lastEval: LastEvalView | null;
 }
@@ -118,6 +125,8 @@ export interface ModelsOverview {
   cloud: CloudModelView[];
   sources: CloudSource[];
   memory: MemoryView | null;
+  /** The bin of the removed models; null when the core has no actions. */
+  trash: TrashView | null;
   errors: { catalog: string | null; cloudCatalog: string | null; evals: string | null };
 }
 

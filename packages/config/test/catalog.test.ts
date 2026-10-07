@@ -79,6 +79,9 @@ test('ids are folder names: lowercase and unique; unknown keys are rejected', ()
   const second = VALID.slice(VALID.indexOf('  - id'));
   assert.throws(() => parseCatalog(VALID + second), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('id: fake-model-mlx', 'id: Fake-Model')), ConfigError);
+  // data/models/eliminati is the bin of the removed models (I-3, M4); a name that only contains it is fine.
+  assert.throws(() => parseCatalog(VALID.replace('id: fake-model-mlx', 'id: eliminati')), /bin of data\/models/);
+  assert.equal(parseCatalog(VALID.replace('id: fake-model-mlx', 'id: eliminati-2')).models[0]?.id, 'eliminati-2');
   assert.throws(() => parseCatalog(`${VALID}extra: true\n`), ConfigError);
   assert.throws(() => parseCatalog(VALID.replace('family: fake', 'family: fake\n    name: x')), ConfigError);
 });

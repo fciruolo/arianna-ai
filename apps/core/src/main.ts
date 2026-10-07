@@ -403,14 +403,14 @@ const modelActions = createModelActions({
   unload: async (modelId) => {
     const endpoints = settings.current().local.endpoints;
     const places = memory.snapshot().loaded.filter(({ model }) => model === modelId);
-    let outcome: 'unloaded' | 'busy' | 'failed' = 'unloaded';
+    // Busy anywhere wins; then any server that did not confirm, or an endpoint gone from the configuration, is a failure.
+    const results: ('unloaded' | 'busy' | 'failed')[] = [];
     for (const place of places) {
       const endpoint = endpoints.find(({ id }) => id === place.endpoint);
-      if (endpoint === undefined) continue;
-      const result = await memory.unloadNow(endpoint, modelId);
-      if (result !== 'unloaded') outcome = result;
+      results.push(endpoint === undefined ? 'failed' : await memory.unloadNow(endpoint, modelId));
     }
-    return outcome;
+    if (results.includes('busy')) return 'busy';
+    return results.length > 0 && results.every((result) => result === 'unloaded') ? 'unloaded' : 'failed';
   },
   trialOpen: (modelId) => trialOpen(sql, modelId),
   onEvent: (kind, payload) => {

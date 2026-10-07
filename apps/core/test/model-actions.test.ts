@@ -3,7 +3,7 @@
 // from a fake fetcher, a fake memory account, no database, no network.
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
@@ -183,6 +183,13 @@ describe('download', () => {
     const full = setup({ freeBytes: () => 10 });
     assert.throws(() => full.actions.download('fake-a'), code('conflict'));
     assert.deepEqual(full.state.events, []);
+    // A file of the wrong size counts once: exactly the room it needs is enough.
+    const exact = setup({ freeBytes: () => WEIGHTS.length });
+    install(exact.state.data, 'fake-a');
+    writeFileSync(join(modelDir(exact.state.data, 'fake-a'), 'weights', 'model.bin'), WEIGHTS.subarray(0, 10));
+    assert.equal(exact.actions.download('fake-a').bytesTotal, WEIGHTS.length);
+    assert.equal((await settled(exact.actions, 'fake-a')).status, 'done');
+    assert.equal(exact.actions.trash().entries.length, 1);
   });
 
   it('is stopped by cancel: the .part stays and the outcome is cancelled', async () => {
@@ -303,11 +310,54 @@ describe('remove and the bin', () => {
     assert.deepEqual(state.events.at(-1), { kind: 'model.trash.emptied', payload: { outcome: 'ok', removed: 1 } });
   });
 
-  it('counts a folder without following links out of it', () => {
+  it('counts a folder without following links out of it, and empties a link without touching what it points at', () => {
+    const outside = join(ROOT, randomUUID());
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'big'), Buffer.alloc(100_000));
     const dir = join(ROOT, randomUUID());
     mkdirSync(join(dir, 'inner'), { recursive: true });
     writeFileSync(join(dir, 'inner', 'a'), 'abc');
-    assert.equal(folderBytes(dir), 3);
+    symlinkSync(outside, join(dir, 'inner', 'link'));
+    assert.ok(folderBytes(dir) < 1000);
+    const { actions, state } = setup();
+    const bin = join(state.data, 'models', TRASH_DIR);
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(outside, join(bin, 'linked'));
+    assert.ok(actions.trash().sizeBytes < 1000);
+    assert.equal(actions.emptyTrash(true).removed, 1);
+    assert.ok(existsSync(join(outside, 'big')));
+  });
+
+  it('refuses to empty the bin while a download runs', async () => {
+    const { actions, state } = setup();
+    install(state.data, 'fake-b');
+    await actions.remove('fake-b', 'fake-b');
+    actions.download('fake-a');
+    assert.throws(() => actions.emptyTrash(true), code('conflict'));
+    await settled(actions, 'fake-a');
+    assert.equal(actions.trash().entries.length, 1);
+  });
+
+  it('checks again after waiting for the trials: a download started meanwhile stops the removal', async () => {
+    let release: () => void = () => undefined;
+    const { actions, state } = setup({ trialOpen: () => new Promise<boolean>((resolve) => { release = () => { resolve(false); }; }) });
+    mkdirSync(modelDir(state.data, 'fake-a'), { recursive: true });
+    const removing = actions.remove('fake-a', 'fake-a');
+    actions.download('fake-a');
+    release();
+    await assert.rejects(removing, code('conflict'));
+    await settled(actions, 'fake-a');
+    assert.ok(existsSync(join(modelDir(state.data, 'fake-a'), 'config.json')));
+  });
+
+  it('two removals in the same millisecond get two folders of the bin', async () => {
+    const { actions, state } = setup();
+    install(state.data, 'fake-a');
+    await actions.remove('fake-a', 'fake-a');
+    install(state.data, 'fake-a');
+    const second = await actions.remove('fake-a', 'fake-a');
+    assert.match(second.folder, /-fake-a-2$/);
+    assert.equal(actions.trash().entries.length, 2);
   });
 });
 

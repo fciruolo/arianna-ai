@@ -113,6 +113,8 @@ function parseEntry(raw: unknown, where: string): CatalogEntry {
   if (!NAME.test(id)) {
     throw new ConfigError(`${where}.id: use lowercase letters, digits, dot, dash, underscore`);
   }
+  // data/models/eliminati is the bin of the removed models (I-3, M4).
+  if (id === 'eliminati') throw new ConfigError(`${where}.id: "eliminati" is the bin of data/models`);
   const roles = asArray(entry.roles, `${where}.roles`).map((role, index) =>
     asOneOf(role, MODEL_ROLES, `${where}.roles[${String(index)}]`),
   );

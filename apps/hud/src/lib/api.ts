@@ -2,6 +2,7 @@ import type { CallInfo } from './calls.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
+import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { SearchResult } from './search.ts';
@@ -286,6 +287,29 @@ export async function listModelEvals(limit = 20, modelId?: string): Promise<Mode
 /** Every model, local and cloud, for Impostazioni → Modelli (I-3); read only and L0. */
 export async function loadModelsOverview(): Promise<ModelsOverview> {
   return call<ModelsOverview>('GET', '/api/models/overview');
+}
+
+/** Starts a download or verification of a local model in the background (I-3, M4); the progress comes with the overview. */
+export async function startModelAction(modelId: string, kind: 'download' | 'verify'): Promise<ModelAction> {
+  return (await call<{ action: ModelAction }>('POST', `/api/models/${encodeURIComponent(modelId)}/${kind}`, {})).action;
+}
+
+export async function cancelModelAction(modelId: string): Promise<ModelAction> {
+  return (await call<{ action: ModelAction }>('POST', `/api/models/${encodeURIComponent(modelId)}/cancel`, {})).action;
+}
+
+/** Moves the files of a local model into data/models/eliminati; `confirm` is the id typed by the user. Where they went. */
+export async function removeModel(modelId: string, confirm: string): Promise<string> {
+  return (await call<{ folder: string }>('POST', `/api/models/${encodeURIComponent(modelId)}/remove`, { confirm })).folder;
+}
+
+export async function unloadLocalModel(modelId: string): Promise<'unloaded' | 'failed'> {
+  return (await call<{ outcome: 'unloaded' | 'failed' }>('POST', `/api/models/${encodeURIComponent(modelId)}/unload`, {})).outcome;
+}
+
+/** Erases the bin of the models, after the user's confirmation; how many folders and bytes. */
+export async function emptyModelTrash(): Promise<{ removed: number; sizeBytes: number }> {
+  return call<{ removed: number; sizeBytes: number }>('POST', '/api/models/trash/empty', { confirm: true });
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

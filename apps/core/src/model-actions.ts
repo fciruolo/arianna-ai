@@ -154,9 +154,12 @@ export function diskState(dataDir: string, entry: CatalogEntry): DiskState {
   return { hasFiles, missingBytes };
 }
 
-/** "2026-10-07T21-03-11-123Z-<id>": unique, sortable, the model id at the end. */
-function binName(now: Date, modelId: string): string {
-  return `${now.toISOString().replace(/[:.]/g, '-')}-${modelId}`;
+/** "2026-10-07T21-03-11-123Z-<id>": sortable, the model id at the end; "-2", "-3"... when the name is taken. */
+function binName(trashDir: string, now: Date, modelId: string): string {
+  const base = `${now.toISOString().replace(/[:.]/g, '-')}-${modelId}`;
+  let name = base;
+  for (let count = 2; existsSync(join(trashDir, name)); count += 1) name = `${base}-${String(count)}`;
+  return name;
 }
 
 async function hashWithProgress(path: string, signal: AbortSignal, onBytes: (bytes: number) => void): Promise<string> {
@@ -228,8 +231,12 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
     const controller = new AbortController();
     last.set(entry.id, action);
     emit(`model.${kind}.started`, { modelId: entry.id });
-    const done = (async () => {
+    // Held before the work starts: no second action can slip in, whatever the work does first.
+    const held: { action: ModelAction; controller: AbortController; done: Promise<void> } = { action, controller, done: Promise.resolve() };
+    running = held;
+    held.done = (async () => {
       try {
+        await Promise.resolve();
         await work(action, controller.signal);
         action.status = 'done';
       } catch (error) {
@@ -238,7 +245,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
         if (!controller.signal.aborted && !(error instanceof ModelError)) onError(error);
       } finally {
         action.finishedAt = now().toISOString();
-        running = undefined;
+        if (running === held) running = undefined;
         const outcome = action.status === 'done' && kind === 'verify' && action.bad.length > 0 ? 'mismatch' : action.status === 'done' ? 'ok' : action.status;
         emit(`model.${kind}.finished`, {
           modelId: entry.id,
@@ -248,7 +255,6 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
         });
       }
     })();
-    running = { action, controller, done };
     return { ...action };
   }
 
@@ -274,7 +280,8 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
       if (needed.length === 0) throw new ModelActionError('conflict', 'every file is already on the disk: verify them instead');
       const { missingBytes } = diskState(options.dataDir, entry);
       const replaced = needed.filter((status) => status.state === 'wrong-size' || status.state === 'present');
-      const toFetch = missingBytes + replaced.reduce((total, status) => total + status.file.sizeBytes, 0);
+      // missingBytes already counts a file of the wrong size; a wrong sha256 of the right size is on top.
+      const toFetch = missingBytes + replaced.filter((status) => status.state === 'present').reduce((total, status) => total + status.file.sizeBytes, 0);
       mkdirSync(modelsDir, { recursive: true });
       if (free(modelsDir) < toFetch) throw new ModelActionError('conflict', `not enough free space: ${String(toFetch)} bytes to download`);
       const total = needed.reduce((sum, status) => sum + status.file.sizeBytes, 0);
@@ -282,23 +289,27 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
         // A wrong file goes into the bin, never erased: the download writes a new one.
         if (replaced.length > 0) {
           ensureTrash();
-          const bin = join(trashDir, binName(now(), entry.id));
+          const bin = join(trashDir, binName(trashDir, now(), entry.id));
           for (const status of replaced) {
             const to = join(bin, status.file.path);
             mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
             renameSync(status.target, to);
           }
         }
+        // Progress never goes back: the .part of the files still to do count from the start.
+        const partOf = (status: FileStatus): number => (status.state === 'partial' ? Math.min(sizeOf(`${status.target}${PART_SUFFIX}`) ?? 0, status.file.sizeBytes) : 0);
         let finished = 0;
-        action.bytesDone = needed.reduce((sum, status) => sum + (status.state === 'partial' ? Math.min(sizeOf(`${status.target}${PART_SUFFIX}`) ?? 0, status.file.sizeBytes) : 0), 0);
+        let restParts = needed.reduce((sum, status) => sum + partOf(status), 0);
+        action.bytesDone = restParts;
         for (const status of needed) {
+          restParts -= partOf(status);
           await pullFile(
             { ...status, state: 'missing' },
             {
               fetch: options.fetch,
               signal,
               onProgress: (_status, bytes) => {
-                action.bytesDone = finished + bytes;
+                action.bytesDone = finished + bytes + restParts;
               },
             },
           );
@@ -338,11 +349,12 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
     async remove(modelId, confirm) {
       const entry = entryOf(modelId);
       if (confirm !== entry.id) throw new ModelActionError('invalid', 'removal needs the id of the model as confirmation');
+      if (await options.trialOpen(entry.id)) throw new ModelActionError('conflict', 'a trial of the model is queued or running: cancel it first');
+      // After the wait for the database: the checks below see the state of the moment of the rename.
       const roles = rolesOf(entry.id);
       if (roles.length > 0) throw new ModelActionError('conflict', `the model has the role ${roles.join(', ')}: give the role to another model first`);
       if (running?.action.modelId === entry.id) throw new ModelActionError('conflict', 'a download or verification of the model is running: stop it first');
       if (options.loaded(entry.id).length > 0) throw new ModelActionError('conflict', 'the model is loaded in memory: unload it first');
-      if (await options.trialOpen(entry.id)) throw new ModelActionError('conflict', 'a trial of the model is queued or running: cancel it first');
       const from = join(modelsDir, entry.id);
       try {
         lstatSync(from);
@@ -350,7 +362,7 @@ export function createModelActions(options: ModelActionsOptions): ModelActions {
         throw new ModelActionError('not-found', 'the model has no files on the disk');
       }
       ensureTrash();
-      const name = binName(now(), entry.id);
+      const name = binName(trashDir, now(), entry.id);
       // A rename inside data/models: the same disk, instant, and a link moves as a link.
       renameSync(from, join(trashDir, name));
       last.delete(entry.id);

@@ -7,12 +7,28 @@
  * edited (`roles`, `sprites`, `cloudModels`): the card and the compact
  * panels below edit the same forms, one bar saves them in one write. Trials
  * of the orchestrator (D-081) start from the card. Read from
- * GET /api/models/overview, all L0; no download or removal here (stage M4).
+ * GET /api/models/overview, all L0. The actions on a local model (stage M4:
+ * download, verify, unload, remove into the bin, empty the bin) ask for a
+ * confirmation that says how much and where; a removal needs the id typed.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { cancelModelEval, listModelEvals, loadModelsOverview, requestModelEval } from '../lib/api.ts';
+import { cancelModelAction, cancelModelEval, emptyModelTrash, listModelEvals, loadModelsOverview, removeModel, requestModelEval, startModelAction, unloadLocalModel } from '../lib/api.ts';
 import { errorText, MODEL_EVAL_STATUS_TEXT, modelEvalErrorText } from '../lib/italian.ts';
+import {
+  actionButtons,
+  actionErrorText,
+  blockedReasons,
+  canConfirm,
+  confirmationOf,
+  emptyTrashConfirmation,
+  outcomeText,
+  progressOf,
+  runningAction,
+  trashText,
+  type ButtonKind,
+  type Confirmation,
+} from '../lib/model-actions.ts';
 import { anyOpen, canTry, dateText, isOpen, latencyText, promotionHint, scoreText, type ModelEval } from '../lib/model-evals.ts';
 import {
   cardSources,
@@ -202,6 +218,63 @@ const TRIAL_CLASS: Record<ModelEval['status'], string> = {
   cancelled: 'text-muted',
 };
 
+// Actions on a local model (stage M4): always after a confirmation that says what happens.
+const running = computed(() => runningAction(overview.value?.local ?? []));
+const trash = computed(() => overview.value?.trash ?? null);
+const confirming = ref<Confirmation | null>(null);
+const typed = ref('');
+const actionBusy = ref(false);
+const actionError = ref<string | null>(null);
+const actionNotice = ref<string | null>(null);
+watch(currentKey, () => {
+  actionNotice.value = null;
+});
+function ask(kind: ButtonKind, view: LocalModelView): void {
+  confirming.value = confirmationOf(kind, view);
+  typed.value = '';
+  actionError.value = null;
+  actionNotice.value = null;
+}
+function askEmptyTrash(): void {
+  if (trash.value === null) return;
+  confirming.value = emptyTrashConfirmation(trash.value);
+  typed.value = '';
+  actionError.value = null;
+}
+function closeConfirmation(): void {
+  confirming.value = null;
+  actionError.value = null;
+}
+async function confirmAction(): Promise<void> {
+  const shown = confirming.value;
+  if (shown === null || !canConfirm(shown, typed.value) || actionBusy.value) return;
+  actionBusy.value = true;
+  actionError.value = null;
+  const id = shown.modelId ?? '';
+  try {
+    if (shown.kind === 'download' || shown.kind === 'verify') await startModelAction(id, shown.kind);
+    else if (shown.kind === 'cancel') await cancelModelAction(id);
+    else if (shown.kind === 'unload') {
+      const outcome = await unloadLocalModel(id);
+      actionNotice.value = outcome === 'unloaded' ? `${id} non è più in memoria.` : 'Il server locale non ha confermato: riprova fra poco, o riavvialo da Server locali.';
+    } else if (shown.kind === 'remove') {
+      const folder = await removeModel(id, typed.value.trim());
+      actionNotice.value = `Tolto dal disco: i file sono nel cestino, in ${folder}.`;
+    } else {
+      const emptied = await emptyModelTrash();
+      actionNotice.value = emptied.removed === 0 ? 'Il cestino era già vuoto.' : `Cestino svuotato: liberati ${sizeText(Math.max(emptied.sizeBytes, 1))}.`;
+    }
+    confirming.value = null;
+    await load();
+    // A download or verification just started: the progress is read more often.
+    schedule();
+  } catch (error) {
+    actionError.value = actionErrorText(error);
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
 // The bar: one write for roles, characters and switches.
 const working = ref(false);
 const savedNow = ref(false);
@@ -222,17 +295,29 @@ async function saveAll(): Promise<void> {
   }
 }
 
-// Memory and trials change by themselves: read again every 10 s.
+// Memory and trials change by themselves: read again every 10 s, every 1.5 s while a download or verification runs.
 let timer: number | undefined;
+let unmounted = false;
+function schedule(): void {
+  window.clearTimeout(timer);
+  if (unmounted) return;
+  timer = window.setTimeout(
+    () => {
+      void (async () => {
+        await load();
+        if (anyOpen(trials.value)) await loadTrials();
+        schedule();
+      })();
+    },
+    running.value === undefined ? 10_000 : 1_500,
+  );
+}
 onMounted(() => {
-  void load();
-  timer = window.setInterval(() => {
-    void load();
-    if (anyOpen(trials.value)) void loadTrials();
-  }, 10_000);
+  void load().then(schedule);
 });
 onBeforeUnmount(() => {
-  window.clearInterval(timer);
+  unmounted = true;
+  window.clearTimeout(timer);
   window.clearTimeout(savedTimer);
 });
 </script>
@@ -257,7 +342,11 @@ onBeforeUnmount(() => {
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
         <span class="hud-title text-[10px]">Modelli locali</span>
         <span class="font-hud text-lg leading-tight font-medium">{{ localCount.present }} di {{ localCount.total }} sul disco</span>
-        <span class="text-xs text-muted">{{ localCount.loaded === 1 ? '1 in memoria' : `${localCount.loaded} in memoria` }} · i mancanti si scaricano con <code class="font-mono">pnpm arianna:models pull</code></span>
+        <span class="text-xs text-muted">{{ localCount.loaded === 1 ? '1 in memoria' : `${localCount.loaded} in memoria` }} · i mancanti si scaricano dalla loro scheda</span>
+        <span v-if="trash !== null" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          Cestino: {{ trashText(trash) }}
+          <button v-if="trash.entries.length > 0" type="button" class="btn btn-danger px-2 py-0.5 text-xs" :disabled="actionBusy" @click="askEmptyTrash">Svuota il cestino…</button>
+        </span>
       </div>
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
         <span class="hud-title text-[10px]">Modelli cloud</span>
@@ -375,9 +464,35 @@ onBeforeUnmount(() => {
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Licenza</dt><dd class="text-[13px]" :class="{ 'text-muted': current.view.license === null }">{{ current.view.license ?? 'non indicata' }}</dd></div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Costo</dt><dd class="text-[13px]">nessuna quota: gira sul Mac</dd></div>
           </dl>
-          <p v-if="!current.view.present" class="text-xs text-muted">
-            I file mancano in <code class="font-mono">data/models</code>: si scaricano con <code class="font-mono">pnpm arianna:models pull</code>. Si può già assegnare a un ruolo.
-          </p>
+          <!-- Actions on the files and the memory (stage M4) -->
+          <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Azioni sul modello">
+            <h3 class="hud-title text-[10.5px]">File e memoria</h3>
+            <p v-if="!current.view.present && current.view.action?.status !== 'running'" class="text-xs text-muted">
+              I file mancano in <code class="font-mono">data/models/{{ current.view.id }}</code>: «Scarica» li prende dagli indirizzi del catalogo. Si può già assegnare a un ruolo.
+            </p>
+            <div v-if="current.view.action?.status === 'running'" class="flex flex-col gap-1" role="status">
+              <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-surface-2">
+                <i class="block h-full bg-accent transition-[width]" :style="{ width: `${Math.round(progressOf(current.view.action).ratio * 100)}%` }" />
+              </div>
+              <span class="text-xs text-muted">{{ progressOf(current.view.action).text }}</span>
+            </div>
+            <p v-if="outcomeText(current.view.action) !== undefined" class="text-xs" :class="TONE_CLASS[outcomeText(current.view.action)?.tone ?? 'muted']">{{ outcomeText(current.view.action)?.text }}</p>
+            <div v-if="actionButtons(current.view, running).length > 0" class="flex flex-wrap items-center gap-2">
+              <button
+                v-for="button in actionButtons(current.view, running)"
+                :key="button.kind"
+                type="button"
+                class="btn px-3 py-1 text-[13px]"
+                :class="button.danger ? 'btn-danger' : ''"
+                :disabled="button.blocked !== undefined || actionBusy"
+                @click="ask(button.kind, current.view)"
+              >
+                {{ button.text }}
+              </button>
+            </div>
+            <p v-for="reason in blockedReasons(actionButtons(current.view, running))" :key="reason" class="text-xs text-muted">{{ reason }}</p>
+            <p v-if="actionNotice !== null" class="text-xs text-ok" role="status">{{ actionNotice }}</p>
+          </div>
 
           <template v-if="current.view.strengths.length > 0">
             <h3 class="hud-title text-[10.5px]">Punti di forza</h3>
@@ -616,6 +731,23 @@ onBeforeUnmount(() => {
           <a href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Esecutori cloud</a>, con la sua conferma.
         </p>
       </section>
+    </div>
+
+    <!-- The confirmation of an action: what happens, how much, where -->
+    <div v-if="confirming" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">
+      <form class="hud-card flex max-w-lg flex-col gap-3 p-4" @submit.prevent="confirmAction">
+        <h2 id="model-action-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase break-all">{{ confirming.title }}</h2>
+        <p v-for="line in confirming.lines" :key="line" class="text-[13px]">{{ line }}</p>
+        <label v-if="confirming.typed !== undefined" class="flex flex-col gap-1 text-xs text-muted">
+          Per confermare scrivi l’id del modello
+          <input v-model="typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="confirming.typed" autocomplete="off" spellcheck="false" />
+        </label>
+        <p v-if="actionError !== null" class="text-xs text-danger" role="alert">{{ actionError }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-xs" @click="closeConfirmation">Annulla</button>
+          <button type="submit" class="btn px-2.5 py-1 text-xs" :class="confirming.danger ? 'btn-danger' : 'btn-primary'" :disabled="actionBusy || !canConfirm(confirming, typed)">{{ confirming.button }}</button>
+        </div>
+      </form>
     </div>
 
     <!-- One bar for roles, characters and switches -->
