@@ -4,7 +4,7 @@
 import http from 'node:http';
 import https from 'node:https';
 
-import { ModelError, type Download, type Fetcher } from './models.ts';
+import { ModelError, type Download, type Fetcher } from './model-files.ts';
 
 const MAX_REDIRECTS = 5;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
@@ -20,7 +20,7 @@ export function createFetcher(options: HttpOptions = {}): Fetcher {
   const agents = { 'https:': new https.Agent({ keepAlive: false }), 'http:': new http.Agent({ keepAlive: false }) };
   const idle = options.idleTimeoutMs ?? 60_000;
 
-  const open = (url: URL, offset: number, redirects: number): Promise<Download> => {
+  const open = (url: URL, offset: number, redirects: number, signal?: AbortSignal): Promise<Download> => {
     if (url.protocol !== 'https:' && !(options.allowHttp === true && url.protocol === 'http:')) {
       return Promise.reject(new ModelError('insecure-url', `refused a download over ${url.protocol}`));
     }
@@ -32,6 +32,7 @@ export function createFetcher(options: HttpOptions = {}): Fetcher {
           agent: url.protocol === 'https:' ? agents['https:'] : agents['http:'],
           headers: offset > 0 ? { range: `bytes=${String(offset)}-` } : {},
           timeout: idle,
+          ...(signal === undefined ? {} : { signal }),
         },
         (response) => {
           const status = response.statusCode ?? 0;
@@ -49,7 +50,7 @@ export function createFetcher(options: HttpOptions = {}): Fetcher {
               reject(new ModelError('redirects', 'invalid redirect'));
               return;
             }
-            open(next, offset, redirects + 1).then(resolve, reject);
+            open(next, offset, redirects + 1, signal).then(resolve, reject);
             return;
           }
           const range = response.headers['content-range'];
@@ -61,5 +62,5 @@ export function createFetcher(options: HttpOptions = {}): Fetcher {
     });
   };
 
-  return (url, offset) => open(new URL(url), offset, 0);
+  return (url, offset, signal) => open(new URL(url), offset, 0, signal);
 }

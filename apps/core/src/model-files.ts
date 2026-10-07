@@ -30,7 +30,7 @@ export interface FileStatus {
   state: FileState;
 }
 
-export type ModelErrorCode = 'http-status' | 'too-large' | 'wrong-size' | 'wrong-hash' | 'redirects' | 'insecure-url' | 'network';
+export type ModelErrorCode = 'http-status' | 'too-large' | 'wrong-size' | 'wrong-hash' | 'redirects' | 'insecure-url' | 'network' | 'aborted';
 
 /** Messages name the model file and a code, never a response body. */
 export class ModelError extends Error {
@@ -51,16 +51,16 @@ export interface Download {
   contentRange?: string;
 }
 
-/** Opens `url` from byte `offset`; the default is `httpsGet` (src/http.ts). */
-export type Fetcher = (url: string, offset: number) => Promise<Download>;
+/** Opens `url` from byte `offset`; the default is `createFetcher` (model-http.ts). */
+export type Fetcher = (url: string, offset: number, signal?: AbortSignal) => Promise<Download>;
 
 export function fileTarget(data: string, model: string, file: ModelFile): string {
   return join(data, MODELS_DIR, model, file.path);
 }
 
-export async function sha256Of(path: string): Promise<string> {
+export async function sha256Of(path: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
-  await pipeline(createReadStream(path), hash);
+  await pipeline(createReadStream(path), hash, signal === undefined ? {} : { signal });
   return hash.digest('hex');
 }
 
@@ -103,6 +103,8 @@ export interface PullOptions {
   fetch: Fetcher;
   /** Called with the bytes written so far for the current file. */
   onProgress?: (status: FileStatus, bytes: number) => void;
+  /** Stops the download; the .part stays and the next pull resumes from it. */
+  signal?: AbortSignal;
 }
 
 /** Downloads one file to its target, resuming a `.part` left by an earlier attempt. */
@@ -117,13 +119,24 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
     rmSync(part);
     offset = 0;
   }
+  // A function: the signal changes while the download runs.
+  const stopped = (): boolean => options.signal?.aborted === true;
+  const fetchOrStop = async (url: string, from: number): Promise<Download> => {
+    try {
+      return await options.fetch(url, from, options.signal);
+    } catch (error) {
+      if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
+      throw error;
+    }
+  };
   if (offset < file.sizeBytes) {
-    let download = await options.fetch(file.url, offset);
+    if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
+    let download = await fetchOrStop(file.url, offset);
     if (download.status === 206 && rangeStart(download.contentRange) !== offset) {
       // Bytes from somewhere else would only be thrown away by the hash check: start over.
       download.body.destroy();
       offset = 0;
-      download = await options.fetch(file.url, 0);
+      download = await fetchOrStop(file.url, 0);
     }
     if (download.status === 200) offset = 0; // the server ignored the Range header: start over
     else if (download.status === 416) {
@@ -146,9 +159,10 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
       }
     };
     try {
-      await pipeline(download.body, counted, createWriteStream(part, { flags: offset === 0 ? 'w' : 'a' }));
+      await pipeline(download.body, counted, createWriteStream(part, { flags: offset === 0 ? 'w' : 'a' }), options.signal === undefined ? {} : { signal: options.signal });
     } catch (error) {
       if (error instanceof ModelError) throw error;
+      if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
       // The .part stays: the next pull resumes from it.
       throw new ModelError('network', `${label}: download interrupted, run pull again`);
     }
@@ -159,7 +173,15 @@ export async function pullFile(status: FileStatus, options: PullOptions): Promis
     // A short file can be resumed: keep it.
     throw new ModelError('wrong-size', `${label}: ${String(size)} of ${String(file.sizeBytes)} bytes, run pull again`);
   }
-  if ((await sha256Of(part)) !== file.sha256) {
+  let digest: string;
+  try {
+    digest = await sha256Of(part, options.signal);
+  } catch (error) {
+    // Stopped while hashing: the .part is whole, the next pull only hashes it again.
+    if (stopped()) throw new ModelError('aborted', `${label}: download stopped`);
+    throw error;
+  }
+  if (digest !== file.sha256) {
     rmSync(part);
     throw new ModelError('wrong-hash', `${label}: sha256 does not match the catalog, download discarded`);
   }

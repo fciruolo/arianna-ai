@@ -4,6 +4,24 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.27.0] - 2026-10-07
+
+### Aggiunto
+
+- Impostazioni → Modelli, azioni dalla scheda di un modello locale: Scarica con avanzamento, ripresa e verifica sha256, Verifica, Scarica dalla memoria, Togli dal disco nel cestino `data/models/eliminati` con l'id scritto come conferma, e Svuota il cestino; ogni azione chiede conferma con dimensione e cartella (I-3 M4, D-137).
+
+### Cambiato
+
+- La logica dei file dei modelli (`pnpm arianna:models`) passa dall'installer al nucleo (`model-files.ts`, `model-http.ts`), così la pagina Modelli può scaricare e verificare (I-3 M4, D-137).
+
+### Corretto
+
+- Nell'elenco della pagina Modelli il nome si legge sempre per intero: le etichette stanno sotto il nome, che va a capo invece di essere tagliato (D-137).
+
+### Sicurezza
+
+- L'id `eliminati` è vietato nel catalogo dei modelli; un modello con un ruolo, in memoria o con una prova aperta non si toglie dal disco (D-137).
+
 ## [0.26.0] - 2026-10-07
 
 ### Cambiato

@@ -24,10 +24,10 @@ import {
   type CatalogEntry,
 } from '@arianna/config';
 import { runDoctor, type DoctorCheck } from '@arianna/core/doctor';
+import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from '@arianna/core/model-files';
+import { createFetcher } from '@arianna/core/model-http';
 
-import { createFetcher } from './http.ts';
 import { configPath, currentSettings, installedExecutors, writeSettings } from './init.ts';
-import { MODELS_DIR, modelStatus, pullModels, selectedModels, type FileStatus } from './models.ts';
 import { folderProblem, projectChecks, syncProjectLinks } from './projects.ts';
 import { ensureLayout, freeBytes, layoutCheck, omlxLogChecks, systemChecks, voiceCheck } from './system.ts';
 import { runWizard, type Prompter } from './wizard.ts';

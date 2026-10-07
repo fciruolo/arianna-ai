@@ -167,6 +167,13 @@ export async function loadModelEval(sql: Queryable, id: string): Promise<ModelEv
   return row;
 }
 
+/** A trial of the model queued or running: its files must stay where they are (I-3, M4). */
+export async function trialOpen(sql: Queryable, modelId: string): Promise<boolean> {
+  const [row] = await sql<{ open: boolean }[]>`
+    SELECT EXISTS (SELECT FROM model_evals WHERE model_id = ${modelId} AND status IN ('queued', 'running')) AS open`;
+  return row?.open === true;
+}
+
 /** Closes a trial with its status and code; false when it was already closed. */
 async function closeTrial(tx: Queryable, id: string, modelId: string, status: 'error' | 'cancelled', code: string): Promise<boolean> {
   const rows = await tx`

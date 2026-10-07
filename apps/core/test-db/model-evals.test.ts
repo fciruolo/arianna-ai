@@ -8,7 +8,7 @@ import { resolveHome, type CatalogEntry, type LocalEndpointConfig } from '@arian
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
-import { createModelEvals, EVAL_QUEUE, loadModelEval, type ModelEvals, type ModelEvalsOptions } from '../src/model-evals.ts';
+import { createModelEvals, EVAL_QUEUE, loadModelEval, trialOpen, type ModelEvals, type ModelEvalsOptions } from '../src/model-evals.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -148,6 +148,20 @@ test('arianna_app inserts, reads and updates trials, never deletes them; the tri
   await assert.rejects(sql`UPDATE model_evals SET preemptions = 1 WHERE id = ${id}::bigint`, /is finished/);
   // Not even the owner rewrites the model of a trial.
   await assert.rejects(owner`UPDATE model_evals SET model_id = 'x' WHERE id = ${id}::bigint`, /do not change/);
+});
+
+test('trialOpen: a queued or running trial keeps the files of its model; a finished one does not (I-3, M4)', async () => {
+  const { sql } = db();
+  assert.equal(await trialOpen(sql, 'open-model'), false);
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO model_evals (model_id, role, catalog_status) VALUES ('open-model', 'orchestrator', 'experimental') RETURNING id::text`;
+  const id = row?.id ?? '';
+  assert.equal(await trialOpen(sql, 'open-model'), true);
+  assert.equal(await trialOpen(sql, 'open-other'), false);
+  await sql`UPDATE model_evals SET status = 'running', started_at = now() WHERE id = ${id}::bigint`;
+  assert.equal(await trialOpen(sql, 'open-model'), true);
+  await sql`UPDATE model_evals SET status = 'cancelled', error = 'user', finished_at = now() WHERE id = ${id}::bigint`;
+  assert.equal(await trialOpen(sql, 'open-model'), false);
 });
 
 test('a request is refused unless the model is in the catalog, suited, on disk and served; one open trial per model', async () => {

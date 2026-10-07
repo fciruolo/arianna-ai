@@ -55,6 +55,7 @@ import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
+import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
@@ -134,6 +135,8 @@ export interface ApiServerOptions {
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
   modelsOverview?: () => Promise<ModelsOverview>;
+  /** Download, verify, remove and unload a local model, and the bin (I-3, stage M4); without it the routes answer 404. */
+  modelActions?: ModelActions;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -767,6 +770,48 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
     route('POST', '/api/model-evals/:id/cancel', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return { body: { eval: await need().cancel(evalId(params)) } };
+    }),
+  ];
+}
+
+/**
+ * The actions of the "Modelli" page on a local model (I-3, stage M4): a
+ * download or a verification starts in the background (202) and its progress
+ * comes with GET /api/models/overview; a removal needs the id typed by the
+ * user, emptying the bin needs `confirm: true`. Catalog ids only: no route
+ * takes a path.
+ */
+function modelActionRoutes(actions: ModelActions | undefined): Route[] {
+  const need = (): ModelActions => {
+    if (actions === undefined) throw new HttpError(404, 'not found');
+    return actions;
+  };
+  return [
+    route('POST', '/api/models/trash/empty', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return { body: need().emptyTrash(body.confirm) };
+    }),
+    route('POST', '/api/models/:id/download', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: { action: need().download(params.id ?? '') } };
+    }),
+    route('POST', '/api/models/:id/verify', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: { action: need().verify(params.id ?? '') } };
+    }),
+    route('POST', '/api/models/:id/cancel', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: { action: need().cancel(params.id ?? '') } };
+    }),
+    route('POST', '/api/models/:id/remove', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return { body: await need().remove(params.id ?? '', body.confirm) };
+    }),
+    route('POST', '/api/models/:id/unload', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { body: await need().unload(params.id ?? '') };
     }),
   ];
 }
@@ -1550,6 +1595,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
+  if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
   return undefined;
@@ -1684,6 +1730,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       return { body: await options.modelsOverview() };
     }),
   );
+  table.push(...modelActionRoutes(options.modelActions));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();

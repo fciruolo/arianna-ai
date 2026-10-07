@@ -8,8 +8,8 @@ import { after, before, test } from 'node:test';
 
 import { loadCatalog, resolveHome, type CatalogEntry } from '@arianna/config';
 
-import { createFetcher } from '../src/http.ts';
-import { fileTarget, modelStatus, ModelError, PART_SUFFIX, pullFile, pullModels, selectedModels } from '../src/models.ts';
+import { createFetcher } from '../src/model-http.ts';
+import { fileTarget, modelStatus, ModelError, PART_SUFFIX, pullFile, pullModels, selectedModels } from '../src/model-files.ts';
 
 // Fake weights: random bytes, never a real model.
 const BODY = randomBytes(64 * 1024 + 123);
@@ -193,6 +193,23 @@ test('a server that stops sending fails with the file name, and the .part is kep
     (error: unknown) => error instanceof ModelError && error.code === 'network' && /fake-model\/weights\/model\.bin/.test(error.message),
   );
   assert.equal((await modelStatus(models('/stall'), data))[0]?.state, 'partial');
+});
+
+test('a download stopped by its signal fails as aborted and keeps the .part; a signal already stopped fetches nothing (I-3, M4)', async () => {
+  const data = freshData();
+  const stop = new AbortController();
+  const pulling = pullModels(models('/stall'), data, {
+    fetch: createFetcher({ allowHttp: true, idleTimeoutMs: 10_000 }),
+    signal: stop.signal,
+    onProgress: () => {
+      stop.abort();
+    },
+  });
+  await assert.rejects(pulling, (error: unknown) => error instanceof ModelError && error.code === 'aborted');
+  assert.equal((await modelStatus(models('/stall'), data))[0]?.state, 'partial');
+  const before = seen.length;
+  await assert.rejects(pullModels(models('/weights'), freshData(), { fetch, signal: stop.signal }), (error: unknown) => error instanceof ModelError && error.code === 'aborted');
+  assert.equal(seen.length, before);
 });
 
 test('pull with verify replaces a file of the right size but the wrong hash', async () => {

@@ -15,7 +15,7 @@ import {
 } from '@arianna/config';
 
 import { currentSettings, installedExecutors, writeSettings } from '../src/init.ts';
-import { selectedModels } from '../src/models.ts';
+import { selectedModels } from '@arianna/core/model-files';
 import { runWizard, type Prompter, type WizardContext } from '../src/wizard.ts';
 
 const GIB = 2 ** 30;

@@ -21,6 +21,7 @@ import {
 import { needsBudgetApproval, usesOf, type ModelUse } from '@arianna/router';
 
 import type { Queryable } from './db/client.ts';
+import type { DiskState, ModelAction, ModelActions, TrashView } from './model-actions.ts';
 import { weightsDigest, type EvalStatus } from './model-evals.ts';
 import type { MemorySnapshot } from './model-memory.ts';
 import { present } from './settings-page.ts';
@@ -78,6 +79,12 @@ export interface LocalModelView {
   /** Every file in data/models/<id> with its size (sha256 not checked here). */
   present: boolean;
   state: LocalState;
+  /** A folder data/models/<id> exists, complete or not: something to remove. */
+  hasFiles: boolean;
+  /** Bytes still to download (a partial download counts for what it holds). */
+  missingBytes: number;
+  /** The download or verification in progress, or the last one since the core started (I-3, M4). */
+  action: ModelAction | null;
   /** Where it is loaded, by the core's account (D-107, stage E). */
   loaded: { endpoint: string; gib: number | null; busy: boolean }[];
   /** The last trial, and whether it ran on the weights the catalog lists now. */
@@ -121,6 +128,8 @@ export interface ModelsOverview {
   sources: CloudSource[];
   /** The memory of the local models (D-107, stage E); null when the core does not keep the account. */
   memory: Omit<MemorySnapshot, 'loaded'> | null;
+  /** The bin of the removed models (I-3, M4); null when the core has no actions. */
+  trash: TrashView | null;
   /** Why a catalog or the trials could not be read: the file and the place, never what it holds. */
   errors: { catalog: string | null; cloudCatalog: string | null; evals: string | null };
 }
@@ -135,6 +144,10 @@ export interface OverviewInputs {
   lastEvals: readonly LastEval[];
   /** Whether the core has an adapter for the executor now. */
   adapters: Readonly<Record<CloudExecutor, boolean>>;
+  /** What is on the disk; without it, from `present` alone. */
+  disk?: (entry: CatalogEntry) => DiskState;
+  actions?: readonly ModelAction[];
+  trash?: TrashView | null;
   errors?: Partial<ModelsOverview['errors']>;
 }
 
@@ -157,6 +170,8 @@ function localView(entry: CatalogEntry, inputs: OverviewInputs): LocalModelView 
     .map(([alias]) => alias);
   const loaded = (inputs.memory?.loaded ?? []).filter(({ model }) => model === entry.id).map(({ endpoint, gib, busy }) => ({ endpoint, gib, busy }));
   const isPresent = inputs.present(entry);
+  const disk = inputs.disk?.(entry) ?? { hasFiles: isPresent, missingBytes: isPresent ? 0 : modelSize(entry) };
+  const action = inputs.actions?.find(({ modelId }) => modelId === entry.id);
   const last = inputs.lastEvals.find(({ modelId }) => modelId === entry.id);
   return {
     locality: 'local',
@@ -179,6 +194,9 @@ function localView(entry: CatalogEntry, inputs: OverviewInputs): LocalModelView 
     uses: usesOfAliases(aliases),
     present: isPresent,
     state: loaded.length > 0 ? 'loaded' : isPresent ? 'on-disk' : 'missing',
+    hasFiles: disk.hasFiles,
+    missingBytes: disk.missingBytes,
+    action: action === undefined ? null : { ...action, bad: [...action.bad] },
     loaded,
     lastEval:
       last === undefined
@@ -234,6 +252,7 @@ export function buildModelsOverview(inputs: OverviewInputs): ModelsOverview {
     cloud: CLOUD_MODELS.map((alias) => cloudView(alias, inputs)),
     sources: inputs.cloudCatalog.sources,
     memory,
+    trash: inputs.trash ?? null,
     errors: { catalog: inputs.errors?.catalog ?? null, cloudCatalog: inputs.errors?.cloudCatalog ?? null, evals: inputs.errors?.evals ?? null },
   };
 }
@@ -256,6 +275,8 @@ export interface ModelsOverviewOptions {
   config: () => Pick<AriannaConfig, 'roles' | 'cloud' | 'agents'>;
   memory?: () => MemorySnapshot;
   adapters: () => Readonly<Record<CloudExecutor, boolean>>;
+  /** The actions on the local models (I-3, M4): their progress, the bin, what is on the disk. */
+  actions?: Pick<ModelActions, 'list' | 'trash' | 'disk'>;
 }
 
 /**
@@ -303,6 +324,16 @@ export async function loadModelsOverview(sql: Queryable, options: ModelsOverview
     memory: options.memory?.(),
     lastEvals: trials,
     adapters: options.adapters(),
+    ...(options.actions === undefined ? {} : { disk: options.actions.disk, actions: options.actions.list(), trash: trashOf(options.actions) }),
     errors,
   });
+}
+
+/** A bin that cannot be read costs the bin, not the page. */
+function trashOf(actions: Pick<ModelActions, 'trash'>): TrashView | null {
+  try {
+    return actions.trash();
+  } catch {
+    return null;
+  }
 }

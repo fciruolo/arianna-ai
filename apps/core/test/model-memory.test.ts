@@ -559,3 +559,47 @@ describe('createModelMemory, reviewed cases', () => {
     assert.deepEqual(unloaded, []);
   });
 });
+
+describe('createModelMemory, unloadNow (I-3, stage M4)', () => {
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  it('unloads an idle model at once and takes it out of the account', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, unloaded, events } = memoryWith(config);
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    assert.equal(await memory.unloadNow(endpoint({ 'local-large': 'big-27b' }), 'big-27b'), 'unloaded');
+    assert.deepEqual(unloaded, ['big-27b']);
+    assert.deepEqual(events, [{ type: 'unloaded', endpoint: 'omlx', model: 'big-27b', reason: 'user' }]);
+    assert.deepEqual(memory.snapshot().loaded, []);
+  });
+
+  it('refuses a model a request is using, and keeps it', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, unloaded } = memoryWith(config);
+    let open: () => void = () => undefined;
+    const running = memory.wrap(fakeModel(new Promise<void>((resolve) => { open = resolve; })), config).chat({ model: 'local-large', messages: [] });
+    await tick();
+    assert.equal(await memory.unloadNow(endpoint({ 'local-large': 'big-27b' }), 'big-27b'), 'busy');
+    open();
+    await running;
+    assert.deepEqual(unloaded, []);
+    assert.equal(memory.snapshot().loaded.length, 1);
+  });
+
+  it('refuses a model a call holds', async () => {
+    const config = [endpoint({ 'local-voice': 'small-4b' })];
+    const { memory, unloaded } = memoryWith(config, { pinned: () => true });
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-voice', messages: [] });
+    assert.equal(await memory.unloadNow(endpoint({ 'local-voice': 'small-4b' }), 'small-4b'), 'busy');
+    assert.deepEqual(unloaded, []);
+  });
+
+  it('keeps the model in the account when the server does not confirm', async () => {
+    const config = [endpoint({ 'local-large': 'big-27b' })];
+    const { memory, events } = memoryWith(config, { unload: () => Promise.resolve(false) });
+    await memory.wrap(fakeModel(), config).chat({ model: 'local-large', messages: [] });
+    assert.equal(await memory.unloadNow(endpoint({ 'local-large': 'big-27b' }), 'big-27b'), 'failed');
+    assert.deepEqual(events, []);
+    assert.equal(memory.snapshot().loaded.length, 1);
+  });
+});
