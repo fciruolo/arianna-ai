@@ -83,6 +83,9 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   assert.equal(line('delegate', 'coder'), 'Passo delegato al Coder');
   assert.equal(line('delegate', 'coder · claude/sonnet'), 'Il Coder lavora su Claude Code (Claude Sonnet)');
   assert.equal(line('tool', 'Edit'), 'Il Coder usa Edit');
+  // Codex names no tool, only the kind (D-140).
+  assert.equal(line('tool', 'command'), 'Il Coder usa il terminale');
+  assert.equal(line('tool', 'file_change'), 'Il Coder usa la modifica dei file');
   assert.equal(line('wait', 'budget · fable'), 'Serve la tua approvazione del budget per Claude Fable (con approvazione)');
   assert.match(line('wait', 'claude · 2026-10-03T15:00:00.000Z'), /^Claude Code ha esaurito la quota: riprovo alle \d\d:\d\d$/);
   assert.equal(line('wait', 'something else'), 'In attesa dell’esecutore');

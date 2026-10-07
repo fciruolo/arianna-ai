@@ -5,12 +5,17 @@ export type ConversationMode = 'work' | 'private';
 /** The agent a conversation has in place of Arianna (D-111d): any agent id but Arianna's. */
 export type ConversationAgent = string;
 
+/** The cloud executors a direct chat may go to (D-140). */
+export type CloudExecutorKind = 'claude' | 'codex';
+
 /** An agent the user may talk with directly (GET /api/direct-agents, D-111d): what its card allows. */
 export interface DirectAgent {
   agent: string;
   description: string;
-  /** Every message goes to Claude: the warning, "va a Claude", the context indicator. */
+  /** Every message goes to the cloud: the warning, "va a Claude", the context indicator. */
   cloud: boolean;
+  /** The cloud executors of its card that run now, in the card's order (D-140); absent from an older core. */
+  executors?: CloudExecutorKind[];
   modes: ConversationMode[];
   /** The conversation needs an approved project. */
   project: boolean;

@@ -67,8 +67,7 @@ executors = []
 # or the exact name to pass to --model (on), e.g. opus = "claude-opus-5-5";
 # true means the alias, the newest model for the binary. Which model an
 # agent starts with is in [agents]. Not a privacy setting: it never turns
-# an executor on. Codex applies with its adapter (task 1.16). Applies
-# without a restart.
+# an executor on. Applies without a restart.
 [cloud.models]
 sonnet = true
 opus = true

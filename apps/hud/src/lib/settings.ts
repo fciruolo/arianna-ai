@@ -239,13 +239,12 @@ function executorOfModel(model: CloudModelAlias): string {
 
 /**
  * Why a model the card allows would not start a new conversation now
- * (D-116): turned off, its executor off, or Codex before its adapter. It can
- * still be chosen: it applies once the cause is gone.
+ * (D-116): turned off, or its executor off. It can still be chosen: it
+ * applies once the cause is gone. Codex has its adapter since D-140.
  */
 export function modelBlocker(model: CloudModelAlias, values: Pick<SettingsValues, 'cloudModels' | 'executors'>): string | undefined {
   if (values.cloudModels.models[model] === false) return 'spento in Modelli';
   if (!values.executors.includes(executorOfModel(model))) return 'esecutore spento';
-  if (model === 'codex') return 'vale con il suo adattatore';
   return undefined;
 }
 

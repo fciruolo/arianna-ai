@@ -545,7 +545,7 @@ test('a private direct chat with a local agent that may read Privato: the brief 
 
 test('the routes (D-111d): the list of who answers, and a conversation only with an agent and a mode it allows', async () => {
   const live = await startLiveFeed(db().sql);
-  const agents = [{ agent: 'traduttore', description: 'Traduce', cloud: false, modes: ['work' as const], project: false }];
+  const agents = [{ agent: 'traduttore', description: 'Traduce', cloud: false, executors: [], modes: ['work' as const], project: false }];
   const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, directAgents: () => agents, projects: () => [] });
   const post = (body: unknown) =>
     fetch(`http://127.0.0.1:${String(server.port)}/api/conversations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

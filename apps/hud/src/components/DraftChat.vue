@@ -97,7 +97,7 @@ onMounted(() => field.value?.focus());
           <p v-if="policy === undefined" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">
             {{ agentName(draft.agent) }} non può rispondere adesso: è spento, o il suo esecutore lo è. Scegli un altro agente da "+ Nuovo".
           </p>
-          <p v-else-if="policy?.cloud === true" role="note" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">{{ cloudWarning(draft.agent, draft.project) }}</p>
+          <p v-else-if="policy?.cloud === true" role="note" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">{{ cloudWarning(draft.agent, draft.project, policy.executors) }}</p>
           <p v-else-if="policy !== undefined" role="note" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-left text-sm text-muted">{{ localNote(draft.agent) }}</p>
         </template>
         <!-- Incognito (D-136): what stays outside Arianna, to read before the first message. -->

@@ -2007,7 +2007,7 @@ Stime grezze (±50%).
 ## D-111 — Con chi parli: Arianna, un modello locale, Claude o ChatGPT, scelto quando nasce la conversazione
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Proposta, da discutere; tappa A unita in 0.13.0 (D-111b, D-111c, D-111d); tappa C (Codex alla pari, scheda Reviewer) sul ramo `task/d111-c-codex` come D-140, da provare
 - **Collegate:** D-015 (taint, clearance, conversazioni di lavoro L1), D-034 (trifecta; `task.delegate` non apre la comunicazione esterna perché il passo delegato ha letto solo il brief), D-053 (contesto dell'orchestratore per task, `task_turns`), D-049/D-050 (profilo e sandbox di `claude -p`, ripresa con `--resume`), D-053/D-055 (orchestratore, delega con brief, declassamento, budget per Fable, selettore di modello), D-056 (cartella vera del progetto), D-058 (progetti approvati), D-064 (Claude che risponde direttamente in una chat di sistema: il precedente più vicino), D-077 (storia ancorata con riassunti), D-078 (Arianna sviluppata da dentro Arianna), D-082 (crediti e file cambiati delle deleghe), D-085 (`wait-user` dopo un blocco), D-106 (ufficio pixel, "Parla con…"), D-107 (chat multi-agente), D-108 (conversazione nuova come bozza)
 
 ### Contesto
