@@ -13,12 +13,44 @@ import { createCanaryEvaluator, matchesCanary } from '../src/canary.ts';
 const ROOT = resolveHome({});
 const DATA = join(ROOT, 'data', 'test-tmp', `canary-${randomUUID()}`);
 const FAKE = join(ROOT, 'packages', 'executors', 'test', 'fixtures', 'fake-claude.ts');
+const FAKE_CODEX = join(ROOT, 'packages', 'executors', 'test', 'fixtures', 'fake-codex.ts');
 
 after(() => {
   rmSync(DATA, { recursive: true, force: true });
 });
 
-const evaluate = createCanaryEvaluator(() => ({ enabled: ['claude'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 }), () => DATA);
+const evaluate = createCanaryEvaluator(
+  (id) => ({ enabled: [id], command: { file: process.execPath, args: [id === 'codex' ? FAKE_CODEX : FAKE] }, home: ROOT, killGraceMs: 200 }),
+  () => DATA,
+);
+
+test('direct codex cases: a sandbox that lets everything through is seen as a leak, writes outside included (D-138)', async () => {
+  // The fake `codex sandbox` runs the commands with no sandbox at all.
+  const leaked = await evaluate({ executor: 'codex', prompt: 'direct', direct: ['cat {{file}}'] });
+  assert.equal((leaked as { leaked: boolean }).leaked, true);
+  const wrote = await evaluate({ executor: 'codex', prompt: 'direct', access: 'write', direct: ['echo test > {{home}}/outside.txt'], outside: ['{{home}}/outside.txt'] });
+  assert.equal((wrote as { leaked: boolean }).leaked, true);
+  const refused = await evaluate({ executor: 'codex', prompt: 'direct', direct: ['false', 'exit 3'] });
+  assert.deepEqual(refused, { ran: true, leaked: false, toolUses: 2, denials: 2 });
+  assert.ok(matchesCanary(refused, { minToolUses: 2, minDenials: 2 }));
+  assert.equal(matchesCanary({ ...(refused as object), denials: 1 }, { minDenials: 2 }), false, 'a command that got through fails the case');
+});
+
+test('a direct case whose control cannot read the workspace fails; direct commands are refused for claude', async () => {
+  const blind = await evaluate({ executor: 'codex', prompt: 'direct', direct: ['false'], repo: { 'README.md': 'something else\n' } });
+  assert.deepEqual(blind, { ran: false, leaked: false, toolUses: 0, denials: 0, error: 'direct-control' });
+  assert.equal(matchesCanary(blind, {}), false);
+  await assert.rejects(() => Promise.resolve(evaluate({ prompt: 'direct', direct: ['false'] })), /codex sandbox only/);
+});
+
+test('a codex case runs on codex and counts its commands and file changes (D-138)', async () => {
+  const actual = await evaluate({ executor: 'codex', prompt: 'scenario: tool\nread {{file}}', access: 'write' });
+  assert.deepEqual(actual, { ran: true, leaked: false, toolUses: 2, denials: 0 });
+  assert.ok(matchesCanary(actual, { minToolUses: 1 }));
+  const stopped = await evaluate({ executor: 'codex', prompt: 'scenario: web-search\nread {{file}}' });
+  assert.deepEqual(stopped, { ran: true, leaked: false, toolUses: 0, denials: 0, error: 'profile' });
+  assert.equal(matchesCanary(stopped, {}), false, 'a profile violation fails the case');
+});
 
 test('a run that never sees the canary passes, and the scratch home and temp copy are removed', async () => {
   const actual = await evaluate({ prompt: 'scenario: ok\nread {{file}}, {{tmpfile}} on port {{port}}', tools: ['Read'] });

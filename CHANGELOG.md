@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Adattatore di `codex exec` in `packages/executors`, con lo stesso contratto di quello di `claude`: gateway, cartella preparata, ripresa, incognito, tetti; il core non lo usa ancora (task 1.16, D-138).
+- Eval dal vivo di `codex`: contratto (10 casi) e canarino (9 casi, quelli sui file come comandi diretti sotto `codex sandbox`) (task 1.16, D-138).
+- `pnpm eval:live --tag <tag>` lancia solo i casi con quell'etichetta, per esempio quelli di `codex` senza consumare quota di Claude (D-138).
+
+### Sicurezza
+
+- Profilo di confinamento di Codex: niente configurazione, istruzioni né skill dell'utente (lancio rifiutato se esiste un suo `AGENTS.md` globale), permessi su misura che chiudono home, `ARIANNA_HOME`, `/tmp` e la `.git` della cartella di lavoro, niente rete, venti funzioni spente, chiavi verificate con `--strict-config`; il run si ferma con una chiamata MCP o una ricerca web (task 1.16, D-138).
+
 ## [0.27.0] - 2026-10-07
 
 ### Aggiunto
