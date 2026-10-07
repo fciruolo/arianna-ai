@@ -5,7 +5,7 @@ import type { Activity, ActivityKind, Delta, EditPiece, EditTool, LiveEvent } fr
 export type ServerMessage =
   | { type: 'event'; event: LiveEvent }
   | ({ type: 'delta' } & Delta)
-  | ({ type: 'activity' } & Activity)
+  | ({ type: 'activity'; incognito?: true } & Activity)
   | ({ type: 'edit' } & EditPiece)
   /** A notification (I-1): a kind and a conversation, never text; the page decides whether to show it. */
   | { type: 'notice'; kind: NoticeKind; conversationId: string | null; trial?: true; helper?: true }
@@ -94,7 +94,8 @@ export function parseServerMessage(raw: string): ServerMessage | undefined {
       ) {
         return undefined;
       }
-      return { type: 'activity', conversationId, taskId, step, kind: known, detail };
+      // `incognito: true` from the core (D-136): the office leaves it out even when this page does not know the conversation.
+      return { type: 'activity', conversationId, taskId, step, kind: known, detail, ...(value.incognito === true ? { incognito: true as const } : {}) };
     }
     case 'edit':
       return parseEdit(value);

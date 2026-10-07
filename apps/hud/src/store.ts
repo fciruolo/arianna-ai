@@ -860,7 +860,7 @@ export function createChatStore() {
     }
     if (message.type === 'activity') {
       // The office never shows the work of an incognito conversation (D-136).
-      if (officeMayNote(message.conversationId, knownIncognito)) noteActivity(officeSignals.value, message.conversationId, message.kind);
+      if (message.incognito !== true && officeMayNote(message.conversationId, knownIncognito)) noteActivity(officeSignals.value, message.conversationId, message.kind);
       if (chat.value !== null) chat.value = applyActivity(chat.value, message);
       return;
     }

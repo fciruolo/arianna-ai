@@ -252,3 +252,10 @@ test('the frames of the feed about incognito are parsed, the malformed ones drop
   assert.equal(parseServerMessage(JSON.stringify({ type: 'conversation.incognito-closing', conversationId: ID, inSeconds: -5 })), undefined);
   assert.equal(parseServerMessage(JSON.stringify({ type: 'conversation.incognito-closing', conversationId: ID })), undefined);
 });
+
+test('an activity frame keeps the incognito sign of the core, and only `true`', () => {
+  const frame = { type: 'activity', conversationId: ID, taskId: 't', step: 1, kind: 'read', detail: 'kb/x.md' };
+  assert.equal((parseServerMessage(JSON.stringify({ ...frame, incognito: true })) as { incognito?: true } | undefined)?.incognito, true);
+  assert.equal('incognito' in (parseServerMessage(JSON.stringify(frame)) ?? {}), false);
+  assert.equal('incognito' in (parseServerMessage(JSON.stringify({ ...frame, incognito: 'yes' })) ?? {}), false);
+});
