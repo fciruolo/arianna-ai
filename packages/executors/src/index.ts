@@ -40,7 +40,7 @@ export {
   type CodexRun,
   type CodexStart,
 } from './codex/run.ts';
-export { CODEX_ACCESS, CODEX_DISABLED_FEATURES, CODEX_MODELS, codexArgs, codexEnv, codexFilesystem, codexPermissionArgs, userInstructionFiles, type CodexAccess, type CodexModel } from './codex/profile.ts';
+export { CODEX_ACCESS, CODEX_DISABLED_FEATURES, CODEX_MODELS, codexArgs, codexInFamily, codexEnv, codexFilesystem, codexPermissionArgs, userInstructionFiles, type CodexAccess, type CodexModel } from './codex/profile.ts';
 export { CODEX_FILE_CHANGE_KINDS, CodexStream, type CodexEvent, type CodexFileChangeKind, type CodexUsage } from './codex/stream.ts';
 export { localEndpoint, localEndpointUrl, LocalEndpointError, type LocalEndpoint } from './local/endpoint.ts';
 export { HttpBodyTooLarge, localRequestBytes, type HttpBytesResponse } from './local/http.ts';

@@ -1,5 +1,7 @@
 import { INCOGNITO_PATH } from './incognito.ts';
 import { agentName } from './italian.ts';
+import { MODEL_TEXT } from './labels.ts';
+import { executorOfModel } from './settings.ts';
 import type { CloudExecutorKind, ConversationAgent, ConversationMode } from './types.ts';
 
 /**
@@ -91,8 +93,20 @@ const SHORT: Record<CloudExecutorKind, string> = { claude: 'Claude', codex: 'Cod
  */
 export function cloudTargets(executors: readonly CloudExecutorKind[] | undefined, model: string | null): CloudExecutorKind[] {
   const known: CloudExecutorKind[] = executors === undefined || executors.length === 0 ? ['claude'] : [...executors];
-  const chosen: CloudExecutorKind | undefined = model === null ? undefined : model === 'codex' ? 'codex' : 'claude';
+  const chosen: CloudExecutorKind | undefined = model === null ? undefined : executorOfModel(model);
   return chosen !== undefined && known.includes(chosen) ? [chosen, ...known.filter((item) => item !== chosen)] : known;
+}
+
+/**
+ * Who answers a direct chat on the cloud, and with what (D-141, asked by the
+ * user: "se apro la singola chat del coder chi mi risponde?"): always the
+ * agent, never Arianna; the model chosen here, or the router at each message;
+ * and the model of its latest answer, when there is one.
+ */
+export function whoAnswers(agent: string, model: string | null, last: string | null): string {
+  const chosen = model === null ? 'il modello che il router sceglie a ogni messaggio' : (MODEL_TEXT[model] ?? model);
+  const latest = last === null ? '' : ` · ultima risposta: ${MODEL_TEXT[last] ?? last}`;
+  return `Risponde ${agentName(agent)}, con ${chosen}${latest}`;
 }
 
 /** "Claude (Anthropic)", or "Claude (Anthropic) o Codex (OpenAI)" while the router chooses. */

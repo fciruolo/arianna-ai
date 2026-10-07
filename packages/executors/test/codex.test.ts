@@ -77,6 +77,7 @@ const executor = (options: Partial<CodexExecutorOptions> = {}) =>
     readable: [],
     env: { ...process.env, HOME: USER_HOME, SOPS_AGE_KEY: 'fake-age-key', OPENAI_API_KEY: 'fake-api-key', CODEX_HOME: '/elsewhere', NODE_OPTIONS: '--inspect' },
     killGraceMs: 200,
+    modelName: () => 'gpt-6.1-sol',
     ...options,
   });
 
@@ -86,7 +87,7 @@ async function start(scenario: string, extra: Partial<CodexStart> = {}, options:
   const run = executor(options).start({
     brief: brief(`scenario: ${scenario}\nfake task`),
     workspace: prepared,
-    model: 'codex',
+    model: 'sol',
     access: 'write',
     onEvent: (event) => {
       events.push(event);
@@ -113,11 +114,11 @@ const overrides = (args: string[]) => args.flatMap((arg, index) => (args[index -
 
 describe('codex profile', () => {
   it('builds the confined arguments, with the prompt on stdin', () => {
-    const args = codexArgs({ model: 'codex', access: 'write', sandbox: SANDBOX });
+    const args = codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'write', sandbox: SANDBOX });
     assert.deepEqual(args.slice(0, 5), ['exec', '--json', '--strict-config', '--ignore-user-config', '--ignore-rules']);
     assert.equal(args.at(-1), '-');
     assert.equal(args[args.indexOf('--cd') + 1], '/w');
-    assert.ok(!args.includes('--model'), 'the binary picks its default model');
+    assert.equal(args[args.indexOf('--model') + 1], 'gpt-6.1-sol', 'always the exact name, never the binary\'s default (D-141)');
     assert.ok(!args.includes('--ephemeral'));
     for (const forbidden of ['--dangerously-bypass-approvals-and-sandbox', '--oss', '--dangerously-bypass-hook-trust', '--add-dir', '--skip-git-repo-check']) {
       assert.ok(!args.includes(forbidden), forbidden);
@@ -152,19 +153,26 @@ describe('codex profile', () => {
 
   it('refuses unknown models, a bad model name, a resume that is not a session id, and a resume of an unsaved session', () => {
     assert.throws(() => codexArgs({ model: 'gpt' as never, access: 'read', sandbox: SANDBOX }), /unknown model/);
-    for (const name of ['-c', '--model', 'a b', '']) assert.throws(() => codexArgs({ model: 'codex', modelName: name, access: 'read', sandbox: SANDBOX }), /model name/, name);
-    const named = codexArgs({ model: 'codex', modelName: 'gpt-5.5-codex', access: 'read', sandbox: SANDBOX });
-    assert.equal(named[named.indexOf('--model') + 1], 'gpt-5.5-codex');
-    assert.throws(() => codexArgs({ model: 'codex', access: 'read', resume: 'last', sandbox: SANDBOX }), /session id/);
-    assert.throws(() => codexArgs({ model: 'codex', access: 'read', resume: THREAD, persistSession: false, sandbox: SANDBOX }), /cannot resume/);
-    assert.throws(() => codexArgs({ model: 'codex', access: 'read', persistSession: 'no' as never, sandbox: SANDBOX }), /boolean/);
+    for (const name of ['-c', '--model', 'a b', '']) assert.throws(() => codexArgs({ model: 'sol', modelName: name, access: 'read', sandbox: SANDBOX }), /model name/, name);
+    const named = codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'read', sandbox: SANDBOX });
+    assert.equal(named[named.indexOf('--model') + 1], 'gpt-6.1-sol');
+    // D-141: always an exact name, and of the alias's family (the cheapest tier never runs the strongest model).
+    assert.throws(() => codexArgs({ model: 'sol', access: 'read', sandbox: SANDBOX }), /no exact model name/);
+    assert.throws(() => codexArgs({ model: 'luna', modelName: 'gpt-6-astra', access: 'read', sandbox: SANDBOX }), /not a luna model/);
+    assert.throws(() => codexArgs({ model: 'sol', modelName: 'gpt-6-solar', access: 'read', sandbox: SANDBOX }), /not a sol model/);
+    assert.throws(() => codexArgs({ model: 'luna', modelName: 'gpt-6-astra-luna', access: 'read', sandbox: SANDBOX }), /not a luna model/);
+    assert.throws(() => codexArgs({ model: 'sol', modelName: 'sol', access: 'read', sandbox: SANDBOX }), /not a sol model/);
+    assert.ok(codexArgs({ model: 'astra', modelName: 'gpt-6-astra', access: 'read', sandbox: SANDBOX }).includes('gpt-6-astra'));
+    assert.throws(() => codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'read', resume: 'last', sandbox: SANDBOX }), /session id/);
+    assert.throws(() => codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'read', resume: THREAD, persistSession: false, sandbox: SANDBOX }), /cannot resume/);
+    assert.throws(() => codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'read', persistSession: 'no' as never, sandbox: SANDBOX }), /boolean/);
   });
 
   it('resumes with `resume <id>` after the options, without --cd; ephemeral only when asked (D-136)', () => {
-    const args = codexArgs({ model: 'codex', access: 'write', resume: THREAD, sandbox: SANDBOX });
+    const args = codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'write', resume: THREAD, sandbox: SANDBOX });
     assert.deepEqual(args.slice(-3), ['resume', THREAD, '-']);
     assert.ok(!args.includes('--cd'));
-    assert.ok(codexArgs({ model: 'codex', access: 'write', persistSession: false, sandbox: SANDBOX }).includes('--ephemeral'));
+    assert.ok(codexArgs({ model: 'sol', modelName: 'gpt-6.1-sol', access: 'write', persistSession: false, sandbox: SANDBOX }).includes('--ephemeral'));
   });
 
   it('sandbox folders must be absolute, normalized, not the root, TOML-safe and listed once; something must be denied', () => {
@@ -259,7 +267,7 @@ describe('codex executor', () => {
     assert.equal(result.text, 'ok');
     assert.equal(result.sessionRef, THREAD);
     assert.equal(result.label, 'L1');
-    assert.equal(result.model, '');
+    assert.equal(result.model, 'gpt-6.1-sol');
     assert.deepEqual(
       events.map((event) => event.type),
       ['init', 'text', 'usage'],
@@ -272,11 +280,15 @@ describe('codex executor', () => {
   });
 
   it('asks for the exact model name at each launch, and refuses a bad one before starting (D-071)', async () => {
-    let name: string | undefined = 'gpt-5.5-codex';
+    let name: string | undefined = 'gpt-6.1-sol';
     const options = { modelName: () => name };
     const { run, path } = await start('ok', {}, options);
-    assert.equal((await run.result).model, 'gpt-5.5-codex');
-    assert.equal(received(path).argv[received(path).argv.indexOf('--model') + 1], 'gpt-5.5-codex');
+    assert.equal((await run.result).model, 'gpt-6.1-sol');
+    assert.equal(received(path).argv[received(path).argv.indexOf('--model') + 1], 'gpt-6.1-sol');
+    // No name at all: refused before starting, never the binary's default under an alias (D-141).
+    name = undefined;
+    const unnamed = await start('ok', {}, options);
+    assert.equal((await failure(unnamed.run.result)).kind, 'invalid-options');
     name = '--dangerously-bypass-approvals-and-sandbox';
     const bad = await start('ok', {}, options);
     assert.equal((await failure(bad.run.result)).kind, 'invalid-options');
@@ -285,14 +297,14 @@ describe('codex executor', () => {
 
   it('resumes a session in the same workspace, and refuses to resume one that was not saved (D-136)', async () => {
     const { prepared, path } = await workspace();
-    const resumed = await executor().resume({ brief: brief('scenario: ok'), workspace: prepared, model: 'codex', access: 'write', sessionRef: THREAD }).result;
+    const resumed = await executor().resume({ brief: brief('scenario: ok'), workspace: prepared, model: 'sol', access: 'write', sessionRef: THREAD }).result;
     assert.equal(resumed.text, 'resumed');
     assert.deepEqual(received(path).argv.slice(-3), ['resume', THREAD, '-']);
     const decision = brief('scenario: ok');
-    const refused = executor().resume({ brief: decision, workspace: prepared, model: 'codex', access: 'write', sessionRef: THREAD, persistSession: false });
+    const refused = executor().resume({ brief: decision, workspace: prepared, model: 'sol', access: 'write', sessionRef: THREAD, persistSession: false });
     assert.equal((await failure(refused.result)).kind, 'invalid-options');
     // Still unspent: the refusal came first.
-    const ephemeral = await executor().start({ brief: decision, workspace: prepared, model: 'codex', access: 'write', persistSession: false }).result;
+    const ephemeral = await executor().start({ brief: decision, workspace: prepared, model: 'sol', access: 'write', persistSession: false }).result;
     assert.equal(ephemeral.text, 'ok');
     assert.ok(received(path).argv.includes('--ephemeral'));
   });
@@ -336,7 +348,7 @@ describe('codex executor', () => {
       assert.deepEqual([error.kind, error.violations], ['profile', [violation]], scenario);
     }
     const { prepared } = await workspace();
-    const other = executor().resume({ brief: brief('scenario: new-session'), workspace: prepared, model: 'codex', access: 'read', sessionRef: THREAD });
+    const other = executor().resume({ brief: brief('scenario: new-session'), workspace: prepared, model: 'sol', access: 'read', sessionRef: THREAD });
     assert.deepEqual((await failure(other.result)).violations, ['session']);
   });
 
@@ -380,7 +392,7 @@ describe('codex executor', () => {
 
   it('launches nothing when not enabled, without a gateway allow towards codex, or without a prepared workspace', async () => {
     const { prepared, path } = await workspace();
-    const base = { workspace: prepared, model: 'codex' as const, access: 'read' as const };
+    const base = { workspace: prepared, model: 'sol' as const, access: 'read' as const };
     const kind = async (promise: Promise<unknown>) => (await failure(promise)).kind;
     assert.equal(await kind(executor({ enabled: [] }).start({ ...base, brief: brief('scenario: ok') }).result), 'not-enabled');
     assert.equal(await kind(executor({ enabled: ['claude'] }).start({ ...base, brief: brief('scenario: ok') }).result), 'not-enabled');
@@ -401,14 +413,14 @@ describe('codex executor', () => {
     // The project folder itself, opened by openRepository (D-056), is accepted like a prepared copy.
     const opened = await openRepository({ home: HOME, project: { name: 'site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } });
     assert.ok(opened.path !== undefined);
-    await executor().check({ workspace: opened, model: 'codex', access: 'read' });
-    await assert.rejects(executor().check({ workspace: { ...opened }, model: 'codex', access: 'read' }), (error: unknown) => (error as { kind?: string }).kind === 'workspace');
+    await executor().check({ workspace: opened, model: 'sol', access: 'read' });
+    await assert.rejects(executor().check({ workspace: { ...opened }, model: 'sol', access: 'read' }), (error: unknown) => (error as { kind?: string }).kind === 'workspace');
   });
 
   it('a brief is spent by its launch, and an L0 brief gives an L1 answer', async () => {
     const { prepared } = await workspace();
     const decision = brief('scenario: ok', 'L0');
-    const base = { brief: decision, workspace: prepared, model: 'codex' as const, access: 'read' as const };
+    const base = { brief: decision, workspace: prepared, model: 'sol' as const, access: 'read' as const };
     assert.equal((await executor().start(base).result).label, 'L1');
     assert.equal((await failure(executor().start(base).result)).kind, 'not-cleared');
   });
@@ -416,7 +428,7 @@ describe('codex executor', () => {
   it('refuses bad options before spending the brief, and a replaced or removed workspace', async () => {
     const { prepared, path } = await workspace();
     const decision = brief('scenario: ok');
-    const base = { brief: decision, workspace: prepared, model: 'codex' as const };
+    const base = { brief: decision, workspace: prepared, model: 'sol' as const };
     assert.equal((await failure(executor().start({ ...base, access: 'all' as never }).result)).kind, 'invalid-options');
     assert.equal((await failure(executor().start({ ...base, access: 'read', limits: { maxTurns: 0 } }).result)).kind, 'invalid-options');
     assert.equal((await failure(executor().resume({ ...base, access: 'read', sessionRef: 'last' }).result)).kind, 'invalid-options');
@@ -435,11 +447,11 @@ describe('codex executor', () => {
       const { prepared, path } = await workspace();
       const decision = brief('scenario: ok');
       const instructed = executor({ env: { ...process.env, HOME: home } });
-      const refused = await failure(instructed.start({ brief: decision, workspace: prepared, model: 'codex', access: 'read' }).result);
+      const refused = await failure(instructed.start({ brief: decision, workspace: prepared, model: 'sol', access: 'read' }).result);
       assert.deepEqual([refused.kind, refused.violations], ['profile', ['user-instructions']], name);
       assert.throws(() => readFileSync(join(path, '.fake-codex.json')), 'nothing launched');
       rmSync(join(home, '.codex', name));
-      assert.equal((await instructed.start({ brief: decision, workspace: prepared, model: 'codex', access: 'read' }).result).text, 'ok', 'removed: the same brief runs');
+      assert.equal((await instructed.start({ brief: decision, workspace: prepared, model: 'sol', access: 'read' }).result).text, 'ok', 'removed: the same brief runs');
     }
   });
 

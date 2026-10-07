@@ -1,5 +1,5 @@
 import { CHARACTER_ID } from './characters.ts';
-import { CLOUD_MODELS, type CloudModel } from './cloud.ts';
+import { CLOUD_MODELS, LEGACY_CODEX_ALIAS, LEGACY_CODEX_AS, type CloudModel } from './cloud.ts';
 import { asOneOf, asTable, ConfigError, onlyKeys } from './validate.ts';
 
 /** The settings of one agent in `[agents.<id>]` (D-116). */
@@ -49,7 +49,8 @@ export function parseAgents(value: unknown, legacy?: CloudModel): AgentsSettings
         continue;
       }
       if (agent === ORCHESTRATOR_AGENT) throw new ConfigError(`${where}.model: Arianna's model is the orchestrator of [roles], local only`);
-      agents[agent] = { model: asOneOf(settings.model, CLOUD_MODELS, `${where}.model`) };
+      // `codex` from before D-141 is read as sol; the page writes the new alias at the next save.
+      agents[agent] = { model: settings.model === LEGACY_CODEX_ALIAS ? LEGACY_CODEX_AS : asOneOf(settings.model, CLOUD_MODELS, `${where}.model`) };
     }
   }
   if (legacy !== undefined && agents[LEGACY_DEFAULT_AGENT]?.model === undefined) {

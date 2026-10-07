@@ -25,7 +25,7 @@
 | Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087) | Rileggerle in `DECISIONS.md`: sono applicate ma da confermare | Prossima sessione con l'utente |
 | Incognito: tetto di durata con la pagina aperta | Oggi un'incognita resta aperta finché una pagina la tiene aperta, anche nascosta (D-136): proposta di Claude, nessun tetto | Prima di unire D-136 |
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
-| Modelli: schede cloud da rileggere | Frasi tradotte, prezzi API e nomi dei modelli di Codex in `config/cloud-models.catalog.yaml` (D-137, I-3 M1) | Prima di unire I-3 |
+| Modelli: schede cloud da rileggere | Frasi tradotte e prezzi API in `config/cloud-models.catalog.yaml` (D-137, I-3 M1); i nomi dei tre modelli di Codex sono verificati dal vivo il 2026-10-07 (D-141) | Prima di unire I-3 |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -644,7 +644,7 @@ Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (rig
 
 ### oq-modelli-schede-cloud-da-rileggere
 
-- Contesto: La futura pagina Modelli mostra una scheda per Sonnet, Opus, Fable e Codex con punti di forza, contesto e prezzi presi dalle pagine dei fornitori il 7 ottobre. Le frasi sono traduzioni di Claude (per esempio "Il più lento" per "Slower"), i prezzi sono quelli delle API e non la quota dell'abbonamento, e i nomi dei modelli di Codex vengono da una pagina di OpenAI.
+- Contesto: La futura pagina Modelli mostra una scheda per Sonnet, Opus, Fable e Codex con punti di forza, contesto e prezzi presi dalle pagine dei fornitori il 7 ottobre. Le frasi sono traduzioni di Claude (per esempio "Il più lento" per "Slower"), i prezzi sono quelli delle API e non la quota dell'abbonamento, e i nomi dei tre modelli di Codex (Luna, Sol, Astra) vengono da una pagina di OpenAI, ma sono stati verificati con un run dal vivo il 7 ottobre (D-141).
 - Opzione consigliata: Le rileggo prima dell'unione — leggi `config/cloud-models.catalog.yaml` e correggi o approvi; poi la pagina le mostra.
 - Opzione: Togliere i prezzi API — restano frasi e contesto; niente cifre che potrebbero confondersi con la quota.
 - Opzione: Vanno bene così — si uniscono come sono.

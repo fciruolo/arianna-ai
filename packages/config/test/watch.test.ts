@@ -90,7 +90,7 @@ test('every section but paths, database and server applies live; an invalid file
     assert.deepEqual(watcher.current().cloud.executors, ['claude']);
 
     // The cloud models (D-071).
-    const models = { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true, name: 'claude-fable-5-1' }, codex: { enabled: true } };
+    const models = { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true, name: 'claude-fable-5-1' }, luna: { enabled: true }, sol: { enabled: true }, astra: { enabled: true } };
     write({ ...SECOND, cloud: { executors: ['claude'], models } });
     assert.deepEqual(await next(seen), { applied: ['cloud.models'], restart: [] });
     assert.deepEqual(watcher.current().cloud, { executors: ['claude'], models });

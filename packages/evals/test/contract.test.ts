@@ -8,7 +8,7 @@ import { after, test } from 'node:test';
 import { resolveHome } from '@arianna/config';
 import { createClaudeExecutor, createCodexExecutor } from '@arianna/executors';
 
-import { createContractEvaluator, matchesContract } from '../src/contract.ts';
+import { createContractEvaluator, evalCodexName, matchesContract } from '../src/contract.ts';
 
 const ROOT = resolveHome({});
 const DATA = join(ROOT, 'data', 'test-tmp', `contract-${randomUUID()}`);
@@ -41,7 +41,7 @@ test('codex cases run on the codex executor, with the access of each step (D-138
   const both = createContractEvaluator(
     {
       claude: () => assert.fail('a codex case must not reach claude'),
-      codex: () => createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [FAKE_CODEX] }, home: ROOT, readable: [], killGraceMs: 200 }),
+      codex: () => createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [FAKE_CODEX] }, home: ROOT, readable: [], killGraceMs: 200, modelName: evalCodexName(ROOT) }),
     },
     () => DATA,
   );

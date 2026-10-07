@@ -40,7 +40,7 @@ function publicKey(): string {
 const [PUB, NEW_PUB] = [publicKey(), publicKey()];
 
 /** What the cards in agents/ allow (D-116): Arianna none, the Coder every cloud model. */
-const AGENT_MODELS = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'codex'] } as const;
+const AGENT_MODELS = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] } as const;
 
 const START: Settings = {
   ...DEFAULT_SETTINGS,
@@ -97,9 +97,9 @@ describe('read', () => {
     assert.deepEqual(view.values?.executors, ['claude']);
     assert.deepEqual(view.values.telegram, { chats: [123] });
     assert.deepEqual(view.values.voice?.push, { publicKey: PUB, subject: 'mailto:a@example.org' });
-    assert.deepEqual(view.values.cloudModels, { models: { sonnet: true, opus: true, fable: true, codex: true } });
+    assert.deepEqual(view.values.cloudModels, { models: { sonnet: true, opus: true, fable: true, luna: true, sol: true, astra: true } });
     assert.deepEqual(view.values.agents, {});
-    assert.deepEqual(view.agentModels, { arianna: [], coder: ['sonnet', 'opus', 'fable', 'codex'] });
+    assert.deepEqual(view.agentModels, { arianna: [], coder: ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] });
     const shown = JSON.stringify(view.values);
     for (const hidden of ['vault://', 'database', '54329', '7420']) assert.ok(!shown.includes(hidden), hidden);
     assert.deepEqual(view.restartOnly, ['paths', 'database', 'server']);
@@ -162,7 +162,7 @@ describe('update (ordinary)', () => {
     const voice = { ...structuredClone(DEFAULT_VOICE), port: 7431, push: { publicKey: NEW_PUB, subject: 'mailto:b@example.org' } };
     page.update({
       fingerprint: fingerprint(),
-      values: { cloudModels: { models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, codex: true } }, characters: { arianna: 'originali/arianna' }, voice },
+      values: { cloudModels: { models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, luna: true, sol: true, astra: true } }, characters: { arianna: 'originali/arianna' }, voice },
     });
     assert.deepEqual(changes, [{ sections: ['cloudModels', 'characters', 'voice'], privacy: false }]);
     const config = parseConfig(text(), home, loadCatalog(home), userHome);
@@ -195,13 +195,13 @@ describe('update (ordinary)', () => {
     narrow.update({ fingerprint: fingerprint(), values: { agents: { arianna: { model: null }, coder: { model: 'fable' } }, characters: { coder: 'originali/coder' } } });
     assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { ghost: { model: 'opus' }, coder: { model: 'fable' } });
     // Changed to another model the card does not allow: refused.
-    assert.throws(() => narrow.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'codex' } } } }), refused('invalid', /agents\.coder\.model must be one of sonnet, opus/));
+    assert.throws(() => narrow.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'sol' } } } }), refused('invalid', /agents\.coder\.model must be one of sonnet, opus/));
     narrow.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'sonnet' } } } });
     assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { ghost: { model: 'opus' }, coder: { model: 'sonnet' } });
   });
 
   it('a file with default of [cloud.models] keeps it as the Coder model through any save', () => {
-    writeFileSync(file, text().replace(/^codex = true$/m, 'codex = true\ndefault = "opus"'));
+    writeFileSync(file, text().replace(/^astra = true$/m, 'astra = true\ndefault = "opus"'));
     page.update({ fingerprint: fingerprint(), values: { characters: { coder: 'originali/coder' } } });
     assert.deepEqual(changes, [{ sections: ['characters'], privacy: false }], 'the new form is not a change');
     assert.doesNotMatch(text(), /^default =/m);

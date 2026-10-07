@@ -9,13 +9,14 @@
 # from executor.rate_limit, I-3 stage M5).
 #
 # Fields of an entry:
-#   alias        sonnet | opus | fable | codex
+#   alias        sonnet | opus | fable | luna | sol | astra
 #   provider     who makes the models
 #   family       the name of the line
 #   executor     claude | codex (fixed by the alias)
 #   names        exact names `--model` accepts, with context and max output
-#                when the source states them; for Claude, of the family of
-#                the alias, as in [cloud.models]
+#                when the source states them; of the family of the alias,
+#                as in [cloud.models]. For Codex the first name is the one
+#                passed to --model when [cloud.models] gives none (D-141)
 #   strengths    1-4 short lines, each with its source
 #   api_price    dollars per million tokens on the API (input, output): not
 #                the subscription, only how heavy a model is next to another
@@ -82,18 +83,30 @@ models:
         source: anthropic-models
     api_price: { input: 10, output: 50, source: anthropic-models }
     notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
-  - alias: codex
+  - alias: luna
     provider: OpenAI
-    family: Modelli di Codex (accesso ChatGPT)
+    family: Codex Luna (accesso ChatGPT)
+    executor: codex
+    names:
+      - name: gpt-6-luna
+        description: Il più efficiente, per compiti mirati e numerosi (riassunti, estrazione, coding mirato)
+        source: codex-models
+    notes: Nome verificato con un run dal vivo il 2026-10-07 (D-141). La pagina non dice il contesto. Il router non lo sceglie mai da solo; si sceglie a mano nella conversazione.
+  - alias: sol
+    provider: OpenAI
+    family: Codex Sol (accesso ChatGPT)
     executor: codex
     names:
       - name: gpt-6.1-sol
         description: Prestazioni vicine ad Astra per il lavoro complesso, a un costo minore
         source: codex-models
-      - name: gpt-6-luna
-        description: Il più efficiente, per compiti mirati e numerosi (riassunti, estrazione, coding mirato)
-        source: codex-models
+    notes: Nome verificato con un run dal vivo il 2026-10-07 (D-141). La pagina non dice il contesto. Nel router sta accanto a Sonnet.
+  - alias: astra
+    provider: OpenAI
+    family: Codex Astra (accesso ChatGPT)
+    executor: codex
+    names:
       - name: gpt-6-astra
         description: Il più capace, per lavoro complesso su codice, app e ricerca
         source: codex-models
-    notes: Senza un nome esatto il binario usa un modello consigliato (pagina dei modelli di Codex). La pagina non dice il contesto. Non collegato finché manca l'adattatore (task 1.16).
+    notes: Nome verificato con un run dal vivo il 2026-10-07 (D-141). La pagina non dice il contesto. Nel router sta accanto a Opus.

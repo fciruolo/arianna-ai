@@ -197,7 +197,9 @@ export const CLOUD_NAME: Record<string, string> = {
   sonnet: 'Claude Sonnet',
   opus: 'Claude Opus',
   fable: 'Claude Fable',
-  codex: 'Codex (ChatGPT)',
+  luna: 'Codex Luna',
+  sol: 'Codex Sol',
+  astra: 'Codex Astra',
 };
 
 /** "Qwen (Alibaba); conversione MLX di mlx-community" → "Qwen": who makes it, without the converter. */
@@ -235,7 +237,7 @@ export function entryOf(view: ModelView): ModelEntry {
     name: CLOUD_NAME[view.alias] ?? view.alias,
     sub: `${provider} · cloud · alias ${view.alias}`,
     provider,
-    badge: view.alias === 'codex' ? 'Cx' : badgeOf(view.alias),
+    badge: badgeOf(view.alias),
     state: CLOUD_STATE_TEXT[view.state],
     roles: [],
     agents: view.agents,

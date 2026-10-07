@@ -47,17 +47,20 @@ test('the router candidates follow the roles and the enabled cloud executors', (
   ]);
 });
 
-test('codex is a candidate when enabled and its adapter runs here (D-140)', () => {
-  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n'), ['codex/codex']);
-  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable', 'codex/codex']);
+test('codex is a candidate when enabled and its adapter runs here, with its three models (D-140, D-141)', () => {
+  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n'), ['codex/luna', 'codex/sol', 'codex/astra']);
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable', ...['codex/luna', 'codex/sol', 'codex/astra']]);
+  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n\n[cloud.models]\nastra = false\n'), ['codex/luna', 'codex/sol'], 'one model off');
+  // The old single alias reads as sol (D-141).
+  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n\n[cloud.models]\ncodex = false\n'), [], 'the old codex = false turns the three off');
   assert.deepEqual(keys('[cloud]\nexecutors = ["claude"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable'], 'not enabled');
-  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n\n[cloud.models]\ncodex = false\n'), ['claude/sonnet', 'claude/opus', 'claude/fable'], 'turned off');
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n\n[cloud.models]\nluna = false\nsol = false\nastra = false\n'), ['claude/sonnet', 'claude/opus', 'claude/fable'], 'turned off');
 });
 
 test('an executor whose adapter does not run here is never a candidate, enabled or not (D-140)', () => {
   const both = '[cloud]\nexecutors = ["claude", "codex"]\n';
   assert.deepEqual(keys(both, { claude: true, codex: false }), ['claude/sonnet', 'claude/opus', 'claude/fable']);
-  assert.deepEqual(keys(both, { claude: false, codex: true }), ['codex/codex']);
+  assert.deepEqual(keys(both, { claude: false, codex: true }), ['codex/luna', 'codex/sol', 'codex/astra']);
   assert.deepEqual(keys(both, { claude: false, codex: false }), []);
 });
 
@@ -83,7 +86,7 @@ const card = (id: string): AgentCard => {
 };
 
 test("an agent's models are the cloud executors of its card, none for Arianna (D-116)", () => {
-  assert.deepEqual(agentModels('coder', card('coder')), ['sonnet', 'opus', 'fable', 'codex']);
+  assert.deepEqual(agentModels('coder', card('coder')), ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra']);
   assert.deepEqual(agentModels('arianna', card('arianna')), [], 'local only: her model is the orchestrator of [roles]');
   assert.deepEqual(agentModels('arianna', card('coder')), [], 'by id, whatever the card says');
   assert.deepEqual(agentModels('writer', { ...card('coder'), executors: ['local'] }), [], 'a card without the cloud');
@@ -99,7 +102,7 @@ test('a new conversation with an agent starts with its model only while the card
   assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n'), 'coder', coder, BOTH), undefined, 'no model: the router chooses');
   assert.equal(agentDefaultModel(config('[cloud]\nexecutors = []\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder, BOTH), undefined, 'claude is off');
   assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nopus = false\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder, BOTH), undefined, 'opus is off');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder, BOTH), 'codex', 'codex runs here (D-140)');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder, BOTH), 'sol', 'the old codex reads as sol (D-141)');
   assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder, { claude: true, codex: false }), undefined, 'its adapter is refused');
   assert.equal(agentDefaultModel(config(opus), 'coder', { ...coder, executors: ['local'] }, BOTH), undefined, 'a card without the cloud');
   assert.equal(agentDefaultModel(config(opus), 'coder', undefined, BOTH), undefined, 'no card');

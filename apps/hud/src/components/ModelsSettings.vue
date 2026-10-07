@@ -670,7 +670,7 @@ onBeforeUnmount(() => {
               :list="`names-${current.view.alias}`"
               class="field min-w-[180px] flex-1 px-2 py-1 font-mono text-xs"
               :disabled="!currentRow.enabled"
-              :placeholder="current.view.alias === 'codex' ? 'il predefinito del binario' : 'il più recente'"
+              :placeholder="current.view.executor === 'codex' ? 'il primo della scheda' : 'il più recente'"
               :aria-label="`Nome esatto di ${current.view.alias}`"
             />
             <datalist :id="`names-${current.view.alias}`">

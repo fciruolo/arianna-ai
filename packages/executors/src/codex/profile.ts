@@ -8,7 +8,12 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { MODEL_NAME, SESSION_REF } from '../claude/profile.ts';
 
 /** The one alias of the router for ChatGPT's coding model (D-137). */
-export const CODEX_MODELS = ['codex'] as const;
+/**
+ * The router aliases of Codex's models (D-141), like sonnet, opus and fable
+ * for Claude: the binary knows only exact names (`gpt-6.1-sol`), so every
+ * launch gets one, from `[cloud.models]` or the cloud catalog.
+ */
+export const CODEX_MODELS = ['luna', 'sol', 'astra'] as const;
 export type CodexModel = (typeof CODEX_MODELS)[number];
 
 /**
@@ -65,7 +70,7 @@ export interface CodexSandboxPaths {
 
 export interface CodexProfileOptions {
   model: CodexModel;
-  /** Passed to `--model` (`[cloud.models]`, D-071); without it the binary picks its default model. */
+  /** Passed to `--model` (`[cloud.models]` or the cloud catalog, D-071, D-141): required, and of the alias's family. */
   modelName?: string;
   access: CodexAccess;
   resume?: string;
@@ -155,13 +160,26 @@ export function codexFilesystem(paths: CodexSandboxPaths, access: CodexAccess): 
  *   with `resume`.
  * - Never `--dangerously-bypass-approvals-and-sandbox`, `--oss` nor an API key.
  */
+/**
+ * A Codex name stays in the family of its alias (`sol`, `gpt-6.1-sol`): the
+ * router and the records see the alias, so `luna = "gpt-6-astra"` would run
+ * the strongest model on the cheapest tier. Same rule as inFamily of
+ * @arianna/config.
+ */
+export function codexInFamily(model: CodexModel, name: string): boolean {
+  return new RegExp(`^gpt-[0-9][0-9.]*-${model}$`).test(name);
+}
+
 export function codexArgs(options: CodexProfileOptions): string[] {
   if (!(CODEX_MODELS as readonly string[]).includes(options.model)) {
     throw new TypeError(`codex: unknown model ${JSON.stringify(options.model)}`);
   }
-  if (options.modelName !== undefined && (typeof options.modelName !== 'string' || !MODEL_NAME.test(options.modelName))) {
+  // Without an exact name the binary would run its default model under any alias: the records would lie (D-141).
+  if (options.modelName === undefined) throw new TypeError(`codex: no exact model name for ${options.model}`);
+  if (typeof options.modelName !== 'string' || !MODEL_NAME.test(options.modelName)) {
     throw new TypeError('codex: the model name is not a model name');
   }
+  if (!codexInFamily(options.model, options.modelName)) throw new TypeError(`codex: ${options.modelName} is not a ${options.model} model`);
   const persist: unknown = options.persistSession === undefined ? true : options.persistSession;
   // Types do not hold at runtime: a value that is not a boolean must not read as "saved".
   if (typeof persist !== 'boolean') throw new TypeError('codex: persistSession must be a boolean');
@@ -174,7 +192,7 @@ export function codexArgs(options: CodexProfileOptions): string[] {
   if (!persist) args.push('--ephemeral');
   // `exec resume` takes neither: the working directory is the process's own.
   if (options.resume === undefined) args.push('--color', 'never', '--cd', options.sandbox.workspace);
-  if (options.modelName !== undefined) args.push('--model', options.modelName);
+  args.push('--model', options.modelName);
   args.push(
     ...permissions,
     '-c',

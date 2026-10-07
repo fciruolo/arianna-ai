@@ -116,9 +116,10 @@ type Ladder = readonly (readonly ModelAlias[])[];
 
 const LOCAL_SMALL_FIRST: Ladder = [['local-small'], ['local-large']];
 const LOCAL_LARGE: Ladder = [['local-large']];
-const CLOUD_CODING: Ladder = [['sonnet'], ['opus', 'codex'], ['fable']];
+// Claude and Codex side by side at each tier (D-141): with one out of quota, the other model of the tier.
+const CLOUD_CODING: Ladder = [['sonnet', 'sol'], ['opus', 'astra'], ['fable']];
 // A second opinion comes best from a different family of models.
-const CLOUD_REVIEW: Ladder = [['codex', 'sonnet'], ['opus'], ['fable']];
+const CLOUD_REVIEW: Ladder = [['sol', 'sonnet'], ['astra', 'opus'], ['fable']];
 
 /** First tier for each difficulty, clipped to the ladder. */
 const START_TIER: Record<Difficulty, number> = { trivial: 0, normal: 0, hard: 1, critical: 2 };
@@ -372,7 +373,17 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
     // `not-chosen` (above the starting tier) is the ladder's exclusion, not a rule's.
     const excluded = preferred === undefined ? undefined : outcomes.get(preferred);
     if (preferred !== undefined && (excluded === undefined || excluded === 'not-chosen')) return choose(preferred, ' (chosen by the user)');
-    notes.push(preferred === undefined ? `preferred ${step.preferredModel} not installed` : `preferred ${step.preferredModel} excluded: ${excluded ?? 'not-chosen'}`);
+    // A cloud model on no ladder (Luna, D-141) runs only when the user picks it, with every other rule held:
+    // a cloud step, privacy, the agent's executors, the budget, and no failed attempt (it sits below every
+    // tier, so after a failure the step escalates instead).
+    const offLadder = preferred !== undefined && excluded === 'not-for-step' && cloudLadder !== undefined && ladder === cloudLadder && isCloudExecutor(preferred.executor);
+    if (offLadder) {
+      const why = !privacyOk(preferred) ? 'privacy' : !agentOk(preferred) ? 'agent' : (blocksOf(preferred)[0]?.cause ?? (attempts.length > 0 ? 'escalation' : undefined));
+      if (why === undefined) return choose(preferred, ' (chosen by the user, on no ladder)');
+      notes.push(`preferred ${step.preferredModel} excluded: ${why}`);
+    } else {
+      notes.push(preferred === undefined ? `preferred ${step.preferredModel} not installed` : `preferred ${step.preferredModel} excluded: ${excluded ?? 'not-chosen'}`);
+    }
   }
 
   // From the starting tier down to the floor: a model that is out of budget or

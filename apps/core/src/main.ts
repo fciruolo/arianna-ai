@@ -6,11 +6,13 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { AGENTS_DIR, loadAgents } from '@arianna/agents';
 import {
+  catalogModelName,
   CLOUD_MODELS,
   cloudModelName,
   DEFAULT_VOICE,
   enabledCloudModels,
   loadCatalog,
+  loadCloudCatalog,
   loadConfig,
   loadLabelRules,
   userHomeOf,
@@ -311,10 +313,12 @@ try {
 // D-140 (D-111 tappa C): Codex next to Claude, with its own profile (D-138); the same rules apply.
 let codex: CodexExecutor | undefined;
 try {
+  // The binary knows no alias (D-141): the exact name of [cloud.models], else the first of the cloud catalog.
+  const catalog = loadCloudCatalog(config.home);
   codex = createCodexExecutor({
     enabled: () => settings.current().cloud.executors,
     home: config.home,
-    modelName: (model) => settings.current().cloud.models[model].name,
+    modelName: (model) => settings.current().cloud.models[model].name ?? catalogModelName(catalog, model),
   });
 } catch (error) {
   report(error);
