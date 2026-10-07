@@ -512,23 +512,17 @@ export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?
 }
 
 /**
- * The cloud step: the plan is `cloud`. A run that saves no session runs
- * `claude` with `--no-session-persistence` (D-136): nothing is resumed, and
- * the direct chat sends its latest exchanges at every message. Every run of
- * a task of an incognito conversation is one, resumed ones included, whatever
- * `persist` asks; `persist` false asks it elsewhere.
+ * The cloud step: the plan is `cloud`. Every run of a task of an incognito
+ * conversation, resumed ones included, runs `claude` with
+ * `--no-session-persistence` (D-136): its session is not saved, so it is
+ * never resumed. An incognito conversation has no direct chat (migration
+ * 0031), so the direct chat always continues its saved session.
  */
-export async function runDelegation(
-  env: DelegateEnv,
-  ctx: StepContext,
-  plan: Extract<DelegationPlan, { kind: 'cloud' }>,
-  persist = true,
-): Promise<StepOutcome> {
+export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'cloud' }>): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
   const { delegation } = plan;
   const { sql } = env;
-  const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
-  const persistSession = persist && !incognito;
+  const persistSession = !(task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId)));
   const claude = env.claude;
   if (claude === undefined) throw new Error('claude is not available');
   const failed = async (result: string): Promise<StepOutcome> => {
@@ -572,10 +566,7 @@ export async function runDelegation(
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];
   // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
-  // A session that was not saved (D-136) is never continued: its exchanges travel in the brief instead.
-  const session = persistSession && direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
-  const unsaved = !persistSession && direct && task.conversationId !== null ? await directChatHistory(sql, task.conversationId, delegation) : [];
-  const earlier = unsaved.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...unsaved];
+  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
   const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined) => runClaudeStep(sql, claude, ctx, {
@@ -609,7 +600,7 @@ export async function runDelegation(
       }
     },
   });
-  let result = await attempt(session === undefined ? [...opening, ...earlier, message] : [message], session);
+  let result = await attempt(session === undefined ? [...opening, message] : [message], session);
   // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
   if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
     const history = await directChatHistory(sql, task.conversationId, delegation);

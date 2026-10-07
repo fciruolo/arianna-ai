@@ -166,6 +166,27 @@ test('canary: after purge_incognito no text or jsonb column of the schema holds 
   // A purged incognito never changes again, and its guards are on.
   await assert.rejects(sql`UPDATE conversations SET effective_label = 'L1' WHERE id = ${id}`, /never changes/);
   await assert.rejects(owner`INSERT INTO messages (conversation_id, role, label, body) VALUES (${id}, 'assistant', 'L1', 'tardi')`, /was deleted/);
+  // A late step (migration 0032): its delegation, its turn, its message are refused, and the canary stays gone.
+  await assert.rejects(
+    sql`INSERT INTO task_delegations (task_id, step, agent, brief, label) VALUES (${taskId}, 3, 'coder', ${`tardi ${canary}`}, 'L1')`,
+    /was deleted/,
+  );
+  await assert.rejects(
+    owner`INSERT INTO task_turns (task_id, step, run_id, label, answer, result)
+      VALUES (${taskId}, 3, ${runId}, 'L1', ${owner.json({ action: 'reply', text: canary })}, ${`tardi ${canary}`})`,
+    /was deleted/,
+  );
+  await assert.rejects(
+    sql`INSERT INTO messages (conversation_id, role, label, body, task_id) VALUES (${id}, 'assistant', 'L1', ${`tardi ${canary}`}, ${taskId})`,
+    /was deleted/,
+  );
+  assert.deepEqual(await canaryPlaces(owner, schema, canary), []);
+  // The task of a live conversation still takes its delegation and its update.
+  const [live] = await sql<{ id: string }[]>`INSERT INTO conversations (mode, clearance) VALUES ('work', 'L1') RETURNING id::text`;
+  const liveTask = await task(live?.id ?? '', 'Domanda', 'L1');
+  const [ok] = await sql<{ id: string }[]>`
+    INSERT INTO task_delegations (task_id, step, agent, brief, label) VALUES (${liveTask}, 1, 'coder', 'brief', 'L1') RETURNING id::text`;
+  await sql`UPDATE task_delegations SET status = 'running' WHERE id = ${ok?.id ?? ''}`;
   const [setting] = await sql<{ flag: string | null }[]>`SELECT current_setting('arianna.purge', true) AS flag`;
   assert.ok(setting?.flag === null || setting?.flag === '');
 });

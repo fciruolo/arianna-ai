@@ -1,6 +1,7 @@
 import type { OutgoingRules } from '@arianna/config';
 
 import type { Queryable, Sql } from '../db/client.ts';
+import { ChatError } from '../conversations.ts';
 import { appendEvent } from '../events.ts';
 import { loadTask } from '../tasks.ts';
 import { CALL_COLUMNS, loadCall, writeNote, type Call } from './calls.ts';
@@ -201,9 +202,11 @@ export async function scheduleCall(sql: Sql, conversationId: string, at: Date, n
     throw new ScheduleError('the time must be within the next seven days');
   }
   return sql.begin(async (tx) => {
-    const [conversation] = await tx<{ archived: boolean }[]>`
-      SELECT archived_at IS NOT NULL AS archived FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL AND origin = 'user'`;
+    const [conversation] = await tx<{ archived: boolean; incognito: boolean }[]>`
+      SELECT archived_at IS NOT NULL AS archived, incognito FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL AND origin = 'user'`;
     if (conversation === undefined) throw new ScheduleError('no such conversation of the user');
+    // An incognito conversation has no calls (D-136): a ChatError, the same 409 `incognito` as every refusal of an incognito.
+    if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (conversation.archived) throw new ScheduleError('the conversation is archived');
     const [row] = await tx.unsafe<Call[]>(
       `INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at) VALUES ($1, 'out', 'scheduled', 'scheduled', $2) RETURNING ${CALL_COLUMNS}`,
@@ -220,8 +223,10 @@ export async function callWhenDone(sql: Sql, taskId: string): Promise<Call> {
   const task = await loadTask(sql, taskId);
   if (task?.conversationId === null || task === undefined) throw new ScheduleError('no such task in a conversation');
   if (task.status === 'done' || task.status === 'failed') throw new ScheduleError('the task is already over');
-  const [open] = await sql`SELECT 1 FROM conversations WHERE id = ${task.conversationId} AND archived_at IS NULL AND purged_at IS NULL AND origin = 'user'`;
+  const [open] = await sql<{ incognito: boolean }[]>`
+    SELECT incognito FROM conversations WHERE id = ${task.conversationId} AND archived_at IS NULL AND purged_at IS NULL AND origin = 'user'`;
   if (open === undefined) throw new ScheduleError('the conversation is archived, deleted or a system chat');
+  if (open.incognito) throw new ChatError('incognito', 'incognito');
   return sql.begin(async (tx) => {
     const [existing] = await tx.unsafe<Call[]>(`SELECT ${CALL_COLUMNS} FROM calls WHERE task_id = $1 AND reason = 'task-done' AND status = 'scheduled'`, [taskId]);
     if (existing !== undefined) return existing;
