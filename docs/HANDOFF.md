@@ -2,7 +2,24 @@
 
 Questo file dice a una nuova sessione di Claude Code da dove riprendere. Si aggiorna a fine task e ogni volta che si propone di aprire una conversazione nuova (regola in `CLAUDE.md`). Contiene solo ciò che non si ricava da git e dagli altri documenti.
 
-Aggiornato: 2026-10-07, 00:50 circa (vedi la sezione delle 00:50). Prima: 2026-10-06, 23:40 circa. Prima: 21:50 circa. Prima: 14:30 circa. Prima: 10:40 circa. Prima: 2026-10-06, 01:00 circa. **Chat installabile come app di Chrome fatta** sul ramo `task/notifiche-d126` (commit `ecb646a`: manifest, icone 192/512/mascherabile dalla testa pixel con `headIconPng`, test; `reviewer` senza bloccanti). **Prova dell'utente: l'app si installa, ma la notifica di macOS arriva ancora a nome di "Google Chrome".** Scritta **D-128, aiutante nativo in Swift** (`apps/notifier`, barra dei menu, endpoint `GET /api/notifications/stream` con solo tipo e conversazione), accettata. **Scelte dell'utente:** il ramo `task/notifiche-d126` resta aperto e si unisce come 0.13.0 solo quando l'aiutante funziona; ordine: **prima la chat diretta con il Coder (D-111 tappa A), poi D-128** ("in parallelo se possibile": non con la quota sopra il 100%), poi etichette parlanti con legenda, I-8, I-7. La chat diretta con il Coder va in un ramo suo da `main`. Core e chat girano ancora su `task/notifiche-d126`.
+Aggiornato: 2026-10-07, 07:30 circa (vedi la sezione delle 07:30). Prima: 00:50 circa. Prima: 2026-10-06, 23:40 circa. Prima: 21:50 circa. Prima: 14:30 circa. Prima: 10:40 circa. Prima: 2026-10-06, 01:00 circa. **Chat installabile come app di Chrome fatta** sul ramo `task/notifiche-d126` (commit `ecb646a`: manifest, icone 192/512/mascherabile dalla testa pixel con `headIconPng`, test; `reviewer` senza bloccanti). **Prova dell'utente: l'app si installa, ma la notifica di macOS arriva ancora a nome di "Google Chrome".** Scritta **D-128, aiutante nativo in Swift** (`apps/notifier`, barra dei menu, endpoint `GET /api/notifications/stream` con solo tipo e conversazione), accettata. **Scelte dell'utente:** il ramo `task/notifiche-d126` resta aperto e si unisce come 0.13.0 solo quando l'aiutante funziona; ordine: **prima la chat diretta con il Coder (D-111 tappa A), poi D-128** ("in parallelo se possibile": non con la quota sopra il 100%), poi etichette parlanti con legenda, I-8, I-7. La chat diretta con il Coder va in un ramo suo da `main`. Core e chat girano ancora su `task/notifiche-d126`.
+
+**2026-10-07, 07:30 circa: 0.25.0, 0.26.0 e 0.27.0 su `main`** (sostituisce la sezione delle 07:00, che resta come storia).
+
+**Quota:** settimana all'82% alle 07:30 (proiezione circa 157%, reset sabato 10 alle 16:00). **Ritmo ridotto:** solo il `reviewer`, letture mirate.
+
+**Fatto in questa conversazione:**
+- **Test a tempo di I-4 risolti:** il trigger della catena degli eventi (`0001_init.sql`) prende `pg_advisory_xact_lock(hashtext('arianna.events'))`, una chiave unica per tutto il database (anche fra gli schemi dei test); la chiusura dell'incognita scriveva eventi e poi aspettava 5 s un lock nel purge, fermando ogni altro evento. Correzione: `lock_incognito` (migrazione `0033`, ammessa dal doctor) prende i lock prima del primo evento. **Regola da ricordare:** in una transazione che scrive eventi, ogni attesa di lock va prima del primo evento.
+- **0.25.0** modalità incognita (D-136), provata dall'utente; su sua richiesta "Salva in inbox" in incognito non compare proprio.
+- **0.26.0** pagina Modelli M1-M3 e **0.27.0** azioni M4 (D-137), provate dall'utente; corretto l'elenco dove un id lungo spariva.
+- Idea nuova **I-10** in `docs/PROPOSTE.md`: cercare e scaricare modelli da Hugging Face dalla pagina Modelli (da progettare; oggi solo URL del catalogo).
+- Tolti i worktree dei rami uniti (i4, i3, agenti). Cartella principale, core e chat su `main`. `test:db` su `main` 442/442.
+
+**In attesa dell'utente** (in `docs/OPEN-QUESTIONS.md`, ora su `main`): tetto di durata di un'incognita aperta; verifica dal vivo dei file del profilo di `claude`; schede dei modelli cloud da rileggere (frasi, prezzi, nomi dei modelli di Codex presi da una pagina web).
+
+**Prossimo lavoro possibile:** I-10 (progetto), il task 1.16 (adattatore di `codex`), o quanto l'utente sceglie; ramo rimasto non unito: `prova/d117-barre-d120` (vecchio ramo di prova, da verificare se si può togliere).
+
+**Non ovvio:** il test `POST /api/characters/upload` può cadere con `EPIPE` nell'hook di commit: ripetere il commit. `pnpm -s` non funziona; dopo ogni cambio della chat serve `pnpm hud:build`. Per lanciare `test:db` senza `pnpm`: lo script in un file a parte con `find apps -path '*/test-db/*'` (in zsh una variabile con più file non si divide).
 
 **2026-10-07, 07:00 circa: consegna per una conversazione nuova** (sostituisce la sezione delle 01:10 per ciò che va fatto ora).
 
