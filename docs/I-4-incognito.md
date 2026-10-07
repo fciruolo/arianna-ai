@@ -179,6 +179,7 @@ Le tappe 2 (core) e 4 (chat) si fanno in parallelo su questo contratto; un cambi
 - `GET /api/incognito/notice` dà anche `localCache` (vero quando oMLX ha la cache su SSD): la scheda la nomina.
 - Il 409 di `POST /end` con il lavoro ancora in corso ha il codice stabile `{ "error": "busy" }`.
 - Le chiamate legate a un'incognita rispondono 409 `{ "error": "incognito" }`.
+- La chiusura prende tutti i lock prima di scrivere il primo evento (`lock_incognito`, migrazione `0033`): un evento tiene il lock della catena fino al commit, e una chiusura in attesa di un lock fermava per 5 s ogni altro evento (trovato dai test con il database in serie completa).
 - `task_delegations` rifiuta le scritture per un task di una conversazione cancellata (migrazione `0032`): un passo tardivo non lascia un brief dopo la chiusura.
 - **Eval dal vivo in sospeso:** il caso del profilo di `claude` non è scritto (serve leggere la home dell'utente); finché non c'è, la scheda dice che gli altri file del profilo non sono verificati.
 - **Limiti rimasti dopo la seconda revisione:** la chiusura chiude una chiamata viva solo nel database (la sessione della voce, se esistesse, continuerebbe, ma le sue scritture sono rifiutate dai trigger); "Termina" può attendere due timeout di lock in fila (circa 10 secondi) prima del 409 `busy`, che la chat ritenta; il test delle prove dei modelli (`model-evals.test.ts`) e quello del ringer sono sensibili ai tempi quando tutti i test con il database girano insieme, e passano da soli.

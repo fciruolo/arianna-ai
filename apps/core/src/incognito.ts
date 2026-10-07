@@ -109,12 +109,16 @@ export async function closeIncognito(sql: Sql, conversationId: string, cause: In
 
   try {
     return await sql.begin(async (tx) => {
+      // "Termina" never hangs on a lock: it answers busy, like the purge.
+      await tx`SET LOCAL lock_timeout = '5s'`;
       await tx`SELECT 1 FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
       await checkIncognito(tx, conversationId);
       const taskIds = (await tx<{ id: string }[]>`
         SELECT id::text FROM tasks WHERE conversation_id = ${conversationId} ORDER BY id FOR UPDATE`).map((row) => row.id);
       // Again under the locks: a step claimed since the first look stops now; its writes wait for this transaction and then find the job failed.
       for (const id of taskIds) options.stopTask?.(id);
+      // Every lock of the purge before the first event: an event holds the lock of the chain until the commit (0033_incognito_locks.sql).
+      await tx`SELECT lock_incognito(${conversationId}::uuid)`;
       await stopWork(tx, conversationId, taskIds);
 
       const remains = await remainsOf(tx, taskIds);
@@ -160,6 +164,10 @@ async function stopWork(tx: Queryable, conversationId: string, taskIds: readonly
   await tx`
     UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'incognito'
     WHERE key = ANY (${taskIds.map((id) => `task:${id}`)}) AND status IN ('queued', 'running')`;
+  // The waits before the first event: an event holds the lock of the chain, and every other event of Arianna with it, until the commit.
+  // For haltIncognito: the closing already holds these through lock_incognito.
+  await tx`SELECT 1 FROM runs WHERE task_id = ANY (${taskIds}::uuid[]) ORDER BY id FOR UPDATE`;
+  await tx`SELECT 1 FROM calls WHERE conversation_id = ${conversationId} ORDER BY id FOR UPDATE`;
   // A run the worker did not end in time (or one left by a crash) ends here.
   for (const id of taskIds) await interruptRunning(tx, id);
   const atWork = await tx<{ id: string }[]>`

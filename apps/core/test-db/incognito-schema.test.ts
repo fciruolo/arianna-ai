@@ -111,6 +111,26 @@ test('purge_incognito refuses a normal conversation and an incognito still at wo
   await assert.rejects(sql`SELECT purge_conversation(${other}::uuid)`, /only an archived/);
 });
 
+test('lock_incognito (0033) locks the rows of an incognito for arianna_app and refuses a normal conversation', async () => {
+  const { sql, owner } = db();
+  const [normal] = await sql<{ id: string }[]>`INSERT INTO conversations (mode) VALUES ('private') RETURNING id::text`;
+  await assert.rejects(sql`SELECT lock_incognito(${normal?.id ?? ''}::uuid)`, /not an incognito/);
+  const id = await incognito();
+  const taskId = await task(id);
+  const [message] = await owner<{ id: string }[]>`
+    INSERT INTO messages (conversation_id, role, label, body, task_id) VALUES (${id}, 'user', 'L2', 'Bloccato', ${taskId}) RETURNING id::text`;
+  const other = await owner.reserve();
+  try {
+    await sql.begin(async (tx) => {
+      await tx`SELECT lock_incognito(${id}::uuid)`;
+      // A table where arianna_app has no UPDATE: the row is held all the same.
+      await assert.rejects(other`SELECT 1 FROM messages WHERE id = ${message?.id ?? ''} FOR UPDATE NOWAIT`, (error: unknown) => (error as { code?: string }).code === '55P03');
+    });
+  } finally {
+    other.release();
+  }
+});
+
 test('canary: after purge_incognito no text or jsonb column of the schema holds what the incognito wrote', async () => {
   const { sql, owner, schema } = db();
   const canary = newCanary();

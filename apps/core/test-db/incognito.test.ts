@@ -14,6 +14,7 @@ import { DEFAULT_VOICE, parseLabelRules, resolveHome } from '@arianna/config';
 
 import { ChatError, createConversation, postUserMessage } from '../src/conversations.ts';
 import { createWorker, type StepExecutor } from '../src/engine.ts';
+import { appendEvent } from '../src/events.ts';
 import { recordFailure } from '../src/failures.ts';
 import { closeIncognito, closeIncognitoAtStart, haltIncognito, isIncognitoTask, localCacheOn } from '../src/incognito.ts';
 import { createCalls, type Calls } from '../src/voice/calls.ts';
@@ -518,6 +519,28 @@ test('a closing that fails on a lock answers busy and leaves no task at work: it
     FROM tasks t WHERE t.id = ${task.id}`;
   assert.deepEqual(state, { task: 'failed', job: 'failed' });
   // Not purged yet: tried again, it closes.
+  assert.equal((await closeIncognito(sql, id, 'user')).deleted.tasks, 1);
+});
+
+test('a closing that waits for a lock holds no lock of the event chain: the rest of Arianna keeps writing events', async () => {
+  const { sql, owner } = db();
+  const id = await newIncognito();
+  const { message } = await postUserMessage(sql, id, 'In attesa');
+  const holder = await owner.reserve();
+  try {
+    await holder`BEGIN`;
+    await holder`SELECT 1 FROM messages WHERE id = ${message.id} FOR UPDATE`;
+    const closing = closeIncognito(sql, id, 'user').catch((error: unknown) => error);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const started = Date.now();
+    await appendEvent(sql, { kind: 'test.elsewhere', label: 'L0', payload: {} });
+    assert.ok(Date.now() - started < 2_000, 'an event of another conversation waited for the closing');
+    const result = await closing;
+    assert.ok(result instanceof ChatError && result.code === 'busy');
+  } finally {
+    await holder`ROLLBACK`;
+    holder.release();
+  }
   assert.equal((await closeIncognito(sql, id, 'user')).deleted.tasks, 1);
 });
 
