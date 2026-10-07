@@ -34,6 +34,7 @@ import {
 } from '../lib/model-actions.ts';
 import { anyOpen, canTry, dateText, isOpen, latencyText, promotionHint, scoreText, type ModelEval } from '../lib/model-evals.ts';
 import {
+  canChatTrial,
   cardSources,
   chosenKey,
   cloudNotice,
@@ -84,7 +85,7 @@ const props = defineProps<{
   save: () => Promise<boolean>;
 }>();
 /** `cancel`: the parts back to what was read. `section`: another section of the settings. `catalog`: the catalog changed (I-10): read the settings again. */
-const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: [] }>();
+const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: []; chatTrial: [modelId: string] }>();
 
 // The list
 const overview = ref<ModelsOverview | null>(null);
@@ -516,6 +517,11 @@ onBeforeUnmount(() => {
             </div>
             <p v-for="reason in blockedReasons(actionButtons(current.view, running))" :key="reason" class="text-xs text-muted">{{ reason }}</p>
             <p v-if="actionNotice !== null" class="text-xs text-ok" role="status">{{ actionNotice }}</p>
+            <!-- "Prova in chat" (D-142): an incognito conversation where only this model answers -->
+            <div v-if="canChatTrial(current.view)" class="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="current.view.action?.status === 'running'" @click="emit('chatTrial', current.view.id)">Prova in chat</button>
+              <span class="text-xs text-muted">Apre una conversazione incognita dove risponde solo questo modello, sul Mac. Si carica al primo messaggio.</span>
+            </div>
           </div>
           <HubEntryPanel v-if="current.view.origin === 'huggingface'" :view="current.view" :assigned="savedRoles(current.view.id)" @changed="catalogChanged()" @forgotten="catalogChanged()" />
 

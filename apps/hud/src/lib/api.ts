@@ -117,12 +117,14 @@ export async function loadInstallation(): Promise<InstallationInfo | undefined> 
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
-export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent, incognito = false): Promise<Conversation> {
+export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent, incognito = false, trialModel?: string): Promise<Conversation> {
   const body = {
     mode,
     ...(project === undefined || project === '' ? {} : { project }),
     ...(agent === undefined ? {} : { agent }),
     ...(incognito ? { incognito: true } : {}),
+    // "Prova in chat" (D-142): only that local model answers.
+    ...(trialModel === undefined ? {} : { trialModel }),
   };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
 }

@@ -119,7 +119,9 @@ const directExecutors = computed(() => (directPolicy.value?.executors?.length ? 
 /** Where the next message goes: the executor of the chosen model, or those the router picks from. */
 const targets = computed(() => cloudTargets(directExecutors.value, props.conversation.model));
 const targetName = computed(() => shortTarget(targets.value));
-const directName = computed(() => (direct.value === null ? 'Arianna' : agentName(direct.value)));
+/** "Prova in chat" (D-142): the catalog model that alone answers here. */
+const trial = computed(() => props.conversation.trialModel ?? null);
+const directName = computed(() => trial.value ?? (direct.value === null ? 'Arianna' : agentName(direct.value)));
 /** The model of the agent's latest answer here, from its credit line (D-141). */
 const lastAlias = computed(() => {
   const agent = direct.value;
@@ -515,7 +517,8 @@ onBeforeUnmount(() => clearInterval(clock));
               {{ POSE_TEXT[directPose] }}
             </p>
             <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
-            <p class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
+            <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
+            <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
             <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
               <span>CONTESTO</span>
               <span
@@ -856,7 +859,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
         <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span class="inline-flex flex-wrap items-center gap-1.5">
-          Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : MODE_HINT[conversation.mode] }}
+          Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
         </span>
       </p>

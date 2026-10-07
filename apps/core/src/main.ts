@@ -43,6 +43,7 @@ import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
+import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
@@ -65,6 +66,7 @@ import { createVoiceService } from './voice/service.ts';
 import { createVoiceSwitch } from './voice/switch.ts';
 import { listClones } from './voice/clones.ts';
 import { fileSize, trialModels } from './voice/trial.ts';
+import { trialRefusal } from './orchestrator/trial-chat.ts';
 
 /** Logs only the error's class and code: messages may quote data. */
 function report(error: unknown): void {
@@ -337,6 +339,14 @@ const orchestrator = createOrchestrator({
   rules,
   ...(claude === undefined ? {} : { claude }),
   ...(codex === undefined ? {} : { codex }),
+  // The trial chat of a catalog model (D-142): `local-large` of the endpoints pointing at it, as the trials of D-081.
+  trialModel: (modelId) => {
+    const endpoints = trialEndpoints(settings.current().local.endpoints, modelId);
+    return memory.wrap(
+      createLocalModel({ endpoints, isAvailable: (id) => localServers.isAvailable(id), onFailure: (id) => { localServers.onFailure(id); } }),
+      endpoints,
+    );
+  },
 });
 const refused = [...(claude === undefined ? ['claude'] : []), ...(codex === undefined ? ['codex'] : [])];
 console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${refused.length === 0 ? '' : ` (sandbox refused: ${refused.join(', ')})`}`);
@@ -523,6 +533,8 @@ const server = await startApiServer({
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
+  // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
+  trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, voiceDirs.models, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
   directAgents: () =>
     directPolicies(agents, {

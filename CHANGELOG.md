@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.32.0] - 2026-10-07
+
+### Aggiunto
+
+- Impostazioni → Modelli: «Prova in chat» nella scheda di un modello locale scaricato apre una conversazione in incognito dove risponde solo quel modello, sul Mac, senza Arianna, strumenti né archivio (D-142).
+
 ## [0.31.0] - 2026-10-07
 
 ### Aggiunto

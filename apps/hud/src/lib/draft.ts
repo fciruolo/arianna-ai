@@ -20,6 +20,8 @@ export interface Draft {
   agent?: ConversationAgent | undefined;
   /** An incognito conversation (D-136): with Arianna only, never with a direct agent. */
   incognito?: boolean | undefined;
+  /** "Prova in chat" of a local model (D-142): an incognito private draft where only that catalog model answers. */
+  trialModel?: string | undefined;
   /**
    * Set once the core created the conversation but the first message did not
    * go through: a retry sends to it, never creates a second one.
@@ -30,7 +32,7 @@ export interface Draft {
 export const DRAFT_PATH = '/nuova';
 
 /** What "Nuovo" chose: the mode, the project, and who answers. */
-export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent' | 'incognito'>;
+export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent' | 'incognito' | 'trialModel'>;
 
 const MODE_WORD: Record<ConversationMode, string> = { private: 'privata', work: 'lavoro' };
 
@@ -75,7 +77,7 @@ export function choiceAgent(choice: DraftChoice): ConversationAgent | undefined 
 
 /** The same choice: the page does not open a draft again for it. */
 export function sameChoice(a: DraftChoice, b: DraftChoice): boolean {
-  return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true);
+  return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true) && a.trialModel === b.trialModel;
 }
 
 /** What stays out of Arianna's hands in a direct chat on Claude or Codex (D-111, D-140): also said where such a conversation is deleted. */

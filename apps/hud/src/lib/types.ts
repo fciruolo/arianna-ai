@@ -58,6 +58,11 @@ export interface Conversation {
    * its texts deleted when it closes. Optional: a core without it sends none.
    */
   incognito?: boolean;
+  /**
+   * The catalog id of the local model under trial (D-142): only it answers in
+   * this incognito private conversation. Optional: a core without it sends none.
+   */
+  trialModel?: string | null;
 }
 
 /** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */

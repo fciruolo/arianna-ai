@@ -27,9 +27,11 @@ export type CloseCause = 'user' | 'idle' | 'restart';
  * What the history entry of `/incognito` holds: the choice of a draft not yet
  * sent, or the id of the conversation once created. Never a text.
  */
-export type IncognitoEntry = { draft: { mode: ConversationMode; project?: string } } | { conversationId: string };
+export type IncognitoEntry = { draft: { mode: ConversationMode; project?: string; trialModel?: string } } | { conversationId: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A catalog id, as the core accepts it for a trial chat (D-142). */
+export const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,254}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -46,8 +48,8 @@ export function entryFromState(state: unknown): IncognitoEntry | undefined {
   const entry = state.incognito;
   if (typeof entry.conversationId === 'string' && UUID.test(entry.conversationId)) return { conversationId: entry.conversationId.toLowerCase() };
   if (isRecord(entry.draft)) {
-    const { mode, project } = entry.draft;
-    if (mode === 'private') return { draft: { mode } };
+    const { mode, project, trialModel } = entry.draft;
+    if (mode === 'private') return { draft: { mode, ...(typeof trialModel === 'string' && MODEL_ID.test(trialModel) ? { trialModel } : {}) } };
     if (mode === 'work') return { draft: { mode, ...(typeof project === 'string' && project.trim() !== '' ? { project: project.trim() } : {}) } };
   }
   return undefined;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  canChatTrial,
   cardSources,
   chosenKey,
   cloudNotice,
@@ -337,5 +338,19 @@ describe('roles and unsaved edits', () => {
     // Spaces count, as for the rest of the settings page: the bar and the page agree on what is an edit.
     assert.deepEqual(unsavedKeys({ roles: { orchestrator: 'a' }, cloudModels: rows({ enabled: true, name: '  ' }) }, base), new Set(['cloud:opus']));
     assert.deepEqual(unsavedKeys({ roles: { orchestrator: 'a' }, cloudModels: rows({ enabled: true, name: 'opus[1m]' }) }, base), new Set(['cloud:opus']));
+  });
+});
+
+describe('canChatTrial (D-142)', () => {
+  it('offers "Prova in chat" for a model that writes text, or has no role yet, with its files on the disk', () => {
+    assert.equal(canChatTrial({ present: true, suitedRoles: ['orchestrator'] }), true);
+    assert.equal(canChatTrial({ present: true, suitedRoles: [] }), true);
+    assert.equal(canChatTrial({ present: true, suitedRoles: ['voice', 'tts'] }), true);
+  });
+
+  it('not without the files, nor for a model that only embeds, listens or speaks', () => {
+    assert.equal(canChatTrial({ present: false, suitedRoles: ['orchestrator'] }), false);
+    assert.equal(canChatTrial({ present: true, suitedRoles: ['embedder'] }), false);
+    assert.equal(canChatTrial({ present: true, suitedRoles: ['stt'] }), false);
   });
 });
