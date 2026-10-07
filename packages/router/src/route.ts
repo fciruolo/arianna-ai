@@ -126,6 +126,55 @@ const START_TIER: Record<Difficulty, number> = { trivial: 0, normal: 0, hard: 1,
 /** Only behind a budget approval (docs/ROUTER-SPEC.md). */
 const NEEDS_BUDGET_APPROVAL: readonly ModelAlias[] = ['fable'];
 
+/** Whether a step on this model starts only after the user approves the budget. */
+export function needsBudgetApproval(model: string): boolean {
+  return (NEEDS_BUDGET_APPROVAL as readonly string[]).includes(model);
+}
+
+/**
+ * Where a model sits in the ladder of a kind of step (I-3, "uso tipico"):
+ * `tier` 0 is the first tried, `tiers` how many there are. `fallback` is the
+ * large local model on coding and review, taken only when privacy or the
+ * agent keep every cloud candidate out.
+ */
+export interface ModelUse {
+  kind: StepKind;
+  tier: number;
+  tiers: number;
+  fallback?: true;
+}
+
+/**
+ * The steps a model may take, read from the ladders `route` uses, so the
+ * page never says something the router does not do. An alias the ladders do
+ * not name (`local-voice`, an unknown one) takes none.
+ */
+export function usesOf(model: string): ModelUse[] {
+  const uses: ModelUse[] = [];
+  for (const kind of STEP_KINDS) {
+    const cloud = cloudLadderOf(kind);
+    const local = localLadderOf(kind);
+    const ladder = cloud ?? local;
+    const tier = tierOf(ladder, model);
+    if (tier !== -1) uses.push({ kind, tier, tiers: ladder.length });
+    else if (cloud !== undefined) {
+      const fallbackTier = tierOf(local, model);
+      if (fallbackTier !== -1) uses.push({ kind, tier: fallbackTier, tiers: local.length, fallback: true });
+    }
+  }
+  return uses;
+}
+
+/** The cloud ladder of a step; undefined for a step that never leaves the Mac. Shared by route and usesOf. */
+function cloudLadderOf(kind: StepKind): Ladder | undefined {
+  return kind === 'coding' ? CLOUD_CODING : kind === 'review' ? CLOUD_REVIEW : undefined;
+}
+
+/** The local ladder of a step: its own, or the fallback of a cloud step that cannot leave. */
+function localLadderOf(kind: StepKind): Ladder {
+  return cloudLadderOf(kind) !== undefined || kind === 'plan' || kind === 'judge' ? LOCAL_LARGE : LOCAL_SMALL_FIRST;
+}
+
 function tierOf(ladder: Ladder, model: string): number {
   return ladder.findIndex((tier) => (tier as readonly string[]).includes(model));
 }
@@ -249,17 +298,16 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
   // installed cloud candidate; otherwise to the large local model. The budget
   // does not move a step from the cloud to the local model: it waits instead.
   let ladder: Ladder;
-  let cloudLadder: Ladder | undefined;
-  if (step.kind === 'coding' || step.kind === 'review') {
-    cloudLadder = step.kind === 'coding' ? CLOUD_CODING : CLOUD_REVIEW;
-    const inCloud = config.candidates.filter((candidate) => tierOf(cloudLadder ?? [], candidate.model) !== -1);
+  const cloudLadder = cloudLadderOf(step.kind);
+  if (cloudLadder !== undefined) {
+    const inCloud = config.candidates.filter((candidate) => tierOf(cloudLadder, candidate.model) !== -1);
     const reachable = inCloud.some((candidate) => privacyOk(candidate) && agentOk(candidate));
-    ladder = reachable ? cloudLadder : LOCAL_LARGE;
+    ladder = reachable ? cloudLadder : localLadderOf(step.kind);
     if (!reachable && inCloud.length > 0) {
       notes.push(inCloud.some(privacyOk) ? 'cloud excluded: agent' : 'cloud excluded: privacy');
     }
   } else {
-    ladder = step.kind === 'plan' || step.kind === 'judge' ? LOCAL_LARGE : LOCAL_SMALL_FIRST;
+    ladder = localLadderOf(step.kind);
   }
 
   // Escalation: never again at or below the tier of a failed attempt.

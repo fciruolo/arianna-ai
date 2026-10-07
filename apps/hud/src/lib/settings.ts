@@ -145,8 +145,8 @@ export const STATE_TEXT: Record<WatchdogState, string> = {
 };
 
 export const SECTION_TEXT: Record<string, string> = {
-  roles: 'Modelli locali',
-  cloudModels: 'Modelli cloud',
+  roles: 'Ruoli dei modelli locali',
+  cloudModels: 'Modelli cloud accesi',
   characters: 'Personaggi',
   personas: 'Personalità',
   agents: 'Modelli degli agenti',
@@ -243,7 +243,7 @@ function executorOfModel(model: CloudModelAlias): string {
  * still be chosen: it applies once the cause is gone.
  */
 export function modelBlocker(model: CloudModelAlias, values: Pick<SettingsValues, 'cloudModels' | 'executors'>): string | undefined {
-  if (values.cloudModels.models[model] === false) return 'spento in Modelli cloud';
+  if (values.cloudModels.models[model] === false) return 'spento in Modelli';
   if (!values.executors.includes(executorOfModel(model))) return 'esecutore spento';
   if (model === 'codex') return 'vale con il suo adattatore';
   return undefined;

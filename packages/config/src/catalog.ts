@@ -53,7 +53,22 @@ export interface CatalogEntry {
   roles: ModelRole[];
   status: ModelStatus;
   files: ModelFile[];
+  /**
+   * What the "Modelli" page shows of the model (I-3), all optional and written
+   * by hand: who makes it, the context as the local server serves it, 1-4 short lines on
+   * what it is good at, its license, a note, and the page of the model.
+   * Never fetched at runtime.
+   */
+  provider?: string;
+  contextTokens?: number;
+  strengths?: string[];
+  license?: string;
+  notes?: string;
+  source?: string;
 }
+
+/** At most this many lines of strengths for a model (I-3: 1-4 short lines, never padded). */
+export const MAX_STRENGTHS = 4;
 
 export interface ModelCatalog {
   version: 1;
@@ -73,10 +88,7 @@ function parseFile(raw: unknown, where: string): ModelFile {
   if (isAbsolute(path) || path.split(/[\\/]/).includes('..')) {
     throw new ConfigError(`${where}.path: must be relative and stay inside the model folder`);
   }
-  const url = asString(file.url, `${where}.url`);
-  if (!URL.canParse(url) || new URL(url).protocol !== 'https:') {
-    throw new ConfigError(`${where}.url: must be an https URL`);
-  }
+  const url = asHttpsUrl(file.url, `${where}.url`);
   const sha256 = asString(file.sha256, `${where}.sha256`);
   if (!SHA256.test(sha256)) {
     throw new ConfigError(`${where}.sha256: expected 64 lowercase hex characters`);
@@ -91,7 +103,11 @@ function parseFile(raw: unknown, where: string): ModelFile {
 
 function parseEntry(raw: unknown, where: string): CatalogEntry {
   const entry = asTable(raw, where);
-  onlyKeys(entry, ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files'], where);
+  onlyKeys(
+    entry,
+    ['id', 'family', 'runtime', 'ram_min_gib', 'roles', 'status', 'files', 'provider', 'context_tokens', 'strengths', 'license', 'notes', 'source'],
+    where,
+  );
 
   const id = asString(entry.id, `${where}.id`);
   if (!NAME.test(id)) {
@@ -117,7 +133,34 @@ function parseEntry(raw: unknown, where: string): CatalogEntry {
     roles,
     status: asOneOf(entry.status, MODEL_STATUSES, `${where}.status`),
     files,
+    ...describedBy(entry, where),
   };
+}
+
+/** The optional fields of the card (I-3); absent ones stay absent. */
+function describedBy(entry: Record<string, unknown>, where: string): Pick<CatalogEntry, 'provider' | 'contextTokens' | 'strengths' | 'license' | 'notes' | 'source'> {
+  const card: Pick<CatalogEntry, 'provider' | 'contextTokens' | 'strengths' | 'license' | 'notes' | 'source'> = {};
+  if (entry.provider !== undefined) card.provider = asString(entry.provider, `${where}.provider`);
+  if (entry.context_tokens !== undefined) card.contextTokens = asInteger(entry.context_tokens, `${where}.context_tokens`, 1, 100_000_000);
+  if (entry.strengths !== undefined) card.strengths = asStrengths(entry.strengths, `${where}.strengths`);
+  if (entry.license !== undefined) card.license = asString(entry.license, `${where}.license`);
+  if (entry.notes !== undefined) card.notes = asString(entry.notes, `${where}.notes`);
+  if (entry.source !== undefined) card.source = asHttpsUrl(entry.source, `${where}.source`);
+  return card;
+}
+
+/** 1-4 short lines, each on one line. */
+export function asStrengths(value: unknown, where: string): string[] {
+  const lines = asArray(value, where).map((line, index) => asString(line, `${where}[${String(index)}]`));
+  if (lines.length === 0 || lines.length > MAX_STRENGTHS) throw new ConfigError(`${where}: expected 1-${String(MAX_STRENGTHS)} lines`);
+  if (lines.some((line) => line.includes('\n') || line.length > 200)) throw new ConfigError(`${where}: one line each, at most 200 characters`);
+  return lines;
+}
+
+export function asHttpsUrl(value: unknown, where: string): string {
+  const url = asString(value, where);
+  if (!URL.canParse(url) || new URL(url).protocol !== 'https:') throw new ConfigError(`${where}: must be an https URL`);
+  return url;
 }
 
 export function parseCatalog(text: string): ModelCatalog {

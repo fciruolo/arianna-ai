@@ -662,7 +662,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
                 <p class="flex flex-wrap items-center gap-2 text-[13px]"><span class="font-mono text-xs">{{ view.values?.roles.orchestrator ?? 'nessuno' }}</span><span class="chip text-ok">locale</span></p>
                 <p class="text-xs text-muted">
                   Si cambia in
-                  <a href="/impostazioni/modelli-locali" class="text-accent hover:underline" @click.prevent="emit('section', 'modelli-locali')">Modelli locali</a>: per Arianna solo modelli locali.
+                  <a href="/impostazioni/modelli" class="text-accent hover:underline" @click.prevent="emit('section', 'modelli')">Modelli</a>, ruolo Orchestratore: per Arianna solo modelli locali.
                 </p>
               </div>
             </template>

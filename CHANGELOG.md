@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.26.0] - 2026-10-07
+
+### Cambiato
+
+- Una voce sola **Modelli** nelle Impostazioni al posto di Modelli locali, Prove dei modelli e Modelli cloud: elenco dei modelli locali e cloud con filtri e ricerca, scheda di ogni modello, prove, ruoli e interruttori nella stessa pagina; gli indirizzi vecchi portano alla nuova (I-3 M3, D-137).
+
+### Aggiunto
+
+- Schede dei modelli nei cataloghi: campi facoltativi nel catalogo locale e `config/cloud-models.catalog.yaml` per Sonnet, Opus, Fable e Codex, ogni dato con fonte e data di lettura (I-3 M1, D-137).
+- `GET /api/models/overview`: un elenco unico dei modelli locali e cloud con file presenti, ruoli, agenti, ultima prova, memoria di oMLX, interruttori e uso tipico dal router (I-3 M2, D-137).
+
 ## [0.25.0] - 2026-10-07
 
 ### Aggiunto

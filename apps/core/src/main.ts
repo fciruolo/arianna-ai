@@ -40,6 +40,7 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createModelEvals } from './model-evals.ts';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
+import { loadModelsOverview } from './models-overview.ts';
 import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
@@ -482,6 +483,15 @@ const server = await startApiServer({
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
   modelEvals,
+  // The "Modelli" page (I-3): catalogs read at each request; Codex has no adapter until task 1.16.
+  modelsOverview: () =>
+    loadModelsOverview(sql, {
+      home: config.home,
+      dataDir: config.paths.data,
+      config: () => settings.current(),
+      memory: () => memory.snapshot(),
+      adapters: () => ({ claude: claude !== undefined, codex: false }),
+    }),
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home },
   // "Novità": CHANGELOG.md at the root of the home, read only.

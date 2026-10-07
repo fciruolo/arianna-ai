@@ -21,7 +21,7 @@ import { MODE_BADGE, MODE_HINT, type InstallationInfo } from '../lib/installatio
 import { personasBody, personasForm, personasProblem, type PersonaForm } from '../lib/persona.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
-import { EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import { EXECUTOR_TEXT } from '../lib/labels.ts';
 import { CHANGELOG_PATH, SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
 import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, sectionDirty, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
 import {
@@ -36,12 +36,9 @@ import {
   endpointsBody,
   endpointsForm,
   executorsBody,
-  MODEL_ROLES,
   notificationsBody,
   notificationsForm,
   notificationsProblem,
-  ROLE_TEXT,
-  roleOptions,
   rolesBody,
   keptSections,
   leaveAfterProblem,
@@ -56,7 +53,6 @@ import {
   voiceProblem,
   writeError,
   type AgentsForm,
-  type CatalogModel,
   type CloudModelsForm,
   type EndpointForm,
   type LocalServerStatus,
@@ -77,7 +73,7 @@ import {
 import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
 import Icon from './Icon.vue';
-import ModelEvals from './ModelEvals.vue';
+import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
 import PrivacyConfirm from './PrivacyConfirm.vue';
 import SettingsCard from './SettingsCard.vue';
@@ -387,9 +383,12 @@ onBeforeUnmount(() => {
 });
 
 const catalog = computed(() => view.value?.catalog ?? []);
-function chosenModel(role: ModelRole): CatalogModel | undefined {
-  const id = forms.value?.roles[role];
-  return catalog.value.find((model) => model.id === id);
+
+/** The parts the Modelli page saves together, in one write (D-137); it is known by `roles`. */
+const MODEL_PARTS: readonly OrdinarySection[] = ['roles', 'sprites', 'cloudModels'];
+function resetModels(): void {
+  for (const part of MODEL_PARTS) reset(part);
+  delete errors.value.roles;
 }
 
 /** The voices of the speech model chosen in the card of the models (the saved one until then). */
@@ -634,7 +633,7 @@ watch(active, () => {
     </nav>
 
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
-      <div :class="active === 'agents' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
+      <div :class="active === 'agents' || active === 'models' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
         <header>
           <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex">‹ Impostazioni</button>
           <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">{{ chosen.item.title }}</h1>
@@ -683,100 +682,18 @@ watch(active, () => {
           </p>
 
           <template v-if="forms !== null">
-            <!-- Models by role -->
-            <SettingsCard
-              v-if="active === 'roles'"
-              id="roles"
-              title="Modelli locali per ruolo"
-              kind="now"
-              :changed="changed('roles') || changed('sprites')"
-              :saved="saved === 'roles'"
+            <!-- Modelli (I-3, D-137): every model in one list, the card, roles and switches; one bar saves -->
+            <ModelsSettings
+              v-if="active === 'models'"
+              :form="forms"
+              :base="base ?? forms"
+              :catalog="catalog"
               :busy="busy === 'roles'"
               :error="errors.roles"
-              @cancel="reset('roles'); reset('sprites')"
-              @save="save('roles', ['roles', 'sprites'])"
-            >
-              <div class="flex flex-col">
-                <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1.5 border-t border-line py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[140px_minmax(0,1fr)] md:grid-cols-[140px_minmax(0,1fr)_auto] md:gap-3">
-                  <label :for="`role-${role}`" class="font-medium">
-                    {{ ROLE_TEXT[role].title }}<small class="block text-[11.5px] font-normal text-muted">{{ ROLE_TEXT[role].hint }}</small>
-                  </label>
-                  <select :id="`role-${role}`" v-model="forms.roles[role]" class="field min-w-0 px-2 py-1.5 text-[13px]">
-                    <option :value="undefined">— nessuno —</option>
-                    <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : ' (da scaricare)' }}</option>
-                    <!-- A model of the file the catalog no longer has stays visible. -->
-                    <option v-if="forms.roles[role] !== undefined && !roleOptions(catalog, role).some((model) => model.id === forms?.roles[role])" :value="forms.roles[role]">
-                      {{ forms.roles[role] }} (non nel catalogo)
-                    </option>
-                  </select>
-                  <div class="flex flex-wrap gap-1.5 sm:col-start-2 md:col-start-auto md:justify-end">
-                    <template v-if="chosenModel(role) !== undefined">
-                      <span class="chip">≥ {{ chosenModel(role)?.ramMinGib }} GiB</span>
-                      <span class="chip" :class="chosenModel(role)?.status === 'verified' ? 'text-ok' : 'text-warn'">{{ chosenModel(role)?.status === 'verified' ? 'verificato' : 'sperimentale' }}</span>
-                      <span class="chip" :class="chosenModel(role)?.present ? 'text-ok' : 'text-danger'">{{ chosenModel(role)?.present ? 'file presenti' : 'file mancanti' }}</span>
-                    </template>
-                    <span v-else-if="roleOptions(catalog, role).length === 0" class="chip">nessun modello del catalogo per questo ruolo</span>
-                  </div>
-                </div>
-              </div>
-              <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
-              <div class="grid grid-cols-1 items-center gap-1.5 border-t border-line pt-2.5 sm:grid-cols-[140px_minmax(0,1fr)] md:gap-3">
-                <label for="role-sprites" class="font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
-                <select id="role-sprites" v-model="forms.sprites" class="field min-w-0 px-2 py-1.5 text-[13px]">
-                  <option value="sonnet">Claude Sonnet</option>
-                  <option value="opus">Claude Opus (predefinito)</option>
-                  <option value="local">modello locale (quello dell’orchestratore)</option>
-                </select>
-              </div>
-              <p class="text-xs text-muted">
-                Con Claude, «Genera personaggio» manda verso il cloud, passando dal gateway, nome, descrizione e prompt dell’agente, tono e specializzazione e il tuo suggerimento (Interno), e usa
-                la tua quota; serve Claude attivo fra gli esecutori cloud. Con il modello locale non esce nulla.
-              </p>
-              <p class="text-xs text-muted">
-                Un modello senza file in <code class="font-mono">data/models</code> si può scegliere, ma va scaricato con
-                <code class="font-mono">pnpm arianna:models pull</code>. Cambiare modello non riavvia oMLX: lo carica per nome alla prossima richiesta.
-              </p>
-            </SettingsCard>
-
-            <!-- Trials of the catalog models (D-081) -->
-            <ModelEvals v-if="active === 'model-evals'" :catalog="catalog" :current="view.values?.roles.orchestrator" />
-
-            <!-- Cloud models -->
-            <SettingsCard v-if="active === 'cloud-models'" id="cloud-models" title="Modelli cloud" kind="now" :changed="changed('cloudModels')" :saved="saved === 'cloudModels'" :busy="busy === 'cloudModels'" :error="errors.cloudModels" @cancel="reset('cloudModels')" @save="save('cloudModels')">
-              <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-[13px]">
-                  <thead>
-                    <tr class="hud-title text-left">
-                      <th class="pr-2 pb-2 font-semibold">Acceso</th>
-                      <th class="px-2 pb-2 font-semibold">Modello</th>
-                      <th class="pb-2 pl-2 font-semibold">Nome esatto (facoltativo)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in forms.cloudModels.rows" :key="row.alias" class="border-t border-line" :class="{ 'text-muted': !row.enabled }">
-                      <td class="py-2 pr-2">
-                        <input
-                          v-model="row.enabled"
-                          type="checkbox"
-                          role="switch"
-                          class="switch"
-                          :aria-label="`${MODEL_TEXT[row.alias] ?? row.alias} acceso`"
-                        />
-                      </td>
-                      <td class="px-2 py-2 whitespace-nowrap">{{ MODEL_TEXT[row.alias] ?? row.alias }}</td>
-                      <td class="py-2 pl-2">
-                        <input v-model="row.name" class="field w-full min-w-[150px] px-2 py-1 font-mono text-xs" :disabled="!row.enabled" placeholder="il più recente" :aria-label="`Nome esatto di ${row.alias}`" />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p class="text-xs text-muted">
-                Un modello spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia del modello (es.
-                <code class="font-mono">opus[1m]</code>, <code class="font-mono">claude-opus-5-5</code>); vuoto è il più recente. Per Codex la scelta si salva e vale con il suo adattatore.
-                Il modello con cui parte ogni agente si sceglie in <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="openSection('agenti')">Agenti</a>.
-              </p>
-            </SettingsCard>
+              :save="() => save('roles', MODEL_PARTS)"
+              @cancel="resetModels"
+              @section="openSection"
+            />
 
             <!-- Voice -->
             <SettingsCard v-if="active === 'voice'" id="voice" title="Voce e chiamate" kind="now" :changed="changed('voice')" :saved="saved === 'voice'" :invalid="voiceProblem(forms.voice)" :busy="busy === 'voice'" :error="errors.voice" @cancel="reset('voice')" @save="save('voice')">

@@ -1,0 +1,99 @@
+# Cards of the cloud models (I-3): one entry per alias of the router
+# (docs/ROUTER-SPEC.md), written by hand and read by the "Modelli" page.
+# Never downloaded at runtime: the core does not open these pages.
+#
+# Every fact names a source of the list below: the page and the day it was
+# read. A value no page states is left out, never guessed (e.g. how much of
+# the subscription quota a model uses next to another: no page read so far
+# says it, so `quota_ratio` is absent everywhere; Arianna will measure it
+# from executor.rate_limit, I-3 stage M5).
+#
+# Fields of an entry:
+#   alias        sonnet | opus | fable | codex
+#   provider     who makes the models
+#   family       the name of the line
+#   executor     claude | codex (fixed by the alias)
+#   names        exact names `--model` accepts, with context and max output
+#                when the source states them; for Claude, of the family of
+#                the alias, as in [cloud.models]
+#   strengths    1-4 short lines, each with its source
+#   api_price    dollars per million tokens on the API (input, output): not
+#                the subscription, only how heavy a model is next to another
+#   quota_ratio  relative_to, times, source: share of the subscription quota
+#   terms        page of the provider's terms
+#   notes        anything the card must say
+version: 1
+sources:
+  - id: anthropic-models
+    url: https://platform.claude.com/docs/en/about-claude/models/overview
+    read: "2026-10-07"
+  - id: codex-models
+    url: https://learn.chatgpt.com/docs/models
+    read: "2026-10-07"
+models:
+  - alias: sonnet
+    provider: Anthropic
+    family: Claude Sonnet
+    executor: claude
+    names:
+      - name: claude-sonnet-5-5
+        context_tokens: 1000000
+        max_output_tokens: 128000
+        description: La migliore combinazione di velocità e intelligenza
+        source: anthropic-models
+    strengths:
+      - text: La migliore combinazione di velocità e intelligenza
+        source: anthropic-models
+      - text: Latenza bassa fra i modelli Claude attuali
+        source: anthropic-models
+    api_price: { input: 2, output: 10, source: anthropic-models }
+    notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
+  - alias: opus
+    provider: Anthropic
+    family: Claude Opus
+    executor: claude
+    names:
+      - name: claude-opus-5-5
+        context_tokens: 1000000
+        max_output_tokens: 128000
+        description: Per coding agentico lungo e lavoro di conoscenza
+        source: anthropic-models
+    strengths:
+      - text: Coding agentico lungo e lavoro di conoscenza
+        source: anthropic-models
+      - text: Il modello consigliato da Anthropic per la maggior parte dei lavori
+        source: anthropic-models
+    api_price: { input: 4, output: 20, source: anthropic-models }
+    notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
+  - alias: fable
+    provider: Anthropic
+    family: Claude Fable
+    executor: claude
+    names:
+      - name: claude-fable-5-1
+        context_tokens: 1000000
+        max_output_tokens: 128000
+        description: Per ragionamento impegnativo e lavoro agentico di lungo periodo
+        source: anthropic-models
+    strengths:
+      - text: Ragionamento impegnativo e lavoro agentico di lungo periodo
+        source: anthropic-models
+      - text: Il più lento dei modelli Claude attuali
+        source: anthropic-models
+    api_price: { input: 10, output: 50, source: anthropic-models }
+    notes: Contesto e uscita massimi sono quelli dell'API; con l'abbonamento in Claude Code possono essere diversi (da verificare).
+  - alias: codex
+    provider: OpenAI
+    family: Modelli di Codex (accesso ChatGPT)
+    executor: codex
+    names:
+      - name: gpt-6.1-sol
+        description: Prestazioni vicine ad Astra per il lavoro complesso, a un costo minore
+        source: codex-models
+      - name: gpt-6-luna
+        description: Il più efficiente, per compiti mirati e numerosi (riassunti, estrazione, coding mirato)
+        source: codex-models
+      - name: gpt-6-astra
+        description: Il più capace, per lavoro complesso su codice, app e ricerca
+        source: codex-models
+    notes: Senza un nome esatto il binario usa un modello consigliato (pagina dei modelli di Codex). La pagina non dice il contesto. Non collegato finché manca l'adattatore (task 1.16).

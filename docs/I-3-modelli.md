@@ -39,7 +39,7 @@ Campi comuni:
 | Nome e id | `qwen3.8-27b-4bit` | `opus` → nome esatto se scelto | catalogo; `[cloud.models]` |
 | Fornitore e famiglia | Qwen (Alibaba), `qwen3.8` | Anthropic, Claude Opus | catalogo |
 | Contesto | 32k / 128k come servito da oMLX | es. 200k; 1M con la variante `[1m]` | catalogo (fonte scritta) |
-| Punti di forza | 2-4 righe brevi | 2-4 righe brevi | catalogo (testo scritto a mano) |
+| Punti di forza | 1-4 righe brevi (di solito 2-4) | 1-4 righe brevi, ognuna con fonte | catalogo (testo scritto a mano) |
 | Uso tipico in Arianna | "orchestratore (`local-large`): pianifica, giudica, risponde come Arianna" | "coding difficile, architettura; secondo gradino della scala di coding" | generato dalle regole del router e dai ruoli, non scritto a mano |
 | Ruoli / alias assegnati | ruoli di `[roles]` | alias, agenti che partono con questo modello (`[agents.<id>] model`) | `arianna.toml` |
 | Costo | RAM, energia (nessun costo in euro) | consumo della quota dell'abbonamento | vedi sotto |
@@ -86,8 +86,8 @@ Nessuna azione accende un esecutore cloud o allarga ciò che esce: quelle restan
 
 ## Da dove arrivano i dati delle schede
 
-- **Locali:** `config/models.catalog.yaml`, in git, come oggi. Si aggiungono campi facoltativi: `provider`, `context_tokens`, `strengths` (2-4 righe), `license`, `notes`, `source` (link alla pagina del modello). La validazione di `@arianna/config` li accetta facoltativi, così il catalogo di oggi resta valido.
-- **Cloud:** un file nuovo `config/cloud-models.catalog.yaml`, in git, **scritto a mano**: per ogni alias fornitore, famiglia, esecutore, contesto, punti di forza, consumo relativo, approvazione di budget, e per ogni dato la sua **fonte** (URL e data di lettura). Lo aggiorna l'utente o Claude Code su richiesta, con un commit come ogni altro file.
+- **Locali:** `config/models.catalog.yaml`, in git, come oggi. Si aggiungono campi facoltativi: `provider`, `context_tokens`, `strengths` (1-4 righe: meglio una riga vera che due di cui una inventata), `license`, `notes`, `source` (link alla pagina del modello). La validazione di `@arianna/config` li accetta facoltativi, così il catalogo di oggi resta valido.
+- **Cloud:** un file nuovo `config/cloud-models.catalog.yaml`, in git, **scritto a mano**: per ogni alias fornitore, famiglia, esecutore, contesto, punti di forza, consumo relativo, e per ogni dato la sua **fonte** (URL e data di lettura). L'approvazione di budget non sta nel file: la pagina la legge dal router (`needsBudgetApproval`), così non va mai fuori sincrono. Lo aggiorna l'utente o Claude Code su richiesta, con un commit come ogni altro file.
 - **Mai scaricato a runtime da internet:** né il catalogo né le descrizioni. Il core non chiama pagine dei fornitori, Hugging Face o model card per riempire le schede. L'unica rete della pagina è lo scaricamento dei pesi, dagli URL a commit fisso del catalogo, quando l'utente lo chiede.
 - **Misurati da Arianna:** presenza e verifica dei file, memoria di oMLX, prove (D-081), consumo di quota per run, modello dichiarato dal binario. Tutto già nel database o nei file locali, tutto L0.
 - **Generati dal codice:** "uso tipico in Arianna" esce dalle regole del router e da `[roles]`/`[agents]`, così non va mai fuori sincrono con il comportamento vero.
@@ -105,11 +105,13 @@ Nessuna azione accende un esecutore cloud o allarga ciò che esce: quelle restan
 | Tappa | Cosa | Stima |
 | --- | --- | --- |
 | M1 | Campi nuovi facoltativi di `models.catalog.yaml`; `config/cloud-models.catalog.yaml` con lettore e validazione in `@arianna/config` (test positivi e negativi), voci di Sonnet, Opus, Fable e Codex con fonti | 3-4 h |
-| M2 | API `GET /api/models`: elenco unico (catalogo locale e cloud, presenza file, ruoli, agenti, ultima prova, memoria di oMLX, interruttori, uso tipico calcolato dal router) | 4-6 h |
+| M2 | API `GET /api/models/overview` (`/api/models` resta il selettore delle conversazioni): elenco unico (catalogo locale e cloud, presenza file, ruoli, agenti, ultima prova, memoria di oMLX, interruttori, uso tipico calcolato dal router) | 4-6 h |
 | M3 | Pagina **Modelli** nella chat: elenco con filtri e ricerca, scheda, ruoli e interruttori dentro la pagina; via le tre voci vecchie (gli indirizzi vecchi rimandano alla nuova) | 6-9 h |
 | M4 | Azioni locali: scarica (job con avanzamento), verifica, togli (cestino, conferma), scarica dalla memoria; eventi L0 | 6-8 h |
 | M5 | Costo in quota misurato per modello (differenza degli eventi `executor.rate_limit` per run, mediana, token) | 3-4 h |
 | M6 | ChatGPT/Codex: task 1.16 (adattatore, profilo, contratto, canarino), candidato nel router con eval, schede collegate, quota di Codex | 6-10 h (1.16 compreso) |
+
+**Stato M1-M2 (2026-10-07, ramo `task/i3-modelli`).** M1: campi facoltativi nel catalogo locale (riempiti solo `provider`, `source` e, dove già scritta nei commenti, `license`; il contesto servito da oMLX non è verificato e resta vuoto) e `config/cloud-models.catalog.yaml` con le pagine dei modelli di Anthropic e di Codex lette il 2026-10-07 (nomi esatti, contesto e uscita massimi dell'API per Claude, prezzi API, descrizioni; contesto di Codex e quota relativa vuoti: nessuna pagina li dice). M2: `apps/core/src/models-overview.ts`, servito da `GET /api/models/overview`; il router espone `usesOf` (gradino di ogni tipo di passo, letto dalle stesse scale di `route`) e `needsBudgetApproval`. Non ancora nell'elenco: versione del binario e accesso fatto, ultimo modello dichiarato dal binario (`executor.model`), ultima verifica sha256 (non registrata da nessuna parte), quota misurata (M5), esiti di contratto e canarino (`pnpm eval:live` non scrive nel database).
 
 Totale: **28-41 h**. M1-M3 danno già la pagina unica con le schede (anche di Opus) e la scheda di Codex "non collegato"; M4-M6 si possono fare in qualsiasi ordine dopo.
 

@@ -22,7 +22,7 @@ export const CLOUD_MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,99}$/;
  * so `sonnet = "claude-fable-5-1"` would run Fable without the approval.
  * Same rule as claudeArgs in @arianna/executors.
  */
-function inFamily(model: CloudModel, name: string): boolean {
+export function inFamily(model: CloudModel, name: string): boolean {
   return model === 'codex' || new RegExp(`^(claude-)?${model}(?![A-Za-z0-9])`).test(name);
 }
 

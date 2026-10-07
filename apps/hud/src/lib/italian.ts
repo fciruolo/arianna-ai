@@ -458,7 +458,7 @@ export const SPRITE_MODEL_TEXT: Readonly<Record<string, string>> = { sonnet: 'Cl
 /** Why a model cannot draw now, from the reason the core gives (D-123). */
 export function spriteReasonText(reason: string): string {
   if (/not on in \[cloud\] executors/.test(reason)) return 'Claude non è attivo fra gli esecutori cloud (Impostazioni → Esecutori): attivalo o scegli il modello locale per i personaggi.';
-  if (/is off in \[cloud\.models\]/.test(reason)) return 'Il modello scelto per i personaggi è spento in Modelli cloud: riaccendilo o scegline un altro.';
+  if (/is off in \[cloud\.models\]/.test(reason)) return 'Il modello scelto per i personaggi è spento in Impostazioni → Modelli: riaccendilo o scegline un altro.';
   if (/cannot run on this installation/.test(reason)) return 'Claude non può partire su questa installazione (sandbox rifiutata): scegli il modello locale per i personaggi.';
   if (/no local server serves/.test(reason)) return 'Nessun server locale serve il modello dell’orchestratore: configuralo in Server locali o scegli Claude per i personaggi.';
   return 'Il modello scelto per i personaggi non è disponibile ora.';

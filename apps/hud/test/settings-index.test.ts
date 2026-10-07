@@ -31,13 +31,13 @@ test('groups by subject, no group named after how a section takes effect', () =>
 test('the address names the section; none or an unknown one falls back to the first', () => {
   assert.deepEqual(resolveSection('progetti'), { item: byId('projects'), explicit: true });
   // Telegram is off (D-110): its old address falls back to the first section.
-  assert.equal(resolveSection('telegram').item.id, 'roles');
-  assert.equal(resolveSection(undefined).item.id, 'roles');
+  assert.equal(resolveSection('telegram').item.id, 'models');
+  assert.equal(resolveSection(undefined).item.id, 'models');
   assert.equal(resolveSection(undefined).explicit, false);
-  assert.equal(resolveSection('non-esiste').item.id, 'roles');
+  assert.equal(resolveSection('non-esiste').item.id, 'models');
   assert.equal(resolveSection('non-esiste').explicit, false);
   // A page of its own is not a section of this page.
-  assert.equal(resolveSection('provino-della-voce').item.id, 'roles');
+  assert.equal(resolveSection('provino-della-voce').item.id, 'models');
   assert.equal(resolveSection('sviluppo').explicit, false);
 });
 
@@ -51,6 +51,21 @@ test('Personaggi and Personalità are in Agenti (D-116): their old addresses ope
   assert.equal(sectionDirty('agents', (section) => section === 'participants'), true);
   assert.equal(sectionDirty('agents', (section) => section === 'roles'), false);
   assert.deepEqual(pendingTitles('roles', (section) => section === 'agents'), ['Agenti']);
+});
+
+test('Modelli locali, Prove dei modelli and Modelli cloud are in Modelli (D-137): their old addresses open it', () => {
+  assert.deepEqual(resolveSection('modelli'), { item: byId('models'), explicit: true });
+  for (const old of ['modelli-locali', 'prove-dei-modelli', 'modelli-cloud']) assert.deepEqual(resolveSection(old), { item: byId('models'), explicit: true });
+  assert.deepEqual(
+    SETTINGS_INDEX[0]?.items.map((entry) => entry.title),
+    ['Modelli'],
+  );
+  assert.ok(!items.some((entry) => entry.id === 'roles' || entry.id === 'model-evals' || entry.id === 'cloud-models'));
+  // Roles, the model of the characters and the cloud switches: any of them makes it dirty, the voice does not.
+  for (const part of ['roles', 'sprites', 'cloudModels']) assert.equal(sectionDirty('models', (section) => section === part), true);
+  assert.equal(sectionDirty('models', (section) => section === 'voice'), false);
+  // A near miss is not an old address.
+  assert.equal(resolveSection('modelli-locale').explicit, false);
 });
 
 test('the entries lead to their section, or to their own page', () => {
@@ -76,8 +91,12 @@ test('the address of a section is read and written back', () => {
 test('sections left with unsaved edits are named, the open one and read-only ones never', () => {
   const changed = new Set(['voice', 'endpoints', 'roles']);
   assert.deepEqual(
-    pendingTitles('roles', (section) => changed.has(section)),
+    pendingTitles('models', (section) => changed.has(section)),
     ['Voce', 'Server locali'],
+  );
+  assert.deepEqual(
+    pendingTitles('voice', (section) => changed.has(section)),
+    ['Modelli', 'Server locali'],
   );
   assert.deepEqual(
     pendingTitles('labels', () => false),
