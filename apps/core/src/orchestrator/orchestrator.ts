@@ -46,6 +46,7 @@ import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
+import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
 /**
@@ -100,6 +101,8 @@ export interface OrchestratorOptions {
   directPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
   maxTokens?: number;
+  /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
+  trialModel?: (modelId: string) => LocalModel;
 }
 
 /**
@@ -428,6 +431,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   return {
     async plan(task: Task, step: number): Promise<RunSpec> {
       const key = `${task.id}:${String(step)}`;
+      // The trial chat of a local model (D-142): that model answers, nothing else runs.
+      const trial = await trialModelOf(sql, task.conversationId);
+      if (trial !== undefined) return { agent: task.assignee, executor: 'local', locality: 'local', model: trial };
       const directChat = await isDirectChat(task);
       const planned = await delegationPlanFor(task, step, directChat);
       // Nothing left to run in the direct chat: the step only closes the task (directChatEnd). Its run row says
@@ -456,6 +462,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     async run(ctx: StepContext): Promise<StepOutcome> {
       const { task, step, runId } = ctx;
       const key = `${task.id}:${String(step)}`;
+      const trial = await trialModelOf(sql, task.conversationId);
+      if (trial !== undefined) return runTrialChat(sql, ctx, trial, options.trialModel?.(trial));
       const directChat = await isDirectChat(task);
       const planned = plans.get(key) ?? (await delegationPlanFor(task, step, directChat));
       plans.delete(key);

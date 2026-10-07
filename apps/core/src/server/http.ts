@@ -164,6 +164,12 @@ export interface ApiServerOptions {
   participantAgent?: (agent: string) => { executor: string | null; nameLabel: Label } | undefined;
   /** Who the user may talk with in place of Arianna (D-111d); undefined, nobody. */
   directAgents?: () => readonly DirectPolicy[];
+  /**
+   * Why a local model cannot open a trial chat now (D-142): undefined when it
+   * can (in the catalog, a chat model, its files on the disk). Without it no
+   * trial chat opens.
+   */
+  trialRefusal?: (modelId: string) => string | undefined;
   /** When an idle agent leaves a conversation (I-8, D-130), read at each message; undefined, none leaves. */
   leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
@@ -331,6 +337,7 @@ interface RouteOptions {
   approvedProjects: () => readonly Project[];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
+  trialRefusal?: ((modelId: string) => string | undefined) | undefined;
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   incognito?: ApiServerOptions['incognito'];
@@ -1037,7 +1044,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -1109,12 +1116,21 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     route('GET', '/api/direct-agents', () => Promise.resolve({ body: { agents: directAgents?.() ?? [] } })),
     route('POST', '/api/conversations', async (request) => {
       const body = await readJson(request);
-      onlyFields(body, ['mode', 'project', 'agent', 'incognito']);
+      onlyFields(body, ['mode', 'project', 'agent', 'incognito', 'trialModel']);
       if (body.mode !== 'work' && body.mode !== 'private') throw new HttpError(400, 'mode must be work or private');
       if (body.incognito !== undefined && typeof body.incognito !== 'boolean') throw new HttpError(400, 'incognito must be true or false');
       // An incognito conversation is answered by Arianna (D-136): a direct chat keeps its agent's session.
       if (body.incognito === true && body.agent !== undefined) throw new HttpError(400, 'an incognito conversation has no direct agent');
       if (body.project !== undefined && typeof body.project !== 'string') throw new HttpError(400, 'project must be a string');
+      // The trial chat of a local model (D-142): incognito, private, the model checked against the catalog and the disk.
+      const trialModel = body.trialModel;
+      if (trialModel !== undefined) {
+        // The format of conversations.trial_model (0035): a longer catalog id would fail the INSERT.
+        if (typeof trialModel !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,254}$/.test(trialModel)) throw new HttpError(400, 'trialModel must be a catalog id');
+        if (body.incognito !== true || body.mode !== 'private' || body.agent !== undefined) throw new HttpError(400, 'a trial chat is an incognito private conversation');
+        const refusal = trialRefusal === undefined ? 'trial chats are not available' : trialRefusal(trialModel);
+        if (refusal !== undefined) throw new HttpError(409, refusal);
+      }
       // Who answers in place of Arianna (D-111d): only here, at creation; no route changes it later. Its card says how.
       const policy = body.agent === undefined ? undefined : (directAgents?.() ?? []).find((item) => item.agent === body.agent);
       if (body.agent !== undefined && policy === undefined) throw new HttpError(400, 'agent is not one the user may talk with now');
@@ -1127,6 +1143,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
         ...(body.project === undefined ? {} : { project: body.project }),
         ...(agent === undefined ? {} : { agent }),
         ...(body.incognito === true ? { incognito: true } : {}),
+        ...(typeof trialModel === 'string' ? { trialModel } : {}),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
@@ -1726,6 +1743,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
+    trialRefusal: options.trialRefusal,
     services: options.services,
     leaveRule: options.leaveRule,
     incognito: options.incognito,

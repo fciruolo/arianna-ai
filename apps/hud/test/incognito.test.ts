@@ -259,3 +259,14 @@ test('an activity frame keeps the incognito sign of the core, and only `true`', 
   assert.equal('incognito' in (parseServerMessage(JSON.stringify(frame)) ?? {}), false);
   assert.equal('incognito' in (parseServerMessage(JSON.stringify({ ...frame, incognito: 'yes' })) ?? {}), false);
 });
+
+test('a trial chat draft (D-142) keeps its model in the history entry, never a malformed one', () => {
+  assert.deepEqual(entryFromState(incognitoState({ draft: { mode: 'private', trialModel: 'qwen3-0.6b-4bit' } })), { draft: { mode: 'private', trialModel: 'qwen3-0.6b-4bit' } });
+  assert.deepEqual(entryFromState({ incognito: { draft: { mode: 'private', trialModel: 'Not An Id' } } }), { draft: { mode: 'private' } });
+  // Only a private draft has one.
+  assert.deepEqual(entryFromState({ incognito: { draft: { mode: 'work', trialModel: 'qwen3-0.6b-4bit' } } }), { draft: { mode: 'work' } });
+  // Another model is another choice: the page opens its draft.
+  assert.equal(sameChoice({ mode: 'private', incognito: true, trialModel: 'a' }, { mode: 'private', incognito: true, trialModel: 'b' }), false);
+  assert.equal(sameChoice({ mode: 'private', incognito: true, trialModel: 'a' }, { mode: 'private', incognito: true, trialModel: 'a' }), true);
+  assert.equal(sameChoice({ mode: 'private', incognito: true, trialModel: 'a' }, { mode: 'private', incognito: true }), false);
+});

@@ -326,6 +326,14 @@ export function useText(use: ModelUse): string {
   return `${step}: ${ordinal} gradino di ${String(use.tiers)}`;
 }
 
+/** The roles of a model that writes text (D-142): the same as CHAT_ROLES of apps/core/src/orchestrator/trial-chat.ts. */
+const CHAT_ROLES: readonly ModelRole[] = ['orchestrator', 'extractor', 'voice'];
+
+/** "Prova in chat" (D-142): a local model with its files on the disk that writes text, or has no role yet (added from Hugging Face). */
+export function canChatTrial(view: Pick<LocalModelView, 'present' | 'suitedRoles'>): boolean {
+  return view.present && (view.suitedRoles.length === 0 || view.suitedRoles.some((role) => CHAT_ROLES.includes(role)));
+}
+
 /** What a model does in Arianna, from its roles, the router's ladders and the agents: never written by hand. */
 export function usageLines(view: ModelView): string[] {
   const lines: string[] = [];

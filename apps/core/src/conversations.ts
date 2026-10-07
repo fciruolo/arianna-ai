@@ -44,6 +44,12 @@ export interface Conversation {
    * deleted when it closes (incognito.ts).
    */
   incognito: boolean;
+  /**
+   * The catalog id of the local model under trial (D-142): every message of
+   * this incognito private conversation goes to it only, without Arianna.
+   * Chosen at creation, never changed; null elsewhere.
+   */
+  trialModel: string | null;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -111,7 +117,7 @@ export class ChatError extends Error {
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito,
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
@@ -146,6 +152,8 @@ export interface NewConversation {
   agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
   /** An incognito conversation (D-136): never with a direct agent. */
   incognito?: boolean;
+  /** The local model under trial (D-142), already checked by the caller against the catalog: incognito and private only. */
+  trialModel?: string;
 }
 
 /**
@@ -177,15 +185,17 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
   const incognito = options.incognito === true;
   // A direct chat keeps its agent's session to resume it (D-111): it has no incognito form.
   if (incognito && options.agent !== undefined) throw new ChatError('invalid', 'an incognito conversation is answered by Arianna');
+  // The trial chat of a local model (D-142) leaves nothing behind: incognito, private, nobody else answers.
+  if (options.trialModel !== undefined && (!incognito || options.mode !== 'private')) throw new ChatError('invalid', 'a trial chat is an incognito private conversation');
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito})
+    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
     kind: 'conversation.created',
     label: 'L0',
-    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }), ...(incognito ? { incognito } : {}) },
+    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }), ...(incognito ? { incognito } : {}), ...(options.trialModel === undefined ? {} : { trialModel: options.trialModel }) },
   });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');

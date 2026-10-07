@@ -603,6 +603,8 @@ export function createChatStore() {
       project: choice.project,
       ...(agent === undefined ? {} : { agent }),
       ...(choice.incognito === true ? { incognito: true } : {}),
+      // A trial chat (D-142) is incognito and private only.
+      ...(choice.incognito === true && choice.mode === 'private' && choice.trialModel !== undefined ? { trialModel: choice.trialModel } : {}),
       conversationId: null,
     };
   }
@@ -627,7 +629,7 @@ export function createChatStore() {
       let created: Conversation | undefined;
       let id: string;
       if (step.kind === 'create') {
-        created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true);
+        created = await api.createConversation(start.mode, start.project, start.agent, start.incognito === true, start.trialModel);
         id = created.id;
         if (start.incognito === true) knownIncognito.add(id);
         // The user left the draft while it was created: nothing is sent, the text stays where it was written.

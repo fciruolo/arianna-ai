@@ -104,6 +104,7 @@ const emit = defineEmits<{
   changelog: [];
   newAgent: [];
   chat: [agent: string];
+  chatTrial: [modelId: string];
   section: [slug: string | undefined];
   dirty: [dirty: boolean];
 }>();
@@ -694,6 +695,7 @@ watch(active, () => {
               @cancel="resetModels"
               @section="openSection"
               @catalog="reload"
+              @chat-trial="emit('chatTrial', $event)"
             />
 
             <!-- Voice -->

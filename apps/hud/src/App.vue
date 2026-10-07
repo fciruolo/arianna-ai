@@ -233,7 +233,13 @@ function openDraft(choice: DraftChoice, replace = false): void {
   store.openDraft(choice);
   if (choice.incognito === true) {
     // The choice in the state of the entry, never in the address; a draft's entry is taken over, as below.
-    const entry: IncognitoEntry = { draft: { mode: choice.mode, ...(choice.mode === 'work' && choice.project !== undefined ? { project: choice.project } : {}) } };
+    const entry: IncognitoEntry = {
+      draft: {
+        mode: choice.mode,
+        ...(choice.mode === 'work' && choice.project !== undefined ? { project: choice.project } : {}),
+        ...(choice.mode === 'private' && choice.trialModel !== undefined ? { trialModel: choice.trialModel } : {}),
+      },
+    };
     const here = entryFromState(window.history.state);
     const onDraft =
       draftFromAddress(window.location.pathname, window.location.search) !== undefined || (isIncognitoPath(window.location.pathname) && here !== undefined && 'draft' in here);
@@ -251,6 +257,10 @@ function openDraft(choice: DraftChoice, replace = false): void {
   }
   setTitle('Nuova conversazione');
   focusComposer();
+}
+/** "Prova in chat" of a local model (D-142): an incognito private draft where only that model answers. */
+function openTrialChat(modelId: string): void {
+  openDraft({ mode: 'private', incognito: true, trialModel: modelId });
 }
 /** A result of "Cerca": a conversation (and the message in it) or a node of the knowledge graph. */
 function goTo(target: SearchTarget): void {
@@ -819,7 +829,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
       <ChangelogPage v-else-if="page === 'changelog'" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />

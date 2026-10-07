@@ -103,9 +103,14 @@ onMounted(() => field.value?.focus());
         <!-- Incognito (D-136): what stays outside Arianna, to read before the first message. -->
         <template v-else-if="draft.incognito === true">
           <span class="grid size-16 place-items-center rounded-full bg-incognito text-incognito-ink" aria-hidden="true"><Icon name="incognito" :size="34" /></span>
-          <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">
+          <h2 v-if="draft.trialModel !== undefined" class="font-hud text-lg font-semibold tracking-[0.05em]">Prova di {{ draft.trialModel }}</h2>
+          <h2 v-else class="font-hud text-lg font-semibold tracking-[0.05em]">
             Nuova conversazione incognita {{ draft.mode === 'private' ? 'privata' : 'di lavoro' }}
           </h2>
+          <!-- "Prova in chat" (D-142): who answers, before the first message -->
+          <p v-if="draft.trialModel !== undefined" role="note" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-left text-sm text-muted">
+            Ogni messaggio va solo a <span class="font-mono">{{ draft.trialModel }}</span>, sul Mac: senza Arianna, strumenti né archivio. Il modello si carica al primo messaggio, e può volerci un po'.
+          </p>
           <p class="inline-flex items-center gap-1.5 text-sm text-muted">
             <Icon :name="draft.mode" :size="14" />{{ MODE_TEXT[draft.mode] }}<template v-if="draft.project"> · {{ draft.project }}</template>
           </p>
@@ -141,7 +146,7 @@ onMounted(() => field.value?.focus());
           v-model="text"
           rows="1"
           maxlength="16000"
-          :placeholder="draft.agent === undefined ? 'Scrivi ad Arianna…' : `Scrivi ${toAgent(draft.agent)}…`"
+          :placeholder="draft.trialModel !== undefined ? `Scrivi a ${draft.trialModel}…` : draft.agent === undefined ? 'Scrivi ad Arianna…' : `Scrivi ${toAgent(draft.agent)}…`"
           class="max-h-48 min-w-0 flex-1 resize-none border-0 bg-transparent py-2 text-ink outline-none placeholder:text-muted"
           @keydown="onKey"
           @input="grow"
