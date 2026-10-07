@@ -10,13 +10,17 @@ import { after, before, test } from 'node:test';
 
 import WebSocket from 'ws';
 
-import { parseLabelRules, resolveHome } from '@arianna/config';
+import { DEFAULT_VOICE, parseLabelRules, resolveHome } from '@arianna/config';
 
 import { ChatError, createConversation, postUserMessage } from '../src/conversations.ts';
 import { createWorker, type StepExecutor } from '../src/engine.ts';
 import { recordFailure } from '../src/failures.ts';
-import { closeIncognito, closeIncognitoAtStart, isIncognitoTask } from '../src/incognito.ts';
+import { closeIncognito, closeIncognitoAtStart, haltIncognito, isIncognitoTask, localCacheOn } from '../src/incognito.ts';
+import { createCalls, type Calls } from '../src/voice/calls.ts';
+import { postLiveEdit } from '../src/live-edit.ts';
+import { scheduleCall, callWhenDone } from '../src/voice/ringer.ts';
 import { startLiveFeed, type LiveFeed } from '../src/live.ts';
+import { openReply, postActivity } from '../src/reply.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 import { loadStatus } from '../src/status.ts';
 import { openFailureChat } from '../src/system-chats.ts';
@@ -34,6 +38,11 @@ let origin: string;
 const home = join(resolveHome({}), 'data', 'test-tmp', randomUUID());
 const RULES = parseLabelRules('');
 const PROJECT = 'fake-site';
+// What the configuration says now: a local server with the cache on the SSD; a closing made to fail.
+let ssdCache = false;
+let closeFails: Error | undefined;
+/** The conversations whose call reached the voice (a stub). */
+const started: string[] = [];
 
 before(async () => {
   database = await createTestDatabase();
@@ -48,6 +57,18 @@ before(async () => {
     projects: () => [{ name: PROJECT, path: 'repos/fake-site', label: 'L1' }],
     models: () => [{ executor: 'claude', model: 'opus' }],
     directAgents: () => [{ agent: 'coder', description: 'Coder', cloud: true, modes: ['work'], project: true }],
+    // The voice reads as on; a call that reaches the voice service is a mistake of the test.
+    voice: { service: { state: 'up', request: () => Promise.reject(new Error('no voice in this test')) }, models: () => [], voice: () => 'voce', clones: '/srv/none' },
+    calls: {
+      start: (conversationId: string) => {
+        started.push(conversationId);
+        return Promise.resolve({ call: { id: randomUUID() }, answer: { sdp: 'v=0', type: 'answer' } });
+      },
+    } as unknown as Calls,
+    incognito: {
+      close: (id, cause) => (closeFails === undefined ? closeIncognito(db().sql, id, cause) : Promise.reject(closeFails)),
+      localCache: () => ssdCache,
+    },
   });
   origin = `http://127.0.0.1:${String(server.port)}`;
 });
@@ -209,8 +230,19 @@ test('saving from an incognito answers 409 and writes nothing; its saves read as
 });
 
 test('the opening card: cloud only for work, the project only an approved one', async () => {
-  assert.deepEqual((await call('GET', '/api/incognito/notice?mode=private')).body, { cloud: false, project: null });
-  assert.deepEqual((await call('GET', `/api/incognito/notice?mode=work&project=${PROJECT}`)).body, { cloud: true, project: PROJECT });
+  assert.deepEqual((await call('GET', '/api/incognito/notice?mode=private')).body, { cloud: false, project: null, localCache: false });
+  assert.deepEqual((await call('GET', `/api/incognito/notice?mode=work&project=${PROJECT}`)).body, { cloud: true, project: PROJECT, localCache: false });
+  // A local server with the cache of the prompts on the SSD: the card names it (D-136).
+  ssdCache = true;
+  try {
+    assert.deepEqual((await call('GET', '/api/incognito/notice?mode=private')).body, { cloud: false, project: null, localCache: true });
+  } finally {
+    ssdCache = false;
+  }
+  assert.equal(localCacheOn([{ command: ['omlx', 'serve', '--paged-ssd-cache-dir', 'data/omlx-cache'] }]), true);
+  assert.equal(localCacheOn([{ command: ['sh', '-c', 'omlx serve --paged-ssd-cache-dir=data/c --port 7001'] }]), true);
+  assert.equal(localCacheOn([{ command: ['omlx', 'serve', '--port', '7001'] }, {}]), false);
+  assert.equal(localCacheOn([{ command: ['omlx', '--paged-ssd-cache-dirs', 'x'] }]), false);
   assert.equal((await call('GET', '/api/incognito/notice?mode=work&project=altro')).status, 400);
   assert.equal((await call('GET', `/api/incognito/notice?mode=private&project=${PROJECT}`)).status, 400);
   assert.equal((await call('GET', '/api/incognito/notice')).status, 400);
@@ -354,4 +386,181 @@ test('at start-up every incognito left open closes with cause restart, its crash
   assert.equal((await call('GET', `/api/conversations/${normal}`)).status, 200);
   const open = await owner`SELECT 1 FROM conversations WHERE incognito AND purged_at IS NULL`;
   assert.equal(open.length, 0);
+});
+
+test('the live frames of an incognito say so: activity, reply fragments and events; those of a normal conversation do not', async () => {
+  const { sql } = db();
+  const id = await newIncognito();
+  const { task } = await postUserMessage(sql, id, 'Domanda');
+  const normal = await createConversation(sql, { mode: 'private' });
+  const other = await postUserMessage(sql, normal.id, 'Domanda');
+  const socket = new WebSocket(`ws://127.0.0.1:${String(server.port)}/api/ws`, { headers: { origin } });
+  const frames: Record<string, unknown>[] = [];
+  socket.on('message', (data: Buffer) => frames.push(JSON.parse(data.toString('utf8')) as Record<string, unknown>));
+  await new Promise((resolve) => socket.once('open', resolve));
+  await waitFor(() => frames.some((frame) => frame.type === 'ready'));
+  try {
+    for (const [conversationId, taskId] of [[id, task.id], [normal.id, other.task.id]] as const) {
+      await postActivity(sql, { conversationId, taskId, step: 1, kind: 'search', detail: 'cerca' });
+      await postLiveEdit(sql, { conversationId, taskId, step: 1 }, { path: 'index.html', tool: 'Edit', label: 'L1', added: 1, removed: 0, lines: '+ciao' });
+      const reply = await openReply(sql, taskId);
+      await reply.delta('pezzo');
+      await reply.finish('Risposta.', 'L2');
+    }
+    const of = (type: string, taskId: string) => frames.find((frame) => frame.type === type && frame.taskId === taskId);
+    await waitFor(() => of('delta', other.task.id) !== undefined && of('activity', other.task.id) !== undefined);
+    assert.equal(of('activity', task.id)?.incognito, true);
+    assert.equal(of('delta', task.id)?.incognito, true);
+    assert.equal(of('activity', other.task.id)?.incognito, undefined);
+    await waitFor(() => of('edit', other.task.id) !== undefined);
+    assert.equal(of('edit', task.id)?.incognito, true);
+    assert.equal(of('edit', other.task.id)?.incognito, undefined);
+    assert.equal(of('delta', other.task.id)?.incognito, undefined);
+    const created = (taskId: string) =>
+      frames.find((frame) => frame.type === 'event' && (frame.event as { kind: string; taskId: string }).kind === 'message.created' && (frame.event as { taskId: string }).taskId === taskId && ((frame.event as { payload: { role: string } }).payload.role === 'assistant'));
+    await waitFor(() => created(other.task.id) !== undefined);
+    assert.equal(created(task.id)?.incognito, true);
+    assert.equal(created(other.task.id)?.incognito, undefined);
+    // An event without a task is marked from its conversation: the closing of the incognito; a normal creation is not.
+    await closeIncognito(sql, id, 'user');
+    const eventOf = (kind: string, conversationId: string) =>
+      frames.find((frame) => frame.type === 'event' && (frame.event as { kind: string }).kind === kind && (frame.event as { payload: { conversationId?: string } }).payload.conversationId === conversationId);
+    await waitFor(() => eventOf('conversation.incognito-closed', id) !== undefined);
+    assert.equal(eventOf('conversation.incognito-closed', id)?.incognito, true);
+    const later = await createConversation(sql, { mode: 'private' });
+    await waitFor(() => eventOf('conversation.created', later.id) !== undefined);
+    assert.equal(eventOf('conversation.created', later.id)?.incognito, undefined);
+  } finally {
+    socket.close();
+  }
+});
+
+test('an incognito has no calls: the routes answer 409 incognito, the functions refuse; a normal conversation schedules', async () => {
+  const { sql } = db();
+  const id = await newIncognito();
+  const { taskId } = await quietMessage(id, 'Domanda');
+  await sql`UPDATE tasks SET status = 'running', waiting_reason = NULL WHERE id = ${taskId}`;
+  // The voice reads as on: an incognito is refused before the call reaches it.
+  assert.deepEqual(await call('POST', '/api/calls', { conversationId: id, sdp: 'v=0', type: 'offer' }), { status: 409, body: { error: 'incognito' } });
+  assert.deepEqual(await call('POST', '/api/calls/schedule', { conversationId: id, at: new Date(Date.now() + 3_600_000).toISOString() }), { status: 409, body: { error: 'incognito' } });
+  assert.deepEqual(await call('POST', `/api/tasks/${taskId}/call-when-done`), { status: 409, body: { error: 'incognito' } });
+  await assert.rejects(scheduleCall(sql, id, new Date(Date.now() + 3_600_000)), (error: unknown) => error instanceof ChatError && error.code === 'incognito');
+  await assert.rejects(callWhenDone(sql, taskId), (error: unknown) => error instanceof ChatError && error.code === 'incognito');
+  const normal = (await createConversation(sql, { mode: 'private' })).id;
+  assert.deepEqual(started, [], 'no call of the incognito reached the voice');
+  // A normal conversation goes on to the voice (here a stub).
+  assert.equal((await call('POST', '/api/calls', { conversationId: normal, sdp: 'v=0', type: 'offer' })).status, 201);
+  assert.deepEqual(started, [normal]);
+  // calls.start refuses an incognito by itself, before the voice; a normal conversation passes that check.
+  const real = createCalls({
+    sql,
+    voice: { state: 'up', request: () => Promise.reject(new Error('no voice in this test')) },
+    config: () => ({ roles: {}, voice: DEFAULT_VOICE, local: { endpoints: [] } }),
+    candidates: () => [],
+    model: () => { throw new Error('no model in this test'); },
+    coreUrl: 'http://127.0.0.1:1',
+  });
+  await assert.rejects(real.start(id, { sdp: 'v=0', type: 'offer' }), (error: unknown) => error instanceof ChatError && error.code === 'incognito');
+  await assert.rejects(real.start(normal, { sdp: 'v=0', type: 'offer' }), (error: unknown) => !(error instanceof ChatError));
+  assert.equal((await scheduleCall(sql, normal, new Date(Date.now() + 3_600_000))).status, 'scheduled');
+  await sql`UPDATE tasks SET status = 'failed' WHERE id = ${taskId}`;
+});
+
+test('closing cancels the calls still scheduled on the incognito (rows from before the refusal, or written by hand)', async () => {
+  const { sql, owner } = db();
+  const id = await newIncognito();
+  const [row] = await owner<{ id: string }[]>`
+    INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at) VALUES (${id}, 'out', 'scheduled', 'scheduled', now() + interval '1 hour') RETURNING id::text`;
+  await closeIncognito(sql, id, 'user');
+  const [after] = await owner<{ status: string; reason: string }[]>`SELECT status, end_reason AS reason FROM calls WHERE id = ${row?.id ?? ''}`;
+  assert.deepEqual(after, { status: 'skipped', reason: 'cancelled' });
+});
+
+test('closing marks ended a live call on the incognito, with its event; a call of another conversation stays', async () => {
+  const { sql, owner } = db();
+  const id = await newIncognito();
+  // No live call in the schema but this one (one at a time).
+  await owner`UPDATE calls SET status = 'ended', end_reason = 'hangup', ended_at = now() WHERE status IN ('ringing', 'connecting', 'active')`;
+  const [live] = await owner<{ id: string }[]>`
+    INSERT INTO calls (conversation_id, direction, status, answered_at) VALUES (${id}, 'in', 'active', now()) RETURNING id::text`;
+  const normal = (await createConversation(sql, { mode: 'private' })).id;
+  const [kept] = await owner<{ id: string }[]>`
+    INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at) VALUES (${normal}, 'out', 'scheduled', 'scheduled', now() + interval '1 hour') RETURNING id::text`;
+  await closeIncognito(sql, id, 'user');
+  const rows = await owner<{ id: string; status: string; reason: string | null }[]>`
+    SELECT id::text, status, end_reason AS reason FROM calls WHERE id IN (${live?.id ?? ''}, ${kept?.id ?? ''})`;
+  assert.deepEqual(Object.fromEntries(rows.map((row) => [row.id, [row.status, row.reason]])), {
+    [live?.id ?? '']: ['ended', 'hangup'],
+    [kept?.id ?? '']: ['scheduled', null],
+  });
+  const [ended] = await owner<{ payload: Record<string, unknown> }[]>`
+    SELECT payload FROM events WHERE kind = 'call.ended' AND payload ->> 'callId' = ${live?.id ?? ''}`;
+  assert.deepEqual(ended?.payload, { callId: live?.id, conversationId: id, status: 'ended', reason: 'hangup' });
+});
+
+test('a closing that fails on a lock answers busy and leaves no task at work: its jobs failed, its tasks failed', async () => {
+  const { sql, owner } = db();
+  const id = await newIncognito();
+  const { task, message } = await postUserMessage(sql, id, 'Al lavoro');
+  const errors: unknown[] = [];
+  const holder = await owner.reserve();
+  try {
+    await holder`BEGIN`;
+    await holder`SELECT 1 FROM messages WHERE id = ${message.id} FOR UPDATE`;
+    await assert.rejects(closeIncognito(sql, id, 'user', { onError: (error) => errors.push(error) }), (error: unknown) => error instanceof ChatError && error.code === 'busy');
+  } finally {
+    await holder`ROLLBACK`;
+    holder.release();
+  }
+  assert.deepEqual(errors, []);
+  const [state] = await owner<{ task: string; job: string }[]>`
+    SELECT t.status AS task, (SELECT j.status FROM jobs j WHERE j.key = ${`task:${task.id}`} ORDER BY j.id DESC LIMIT 1) AS job
+    FROM tasks t WHERE t.id = ${task.id}`;
+  assert.deepEqual(state, { task: 'failed', job: 'failed' });
+  // Not purged yet: tried again, it closes.
+  assert.equal((await closeIncognito(sql, id, 'user')).deleted.tasks, 1);
+});
+
+test('"Termina" when the work does not stop answers 409 busy, a stable code', async () => {
+  const id = await newIncognito();
+  closeFails = new ChatError('busy', 'the conversation is still at work: try again in a moment');
+  try {
+    assert.deepEqual(await call('POST', `/api/conversations/${id}/end`), { status: 409, body: { error: 'busy' } });
+  } finally {
+    closeFails = undefined;
+  }
+  assert.equal((await call('POST', `/api/conversations/${id}/end`)).status, 200);
+});
+
+test('an incognito that does not close at start-up is stopped all the same: its jobs never run again, no task left at work', async () => {
+  const { sql, owner } = db();
+  const id = await newIncognito();
+  const { task, message } = await postUserMessage(sql, id, 'Prima del crollo');
+  // A task left running without its job, as after a first stop that failed it.
+  await owner`UPDATE tasks SET status = 'running' WHERE id = ${task.id}`;
+  await owner`UPDATE jobs SET status = 'failed', last_error = 'incognito' WHERE key = ${`task:${task.id}`}`;
+  const second = await postUserMessage(sql, id, 'Seconda');
+  // Another connection holds the message: the purge waits for its lock and gives up (lock_timeout of purge_incognito).
+  const holder = await owner.reserve();
+  try {
+    await holder`BEGIN`;
+    await holder`SELECT 1 FROM messages WHERE id = ${message.id} FOR UPDATE`;
+    const errors: unknown[] = [];
+    await closeIncognitoAtStart(sql, (error) => errors.push(error));
+    assert.ok(errors.some((error) => error instanceof ChatError && error.code === 'busy'));
+  } finally {
+    await holder`ROLLBACK`;
+    holder.release();
+  }
+  const rows = await owner<{ status: string; job: string | null }[]>`
+    SELECT t.status, (SELECT j.status FROM jobs j WHERE j.key = 'task:' || t.id::text ORDER BY j.id DESC LIMIT 1) AS job
+    FROM tasks t WHERE t.id IN (${task.id}, ${second.task.id}) ORDER BY t.created_at`;
+  assert.deepEqual([...rows], [{ status: 'failed', job: 'failed' }, { status: 'failed', job: 'failed' }]);
+  // Still open, not purged: the next closing deletes it.
+  assert.equal((await call('GET', `/api/conversations/${id}`)).status, 200);
+  await haltIncognito(sql, id);
+  assert.equal((await closeIncognito(sql, id, 'restart')).deleted.tasks, 2);
+  // Never on a conversation of the user: refused, nothing touched.
+  const normal = await createConversation(sql, { mode: 'private' });
+  await assert.rejects(haltIncognito(sql, normal.id), (error: unknown) => error instanceof ChatError && error.code === 'not-incognito');
 });

@@ -65,7 +65,7 @@ import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-m
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import type { DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
-import { closeIncognito, incognitoClosedCause, isIncognitoConversation, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
+import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -162,7 +162,11 @@ export interface ApiServerOptions {
    * Closes an incognito conversation (D-136) stopping its work in progress;
    * without it the route closes it without stopping a step of the worker.
    */
-  incognito?: { close: (conversationId: string, cause: IncognitoCause) => Promise<IncognitoReceipt> };
+  incognito?: {
+    close: (conversationId: string, cause: IncognitoCause) => Promise<IncognitoReceipt>;
+    /** A local server keeps a cache of the prompts on the SSD (`--paged-ssd-cache-dir`, D-136): the opening card names it. Read at each request. */
+    localCache?: () => boolean;
+  };
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -356,7 +360,10 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       onlyFields(body, ['conversationId', 'sdp', 'type']);
       const { conversationId, sdp, type } = body;
       if (typeof conversationId !== 'string' || typeof sdp !== 'string' || typeof type !== 'string') throw new HttpError(400, 'conversationId, sdp and type are required');
-      return { status: 201, body: await need().start(conversationId, { sdp, type }) };
+      const started = need();
+      // An incognito conversation has no calls (D-136); with the voice off the 503 comes first, as for any call.
+      if (await isIncognitoConversation(sql, conversationId)) return { status: 409, body: { error: 'incognito' } };
+      return { status: 201, body: await started.start(conversationId, { sdp, type }) };
     }),
     route('POST', '/api/calls/:id/end', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
@@ -379,6 +386,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
       const body = await readJson(request);
       onlyFields(body, ['conversationId', 'at']);
       need();
+      if (typeof body.conversationId === 'string' && (await isIncognitoConversation(sql, body.conversationId))) return { status: 409, body: { error: 'incognito' } };
       const { conversationId, at } = body;
       if (typeof conversationId !== 'string' || !isUuid(conversationId) || typeof at !== 'string') throw new HttpError(400, 'conversationId and at (ISO time) are required');
       return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at)) } };
@@ -386,6 +394,7 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
     route('POST', '/api/tasks/:id/call-when-done', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       need();
+      if (await isIncognitoTask(sql, idParam(params, 'id'))) return { status: 409, body: { error: 'incognito' } };
       return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id')) } };
     }),
     route('POST', '/api/calls/:id/cancel', async (request, _url, params) => {
@@ -1099,6 +1108,8 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
         return { body: incognito === undefined ? await closeIncognito(sql, id, 'user') : await incognito.close(id, 'user') };
       } catch (error) {
         if (error instanceof ChatError && error.code === 'not-incognito') return { status: 409, body: { error: 'not incognito' } };
+        // The work did not stop in time, or the conversation was in use: a stable code, the chat tries again.
+        if (error instanceof ChatError && error.code === 'busy') return { status: 409, body: { error: 'busy' } };
         throw error;
       }
     }),
@@ -1110,7 +1121,8 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       if (project !== null && mode !== 'work') throw new HttpError(400, 'only a work conversation has a project');
       if (project !== null && !projects().some((item) => item.name === project)) throw new HttpError(400, 'project is not among the approved projects');
       // A private conversation never leaves the Mac; a work one reaches Claude only while a cloud model can take a step.
-      return Promise.resolve({ body: { cloud: mode === 'work' && models().length > 0, project } });
+      // `localCache`: a local server writes blocks of the prompts to the SSD; they stay until evicted.
+      return Promise.resolve({ body: { cloud: mode === 'work' && models().length > 0, project, localCache: incognito?.localCache?.() ?? false } });
     }),
 
     // Attaches the question of the failed task to its system chat: only when the user asks (D-064).

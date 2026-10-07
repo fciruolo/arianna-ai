@@ -166,7 +166,9 @@ test('Arianna never calls about an incognito conversation (D-136): not a wait, n
   const { task } = await postUserMessage(db().sql, conversation.id, 'Controlla il contratto finto');
   await db().sql`UPDATE jobs SET status = 'done' WHERE key = ${`task:${task.id}`}`;
   await db().sql`UPDATE tasks SET status = 'waiting_user', waiting_reason = 'approval', updated_at = now() - interval '90 minutes' WHERE id = ${task.id}`;
-  await scheduleCall(db().sql, conversation.id, clock, clock);
+  // scheduleCall refuses an incognito: a row written by hand, as one from before the refusal.
+  await assert.rejects(scheduleCall(db().sql, conversation.id, clock, clock), /incognito/);
+  await db().sql`INSERT INTO calls (conversation_id, direction, reason, status, scheduled_at) VALUES (${conversation.id}, 'out', 'scheduled', 'scheduled', ${clock})`;
   assert.equal(await ringer.tick(), undefined);
   // A normal conversation in the same state rings.
   const normal = await waitingTask(40);

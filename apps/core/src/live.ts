@@ -13,12 +13,18 @@ import { ACTIVITY_KINDS, activityChannel, deltaChannel, type ActivityNotice, typ
  */
 export type PublicEvent = Omit<StoredEvent, 'prevHash' | 'hash'>;
 
-export type LiveMessage =
+/**
+ * `incognito: true` on a frame of a task or a conversation that is incognito
+ * (D-136): the chat keeps it out of the office and the status also in a page
+ * that does not know that conversation. Absent otherwise.
+ */
+export type LiveMessage = (
   | { type: 'event'; event: PublicEvent }
   | ({ type: 'delta' } & DeltaNotice)
   | ({ type: 'activity' } & ActivityNotice)
   /** A piece of a live change of the Coder (D-117): web chat only. */
-  | ({ type: 'edit' } & EditNotice);
+  | ({ type: 'edit' } & EditNotice)
+) & { incognito?: true };
 
 export interface Subscriber {
   send(message: LiveMessage): void;
@@ -119,9 +125,39 @@ interface Entry {
   subscriber: Subscriber;
   /** Last event id sent to this subscriber. */
   sent: bigint;
-  /** While it catches up, live events wait here. */
-  pending: PublicEvent[] | undefined;
+  /** While it catches up, live events wait here, with whether they are of an incognito. */
+  pending: { event: PublicEvent; incognito: boolean }[] | undefined;
 }
+
+/**
+ * The ids of the events of a task or a conversation that is incognito
+ * (D-136), from the task of the event or the `conversationId` of its payload.
+ */
+export async function incognitoEvents(sql: Sql, events: readonly Pick<StoredEvent, 'id' | 'taskId' | 'payload'>[]): Promise<Set<string>> {
+  const conversationOf = (event: Pick<StoredEvent, 'payload'>): string | undefined => {
+    const payload = event.payload;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined;
+    const id = (payload as Record<string, unknown>).conversationId;
+    return typeof id === 'string' && UUID.test(id) ? id : undefined;
+  };
+  const taskIds = [...new Set(events.flatMap((event) => (event.taskId === null ? [] : [event.taskId])))];
+  const conversationIds = [...new Set(events.flatMap((event) => conversationOf(event) ?? []))];
+  if (taskIds.length === 0 && conversationIds.length === 0) return new Set();
+  const rows = await sql<{ id: string; kind: 'task' | 'conversation' }[]>`
+    SELECT t.id::text, 'task' AS kind FROM tasks t JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.id = ANY (${taskIds}::uuid[]) AND c.incognito
+    UNION ALL
+    SELECT id::text, 'conversation' FROM conversations WHERE id = ANY (${conversationIds}::uuid[]) AND incognito`;
+  const tasks = new Set(rows.filter((row) => row.kind === 'task').map((row) => row.id));
+  const conversations = new Set(rows.filter((row) => row.kind === 'conversation').map((row) => row.id));
+  return new Set(
+    events
+      .filter((event) => (event.taskId !== null && tasks.has(event.taskId)) || conversations.has(conversationOf(event) ?? ''))
+      .map((event) => event.id),
+  );
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function startLiveFeed(sql: Sql, options: { onError?: (error: unknown) => void } = {}): Promise<LiveFeed> {
   // The same schema the trigger and the replies use for their channels.
@@ -135,26 +171,62 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
   let wakes = 0;
   let closed = false;
 
-  function deliver(entry: Entry, event: PublicEvent): void {
+  function deliver(entry: Entry, event: PublicEvent, incognito: boolean): void {
     const id = BigInt(event.id);
     if (id <= entry.sent) return;
     entry.sent = id;
-    entry.subscriber.send({ type: 'event', event });
+    entry.subscriber.send({ type: 'event', event, ...(incognito ? { incognito: true as const } : {}) });
   }
 
   async function readNew(): Promise<void> {
     for (;;) {
       const events = await readEvents(sql, { afterId: last.toString(), limit: PAGE });
-      for (const stored of events) {
-        const event = toPublic(stored);
-        last = BigInt(event.id);
-        for (const entry of entries) {
-          if (entry.pending !== undefined) entry.pending.push(event);
-          else deliver(entry, event);
+      const hidden = await incognitoEvents(sql, events);
+      last = events.length === 0 ? last : BigInt(events[events.length - 1]?.id ?? last.toString());
+      // In the same queue as the fragments (D-136): a fragment that came first, waiting for its lookup, still goes first.
+      await enqueue(() => {
+        for (const stored of events) {
+          const event = toPublic(stored);
+          const incognito = hidden.has(event.id);
+          for (const entry of entries) {
+            if (entry.pending !== undefined) entry.pending.push({ event, incognito });
+            else deliver(entry, event, incognito);
+          }
         }
-      }
+      });
       if (events.length < PAGE) return;
     }
+  }
+
+  /** Whether a conversation is incognito: immutable, so remembered (D-136). */
+  const incognitoCache = new Map<string, boolean>();
+  async function conversationIncognito(conversationId: string): Promise<boolean> {
+    const known = incognitoCache.get(conversationId);
+    if (known !== undefined) return known;
+    if (!UUID.test(conversationId)) return false;
+    const [row] = await sql<{ incognito: boolean }[]>`SELECT incognito FROM conversations WHERE id = ${conversationId}`;
+    const incognito = row?.incognito === true;
+    if (incognitoCache.size >= 1000) incognitoCache.clear();
+    if (row !== undefined) incognitoCache.set(conversationId, incognito);
+    return incognito;
+  }
+  /**
+   * One queue for what reaches the subscribers live: the fragments of the
+   * notifications, each marked when its conversation is incognito, and the
+   * events, in the order they came. A fragment whose lookup fails is dropped
+   * (reported): unmarked it could show an incognito where it must not.
+   */
+  let frames: Promise<void> = Promise.resolve();
+  function enqueue(work: () => void | Promise<void>): Promise<void> {
+    frames = frames.then(work).catch((error: unknown) => options.onError?.(error));
+    return frames;
+  }
+  function sendFrame(message: Exclude<LiveMessage, { type: 'event' }>): void {
+    void enqueue(async () => {
+      const incognito = await conversationIncognito(message.conversationId);
+      const marked: LiveMessage = incognito ? { ...message, incognito: true } : message;
+      for (const entry of entries) entry.subscriber.send(marked);
+    });
   }
 
   /** Coalesces notifications: one read at a time, and one more if any came meanwhile. */
@@ -180,18 +252,18 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
   const deltas = await sql.listen(deltaChannel(schema), (payload) => {
     const delta = parseDelta(payload);
     if (delta === undefined) return;
-    for (const entry of entries) entry.subscriber.send({ type: 'delta', ...delta });
+    sendFrame({ type: 'delta', ...delta });
   });
   const activity = await sql.listen(activityChannel(schema), (payload) => {
     const notice = parseActivity(payload);
     if (notice === undefined) return;
-    for (const entry of entries) entry.subscriber.send({ type: 'activity', ...notice });
+    sendFrame({ type: 'activity', ...notice });
   });
 
   const edits = await sql.listen(editChannel(schema), (payload) => {
     const notice = parseEdit(payload);
     if (notice === undefined) return;
-    for (const entry of entries) entry.subscriber.send({ type: 'edit', ...notice });
+    sendFrame({ type: 'edit', ...notice });
   });
 
   return {
@@ -205,10 +277,11 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
         // Catch up from the table, then flush what arrived live meanwhile; ids dedupe the overlap.
         for (;;) {
           const page = await readEvents(sql, { afterId: entry.sent.toString(), limit: PAGE });
-          for (const event of page) deliver(entry, toPublic(event));
+          const hidden = await incognitoEvents(sql, page);
+          for (const event of page) deliver(entry, toPublic(event), hidden.has(event.id));
           if (page.length < PAGE) break;
         }
-        for (const event of entry.pending ?? []) deliver(entry, event);
+        for (const { event, incognito } of entry.pending ?? []) deliver(entry, event, incognito);
         entry.pending = undefined;
       } catch (error) {
         entries.delete(entry);
@@ -226,6 +299,7 @@ export async function startLiveFeed(sql: Sql, options: { onError?: (error: unkno
       await activity.unlisten();
       await edits.unlisten();
       await reading;
+      await frames;
     },
   };
 }

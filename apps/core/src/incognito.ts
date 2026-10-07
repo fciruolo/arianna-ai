@@ -36,6 +36,17 @@ export interface IncognitoReceipt {
   };
 }
 
+const SSD_CACHE = /(^|\s)--paged-ssd-cache-dir(=|\s|$)/;
+
+/**
+ * A local server started with `--paged-ssd-cache-dir` (oMLX) keeps blocks
+ * of the prompts on the SSD until they are evicted (D-136): the opening card
+ * of an incognito names it. Any argument of a `command`, also inside a shell line.
+ */
+export function localCacheOn(endpoints: readonly { command?: readonly string[] }[]): boolean {
+  return endpoints.some((endpoint) => (endpoint.command ?? []).some((arg) => SSD_CACHE.test(arg)));
+}
+
 /** The conversation is incognito, open or closed: the channels recognize one also after its purge. */
 export async function isIncognitoConversation(sql: Queryable, conversationId: string): Promise<boolean> {
   if (!isUuid(conversationId)) return false;
@@ -68,6 +79,8 @@ export interface CloseOptions {
   /** How long to wait for a stopped run to end before closing it here. Default 15 s. */
   waitMs?: number;
   pollMs?: number;
+  /** Where a failed fallback stop is reported (busy closing): never silent. */
+  onError?: (error: unknown) => void;
 }
 
 interface PurgeResult {
@@ -100,18 +113,9 @@ export async function closeIncognito(sql: Sql, conversationId: string, cause: In
       await checkIncognito(tx, conversationId);
       const taskIds = (await tx<{ id: string }[]>`
         SELECT id::text FROM tasks WHERE conversation_id = ${conversationId} ORDER BY id FOR UPDATE`).map((row) => row.id);
-      const keys = taskIds.map((id) => `task:${id}`);
       // Again under the locks: a step claimed since the first look stops now; its writes wait for this transaction and then find the job failed.
       for (const id of taskIds) options.stopTask?.(id);
-      // The work stops for good: no step goes back to the queue (D-136, cause incognito).
-      await tx`
-        UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'incognito'
-        WHERE key = ANY (${keys}) AND status IN ('queued', 'running')`;
-      // A run the worker did not end in time (or one left by a crash) ends here.
-      for (const id of taskIds) await interruptRunning(tx, id);
-      const atWork = await tx<{ id: string }[]>`
-        SELECT id::text FROM tasks WHERE id = ANY (${taskIds}::uuid[]) AND status IN ('ready', 'running')`;
-      for (const task of atWork) await moveTask(tx, task.id, 'failed', { cause: 'incognito' });
+      await stopWork(tx, conversationId, taskIds);
 
       const remains = await remainsOf(tx, taskIds);
       const [row] = await tx<{ purged: PurgeResult }[]>`SELECT purge_incognito(${conversationId}::uuid) AS purged`;
@@ -135,8 +139,41 @@ export async function closeIncognito(sql: Sql, conversationId: string, cause: In
     const code = (error as { code?: unknown }).code;
     if (code === 'P0002') throw new ChatError('not-found', `conversation ${conversationId} does not exist`);
     // A step that kept working past the closing, or a lock that did not come in time: the caller may try again.
-    if (code === '55006' || code === '55P03' || code === '40P01') throw new ChatError('busy', 'the conversation is still at work: try again in a moment');
+    if (code === '55006' || code === '55P03' || code === '40P01') {
+      // Not left half-stopped: a task the first stop already left without its job is not `running` any more.
+      await haltIncognito(sql, conversationId).catch((halt: unknown) => options.onError?.(halt));
+      throw new ChatError('busy', 'the conversation is still at work: try again in a moment');
+    }
     throw error;
+  }
+}
+
+/**
+ * Stops everything of an incognito conversation for good, inside the
+ * caller's transaction (D-136, cause incognito): its active jobs fail and
+ * never go back to the queue, its running runs end, its tasks still ready
+ * or running fail, its scheduled calls are cancelled and a live call on it
+ * is marked ended in the database only (none should exist: calls are refused
+ * in an incognito; a session of the voice would not be closed from here).
+ */
+async function stopWork(tx: Queryable, conversationId: string, taskIds: readonly string[]): Promise<void> {
+  await tx`
+    UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'incognito'
+    WHERE key = ANY (${taskIds.map((id) => `task:${id}`)}) AND status IN ('queued', 'running')`;
+  // A run the worker did not end in time (or one left by a crash) ends here.
+  for (const id of taskIds) await interruptRunning(tx, id);
+  const atWork = await tx<{ id: string }[]>`
+    SELECT id::text FROM tasks WHERE id = ANY (${taskIds}::uuid[]) AND status IN ('ready', 'running')`;
+  for (const task of atWork) await moveTask(tx, task.id, 'failed', { cause: 'incognito' });
+  const calls = await tx<{ id: string; status: 'skipped' | 'ended'; reason: string }[]>`
+    UPDATE calls SET
+      status = CASE WHEN status = 'scheduled' THEN 'skipped' ELSE 'ended' END,
+      end_reason = CASE WHEN status = 'scheduled' THEN 'cancelled' ELSE 'hangup' END,
+      ended_at = now()
+    WHERE conversation_id = ${conversationId} AND status IN ('scheduled', 'ringing', 'connecting', 'active')
+    RETURNING id::text, status, end_reason AS reason`;
+  for (const call of calls) {
+    await appendEvent(tx, { kind: 'call.ended', label: 'L0', payload: { callId: call.id, conversationId, status: call.status, reason: call.reason } });
   }
 }
 
@@ -182,7 +219,7 @@ export async function closeIncognitoAtStart(sql: Sql, onError: (error: unknown) 
   let closed = 0;
   for (const id of await openIncognito(sql)) {
     try {
-      await closeIncognito(sql, id, 'restart');
+      await closeIncognito(sql, id, 'restart', { onError });
       closed += 1;
     } catch (error) {
       onError(error);
@@ -193,14 +230,16 @@ export async function closeIncognitoAtStart(sql: Sql, onError: (error: unknown) 
   return closed;
 }
 
-/** The jobs of an incognito conversation fail and its runs end, without the purge: nothing of it runs again. */
-async function haltIncognito(sql: Sql, conversationId: string): Promise<void> {
+/** Stops the work of an incognito conversation without the purge (stopWork in its own transaction): nothing of it runs again. */
+export async function haltIncognito(sql: Sql, conversationId: string): Promise<void> {
   await sql.begin(async (tx) => {
-    const taskIds = (await tx<{ id: string }[]>`SELECT id::text FROM tasks WHERE conversation_id = ${conversationId}`).map((row) => row.id);
-    await tx`
-      UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'incognito'
-      WHERE key = ANY (${taskIds.map((id) => `task:${id}`)}) AND status IN ('queued', 'running')`;
-    for (const id of taskIds) await interruptRunning(tx, id);
+    // It runs after a closing that failed on a lock: it waits for none longer than the purge does.
+    await tx`SET LOCAL lock_timeout = '5s'`;
+    // Never on a conversation of the user: it fails tasks and jobs and ends calls.
+    await checkIncognito(tx, conversationId);
+    const taskIds = (await tx<{ id: string }[]>`
+      SELECT id::text FROM tasks WHERE conversation_id = ${conversationId} ORDER BY id FOR UPDATE`).map((row) => row.id);
+    await stopWork(tx, conversationId, taskIds);
   });
 }
 

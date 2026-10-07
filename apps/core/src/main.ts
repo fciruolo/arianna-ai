@@ -28,7 +28,7 @@ import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
 import { createWorker } from './engine.ts';
-import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, openIncognito, type IncognitoCause } from './incognito.ts';
+import { closeIncognito, closeIncognitoAtStart, createIncognitoWatch, isIncognitoConversation, localCacheOn, openIncognito, type IncognitoCause } from './incognito.ts';
 import { appendEvent } from './events.ts';
 import { createServiceManager } from './project-services.ts';
 import { createUserAgents } from './user-agents.ts';
@@ -328,7 +328,7 @@ const worker = createWorker({
 });
 /** Closes an incognito conversation, stopping the step the worker runs for it (D-136). */
 const endIncognito = (conversationId: string, cause: IncognitoCause) =>
-  closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito') });
+  closeIncognito(sql, conversationId, cause, { stopTask: (taskId) => worker.stopTask(taskId, 'incognito'), onError: report });
 const live = await startLiveFeed(sql, { onError: report });
 
 // The calls (D-066), on the voice in place: off, they are refused. Limits,
@@ -489,7 +489,7 @@ const server = await startApiServer({
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
   installation: () => installationInfo(config.home, app.development, settings.current().installation?.mode),
   ...(existsSync(dist) ? { staticDir: dist } : {}),
-  incognito: { close: endIncognito },
+  incognito: { close: endIncognito, localCache: () => localCacheOn(settings.current().local.endpoints) },
   onError: report,
 });
 await worker.start();
