@@ -3,7 +3,7 @@ import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/coverage/**', 'data/**', '.claude/worktrees/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/coverage/**', 'data/**', '.claude/worktrees/**', 'repos/**', 'kb/inbox/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{ts,mts,cts}'],

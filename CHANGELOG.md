@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- `pnpm dev:codex` lancia Codex CLI sullo sviluppo di Arianna con un profilo di permessi che chiude `data/` e `config/arianna.toml`; le regole per Codex sono in `AGENTS.md` (D-143).
+
 ## [0.32.0] - 2026-10-07
 
 ### Aggiunto
