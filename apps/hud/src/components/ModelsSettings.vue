@@ -10,6 +10,9 @@
  * GET /api/models/overview, all L0. The actions on a local model (stage M4:
  * download, verify, unload, remove into the bin, empty the bin) ask for a
  * confirmation that says how much and where; a removal needs the id typed.
+ * I-10 (D-139): models are searched on Hugging Face and added to the user
+ * catalog from the panel above the list; the card of one added that way
+ * promotes it to roles or takes it out of the catalog.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -58,6 +61,8 @@ import {
   type Tone,
 } from '../lib/models-page.ts';
 import { MODEL_ROLES, ROLE_TEXT, roleOptions, type CatalogModel, type CloudModelsForm, type ModelRole, type SettingsValues } from '../lib/settings.ts';
+import HubEntryPanel from './HubEntryPanel.vue';
+import HuggingFaceSearch from './HuggingFaceSearch.vue';
 import Icon from './Icon.vue';
 
 interface ModelParts {
@@ -78,8 +83,8 @@ const props = defineProps<{
   error: string | undefined;
   save: () => Promise<boolean>;
 }>();
-/** `cancel`: the parts back to what was read. `section`: another section of the settings. */
-const emit = defineEmits<{ cancel: []; section: [slug: string] }>();
+/** `cancel`: the parts back to what was read. `section`: another section of the settings. `catalog`: the catalog changed (I-10): read the settings again. */
+const emit = defineEmits<{ cancel: []; section: [slug: string]; catalog: [] }>();
 
 // The list
 const overview = ref<ModelsOverview | null>(null);
@@ -136,6 +141,20 @@ const TONE_CLASS: Record<Tone, string> = { ok: 'text-ok', warn: 'text-warn', inf
 function badgeClass(view: LocalModelView | CloudModelView): string {
   if (view.locality === 'local') return 'text-ok';
   return view.executor === 'claude' ? 'text-accent' : 'text-info';
+}
+
+// Models from Hugging Face (I-10): a new or changed entry of the user catalog is read again here and in the role menus.
+async function catalogChanged(select?: string): Promise<void> {
+  emit('catalog');
+  await load();
+  if (select !== undefined) {
+    filter.value = { ...EMPTY_FILTER };
+    await choose(`local:${select}`);
+  }
+}
+/** The roles `[roles]` gives a model as saved: a promotion cannot take them away. */
+function savedRoles(id: string): ModelRole[] {
+  return MODEL_ROLES.filter((role) => props.base.roles[role] === id);
 }
 
 // Roles of a local model, from its card: the same form as the panel below.
@@ -362,6 +381,8 @@ onBeforeUnmount(() => {
       <span class="font-mono text-xs">{{ problem }}</span>
     </p>
 
+    <HuggingFaceSearch @added="(id) => catalogChanged(id)" />
+
     <!-- Filters -->
     <div class="flex flex-wrap items-center gap-2" role="search">
       <div class="inline-flex overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Dove gira">
@@ -433,7 +454,9 @@ onBeforeUnmount(() => {
             <span class="grid size-[42px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface-2 font-hud text-sm font-semibold text-ok">{{ current.badge }}</span>
             <div class="min-w-0">
               <h2 class="font-mono text-[15px] font-semibold break-all">{{ current.view.id }}</h2>
-              <p class="text-[12.5px] text-muted">{{ current.view.provider ?? 'Fornitore non indicato' }} · famiglia {{ current.view.family }} · runtime {{ current.view.runtime }}</p>
+              <p class="text-[12.5px] text-muted">
+                {{ current.view.provider ?? 'Fornitore non indicato' }} · famiglia {{ current.view.family }} · runtime {{ current.view.runtime }}<template v-if="current.view.origin === 'huggingface'"> · <span class="chip text-info">da Hugging Face</span></template>
+              </p>
             </div>
           </div>
           <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-2">
@@ -469,7 +492,7 @@ onBeforeUnmount(() => {
           <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Azioni sul modello">
             <h3 class="hud-title text-[10.5px]">File e memoria</h3>
             <p v-if="!current.view.present && current.view.action?.status !== 'running'" class="text-xs text-muted">
-              I file mancano in <code class="font-mono">data/models/{{ current.view.id }}</code>: «Scarica» li prende dagli indirizzi del catalogo. Si può già assegnare a un ruolo.
+              I file mancano in <code class="font-mono">data/models/{{ current.view.id }}</code>: «Scarica» li prende dagli indirizzi del catalogo.<template v-if="current.view.suitedRoles.length > 0"> Si può già assegnare a un ruolo.</template>
             </p>
             <div v-if="current.view.action?.status === 'running'" class="flex flex-col gap-1" role="status">
               <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-surface-2">
@@ -494,6 +517,7 @@ onBeforeUnmount(() => {
             <p v-for="reason in blockedReasons(actionButtons(current.view, running))" :key="reason" class="text-xs text-muted">{{ reason }}</p>
             <p v-if="actionNotice !== null" class="text-xs text-ok" role="status">{{ actionNotice }}</p>
           </div>
+          <HubEntryPanel v-if="current.view.origin === 'huggingface'" :view="current.view" :assigned="savedRoles(current.view.id)" @changed="catalogChanged()" @forgotten="catalogChanged()" />
 
           <template v-if="current.view.strengths.length > 0">
             <h3 class="hud-title text-[10.5px]">Punti di forza</h3>

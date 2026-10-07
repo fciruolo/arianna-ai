@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Impostazioni → Modelli: "Cerca su Hugging Face" trova i modelli MLX pubblici e mostra la scheda di uno (file, peso, licenza, sha256 dei pesi, motivi per cui non si può aggiungere) (I-10, D-139).
+- "Aggiungi al catalogo" scrive il modello in `config/models.user-catalog.yaml`, fuori da git, fissato a un commit, sperimentale e senza ruoli; si scarica poi con «Scarica» (I-10, D-139).
+- Nella scheda di un modello aggiunto da Hugging Face: «Promuovi» sceglie i ruoli che può avere, «Togli dal catalogo» lo toglie scrivendo l'id (I-10, D-139).
+
+### Sicurezza
+
+- La ricerca e la scheda di Hugging Face passano dal gateway come uscita L0 verso il web: esce solo il testo cercato o l'id scelto, registrato in `gateway_log` senza il testo; niente account né token, l'API solo in HTTPS verso huggingface.co; i file piccoli letti quando si aggiunge un modello si controllano contro il commit (D-139).
+- Dal catalogo restano fuori i pesi pickle, il codice dei repository e i file nascosti (D-139).
+
 ## [0.28.0] - 2026-10-07
 
 ### Aggiunto

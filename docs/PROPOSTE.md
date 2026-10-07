@@ -2485,7 +2485,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | D-131, provata e unita in 0.20.0 |
 | I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | D-130, unita in 0.19.0, prova dell'utente da fare |
 | I-9 | Una skill di Claude Code per la pixel art (oggi non esiste): regole di disegno, controlli e esempi del progetto, riusabile per i personaggi nuovi disegnati a mano | idea | da stimare | D-132 | annotata il 2026-10-06, da decidere |
-| I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | idea | da stimare | D-137 | detta dall'utente alla prova di I-3, 2026-10-07 |
+| I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | funzione | 8-12 h (tappe H1-H3 fatte in circa 6 h) | D-137 | detta dall'utente alla prova di I-3, 2026-10-07; progetto `docs/I-10-huggingface.md`, D-139 applicata sul ramo `task/i10-huggingface`, da provare |
 
 ### I-1, notifiche delle risposte
 

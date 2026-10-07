@@ -5,6 +5,9 @@ data/
 # the repository carries config/arianna.example.toml
 config/arianna.toml
 config/.arianna.toml.*
+# Models added from Hugging Face on the "Modelli" page (I-10, D-139), written by the core
+config/models.user-catalog.yaml
+config/.models.user-catalog.yaml.*
 
 # Secrets
 .env*

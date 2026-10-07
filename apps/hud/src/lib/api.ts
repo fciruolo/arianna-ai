@@ -3,11 +3,12 @@ import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
+import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { SearchResult } from './search.ts';
-import type { PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
+import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
@@ -335,6 +336,31 @@ export async function unloadLocalModel(modelId: string): Promise<'unloaded' | 'f
 /** Erases the bin of the models, after the user's confirmation; how many folders and bytes. */
 export async function emptyModelTrash(): Promise<{ removed: number; sizeBytes: number }> {
   return call<{ removed: number; sizeBytes: number }>('POST', '/api/models/trash/empty', { confirm: true });
+}
+
+/** Searches the MLX models of Hugging Face (I-10, D-139): only `query` leaves, through the gateway. */
+export async function searchHuggingFace(query: string): Promise<HubSearchResult[]> {
+  return (await call<{ results: HubSearchResult[] }>('POST', '/api/models/huggingface/search', { query })).results;
+}
+
+/** The card of a repository of Hugging Face: files, sizes, sha256 of the weights, why it cannot be added. */
+export async function huggingFaceCard(repo: string): Promise<HubCard> {
+  return (await call<{ card: HubCard }>('POST', '/api/models/huggingface/card', { repo })).card;
+}
+
+/** Adds the repository at the commit of its card to the user catalog; the id of the new entry. */
+export async function addFromHuggingFace(repo: string, revision: string): Promise<string> {
+  return (await call<{ modelId: string }>('POST', '/api/models/huggingface/add', { repo, revision })).modelId;
+}
+
+/** The roles a model added from Hugging Face may have. */
+export async function promoteModel(modelId: string, roles: ModelRole[]): Promise<ModelRole[]> {
+  return (await call<{ roles: ModelRole[] }>('POST', `/api/models/${encodeURIComponent(modelId)}/promote`, { roles })).roles;
+}
+
+/** Takes a model added from Hugging Face out of the catalog; `confirm` is the id typed by the user. */
+export async function forgetModel(modelId: string, confirm: string): Promise<void> {
+  await call<{ modelId: string }>('POST', `/api/models/${encodeURIComponent(modelId)}/forget`, { confirm });
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

@@ -260,6 +260,25 @@ describe('loadModelsOverview', () => {
     assert.deepEqual(overview.errors, { catalog: null, cloudCatalog: null, evals: null });
   });
 
+  it('lists the models added from Hugging Face after the curated ones, and names their file when it is broken (I-10)', async () => {
+    const repo = 'fake-org/Fake-Hub';
+    const revision = '4'.repeat(40);
+    const user = `version: 1\nmodels:\n  - id: fake-hub\n    family: fake\n    runtime: mlx\n    ram_min_gib: 1\n    roles: []\n    status: experimental\n    source: https://huggingface.co/${repo}\n    files:\n      - path: model.safetensors\n        url: https://huggingface.co/${repo}/resolve/${revision}/model.safetensors\n        size_bytes: 5\n        sha256: "${SHA}"\n`;
+    writeFileSync(join(home, 'config', 'models.user-catalog.yaml'), user);
+    try {
+      const overview = await loadModelsOverview(noTrials, options);
+      assert.deepEqual(overview.local.map(({ id, origin, suitedRoles }) => ({ id, origin, suitedRoles })), [
+        { id: 'fake-small', origin: 'catalog', suitedRoles: ['extractor'] },
+        { id: 'fake-missing', origin: 'catalog', suitedRoles: ['extractor'] },
+        { id: 'fake-hub', origin: 'huggingface', suitedRoles: [] },
+      ]);
+      writeFileSync(join(home, 'config', 'models.user-catalog.yaml'), user.replace('https://huggingface.co/fake-org', 'https://example.org/fake-org'));
+      assert.equal((await loadModelsOverview(noTrials, options)).errors.catalog, 'config/models.user-catalog.yaml is not valid at user catalog.models[0].source');
+    } finally {
+      rmSync(join(home, 'config', 'models.user-catalog.yaml'));
+    }
+  });
+
   it('a file of the wrong size is not present', async () => {
     writeFileSync(join(dataDir, 'models', 'fake-small', 'model.bin'), 'fake');
     const overview = await loadModelsOverview(noTrials, options);

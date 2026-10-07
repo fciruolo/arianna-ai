@@ -55,6 +55,8 @@ import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
+import { HubError } from '../hub-http.ts';
+import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
@@ -137,6 +139,8 @@ export interface ApiServerOptions {
   modelsOverview?: () => Promise<ModelsOverview>;
   /** Download, verify, remove and unload a local model, and the bin (I-3, stage M4); without it the routes answer 404. */
   modelActions?: ModelActions;
+  /** Search and add models from Hugging Face, promote them, take them out (I-10, D-139); without it the routes answer 404. */
+  huggingface?: HuggingFace;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -781,6 +785,45 @@ function modelEvalRoutes(evals: ApiServerOptions['modelEvals']): Route[] {
  * user, emptying the bin needs `confirm: true`. Catalog ids only: no route
  * takes a path.
  */
+/**
+ * Hugging Face on the "Modelli" page (I-10, D-139). POST also for the search:
+ * the text the user typed never sits in an address. Each request that leaves
+ * passes the gateway inside `huggingface`.
+ */
+function huggingFaceRoutes(hub: HuggingFace | undefined): Route[] {
+  const need = (): HuggingFace => {
+    if (hub === undefined) throw new HttpError(404, 'not found');
+    return hub;
+  };
+  return [
+    route('POST', '/api/models/huggingface/search', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['query']);
+      return { body: { results: await need().search(body.query) } };
+    }),
+    route('POST', '/api/models/huggingface/card', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['repo']);
+      return { body: { card: await need().card(body.repo) } };
+    }),
+    route('POST', '/api/models/huggingface/add', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['repo', 'revision']);
+      return { status: 201, body: await need().add(body.repo, body.revision) };
+    }),
+    route('POST', '/api/models/:id/promote', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['roles']);
+      return { body: need().promote(params.id ?? '', body.roles) };
+    }),
+    route('POST', '/api/models/:id/forget', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['confirm']);
+      return { body: need().forget(params.id ?? '', body.confirm) };
+    }),
+  ];
+}
+
 function modelActionRoutes(actions: ModelActions | undefined): Route[] {
   const need = (): ModelActions => {
     if (actions === undefined) throw new HttpError(404, 'not found');
@@ -1595,6 +1638,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
+  if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
   if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
@@ -1730,6 +1774,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       return { body: await options.modelsOverview() };
     }),
   );
+  table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */

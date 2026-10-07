@@ -37,6 +37,8 @@ import { passGateway } from './gateway.ts';
 import { nameLabelOf } from './participants.ts';
 import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
+import { createHubClient } from './hub-http.ts';
+import { createHuggingFace } from './huggingface.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
@@ -428,6 +430,21 @@ const modelActions = createModelActions({
   },
   onError: report,
 });
+// Hugging Face on the "Modelli" page (I-10, D-139): the typed search or the
+// chosen repository id passes the gateway (L0, web target, logged) and is all
+// that leaves; a model goes into config/models.user-catalog.yaml as
+// experimental and without a role, its weights come later through Scarica.
+const huggingface = createHuggingFace({
+  home: config.home,
+  dataDir: config.paths.data,
+  client: createHubClient(),
+  gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
+  roles: () => settings.current().roles,
+  busy: (modelId) => modelActions.list().some((action) => action.modelId === modelId && action.status === 'running'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+});
 // Captured notes organized by the local model in the background (D-086), one
 // at a time, giving way to calls and task steps; the raw note is saved first.
 // No note starts while oMLX is on its way up: at start it loads for minutes (D-100).
@@ -523,6 +540,7 @@ const server = await startApiServer({
       actions: modelActions,
     }),
   modelActions,
+  huggingface,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
   devProgress: { home: config.home },
   // "Novità": CHANGELOG.md at the root of the home, read only.

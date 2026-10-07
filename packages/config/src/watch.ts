@@ -17,7 +17,7 @@ import { unwatchFile, watchFile } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { CATALOG_FILE } from './catalog.ts';
+import { CATALOG_FILE, USER_CATALOG_FILE } from './catalog.ts';
 import { CONFIG_FILE, loadConfig, type AriannaConfig } from './config.ts';
 
 const RESTART_SECTIONS = ['paths', 'database', 'server'] as const;
@@ -154,7 +154,7 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
   // Polled, not fs.watch: on macOS events right after the watch starts can be
   // lost, and the wizard replaces the file with a rename, which polling by path
   // sees as any other change.
-  const files = [CONFIG_FILE, CATALOG_FILE].map((file) => join(current.home, file));
+  const files = [CONFIG_FILE, CATALOG_FILE, USER_CATALOG_FILE].map((file) => join(current.home, file));
   const interval = options.intervalMs ?? 1000;
   for (const file of files) watchFile(file, { interval, persistent: false }, reload);
   // Polling compares with its own first look: a change made between the

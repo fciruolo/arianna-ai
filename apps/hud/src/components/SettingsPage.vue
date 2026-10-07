@@ -693,6 +693,7 @@ watch(active, () => {
               :save="() => save('roles', MODEL_PARTS)"
               @cancel="resetModels"
               @section="openSection"
+              @catalog="reload"
             />
 
             <!-- Voice -->

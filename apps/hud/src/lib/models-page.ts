@@ -54,6 +54,8 @@ export interface LocalModelView {
   notes: string | null;
   source: string | null;
   suitedRoles: ModelRole[];
+  /** The curated catalog, or Hugging Face through this page (I-10, D-139): no suited role until the user promotes it. */
+  origin: 'catalog' | 'huggingface';
   roles: ModelRole[];
   aliases: string[];
   agents: string[];
