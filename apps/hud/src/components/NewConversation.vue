@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { cloudWarning, localNote, type DraftChoice } from '../lib/draft.ts';
+import { cloudWarning, localNote, shortTarget, type DraftChoice } from '../lib/draft.ts';
 import { agentName } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
@@ -33,7 +33,7 @@ const mode = computed<ConversationMode>(() => {
   const modes = policy.value?.modes ?? [];
   return modes.includes(agentMode.value) ? agentMode.value : (modes[0] ?? 'work');
 });
-// An agent on Claude works in a project: no "Nessun progetto" there, the first project is chosen when the empty one was.
+// An agent on Claude or Codex works in a project: no "Nessun progetto" there, the first project is chosen when the empty one was.
 const agentProject = computed(() => (policy.value?.project === true && project.value === '' ? (props.projects[0]?.name ?? '') : project.value));
 const hint = computed(() => {
   if (kind.value === 'incognito') {
@@ -140,7 +140,7 @@ function submit(): void {
           <span
             class="rounded-full border px-1.5 py-px font-mono text-[10px]"
             :class="entry.cloud ? 'border-l1/60 text-l1' : 'border-line-strong text-muted'"
-          >{{ entry.cloud ? 'Claude' : 'locale' }}</span>
+          >{{ entry.cloud ? shortTarget(entry.executors?.length ? entry.executors : ['claude']) : 'locale' }}</span>
           <span v-if="entry.description !== ''" class="line-clamp-2 text-[11.5px] leading-snug text-muted" :title="entry.description">{{ entry.description }}</span>
         </button>
       </div>
@@ -177,7 +177,7 @@ function submit(): void {
         class="rounded-lg border px-3 py-2 text-xs leading-snug"
         :class="policy.cloud ? 'border-warn/50 bg-warn/10 text-warn' : 'border-line bg-surface-2 text-muted'"
       >
-        {{ policy.cloud ? cloudWarning(policy.agent, policy.project ? agentProject : undefined) : localNote(policy.agent) }}
+        {{ policy.cloud ? cloudWarning(policy.agent, policy.project ? agentProject : undefined, policy.executors) : localNote(policy.agent) }}
       </p>
     </template>
 

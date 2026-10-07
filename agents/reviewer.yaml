@@ -1,0 +1,22 @@
+# Reviewer (docs/AGENT-CARDS.md, D-140): reads a diff and its tests with a
+# model of another family than the one that wrote it; Codex first, then
+# Claude Code. It never writes: on Codex the sandbox opens the project read
+# only and runs its tests there; on Claude Code it has no Edit, Write nor
+# Bash (that sandbox lets commands write the project), so it only reads. In
+# the cloud the private data side is removed by cloud_max_label.
+name: reviewer
+description: Reviews changes and their tests in a project, without changing files
+max_label: L1
+cloud_max_label: L1
+executors: [codex, claude]
+tools: [repo.read, repo.test, task.update]
+trifecta:
+  private_data: false
+  # Repositories, dependencies and issue text are not trusted.
+  untrusted_content: true
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 30, max_minutes: 30, max_cost: 0 }
+approvals: []
+prompt: reviewer.md

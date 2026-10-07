@@ -118,7 +118,7 @@ test('a model of an agent says why it would not start a conversation now', () =>
   assert.equal(modelBlocker('opus', values({ opus: false }, ['claude'])), 'spento in Modelli');
   assert.equal(modelBlocker('opus', values({}, [])), 'esecutore spento');
   assert.equal(modelBlocker('codex', values({}, ['claude'])), 'esecutore spento');
-  assert.equal(modelBlocker('codex', values({}, ['claude', 'codex'])), 'vale con il suo adattatore');
+  assert.equal(modelBlocker('codex', values({}, ['claude', 'codex'])), undefined, 'Codex has its adapter (D-140)');
 });
 
 test('voice: off is null; turning it on starts from the defaults of the core', () => {

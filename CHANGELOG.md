@@ -4,6 +4,23 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.29.0] - 2026-10-07
+
+### Aggiunto
+
+- Codex lavora come Claude: Arianna gli delega i passi nei progetti quando il router lo sceglie, e la chat diretta con un agente può andare a Codex scegliendo il modello `codex` (D-140, D-111 tappa C).
+- Scheda Reviewer: rivede le modifiche di un progetto senza cambiare file, con Codex per primo e poi Claude Code; Arianna può delegarle e le si può scrivere direttamente (D-140).
+
+### Cambiato
+
+- Avviso, distintivo "va a …" e conferma dei messaggi lunghi della chat diretta nominano Claude o Codex (tutti quelli a cui può andare, quello del modello scelto per primo); il selettore offre solo i modelli degli esecutori dell'agente (D-140).
+- Cambiando modello fra Claude e Codex nella chat diretta, il primo messaggio porta con sé gli ultimi scambi: la sessione dell'altro esecutore non si riprende (D-140).
+- Impostazioni → Modelli: Codex non risulta più "non collegato" quando il suo adattatore gira (D-140).
+
+### Sicurezza
+
+- Su Claude Code un agente senza il permesso di scrivere non ha più `Bash`: la sandbox di Claude gli lascerebbe modificare il progetto con un comando (D-140).
+
 ## [0.28.0] - 2026-10-07
 
 ### Aggiunto

@@ -10,8 +10,13 @@ import {
   repositoryHead,
   toolConfigFiles,
   WorkspaceError,
+  CODEX_MODELS,
   type ClaudeError,
   type ClaudeExecutor,
+  type CodexAccess,
+  type CodexError,
+  type CodexExecutor,
+  type CodexModel,
   type ClaudeModel,
   type ClaudeTool,
   type FileChange,
@@ -23,6 +28,7 @@ import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRul
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
+import { runCodexStep } from '../codex-step.ts';
 import { loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
@@ -54,9 +60,11 @@ export interface DelegateEnv {
   rules: LabelRules;
   /**
    * Absent only when `claude` cannot run on this machine (sandbox refused):
-   * whether it is enabled is `canDelegate`, read from `settings` at each use.
+   * whether it is enabled is `availableCloud`, read from `settings` at each use.
    */
   claude?: ClaudeExecutor;
+  /** The same for `codex exec` (D-140, D-111 tappa C): absent when its sandbox is refused on this machine. */
+  codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly; DIRECT_PROMPT by default (tests pick a scenario). */
   directPrompt?: string;
   /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */
@@ -65,33 +73,58 @@ export interface DelegateEnv {
 
 /** What the step with an open delegation will do. */
 export type DelegationPlan =
-  | { kind: 'cloud'; delegation: Delegation; decision: RouteDecision; model: ClaudeModel; label: Label; declassify?: { approvalId: string; to: Label } }
+  | { kind: 'cloud'; delegation: Delegation; decision: RouteDecision; executor: 'claude'; model: ClaudeModel; label: Label; declassify?: { approvalId: string; to: Label } }
+  /** The same step on Codex (D-140): the router chose `codex`. */
+  | { kind: 'cloud'; delegation: Delegation; decision: RouteDecision; executor: 'codex'; model: CodexModel; label: Label; declassify?: { approvalId: string; to: Label } }
   /** An agent that only answers, on the local model (D-119, tappa T3). */
   | { kind: 'local'; delegation: Delegation; decision: RouteDecision; model: string; label: Label; declassify?: { approvalId: string; to: Label } }
-  | { kind: 'budget'; delegation: Delegation; decision: RouteDecision; model: string }
+  | { kind: 'budget'; delegation: Delegation; decision: RouteDecision; executor: CloudExecutor; model: string }
   /** The project folder has uncommitted changes: the user approves first (D-056). */
   | { kind: 'workspace'; delegation: Delegation; repo: string; files: string[] }
   | { kind: 'retry'; delegation: Delegation; decision: RouteDecision; at: Date }
   /** Nothing runs: the delegation ends with this result and the local step goes on with it. */
   | { kind: 'closed'; delegation: Delegation; status: 'failed' | 'refused'; result: string; decision?: RouteDecision };
 
-/** The orchestrator may offer `task.delegate` only when a cloud executor can take the step. */
-export function canDelegate(env: DelegateEnv): boolean {
-  return env.claude !== undefined && env.settings().cloud.executors.includes('claude');
+/** The executors that run a delegated step in the cloud, in a project folder. */
+export const CLOUD_DELEGATES = ['claude', 'codex'] as const;
+export type CloudExecutor = (typeof CLOUD_DELEGATES)[number];
+
+/**
+ * The cloud executors that can take a step now: enabled in `[cloud]
+ * executors` (read at each use, D-071) and with an adapter that runs on this
+ * machine (its sandbox not refused).
+ */
+export function availableCloud(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings'>): CloudExecutor[] {
+  const enabled = env.settings().cloud.executors;
+  return CLOUD_DELEGATES.filter((executor) => env[executor] !== undefined && enabled.includes(executor));
+}
+
+/** Whether one of the cloud executors of `card` can take a step now (D-140). */
+export function cloudReady(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings'>, card: AgentCard): boolean {
+  const available: readonly string[] = availableCloud(env);
+  return card.executors.some((executor) => available.includes(executor));
 }
 
 /**
- * Where a delegated step of an agent runs (D-119, tappa T3): on Claude Code
- * in a project folder, like the Coder; or, for an agent without tools (the
+ * Where a delegated step of an agent runs (D-119, tappa T3): in a project
+ * folder on a cloud executor, like the Coder, named by the first one on its
+ * card (`claude` or `codex`, D-140: the router still chooses between the two
+ * at every step, among the card's); or, for an agent without tools (the
  * template `answer`), in one call to the local model. Any other agent takes
  * no delegated step: the web tools of the template `web` do not exist yet.
  */
-export type DelegationRoute = 'claude' | 'local';
+export type DelegationRoute = CloudExecutor | 'local';
 
 export function delegationRoute(card: AgentCard): DelegationRoute | undefined {
-  if (card.executors.includes('claude')) return 'claude';
+  const cloud = card.executors.find((executor): executor is CloudExecutor => (CLOUD_DELEGATES as readonly string[]).includes(executor));
+  if (cloud !== undefined) return cloud;
   if (card.executors.includes('local') && card.tools.length === 0) return 'local';
   return undefined;
+}
+
+/** A route in a project folder, on Claude Code or Codex. */
+export function isCloudRoute(route: DelegationRoute | undefined): route is CloudExecutor {
+  return route === 'claude' || route === 'codex';
 }
 
 /**
@@ -104,7 +137,7 @@ export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTar
   for (const [name, agent] of env.agents) {
     if (name === assignee) continue;
     const where = delegationRoute(agent.card);
-    if (where === 'claude' ? canDelegate(env) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
+    if (isCloudRoute(where) ? cloudReady(env, agent.card) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
   }
   const rank = (name: string): number => (name === 'coder' ? 0 : 1);
   return targets.sort((a, b) => rank(a.name) - rank(b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -120,12 +153,36 @@ export function briefCeiling(card: AgentCard): Label {
   return isAtMost(card.cloudMaxLabel ?? card.maxLabel, 'L1') ? (card.cloudMaxLabel ?? card.maxLabel) : 'L1';
 }
 
-/** The built-in tools of `claude -p` that a card's repository tools stand for. */
+/**
+ * What a Codex run may do in the project folder (D-140): write only with
+ * `repo.write`. Codex has no list of tools to close: in `read` its commands
+ * (tests among them, `repo.test`) run in a sandbox that writes nowhere.
+ */
+export function codexAccessOf(tools: readonly ToolId[]): CodexAccess {
+  return tools.includes('repo.write') ? 'write' : 'read';
+}
+
+/**
+ * The kind of step the router reads for a cloud agent (D-140): `review` for
+ * one that may not write (the Reviewer: a model of another family first),
+ * `coding` otherwise.
+ */
+export function cloudStepKind(card: AgentCard): 'coding' | 'review' {
+  return card.tools.includes('repo.write') ? 'coding' : 'review';
+}
+
+/**
+ * The built-in tools of `claude -p` that a card's repository tools stand for.
+ * `Bash` only together with `repo.write` (D-140): the sandbox of `claude`
+ * lets commands write the project folder, so a card that may not write (the
+ * Reviewer) runs no command there; on Codex its tests run in a read-only
+ * sandbox instead.
+ */
 export function claudeToolsOf(tools: readonly ToolId[]): ClaudeTool[] {
   const out: ClaudeTool[] = [];
   if (tools.includes('repo.read')) out.push('Read', 'Glob', 'Grep');
   if (tools.includes('repo.write')) out.push('Edit', 'Write');
-  if (tools.includes('repo.test')) out.push('Bash');
+  if (tools.includes('repo.test') && tools.includes('repo.write')) out.push('Bash');
   return out;
 }
 
@@ -220,13 +277,15 @@ export const DIRECT_HISTORY_CHARS = 12_000;
  * the latest answer of the same agent in the same project, in this
  * conversation. Undefined at the first message, or when none was kept.
  */
-export async function directChatSession(sql: Sql, conversationId: string, delegation: Delegation): Promise<string | undefined> {
-  const [row] = await sql<{ sessionRef: string | null }[]>`
-    SELECT d.session_ref AS "sessionRef" FROM task_delegations d JOIN tasks t ON t.id = d.task_id
+export async function directChatSession(sql: Sql, conversationId: string, delegation: Delegation, executor: CloudExecutor = 'claude'): Promise<string | undefined> {
+  // The latest answer only, and only when the same executor gave it (D-140): a session of Claude is not one of Codex.
+  // After a change of model to the other executor, the fallback brief carries the conversation over.
+  const [row] = await sql<{ sessionRef: string | null; executor: string | null }[]>`
+    SELECT d.session_ref AS "sessionRef", d.executor FROM task_delegations d JOIN tasks t ON t.id = d.task_id
       WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
         AND d.status = 'ok' AND d.id <> ${delegation.id}
       ORDER BY d.created_at DESC, d.id DESC LIMIT 1`;
-  return row?.sessionRef ?? undefined;
+  return row?.executor === executor ? (row.sessionRef ?? undefined) : undefined;
 }
 
 /**
@@ -372,7 +431,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 
   if (where === 'local') {
     // One call to the local model: no folder, no quota; the router checks the label against the agent.
-    const decision = route({ kind: 'judge', agent: agent.card, text: delegation.brief }, createContext(task.clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings()));
+    const decision = route({ kind: 'judge', agent: agent.card, text: delegation.brief }, createContext(task.clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
     if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
@@ -385,7 +444,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   if (dirty.length > 0) {
     const consent = await workspaceApprovalOf(env.sql, delegation);
     if (consent?.state === 'rejected' || consent?.state === 'expired') {
-      return closed('refused', 'the user did not want the Coder to work over uncommitted changes: tell the user, or wait for them to commit');
+      return closed('refused', `the user did not want ${delegation.agent} to work over uncommitted changes: tell the user, or wait for them to commit`);
     }
     // The consent covers the files it named: paths dirtied since are asked again.
     const covered = new Set(consent?.state === 'approved' && Array.isArray(consent.detail.files) ? consent.detail.files.map(String) : []);
@@ -413,22 +472,34 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   const preferred = conversation?.model;
   const preferredModel = preferred !== null && preferred !== undefined && (MODEL_ALIASES as readonly string[]).includes(preferred) ? { preferredModel: preferred as ModelAlias } : {};
   const decision = route(
-    { kind: 'coding', agent: agent.card, text: delegation.brief, budgetApproved: budget?.state === 'approved', ...preferredModel },
+    { kind: cloudStepKind(agent.card), agent: agent.card, text: delegation.brief, budgetApproved: budget?.state === 'approved', ...preferredModel },
     createContext(task.clearance, label),
     await budgetOf(env.sql),
-    routerConfigOf(env.settings()),
+    routerConfigOf(env.settings(), adaptersOf(env)),
   );
   if (decision.decision === 'wait') {
     if (decision.next === 'retry-later' && decision.retryAt !== undefined) return { kind: 'retry', delegation, decision, at: new Date(decision.retryAt) };
     return closed('failed', `no executor can take this step now (${decision.reason})`, decision);
   }
-  if (decision.executor !== 'claude' || env.claude === undefined) {
-    return closed('failed', 'the Coder runs delegated steps on Claude Code only, which is not available for this step', decision);
+  const rest = { delegation, decision, label, ...(declassify === undefined ? {} : { declassify }) };
+  if (decision.executor === 'claude' && env.claude !== undefined) {
+    const model = (CLAUDE_MODELS as readonly string[]).includes(decision.model) ? (decision.model as ClaudeModel) : undefined;
+    if (model === undefined) return closed('failed', `claude has no model ${decision.model}`, decision);
+    if (decision.approval === 'budget') return { kind: 'budget', delegation, decision, executor: 'claude', model };
+    return { kind: 'cloud', ...rest, executor: 'claude', model };
   }
-  const model = (CLAUDE_MODELS as readonly string[]).includes(decision.model) ? (decision.model as ClaudeModel) : undefined;
-  if (model === undefined) return closed('failed', `claude has no model ${decision.model}`, decision);
-  if (decision.approval === 'budget') return { kind: 'budget', delegation, decision, model };
-  return { kind: 'cloud', delegation, decision, model, label, ...(declassify === undefined ? {} : { declassify }) };
+  if (decision.executor === 'codex' && env.codex !== undefined) {
+    const model = (CODEX_MODELS as readonly string[]).includes(decision.model) ? (decision.model as CodexModel) : undefined;
+    if (model === undefined) return closed('failed', `codex has no model ${decision.model}`, decision);
+    if (decision.approval === 'budget') return { kind: 'budget', delegation, decision, executor: 'codex', model };
+    return { kind: 'cloud', ...rest, executor: 'codex', model };
+  }
+  return closed('failed', `${delegation.agent} runs delegated steps on Claude Code or Codex only, and neither is available for this step`, decision);
+}
+
+/** Which cloud adapters run on this machine, for the router's candidates. */
+export function adaptersOf(env: Pick<DelegateEnv, 'claude' | 'codex'>): { claude: boolean; codex: boolean } {
+  return { claude: env.claude !== undefined, codex: env.codex !== undefined };
 }
 
 async function show(sql: Sql, task: Task, step: number, kind: ActivityKind, detail = ''): Promise<void> {
@@ -441,6 +512,13 @@ async function close(env: DelegateEnv, task: Task, step: number, delegation: Del
   await updateDelegation(env.sql, delegation.id, { status, result, resultLabel: delegation.label });
   await show(env.sql, task, step, 'error', result.replace(/^error: [^:]+: /, ''));
 }
+
+/** What a cloud step gave, on either executor: the fields the delegation reads are the same (D-140). */
+type CloudStepResult =
+  | { kind: 'answer'; result: { text: string; label: Label; sessionRef: string; usage: { context?: number } }; usage: RunUsage }
+  | { kind: 'blocked'; decision: { reason: string } }
+  | { kind: 'quota'; overage: boolean; resetsAt?: Date; usage: RunUsage }
+  | { kind: 'failed'; reason: string; usage: RunUsage; error: ClaudeError | CodexError };
 
 /** At most this many changed files are kept for the chat (the database refuses more). */
 export const MAX_STORED_FILES = 500;
@@ -512,6 +590,17 @@ export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?
 }
 
 /**
+ * The step as `executor` runs it (D-140): an interrupted run of the other
+ * cloud executor is not resumed, its session is not one of this binary.
+ */
+export function stepFor(ctx: StepContext, executor: CloudExecutor): StepContext {
+  if (ctx.resume?.executor === undefined || ctx.resume.executor === executor) return ctx;
+  const copy = { ...ctx };
+  delete copy.resume;
+  return copy;
+}
+
+/**
  * The cloud step: the plan is `cloud`. Every run of a task of an incognito
  * conversation, resumed ones included, runs `claude` with
  * `--no-session-persistence` (D-136): its session is not saved, so it is
@@ -523,8 +612,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const { delegation } = plan;
   const { sql } = env;
   const persistSession = !(task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId)));
-  const claude = env.claude;
-  if (claude === undefined) throw new Error('claude is not available');
+  const executor = plan.executor;
+  if (env[executor] === undefined) throw new Error(`${executor} is not available`);
+  const runCtx = stepFor(ctx, executor);
   const failed = async (result: string): Promise<StepOutcome> => {
     await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result}`);
     return { kind: 'continue', usage: { steps: 1 } };
@@ -551,8 +641,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const fingerprint = await gitConfigFingerprint(path);
   // Tool configuration (.claude/, .envrc, .vscode/...), ignored by git or not: what changed is told to the user.
   const tools = await toolConfigFiles(path);
-  await updateDelegation(sql, delegation.id, { status: 'running', executor: 'claude', model: plan.model, runId });
-  await show(sql, task, step, 'delegate', `${delegation.agent} · claude/${plan.model}`);
+  await updateDelegation(sql, delegation.id, { status: 'running', executor, model: plan.model, runId });
+  await show(sql, task, step, 'delegate', `${delegation.agent} · ${executor}/${plan.model}`);
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
   // At its first delegation in this conversation the agent also reads how to enter it (D-125): our fixed text, L0.
@@ -566,41 +656,69 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];
   // The direct chat continues the session of its latest answer (D-111, tappa A2): only the new message leaves.
-  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation) : undefined;
+  const session = direct && task.conversationId !== null ? await directChatSession(sql, task.conversationId, delegation, executor) : undefined;
   const reply = task.conversationId === null ? undefined : await openReply(sql, task.id, { runId, agent: delegation.agent });
   let streamed = 0;
-  const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined) => runClaudeStep(sql, claude, ctx, {
-    // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
-    // at the highest label of what it reads, as the local run (a prompt of the user is L1, tappa T3b).
-    context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
-    brief,
-    ...(sessionRef === undefined ? {} : { sessionRef }),
-    ...(persistSession ? {} : { persistSession: false }),
-    workspace,
-    model: plan.model,
-    tools: claudeToolsOf(agent.card.tools),
-    ...runLimitsOf(agent),
-    summary: `delegated step for ${delegation.agent}`,
-    onEvent: async (event) => {
-      if (event.type === 'text') {
-        // One block per model message: separated, so that the chat reads them as paragraphs.
-        await reply?.delta(`${streamed === 0 ? '' : '\n\n'}${event.text}`);
-        streamed += 1;
-      } else if (event.type === 'edit') {
-        // A change to a file, as a small diff in the activity card (D-117): live only, never stored.
-        const edit = path === '' ? undefined : liveEditOf(event, { root: path, label: editLabel });
-        if (task.conversationId !== null && edit !== undefined && isAtMost(edit.label, task.clearance)) {
-          await postLiveEdit(sql, { conversationId: task.conversationId, taskId: task.id, step }, edit).catch((error: unknown) => {
-            // The run goes on; the log says only the kind of error, never the text of a file.
-            console.error(liveEditFailure(error));
-          });
+  const onText = async (text: string): Promise<void> => {
+    // One block per model message: separated, so that the chat reads them as paragraphs.
+    await reply?.delta(`${streamed === 0 ? '' : '\n\n'}${text}`);
+    streamed += 1;
+  };
+  const attempt = (brief: readonly BriefFragment[], sessionRef: string | null | undefined): Promise<CloudStepResult> => {
+    const common = {
+      // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
+      // at the highest label of what it reads, as the local run (a prompt of the user is L1, tappa T3b).
+      context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
+      brief,
+      ...(sessionRef === undefined ? {} : { sessionRef }),
+      ...(persistSession ? {} : { persistSession: false }),
+      workspace,
+      ...runLimitsOf(agent),
+      summary: `delegated step for ${delegation.agent}`,
+    };
+    if (plan.executor === 'codex') {
+      const codex = env.codex;
+      if (codex === undefined) throw new Error('codex is not available');
+      // Codex gives no diff of a change (D-140): the files changed are read from git after the run, as for Claude.
+      return runCodexStep(sql, codex, runCtx, {
+        ...common,
+        model: plan.model,
+        access: codexAccessOf(agent.card.tools),
+        onEvent: async (event) => {
+          if (event.type === 'text') await onText(event.text);
+          else await show(sql, task, step, 'tool', event.name);
+        },
+      });
+    }
+    const claude = env.claude;
+    if (claude === undefined) throw new Error('claude is not available');
+    return runClaudeStep(sql, claude, runCtx, {
+      ...common,
+      model: plan.model,
+      tools: claudeToolsOf(agent.card.tools),
+      onEvent: async (event) => {
+        if (event.type === 'text') {
+          await onText(event.text);
+        } else if (event.type === 'edit') {
+          // A change to a file, as a small diff in the activity card (D-117): live only, never stored.
+          const edit = path === '' ? undefined : liveEditOf(event, { root: path, label: editLabel });
+          if (task.conversationId !== null && edit !== undefined && isAtMost(edit.label, task.clearance)) {
+            await postLiveEdit(sql, { conversationId: task.conversationId, taskId: task.id, step }, edit).catch((error: unknown) => {
+              // The run goes on; the log says only the kind of error, never the text of a file.
+              console.error(liveEditFailure(error));
+            });
+          }
+        } else {
+          await show(sql, task, step, 'tool', event.name);
         }
-      } else {
-        await show(sql, task, step, 'tool', event.name);
-      }
-    },
-  });
-  let result = await attempt(session === undefined ? [...opening, message] : [message], session);
+      },
+    });
+  };
+  // No session of this executor to continue, after earlier answers (the model moved from Claude to Codex or back, D-140):
+  // the new start carries the latest exchanges, as when a session is lost.
+  const earlier = direct && session === undefined && task.conversationId !== null ? await directChatHistory(sql, task.conversationId, delegation) : [];
+  const carried = earlier.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...earlier];
+  let result = await attempt(session === undefined ? [...opening, ...carried, message] : [message], session);
   // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
   if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
     const history = await directChatHistory(sql, task.conversationId, delegation);
@@ -666,8 +784,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       await updateDelegation(sql, delegation.id, { status: 'pending' });
       // A reset time already past (or none): an hour, so that a stale clock does not loop.
       const at = result.resetsAt !== undefined && result.resetsAt.getTime() > Date.now() ? result.resetsAt : new Date(Date.now() + 60 * 60_000);
-      await show(sql, task, step, 'wait', `claude · ${at.toISOString()}`);
-      return { kind: 'retry', at, reason: result.overage ? 'claude is on paid extra usage' : 'claude is out of quota', usage: result.usage };
+      await show(sql, task, step, 'wait', `${executor} · ${at.toISOString()}`);
+      return { kind: 'retry', at, reason: result.overage ? `${executor} is on paid extra usage` : `${executor} is out of quota`, usage: result.usage };
     }
     case 'failed':
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result.reason}`);
@@ -679,7 +797,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
  * A resume that found no session to continue (D-111, tappa A2): the binary
  * ended before its first message, or reported another session.
  */
-export function sessionLost(error: ClaudeError): boolean {
+export function sessionLost(error: ClaudeError | CodexError): boolean {
   // Another session and nothing else: a binary that broke the profile in any other way is not started again.
   if (error.kind === 'profile') return error.violations.length === 1 && error.violations[0] === 'session';
   // A result before the init is refused as bad-output by the stream.

@@ -727,7 +727,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="text-xs text-muted">
           Un modello spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia del modello (es. <code class="font-mono">opus[1m]</code>); vuoto è il più
-          recente. Per Codex la scelta si salva e vale con il suo adattatore. Il modello con cui parte ogni agente si sceglie in
+          recente. Il modello con cui parte ogni agente si sceglie in
           <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="emit('section', 'agenti')">Agenti</a>; accendere un esecutore resta in
           <a href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Esecutori cloud</a>, con la sua conferma.
         </p>

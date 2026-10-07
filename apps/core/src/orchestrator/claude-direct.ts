@@ -7,7 +7,7 @@ import { DIRECT_MODELS, type Conversation, type DirectModel } from '../conversat
 import type { StepContext, StepOutcome } from '../engine.ts';
 import { describeFailure } from '../failures.ts';
 import { openReply, postActivity } from '../reply.ts';
-import { canDelegate, type DelegateEnv } from './delegate.ts';
+import { availableCloud, type DelegateEnv } from './delegate.ts';
 import { budgetOf } from './routing.ts';
 
 /**
@@ -56,7 +56,7 @@ export function directModelOf(
 
 /** Claude can answer now: enabled in the configuration and runnable on this machine. */
 export function canAnswerDirectly(env: DelegateEnv): boolean {
-  return canDelegate(env);
+  return availableCloud(env).includes('claude');
 }
 
 const ROLE_NAME: Record<TurnMessage['role'], string> = { user: 'User', assistant: 'Assistant', tool: 'Tool' };

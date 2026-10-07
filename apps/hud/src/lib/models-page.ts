@@ -368,7 +368,7 @@ export function memorySummary(memory: MemoryView | null, local: readonly LocalMo
 export function cloudNotice(view: CloudModelView): string | undefined {
   if (view.state === 'not-connected') {
     return view.executor === 'codex'
-      ? 'Non collegato: manca l’adattatore di Codex (task 1.16). Servono anche il binario codex con il tuo accesso ChatGPT, fatto da te nel terminale, e Codex acceso in Esecutori cloud. La scelta qui si salva e vale dopo.'
+      ? 'Non collegato: il nucleo non ha l’adattatore di Codex su questa installazione (la sua sandbox è stata rifiutata: lo dice il registro del nucleo all’avvio).'
       : 'Non collegato: il nucleo non ha l’adattatore di Claude su questa installazione.';
   }
   if (view.state === 'executor-off') return `L’esecutore ${view.executor === 'claude' ? 'Claude Code' : view.executor} è spento in Esecutori cloud: finché resta spento il modello non riceve lavori.`;

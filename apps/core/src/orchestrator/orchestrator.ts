@@ -14,7 +14,7 @@ import {
   type TurnMessage,
 } from '@arianna/agents';
 import { enabledCloudModels, type AriannaConfig } from '@arianna/config';
-import { LocalModelError, type ClaudeExecutor, type LocalModel } from '@arianna/executors';
+import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
 import { CHAT_AGENT, loadConversation, type DirectModel } from '../conversations.ts';
@@ -30,6 +30,7 @@ import {
   briefCeiling,
   delegateTargets,
   delegationRoute,
+  isCloudRoute,
   directChatOf,
   NO_PROJECT,
   planDelegation,
@@ -93,6 +94,8 @@ export interface OrchestratorOptions {
   rules: LabelRules;
   /** The `claude -p` adapter, when `claude` is enabled and runs on this machine. */
   claude?: ClaudeExecutor;
+  /** The `codex exec` adapter (D-140), when it runs on this machine; enabled or not is read at each step. */
+  codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly (claude-direct.ts); for tests. */
   directPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
@@ -255,6 +258,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     rules: options.rules,
     model: options.model,
     ...(options.claude === undefined ? {} : { claude: options.claude }),
+    ...(options.codex === undefined ? {} : { codex: options.codex }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
@@ -372,14 +376,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const reason = typeof args.reason === 'string' ? args.reason.replace(/\s+/g, ' ').trim() : '';
     const target = options.agents.get(agentName);
     const where = target === undefined || !delegates.some((item) => item.name === agentName) ? undefined : delegationRoute(target.card);
-    // Only a run on Claude works in a project folder.
-    const conversation = where === 'claude' && task.conversationId !== null ? await loadConversation(sql, task.conversationId) : undefined;
-    const repo = where === 'claude' ? repoFor(conversation?.workspace, options.settings().projects) : undefined;
+    // Only a run on Claude Code or Codex works in a project folder.
+    const conversation = isCloudRoute(where) && task.conversationId !== null ? await loadConversation(sql, task.conversationId) : undefined;
+    const repo = isCloudRoute(where) ? repoFor(conversation?.workspace, options.settings().projects) : undefined;
     let error: string | undefined;
     if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';
     else if (reason === '') error = 'the reason is empty: say in one short line why you bring this agent in';
-    else if (where === 'claude' && repo === undefined) error = NO_PROJECT;
+    else if (isCloudRoute(where) && repo === undefined) error = NO_PROJECT;
     if (error !== undefined || target === undefined) {
       const result = `error: ${DELEGATE}: ${error ?? ''}`;
       await recordTurn(sql, { ...turn, label, result });
@@ -439,7 +443,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       }
       plans.set(key, planned);
       // The delegated run reads only the brief (and the agent's prompt): that label, not the task's.
-      if (planned.kind === 'cloud') return { agent: planned.delegation.agent, executor: 'claude', locality: 'cloud', model: planned.model, effectiveLabel: planned.label };
+      if (planned.kind === 'cloud') return { agent: planned.delegation.agent, executor: planned.executor, locality: 'cloud', model: planned.model, effectiveLabel: planned.label };
       if (planned.kind === 'local') {
         const agent = options.agents.get(planned.delegation.agent);
         // An agent gone meanwhile: never lower than a user's prompt (the delegation fails anyway).
@@ -475,10 +479,14 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
             return { kind: 'workspace', repo: planned.repo, files: planned.files, step: planned.delegation.step, agent: planned.delegation.agent };
           case 'budget':
             await show(task, step, 'wait', `budget · ${planned.model}`);
-            return { kind: 'budget', executor: 'claude', model: planned.model, step: planned.delegation.step };
-          case 'retry':
-            await show(task, step, 'wait', `claude · ${planned.at.toISOString()}`);
+            return { kind: 'budget', executor: planned.executor, model: planned.model, step: planned.delegation.step };
+          case 'retry': {
+            // The cloud executor the agent's card names first: the one the user expects to see waiting.
+            const card = options.agents.get(planned.delegation.agent)?.card;
+            const waiting = card === undefined ? undefined : delegationRoute(card);
+            await show(task, step, 'wait', `${isCloudRoute(waiting) ? waiting : 'claude'} · ${planned.at.toISOString()}`);
             return { kind: 'retry', at: planned.at, reason: planned.decision.reason };
+          }
           case 'closed':
             // Nothing to run: the local step goes on, with the error as the result of the call.
             await updateDelegation(sql, planned.delegation.id, { status: planned.status, result: planned.result, resultLabel: planned.delegation.label });

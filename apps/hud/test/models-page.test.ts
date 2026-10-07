@@ -270,7 +270,7 @@ describe('cloud card', () => {
 
   it('says why a model is out, nothing when it is on', () => {
     assert.equal(cloudNotice(sonnet), undefined);
-    assert.match(cloudNotice(cloud('codex', { state: 'not-connected', adapter: false })) ?? '', /task 1\.16/);
+    assert.match(cloudNotice(cloud('codex', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Codex/);
     assert.match(cloudNotice(cloud('opus', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Claude/);
     assert.match(cloudNotice(cloud('opus', { state: 'executor-off' })) ?? '', /Claude Code è spento in Esecutori cloud/);
     assert.match(cloudNotice(cloud('opus', { state: 'off' })) ?? '', /^Spento/);

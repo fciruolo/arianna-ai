@@ -64,7 +64,7 @@ export interface StepContext {
   step: number;
   runId: string;
   /** Present when this step resumes an interrupted run (crash, shutdown, lost lock). */
-  resume?: { runId: string; sessionRef: string | null };
+  resume?: { runId: string; sessionRef: string | null; executor?: string };
   /** Present when the step follows the decision on the approval the task waited for. */
   approval?: StoredApproval;
   /** Aborted at the time cap, when the worker stops or loses the job: stop promptly. */
@@ -264,7 +264,7 @@ export async function processStepJob(
       task: { ...task, status: 'running' },
       step,
       runId,
-      ...(interrupted === undefined ? {} : { resume: { runId: interrupted.id, sessionRef: interrupted.sessionRef } }),
+      ...(interrupted === undefined ? {} : { resume: { runId: interrupted.id, sessionRef: interrupted.sessionRef, executor: interrupted.executor } }),
       ...(approval === undefined ? {} : { approval }),
       signal,
       setSessionRef: (ref) => setSessionRef(sql, runId, ref),

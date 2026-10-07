@@ -29,8 +29,10 @@ const CATALOG = {
   ],
 };
 
-function keys(text: string): string[] {
-  return routerConfigOf(parseConfig(`${BASE}${text}`, HOME, CATALOG as never)).candidates.map(candidateKey);
+const BOTH = { claude: true, codex: true };
+
+function keys(text: string, adapters = BOTH): string[] {
+  return routerConfigOf(parseConfig(`${BASE}${text}`, HOME, CATALOG as never), adapters).candidates.map(candidateKey);
 }
 
 test('the router candidates follow the roles and the enabled cloud executors', () => {
@@ -45,15 +47,24 @@ test('the router candidates follow the roles and the enabled cloud executors', (
   ]);
 });
 
-test('codex is not a candidate until its adapter exists, enabled or not', () => {
-  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n'), []);
-  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable']);
+test('codex is a candidate when enabled and its adapter runs here (D-140)', () => {
+  assert.deepEqual(keys('[cloud]\nexecutors = ["codex"]\n'), ['codex/codex']);
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable', 'codex/codex']);
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude"]\n'), ['claude/sonnet', 'claude/opus', 'claude/fable'], 'not enabled');
+  assert.deepEqual(keys('[cloud]\nexecutors = ["claude", "codex"]\n\n[cloud.models]\ncodex = false\n'), ['claude/sonnet', 'claude/opus', 'claude/fable'], 'turned off');
+});
+
+test('an executor whose adapter does not run here is never a candidate, enabled or not (D-140)', () => {
+  const both = '[cloud]\nexecutors = ["claude", "codex"]\n';
+  assert.deepEqual(keys(both, { claude: true, codex: false }), ['claude/sonnet', 'claude/opus', 'claude/fable']);
+  assert.deepEqual(keys(both, { claude: false, codex: true }), ['codex/codex']);
+  assert.deepEqual(keys(both, { claude: false, codex: false }), []);
 });
 
 test('the selectable models of a work conversation are the cloud candidates', () => {
-  assert.deepEqual(selectableModels(parseConfig(`${BASE}[roles]\norchestrator = "big"\n`, HOME, CATALOG as never)), []);
+  assert.deepEqual(selectableModels(parseConfig(`${BASE}[roles]\norchestrator = "big"\n`, HOME, CATALOG as never), BOTH), []);
   assert.deepEqual(
-    selectableModels(parseConfig(`${BASE}[cloud]\nexecutors = ["claude"]\n`, HOME)).map((entry) => `${entry.executor}/${entry.model}`),
+    selectableModels(parseConfig(`${BASE}[cloud]\nexecutors = ["claude"]\n`, HOME), BOTH).map((entry) => `${entry.executor}/${entry.model}`),
     ['claude/sonnet', 'claude/opus', 'claude/fable'],
   );
 });
@@ -83,14 +94,15 @@ test('a new conversation with an agent starts with its model only while the card
   const config = (text: string) => parseConfig(`${BASE}${text}`, HOME);
   const coder = card('coder');
   const opus = '[cloud]\nexecutors = ["claude"]\n\n[agents.coder]\nmodel = "opus"\n';
-  assert.equal(agentDefaultModel(config(opus), 'coder', coder), 'opus');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\ndefault = "opus"\n'), 'coder', coder), 'opus', 'the default from before D-116');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n'), 'coder', coder), undefined, 'no model: the router chooses');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = []\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder), undefined, 'claude is off');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nopus = false\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder), undefined, 'opus is off');
-  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder), undefined, 'codex has no adapter yet');
-  assert.equal(agentDefaultModel(config(opus), 'coder', { ...coder, executors: ['local'] }), undefined, 'a card without the cloud');
-  assert.equal(agentDefaultModel(config(opus), 'coder', undefined), undefined, 'no card');
+  assert.equal(agentDefaultModel(config(opus), 'coder', coder, BOTH), 'opus');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\ndefault = "opus"\n'), 'coder', coder, BOTH), 'opus', 'the default from before D-116');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n'), 'coder', coder, BOTH), undefined, 'no model: the router chooses');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = []\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder, BOTH), undefined, 'claude is off');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude"]\n\n[cloud.models]\nopus = false\n\n[agents.coder]\nmodel = "opus"\n'), 'coder', coder, BOTH), undefined, 'opus is off');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder, BOTH), 'codex', 'codex runs here (D-140)');
+  assert.equal(agentDefaultModel(config('[cloud]\nexecutors = ["claude", "codex"]\n\n[agents.coder]\nmodel = "codex"\n'), 'coder', coder, { claude: true, codex: false }), undefined, 'its adapter is refused');
+  assert.equal(agentDefaultModel(config(opus), 'coder', { ...coder, executors: ['local'] }, BOTH), undefined, 'a card without the cloud');
+  assert.equal(agentDefaultModel(config(opus), 'coder', undefined, BOTH), undefined, 'no card');
 });
 
 test('the configuration and the Claude adapter check exact model names with the same rule', () => {

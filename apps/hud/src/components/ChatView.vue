@@ -8,7 +8,7 @@ import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usa
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
-import { longMessageStep, toAgent } from '../lib/draft.ts';
+import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
@@ -109,12 +109,16 @@ function onModel(event: Event): void {
 
 /** In a work system chat the selector chooses who answers, not the Coder's model. */
 const answersDirect = computed(() => props.conversation.origin === 'system' && props.conversation.mode === 'work');
-/** The direct chat with the Coder (D-111): it answers in place of Arianna, always on Claude. */
 /** The direct chat with an agent (D-111d): it answers in place of Arianna, where its card says. */
 const direct = computed(() => props.conversation.agent);
 const directPolicy = computed(() => (direct.value === null ? undefined : props.directAgents?.find((entry) => entry.agent === direct.value)));
 /** Every message goes to Claude; without the list (an agent turned off), a conversation on a project is taken as one. */
 const cloud = computed(() => direct.value !== null && (directPolicy.value?.cloud ?? props.conversation.workspace !== null));
+/** The cloud executors of the agent that run now (D-140): Claude when an older core does not say. */
+const directExecutors = computed(() => (directPolicy.value?.executors?.length ? directPolicy.value.executors : ['claude' as const]));
+/** Where the next message goes: the executor of the chosen model, or those the router picks from. */
+const targets = computed(() => cloudTargets(directExecutors.value, props.conversation.model));
+const targetName = computed(() => shortTarget(targets.value));
 const directName = computed(() => (direct.value === null ? 'Arianna' : agentName(direct.value)));
 const directPose = computed<Pose>(() => (direct.value === null ? props.arianna.pose : participantPose(direct.value, props.status?.agents)));
 const meter = computed(() => contextMeter(props.conversation.contextTokens));
@@ -123,7 +127,7 @@ const selectable = computed(() =>
   answersDirect.value
     ? props.models.filter((entry) => entry.executor === 'claude' && DIRECT_MODELS.includes(entry.model))
     : cloud.value
-      ? props.models.filter((entry) => entry.executor === 'claude')
+      ? props.models.filter((entry) => (directExecutors.value as readonly string[]).includes(entry.executor))
       : props.models,
 );
 const selectorName = computed(() => (answersDirect.value ? 'Chi risponde in questa chat' : 'Modello per i passi delegati'));
@@ -150,7 +154,7 @@ const selected = computed(() => (answersDirect.value ? (directModel.value ?? off
 /** Who writes Arianna's answers here: the local model, or Claude in a system chat. */
 const answerModel = computed(() => {
   if (direct.value !== null && !cloud.value) return 'locale';
-  if (direct.value !== null) return props.conversation.model === null ? 'Claude (router)' : (MODEL_TEXT[props.conversation.model] ?? props.conversation.model);
+  if (direct.value !== null) return props.conversation.model === null ? `${shortTarget(directExecutors.value)} (router)` : (MODEL_TEXT[props.conversation.model] ?? props.conversation.model);
   return directModel.value === null ? 'locale' : (MODEL_TEXT[directModel.value] ?? directModel.value);
 });
 /** A long message of the direct chat waits for "Invia comunque" (D-111, risposta 5). */
@@ -484,8 +488,8 @@ onBeforeUnmount(() => clearInterval(clock));
               <span
                 v-if="cloud"
                 class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-l1"
-                title="Ogni messaggio va così com'è a Claude (Anthropic): Arianna non lo filtra."
-              ><Icon name="coder" :size="11" />va a Claude</span>
+                :title="`Ogni messaggio va così com'è a ${providerText(targets)}: Arianna non lo filtra.`"
+              ><Icon name="coder" :size="11" />va a {{ targetName }}</span>
               <span
                 v-if="incognito"
                 class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-incognito-ink"
@@ -498,7 +502,7 @@ onBeforeUnmount(() => clearInterval(clock));
               </span>
               {{ POSE_TEXT[directPose] }}
             </p>
-            <p class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? 'Senza Arianna: ogni messaggio va a Claude.' : 'Senza Arianna, sul modello locale.' }}</p>
+            <p class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
             <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
               <span>CONTESTO</span>
               <span
@@ -829,7 +833,7 @@ onBeforeUnmount(() => clearInterval(clock));
       </div>
       <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
         <span class="min-w-0 flex-1">
-          Va davvero a Claude? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
+          Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
         </span>
         <button ref="confirmButton" type="button" class="btn px-2.5 py-1 text-xs" @click="submit(true)">Invia comunque</button>
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
@@ -839,7 +843,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
         <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span class="inline-flex flex-wrap items-center gap-1.5">
-          Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? 'fino a Interno, ogni messaggio va così com\'è a Claude, senza Arianna. Niente dati privati.' : MODE_HINT[conversation.mode] }}
+          Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
         </span>
       </p>

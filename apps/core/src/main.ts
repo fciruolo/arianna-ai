@@ -19,7 +19,7 @@ import {
   watchConfig,
   type TelegramConfig,
 } from '@arianna/config';
-import { createClaudeExecutor, createLocalModel, type ClaudeExecutor } from '@arianna/executors';
+import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
@@ -308,6 +308,19 @@ try {
   report(error);
   if (config.cloud.executors.includes('claude')) console.error('claude off: the sandbox folders of this Node installation are refused (see the error above)');
 }
+// D-140 (D-111 tappa C): Codex next to Claude, with its own profile (D-138); the same rules apply.
+let codex: CodexExecutor | undefined;
+try {
+  codex = createCodexExecutor({
+    enabled: () => settings.current().cloud.executors,
+    home: config.home,
+    modelName: (model) => settings.current().cloud.models[model].name,
+  });
+} catch (error) {
+  report(error);
+  if (config.cloud.executors.includes('codex')) console.error('codex off: its sandbox folders are refused (see the error above)');
+}
+const adapters = { claude: claude !== undefined, codex: codex !== undefined };
 const kb = createKb({ home: config.home, rules });
 const orchestrator = createOrchestrator({
   sql,
@@ -317,8 +330,10 @@ const orchestrator = createOrchestrator({
   settings: () => settings.current(),
   rules,
   ...(claude === undefined ? {} : { claude }),
+  ...(codex === undefined ? {} : { codex }),
 });
-console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${claude === undefined ? ' (delegation off: sandbox refused)' : ''}`);
+const refused = [...(claude === undefined ? ['claude'] : []), ...(codex === undefined ? ['codex'] : [])];
+console.log(`Cloud executors: ${config.cloud.executors.length === 0 ? 'none' : config.cloud.executors.join(', ')}${refused.length === 0 ? '' : ` (sandbox refused: ${refused.join(', ')})`}`);
 
 const worker = createWorker({
   sql,
@@ -481,14 +496,18 @@ const server = await startApiServer({
   approvedProjects,
   services,
   // Without the adapter no delegation runs: the selector offers nothing.
-  models: () => (claude === undefined ? [] : selectableModels(settings.current())),
-  defaultModel: () => (claude === undefined ? undefined : agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card)),
+  models: () => selectableModels(settings.current(), adapters),
+  defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),
   agents: () => [...agents.keys()],
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
-  directAgents: () => directPolicies(agents, { claude: claude !== undefined && settings.current().cloud.executors.includes('claude') }),
+  directAgents: () =>
+    directPolicies(agents, {
+      claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+      codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+    }),
   participantAgent: (name) => {
     const agent = agents.get(name);
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
@@ -512,14 +531,14 @@ const server = await startApiServer({
   },
   capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
   modelEvals,
-  // The "Modelli" page (I-3): catalogs read at each request; Codex has no adapter until task 1.16.
+  // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>
     loadModelsOverview(sql, {
       home: config.home,
       dataDir: config.paths.data,
       config: () => settings.current(),
       memory: () => memory.snapshot(),
-      adapters: () => ({ claude: claude !== undefined, codex: false }),
+      adapters: () => adapters,
       actions: modelActions,
     }),
   modelActions,
