@@ -17,9 +17,10 @@ export function splitPinned(conversations: readonly Conversation[]): { pinned: C
  * or in a new private one (a work conversation, an archived one, a system
  * chat or another page get a new private conversation).
  */
-export function callTarget(open: Pick<Conversation, 'id' | 'mode' | 'archivedAt' | 'origin'> | undefined, onChat: boolean): { here: string } | 'new' {
+export function callTarget(open: Pick<Conversation, 'id' | 'mode' | 'archivedAt' | 'origin' | 'incognito'> | undefined, onChat: boolean): { here: string } | 'new' {
   if (open === undefined || !onChat) return 'new';
-  if (open.mode !== 'private' || open.archivedAt !== null || open.origin === 'system') return 'new';
+  // Never in an incognito conversation (D-136): a call has its own trace, and the core refuses it there.
+  if (open.mode !== 'private' || open.archivedAt !== null || open.origin === 'system' || open.incognito === true) return 'new';
   return { here: open.id };
 }
 

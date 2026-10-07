@@ -7,6 +7,7 @@ import { agentName } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, DirectAgent } from '../lib/types.ts';
 import Icon from './Icon.vue';
+import IncognitoNotice from './IncognitoNotice.vue';
 import PixelAgent from './PixelAgent.vue';
 
 /**
@@ -98,6 +99,18 @@ onMounted(() => field.value?.focus());
           </p>
           <p v-else-if="policy?.cloud === true" role="note" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-left text-sm text-warn">{{ cloudWarning(draft.agent, draft.project) }}</p>
           <p v-else-if="policy !== undefined" role="note" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-left text-sm text-muted">{{ localNote(draft.agent) }}</p>
+        </template>
+        <!-- Incognito (D-136): what stays outside Arianna, to read before the first message. -->
+        <template v-else-if="draft.incognito === true">
+          <span class="grid size-16 place-items-center rounded-full bg-incognito text-incognito-ink" aria-hidden="true"><Icon name="incognito" :size="34" /></span>
+          <h2 class="font-hud text-lg font-semibold tracking-[0.05em]">
+            Nuova conversazione incognita {{ draft.mode === 'private' ? 'privata' : 'di lavoro' }}
+          </h2>
+          <p class="inline-flex items-center gap-1.5 text-sm text-muted">
+            <Icon :name="draft.mode" :size="14" />{{ MODE_TEXT[draft.mode] }}<template v-if="draft.project"> · {{ draft.project }}</template>
+          </p>
+          <p class="text-sm text-muted">Non compare nella lista né in Cerca; "Salva in inbox" e /nota sono spenti. Si chiude con "Termina", dopo 10 minuti senza la pagina aperta o al riavvio di Arianna.</p>
+          <IncognitoNotice :mode="draft.mode" :project="draft.project" />
         </template>
         <template v-else>
           <PixelAgent :choice="arianna" pose="idle" :scale="3" bubble label="Arianna" />

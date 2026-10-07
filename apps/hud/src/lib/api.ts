@@ -1,6 +1,7 @@
 import type { CallInfo } from './calls.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
+import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { SearchResult } from './search.ts';
@@ -16,10 +17,13 @@ import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel
 export class ApiError extends Error {
   override name = 'ApiError';
   readonly status: number;
+  /** The whole answer of the core, for the fields beside `error` (the cause of a closed incognito conversation, D-136). */
+  readonly body: Record<string, unknown>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -31,7 +35,7 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: u
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
   return data as T;
 }
 
@@ -100,7 +104,7 @@ export async function search(query: string, limit: number, signal?: AbortSignal)
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const response = await fetch(`/api/search?${params.toString()}`, { credentials: 'same-origin', ...(signal === undefined ? {} : { signal }) });
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
+  if (!response.ok) throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
   return data as unknown as SearchResult;
 }
 
@@ -110,9 +114,28 @@ export async function loadInstallation(): Promise<InstallationInfo | undefined> 
 }
 
 /** Opens a conversation; a work one may name an approved project (D-058). */
-export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent): Promise<Conversation> {
-  const body = { mode, ...(project === undefined || project === '' ? {} : { project }), ...(agent === undefined ? {} : { agent }) };
+export async function createConversation(mode: ConversationMode, project?: string, agent?: ConversationAgent, incognito = false): Promise<Conversation> {
+  const body = {
+    mode,
+    ...(project === undefined || project === '' ? {} : { project }),
+    ...(agent === undefined ? {} : { agent }),
+    ...(incognito ? { incognito: true } : {}),
+  };
   return (await call<{ conversation: Conversation }>('POST', '/api/conversations', body)).conversation;
+}
+
+/** "Cosa resta fuori da Arianna" before the first message of an incognito conversation (D-136): only whether it reaches the cloud, and the project. */
+export async function loadIncognitoNotice(mode: ConversationMode, project?: string): Promise<IncognitoNotice> {
+  const params = new URLSearchParams({ mode });
+  if (mode === 'work' && project !== undefined && project !== '') params.set('project', project);
+  const notice = parseNotice(await call<unknown>('GET', `/api/incognito/notice?${params.toString()}`));
+  if (notice === undefined) throw new ApiError(500, 'malformed notice');
+  return notice;
+}
+
+/** "Termina" (D-136): the core stops the work, deletes the texts and says what it deleted and what stays outside; undefined when its answer is not the contract's. */
+export async function endIncognito(conversationId: string): Promise<EndResult | undefined> {
+  return parseEndResult(await call<unknown>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/end`, {}));
 }
 
 /** The agents the user may talk with directly now (D-111d). */
@@ -152,6 +175,8 @@ export async function captureNote(note: {
   url?: string;
   title?: string;
   from?: Label;
+  /** The conversation "/nota" was written in: the core refuses it from an incognito one (D-136). */
+  conversationId?: string;
 }): Promise<{ path: string; label: string; organizing?: boolean }> {
   return call('POST', '/api/capture', note);
 }

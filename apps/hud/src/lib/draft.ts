@@ -1,3 +1,4 @@
+import { INCOGNITO_PATH } from './incognito.ts';
 import { agentName } from './italian.ts';
 import type { ConversationAgent, ConversationMode } from './types.ts';
 
@@ -15,6 +16,8 @@ export interface Draft {
   project?: string | undefined;
   /** Who answers in place of Arianna (D-111d): the direct chat with an agent, as its card allows. */
   agent?: ConversationAgent | undefined;
+  /** An incognito conversation (D-136): with Arianna only, never with a direct agent. */
+  incognito?: boolean | undefined;
   /**
    * Set once the core created the conversation but the first message did not
    * go through: a retry sends to it, never creates a second one.
@@ -25,7 +28,7 @@ export interface Draft {
 export const DRAFT_PATH = '/nuova';
 
 /** What "Nuovo" chose: the mode, the project, and who answers. */
-export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent'>;
+export type DraftChoice = Pick<Draft, 'mode' | 'project' | 'agent' | 'incognito'>;
 
 const MODE_WORD: Record<ConversationMode, string> = { private: 'privata', work: 'lavoro' };
 
@@ -38,6 +41,8 @@ const isAgentId = (value: string | null | undefined): value is string => typeof 
  * `/nuova?con=traduttore&tipo=lavoro`: a reload comes back to the draft.
  */
 export function draftPath(choice: DraftChoice): string {
+  // Incognito (D-136): always the same address, the choice lives in the state of the history entry.
+  if (choice.incognito === true) return INCOGNITO_PATH;
   const params = new URLSearchParams();
   if (isAgentId(choice.agent)) params.set('con', choice.agent);
   params.set('tipo', MODE_WORD[choice.mode]);
@@ -63,12 +68,12 @@ export function draftFromAddress(pathname: string, search: string): DraftChoice 
 
 /** Who answers in a draft of this choice: an agent id, never Arianna; what its card allows is checked against the list (D-111d). */
 export function choiceAgent(choice: DraftChoice): ConversationAgent | undefined {
-  return isAgentId(choice.agent) ? choice.agent : undefined;
+  return choice.incognito !== true && isAgentId(choice.agent) ? choice.agent : undefined;
 }
 
 /** The same choice: the page does not open a draft again for it. */
 export function sameChoice(a: DraftChoice, b: DraftChoice): boolean {
-  return a.mode === b.mode && a.project === b.project && a.agent === b.agent;
+  return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true);
 }
 
 /** What stays out of Arianna's hands in a direct chat on Claude (D-111): also said where such a conversation is deleted. */

@@ -15,10 +15,16 @@ export interface StoredApproval extends DeclassifyApproval {
   requestedAt: Date;
   decidedAt: Date | null;
   decidedVia: DecisionChannel | null;
+  /** The conversation of its task; null for a task without one. */
+  conversationId: string | null;
+  /** Its task is in an incognito conversation (D-136): the chat shows it only in that conversation's page. */
+  incognito: boolean;
 }
 
 const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, label, state,
-  requested_at AS "requestedAt", decided_at AS "decidedAt", decided_via AS "decidedVia"`;
+  requested_at AS "requestedAt", decided_at AS "decidedAt", decided_via AS "decidedVia",
+  (SELECT t.conversation_id::text FROM tasks t WHERE t.id = approvals.task_id) AS "conversationId",
+  coalesce((SELECT c.incognito FROM tasks t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = approvals.task_id), false) AS incognito`;
 
 /**
  * Asks the user to approve lowering `item` to `to`. The approval stores the
@@ -46,13 +52,16 @@ export async function requestDeclassify(
 
 /**
  * Approvals in one state: pending ones oldest first (the queue to work
- * through), decided or expired ones most recently decided first.
+ * through), decided or expired ones most recently decided first. With `incognito` and the conversation of each
+ * (D-136: the chat shows one of an incognito conversation only in its page);
+ * with `conversationId`, only those of that conversation.
  */
-export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100): Promise<StoredApproval[]> {
+export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100, options: { conversationId?: string } = {}): Promise<StoredApproval[]> {
   const order = state === 'pending' ? 'requested_at, id' : 'decided_at DESC, id';
+  const where = options.conversationId === undefined ? '' : 'AND task_id IN (SELECT id FROM tasks WHERE conversation_id = $3::uuid)';
   const rows = await sql.unsafe<StoredApproval[]>(
-    `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ORDER BY ${order} LIMIT $2`,
-    [state, limit],
+    `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ${where} ORDER BY ${order} LIMIT $2`,
+    options.conversationId === undefined ? [state, limit] : [state, limit, options.conversationId],
   );
   return [...rows];
 }

@@ -30,6 +30,7 @@ import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
+import { isIncognitoConversation } from '../incognito.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
@@ -510,11 +511,18 @@ export function runLimitsOf(agent: LoadedAgent): { maxTurns?: number; timeoutMs?
   return { maxTurns: agent.card.limits.maxSteps, timeoutMs: agent.card.limits.maxMinutes * 60_000 };
 }
 
-/** The cloud step: the plan is `cloud`. */
+/**
+ * The cloud step: the plan is `cloud`. Every run of a task of an incognito
+ * conversation, resumed ones included, runs `claude` with
+ * `--no-session-persistence` (D-136): its session is not saved, so it is
+ * never resumed. An incognito conversation has no direct chat (migration
+ * 0031), so the direct chat always continues its saved session.
+ */
 export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Extract<DelegationPlan, { kind: 'cloud' }>): Promise<StepOutcome> {
   const { task, step, runId } = ctx;
   const { delegation } = plan;
   const { sql } = env;
+  const persistSession = !(task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId)));
   const claude = env.claude;
   if (claude === undefined) throw new Error('claude is not available');
   const failed = async (result: string): Promise<StepOutcome> => {
@@ -567,6 +575,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
     brief,
     ...(sessionRef === undefined ? {} : { sessionRef }),
+    ...(persistSession ? {} : { persistSession: false }),
     workspace,
     model: plan.model,
     tools: claudeToolsOf(agent.card.tools),
@@ -642,7 +651,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         status: 'ok',
         result: text,
         resultLabel: result.result.label,
-        sessionRef: result.result.sessionRef,
+        // A session that was not saved is never offered for resume, nor kept as a trace (D-136).
+        ...(persistSession ? { sessionRef: result.result.sessionRef } : {}),
         ...(result.result.usage.context === undefined ? {} : { contextTokens: result.result.usage.context }),
         ...(messageId === undefined ? {} : { messageId }),
       });

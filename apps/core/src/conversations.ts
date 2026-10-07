@@ -38,6 +38,12 @@ export interface Conversation {
   pinnedAt: Date | null;
   /** The conversation of the Telegram channel: it cannot be archived. */
   telegram: boolean;
+  /**
+   * An incognito conversation (D-136): chosen at creation, never changed. It
+   * has no title, is never listed, archived nor pinned, and its texts are
+   * deleted when it closes (incognito.ts).
+   */
+  incognito: boolean;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -85,10 +91,13 @@ export const CHAT_AGENT = 'arianna';
 /** Longest message the user can send; longer text belongs in a document. */
 export const MAX_MESSAGE_LENGTH = 16_000;
 const TITLE_LENGTH = 80;
+/** The title of every task of an incognito conversation, from birth (D-136, migration 0031). */
+export const INCOGNITO_TITLE = 'Incognito';
 /** Longest title the user can give a conversation. */
 export const MAX_CONVERSATION_TITLE = 200;
 
-export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner' | 'archived' | 'busy';
+/** `incognito`: refused in an incognito conversation (D-136); `not-incognito`: only for one. Both 409. */
+export type ChatErrorCode = 'not-found' | 'invalid' | 'scanner' | 'archived' | 'busy' | 'incognito' | 'not-incognito';
 
 export class ChatError extends Error {
   override name = 'ChatError';
@@ -102,7 +111,7 @@ export class ChatError extends Error {
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram,
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito,
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
@@ -135,6 +144,8 @@ export interface NewConversation {
    * (direct-chat.ts): the caller reads the card, this checks mode and project.
    */
   agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
+  /** An incognito conversation (D-136): never with a direct agent. */
+  incognito?: boolean;
 }
 
 /**
@@ -163,15 +174,18 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
     if (!options.agent.modes.includes(options.mode)) throw new ChatError('invalid', `${options.agent.name} does not answer a ${options.mode} conversation`);
     if (options.agent.project && options.project === undefined) throw new ChatError('invalid', `the direct chat with ${options.agent.name} needs a project`);
   }
+  const incognito = options.incognito === true;
+  // A direct chat keeps its agent's session to resume it (D-111): it has no incognito form.
+  if (incognito && options.agent !== undefined) throw new ChatError('invalid', 'an incognito conversation is answered by Arianna');
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model, agent)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null})
+    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito})
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
     kind: 'conversation.created',
     label: 'L0',
-    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }) },
+    payload: { conversationId: row.id, mode: options.mode, ...(options.agent === undefined ? {} : { agent: options.agent.name }), ...(incognito ? { incognito } : {}) },
   });
   const created = await loadConversation(tx, row.id);
   if (created === undefined) throw new Error('the new conversation is missing');
@@ -222,7 +236,7 @@ export async function listConversations(
   const rows = await sql.unsafe<Conversation[]>(
     `SELECT * FROM (
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
-       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND ($2 OR c.origin = $3)
+       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND ($2 OR c.origin = $3)
      ) listed
      ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
@@ -245,6 +259,7 @@ export async function renameConversation(sql: Sql, id: string, title: unknown): 
   if (line.includes(String.fromCharCode(0))) throw new ChatError('invalid', 'the title contains a NUL character');
   return sql.begin(async (tx) => {
     const conversation = await lockConversation(tx, id);
+    if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (conversation.mode === 'work') {
       const kinds = [...new Set(scanText(line).map((finding) => finding.kind))];
       if (kinds.length > 0) throw new ChatError('scanner', `a work conversation cannot hold this title (${kinds.join(', ')})`);
@@ -277,6 +292,7 @@ async function reload(sql: Queryable, id: string): Promise<Conversation> {
 export async function archiveConversation(sql: Sql, id: string, archived: boolean): Promise<Conversation> {
   return sql.begin(async (tx) => {
     const conversation = await lockConversation(tx, id);
+    if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (archived && conversation.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be archived');
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
@@ -295,6 +311,7 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
 export async function pinConversation(sql: Sql, id: string, pinned: boolean): Promise<Conversation> {
   return sql.begin(async (tx) => {
     const conversation = await lockConversation(tx, id);
+    if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (pinned && conversation.archivedAt !== null) throw new ChatError('archived', 'the conversation is archived: restore it to pin it');
     if ((conversation.pinnedAt !== null) !== pinned) {
       await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
@@ -458,8 +475,8 @@ export async function writeUserMessage(
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
     ? (
-        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace FROM conversations
+        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean }[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito FROM conversations
         WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
       )[0]
     : undefined;
@@ -483,7 +500,8 @@ export async function writeUserMessage(
 
   const label = labelForUserMessage(createContext(conversation.clearance));
   const task = await createTask(tx, {
-    title: taskTitle(body),
+    // In incognito the start of the message never becomes a title (D-136): the database refuses any other.
+    title: conversation.incognito ? INCOGNITO_TITLE : taskTitle(body),
     conversationId,
     label,
     clearance: conversation.clearance,
@@ -510,7 +528,7 @@ export async function writeUserMessage(
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO messages returned no row');
   // The first message names the conversation, as in the chat apps (D-057).
-  if (conversation.title === null) {
+  if (conversation.title === null && !conversation.incognito) {
     await tx`UPDATE conversations SET title = ${task.title.replace(/\s+/g, ' ')} WHERE id = ${conversationId}`;
   }
   await appendEvent(tx, {

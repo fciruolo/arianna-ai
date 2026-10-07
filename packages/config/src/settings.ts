@@ -325,7 +325,7 @@ export function renderSettings(settings: Settings): string {
           '# [[local.endpoints]]',
           '# id = "omlx"',
           '# url = "http://127.0.0.1:7001/v1"',
-          '# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "7001", "--paged-ssd-cache-dir", "data/omlx-cache", "--paged-ssd-cache-max-size", "10GB"]',
+          '# command = ["omlx", "serve", "--model-dir", "data/models", "--host", "127.0.0.1", "--port", "7001", "--log-level", "info", "--paged-ssd-cache-dir", "data/omlx-cache", "--paged-ssd-cache-max-size", "10GB"]',
         ]
       : settings.endpoints.flatMap((endpoint, index) => [...(index === 0 ? [] : ['']), ...endpointSection(endpoint)])),
     '',

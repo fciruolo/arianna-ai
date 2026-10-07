@@ -134,7 +134,7 @@ export async function listRecentDelegations(sql: Queryable, limit: number): Prom
      JOIN tasks t ON t.id = d.task_id
      LEFT JOIN conversations c ON c.id = t.conversation_id
      LEFT JOIN runs r ON r.id = d.run_id
-     WHERE ${AT_MOST_L1}
+     WHERE ${AT_MOST_L1} AND NOT coalesce(c.incognito, false)
      ORDER BY d.id DESC
      LIMIT $1`,
     [limit],

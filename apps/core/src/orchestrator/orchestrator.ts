@@ -44,6 +44,7 @@ import { createDelegation, loadDelegations, openDelegation, updateDelegation, ty
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
+import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
 /**
@@ -104,10 +105,14 @@ export interface OrchestratorOptions {
  * conversation had an open card to update when the task started (cards.ts,
  * fixed for the whole task). Without one the tool has no valid target, and a
  * local model would reach for it to move its own task instead of asking.
+ * In an incognito conversation (D-136) none of INCOGNITO_OFF_TOOLS: what
+ * they write would outlive the closing.
  */
-export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false): ToolId[] {
+export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false): ToolId[] {
   return offerable(agent.card.tools).filter(
-    (tool) => (isLocalTool(tool) && (tool !== UPDATE || cards)) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE),
+    (tool) =>
+      !(incognito && (INCOGNITO_OFF_TOOLS as readonly string[]).includes(tool)) &&
+      ((isLocalTool(tool) && (tool !== UPDATE || cards)) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE)),
   );
 }
 
@@ -545,7 +550,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
       // The agents this step may delegate to (D-119, tappa T3): the Coder and the user's active ones.
       const delegates = delegateTargets(env, task.assignee);
-      const tools = orchestratorTools(agent, delegates.length > 0, await updateOffered(sql, task));
+      // In an incognito conversation nothing that outlives it is offered (D-136): no KB note, no card.
+      const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
+      const tools = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito);
       await show(task, step, 'thinking');
       let asked;
       try {
