@@ -20,7 +20,9 @@ export const CLOUD_MODEL_EXECUTOR: Readonly<Record<CloudModel, CloudExecutor>> =
   sonnet: 'claude',
   opus: 'claude',
   fable: 'claude',
-  codex: 'codex',
+  luna: 'codex',
+  sol: 'codex',
+  astra: 'codex',
 };
 
 /** Where a fact comes from: a page and the day it was read (YYYY-MM-DD). */
@@ -203,6 +205,15 @@ export function parseCloudCatalog(text: string): CloudCatalog {
   const unused = sources.find(({ id }) => !used.has(id));
   if (unused !== undefined) throw new ConfigError(`cloud catalog.sources: ${unused.id} is not used by any fact`);
   return { version: 1, sources, models };
+}
+
+/**
+ * The exact name a Codex alias runs when `[cloud.models]` gives none (D-141):
+ * the first of its card. The binary knows no alias, and its own default
+ * would run under any of them. Undefined when the card names none.
+ */
+export function catalogModelName(catalog: CloudCatalog, alias: CloudModel): string | undefined {
+  return catalog.models.find((entry) => entry.alias === alias)?.names[0]?.name;
 }
 
 /** Reads `config/cloud-models.catalog.yaml` from ARIANNA_HOME. */

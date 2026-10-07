@@ -19,7 +19,7 @@ import { join, relative } from 'node:path';
 import { codexEnv, codexPermissionArgs, codexSandboxFolders, createClaudeExecutor, createCodexExecutor, type ClaudeTool, type CodexAccess } from '@arianna/executors';
 import { createContext, gatewayCheck, markLogged, secretMatcher } from '@arianna/policy';
 
-import { isRunError, liveConfig, liveTarget, requireEnabled, scratchWorkspace, type LiveExecutor, type ScratchWorkspace } from './contract.ts';
+import { EVAL_CODEX_MODEL, evalCodexName, isRunError, liveConfig, liveTarget, requireEnabled, scratchWorkspace, type LiveExecutor, type ScratchWorkspace } from './contract.ts';
 import type { Evaluate } from './types.ts';
 
 export interface CanaryInput {
@@ -243,7 +243,7 @@ export function createCanaryEvaluator(executorOptions: (id: LiveExecutor) => Can
             for (const command of direct) lines.push(JSON.stringify(under(fill(command, path))));
           }
         } else if (id === 'codex') {
-          await createCodexExecutor({ ...options, env, observe }).start({ brief, workspace, model: 'codex', access: access ?? 'read', limits }).result;
+          await createCodexExecutor({ modelName: evalCodexName(options.home), ...options, env, observe }).start({ brief, workspace, model: EVAL_CODEX_MODEL, access: access ?? 'read', limits }).result;
         } else {
           await createClaudeExecutor({ ...options, env, observe }).start({ brief, workspace, model: 'sonnet', tools: tools ?? [], limits }).result;
         }

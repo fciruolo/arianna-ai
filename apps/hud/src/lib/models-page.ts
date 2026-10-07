@@ -199,7 +199,9 @@ export const CLOUD_NAME: Record<string, string> = {
   sonnet: 'Claude Sonnet',
   opus: 'Claude Opus',
   fable: 'Claude Fable',
-  codex: 'Codex (ChatGPT)',
+  luna: 'Codex Luna',
+  sol: 'Codex Sol',
+  astra: 'Codex Astra',
 };
 
 /** "Qwen (Alibaba); conversione MLX di mlx-community" → "Qwen": who makes it, without the converter. */
@@ -237,7 +239,7 @@ export function entryOf(view: ModelView): ModelEntry {
     name: CLOUD_NAME[view.alias] ?? view.alias,
     sub: `${provider} · cloud · alias ${view.alias}`,
     provider,
-    badge: view.alias === 'codex' ? 'Cx' : badgeOf(view.alias),
+    badge: badgeOf(view.alias),
     state: CLOUD_STATE_TEXT[view.state],
     roles: [],
     agents: view.agents,
@@ -370,7 +372,7 @@ export function memorySummary(memory: MemoryView | null, local: readonly LocalMo
 export function cloudNotice(view: CloudModelView): string | undefined {
   if (view.state === 'not-connected') {
     return view.executor === 'codex'
-      ? 'Non collegato: manca l’adattatore di Codex (task 1.16). Servono anche il binario codex con il tuo accesso ChatGPT, fatto da te nel terminale, e Codex acceso in Esecutori cloud. La scelta qui si salva e vale dopo.'
+      ? 'Non collegato: il nucleo non ha l’adattatore di Codex su questa installazione (la sua sandbox è stata rifiutata: lo dice il registro del nucleo all’avvio).'
       : 'Non collegato: il nucleo non ha l’adattatore di Claude su questa installazione.';
   }
   if (view.state === 'executor-off') return `L’esecutore ${view.executor === 'claude' ? 'Claude Code' : view.executor} è spento in Esecutori cloud: finché resta spento il modello non riceve lavori.`;

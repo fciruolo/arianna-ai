@@ -174,7 +174,9 @@ describe('buildModelsOverview', () => {
         { alias: 'sonnet', executor: 'claude', enabled: true, name: null, state: 'on', budgetApproval: false, agents: [] },
         { alias: 'opus', executor: 'claude', enabled: true, name: 'claude-opus-9-9', state: 'on', budgetApproval: false, agents: ['coder', 'revisore'] },
         { alias: 'fable', executor: 'claude', enabled: false, name: null, state: 'off', budgetApproval: true, agents: [] },
-        { alias: 'codex', executor: 'codex', enabled: true, name: null, state: 'not-connected', budgetApproval: false, agents: [] },
+        { alias: 'luna', executor: 'codex', enabled: true, name: null, state: 'not-connected', budgetApproval: false, agents: [] },
+        { alias: 'sol', executor: 'codex', enabled: true, name: null, state: 'not-connected', budgetApproval: false, agents: [] },
+        { alias: 'astra', executor: 'codex', enabled: true, name: null, state: 'not-connected', budgetApproval: false, agents: [] },
       ],
     );
     assert.equal(cloud[1]?.card?.names[0]?.contextTokens, 1000);
@@ -184,12 +186,12 @@ describe('buildModelsOverview', () => {
 
   it('an executor left out of [cloud] executors, or without an adapter, is never "on"', () => {
     const off = buildModelsOverview(inputs({ config: { ...inputs().config, cloud: { executors: [], models: defaultCloudModels() } } })).cloud;
-    assert.deepEqual(off.map(({ state }) => state), ['executor-off', 'executor-off', 'executor-off', 'not-connected']);
+    assert.deepEqual(off.map(({ state }) => state), ['executor-off', 'executor-off', 'executor-off', 'not-connected', 'not-connected', 'not-connected']);
     const noAdapter = buildModelsOverview(inputs({ adapters: { claude: false, codex: false } })).cloud;
     assert.equal(noAdapter.some(({ state }) => state === 'on'), false);
-    // An adapter for Codex (task 1.16) with codex enabled turns it on.
+    // An adapter for Codex with codex enabled turns its three models on (D-141).
     const codex = buildModelsOverview(inputs({ adapters: { claude: true, codex: true }, config: { ...inputs().config, cloud: { executors: ['codex'], models: defaultCloudModels() } } })).cloud;
-    assert.deepEqual(codex.map(({ state }) => state), ['executor-off', 'executor-off', 'executor-off', 'on']);
+    assert.deepEqual(codex.map(({ state }) => state), ['executor-off', 'executor-off', 'executor-off', 'on', 'on', 'on']);
   });
 
   it('keeps the memory totals, not the loaded list, and null without an account', () => {
@@ -249,13 +251,13 @@ describe('loadModelsOverview', () => {
   });
 
   it('reads both catalogs and the files on disk at each request', async () => {
-    writeFileSync(join(home, 'config', 'cloud-models.catalog.yaml'), 'version: 1\nsources: []\nmodels:\n  - alias: codex\n    provider: Fake\n    family: Fake Codex\n    executor: codex\n');
+    writeFileSync(join(home, 'config', 'cloud-models.catalog.yaml'), 'version: 1\nsources: []\nmodels:\n  - alias: sol\n    provider: Fake\n    family: Fake Codex\n    executor: codex\n');
     const overview = await loadModelsOverview(noTrials, { ...options, config: () => ({ ...inputs().config, roles: { extractor: 'fake-small' } }) });
     assert.deepEqual(overview.local.map(({ id, state, provider }) => ({ id, state, provider })), [
       { id: 'fake-small', state: 'on-disk', provider: 'Fake Lab' },
       { id: 'fake-missing', state: 'missing', provider: null },
     ]);
-    assert.equal(overview.cloud.find(({ alias }) => alias === 'codex')?.card?.family, 'Fake Codex');
+    assert.equal(overview.cloud.find(({ alias }) => alias === 'sol')?.card?.family, 'Fake Codex');
     assert.equal(overview.memory, null);
     assert.deepEqual(overview.errors, { catalog: null, cloudCatalog: null, evals: null });
   });
@@ -287,9 +289,9 @@ describe('loadModelsOverview', () => {
   });
 
   it('a cloud catalog that cannot be read leaves the cards out and says why, without values', async () => {
-    writeFileSync(join(home, 'config', 'cloud-models.catalog.yaml'), 'version: 1\nsources: []\nmodels:\n  - alias: codex\n    provider: Fake\n    family: Fake\n    executor: claude\n    secret: hunter2\n');
+    writeFileSync(join(home, 'config', 'cloud-models.catalog.yaml'), 'version: 1\nsources: []\nmodels:\n  - alias: sol\n    provider: Fake\n    family: Fake\n    executor: claude\n    secret: hunter2\n');
     const overview = await loadModelsOverview(noTrials, options);
-    assert.equal(overview.cloud.length, 4);
+    assert.equal(overview.cloud.length, 6);
     assert.equal(overview.cloud.every(({ card }) => card === null), true);
     assert.equal(overview.errors.cloudCatalog, 'config/cloud-models.catalog.yaml is not valid at cloud catalog.models[0]');
     assert.doesNotMatch(overview.errors.cloudCatalog, /hunter2|secret/);
@@ -317,7 +319,7 @@ describe('loadModelsOverview', () => {
     const overview = await loadModelsOverview(noTrials, { ...options, home: empty });
     assert.deepEqual(overview.local, []);
     assert.equal(overview.errors.catalog, 'config/models.catalog.yaml cannot be read');
-    assert.equal(overview.cloud.length, 4);
+    assert.equal(overview.cloud.length, 6);
   });
 });
 
@@ -338,7 +340,7 @@ describe('GET /api/models/overview', () => {
       const body = (await response.json()) as { local: { id: string; lastEval: { requestedAt: string } | null }[]; cloud: { alias: string }[] };
       assert.deepEqual(body.local.map(({ id }) => id), ['fake-large', 'fake-small', 'fake-spare']);
       assert.equal(body.local[0]?.lastEval?.requestedAt, '2026-10-01T10:00:00.000Z');
-      assert.deepEqual(body.cloud.map(({ alias }) => alias), ['sonnet', 'opus', 'fable', 'codex']);
+      assert.deepEqual(body.cloud.map(({ alias }) => alias), ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra']);
       assert.deepEqual(await (await fetch(`${origin}/api/models`)).json(), { models: [{ executor: 'claude', model: 'sonnet' }] });
     } finally {
       await server.close();

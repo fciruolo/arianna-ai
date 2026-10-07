@@ -519,7 +519,7 @@ test('uncommitted changes refused: the delegation ends and Arianna hears it', as
     assert.deepEqual(await drain(task.id, executor), ['answered']);
     const [delegation] = await loadDelegations(db().sql, task.id);
     assert.equal(delegation?.status, 'refused');
-    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /did not want the Coder to work over uncommitted changes/);
+    assert.match(model.requests[1]?.messages.at(-1)?.content ?? '', /did not want coder to work over uncommitted changes/);
     assert.equal((await db().sql`SELECT 1 FROM runs WHERE task_id = ${task.id} AND locality = 'cloud'`).length, 0);
   } finally {
     unlinkSync(join(REPO, 'notes.txt'));

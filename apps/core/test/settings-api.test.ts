@@ -32,7 +32,7 @@ const START: Settings = {
   cloud: { executors: ['claude'] },
 };
 
-const AGENT_MODELS = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'codex'] } as const;
+const AGENT_MODELS = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] } as const;
 
 const LOCAL: LocalServerStatus[] = [
   { id: 'omlx', url: 'http://127.0.0.1:7001/v1', managed: true, adopted: false, state: 'up' },

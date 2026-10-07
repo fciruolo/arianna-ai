@@ -29,6 +29,7 @@ export {
 } from './catalog.ts';
 export {
   CLOUD_CATALOG_FILE,
+  catalogModelName,
   CLOUD_MODEL_EXECUTOR,
   EMPTY_CLOUD_CATALOG,
   loadCloudCatalog,
@@ -51,7 +52,12 @@ export {
   CLOUD_MODEL_NAME,
   CLOUD_MODELS,
   cloudModelName,
+  CODEX_ALIASES,
   defaultCloudModels,
+  executorOfCloudModel,
+  inFamily,
+  LEGACY_CODEX_ALIAS,
+  LEGACY_CODEX_AS,
   enabledCloudModels,
   type CloudConfig,
   type CloudExecutor,

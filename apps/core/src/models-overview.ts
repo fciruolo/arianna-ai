@@ -97,8 +97,8 @@ export interface LocalModelView {
 /**
  * on: a candidate of the router; off: turned off in `[cloud.models]`;
  * executor-off: its binary is not in `[cloud] executors`; not-connected: the
- * core has no adapter for it (Codex until task 1.16, Claude when the adapter
- * refused this Node installation). The first that holds wins, in the order
+ * core has no adapter for it (its sandbox refused on this machine, D-050,
+ * D-138). The first that holds wins, in the order
  * not-connected, executor-off, off: Codex reads "not connected" even when
  * the user left it out of `[cloud] executors`, the bigger reason.
  */

@@ -20,7 +20,7 @@ const EXECUTORS = {
 const TOOLS: Record<string, { title: string; text: string }> = {
   'repo.read': { title: 'Legge il codice', text: 'apre e cerca i file del progetto' },
   'repo.write': { title: 'Modifica il codice', text: 'crea e cambia file nel progetto' },
-  'repo.test': { title: 'Esegue i test', text: 'lancia comandi nel progetto, in una sandbox senza rete' },
+  'repo.test': { title: 'Esegue i test', text: 'lancia comandi nel progetto, in una sandbox senza rete; su Claude solo insieme a «Modifica il codice»' },
 };
 
 const set = (change: Partial<UserPermissions>): void => {

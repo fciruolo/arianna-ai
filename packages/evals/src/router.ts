@@ -24,7 +24,9 @@ const ALL: Candidate[] = [
   { executor: 'claude', model: 'sonnet', locality: 'cloud' },
   { executor: 'claude', model: 'opus', locality: 'cloud' },
   { executor: 'claude', model: 'fable', locality: 'cloud' },
-  { executor: 'codex', model: 'codex', locality: 'cloud' },
+  { executor: 'codex', model: 'luna', locality: 'cloud' },
+  { executor: 'codex', model: 'sol', locality: 'cloud' },
+  { executor: 'codex', model: 'astra', locality: 'cloud' },
 ];
 
 /**

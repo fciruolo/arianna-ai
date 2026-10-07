@@ -196,7 +196,7 @@ export function workText(works: UserAgentWork): string {
 const TOOL_TEXT: Record<string, string> = {
   'repo.read': 'legge il codice del progetto',
   'repo.write': 'modifica il codice del progetto',
-  'repo.test': 'esegue i test',
+  'repo.test': 'esegue i test (su Claude solo se modifica anche il codice)',
   'task.update': 'sposta le carte della conversazione',
   'user.ask': 'ti fa domande in chat',
   'web.search': 'cerca sul web',

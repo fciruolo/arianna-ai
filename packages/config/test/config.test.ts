@@ -395,9 +395,24 @@ test('[cloud.models]: every alias on by default, off with false, on under an exa
     sonnet: { enabled: true },
     opus: { enabled: true, name: 'claude-opus-5-5[1m]' },
     fable: { enabled: false },
-    codex: { enabled: true },
+    luna: { enabled: true },
+    sol: { enabled: true },
+    astra: { enabled: true },
   });
-  assert.deepEqual(enabledCloudModels(given), ['sonnet', 'opus', 'codex']);
+  assert.deepEqual(enabledCloudModels(given), ['sonnet', 'opus', 'luna', 'sol', 'astra']);
+  // Codex's names stay in the family of their alias, and the old single alias reads as sol (D-141).
+  assert.deepEqual(cloud('sol = "gpt-6.1-sol"').models.sol, { enabled: true, name: 'gpt-6.1-sol' });
+  assert.throws(() => cloud('luna = "gpt-6-astra"'), /luna family/);
+  assert.throws(() => cloud('sol = "sol"'), /sol family/, 'a bare alias is no name the binary knows');
+  assert.throws(() => cloud('luna = "gpt-6-astra-luna"'), /luna family/);
+  // The old single codex: a name goes to its family, false turns the three off, true changes nothing.
+  assert.deepEqual(cloud('codex = "gpt-6-astra"').models.astra, { enabled: true, name: 'gpt-6-astra' });
+  assert.deepEqual(cloud('codex = "gpt-6-astra"').models.sol, { enabled: true });
+  const off = cloud('codex = false').models;
+  assert.deepEqual([off.luna, off.sol, off.astra], [{ enabled: false }, { enabled: false }, { enabled: false }]);
+  assert.deepEqual(cloud('codex = true').models, defaultCloudModels());
+  assert.throws(() => cloud('codex = "gpt-5.5-codex"'), /cloud\.models\.codex: Codex has three models/);
+  assert.throws(() => cloud('codex = true\nsol = true'), /cloud\.models\.codex: the old single model/);
   assert.equal(cloudModelName(given, 'opus'), 'claude-opus-5-5[1m]');
   assert.equal(cloudModelName(given, 'sonnet'), 'sonnet', 'no name: the alias, the newest model for the binary');
 });

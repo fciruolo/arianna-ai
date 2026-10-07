@@ -127,7 +127,7 @@ export interface CodexExecutorOptions {
   home: string;
   /** Folders the sandbox may read besides the workspace and the system folders. Default: `codexToolchain`. Never a user root or the home directory. */
   readable?: readonly string[];
-  /** The exact name passed to `--model` (`[cloud.models]`, D-071), read at each launch; undefined lets the binary choose. */
+  /** The exact name passed to `--model` (`[cloud.models]` or the cloud catalog, D-071, D-141), read at each launch; undefined refuses the launch. */
   modelName?: (model: CodexModel) => string | undefined;
   /** Evals only: every line of the stream, as it comes, so that the canary can search the whole transcript. */
   observe?: (line: string) => void;

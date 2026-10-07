@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CLOUD_MODELS, ConfigError, loadCloudCatalog, parseCloudCatalog, resolveHome } from '../src/index.ts';
+import { catalogModelName, CLOUD_MODELS, ConfigError, inFamily, loadCloudCatalog, parseCloudCatalog, resolveHome } from '../src/index.ts';
 
 const VALID = `
 version: 1
@@ -27,7 +27,7 @@ models:
     quota_ratio: { relative_to: sonnet, times: 2, source: fake-page }
     terms: https://example.org/terms
     notes: Only fake
-  - alias: codex
+  - alias: sol
     provider: Fake Other
     family: Fake Codex
     executor: codex
@@ -49,7 +49,7 @@ test('a valid cloud catalog is parsed', () => {
     notes: 'Only fake',
   });
   // Every fact but the alias, the provider, the family and the executor may be left out.
-  assert.deepEqual(catalog.models[1], { alias: 'codex', provider: 'Fake Other', family: 'Fake Codex', executor: 'codex', names: [], strengths: [] });
+  assert.deepEqual(catalog.models[1], { alias: 'sol', provider: 'Fake Other', family: 'Fake Codex', executor: 'codex', names: [], strengths: [] });
 });
 
 test('the committed cloud catalog loads, one entry per alias, every fact with its source', () => {
@@ -78,8 +78,8 @@ test('sources are https pages with the day they were read', () => {
 });
 
 test('aliases are those of the router, once each, on their own executor', () => {
-  assert.throws(() => parseCloudCatalog(VALID.replace('alias: codex', 'alias: gpt')), ConfigError);
-  assert.throws(() => parseCloudCatalog(VALID.replace('alias: codex', 'alias: opus')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('alias: sol', 'alias: gpt')), ConfigError);
+  assert.throws(() => parseCloudCatalog(VALID.replace('alias: sol', 'alias: opus')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('executor: codex', 'executor: claude')), ConfigError);
   assert.throws(() => parseCloudCatalog(VALID.replace('executor: claude', 'executor: codex')), ConfigError);
 });
@@ -111,4 +111,13 @@ test('strengths, prices, ratios and unknown keys are checked', () => {
   assert.throws(() => parseCloudCatalog(VALID.replace('version: 1', 'version: 2')), ConfigError);
   assert.throws(() => parseCloudCatalog('version: 1\nmodels: []\n'), ConfigError);
   assert.deepEqual(parseCloudCatalog('version: 1\nsources: []\nmodels: []\n').models, []);
+});
+
+test('the catalog in git gives each Codex alias an exact name of its family, the one --model gets by default (D-141)', () => {
+  const catalog = loadCloudCatalog(resolveHome({}));
+  for (const alias of ['luna', 'sol', 'astra'] as const) {
+    const name = catalogModelName(catalog, alias);
+    assert.ok(name !== undefined && inFamily(alias, name), `${alias}: ${String(name)}`);
+  }
+  assert.equal(catalogModelName(parseCloudCatalog('version: 1\nsources: []\nmodels: []\n'), 'sol'), undefined, 'no card, no name');
 });

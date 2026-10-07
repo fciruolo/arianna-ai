@@ -15,6 +15,34 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - La ricerca e la scheda di Hugging Face passano dal gateway come uscita L0 verso il web: esce solo il testo cercato o l'id scelto, registrato in `gateway_log` senza il testo; niente account né token, l'API solo in HTTPS verso huggingface.co; i file piccoli letti quando si aggiunge un modello si controllano contro il commit (D-139).
 - Dal catalogo restano fuori i pesi pickle, il codice dei repository e i file nascosti (D-139).
 
+## [0.30.0] - 2026-10-07
+
+### Aggiunto
+
+- Codex ha tre modelli come Claude: Luna, Sol e Astra, ciascuno con interruttore e nome esatto in Impostazioni → Modelli; il router mette Sol accanto a Sonnet e Astra accanto a Opus, così con Claude senza quota passa a Codex invece di aspettare; Luna solo se la scegli tu (D-141).
+- La chat diretta dice in testa chi risponde, con quale modello e con quale è arrivata l'ultima risposta (D-141).
+
+### Cambiato
+
+- Il vecchio alias `codex` di `arianna.toml`: `false` spegne Luna, Sol e Astra, un nome esatto va al modello della sua famiglia, nelle schede degli agenti si legge come `sol`; le conversazioni che lo avevano scelto passano a Sol (migrazione 0034, D-141).
+
+## [0.29.0] - 2026-10-07
+
+### Aggiunto
+
+- Codex lavora come Claude: Arianna gli delega i passi nei progetti quando il router lo sceglie, e la chat diretta con un agente può andare a Codex scegliendone un modello (D-140, D-111 tappa C).
+- Scheda Reviewer: rivede le modifiche di un progetto senza cambiare file, con Codex per primo e poi Claude Code; Arianna può delegarle e le si può scrivere direttamente (D-140).
+
+### Cambiato
+
+- Avviso, distintivo "va a …" e conferma dei messaggi lunghi della chat diretta nominano Claude o Codex (tutti quelli a cui può andare, quello del modello scelto per primo); il selettore offre solo i modelli degli esecutori dell'agente (D-140).
+- Cambiando modello fra Claude e Codex nella chat diretta, il primo messaggio porta con sé gli ultimi scambi: la sessione dell'altro esecutore non si riprende (D-140).
+- Impostazioni → Modelli: Codex non risulta più "non collegato" quando il suo adattatore gira (D-140).
+
+### Sicurezza
+
+- Su Claude Code un agente senza il permesso di scrivere non ha più `Bash`: la sandbox di Claude gli lascerebbe modificare il progetto con un comando (D-140).
+
 ## [0.28.0] - 2026-10-07
 
 ### Aggiunto

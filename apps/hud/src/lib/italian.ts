@@ -206,11 +206,14 @@ export function activityText(activity: Activity | SavedActivity): string {
     case 'delegate':
       return delegateText(activity.detail);
     case 'tool':
-      return `Il Coder usa ${activity.detail}`;
+      return `Il Coder usa ${TOOL_TEXT[activity.detail] ?? activity.detail}`;
     case 'wait':
       return waitText(activity.detail);
   }
 }
+
+// The kinds of tool a Codex run reports (D-140): it names no tool, only what it did.
+const TOOL_TEXT: Record<string, string> = { command: 'il terminale', file_change: 'la modifica dei file' };
 
 // `coder` when the step is handed over, `coder · claude/sonnet` when it starts.
 function delegateText(detail: string): string {

@@ -65,15 +65,18 @@ executors = []
 # Cloud models (D-071): which model of an enabled executor runs. Per alias
 # true (on), false (off: never chosen by the router nor offered by the chat)
 # or the exact name to pass to --model (on), e.g. opus = "claude-opus-5-5";
-# true means the alias, the newest model for the binary. Which model an
-# agent starts with is in [agents]. Not a privacy setting: it never turns
-# an executor on. Codex applies with its adapter (task 1.16). Applies
-# without a restart.
+# true means the alias, the newest model for the binary. luna, sol and
+# astra are the models of Codex (D-141): true runs the first name of their
+# card in config/cloud-models.catalog.yaml. Which model an agent starts
+# with is in [agents]. Not a privacy setting: it never turns an executor
+# on. Applies without a restart.
 [cloud.models]
 sonnet = true
 opus = true
 fable = true
-codex = true
+luna = true
+sol = true
+astra = true
 
 # Projects (D-058): the folders a cloud executor may work on, as the user
 # does with the CLI. `path` is ~/<folder> under your home (never the home
@@ -117,8 +120,8 @@ codex = true
 # traits = "Preciso e calmo."
 # specialization = "Sviluppatore senior TypeScript, attento ai test."
 
-# Agents (D-116): `model` is the cloud model (sonnet, opus, fable, codex) a
-# new conversation with the agent starts with; the chat selector can change
+# Agents (D-116): `model` is the cloud model (sonnet, opus, fable, luna,
+# sol, astra) a new conversation with the agent starts with; the chat selector can change
 # it, and without it the router chooses. Offered only while the model is on
 # and the card in agents/<id>.yaml allows the cloud: never for arianna,
 # whose model is the orchestrator of [roles], local only. Not a privacy

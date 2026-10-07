@@ -45,7 +45,7 @@ const FULL: Settings = {
   ],
   cloud: {
     executors: ['claude', 'codex'],
-    models: { sonnet: { enabled: true }, opus: { enabled: true, name: 'claude-opus-5-5[1m]' }, fable: { enabled: false }, codex: { enabled: true } },
+    models: { sonnet: { enabled: true }, opus: { enabled: true, name: 'claude-opus-5-5[1m]' }, fable: { enabled: false }, luna: { enabled: true }, sol: { enabled: true }, astra: { enabled: true } },
   },
   projects: [
     { name: 'site', path: '~/Projects/odd "name" à', label: 'L1' },
@@ -84,7 +84,7 @@ test('the rendered file is what loadConfig reads: roles become the names of the 
 
 test('[cloud.models] is written with every alias, the agents\' models in [agents] (D-116)', () => {
   const text = renderSettings(DEFAULT_SETTINGS);
-  assert.match(text, /^\[cloud\.models\]\nsonnet = true\nopus = true\nfable = true\ncodex = true\n$/m);
+  assert.match(text, /^\[cloud\.models\]\nsonnet = true\nopus = true\nfable = true\nluna = true\nsol = true\nastra = true\n$/m);
   assert.match(text, /^# \[agents\.coder\]\n# model = "sonnet"$/m, 'no model: commented out, the router chooses');
   assert.match(renderSettings(FULL), /^\[agents\.coder\]\nmodel = "opus"\n\n\[agents\.writer\]\nmodel = "fable"$/m);
   // An agent without a model is not written.
@@ -92,7 +92,7 @@ test('[cloud.models] is written with every alias, the agents\' models in [agents
 });
 
 test('a file with default of [cloud.models] is written back in the new form', () => {
-  const old = renderSettings(DEFAULT_SETTINGS).replace(/^codex = true$/m, 'codex = true\ndefault = "opus"');
+  const old = renderSettings(DEFAULT_SETTINGS).replace(/^astra = true$/m, 'astra = true\ndefault = "opus"');
   const settings = readSettings(old, HOME, CATALOG);
   assert.deepEqual(settings.agents, { coder: { model: 'opus' } });
   const text = renderSettings(settings);

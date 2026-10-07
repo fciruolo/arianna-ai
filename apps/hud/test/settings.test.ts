@@ -91,17 +91,17 @@ test('roles and characters leave out what is empty', () => {
 });
 
 test('cloud models: on, off or an exact name, and back', () => {
-  const form = cloudModelsForm({ models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, codex: true } });
+  const form = cloudModelsForm({ models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, luna: true, sol: true, astra: true } });
   assert.deepEqual(form.rows[1], { alias: 'opus', enabled: true, name: 'claude-opus-5-5' });
   assert.deepEqual(form.rows[2], { alias: 'fable', enabled: false, name: '' });
-  assert.deepEqual(cloudModelsBody(form), { models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, codex: true } });
+  assert.deepEqual(cloudModelsBody(form), { models: { sonnet: true, opus: 'claude-opus-5-5', fable: false, luna: true, sol: true, astra: true } });
   // A blank name is the alias; a name of a model turned off is dropped.
   const rows = form.rows.map((row) => (row.alias === 'sonnet' ? { ...row, name: '  ' } : row.alias === 'opus' ? { ...row, enabled: false } : row));
-  assert.deepEqual(cloudModelsBody({ rows }).models, { sonnet: true, opus: false, fable: false, codex: true });
+  assert.deepEqual(cloudModelsBody({ rows }).models, { sonnet: true, opus: false, fable: false, luna: true, sol: true, astra: true });
 });
 
 test("agents' models (D-116): every agent with a card, '' is the router, sent back as null", () => {
-  const allowed = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'codex'] } as const;
+  const allowed = { arianna: [], coder: ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] } as const;
   const form: AgentsForm = agentsForm({ coder: { model: 'opus' }, gone: { model: 'sonnet' } }, { arianna: [], coder: [...allowed.coder] });
   assert.deepEqual(form, { arianna: '', coder: 'opus' }, 'an agent without a card is not in the form');
   assert.deepEqual(agentsBody(form), { arianna: { model: null }, coder: { model: 'opus' } });
@@ -109,16 +109,16 @@ test("agents' models (D-116): every agent with a card, '' is the router, sent ba
 });
 
 test('a model of an agent says why it would not start a conversation now', () => {
-  const values = (models: Partial<Record<'sonnet' | 'opus' | 'fable' | 'codex', boolean | string>>, executors: string[]) => ({
-    cloudModels: { models: { sonnet: true, opus: true, fable: true, codex: true, ...models } },
+  const values = (models: Partial<Record<'sonnet' | 'opus' | 'fable' | 'luna' | 'sol' | 'astra', boolean | string>>, executors: string[]) => ({
+    cloudModels: { models: { sonnet: true, opus: true, fable: true, luna: true, sol: true, astra: true, ...models } },
     executors,
   });
   assert.equal(modelBlocker('opus', values({}, ['claude'])), undefined);
   assert.equal(modelBlocker('opus', values({ opus: 'claude-opus-5-5' }, ['claude'])), undefined);
   assert.equal(modelBlocker('opus', values({ opus: false }, ['claude'])), 'spento in Modelli');
   assert.equal(modelBlocker('opus', values({}, [])), 'esecutore spento');
-  assert.equal(modelBlocker('codex', values({}, ['claude'])), 'esecutore spento');
-  assert.equal(modelBlocker('codex', values({}, ['claude', 'codex'])), 'vale con il suo adattatore');
+  assert.equal(modelBlocker('sol', values({}, ['claude'])), 'esecutore spento');
+  assert.equal(modelBlocker('sol', values({}, ['claude', 'codex'])), undefined, 'Codex has its adapter (D-140)');
 });
 
 test('voice: off is null; turning it on starts from the defaults of the core', () => {

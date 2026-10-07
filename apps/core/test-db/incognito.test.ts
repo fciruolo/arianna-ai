@@ -57,7 +57,7 @@ before(async () => {
     capture: { home, rules: RULES },
     projects: () => [{ name: PROJECT, path: 'repos/fake-site', label: 'L1' }],
     models: () => [{ executor: 'claude', model: 'opus' }],
-    directAgents: () => [{ agent: 'coder', description: 'Coder', cloud: true, modes: ['work'], project: true }],
+    directAgents: () => [{ agent: 'coder', description: 'Coder', cloud: true, executors: ['claude'], modes: ['work'], project: true }],
     // The voice reads as on; a call that reaches the voice service is a mistake of the test.
     voice: { service: { state: 'up', request: () => Promise.reject(new Error('no voice in this test')) }, models: () => [], voice: () => 'voce', clones: '/srv/none' },
     calls: {

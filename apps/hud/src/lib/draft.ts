@@ -1,6 +1,8 @@
 import { INCOGNITO_PATH } from './incognito.ts';
 import { agentName } from './italian.ts';
-import type { ConversationAgent, ConversationMode } from './types.ts';
+import { MODEL_TEXT } from './labels.ts';
+import { executorOfModel } from './settings.ts';
+import type { CloudExecutorKind, ConversationAgent, ConversationMode } from './types.ts';
 
 /**
  * A new conversation as in Claude Code (D-108): "Nuovo" opens a draft that
@@ -76,8 +78,46 @@ export function sameChoice(a: DraftChoice, b: DraftChoice): boolean {
   return a.mode === b.mode && a.project === b.project && a.agent === b.agent && (a.incognito === true) === (b.incognito === true);
 }
 
-/** What stays out of Arianna's hands in a direct chat on Claude (D-111): also said where such a conversation is deleted. */
-export const SESSION_COPY = 'Claude Code tiene una copia della sessione nella tua home: eliminare la conversazione qui non la cancella.';
+/** What stays out of Arianna's hands in a direct chat on Claude or Codex (D-111, D-140): also said where such a conversation is deleted. */
+export const SESSION_COPY = 'Claude Code e Codex tengono una copia della sessione nella tua home: eliminare la conversazione qui non la cancella.';
+
+const PROVIDER: Record<CloudExecutorKind, string> = { claude: 'Claude (Anthropic)', codex: 'Codex (OpenAI)' };
+const SHORT: Record<CloudExecutorKind, string> = { claude: 'Claude', codex: 'Codex' };
+
+/**
+ * Where the messages of a direct chat may go (D-140): every cloud executor of
+ * the agent's card that runs now, the one of the chosen model first. The
+ * model is a preference of the router, not a promise: with its executor out
+ * of quota the step goes to the other, so a privacy warning names both.
+ * Claude when nothing is known, as before.
+ */
+export function cloudTargets(executors: readonly CloudExecutorKind[] | undefined, model: string | null): CloudExecutorKind[] {
+  const known: CloudExecutorKind[] = executors === undefined || executors.length === 0 ? ['claude'] : [...executors];
+  const chosen: CloudExecutorKind | undefined = model === null ? undefined : executorOfModel(model);
+  return chosen !== undefined && known.includes(chosen) ? [chosen, ...known.filter((item) => item !== chosen)] : known;
+}
+
+/**
+ * Who answers a direct chat on the cloud, and with what (D-141, asked by the
+ * user: "se apro la singola chat del coder chi mi risponde?"): always the
+ * agent, never Arianna; the model chosen here, or the router at each message;
+ * and the model of its latest answer, when there is one.
+ */
+export function whoAnswers(agent: string, model: string | null, last: string | null): string {
+  const chosen = model === null ? 'il modello che il router sceglie a ogni messaggio' : (MODEL_TEXT[model] ?? model);
+  const latest = last === null ? '' : ` · ultima risposta: ${MODEL_TEXT[last] ?? last}`;
+  return `Risponde ${agentName(agent)}, con ${chosen}${latest}`;
+}
+
+/** "Claude (Anthropic)", or "Claude (Anthropic) o Codex (OpenAI)" while the router chooses. */
+export function providerText(targets: readonly CloudExecutorKind[]): string {
+  return targets.map((target) => PROVIDER[target]).join(' o ');
+}
+
+/** "Claude", "Codex", "Claude o Codex": for the short badges. */
+export function shortTarget(targets: readonly CloudExecutorKind[]): string {
+  return targets.map((target) => SHORT[target]).join(' o ');
+}
 
 /** "al Coder", "a traduttore": the name of an agent after "a". */
 export function toAgent(agent: string): string {
@@ -85,10 +125,10 @@ export function toAgent(agent: string): string {
   return agent === 'coder' ? `al ${name}` : `a ${name}`;
 }
 
-/** The warning of a direct chat with an agent on Claude, plain and never hidden (D-111d). */
-export function cloudWarning(agent: string, project: string | undefined): string {
+/** The warning of a direct chat with an agent on Claude or Codex, plain and never hidden (D-111d, D-140). */
+export function cloudWarning(agent: string, project: string | undefined, targets: readonly CloudExecutorKind[] = ['claude']): string {
   const files = project === undefined || project === '' ? '' : `, insieme ai file del progetto ${project} che ${agentName(agent)} apre`;
-  return `Ogni messaggio va così com'è a Claude (Anthropic)${files}. Arianna non lo filtra. Per dati personali usa una conversazione privata. ${SESSION_COPY}`;
+  return `Ogni messaggio va così com'è a ${providerText(targets)}${files}. Arianna non lo filtra. Per dati personali usa una conversazione privata. ${SESSION_COPY}`;
 }
 
 /** The note of a direct chat with a local agent: nothing leaves the Mac. */

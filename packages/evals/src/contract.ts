@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadConfig } from '@arianna/config';
+import { catalogModelName, loadCloudCatalog, loadConfig } from '@arianna/config';
 import {
   ClaudeError,
   CodexError,
@@ -28,6 +28,15 @@ import type { Evaluate } from './types.ts';
 /** The cloud executors the live evals run. */
 export const LIVE_EXECUTORS = ['claude', 'codex'] as const;
 export type LiveExecutor = (typeof LIVE_EXECUTORS)[number];
+
+/** The live evals of codex run its cheapest model (D-141): the profile is the same for each. */
+export const EVAL_CODEX_MODEL = 'luna' as const;
+
+/** The exact name of the eval model, from the cloud catalog of `home`: the binary knows no alias. */
+export function evalCodexName(home: string): () => string | undefined {
+  const name = catalogModelName(loadCloudCatalog(home), EVAL_CODEX_MODEL);
+  return () => name;
+}
 
 export const liveTarget = (id: LiveExecutor): Target => ({ kind: 'executor', id, locality: 'cloud' });
 
@@ -153,7 +162,7 @@ export function createContractEvaluator(reach: LiveExecutors, data: () => string
           if (id === 'codex') {
             const codex = reach.codex?.();
             if (codex === undefined) throw new Error('the contract evaluator has no codex executor');
-            const options = { brief, workspace, model: 'codex' as const, access: step.access ?? ('read' as const), limits };
+            const options = { brief, workspace, model: EVAL_CODEX_MODEL, access: step.access ?? ('read' as const), limits };
             result = await (resume === undefined ? codex.start(options) : codex.resume({ ...options, sessionRef: resume })).result;
           } else {
             const options = { brief, workspace, model: 'sonnet' as const, tools: step.tools ?? [], limits };
@@ -190,7 +199,7 @@ export function contract(): Evaluate {
       codex: () => {
         const { executors, home } = ready();
         requireEnabled(executors, 'codex');
-        return (codex ??= createCodexExecutor({ enabled: executors, home }));
+        return (codex ??= createCodexExecutor({ enabled: executors, home, modelName: evalCodexName(home) }));
       },
     },
     () => ready().data,

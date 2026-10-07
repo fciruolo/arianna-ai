@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
               :list="`names-${current.view.alias}`"
               class="field min-w-[180px] flex-1 px-2 py-1 font-mono text-xs"
               :disabled="!currentRow.enabled"
-              :placeholder="current.view.alias === 'codex' ? 'il predefinito del binario' : 'il più recente'"
+              :placeholder="current.view.executor === 'codex' ? 'il primo della scheda' : 'il più recente'"
               :aria-label="`Nome esatto di ${current.view.alias}`"
             />
             <datalist :id="`names-${current.view.alias}`">
@@ -751,7 +751,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="text-xs text-muted">
           Un modello spento esce dal router e dal selettore delle conversazioni. Il nome esatto resta nella famiglia del modello (es. <code class="font-mono">opus[1m]</code>); vuoto è il più
-          recente. Per Codex la scelta si salva e vale con il suo adattatore. Il modello con cui parte ogni agente si sceglie in
+          recente. Il modello con cui parte ogni agente si sceglie in
           <a href="/impostazioni/agenti" class="text-accent hover:underline" @click.prevent="emit('section', 'agenti')">Agenti</a>; accendere un esecutore resta in
           <a href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Esecutori cloud</a>, con la sua conferma.
         </p>

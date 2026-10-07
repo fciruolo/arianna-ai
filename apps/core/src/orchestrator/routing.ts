@@ -1,33 +1,44 @@
 import type { AgentCard } from '@arianna/agents';
 import { aliasesOf, CLOUD_MODELS, LEGACY_DEFAULT_AGENT, ORCHESTRATOR_AGENT, type AriannaConfig, type CloudModel } from '@arianna/config';
-import { CLAUDE_MODELS } from '@arianna/executors';
+import { CLAUDE_MODELS, CODEX_MODELS } from '@arianna/executors';
 import { createRouterConfig, executorOf, MODEL_ALIASES, type Budget, type BudgetBlock, type Candidate, type ModelAlias, type RouterConfig } from '@arianna/router';
 
 import type { Queryable } from '../db/client.ts';
 
+/** Which cloud adapters run on this machine: one whose sandbox is refused offers no model (D-050, D-138). */
+export interface CloudAdapters {
+  claude: boolean;
+  codex: boolean;
+}
+
 /**
  * What the router may choose from on this installation (task 1.10, D-055):
  * the local aliases a role serves, and the models of each cloud executor the
- * user enabled in `[cloud] executors` and that has an adapter, without the
- * ones turned off in `[cloud.models]` (D-071). Codex waits for its adapter
- * (task 1.16): enabled or not, it is not a candidate yet.
+ * user enabled in `[cloud] executors` and whose adapter runs here, without
+ * the ones turned off in `[cloud.models]` (D-071). Codex is one since its
+ * adapter is in the core (D-140, D-111 tappa C).
  */
-export function routerConfigOf(config: AriannaConfig): RouterConfig {
+export function routerConfigOf(config: AriannaConfig, adapters: CloudAdapters): RouterConfig {
   const candidates: Candidate[] = [];
   for (const alias of Object.keys(aliasesOf(config.roles))) {
     if ((MODEL_ALIASES as readonly string[]).includes(alias)) candidates.push({ executor: 'local', model: alias as ModelAlias, locality: 'local' });
   }
-  if (config.cloud.executors.includes('claude')) {
+  if (adapters.claude && config.cloud.executors.includes('claude')) {
     for (const model of CLAUDE_MODELS) {
       if (config.cloud.models[model].enabled) candidates.push({ executor: 'claude', model, locality: 'cloud' });
+    }
+  }
+  if (adapters.codex && config.cloud.executors.includes('codex')) {
+    for (const model of CODEX_MODELS) {
+      if (config.cloud.models[model].enabled) candidates.push({ executor: 'codex', model, locality: 'cloud' });
     }
   }
   return createRouterConfig(candidates);
 }
 
 /** The cloud models the user may choose for a work conversation: the cloud candidates of the router. */
-export function selectableModels(config: AriannaConfig): { executor: string; model: ModelAlias }[] {
-  return routerConfigOf(config)
+export function selectableModels(config: AriannaConfig, adapters: CloudAdapters): { executor: string; model: ModelAlias }[] {
+  return routerConfigOf(config, adapters)
     .candidates.filter((candidate) => candidate.locality === 'cloud')
     .map(({ executor, model }) => ({ executor, model }));
 }
@@ -59,10 +70,10 @@ export function agentModels(agent: string, card: AgentCard): CloudModel[] {
  * `[agents.<id>] model` while its card allows it and this installation offers
  * it, otherwise none (the router chooses). It never turns an executor on.
  */
-export function agentDefaultModel(config: AriannaConfig, agent: string, card: AgentCard | undefined): ModelAlias | undefined {
+export function agentDefaultModel(config: AriannaConfig, agent: string, card: AgentCard | undefined, adapters: CloudAdapters): ModelAlias | undefined {
   const chosen = config.agents[agent]?.model;
   if (chosen === undefined || card === undefined || !agentModels(agent, card).includes(chosen)) return undefined;
-  return selectableModels(config).some((entry) => entry.model === chosen) ? chosen : undefined;
+  return selectableModels(config, adapters).some((entry) => entry.model === chosen) ? chosen : undefined;
 }
 
 /** How long a quota refusal without a reset time keeps an executor blocked. */

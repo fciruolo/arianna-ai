@@ -3,7 +3,8 @@
 import type { ExecutorKind } from '@arianna/agents';
 import type { Locality } from '@arianna/policy';
 
-export const MODEL_ALIASES = ['local-small', 'local-large', 'sonnet', 'opus', 'fable', 'codex'] as const;
+// D-141: Codex has three models like Claude (luna, sol, astra), each its own alias.
+export const MODEL_ALIASES = ['local-small', 'local-large', 'sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] as const;
 export type ModelAlias = (typeof MODEL_ALIASES)[number];
 
 /** One executor with one model, as configured on this machine. */
@@ -29,7 +30,9 @@ const EXECUTOR_OF: Record<ModelAlias, ExecutorKind> = {
   sonnet: 'claude',
   opus: 'claude',
   fable: 'claude',
-  codex: 'codex',
+  luna: 'codex',
+  sol: 'codex',
+  astra: 'codex',
 };
 
 const LOCALITIES: readonly Locality[] = ['local', 'cloud'];

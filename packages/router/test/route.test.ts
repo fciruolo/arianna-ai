@@ -21,7 +21,9 @@ const ALL: Candidate[] = [
   { executor: 'claude', model: 'sonnet', locality: 'cloud' },
   { executor: 'claude', model: 'opus', locality: 'cloud' },
   { executor: 'claude', model: 'fable', locality: 'cloud' },
-  { executor: 'codex', model: 'codex', locality: 'cloud' },
+  { executor: 'codex', model: 'luna', locality: 'cloud' },
+  { executor: 'codex', model: 'sol', locality: 'cloud' },
+  { executor: 'codex', model: 'astra', locality: 'cloud' },
 ];
 const CONFIG = createRouterConfig(ALL);
 const FREE: Budget = { blocked: [] };
@@ -97,7 +99,8 @@ describe('privacy filter', () => {
   it('cloud candidates excluded by privacy are logged as such', () => {
     const decision = route(coding(), ctx('L2'), FREE, CONFIG);
     assert.equal(pick(decision), 'local/local-large');
-    assert.ok(decision.candidates.every((c) => c.executor === 'local' || c.outcome === 'privacy'));
+    // Luna is on no ladder (D-141): it is not for the step, whatever the label.
+    assert.ok(decision.candidates.every((c) => c.executor === 'local' || c.outcome === (c.model === 'luna' ? 'not-for-step' : 'privacy')));
     // Extraction never uses the cloud ladder: cloud candidates are simply not for the step.
     const extract = route({ kind: 'extract', agent: CODER }, ctx('L1'), FREE, CONFIG);
     assert.ok(extract.candidates.every((c) => c.executor === 'local' || c.outcome === 'not-for-step'));
@@ -151,7 +154,9 @@ describe('mapping', () => {
   });
 
   it('reviews go to Codex for a second opinion, Sonnet when Codex is missing', () => {
-    assert.equal(pick(route({ kind: 'review', agent: CODER }, ctx('L1'), FREE, CONFIG)), 'codex/codex');
+    assert.equal(pick(route({ kind: 'review', agent: CODER }, ctx('L1'), FREE, CONFIG)), 'codex/sol');
+    // A hard review: Astra, next to Opus (D-141).
+    assert.equal(pick(route({ kind: 'review', agent: { ...CODER, difficulty: 'hard' } }, ctx('L1'), FREE, CONFIG)), 'codex/astra');
     const noCodex = createRouterConfig(ALL.filter((c) => c.executor !== 'codex'));
     assert.equal(pick(route({ kind: 'review', agent: CODER }, ctx('L1'), FREE, noCodex)), 'claude/sonnet');
   });
@@ -164,11 +169,40 @@ describe('mapping', () => {
 
   it('an agent without the first tier executor starts at its own lowest tier', () => {
     const agent: RouterAgent = { name: 'codex-only', executors: ['codex'], maxLabel: 'L1', difficulty: 'normal' };
-    assert.equal(pick(route(coding({ agent }), ctx('L1'), FREE, CONFIG)), 'codex/codex');
+    assert.equal(pick(route(coding({ agent }), ctx('L1'), FREE, CONFIG)), 'codex/sol');
+  });
+
+  it('Claude and Codex share each tier, Claude first for coding (D-141)', () => {
+    assert.equal(pick(route(coding(), ctx('L1'), FREE, CONFIG)), 'claude/sonnet');
+    assert.equal(pick(route(coding({ agent: { ...CODER, difficulty: 'hard' } }), ctx('L1'), FREE, CONFIG)), 'claude/opus');
+    // Luna is never chosen by the router, only by the user.
+    for (const kind of ['coding', 'review'] as const) {
+      for (const difficulty of ['trivial', 'normal', 'hard', 'critical'] as const) {
+        assert.notEqual(pick(route({ kind, agent: { ...CODER, difficulty }, budgetApproved: true }, ctx('L1'), FREE, CONFIG)), 'codex/luna', `${kind} ${difficulty}`);
+      }
+    }
+    assert.equal(pick(route(coding({ preferredModel: 'luna' }), ctx('L1'), FREE, CONFIG)), 'codex/luna', 'chosen by the user');
+  });
+
+  it('Luna chosen by the user still obeys privacy, the agent and the budget (D-141)', () => {
+    assert.equal(pick(route(coding({ preferredModel: 'luna' }), ctx('L2'), FREE, CONFIG)), 'local/local-large', 'never L2 to the cloud');
+    const claudeOnly: RouterAgent = { ...CODER, executors: ['claude', 'local'] };
+    assert.equal(pick(route(coding({ agent: claudeOnly, preferredModel: 'luna' }), ctx('L1'), FREE, CONFIG)), 'claude/sonnet', 'not on the card');
+    const lunaOut: Budget = { blocked: [{ executor: 'codex', model: 'luna', cause: 'quota', until: '2026-10-03T08:00:00Z' }] };
+    assert.equal(pick(route(coding({ preferredModel: 'luna' }), ctx('L1'), lunaOut, CONFIG)), 'claude/sonnet', 'out of quota: the ladder');
+    // After a failed attempt the step escalates: Luna sits below every tier (D-141).
+    const failed = route(coding({ preferredModel: 'luna', attempts: [{ executor: 'claude', model: 'sonnet', outcome: 'tests-failed' }] }), ctx('L1'), FREE, CONFIG);
+    assert.equal(pick(failed), 'claude/opus');
+    assert.match(failed.reason, /preferred luna excluded: escalation/);
+    const lunaFailed = route(coding({ preferredModel: 'luna', attempts: [{ executor: 'codex', model: 'luna', outcome: 'tests-failed' }] }), ctx('L1'), FREE, CONFIG);
+    assert.notEqual(pick(lunaFailed), 'codex/luna', 'never Luna again after Luna failed');
+    assert.match(route(coding({ preferredModel: 'luna' }), ctx('L1'), lunaOut, CONFIG).reason, /preferred luna excluded: quota/, 'the note names the real cause');
+    // Not a cloud step: Luna is not for it, chosen or not.
+    assert.equal(pick(route({ kind: 'extract', agent: CODER, preferredModel: 'luna' }, ctx('L1'), FREE, CONFIG)), 'local/local-small');
   });
 
   it('a model that is not installed steps down, not up', () => {
-    const noOpus = createRouterConfig(ALL.filter((c) => c.model !== 'opus' && c.model !== 'codex'));
+    const noOpus = createRouterConfig(ALL.filter((c) => c.model !== 'opus' && c.model !== 'astra'));
     const decision = route(coding({ agent: { ...CODER, difficulty: 'hard' } }), ctx('L1'), FREE, noOpus);
     assert.equal(pick(decision), 'claude/sonnet');
     assert.match(decision.reason, /unavailable/);
@@ -239,8 +273,20 @@ describe('escalation', () => {
 });
 
 describe('budget filter', () => {
-  it('a quota error on Claude makes normal coding wait until the reset', () => {
+  it('a quota error on Claude moves normal coding to Sol, on the same tier (D-141)', () => {
     const budget: Budget = { blocked: [{ executor: 'claude', cause: 'quota', until: '2026-10-03T08:00:00Z' }] };
+    const decision = route(coding(), ctx('L1'), budget, CONFIG);
+    assert.equal(pick(decision), 'codex/sol');
+    assert.ok(decision.candidates.some((c) => c.model === 'sonnet' && c.outcome === 'quota'));
+  });
+
+  it('a quota error on both makes normal coding wait until the first reset', () => {
+    const budget: Budget = {
+      blocked: [
+        { executor: 'claude', cause: 'quota', until: '2026-10-03T08:00:00Z' },
+        { executor: 'codex', cause: 'quota', until: '2026-10-04T08:00:00Z' },
+      ],
+    };
     const decision = route(coding(), ctx('L1'), budget, CONFIG);
     assert.equal(pick(decision), 'wait:retry-later');
     assert.equal(decision.decision === 'wait' && decision.retryAt, '2026-10-03T08:00:00.000Z');
@@ -258,9 +304,9 @@ describe('budget filter', () => {
     assert.equal(decision.decision === 'wait' && decision.retryAt, '2026-10-03T09:00:00.000Z');
   });
 
-  it('hard coding falls to Codex when Claude is out of quota', () => {
+  it('hard coding falls to Astra when Claude is out of quota', () => {
     const budget: Budget = { blocked: [{ executor: 'claude', cause: 'quota', until: '2026-10-03T08:00:00Z' }] };
-    assert.equal(pick(route(coding({ agent: { ...CODER, difficulty: 'hard' } }), ctx('L1'), budget, CONFIG)), 'codex/codex');
+    assert.equal(pick(route(coding({ agent: { ...CODER, difficulty: 'hard' } }), ctx('L1'), budget, CONFIG)), 'codex/astra');
   });
 
   it('an exhausted model steps down, never up', () => {
@@ -268,7 +314,7 @@ describe('budget filter', () => {
     const decision = route(coding({ agent: { ...CODER, difficulty: 'hard' } }), ctx('L1'), opusOut, CONFIG);
     assert.equal(pick(decision), 'claude/sonnet');
     assert.match(decision.reason, /unavailable/);
-    const sonnetOut: Budget = { blocked: [{ executor: 'claude', model: 'sonnet', cause: 'cap' }] };
+    const sonnetOut: Budget = { blocked: [{ executor: 'claude', model: 'sonnet', cause: 'cap' }, { executor: 'codex', model: 'sol', cause: 'cap' }] };
     assert.equal(pick(route(coding(), ctx('L1'), sonnetOut, CONFIG)), 'wait:wait-user');
   });
 
@@ -296,7 +342,7 @@ describe('budget filter', () => {
     assert.throws(bad([{ executor: 'claude', cause: 'cap', until: 'Sat Oct 03 2026' }]), /ISO 8601/);
     assert.throws(bad([{ executor: 'claude', cause: 'cap', until: '2026-10-03T08:00:00' }]), /ISO 8601/);
     assert.throws(bad([{ executor: 'Claude', cause: 'quota' }]), /unknown executor/);
-    assert.throws(bad([{ executor: 'claude', model: 'codex', cause: 'quota' }]), /another executor/);
+    assert.throws(bad([{ executor: 'claude', model: 'sol', cause: 'quota' }]), /another executor/);
     assert.throws(bad([null]), /must be an object/);
     assert.throws(bad('none'), /must be a list/);
   });
@@ -307,7 +353,7 @@ describe('budget filter', () => {
   });
 
   it('a reset with an offset is normalized to UTC', () => {
-    const budget: Budget = { blocked: [{ executor: 'claude', cause: 'quota', until: '2026-10-03T10:00:00+02:00' }] };
+    const budget: Budget = { blocked: [{ executor: 'claude', cause: 'quota', until: '2026-10-03T10:00:00+02:00' }, { executor: 'codex', cause: 'quota', until: '2026-10-04T10:00:00+02:00' }] };
     const decision = route(coding(), ctx('L1'), budget, CONFIG);
     assert.equal(decision.decision === 'wait' && decision.retryAt, '2026-10-03T08:00:00.000Z');
   });
@@ -317,6 +363,7 @@ describe('budget filter', () => {
       blocked: [
         { executor: 'claude', cause: 'cap' },
         { executor: 'claude', model: 'sonnet', cause: 'quota', until: '2026-10-03T08:00:00Z' },
+        { executor: 'codex', cause: 'cap' },
       ],
     };
     assert.equal(pick(route(coding(), ctx('L1'), budget, CONFIG)), 'wait:wait-user');
@@ -324,6 +371,7 @@ describe('budget filter', () => {
       blocked: [
         { executor: 'claude', cause: 'quota', until: '2026-10-05T08:00:00Z' },
         { executor: 'claude', model: 'sonnet', cause: 'cap', until: '2026-10-03T08:00:00Z' },
+        { executor: 'codex', cause: 'quota', until: '2026-10-06T08:00:00Z' },
       ],
     };
     const decision = route(coding(), ctx('L1'), both, CONFIG);
@@ -342,7 +390,9 @@ describe('decision log', () => {
         'claude/sonnet:chosen',
         'claude/opus:not-chosen',
         'claude/fable:not-chosen',
-        'codex/codex:not-chosen',
+        'codex/luna:not-for-step',
+        'codex/sol:not-chosen',
+        'codex/astra:not-chosen',
       ],
     );
   });
@@ -399,10 +449,12 @@ describe('typical use of a model (I-3)', () => {
   const short = (model: string): string[] =>
     usesOf(model).map((use) => `${use.kind}:${String(use.tier)}/${String(use.tiers)}${use.fallback === true ? ' fallback' : ''}`);
 
-  it('reads the cloud ladders: Sonnet first for coding, Codex or Sonnet first for review, Fable last', () => {
+  it('reads the cloud ladders: Sonnet or Sol first, Opus or Astra next, Fable last; Luna on none (D-141)', () => {
     assert.deepEqual(short('sonnet'), ['coding:0/3', 'review:0/3']);
     assert.deepEqual(short('opus'), ['coding:1/3', 'review:1/3']);
-    assert.deepEqual(short('codex'), ['coding:1/3', 'review:0/3']);
+    assert.deepEqual(short('sol'), ['coding:0/3', 'review:0/3']);
+    assert.deepEqual(short('astra'), ['coding:1/3', 'review:1/3']);
+    assert.deepEqual(short('luna'), []);
     assert.deepEqual(short('fable'), ['coding:2/3', 'review:2/3']);
   });
 

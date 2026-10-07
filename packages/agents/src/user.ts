@@ -46,7 +46,7 @@ export function checkUserCeiling(card: AgentCard): void {
 
 /**
  * Where a user's agent works (D-119, tappa T3b): one executor, the local model
- * or Claude. Codex joins when its adapter exists (task 1.16).
+ * or Claude. Codex runs the official cards since D-140, not a user's yet.
  */
 export const USER_EXECUTORS = ['local', 'claude'] as const;
 export type UserExecutor = (typeof USER_EXECUTORS)[number];
