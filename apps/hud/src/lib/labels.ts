@@ -83,6 +83,10 @@ export const MODEL_TEXT: Record<string, string> = {
   sonnet: 'Claude Sonnet',
   opus: 'Claude Opus',
   fable: 'Claude Fable (con approvazione)',
+  luna: 'Codex Luna',
+  sol: 'Codex Sol',
+  astra: 'Codex Astra',
+  // The single model of Codex before D-141, in the answers written then.
   codex: 'Codex',
 };
 

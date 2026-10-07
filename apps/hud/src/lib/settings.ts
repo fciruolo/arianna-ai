@@ -9,7 +9,8 @@ import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts
 
 export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
-export const CLOUD_MODELS = ['sonnet', 'opus', 'fable', 'codex'] as const;
+// Claude's models, then Codex's (D-141).
+export const CLOUD_MODELS = ['sonnet', 'opus', 'fable', 'luna', 'sol', 'astra'] as const;
 export type CloudModelAlias = (typeof CLOUD_MODELS)[number];
 export const CLOUD_EXECUTORS = ['claude', 'codex'] as const;
 
@@ -233,9 +234,13 @@ export function agentsBody(form: AgentsForm): Record<string, { model: CloudModel
 }
 
 /** The executor of a cloud model, as `executorOf` of packages/router/src/config.ts has it: a new alias goes in both. */
-function executorOfModel(model: CloudModelAlias): string {
-  return model === 'codex' ? 'codex' : 'claude';
+export function executorOfModel(model: string): 'claude' | 'codex' {
+  // `codex`: the single model of Codex before D-141, in older rows.
+  return CODEX_MODELS.includes(model) || model === 'codex' ? 'codex' : 'claude';
 }
+
+/** The aliases of Codex's models (D-141). */
+export const CODEX_MODELS: readonly string[] = ['luna', 'sol', 'astra'];
 
 /**
  * Why a model the card allows would not start a new conversation now

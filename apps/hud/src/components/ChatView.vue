@@ -8,7 +8,7 @@ import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usa
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
-import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent } from '../lib/draft.ts';
+import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
@@ -120,6 +120,18 @@ const directExecutors = computed(() => (directPolicy.value?.executors?.length ? 
 const targets = computed(() => cloudTargets(directExecutors.value, props.conversation.model));
 const targetName = computed(() => shortTarget(targets.value));
 const directName = computed(() => (direct.value === null ? 'Arianna' : agentName(direct.value)));
+/** The model of the agent's latest answer here, from its credit line (D-141). */
+const lastAlias = computed(() => {
+  const agent = direct.value;
+  if (agent === null) return null;
+  for (const message of [...props.chat.messages].reverse()) {
+    if (message.role !== 'assistant' || message.agent !== agent) continue;
+    const alias = props.credits.get(message.id)?.alias;
+    if (alias !== null && alias !== undefined) return alias;
+  }
+  return null;
+});
+const answers = computed(() => (direct.value === null ? '' : whoAnswers(direct.value, props.conversation.model, lastAlias.value)));
 const directPose = computed<Pose>(() => (direct.value === null ? props.arianna.pose : participantPose(direct.value, props.status?.agents)));
 const meter = computed(() => contextMeter(props.conversation.contextTokens));
 const meterClass = { ok: 'bg-accent', warn: 'bg-warn', full: 'bg-danger' } as const;
@@ -502,6 +514,7 @@ onBeforeUnmount(() => clearInterval(clock));
               </span>
               {{ POSE_TEXT[directPose] }}
             </p>
+            <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
             <p class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
             <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
               <span>CONTESTO</span>

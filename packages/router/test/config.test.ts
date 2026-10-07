@@ -19,7 +19,7 @@ test('a valid configuration is accepted and frozen', () => {
 
 test('claude and codex can never be declared local', () => {
   rejects([{ executor: 'claude', model: 'sonnet', locality: 'local' }], /always runs in the cloud/);
-  rejects([{ executor: 'codex', model: 'codex', locality: 'local' }], /always runs in the cloud/);
+  rejects([{ executor: 'codex', model: 'sol', locality: 'local' }], /always runs in the cloud/);
 });
 
 test('an alias belongs to one executor', () => {

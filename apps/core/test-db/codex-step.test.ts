@@ -25,7 +25,7 @@ const THREAD = '01a114e7-94d7-77c2-bb06-60bdefff158e';
 const RULES = createLabelRules({ folders: [{ path: 'repos', label: 'L1' }], sources: [] });
 const OPTIONS = { allowedActions: (): readonly string[] => [], agentLimits: (): TaskLimits => ({ maxSteps: 10, maxMinutes: 10 }) };
 
-const codex = createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200 });
+const codex = createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [FAKE] }, home: ROOT, killGraceMs: 200, modelName: () => 'gpt-6.1-sol' });
 
 before(() => {
   const repo = join(HOME, 'repos', 'site');
@@ -54,13 +54,13 @@ async function workspace(): Promise<PreparedWorkspace> {
 /** One codex step per task: the answer becomes the evidence. */
 function onCodex(text: string, label: Label, seen: CodexStepResult[], prepared: () => Promise<PreparedWorkspace> = workspace, access: 'read' | 'write' = 'read'): StepExecutor {
   return {
-    plan: () => ({ agent: 'coder', executor: 'codex', locality: 'cloud', model: 'codex' }),
+    plan: () => ({ agent: 'coder', executor: 'codex', locality: 'cloud', model: 'sol' }),
     async run(ctx) {
       const result = await runCodexStep(db().sql, codex, ctx, {
         context: createContext('L1'),
         brief: [{ text, label, source: `task:${ctx.task.id}` }],
         workspace: await prepared(),
-        model: 'codex',
+        model: 'sol',
         access,
         summary: 'trivial fake task',
       });
@@ -92,13 +92,13 @@ test('a trivial task runs on codex and is logged: run, session, gateway row towa
   assert.equal(seen[0]?.kind === 'answer' && seen[0].result.text, 'ok');
   const [run] = await db().sql<{ id: string; executor: string; model: string; locality: string; session_ref: string; status: string }[]>`
     SELECT id::text, executor, model, locality, session_ref, status FROM runs WHERE task_id = ${task.id}`;
-  assert.deepEqual({ ...run, id: undefined }, { id: undefined, executor: 'codex', model: 'codex', locality: 'cloud', session_ref: THREAD, status: 'ok' });
+  assert.deepEqual({ ...run, id: undefined }, { id: undefined, executor: 'codex', model: 'sol', locality: 'cloud', session_ref: THREAD, status: 'ok' });
   const gateway = await db().sql<{ target: string; decision: string; label: string }[]>`
     SELECT target, decision, label::text FROM gateway_log WHERE task_id = ${task.id}`;
   assert.deepEqual([...gateway], [{ target: 'codex', decision: 'allow', label: 'L1' }]);
   const [model] = await db().sql<{ label: string; payload: Record<string, unknown> }[]>`
     SELECT label::text, payload FROM events WHERE task_id = ${task.id} AND kind = 'executor.model'`;
-  assert.deepEqual([model?.label, model?.payload], ['L0', { executor: 'codex', alias: 'codex', model: null }]);
+  assert.deepEqual([model?.label, model?.payload], ['L0', { executor: 'codex', alias: 'sol', model: null }]);
 });
 
 test('an L2 brief never launches codex: one blocked gateway row, the task waits for the user', async () => {
@@ -163,7 +163,7 @@ test('an interrupted run resumes its codex session', async () => {
     context: createContext('L1'),
     brief: [{ text: 'scenario: ok\nagain', label: 'L1', source: 'test' }],
     workspace: prepared,
-    model: 'codex',
+    model: 'sol',
     access: 'read',
   });
   assert.equal(result.kind === 'answer' && result.result.text, 'resumed');

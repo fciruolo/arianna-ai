@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { goesToArianna } from '../src/lib/commands.ts';
-import { asksBeforeClaude, choiceAgent, cloudTargets, cloudWarning, longMessageStep, draftFromAddress, draftPath, draftProjectProblem, draftStep, firstMessageProblem, LONG_TO_CLAUDE, providerText, sameChoice, shortTarget } from '../src/lib/draft.ts';
+import { asksBeforeClaude, choiceAgent, cloudTargets, cloudWarning, longMessageStep, draftFromAddress, draftPath, draftProjectProblem, draftStep, firstMessageProblem, LONG_TO_CLAUDE, providerText, sameChoice, shortTarget, whoAnswers } from '../src/lib/draft.ts';
 
 test('a draft has an address of its own, and a reload comes back to it', () => {
   assert.equal(draftPath({ mode: 'private' }), '/nuova?tipo=privata');
@@ -80,10 +80,11 @@ test('a long message asks once, waits while asking, and only the button sends it
 
 test('where the messages of a direct chat go: the chosen model, else what the router picks from (D-140)', () => {
   // The model is a preference: with both executors on, the warning names both, the chosen one first.
-  assert.deepEqual(cloudTargets(['claude', 'codex'], 'codex'), ['codex', 'claude']);
+  assert.deepEqual(cloudTargets(['claude', 'codex'], 'sol'), ['codex', 'claude']);
+  assert.deepEqual(cloudTargets(['claude', 'codex'], 'luna'), ['codex', 'claude'], 'every model of Codex (D-141)');
   assert.deepEqual(cloudTargets(['claude', 'codex'], 'opus'), ['claude', 'codex']);
-  assert.deepEqual(cloudTargets(['codex'], 'codex'), ['codex']);
-  assert.deepEqual(cloudTargets(['claude'], 'codex'), ['claude'], 'a model whose executor does not run here is not a target');
+  assert.deepEqual(cloudTargets(['codex'], 'astra'), ['codex']);
+  assert.deepEqual(cloudTargets(['claude'], 'sol'), ['claude'], 'a model whose executor does not run here is not a target');
   assert.deepEqual(cloudTargets(['codex', 'claude'], null), ['codex', 'claude']);
   assert.deepEqual(cloudTargets(undefined, null), ['claude'], 'an older core says nothing: Claude, as before');
   assert.equal(providerText(['claude', 'codex']), 'Claude (Anthropic) o Codex (OpenAI)');
@@ -91,4 +92,10 @@ test('where the messages of a direct chat go: the chosen model, else what the ro
   assert.match(cloudWarning('reviewer', 'demo', ['codex']), /^Ogni messaggio va così com'è a Codex \(OpenAI\), insieme ai file del progetto demo/);
   assert.match(cloudWarning('coder', undefined), /a Claude \(Anthropic\)\. Arianna non lo filtra/);
   assert.match(cloudWarning('coder', undefined, ['codex']), /Claude Code e Codex tengono una copia della sessione/);
+});
+
+test('who answers a direct chat: the agent, with the chosen model or the router, and the latest model (D-141)', () => {
+  assert.equal(whoAnswers('coder', null, null), 'Risponde Coder, con il modello che il router sceglie a ogni messaggio');
+  assert.equal(whoAnswers('coder', 'sol', 'sonnet'), 'Risponde Coder, con Codex Sol · ultima risposta: Claude Sonnet');
+  assert.equal(whoAnswers('reviewer', null, 'astra'), 'Risponde reviewer, con il modello che il router sceglie a ogni messaggio · ultima risposta: Codex Astra');
 });

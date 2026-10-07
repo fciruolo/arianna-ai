@@ -36,7 +36,7 @@ const PROJECTS = ['site'];
 const THREAD = '01a114e7-94d7-77c2-bb06-60bdefff158e';
 
 const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [join(FIXTURES, 'fake-claude.ts')] }, home: ROOT, killGraceMs: 200 });
-const codex = createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [join(FIXTURES, 'fake-codex.ts')] }, home: ROOT, killGraceMs: 200 });
+const codex = createCodexExecutor({ enabled: ['codex'], command: { file: process.execPath, args: [join(FIXTURES, 'fake-codex.ts')] }, home: ROOT, killGraceMs: 200, modelName: (model) => `gpt-6-${model}` });
 const loaded = committedAgents(ROOT);
 
 function git(...args: string[]): string {
@@ -140,13 +140,13 @@ test('with only Codex on, a step delegated to the Coder runs on codex, through t
   try {
     assert.deepEqual(await drain(task.id, orchestrator(scripted([delegate('coder'), REPLY]), ['codex'])), ['continued', 'continued', 'answered']);
     const [delegation] = await loadDelegations(db().sql, task.id);
-    assert.deepEqual([delegation?.status, delegation?.executor, delegation?.model, delegation?.result, delegation?.sessionRef], ['ok', 'codex', 'codex', 'ok', THREAD]);
+    assert.deepEqual([delegation?.status, delegation?.executor, delegation?.model, delegation?.result, delegation?.sessionRef], ['ok', 'codex', 'sol', 'ok', THREAD]);
 
     const runs = await db().sql<{ step: number; executor: string; locality: string; model: string | null }[]>`
       SELECT step, executor, locality, model FROM runs WHERE task_id = ${task.id} ORDER BY step`;
     assert.deepEqual([...runs].map((run) => [run.step, run.executor, run.locality, run.model]), [
       [1, 'local', 'local', 'local-large'],
-      [2, 'codex', 'cloud', 'codex'],
+      [2, 'codex', 'cloud', 'sol'],
       [3, 'local', 'local', 'local-large'],
     ]);
     const log = await db().sql<{ target: string; decision: string; label: string }[]>`
@@ -170,7 +170,7 @@ test('Codex enabled but its adapter refused on this machine: the step stays on C
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Guarda il README.');
   try {
-    await setConversationModel(db().sql, conversation.id, 'codex', ['codex']);
+    await setConversationModel(db().sql, conversation.id, 'sol', ['sol']);
     assert.deepEqual(await drain(task.id, orchestrator(scripted([delegate('coder'), REPLY]), ['claude', 'codex'], { claude: true })), ['continued', 'continued', 'answered']);
     const [delegation] = await loadDelegations(db().sql, task.id);
     assert.deepEqual([delegation?.status, delegation?.executor], ['ok', 'claude']);
@@ -187,7 +187,7 @@ test('the Reviewer runs on Codex first and reads the project without writing (D-
     const [delegation] = await loadDelegations(db().sql, task.id);
     assert.deepEqual([delegation?.agent, delegation?.status, delegation?.executor], ['reviewer', 'ok', 'codex']);
     const [decision] = await db().sql<{ executor: string; model: string }[]>`SELECT executor, model FROM router_decisions WHERE task_id = ${task.id}`;
-    assert.deepEqual(decision, { executor: 'codex', model: 'codex' });
+    assert.deepEqual(decision, { executor: 'codex', model: 'sol' });
     const { argv, prompt } = codexGot();
     assert.equal(projectAccess(argv), 'read');
     assert.match(prompt, /^You are the Reviewer/);
@@ -200,7 +200,7 @@ const CODER = { name: 'coder', modes: ['work'] as const, project: true };
 
 test('the direct chat on Codex resumes its session; a change to Claude starts one with the latest exchanges (D-140)', async () => {
   const direct = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: CODER });
-  await setConversationModel(db().sql, direct.id, 'codex', ['codex', 'sonnet']);
+  await setConversationModel(db().sql, direct.id, 'sol', ['sol', 'sonnet']);
   try {
     const first = await postUserMessage(db().sql, direct.id, 'Primo messaggio.');
     assert.deepEqual(await drain(first.task.id, orchestrator(scripted([]), ['claude', 'codex'])), ['answered']);
@@ -215,7 +215,7 @@ test('the direct chat on Codex resumes its session; a change to Claude starts on
     assert.equal(resumed.prompt, 'Secondo messaggio.');
 
     // To Claude: the session of Codex is not one of Claude; the new start reads the conversation so far.
-    await setConversationModel(db().sql, direct.id, 'sonnet', ['codex', 'sonnet']);
+    await setConversationModel(db().sql, direct.id, 'sonnet', ['sol', 'sonnet']);
     const third = await postUserMessage(db().sql, direct.id, 'Terzo messaggio.');
     assert.deepEqual(await drain(third.task.id, orchestrator(scripted([]), ['claude', 'codex'])), ['answered']);
     const moved = claudeGot();

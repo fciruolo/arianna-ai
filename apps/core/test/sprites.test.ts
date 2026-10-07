@@ -227,7 +227,7 @@ describe('the model from the settings', () => {
     assert.equal(spriteUnavailable(on, true), undefined);
     assert.match(spriteUnavailable(on, false) ?? '', /cannot run/);
     assert.match(spriteUnavailable(read(renderSettings(DEFAULT_SETTINGS)), true) ?? '', /not on in \[cloud\] executors/);
-    const opusOff = read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'opus', cloud: { executors: ['claude'], models: { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true }, codex: { enabled: true } } } }));
+    const opusOff = read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'opus', cloud: { executors: ['claude'], models: { sonnet: { enabled: true }, opus: { enabled: false }, fable: { enabled: true }, luna: { enabled: true }, sol: { enabled: true }, astra: { enabled: true } } } }));
     assert.match(spriteUnavailable(opusOff, true) ?? '', /opus is off/);
     const local = read(renderSettings({ ...DEFAULT_SETTINGS, sprites: 'local' }));
     assert.match(spriteUnavailable(local, true) ?? '', /no local server serves local-large/);

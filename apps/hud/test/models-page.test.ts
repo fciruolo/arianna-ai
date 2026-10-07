@@ -62,7 +62,7 @@ const local = (id: string, overrides: Partial<LocalModelView> = {}): LocalModelV
 const cloud = (alias: CloudModelView['alias'], overrides: Partial<CloudModelView> = {}): CloudModelView => ({
   locality: 'cloud',
   alias,
-  executor: alias === 'codex' ? 'codex' : 'claude',
+  executor: ['luna', 'sol', 'astra'].includes(alias) ? 'codex' : 'claude',
   card: null,
   enabled: true,
   name: null,
@@ -107,7 +107,7 @@ const overview: ModelsOverview = {
       },
     }),
     cloud('opus', { state: 'off', enabled: false, uses: [{ kind: 'coding', tier: 1, tiers: 3 }] }),
-    cloud('codex', { state: 'not-connected', adapter: false }),
+    cloud('sol', { state: 'not-connected', adapter: false }),
   ],
   sources: [{ id: 'anthropic-models', url: 'https://example.org/models', read: '2026-10-07' }],
   memory: { memoryGib: 64, budgets: [{ endpoint: 'omlx', gib: 24 }], estimatedGib: 21, swap: null },
@@ -127,7 +127,7 @@ describe('modelEntries', () => {
   it('lists local models first, then cloud ones, each with a unique key', () => {
     assert.deepEqual(
       entries.map((entry) => entry.key),
-      ['local:qwen3.8-27b-4bit', 'local:kokoro-82m-bf16-mlx', 'cloud:sonnet', 'cloud:opus', 'cloud:codex'],
+      ['local:qwen3.8-27b-4bit', 'local:kokoro-82m-bf16-mlx', 'cloud:sonnet', 'cloud:opus', 'cloud:sol'],
     );
     assert.deepEqual(modelEntries(null), []);
   });
@@ -148,10 +148,10 @@ describe('modelEntries', () => {
     assert.equal(opus.state.text, 'spento');
     assert.equal(opus.inUse, false);
     // Codex without a card still has its provider and says why it is out.
-    const codex = byKey('cloud:codex');
+    const codex = byKey('cloud:sol');
     assert.equal(codex.provider, 'OpenAI');
-    assert.equal(codex.name, 'Codex (ChatGPT)');
-    assert.equal(codex.badge, 'Cx');
+    assert.equal(codex.name, 'Codex Sol');
+    assert.equal(codex.badge, 'So');
     assert.equal(codex.state.text, 'non collegato');
   });
 
@@ -194,7 +194,7 @@ describe('filterModels', () => {
     assert.deepEqual(keys({ query: 'local-large' }), ['local:qwen3.8-27b-4bit']);
     assert.deepEqual(keys({ query: '  qwen   mac ' }), ['local:qwen3.8-27b-4bit']);
     assert.deepEqual(keys({ query: 'qwen anthropic' }), []);
-    assert.deepEqual(keys({ query: 'chatgpt' }), ['cloud:codex']);
+    assert.deepEqual(keys({ query: 'codex' }), ['cloud:sol']);
     assert.deepEqual(keys({ query: 'gemini' }), []);
   });
 
@@ -270,7 +270,7 @@ describe('cloud card', () => {
 
   it('says why a model is out, nothing when it is on', () => {
     assert.equal(cloudNotice(sonnet), undefined);
-    assert.match(cloudNotice(cloud('codex', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Codex/);
+    assert.match(cloudNotice(cloud('sol', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Codex/);
     assert.match(cloudNotice(cloud('opus', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Claude/);
     assert.match(cloudNotice(cloud('opus', { state: 'executor-off' })) ?? '', /Claude Code è spento in Esecutori cloud/);
     assert.match(cloudNotice(cloud('opus', { state: 'off' })) ?? '', /^Spento/);
