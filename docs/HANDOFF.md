@@ -10,7 +10,11 @@ Aggiornato: 2026-10-07, 11:00 circa (vedi la sezione delle 11:00). Prima: 09:00 
 
 **Fatto:** ramo `task/d111-c-codex`, commit `1d841c3`, **D-140**: il core avvia l'adattatore di `codex`; il router lo usa quando è acceso e l'adattatore gira; deleghe e chat diretta su Codex con `runCodexStep` (`apps/core/src/codex-step.ts`); scheda **Reviewer** (`agents/reviewer.yaml`, Codex per primo, sola lettura); su Claude `Bash` solo con `repo.write`; sessione ripresa solo dallo stesso esecutore, al cambio porta gli ultimi scambi; la chat nomina tutti gli esecutori possibili. `reviewer` in due giri, bloccante (Reviewer che scriveva su Claude con Bash) corretto. `pnpm check` verde, `test:db` 452/452 (dopo l'ultimo ritocco del testo, `delegation.test.ts` 36/36). **Cartella principale, core e chat su `task/d111-c-codex`**, `pnpm hud:build` fatto. Con "Funziona": unire come 0.29.0 e riportare su `main`.
 
-**I-10** (Hugging Face): lo fa un agente nel suo worktree, ramo `task/i10-huggingface`, decisione **D-139**, migrazione eventuale `0035`; non ancora tornato.
+**D-141** (stesso ramo, commit `84c5cd9`): richiesta dell'utente in prova di D-140 ("codex non è un modello...come claude ha i suoi modelli"): alias `luna`, `sol`, `astra` (nomi verificati dal vivo), gradini misti nel router, migrazione `0034`, testata della chat diretta con "Risponde …". `reviewer` senza bloccanti, correzioni fatte; `pnpm check` verde, `test:db` 452/452 prima dell'ultimo giro (poi i file del router 97/97).
+
+**Prova dal vivo in sospeso:** `repos/demo` ha i segreti finti di D-135 (`.env`, `.env.example`, `certs/`), quindi nessun esecutore cloud lo apre. L'utente ha detto di spostarli, ma il comando è stato negato dai permessi: gli ho dato la riga `! mv …` da lanciare; lo script di prova è `data/probe-codex/live-chat.ts`. Dopo la prova i file tornano in `repos/demo`.
+
+**I-10** (Hugging Face): fatto dall'agente, ramo `task/i10-huggingface`, commit `3f8b39b`, decisione **D-139**, nessuna migrazione; `pnpm check` verde, `reviewer` senza bloccanti; la ricerca vera non è mai partita (rete chiusa per l'agente). Da provare dopo D-140/D-141; worktree `.claude/worktrees/agent-a1b0e23b1c35fbef3`. Il suo CHANGELOG e DECISIONS andranno uniti a quelli del ramo D-140 (conflitti attesi in coda alle tabelle).
 
 **Aperto:** il Reviewer chiede anch'esso il consenso sui file non committati (eccezione per la sola lettura da decidere, scritto in D-140).
 
