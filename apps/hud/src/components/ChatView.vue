@@ -10,7 +10,7 @@ import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { longMessageStep, toAgent } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
-import { NOTE_OFF_TEXT, SAVE_OFF_HINT } from '../lib/incognito.ts';
+import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
   inboxNodeId,
@@ -535,13 +535,8 @@ onBeforeUnmount(() => clearInterval(clock));
         </section>
 
         <!-- I-7 (D-131): the whole conversation as a note of kb/inbox -->
-        <!-- Off in incognito (D-136): the same button, its reason over it; aria-disabled keeps the title under the pointer. -->
-        <div v-if="incognito && chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <button type="button" class="btn cursor-not-allowed px-2.5 py-1 text-xs opacity-50" aria-disabled="true" :title="SAVE_OFF_HINT" :aria-label="`${SAVE_CONVERSATION_TEXT}: ${SAVE_OFF_HINT}`">
-            <Icon name="inbox" :size="14" />{{ SAVE_CONVERSATION_TEXT }}
-          </button>
-        </div>
-        <div v-else-if="chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <!-- Not in incognito (D-136): nothing of it is saved in Arianna, so the button is not there at all. -->
+        <div v-if="!incognito && chat.messages.some((message) => message.role !== 'system')" class="-mt-2 flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
             class="btn px-2.5 py-1 text-xs"
@@ -652,7 +647,7 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
             <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" :save-off="incognito ? SAVE_OFF_HINT : undefined" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -692,7 +687,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="canSaveToInbox(message.label)" :save-off="incognito ? SAVE_OFF_HINT : undefined" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
@@ -717,8 +712,7 @@ onBeforeUnmount(() => clearInterval(clock));
                 class="ml-auto"
                 :message="message"
                 :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null"
-                :can-save="message.role !== 'system' && canSaveToInbox(message.label)"
-                :save-off="incognito ? SAVE_OFF_HINT : undefined"
+                :can-save="!incognito && message.role !== 'system' && canSaveToInbox(message.label)"
                 @saved="markSaved"
                 @open-knowledge="emit('openKnowledge', $event)"
               />
@@ -842,7 +836,7 @@ onBeforeUnmount(() => clearInterval(clock));
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
       <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota e "Salva in inbox" spenti, "Copia" funziona</span>
+        <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
         <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span class="inline-flex flex-wrap items-center gap-1.5">
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? 'fino a Interno, ogni messaggio va così com\'è a Claude, senza Arianna. Niente dati privati.' : MODE_HINT[conversation.mode] }}

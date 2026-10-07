@@ -268,8 +268,7 @@ export function endRetryDelay(status: number, error: string, attempt: number): n
   return END_RETRY_MS;
 }
 
-/** Why "Salva in inbox" and "/nota" are off in incognito: said over the button, and as the error of the command. */
-export const SAVE_OFF_HINT = 'Spento in incognito: niente di questa conversazione si salva in Arianna. "Copia" funziona.';
+/** Why "/nota" is off in incognito ("Salva in inbox" is not shown there at all): the error of the command. */
 export const NOTE_OFF_TEXT = 'In una conversazione incognita /nota è spento: niente si salva in kb/inbox. Usa "Copia" per tenere un testo.';
 
 /** Why a draft is not sent from an incognito conversation: "/nota" would write in kb/inbox. */

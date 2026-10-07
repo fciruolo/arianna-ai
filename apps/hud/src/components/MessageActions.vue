@@ -38,8 +38,6 @@ const props = defineProps<{
   note: string | null;
   /** Whether "Salva in inbox" is offered: not for system lines nor above L2. */
   canSave: boolean;
-  /** Why "Salva in inbox" is off (incognito, D-136): shown off, the reason over it; "Copia" stays. */
-  saveOff?: string | undefined;
 }>();
 const emit = defineEmits<{
   saved: [messageId: string, note: string | null];
@@ -68,7 +66,7 @@ async function copy(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  if (props.saved || saving.value || props.saveOff !== undefined) return;
+  if (props.saved || saving.value) return;
   saving.value = true;
   error.value = null;
   clearTimeout(errorTimer);
@@ -103,11 +101,8 @@ const savedTitle = computed(() => (props.note === null ? SAVED_HINT : `${SAVED_H
     <button type="button" class="action" :class="{ 'text-warn': copyState === 'unavailable' }" :title="COPY_HINT" @click="copy">
       <Icon :name="copyState === 'copied' ? 'saved' : 'copy'" :size="12" />{{ COPY_TEXT[copyState] }}
     </button>
-    <button v-if="canSave && saveOff !== undefined" type="button" class="action opacity-50" aria-disabled="true" :title="saveOff" :aria-label="`${SAVE_TO_INBOX_TEXT}: ${saveOff}`">
-      <Icon name="inbox" :size="12" />{{ SAVE_TO_INBOX_TEXT }}
-    </button>
     <button
-      v-else-if="canSave"
+      v-if="canSave"
       type="button"
       class="action"
       :class="{ 'text-ok': saved }"
