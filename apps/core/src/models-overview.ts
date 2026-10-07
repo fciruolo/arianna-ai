@@ -8,6 +8,7 @@ import {
   ORCHESTRATOR_AGENT,
   type AriannaConfig,
   type CatalogEntry,
+  type CatalogOrigin,
   type CloudCatalog,
   type CloudCatalogEntry,
   type CloudExecutor,
@@ -68,6 +69,8 @@ export interface LocalModelView {
   source: string | null;
   /** The roles the catalog says it suits. */
   suitedRoles: ModelRole[];
+  /** Where the entry comes from: the curated catalog, or Hugging Face through this page (I-10); no suited role until the user promotes it. */
+  origin: CatalogOrigin;
   /** The roles `[roles]` gives it now. */
   roles: ModelRole[];
   /** The aliases it serves through its roles (`local-large`, `local-small`, `local-voice`). */
@@ -188,6 +191,7 @@ function localView(entry: CatalogEntry, inputs: OverviewInputs): LocalModelView 
     notes: entry.notes ?? null,
     source: entry.source ?? null,
     suitedRoles: entry.roles,
+    origin: entry.origin ?? 'catalog',
     roles: assigned,
     aliases,
     agents: assigned.includes('orchestrator') ? [ORCHESTRATOR_AGENT] : [],
@@ -301,7 +305,9 @@ export async function loadModelsOverview(sql: Queryable, options: ModelsOverview
   try {
     catalog = loadCatalog(options.home);
   } catch (error) {
-    errors.catalog = readError(error, 'config/models.catalog.yaml');
+    // The models added from Hugging Face (I-10) have their own file: the error names it.
+    const user = error instanceof Error && error.message.startsWith('user catalog');
+    errors.catalog = readError(error, user ? 'config/models.user-catalog.yaml' : 'config/models.catalog.yaml');
   }
   let cloudCatalog: CloudCatalog = { version: 1, sources: [], models: [] };
   try {

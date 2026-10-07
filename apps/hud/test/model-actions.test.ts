@@ -32,6 +32,7 @@ const local = (id: string, overrides: Partial<LocalModelView> = {}): LocalModelV
   notes: null,
   source: null,
   suitedRoles: ['orchestrator'],
+  origin: 'catalog',
   roles: [],
   aliases: [],
   agents: [],

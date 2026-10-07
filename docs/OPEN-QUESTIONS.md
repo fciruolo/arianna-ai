@@ -26,6 +26,7 @@
 | Incognito: tetto di durata con la pagina aperta | Oggi un'incognita resta aperta finché una pagina la tiene aperta, anche nascosta (D-136): proposta di Claude, nessun tetto | Prima di unire D-136 |
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
 | Modelli: schede cloud da rileggere | Frasi tradotte e prezzi API in `config/cloud-models.catalog.yaml` (D-137, I-3 M1); i nomi dei tre modelli di Codex sono verificati dal vivo il 2026-10-07 (D-141) | Prima di unire I-3 |
+| Modelli da Hugging Face: scelte di D-139 | Applicate le opzioni consigliate di `docs/I-10-huggingface.md` mentre eri via: esce solo il testo cercato o l'id scelto, dal gateway; solo modelli MLX pubblici; catalogo tuo in `config/models.user-catalog.yaml`; sperimentale e senza ruoli finché non lo promuovi | Prima di unire I-10 |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -649,3 +650,12 @@ Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (rig
 - Opzione: Togliere i prezzi API — restano frasi e contesto; niente cifre che potrebbero confondersi con la quota.
 - Opzione: Vanno bene così — si uniscono come sono.
 - Esempio: Nella scheda di Opus leggi "4 / 20 $ per milione di token (API)"; se pensi che faccia credere che ogni delega ti costi soldi, scegli di toglierli.
+
+### oq-modelli-da-hugging-face-scelte-di-d-139
+
+- Contesto: Per cercare e aggiungere modelli da Hugging Face nella pagina Modelli (I-10) Claude ha scelto da solo, mentre eri via, le regole più prudenti: dal Mac esce solo il testo che scrivi nella ricerca (o il nome del modello che scegli), passando dal gateway e senza account; si accettano solo modelli MLX pubblici con pesi .safetensors; il modello scelto va in un catalogo tuo fuori da git (config/models.user-catalog.yaml) come sperimentale e senza ruoli, finché non lo promuovi tu. Si decide se queste regole ti vanno bene prima di unire il lavoro.
+- Opzione consigliata: Vanno bene così — si prova il lavoro e, se funziona, si unisce con queste regole; D-139 diventa accettata.
+- Opzione: Anche modelli con login — servirebbe un token Hugging Face nel vault per i modelli ad accesso controllato (per esempio quelli di Meta): una credenziale in più da custodire e una nuova decisione.
+- Opzione: Anche formato GGUF — si aprirebbe un secondo runtime (llama.cpp) accanto a oMLX: più modelli fra cui scegliere, ma un server locale in più da installare e provare.
+- Opzione: Senza promozione — il modello aggiunto si può assegnare subito a un ruolo: un passaggio in meno, ma un modello mai provato può finire a fare l'orchestratore con un clic.
+- Esempio: Scrivi "qwen3 4bit", scegli mlx-community/Qwen3-4B-4bit (2,3 GB, licenza apache-2.0), premi Aggiungi: compare nell'elenco come qwen3-4b-4bit, da scaricare e senza ruoli; lo scarichi, lo promuovi a Estrattore, poi lo assegni al ruolo e salvi.
