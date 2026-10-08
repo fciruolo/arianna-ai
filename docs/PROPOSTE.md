@@ -2487,6 +2487,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-9 | Una skill di Claude Code per la pixel art (oggi non esiste): regole di disegno, controlli e esempi del progetto, riusabile per i personaggi nuovi disegnati a mano | idea | da stimare | D-132 | annotata il 2026-10-06, da decidere |
 | I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | funzione | 8-12 h (tappe H1-H3 fatte in circa 6 h) | D-137 | detta dall'utente alla prova di I-3, 2026-10-07; progetto `docs/I-10-huggingface.md`, D-139 applicata sul ramo `task/i10-huggingface`, da provare |
 | I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
+| I-12 | **Prioritaria per l'utente.** Arianna (o un agente) come segretaria: le dici "domani dobbiamo rilasciare X per il cliente Y", se lo segna, te lo ricorda la mattina, di nuovo dopo pranzo se non è fatto, e a fine giornata fa il resoconto di ciò che non è stato fatto chiedendoti perché e annotando la risposta; pulsante dedicato per parlarle subito | funzione | 20-30 h (tappe S1-S4) | D-110 (routine, ancora da costruire), D-126/D-128 (notifiche), D-066 (chiamate, facoltative) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 
 ### I-1, notifiche delle risposte
 
@@ -2559,7 +2560,7 @@ Letti i sistemi di orchestrazione per lo sviluppo: modello orchestratore-esecuto
 - cartelle di gestione: `Workplan` (piano di lavoro), documenti di progetto, una cartella degli IM (l'utente spiegherà come funzionano), altre;
 - le cartelle delle parti implementate: `progetto-test-admin` (pannello di amministrazione), `progetto-test-client` (portale clienti) e così via.
 
-Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le sue ricerche e, se serve, la deve leggere anche il Coder. **Vincolo assoluto dell'utente:** le note private (esempio: "ho fatto la fattura al cliente X di Y€") non devono uscire mai. Unica eccezione, in casi eccezionali: con una master password e dopo averle rese anonime con un modello locale (l'utente ha citato Rizzo-PII, da verificare: Claude non lo conosce).
+Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le sue ricerche e, se serve, la deve leggere anche il Coder. **Vincolo assoluto dell'utente:** le note private (esempio: "ho fatto la fattura al cliente X di Y€") non devono uscire mai. Unica eccezione, in casi eccezionali: con una master password e dopo averle rese anonime con un modello locale (l'utente ha citato Rizzo-PII: in D-113 è previsto come secondo controllo locale dei dati personali, solo in salita; usarlo per rendere anonimo un testo è un uso nuovo, da provare).
 
 **Com'è oggi.** Un progetto (D-058, D-134) è una sola cartella approvata in `arianna.toml`: il Coder lavora lì dentro e la pagina Progetti ne mostra File, Git e Servizi. La conoscenza di Arianna sta in `kb/` (note con intestazione ed etichetta, cattura in `kb/inbox`, riordino col modello locale). Le due cose non si parlano: una nota su un progetto non è legata al progetto, e il Coder non vede niente di `kb/`.
 
@@ -2600,3 +2601,53 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
    - Opzione consigliata: Sì, come ultima tappa — prima tutto il resto senza nessuna uscita; poi, se ti serve davvero, l'uscita con anonimizzazione locale, testo esatto da approvare e master password.
    - Opzione: No, mai — le note L2 e L3 non escono in nessun caso; se serve qualcosa al Coder la riscrivi tu senza dati.
    - Esempio: Vuoi che il Coder sappia lo stato dei pagamenti: il modello locale scrive "il cliente A ha pagato la fattura 2 di [importo]", la chat ti mostra il testo, lo approvi con la master password ed esce solo quello.
+
+### I-12, la segretaria (richiesta dell'utente del 2026-10-08, prioritaria)
+
+**Cosa ha chiesto l'utente.** Come in un ufficio, dove il capo dice alla segretaria "domani devo passare in banca per pagare una fideiussione": un posto dove dire ad Arianna (o a un agente) le cose da fare, per esempio "domani dobbiamo rilasciare la funzionalità X che abbiamo sviluppato per il cliente Y". La segretaria:
+1. se lo segna, con il giorno;
+2. lo ricorda la mattina (con le routine di D-110);
+3. se non è fatto, lo ricorda di nuovo dopo pranzo;
+4. a fine giornata fa il resoconto delle cose non fatte e chiede perché; l'utente risponde ("ero fuori casa", "c'era questo problema") e lei lo annota;
+5. ha un pulsante dedicato per parlarle subito.
+
+**Com'è oggi.** Arianna sa creare carte (`task.create`) e la chat ha notifiche (D-126, aiutante del Mac D-128) e chiamate (D-066). Le routine di D-110 (appuntamenti ricorrenti con resoconto scritto dal codice) sono solo proposte: manca il pezzo che fa scattare le cose a un'ora data. Non esiste un promemoria con una data, né uno stato "non fatto, perché".
+
+**Proposta di Claude.**
+1. **Un impegno è una riga sua, non una carta.** Tabella `commitments` (nome da decidere): testo, giorno (e ora se detta), progetto o cliente se nominati, stato (`aperto`, `fatto`, `non fatto`, `rinviato`, `annullato`), motivo del non fatto, storia dei promemoria. Etichetta **Privato (L2)** di base: "pagare la fideiussione in banca" non esce mai verso il cloud. Il testo lo scrive l'utente; la data la capisce il modello locale ("domani", "giovedì dopo pranzo") e la chat la mostra per conferma prima di salvare.
+2. **Il calendario della giornata lo fa il codice, non il modello.** Un ticker nel core (lo stesso pezzo che serve a D-110, da costruire una volta per tutti e due) con tre momenti configurabili: **mattina** (elenco degli impegni del giorno), **dopo pranzo** (solo quelli ancora aperti), **fine giornata** (resoconto dei non fatti). Gli elenchi li scrive il codice da SQL, come il resoconto di D-110: niente modello che inventa o dimentica un impegno.
+3. **Il resoconto di fine giornata è una conversazione.** Per ogni impegno aperto la segretaria chiede "fatto, rinviato o non fatto? perché?". La risposta libera dell'utente diventa il motivo (testo L2), e un rinvio sposta la data. Il giorno dopo la mattina parte dai rinvii.
+4. **Il pulsante "Segretaria".** Nella barra laterale, sempre visibile: apre la sua conversazione privata (una sola, che continua nel tempo) con il campo pronto. Lì si dice "segnati che…", si chiede "cosa ho domani?", si risponde ai resoconti. In seguito anche a voce dalla chiamata (D-066), facoltativo.
+5. **Notifiche senza testo privato fuori dal Mac.** L'aiutante del Mac (D-128) mostra il promemoria per intero, perché resta sul Mac. Le notifiche web passano dai server di Apple o Google: lì solo "Arianna ha un promemoria", senza testo, come oggi per le risposte.
+6. **Il resoconto entra nella conoscenza, se lo vuoi.** I motivi del non fatto, raccolti nel tempo, dicono cosa blocca il lavoro ("fuori casa" tre volte questa settimana). Una sintesi settimanale col modello locale è una tappa facoltativa.
+
+**Tappe proposte.**
+- **S1:** tabella degli impegni, strumento di Arianna per segnarli (con conferma della data), pulsante "Segretaria" e la sua conversazione; "cosa ho domani?".
+- **S2:** il ticker con i tre momenti (mattina, dopo pranzo, fine giornata) e le notifiche; è anche la base delle routine di D-110.
+- **S3:** il resoconto di fine giornata con i motivi e i rinvii.
+- **S4 (facoltative):** promemoria a voce con la chiamata, sintesi settimanale, collegamento ai progetti di I-11 (impegni per cliente).
+
+**Nota sulle fasi.** Promemoria e brief giornaliero erano della Fase 5 (D-110 è già fuori fase): un anticipo va annotato in `ROADMAP.md` come quelli già scelti dall'utente.
+
+**Domande per l'utente.**
+1. **Chi fa la segretaria?**
+   - Contesto: Può essere Arianna stessa, con un pulsante che apre una sua conversazione dedicata, oppure un agente a parte con nome e personaggio suoi nell'ufficio.
+   - Opzione consigliata: Arianna stessa — un'assistente sola che sa tutto; il pulsante apre la conversazione "Segretaria" con lei. Meno pezzi da costruire.
+   - Opzione: Un agente dedicato — nome e personaggio suoi, separato da Arianna; più chiaro chi fa cosa, ma un agente in più da progettare.
+   - Esempio: Premi "Segretaria" e scrivi "giovedì devo andare in banca per la fideiussione"; risponde Arianna: "Segnato per giovedì 9 ottobre. Te lo ricordo la mattina."
+2. **A che ore i tre promemoria?**
+   - Contesto: La segretaria ti ricorda le cose in tre momenti della giornata. Si decidono gli orari di partenza; poi si cambiano nelle Impostazioni.
+   - Opzione consigliata: 9:00, 14:30, 18:30 — mattina, dopo pranzo e fine giornata in orari d'ufficio, dal lunedì al venerdì.
+   - Opzione: Anche nel weekend — gli stessi orari tutti i giorni.
+   - Opzione: Li scelgo io subito — scrivi gli orari nella risposta.
+   - Esempio: Lunedì alle 9:00 arriva "Oggi: rilascio X per il cliente Y"; alle 14:30, se non l'hai segnato fatto, "Ancora da fare: rilascio X"; alle 18:30 "Il rilascio X non risulta fatto: cosa è successo?".
+3. **Come si segna una cosa fatta?**
+   - Contesto: Perché i promemoria del pomeriggio e il resoconto siano giusti, la segretaria deve sapere cosa hai fatto. Si può dire in chat o premere un pulsante.
+   - Opzione consigliata: Tutti e due — un pulsante "Fatto" su ogni promemoria e la frase in chat ("il rilascio l'ho fatto"), che il modello locale collega all'impegno e ti fa confermare.
+   - Opzione: Solo il pulsante — nessun errore di interpretazione, ma devi aprire il promemoria.
+   - Esempio: Alle 11 scrivi "fatto il deploy per Y"; la segretaria risponde "Segno fatto: rilascio X per il cliente Y?" e tu premi Sì.
+4. **Anche a voce?**
+   - Contesto: La chat esiste già con le notifiche; la chiamata di Arianna (D-066) potrebbe leggerti i promemoria della mattina a voce, sul modello locale.
+   - Opzione consigliata: Prima solo chat e notifiche — la voce come tappa facoltativa dopo, quando il resto funziona.
+   - Opzione: Subito anche la chiamata della mattina — più comodo, ma più lavoro e la chiamata va provata con le routine.
+   - Esempio: Alle 9:00 Arianna ti chiama: "Buongiorno, oggi hai il rilascio X per il cliente Y e la banca alle 15."
