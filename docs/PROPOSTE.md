@@ -2486,6 +2486,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | D-130, unita in 0.19.0, prova dell'utente da fare |
 | I-9 | Una skill di Claude Code per la pixel art (oggi non esiste): regole di disegno, controlli e esempi del progetto, riusabile per i personaggi nuovi disegnati a mano | idea | da stimare | D-132 | annotata il 2026-10-06, da decidere |
 | I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | funzione | 8-12 h (tappe H1-H3 fatte in circa 6 h) | D-137 | detta dall'utente alla prova di I-3, 2026-10-07; progetto `docs/I-10-huggingface.md`, D-139 applicata sul ramo `task/i10-huggingface`, da provare |
+| I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 
 ### I-1, notifiche delle risposte
 
@@ -2551,3 +2552,51 @@ Letti i sistemi di orchestrazione per lo sviluppo: modello orchestratore-esecuto
 - **Contesto:** fascicolo generato a ogni richiesta (HANDOFF, fase della ROADMAP, task aperti, ultime decisioni) più gli ultimi messaggi, e pulsante "riassumi e riparti"; la chat che vede l'utente resta intera.
 - **Prove dei lavori (anche fuori da GOD, per questa fase):** "prova tu e unisci": Claude rivede, fa i test (quelli col database da `main`), prova nel browser e unisce con la sua versione; all'utente si chiede la prova solo per ciò che si vede.
 - Da decidere ancora: personaggio di GOD, nome della voce nella barra, dove sta il suo ufficio, id della decisione (proposta: D-127).
+
+### I-11, progetti con la loro conoscenza (richiesta dell'utente del 2026-10-08, prioritaria)
+
+**Cosa ha chiesto l'utente.** Nella pagina Progetti un pulsante per inserire conoscenza su un progetto. Ogni progetto è una cartella contenitore, per esempio `progetto-test/`, che contiene:
+- cartelle di gestione: `Workplan` (piano di lavoro), documenti di progetto, una cartella degli IM (l'utente spiegherà come funzionano), altre;
+- le cartelle delle parti implementate: `progetto-test-admin` (pannello di amministrazione), `progetto-test-client` (portale clienti) e così via.
+
+Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le sue ricerche e, se serve, la deve leggere anche il Coder. **Vincolo assoluto dell'utente:** le note private (esempio: "ho fatto la fattura al cliente X di Y€") non devono uscire mai. Unica eccezione, in casi eccezionali: con una master password e dopo averle rese anonime con un modello locale (l'utente ha citato Rizzo-PII, da verificare: Claude non lo conosce).
+
+**Com'è oggi.** Un progetto (D-058, D-134) è una sola cartella approvata in `arianna.toml`: il Coder lavora lì dentro e la pagina Progetti ne mostra File, Git e Servizi. La conoscenza di Arianna sta in `kb/` (note con intestazione ed etichetta, cattura in `kb/inbox`, riordino col modello locale). Le due cose non si parlano: una nota su un progetto non è legata al progetto, e il Coder non vede niente di `kb/`.
+
+**Proposta di Claude.**
+1. **Il progetto diventa un contenitore.** In `arianna.toml` un progetto è la cartella `progetto-test/`; le parti sono le sue sottocartelle di codice (ognuna col suo git), dove il Coder lavora una alla volta. Le cartelle di gestione restano nel contenitore. Un progetto vecchio con una sola cartella è un contenitore con una parte sola: niente da spostare.
+2. **Ogni cartella e ogni nota ha un'etichetta, e l'etichetta decide chi legge.** Le regole per cartella esistono già (`[[folder]]` di `LabelRules`); ogni file di conoscenza ha anche la sua intestazione con l'etichetta, come le note di `kb/`. Di base tutto ciò che non è codice è **Privato (L2)**; l'utente rende **Interna (L1)** una cartella o una nota con una conferma esplicita, per esempio il Workplan. Le cose più delicate (fatture, compensi, dati di clienti) vanno in **Riservato (L3)**.
+3. **La garanzia sta nel sandbox, non nel modello.** Quando il Coder lavora su una parte, il profilo di confinamento (D-050 per Claude, D-138 per Codex) apre in lettura la parte e le sole cartelle e note L1 del contenitore, e **nega** a livello di file system tutte quelle L2 e L3: anche con la shell, il Coder non può leggerle. Nel testo della delega passa solo ciò che il gateway lascia uscire (L1 al massimo verso il cloud). Una nota L2 messa per sbaglio in una cartella L1 resta L2 per la sua intestazione: il sandbox la nega comunque, file per file.
+4. **Arianna trova tutto, in locale.** La ricerca di Arianna (`kb.search`) indicizza anche le cartelle di conoscenza dei progetti, ciascuna con la sua etichetta; il modello locale legge anche L2 e L3. Le risposte che includono L2 restano nella chat privata, come oggi.
+5. **Pulsante "+ Conoscenza" nella pagina Progetti.** Una scheda "Conoscenza" accanto a File, Git e Servizi: le cartelle di gestione del contenitore e le note, ciascuna con il suo distintivo d'etichetta. Il pulsante apre un campo di testo con: cartella di destinazione, etichetta (Privato per scelta predefinita), titolo. La nota si scrive come una cattura di `kb:capture` (intestazione scritta dal codice) e il riordino col modello locale propone titolo e collegamenti.
+6. **Uscita eccezionale di una nota privata (ultima tappa, facoltativa).** Mai in automatico. L'utente sceglie la nota, un modello locale la rende anonima, la chat mostra il testo esatto che uscirebbe accanto all'originale, e l'utente lo approva con la master password (nel vault). Esce solo quel testo, una volta, registrato in `gateway_log`. L'anonimizzazione aiuta ma non è una garanzia: conta il testo che l'utente approva.
+
+**Tappe proposte.**
+- **P1:** il contenitore e le parti in `arianna.toml` e nella pagina Progetti, con i progetti di oggi letti come contenitori con una parte.
+- **P2:** etichette di cartelle e note del contenitore, scheda "Conoscenza" e pulsante "+ Conoscenza" (solo locale: Arianna la trova con le sue ricerche).
+- **P3:** il Coder legge le note L1 nel sandbox (profili D-050 e D-138 con le cartelle L2 e L3 negate) e, se serve, nel testo della delega. Canarino: una nota L2 con una stringa unica non deve comparire in nessuna uscita.
+- **P4:** cartella degli IM, dopo la spiegazione dell'utente.
+- **P5 (facoltativa):** uscita eccezionale con anonimizzazione locale e master password.
+
+**Domande per l'utente.**
+1. **Le parti del progetto sono repository git separati?**
+   - Contesto: Il Coder lavora su una cartella alla volta e fa i commit lì. Se ogni parte ha il suo git, il Coder lavora su una parte senza vedere le altre; se il git è uno solo per tutto il contenitore, il Coder lavorerebbe nel contenitore, dove ci sono anche le cartelle di gestione.
+   - Opzione consigliata: Un git per ogni parte — il Coder apre solo la parte su cui lavora più le note L1; le cartelle di gestione restano fuori dal suo git e dal cloud.
+   - Opzione: Un git solo per il contenitore — più semplice da gestire, ma Workplan e documenti finiscono nella cronologia di git e il sandbox deve negare cartella per cartella dentro lo stesso repository.
+   - Opzione: Dipende dal progetto — per ogni progetto si sceglie; più flessibile, ma due casi da costruire e provare.
+   - Esempio: `progetto-test-admin` e `progetto-test-client` hanno ognuno il suo git; chiedi "aggiungi il filtro per data al pannello" e il Coder lavora solo in `progetto-test-admin`.
+2. **Che etichetta hanno di base le cartelle di gestione?**
+   - Contesto: Ciò che è Privato (L2) non esce mai verso il cloud; ciò che è Interno (L1) lo può leggere anche il Coder. Si decide da dove parte una cartella nuova come Workplan o documenti.
+   - Opzione consigliata: Tutte Private, Interne a mano — nulla esce finché non lo decidi tu cartella per cartella con una conferma; il Coder all'inizio non vede niente del contenitore.
+   - Opzione: Workplan e documenti Interni — il Coder li legge subito, ma una nota delicata scritta lì per sbaglio uscirebbe se non la etichetti a mano.
+   - Esempio: Crei `progetto-test/Workplan`: nasce Privata; quando vuoi che il Coder segua il piano, la rendi Interna dalla scheda Conoscenza e confermi.
+3. **Dove stanno le note dei progetti?**
+   - Contesto: La conoscenza può stare nella cartella del progetto (vicino al codice, la vedi anche con il Finder) o nella knowledge base di Arianna (`kb/`), collegata al progetto.
+   - Opzione consigliata: Nella cartella del progetto — come hai descritto (Workplan, documenti, IM nel contenitore); Arianna la indicizza lì con le etichette.
+   - Opzione: In kb/progetti/<nome> — tutto in un posto solo con il resto della conoscenza, ma lontano dalle cartelle del progetto.
+   - Esempio: La nota "il cliente vuole il logo blu" finisce in `progetto-test/documenti/` con la sua etichetta e Arianna la trova quando chiedi "cosa voleva il cliente per il logo?".
+4. **L'uscita eccezionale di una nota privata va costruita?**
+   - Contesto: Hai chiesto che le note private non escano mai, salvo casi eccezionali con master password e anonimizzazione. È la tappa più delicata: si decide se farla e quando.
+   - Opzione consigliata: Sì, come ultima tappa — prima tutto il resto senza nessuna uscita; poi, se ti serve davvero, l'uscita con anonimizzazione locale, testo esatto da approvare e master password.
+   - Opzione: No, mai — le note L2 e L3 non escono in nessun caso; se serve qualcosa al Coder la riscrivi tu senza dati.
+   - Esempio: Vuoi che il Coder sappia lo stato dei pagamenti: il modello locale scrive "il cliente A ha pagato la fattura 2 di [importo]", la chat ti mostra il testo, lo approvi con la master password ed esce solo quello.
