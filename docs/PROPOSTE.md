@@ -2488,6 +2488,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | funzione | 8-12 h (tappe H1-H3 fatte in circa 6 h) | D-137 | detta dall'utente alla prova di I-3, 2026-10-07; progetto `docs/I-10-huggingface.md`, D-139 applicata sul ramo `task/i10-huggingface`, da provare |
 | I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-12 | **Prioritaria per l'utente.** Arianna (o un agente) come segretaria: le dici "domani dobbiamo rilasciare X per il cliente Y", se lo segna, te lo ricorda la mattina, di nuovo dopo pranzo se non è fatto, e a fine giornata fa il resoconto di ciò che non è stato fatto chiedendoti perché e annotando la risposta; pulsante dedicato per parlarle subito | funzione | 20-30 h (tappe S1-S4) | D-110 (routine, ancora da costruire), D-126/D-128 (notifiche), D-066 (chiamate, facoltative) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
+| I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 
 ### I-1, notifiche delle risposte
 
@@ -2651,3 +2652,52 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
    - Opzione consigliata: Prima solo chat e notifiche — la voce come tappa facoltativa dopo, quando il resto funziona.
    - Opzione: Subito anche la chiamata della mattina — più comodo, ma più lavoro e la chiamata va provata con le routine.
    - Esempio: Alle 9:00 Arianna ti chiama: "Buongiorno, oggi hai il rilascio X per il cliente Y e la banca alle 15."
+
+### I-13, il cardwall (richiesta dell'utente del 2026-10-08, insieme a I-12)
+
+**Cosa ha chiesto l'utente.** Le cose da fare, i task e gli impegni della segretaria (I-12) visibili in un cardwall:
+- anche nell'ufficio pixel, come oggetto a cui il personaggio si avvicina per aprirlo;
+- con filtri su task, eventi e altro;
+- con task legati a un progetto (I-11) o generali;
+- usato anche per lo sviluppo. Esempio: chiedi ad Arianna una landing page; lei crea due task, uno per la grafica e uno per il codice, e quello del codice resta bloccato finché la grafica non c'è.
+
+**Com'è oggi.** Il cardwall è nella SPEC ("Todo e cardwall", Fase 2, 12-18 h nella ROADMAP) ma non è costruito. La tabella `tasks` ha già quello che serve per le carte: stato (`inbox`, `ready`, `running`, `waiting_user`, `to_verify`, `done`, `failed`), assegnatario, etichetta, conversazione, padre (`parent_id`). Arianna crea e aggiorna carte (`task.create`, `task.update`). Mancano: le dipendenze fra task, una scadenza, il progetto della carta, una vista a colonne con filtri.
+
+**Proposta di Claude.**
+1. **Un cardwall solo, con i filtri, invece di uno per progetto.** Colonne per stato (da decidere quali mostrare), carte con titolo, progetto o "generale", chi lo fa (tu, Arianna, il Coder, un agente), scadenza, distintivo d'etichetta. Filtri: progetto, tipo (task, impegno della segretaria, evento), chi lo fa, stato, scadenza (oggi, settimana, in ritardo), etichetta. Un filtro salvato per progetto equivale a "il cardwall di quel progetto". Le carte si spostano a mano trascinandole; gli agenti le spostano con gli strumenti che hanno già.
+2. **Gli impegni della segretaria sono carte anche loro.** Un impegno di I-12 compare nel cardwall con la sua data; segnarlo fatto dalla carta o dalla chat è la stessa cosa.
+3. **Dipendenze: "bloccato da".** Tabella nuova `task_dependencies` (task, task da cui dipende). Un task con una dipendenza non finita non parte: il worker non lo prende, e la carta mostra "aspetta: Grafica della landing". Quando la dipendenza va in `done`, il task torna `ready` da solo. Il caso del messaggio dell'utente, "bloccato dopo un tot perché non ha la grafica", è coperto in due modi: dalla dipendenza dichiarata prima, oppure dall'agente che si accorge che manca qualcosa e porta il task in `waiting_user` con il motivo (già possibile oggi).
+4. **Scomposizione da parte di Arianna.** Per una richiesta grande ("sviluppa una landing page per il cliente Y") Arianna propone un piano: task figli (`parent_id`), chi li fa, dipendenze. La chat lo mostra come scheda; diventano carte vere solo dopo la tua approvazione (D-110 vieta già le cose ricorrenti decise dal modello senza conferma: qui vale lo stesso). Senza approvazione resta una proposta.
+5. **Nell'ufficio.** Un mobile "cardwall" nella stanza; il personaggio dell'utente ci va vicino e un clic (o il tasto d'azione) apre il cardwall sopra l'ufficio, con gli stessi filtri. Gli agenti al lavoro restano visibili alle loro scrivanie come oggi.
+6. **Privacy.** Il cardwall è nella chat locale: mostra tutto, ciascuna carta con la sua etichetta. Una carta L3 (per esempio una fattura) resta in vista solo qui; nei canali fuori dal Mac (notifiche web, telefono) si contano le carte, senza titoli, come in D-110. Un task affidato al Coder porta nel cloud solo il testo della delega, passato dal gateway.
+
+**Tappe proposte.**
+- **C1:** colonne `project_id`/`due_at` sui task, `task_dependencies`, rotte dell'API; il worker rispetta le dipendenze.
+- **C2:** pagina Cardwall con colonne, trascinamento e filtri (con impegni di I-12 se già fatti).
+- **C3:** scomposizione di Arianna con scheda di approvazione (task figli, assegnatari, dipendenze).
+- **C4:** il cardwall nell'ufficio (mobile e apertura dal personaggio).
+
+**Ordine con I-11 e I-12.** I tre lavori si toccano: i progetti (I-11) danno il filtro per progetto, gli impegni (I-12) sono carte, le dipendenze (I-13) servono allo sviluppo. Proposta: I-12 S1 (impegni), poi I-13 C1-C2 (cardwall con i filtri), poi I-11 P1-P2 (progetti e conoscenza), poi il resto. Va annotato in `ROADMAP.md` come anticipo della Fase 2 scelto dall'utente.
+
+**Domande per l'utente.**
+1. **Quali colonne?**
+   - Contesto: Le carte stanno in colonne per stato. Oggi i task hanno sette stati tecnici; per l'uso quotidiano si possono raggruppare in meno colonne.
+   - Opzione consigliata: Cinque colonne — Da fare, In corso, Aspetta (te o un altro task), Da verificare, Fatto; i falliti compaiono in Aspetta con un segno rosso.
+   - Opzione: Tutti e sette gli stati — più preciso ma più affollato.
+   - Esempio: La carta "Codice della landing" sta in Aspetta con la scritta "aspetta: Grafica della landing"; quando la grafica passa in Fatto, la carta va da sola in Da fare.
+2. **La scomposizione di Arianna va approvata?**
+   - Contesto: Per una richiesta grande Arianna può creare da sola più task con chi li fa e le dipendenze, oppure proporli e aspettare il tuo sì.
+   - Opzione consigliata: Proposta da approvare — vedi il piano come scheda, lo correggi o lo approvi; solo allora diventano carte e partono.
+   - Opzione: Crea da sola — più veloce, ma un piano sbagliato parte senza che tu l'abbia visto.
+   - Esempio: Chiedi "sviluppa una landing page per il cliente Y"; Arianna propone "1. Grafica (designer), 2. Codice (Coder, dopo la 1)"; premi Approva.
+3. **Chi fa la grafica?**
+   - Contesto: Nell'esempio della landing un task è la grafica. Oggi nessun agente di Arianna fa grafica; può farla l'utente, un agente nuovo o il Coder con un modello che sappia di design.
+   - Opzione consigliata: Tu, o un agente da creare dopo — la carta della grafica è assegnata a te finché non esiste un agente adatto (si può creare con la pagina Agenti, D-133).
+   - Opzione: Il Coder — scrive anche la parte grafica (HTML e CSS) partendo da una descrizione; nessun file di design separato.
+   - Esempio: La carta "Grafica della landing" è assegnata a te; quando carichi il file e la segni fatta, il Coder parte con il codice.
+4. **In che ordine I-11, I-12 e I-13?**
+   - Contesto: Sono tre lavori prioritari che si toccano; si fanno uno alla volta, dopo il reset della quota di Claude.
+   - Opzione consigliata: Impegni, cardwall, progetti — prima la segretaria minima (S1), poi il cardwall con i filtri (C1-C2), poi progetti e conoscenza (P1-P2), poi il resto.
+   - Opzione: Progetti per primi — prima I-11, perché il cardwall per progetto e la conoscenza del Coder si appoggiano lì.
+   - Opzione: Cardwall per primo — prima la vista delle carte, poi impegni e progetti ci entrano dentro.
+   - Esempio: Sabato si parte dalla segretaria: "segnati che giovedì vado in banca"; la settimana dopo lo stesso impegno compare come carta nel cardwall, filtrabile come "generale".
