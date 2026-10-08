@@ -2489,6 +2489,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-12 | **Prioritaria per l'utente.** Arianna (o un agente) come segretaria: le dici "domani dobbiamo rilasciare X per il cliente Y", se lo segna, te lo ricorda la mattina, di nuovo dopo pranzo se non è fatto, e a fine giornata fa il resoconto di ciò che non è stato fatto chiedendoti perché e annotando la risposta; pulsante dedicato per parlarle subito | funzione | 20-30 h (tappe S1-S4) | D-110 (routine, ancora da costruire), D-126/D-128 (notifiche), D-066 (chiamate, facoltative) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
+| I-14 | Regole del progetto proposte in bozza quando si aggiunge un progetto (parallelismo degli agenti secondo la quota, codice che non sembri scritto da un'IA, regole per gli IM, niente commit o niente co-autore, mai leggere segreti…), uguali per Claude e per Codex | funzione | 12-18 h (tappe R1-R3) | D-058/D-134 (progetti), I-11, D-050/D-138 (profili), D-135 (segreti) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 
 ### I-1, notifiche delle risposte
 
@@ -2701,3 +2702,48 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
    - Opzione: Progetti per primi — prima I-11, perché il cardwall per progetto e la conoscenza del Coder si appoggiano lì.
    - Opzione: Cardwall per primo — prima la vista delle carte, poi impegni e progetti ci entrano dentro.
    - Esempio: Sabato si parte dalla segretaria: "segnati che giovedì vado in banca"; la settimana dopo lo stesso impegno compare come carta nel cardwall, filtrabile come "generale".
+
+### I-14, le regole del progetto (richiesta dell'utente del 2026-10-08)
+
+**Cosa ha chiesto l'utente.** Quando si aggiunge un progetto, Arianna propone una bozza di tutte le sue regole. Esempi dell'utente:
+- usare gli agenti in parallelo per sfruttare al massimo la quota (come fa Claude Code su Arianna);
+- far sì che il codice non sembri scritto da un'IA;
+- regole per scrivere gli IM;
+- non fare mai commit, o non far comparire il co-autore;
+- non leggere mai i segreti.
+
+Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei due l'utente scelga.
+
+**Un punto non ovvio di oggi.** Gli adattatori di Arianna **ignorano apposta** i file di istruzioni dei progetti: `--safe-mode` spegne `CLAUDE.md` per Claude (D-050), `project_doc_max_bytes=0` spegne `AGENTS.md` per Codex (D-138). Il motivo è che un file dentro un repository può contenere testo piazzato da altri (un collaboratore, una dipendenza, un clone), che il modello prenderebbe per istruzioni. Quindi le regole di un progetto **non possono stare in un file del progetto**: devono venire da Arianna, scritte o approvate dall'utente.
+
+**Proposta di Claude.**
+1. **Le regole stanno in Arianna, una scheda per progetto.** Testo dell'utente, salvato fuori dal repository del progetto (in `data/` o nel contenitore di I-11, con la sua etichetta). Arianna le mette in testa a ogni delega su quel progetto, **identiche per Claude e per Codex**, come parte del testo che passa dal gateway: quindi solo regole fino a L1 (una regola che nomina un cliente o un importo resta locale).
+2. **Due tipi di regole, e la differenza conta.**
+   - **Regole garantite dal codice di Arianna:** non dipendono dalla buona volontà del modello. *Mai leggere segreti* lo fanno già i profili di confinamento e D-135 (i file segreti sono negati anche con la shell). *Niente commit* e *niente co-autore*: i commit sul progetto li fa Arianna (`commitChanges`), non il modello; la regola diventa un interruttore del progetto (Arianna non fa commit e lascia le modifiche da rivedere, oppure li fa senza righe "Co-Authored-By" e con l'autore che scegli). *Agenti in parallelo secondo la quota* è una regola dell'orchestratore di Arianna (quanti passi lanciare insieme), non del modello: un'impostazione del progetto con la regola della quota di CLAUDE.md come base.
+   - **Regole date al modello come testo:** stile del codice, come scrivere gli IM, commenti e messaggi senza tracce di IA, convenzioni del cliente. Il modello le segue quasi sempre, ma non è una garanzia: la revisione (il Reviewer di D-140) le può controllare.
+3. **La bozza quando si aggiunge un progetto.** Il modello locale legge la cartella (linguaggi, package.json, presenza di git, cartelle di I-11) e propone una scheda di regole partendo da un modello dell'utente, con le regole garantite già impostate in modo prudente (segreti negati, nessun commit automatico). L'utente la corregge e la approva; senza approvazione il progetto non riceve deleghe.
+4. **Un modello di regole dell'utente.** Le regole che valgono per tutti i progetti (per esempio "niente co-autore", "commenti in inglese") stanno in un modello comune che ogni bozza copia; poi ogni progetto le può cambiare.
+5. **Per Claude Code e Codex fuori da Arianna** (come `pnpm dev:codex` di D-143, non unito): si può anche esportare la scheda in un `CLAUDE.md` e un `AGENTS.md` uguali, ma resta una comodità, non la fonte.
+
+**Tappe proposte.**
+- **R1:** scheda delle regole del progetto (testo e interruttori garantiti: commit, co-autore, parallelismo), messa in testa alle deleghe per Claude e Codex.
+- **R2:** bozza proposta dal modello locale quando si aggiunge un progetto, partendo dal modello comune dell'utente.
+- **R3:** il Reviewer controlla le regole di testo sul diff; esportazione facoltativa in `CLAUDE.md` e `AGENTS.md`.
+
+**Domande per l'utente.**
+1. **I commit sul progetto: chi li fa?**
+   - Contesto: Oggi è Arianna a fare il commit delle modifiche del Coder, non il modello. Hai chiesto "non committare mai" oppure "senza co-autore": si sceglie cosa succede di base nei progetti nuovi.
+   - Opzione consigliata: Arianna, senza co-autore — il commit lo fa Arianna con il tuo nome come autore e nessuna riga "Co-Authored-By"; lo vedi e puoi annullarlo.
+   - Opzione: Nessun commit — le modifiche restano nella cartella da rivedere; il commit lo fai tu.
+   - Opzione: Si sceglie per progetto — nella bozza delle regole, ogni volta.
+   - Esempio: Il Coder sistema il modulo di contatto di progetto-test-client; nel git compare "Modulo di contatto: validazione dell'email", autore tu, senza altre righe.
+2. **Codice "che non sembri scritto da un'IA": cosa vuol dire per te?**
+   - Contesto: È una regola di testo per il modello. Serve sapere cosa evitare in concreto, perché il modello la segua e il Reviewer la possa controllare.
+   - Opzione consigliata: Niente tracce e stile del progetto — niente firme o commenti tipo "generato da", commenti solo dove servono, nomi e formattazione uguali al codice che c'è già.
+   - Opzione: Lo scrivo io — elenchi tu nella risposta cosa non vuoi vedere.
+   - Esempio: Il Coder aggiunge una funzione senza il commento "// Added by AI to handle the edge case", con i nomi in camelCase come il resto del file.
+3. **Dove scrivi il modello comune delle regole?**
+   - Contesto: Le regole valide per tutti i progetti (per esempio niente co-autore) si scrivono una volta e ogni bozza le copia.
+   - Opzione consigliata: Nelle Impostazioni — una pagina "Regole dei progetti" con il modello comune; ogni progetto ha poi la sua scheda nella pagina Progetti.
+   - Opzione: Solo per progetto — niente modello comune; ogni bozza parte da zero e la scrivi ogni volta.
+   - Esempio: Nel modello comune scrivi "commenti in inglese, niente co-autore"; aggiungi progetto-test e la bozza le contiene già, più "usa pnpm" letto dal package.json.
