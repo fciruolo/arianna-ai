@@ -332,7 +332,7 @@ test('the refusals of the core in Italian', () => {
   assert.equal(cardErrorText(new ApiError(400, 'priority must be 0-4')), 'La priorità non è valida.');
   assert.equal(cardErrorText(new ApiError(400, 'planned must be YYYY-MM-DD')), 'La data di esecuzione non è valida.');
   assert.equal(cardErrorText(new ApiError(400, 'goal is longer than 10000 characters')), 'La descrizione supera i 10000 caratteri.');
-  assert.equal(cardErrorText(new ApiError(400, 'criteria is longer than 2000 characters')), '«Fatto quando» supera i 2000 caratteri.');
+  assert.equal(cardErrorText(new ApiError(400, 'criteria is longer than 2000 characters')), '«Quando è finito» supera i 2000 caratteri.');
   assert.equal(cardErrorText(new ApiError(409, 'something new')), 'Questo spostamento non è permesso.');
   assert.equal(cardErrorText(new ApiError(404, 'no such card')), 'La card non c’è più.');
 });

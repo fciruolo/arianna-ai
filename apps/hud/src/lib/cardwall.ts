@@ -595,7 +595,7 @@ const FIELD_TEXT: Record<string, string> = {
   assignee: 'chi la fa',
   due: 'scadenza',
   goal: 'descrizione',
-  criteria: '«Fatto quando»',
+  criteria: '«Quando è finito»',
   priority: 'priorità',
   planned: 'data di esecuzione',
 };
@@ -697,7 +697,7 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^priority must be/, 'La priorità non è valida.'],
   [/^planned must be/, 'La data di esecuzione non è valida.'],
   [/^goal is longer than (\d+)/, (match) => `La descrizione supera i ${match[1] ?? ''} caratteri.`],
-  [/^criteria is longer than (\d+)/, (match) => `«Fatto quando» supera i ${match[1] ?? ''} caratteri.`],
+  [/^criteria is longer than (\d+)/, (match) => `«Quando è finito» supera i ${match[1] ?? ''} caratteri.`],
   [/^body must not be empty/, 'La voce è vuota.'],
   [/^body is longer than (\d+)/, (match) => `La voce supera i ${match[1] ?? ''} caratteri.`],
   [/^title is longer than (\d+)/, (match) => `Il titolo del link supera i ${match[1] ?? ''} caratteri.`],

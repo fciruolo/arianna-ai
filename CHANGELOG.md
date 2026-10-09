@@ -7,7 +7,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Il cardwall: una pagina con le card di Arianna, quelle scritte a mano ("+ Card") e gli impegni della segretaria, in cinque colonne (Da fare, In corso, Aspetta, Da verificare, Fatto) con interruttori per separare Inbox e Falliti o nascondere una colonna; filtri per progetto, tipo, chi lo fa, scadenza ed etichetta; card da trascinare, e una vista Lista come una tabella (D-152).
-- La card completa: titolo modificabile, descrizione in markdown, "Fatto quando", priorità (Bassa-Altissima), data di esecuzione e scadenza, checklist, link, allegati (copie private sul Mac, fino a 20 MB) e la cronologia di cosa le è successo (D-152).
+- La card completa: titolo modificabile, descrizione in markdown, "Quando è finito" per le card degli agenti, priorità (Bassa-Altissima), data di esecuzione e scadenza, checklist, link, allegati (copie private sul Mac, fino a 20 MB) e la cronologia di cosa le è successo (D-152).
 - "Aspetta": una card può aspettarne altre; finché non sono fatte sta in Aspetta con "aspetta: …" e il suo lavoro non parte, poi torna da sola in Da fare e il lavoro trattenuto riprende (D-152).
 
 ## [0.38.0] - 2026-10-10

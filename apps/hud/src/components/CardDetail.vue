@@ -57,7 +57,7 @@ import MarkdownText from './MarkdownText.vue';
 /**
  * The page of a card of the cardwall (I-13, D-152), a wide panel on the
  * right. A task is changed in place: title, properties, "Descrizione" in
- * Markdown (write or preview), "Fatto quando", checklist, links, attached
+ * Markdown (write or preview), "Quando è finito" (agents' cards only), checklist, links, attached
  * files (button or drop on the panel; they stay on this Mac), the cards it
  * waits for, the moves the core allows and its history. Texts are saved on
  * blur and a moment after typing stops; "Salvato" says so. Read again
@@ -564,15 +564,15 @@ function absoluteTime(at: string): string {
             </div>
           </section>
 
-          <!-- Fatto quando -->
-          <section aria-labelledby="card-criteria-title">
-            <h3 id="card-criteria-title" class="hud-title mb-2">Fatto quando</h3>
+          <!-- When it is finished: only for an agent, who needs to know where to stop (D-152). -->
+          <section v-if="card.assignee !== 'user'" aria-labelledby="card-criteria-title">
+            <h3 id="card-criteria-title" class="hud-title mb-2">Quando è finito</h3>
             <textarea
               v-model="texts.criteria"
               :maxlength="MAX_CRITERIA"
               rows="3"
               class="field w-full resize-y px-3 py-2 text-[13px] leading-relaxed"
-              placeholder="Come si capisce che è fatta"
+              placeholder="Per l’agente: quando il lavoro si può dire finito"
               aria-labelledby="card-criteria-title"
               @input="onTextInput('criteria')"
               @focus="onTextFocus('criteria')"
