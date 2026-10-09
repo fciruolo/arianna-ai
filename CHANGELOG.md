@@ -8,6 +8,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Segretaria: i promemoria della mattina, del dopo pranzo e il resoconto di fine giornata agli orari e nei giorni della sezione Segretaria delle Impostazioni; il messaggio lo scrive Arianna con il codice nella conversazione della segretaria, una volta per giorno e momento, niente se non c'è nulla da dire, con la notifica «Arianna ha un promemoria» senza il testo degli impegni (I-12 S2, D-149).
 
+## [0.36.0] - 2026-10-09
+
+### Aggiunto
+
+- Segretaria: «sposta la banca a venerdì» sposta un impegno a un altro giorno o a un'altra ora; il giorno nuovo lo calcola il codice e la scheda di conferma mostra il vecchio (barrato) e il nuovo; l'orario resta quello di prima se non ne dici un altro (I-12, D-148).
+
 ## [0.35.0] - 2026-10-09
 
 ### Aggiunto

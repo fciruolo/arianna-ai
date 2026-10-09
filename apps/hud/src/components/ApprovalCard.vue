@@ -25,13 +25,21 @@ const budget = computed(() => {
   const { executor, model } = props.approval.detail;
   return typeof executor === 'string' && typeof model === 'string' ? { executor, model } : undefined;
 });
-/** A commitment of the secretary to note or mark done (D-144): its text, the day the core computed, the time. */
+/** A commitment of the secretary to note, mark done (D-144) or move (D-148): its text, the day the core computed, the time; for a move also where it was. */
 const commitment = computed(() => {
   if (props.approval.kind !== 'commitment') return undefined;
-  const { op, text: body, dayText, time } = props.approval.detail;
-  if ((op !== 'add' && op !== 'done') || typeof body !== 'string' || typeof dayText !== 'string') return undefined;
-  return { op, body, dayText, time: typeof time === 'string' ? time : null };
+  const { op: raw, text: body, dayText, time, fromDayText, fromTime } = props.approval.detail;
+  const op = (['add', 'done', 'move'] as const).find((name) => name === raw);
+  if (op === undefined || typeof body !== 'string' || typeof dayText !== 'string') return undefined;
+  const from = op === 'move' && typeof fromDayText === 'string' ? { dayText: fromDayText, time: typeof fromTime === 'string' ? fromTime : null } : undefined;
+  return { op, body, dayText, time: typeof time === 'string' ? time : null, from };
 });
+const COMMITMENT_NOTE = {
+  add: 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
+  done: 'Confermando, l’impegno risulta fatto.',
+  move: 'Il giorno nuovo l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
+} as const;
+const COMMITMENT_YES = { add: 'Sì, segna', done: 'Sì, è fatto', move: 'Sì, sposta' } as const;
 /** The exact text the approval covers: approving lets out this text, and only this. */
 const text = computed(() => (typeof props.approval.detail.text === 'string' ? props.approval.detail.text : undefined));
 const labels = computed(() => declassifyLabels(props.approval.detail));
@@ -72,13 +80,15 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         </ul>
       </template>
       <template v-else-if="commitment !== undefined">
+        <p v-if="commitment.from !== undefined" class="text-muted line-through">
+          <span class="sr-only">Prima: </span>{{ commitment.from.dayText }}<template v-if="commitment.from.time !== null">, alle {{ commitment.from.time }}</template>
+        </p>
         <p class="text-[15px]">
+          <span v-if="commitment.from !== undefined" class="sr-only">Nuovo giorno: </span>
           <strong>{{ commitment.dayText }}</strong><template v-if="commitment.time !== null">, alle {{ commitment.time }}</template>
         </p>
         <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ commitment.body }}</p>
-        <p class="text-xs text-muted">
-          {{ commitment.op === 'add' ? 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.' : 'Confermando, l’impegno risulta fatto.' }}
-        </p>
+        <p class="text-xs text-muted">{{ COMMITMENT_NOTE[commitment.op] }}</p>
       </template>
       <p v-else-if="budget !== undefined">
         Il passo delegato userebbe <strong>{{ MODEL_TEXT[budget.model] ?? budget.model }}</strong> su {{ EXECUTOR_TEXT[budget.executor] ?? budget.executor }},
@@ -89,7 +99,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
 
     <div class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ commitment === undefined ? 'Approva' : commitment.op === 'add' ? 'Sì, segna' : 'Sì, è fatto' }}
+        <Icon name="approve" :size="16" />{{ commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
       <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ commitment === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
