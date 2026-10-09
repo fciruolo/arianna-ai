@@ -55,8 +55,10 @@ export function approvalNotice(kind: string, action: string, title?: string): st
         ? 'Approvazione richiesta: il Coder lavorerebbe in una cartella con modifiche non committate.'
         : kind === 'budget'
           ? 'Approvazione richiesta: budget per un modello che costa oltre il piano.'
-          : `Approvazione richiesta: ${actionName(action)}.`;
+          : kind === 'commitment'
+            ? 'La segretaria aspetta una conferma: si dà solo dalla chat web.'
+            : `Approvazione richiesta: ${actionName(action)}.`;
   const task = title === undefined || oneLine(title) === '' ? '' : `\nTask: ${oneLine(title)}`;
-  const tail = kind === 'declassify' ? '' : '\nIl dettaglio è nella chat web.';
+  const tail = kind === 'declassify' || kind === 'commitment' ? '' : '\nIl dettaglio è nella chat web.';
   return `${head}${task}${tail}`;
 }

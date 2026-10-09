@@ -142,6 +142,10 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     for (const side of toolSpec(tool).opens) {
       if (!trifecta[side]) fail(`tool ${tool} opens ${side}, which the card declares removed`);
     }
+    // Private by nature (D-144): never on a card a cloud executor runs, nor on one that may not read L2.
+    if (toolSpec(tool).localOnly === true && (hasCloud || isAtMost(maxLabel, 'L1'))) {
+      fail(`tool ${tool} reads private data: only a card with max_label L2 or above that runs on the local model alone may list it`);
+    }
   }
 
   const autonomy = oneOf(card.autonomy, AUTONOMY_LEVELS, `${where}: autonomy`);

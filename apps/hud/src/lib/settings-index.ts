@@ -50,6 +50,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       { id: 'voice', slug: 'voce', title: 'Voce', behaviour: 'now' },
       { id: 'voice-trial', slug: 'provino-della-voce', title: 'Provino della voce', behaviour: 'now', page: VOICE_TRIAL_PATH },
       { id: 'notifications', slug: 'notifiche', title: 'Notifiche', behaviour: 'now' },
+      // The secretary (I-12, D-144): reminders on or off, the three moments, the days.
+      { id: 'secretary', slug: 'segretaria', title: 'Segretaria', behaviour: 'now' },
     ],
   },
   {
@@ -115,6 +117,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   agents: ['characters', 'personas', 'agents', 'participants'],
   voice: ['voice'],
   notifications: ['notifications'],
+  secretary: ['secretary'],
   executors: ['executors'],
   projects: ['projects'],
   servers: ['endpoints'],

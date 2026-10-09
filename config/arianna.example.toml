@@ -216,6 +216,21 @@ port = 7420
 # failures = true
 # quiet = "22:00-07:00"
 
+# The secretary (I-12, D-144): the reminders of your commitments in three
+# moments of the day, local time and in this order: `morning` (the
+# commitments of the day), `afternoon` (those still open), `evening` (the
+# report of those not done); `days` among mon, tue, wed, thu, fri, sat,
+# sun. A reminder never carries the text of a commitment outside this
+# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a
+# restart.
+#
+# [secretary]
+# enabled = true
+# morning = "09:00"
+# afternoon = "14:30"
+# evening = "18:30"
+# days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
 # What the web chat says this installation is (D-089): development while the
 # database uses the development passwords or while mode = "development";
 # production only with real passwords and no such line. Applies without a

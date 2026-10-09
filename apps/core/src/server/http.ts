@@ -15,6 +15,8 @@ import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { localDay } from '../commitment-dates.ts';
+import { CommitmentError, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
   archiveConversation,
@@ -1051,6 +1053,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks),
     ...projectServiceRoutes(sql, approvedProjects, services),
+    ...secretaryRoutes(sql),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1346,6 +1349,42 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
       } catch (error) {
         // Decided meanwhile (another tab, Telegram): the database refused the second decision.
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
+        throw error;
+      }
+    }),
+  ];
+}
+
+/**
+ * The secretary (I-12, D-144): its conversation, opened by the "Segretaria"
+ * button (one only, created the first time), and the commitments for the
+ * list beside it with the "Fatto" button. The web chat is local: the text of
+ * a commitment (L2) goes nowhere else; notifications never carry it.
+ */
+function secretaryRoutes(sql: Sql): Route[] {
+  return [
+    route('POST', '/api/secretary', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: { conversation: await openSecretary(sql) } };
+    }),
+    // The open commitments, the late ones first, and those of today in any status: written from SQL.
+    route('GET', '/api/commitments', async () => {
+      const today = localDay();
+      const [open, ofToday] = await Promise.all([listCommitments(sql), listCommitments(sql, { from: today, to: today })]);
+      const seen = new Set(open.map((item) => item.id));
+      const commitments = [...open, ...ofToday.filter((item) => !seen.has(item.id))].sort((a, b) =>
+        a.day === b.day ? (a.time ?? '99:99').localeCompare(b.time ?? '99:99') : a.day.localeCompare(b.day),
+      );
+      return { body: { today, commitments } };
+    }),
+    // "Fatto": the click is the user's confirmation.
+    route('POST', '/api/commitments/:id/done', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      try {
+        return { body: { commitment: await markDone(sql, id) } };
+      } catch (error) {
+        if (error instanceof CommitmentError) throw new HttpError(error.code === 'not-found' ? 404 : 409, error.code === 'not-found' ? 'not found' : 'the commitment is not open');
         throw error;
       }
     }),

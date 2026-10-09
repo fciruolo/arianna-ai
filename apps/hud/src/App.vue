@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import CallView from './components/CallView.vue';
 import ChatView from './components/ChatView.vue';
+import SecretaryPanel from './components/SecretaryPanel.vue';
 import IncognitoClosed from './components/IncognitoClosed.vue';
 import IncognitoEndDialog from './components/IncognitoEndDialog.vue';
 import IncomingCall from './components/IncomingCall.vue';
@@ -69,7 +70,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { commitmentsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -583,6 +584,16 @@ async function openConversation(id: string): Promise<void> {
   await store.open(id);
 }
 
+/** The secretary's conversation (D-144) is the one open on the chat page: its list of commitments shows above it. */
+const secretaryOpen = computed(() => page.value === 'chat' && current.value?.secretary === true);
+
+/** "Segretaria" of the left bar (D-144): its one private conversation, created the first time. */
+async function openSecretary(): Promise<void> {
+  showSidebar.value = false;
+  page.value = 'chat';
+  await store.openSecretary();
+}
+
 async function createConversation(mode: 'work' | 'private', project?: string): Promise<void> {
   showSidebar.value = false;
   page.value = 'chat';
@@ -657,10 +668,12 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :call-blocked="callBlocked"
       :call-starting="callStarting || calling"
       :dev-pending="devPending"
+      :secretary-open="secretaryOpen"
       @fold="foldSidebar"
       @home="openChat(); showSidebar = false"
       @search="openSearch"
       @create="openNew"
+      @secretary="openSecretary"
       @thoughts="openThoughts"
       @knowledge="openKnowledge()"
       @office="openOffice"
@@ -859,8 +872,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :characters="characters?.agents"
         :agents="directAgents"
       />
+      <template v-else-if="chat !== null && current !== undefined">
+      <!-- The secretary's conversation (D-144): its commitments above it, with "Fatto". -->
+      <SecretaryPanel v-if="current.secretary === true" :version="commitmentsVersion" />
       <ChatView
-        v-else-if="chat !== null && current !== undefined"
         class="min-h-0 flex-1"
         :chat="chat"
         :conversation="current"
@@ -891,6 +906,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @legend="showLegend = true"
         @open-knowledge="openKnowledge"
       />
+      </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
         <div class="flex max-w-sm flex-col items-center gap-4">
           <PixelAgent :choice="characters?.agents.arianna" :pose="poseFor('arianna')" :scale="3" bubble label="Arianna" />

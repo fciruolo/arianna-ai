@@ -257,7 +257,7 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
       if (decision === undefined) return;
       const approval = await loadApproval(tx, decision.approvalId);
       if (approval === undefined) return;
-      if (approval.kind === 'declassify') result.outcome = 'web-only';
+      if (approval.kind === 'declassify' || approval.kind === 'commitment') result.outcome = 'web-only';
       else if (approval.state !== 'pending') result.outcome = 'decided';
       else {
         await recordDecisionIn(tx, approval.id, decision.state, 'telegram');
@@ -339,7 +339,8 @@ export async function startTelegram(options: TelegramOptions): Promise<TelegramC
     // The title comes from the user's message: shown only when the task is at most L1.
     // The detail is never shown, whatever its label: it is read in the web chat.
     const title = task !== undefined && isAtMost(task.label, 'L1') ? task.title : undefined;
-    const buttons = approval.kind === 'declassify' ? undefined : (['approved', 'rejected'] as const);
+    // A declassification and a commitment of the secretary (D-144) are decided in the web chat only.
+    const buttons = approval.kind === 'declassify' || approval.kind === 'commitment' ? undefined : (['approved', 'rejected'] as const);
 
     // The notice is written by the channel from the approval's metadata and the
     // title: its context has read the title's label only, not the whole task.

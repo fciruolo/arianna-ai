@@ -25,6 +25,13 @@ const budget = computed(() => {
   const { executor, model } = props.approval.detail;
   return typeof executor === 'string' && typeof model === 'string' ? { executor, model } : undefined;
 });
+/** A commitment of the secretary to note or mark done (D-144): its text, the day the core computed, the time. */
+const commitment = computed(() => {
+  if (props.approval.kind !== 'commitment') return undefined;
+  const { op, text: body, dayText, time } = props.approval.detail;
+  if ((op !== 'add' && op !== 'done') || typeof body !== 'string' || typeof dayText !== 'string') return undefined;
+  return { op, body, dayText, time: typeof time === 'string' ? time : null };
+});
 /** The exact text the approval covers: approving lets out this text, and only this. */
 const text = computed(() => (typeof props.approval.detail.text === 'string' ? props.approval.detail.text : undefined));
 const labels = computed(() => declassifyLabels(props.approval.detail));
@@ -64,6 +71,15 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
         </ul>
       </template>
+      <template v-else-if="commitment !== undefined">
+        <p class="text-[15px]">
+          <strong>{{ commitment.dayText }}</strong><template v-if="commitment.time !== null">, alle {{ commitment.time }}</template>
+        </p>
+        <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ commitment.body }}</p>
+        <p class="text-xs text-muted">
+          {{ commitment.op === 'add' ? 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.' : 'Confermando, l’impegno risulta fatto.' }}
+        </p>
+      </template>
       <p v-else-if="budget !== undefined">
         Il passo delegato userebbe <strong>{{ MODEL_TEXT[budget.model] ?? budget.model }}</strong> su {{ EXECUTOR_TEXT[budget.executor] ?? budget.executor }},
         che costa oltre il piano. Approvando, parte con questo modello; rifiutando, Arianna lo saprà e deciderà altrimenti.
@@ -72,8 +88,10 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </div>
 
     <div class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
-      <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')"><Icon name="approve" :size="16" />Approva</button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Rifiuta</button>
+      <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
+        <Icon name="approve" :size="16" />{{ commitment === undefined ? 'Approva' : commitment.op === 'add' ? 'Sì, segna' : 'Sì, è fatto' }}
+      </button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ commitment === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

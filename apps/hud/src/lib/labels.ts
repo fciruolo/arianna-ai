@@ -76,6 +76,9 @@ export const ACTION_TEXT: Record<string, string> = {
   send_external: 'Invio all’esterno',
   payment: 'Pagamento',
   call: 'Chiamata',
+  // The secretary (D-144).
+  'commitment.add': 'Segno questo impegno?',
+  'commitment.done': 'Lo segno come fatto?',
 };
 
 /** The cloud models as the user reads them; an alias not listed is shown as it is. */

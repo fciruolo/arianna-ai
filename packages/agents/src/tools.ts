@@ -20,6 +20,12 @@ export interface ToolSpec {
   opens: readonly TrifectaSide[];
   /** Approval needed before each use; the card must list it in `approvals`. */
   approval?: ApprovalAction;
+  /**
+   * The tool reads or writes private data of the user by its nature (the
+   * commitments of the secretary, L2, D-144): only a card that reads L2 and
+   * runs on the local model alone may list it.
+   */
+  localOnly?: boolean;
 }
 
 export const TOOLS = {
@@ -35,6 +41,11 @@ export const TOOLS = {
   // The executor that receives the step is judged by its own card.
   'task.delegate': { description: 'Hand a step to another agent or executor, through the gateway', opens: [] },
   'user.ask': { description: 'Ask the user in the web chat', opens: [] },
+  // The secretary (I-12, D-144): the commitments are L2 and never leave this machine.
+  // Noting one or marking it done waits for the user's confirmation in the web chat.
+  'commitment.add': { description: 'Note a commitment of the user with its day, after the user confirms the day', opens: [], localOnly: true },
+  'commitment.list': { description: 'List the commitments of a day, written by the core from the database', opens: [], localOnly: true },
+  'commitment.done': { description: 'Mark a commitment done, after the user confirms it', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only

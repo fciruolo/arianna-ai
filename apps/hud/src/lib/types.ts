@@ -63,6 +63,24 @@ export interface Conversation {
    * this incognito private conversation. Optional: a core without it sends none.
    */
   trialModel?: string | null;
+  /**
+   * The conversation of the "Segretaria" button (I-12, D-144): one only,
+   * private, never in the list. Optional: a core without it sends none.
+   */
+  secretary?: boolean;
+}
+
+/** A commitment of the secretary (D-144): private (L2), shown only in this local page. */
+export interface Commitment {
+  id: string;
+  body: string;
+  /** "YYYY-MM-DD", local day of the core. */
+  day: string;
+  /** "HH:MM" or null. */
+  time: string | null;
+  status: 'open' | 'done' | 'not_done' | 'postponed' | 'cancelled';
+  reason: string | null;
+  label: Label;
 }
 
 /** A project the user approved (D-058): the folder where the Coder works, as written in arianna.toml. */
@@ -121,7 +139,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export interface Approval {
   id: string;
   taskId: string | null;
-  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace';
+  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment';
   action: string;
   detail: Record<string, unknown>;
   label: Label;

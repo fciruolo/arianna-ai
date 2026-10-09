@@ -40,6 +40,11 @@ import {
   notificationsForm,
   notificationsProblem,
   rolesBody,
+  DEFAULT_SECRETARY,
+  secretaryBody,
+  secretaryProblem,
+  WEEKDAY_TEXT,
+  WEEKDAYS,
   keptSections,
   leaveAfterProblem,
   pollAction,
@@ -62,6 +67,7 @@ import {
   type PrivacyProposal,
   type PrivacySection,
   type ProjectValues,
+  type SecretaryValues,
   type Section,
   type SettingsBody,
   type SettingsValues,
@@ -119,6 +125,7 @@ interface Forms {
   participants: number;
   voice: VoiceForm;
   notifications: NotificationsForm;
+  secretary: SecretaryValues;
   executors: string[];
   telegram: TelegramForm;
   projects: ProjectValues[];
@@ -136,6 +143,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     participants: values.participants,
     voice: voiceForm(values.voice, defaults),
     notifications: notificationsForm(values.notifications),
+    secretary: copy(values.secretary ?? DEFAULT_SECRETARY),
     executors: [...values.executors],
     telegram: telegramForm(values.telegram),
     projects: values.projects.map((project) => ({ ...project })),
@@ -143,7 +151,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -250,6 +258,7 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('sprites')) values.sprites = current.sprites;
   if (parts.includes('participants')) values.participants = current.participants;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
+  if (parts.includes('secretary')) values.secretary = secretaryBody(current.secretary);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -779,6 +788,31 @@ watch(active, () => {
               <p class="text-xs text-muted">{{ forms.notifications.quiet ? 'Ora locale; può passare la mezzanotte (per esempio dalle 22:00 alle 07:00).' : 'Nessuna ora di silenzio.' }} Le chiamate seguono i loro orari, in Voce.</p>
             </SettingsCard>
             <NotificationDevice v-if="active === 'notifications'" />
+
+            <!-- The secretary (I-12, D-144): reminders on or off, the three moments, the days; saved in arianna.toml -->
+            <SettingsCard v-if="active === 'secretary'" id="secretary" title="Segretaria" kind="now" :changed="changed('secretary')" :saved="saved === 'secretary'" :invalid="secretaryProblem(forms.secretary)" :busy="busy === 'secretary'" :error="errors.secretary" @cancel="reset('secretary')" @save="save('secretary')">
+              <p class="text-xs text-muted">
+                Dici ad Arianna le cose da fare con il pulsante «Segretaria» della barra a sinistra: le segna con il giorno, dopo che l’hai confermato. Qui scegli quando ricordartele.
+              </p>
+              <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.secretary.enabled" type="checkbox" role="switch" class="switch" />Promemoria accesi</label>
+              <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-3" :class="{ 'opacity-55': !forms.secretary.enabled }">
+                <label class="flex flex-col gap-1 text-xs text-muted">Mattina: gli impegni del giorno<input v-model="forms.secretary.morning" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Dopo pranzo: quelli ancora aperti<input v-model="forms.secretary.afternoon" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Fine giornata: cosa non è fatto<input v-model="forms.secretary.evening" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+              </div>
+              <fieldset class="flex flex-col gap-1.5" :class="{ 'opacity-55': !forms.secretary.enabled }">
+                <legend class="mb-1 text-xs text-muted">Giorni</legend>
+                <div class="flex flex-wrap gap-1.5">
+                  <label v-for="day in WEEKDAYS" :key="day" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2 py-1 text-[12.5px]">
+                    <input v-model="forms.secretary.days" type="checkbox" :value="day" />{{ WEEKDAY_TEXT[day] }}
+                  </label>
+                </div>
+              </fieldset>
+              <p class="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+                I promemoria automatici a questi orari arrivano con la prossima tappa: per ora gli orari si salvano e basta. Gli impegni li vedi e li segni fatti nella conversazione «Segretaria».
+              </p>
+              <p class="text-xs text-muted">Ora locale di questo Mac. Il testo di un impegno resta qui: non va mai al cloud né nelle notifiche fuori dal Mac.</p>
+            </SettingsCard>
 
             <!-- Agents (D-116, D-133): the cards on the left, the chosen agent in tabs, one bar to save -->
             <AgentsSettings
