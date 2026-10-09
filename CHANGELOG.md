@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.34.2] - 2026-10-09
+
+### Cambiato
+
+- Segretaria: ogni clic sul pulsante «Segretaria» apre una sessione nuova; Arianna ricorda solo i messaggi da quel clic in poi, senza riassunti delle parti vecchie, e una riga sottile nella chat segna dove comincia la sessione. Riaprire la conversazione in altri modi non la azzera (I-12, D-146).
+
 ## [0.34.1] - 2026-10-09
 
 ### Corretto
