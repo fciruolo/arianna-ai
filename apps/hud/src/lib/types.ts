@@ -68,6 +68,12 @@ export interface Conversation {
    * private, never in the list. Optional: a core without it sends none.
    */
   secretary?: boolean;
+  /**
+   * When the current session of the secretary began (D-146): the last click
+   * on its button. Arianna reads only the messages from here on. Optional: a
+   * core without it sends none.
+   */
+  secretarySessionAt?: string | null;
 }
 
 /** A commitment of the secretary (D-144): private (L2), shown only in this local page. */

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
+import { sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
@@ -41,6 +42,7 @@ import MarkdownText from './MarkdownText.vue';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
 import PixelAgent from './PixelAgent.vue';
+import SessionLine from './SessionLine.vue';
 
 const props = defineProps<{
   chat: ChatState;
@@ -92,6 +94,8 @@ const emit = defineEmits<{
 
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
+/** The secretary's conversation (D-146): the index of the first message of its current session, -1 elsewhere. */
+const session = computed(() => (props.conversation.secretary === true ? sessionStart(props.chat.messages, props.conversation.secretarySessionAt) : -1));
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
 function canCallWhenDone(task: Task | undefined): boolean {
@@ -420,24 +424,50 @@ function resize(): void {
   element.style.height = `${String(Math.min(element.scrollHeight, 192))}px`;
 }
 
-// Follow new messages and fragments, unless the user scrolled up to read.
+// The list stays at its last message until the user scrolls up to read (user's request, 2026-10-09):
+// on opening, on new messages and fragments, and when the list changes height without a scroll,
+// as when the secretary's commitments arrive above it after the messages.
+const NEAR_BOTTOM = 80;
+let stuck = true;
+function toBottom(): void {
+  if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+}
+function onListScroll(): void {
+  const element = list.value;
+  if (element !== null) stuck = element.scrollHeight - element.scrollTop - element.clientHeight < NEAR_BOTTOM;
+}
 watch(
   () => [props.chat.messages.length, props.chat.streaming.map((reply) => reply.text.length).join(), props.approvals.length],
   async () => {
-    const element = list.value;
-    if (element === null) return;
-    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
     await nextTick();
-    if (atBottom) element.scrollTop = element.scrollHeight;
+    observeContent();
+    if (stuck) toBottom();
   },
 );
 watch(
   () => props.chat.conversationId,
   async () => {
+    stuck = true;
     await nextTick();
-    if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+    observeContent();
+    toBottom();
   },
+  { immediate: true },
 );
+// The list and what it holds now: Vue may replace the content element when the conversation or
+// its messages change, so the observer follows the current one (content loaded later, as the
+// activity logs of a delegation, grows it without a new message).
+let resizes: ResizeObserver | undefined;
+function observeContent(): void {
+  resizes ??= new ResizeObserver(() => {
+    if (stuck) toBottom();
+  });
+  resizes.disconnect();
+  if (list.value === null) return;
+  resizes.observe(list.value);
+  for (const child of list.value.children) resizes.observe(child);
+}
+onBeforeUnmount(() => resizes?.disconnect());
 
 // D-091: the card or message asked for (the "Decisioni in attesa" window, or #approval-<id> / #message-<id>
 // in the address) is brought into view once on the page and lit for a moment. After the watchers above, so it wins.
@@ -448,6 +478,8 @@ async function focusAsked(): Promise<void> {
   const element = anchor === undefined ? null : document.getElementById(anchor);
   if (element === null || list.value?.contains(element) !== true) return;
   clearFocus();
+  // The card asked for wins over the bottom: the list stops following.
+  stuck = false;
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   element.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
   element.classList.add(...HIGHLIGHT_CLASSES);
@@ -481,7 +513,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
 <template>
   <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
-    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
+    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
       <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5">
         <!-- Persona header with the HUD ring -->
         <section class="flex items-center gap-4 border-b border-line pb-4">
@@ -660,6 +692,8 @@ onBeforeUnmount(() => clearInterval(clock));
         </p>
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
+          <!-- The secretary (D-146): where the session Arianna reads begins -->
+          <SessionLine v-if="index === session" />
           <!-- User -->
           <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
@@ -775,6 +809,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
+        <SessionLine v-if="session === chat.messages.length" />
 
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
