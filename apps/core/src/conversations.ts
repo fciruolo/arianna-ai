@@ -50,6 +50,12 @@ export interface Conversation {
    * Chosen at creation, never changed; null elsewhere.
    */
   trialModel: string | null;
+  /**
+   * The conversation of the "Segretaria" button (I-12, D-144): private,
+   * answered by Arianna, one only, never archived; the chat opens it from its
+   * button, never from the list. Chosen at creation, never changed.
+   */
+  secretary: boolean;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -117,7 +123,7 @@ export class ChatError extends Error {
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel",
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary,
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
@@ -246,7 +252,7 @@ export async function listConversations(
   const rows = await sql.unsafe<Conversation[]>(
     `SELECT * FROM (
        SELECT ${CONVERSATION_COLUMNS} FROM conversations c
-       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND ($2 OR c.origin = $3)
+       WHERE (c.archived_at IS NOT NULL) = $2 AND c.purged_at IS NULL AND NOT c.incognito AND NOT c.secretary AND ($2 OR c.origin = $3)
      ) listed
      ORDER BY "pinnedAt" DESC NULLS LAST, coalesce("lastMessageAt", "createdAt") DESC, id
      LIMIT $1`,
@@ -304,6 +310,8 @@ export async function archiveConversation(sql: Sql, id: string, archived: boolea
     const conversation = await lockConversation(tx, id);
     if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (archived && conversation.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be archived');
+    // The secretary's conversation goes on in time (D-144): its button opens it, the list never shows it.
+    if (archived && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary cannot be archived');
     if ((conversation.archivedAt !== null) !== archived) {
       await tx`UPDATE conversations SET archived_at = CASE WHEN ${archived}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.archived', label: 'L0', payload: { conversationId: id, archived } });
@@ -323,6 +331,7 @@ export async function pinConversation(sql: Sql, id: string, pinned: boolean): Pr
     const conversation = await lockConversation(tx, id);
     if (conversation.incognito) throw new ChatError('incognito', 'incognito');
     if (pinned && conversation.archivedAt !== null) throw new ChatError('archived', 'the conversation is archived: restore it to pin it');
+    if (pinned && conversation.secretary) throw new ChatError('invalid', 'the conversation of the secretary has its own button');
     if ((conversation.pinnedAt !== null) !== pinned) {
       await tx`UPDATE conversations SET pinned_at = CASE WHEN ${pinned}::boolean THEN now() END WHERE id = ${id}`;
       await appendEvent(tx, { kind: 'conversation.pinned', label: 'L0', payload: { conversationId: id, pinned } });

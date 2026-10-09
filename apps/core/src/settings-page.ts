@@ -5,8 +5,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
+  checkSecretary,
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
+  DEFAULT_SECRETARY,
   CONFIG_FILE,
   DEFAULT_LEAVE_AFTER,
   DEFAULT_SPRITE_MODEL,
@@ -37,6 +39,7 @@ import {
   type ModelRole,
   type NotificationsConfig,
   type ProjectSettings,
+  type SecretaryConfig,
   type Settings,
   type SpriteModel,
   type VoiceConfig,
@@ -66,7 +69,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -118,6 +121,8 @@ export interface SettingsValues {
   voice: (Omit<VoiceConfig, 'push'> & { push: { publicKey: string; subject: string } | null }) | null;
   /** `[notifications]` (I-1); `quiet` as "HH:MM-HH:MM", null for none. The defaults when the file has no section. */
   notifications: NotificationsValues;
+  /** `[secretary]` (I-12, D-144); the defaults when the file has no section. */
+  secretary: SecretaryConfig;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectSettings[];
@@ -376,6 +381,26 @@ function notificationsFromBody(value: unknown): NotificationsConfig {
   return next;
 }
 
+/** `[secretary]` from the page (D-144): the switch, three clocks "HH:MM" in order, the days. */
+function secretaryFromBody(value: unknown): SecretaryConfig {
+  const table = record(value, 'secretary');
+  only(table, ['enabled', 'morning', 'afternoon', 'evening', 'days'], 'secretary');
+  if (typeof table.enabled !== 'boolean') invalid('secretary.enabled must be true or false');
+  if (!Array.isArray(table.days) || !table.days.every((day) => typeof day === 'string')) invalid('secretary.days must be a list of days');
+  try {
+    return checkSecretary({
+      enabled: table.enabled,
+      morning: text(table.morning, 'secretary.morning'),
+      afternoon: text(table.afternoon, 'secretary.afternoon'),
+      evening: text(table.evening, 'secretary.evening'),
+      days: table.days as SecretaryConfig['days'],
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
+}
+
 function notificationsOf(notifications: NotificationsConfig | undefined): NotificationsValues {
   const { replies, approvals, failures, quiet } = notifications ?? DEFAULT_NOTIFICATIONS;
   return { replies, approvals, failures, quiet: quiet === undefined ? null : quietText(quiet) };
@@ -507,6 +532,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
     voice: voiceOf(settings.voice),
     notifications: notificationsOf(settings.notifications),
+    secretary: structuredClone(settings.secretary ?? DEFAULT_SECRETARY),
     executors: [...settings.cloud.executors],
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
     projects: settings.projects.map((project) => ({ ...project })),
@@ -527,6 +553,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.leaveAfter ?? DEFAULT_LEAVE_AFTER;
     case 'notifications':
       return settings.notifications;
+    case 'secretary':
+      return settings.secretary;
     case 'executors':
       return settings.cloud.executors;
     case 'database':
@@ -757,6 +785,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         else next.voice = voice;
       }
       if (given.notifications !== undefined) next.notifications = notificationsFromBody(given.notifications);
+      if (given.secretary !== undefined) next.secretary = secretaryFromBody(given.secretary);
       const sections = check(settings, next, catalog, ORDINARY_SECTIONS);
       if (sections.length > 0) {
         write(next, catalog, fingerprint);

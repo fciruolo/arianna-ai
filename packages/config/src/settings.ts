@@ -14,6 +14,7 @@ import type { Personas } from './personas.ts';
 import type { ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
+import { DEFAULT_SECRETARY, type SecretaryConfig } from './secretary.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
 import { asTable } from './validate.ts';
 import { DEFAULT_VOICE, VAPID_PRIVATE_KEY_REF, type VoiceConfig } from './voice.ts';
@@ -63,6 +64,8 @@ export interface Settings {
   leaveAfter?: number;
   /** `[notifications]` (I-1): written only when the file has it; absent, the defaults. */
   notifications?: NotificationsConfig;
+  /** `[secretary]` (I-12, D-144): written only when the file has it; absent, the defaults. */
+  secretary?: SecretaryConfig;
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -128,6 +131,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     ...(raw.participants === undefined ? {} : { leaveAfter: config.participants.leaveAfter }),
     // Kept absent when the file has no section: saving another card does not add it.
     ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
+    ...(raw.secretary === undefined ? {} : { secretary: structuredClone(config.secretary) }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -213,6 +217,19 @@ function notificationsSection(notifications: NotificationsConfig | undefined): s
     `failures = ${String(notifications.failures)}`,
     ...(notifications.quiet === undefined ? [] : [`quiet = ${str(quietText(notifications.quiet))}`]),
   ];
+}
+
+function secretarySection(secretary: SecretaryConfig | undefined): string[] {
+  const { enabled, morning, afternoon, evening, days } = secretary ?? DEFAULT_SECRETARY;
+  const lines = [
+    '[secretary]',
+    `enabled = ${String(enabled)}`,
+    `morning = ${str(morning)}`,
+    `afternoon = ${str(afternoon)}`,
+    `evening = ${str(evening)}`,
+    `days = ${list(days)}`,
+  ];
+  return secretary === undefined ? ['#', ...lines.map((line) => `# ${line}`)] : lines;
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -449,6 +466,15 @@ export function renderSettings(settings: Settings): string {
     '# (across midnight too); without it, no quiet hours. Absent: every kind on.',
     '# Applies without a restart.',
     ...notificationsSection(settings.notifications),
+    '',
+    '# The secretary (I-12, D-144): the reminders of your commitments in three',
+    '# moments of the day, local time and in this order: `morning` (the',
+    '# commitments of the day), `afternoon` (those still open), `evening` (the',
+    '# report of those not done); `days` among mon, tue, wed, thu, fri, sat,',
+    '# sun. A reminder never carries the text of a commitment outside this',
+    '# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a',
+    '# restart.',
+    ...secretarySection(settings.secretary),
     '',
     '# What the web chat says this installation is (D-089): development while the',
     '# database uses the development passwords or while mode = "development";',

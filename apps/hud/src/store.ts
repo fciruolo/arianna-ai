@@ -45,6 +45,8 @@ export function createChatStore() {
   /** Saved activity lines per task of the open conversation (D-083). */
   const activityCounts = ref<Record<string, number>>({});
   const approvals = ref<Approval[]>([]);
+  /** Goes up when a commitment of the secretary changes (D-144): its list reads them again. */
+  const commitmentsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
@@ -440,6 +442,16 @@ export function createChatStore() {
     if (state === null || !state.messages.some(hasCredit)) return;
     const listed = await api.listCredits(state.conversationId);
     if (chat.value?.conversationId === state.conversationId) credits.value = creditsByMessage(listed);
+  }
+
+  /** The "Segretaria" button (D-144): its conversation, created the first time, which no list holds. */
+  async function openSecretary(): Promise<void> {
+    try {
+      const conversation = await api.openSecretary();
+      await open(conversation.id, conversation);
+    } catch (cause) {
+      fail(cause);
+    }
   }
 
   /** `known`: the conversation when the page already has it, as an incognito one, which no list holds (D-136). */
@@ -937,6 +949,9 @@ export function createChatStore() {
         }
         break;
       }
+      case 'commitment.changed':
+        commitmentsVersion.value += 1;
+        break;
       case 'approval.decided':
       case 'approval.requested':
         work.push(refreshApprovals());
@@ -1056,7 +1071,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { commitmentsVersion, openSecretary, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

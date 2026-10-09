@@ -38,6 +38,12 @@ const REASONS: Record<string, string> = {
   'the local model keeps repeating the same call': 'il modello locale ripete la stessa chiamata',
   'approval needed: budget': 'serve la tua approvazione per il budget del modello',
   'approval needed: workspace': 'la cartella del progetto ha modifiche non committate: serve il tuo via libera',
+  // The secretary (D-144).
+  'the agent asked for an invalid confirmation': 'l’agente ha chiesto una conferma non valida',
+  'approval needed: commitment.add': 'aspetta la tua conferma per segnare l’impegno',
+  'approval needed: commitment.done': 'aspetta la tua conferma per segnare l’impegno come fatto',
+  'the secretary answers only in its conversation': 'la segretaria risponde solo nella sua conversazione',
+  'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
 };
 
 function actionName(action: string): string {

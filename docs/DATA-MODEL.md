@@ -1,6 +1,6 @@
 # Modello dati (bozza PostgreSQL)
 
-`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`); `calls` da D-066 (`0015_calls.sql`); `push_subscriptions` dalla terza parte di D-066 (`0016_push.sql`); `calls.rang_at` dalla sua revisione (`0017_calls_rang.sql`); `conversation_summaries` da D-077 (`0018_conversation_summaries.sql`); `model_evals` da D-081 (`0019_model_evals.sql`); `task_delegations.files` da D-082 (`0020_delegation_files.sql`); `task_activities` da D-083 (`0021_task_activities.sql`); `conversations.pinned_at` da D-089 (`0022_conversation_pins.sql`); `tasks.note` da `task.update` del task 1.10 (`0023_task_notes.sql`); `task_delegations.base_commit` da D-117 (`0024_delegation_base_commit.sql`); il run locale di una delega da D-119 tappa T3 (`0025_local_delegations.sql`); `conversation_participants` da D-125 (`0026_conversation_participants.sql`); `conversations.agent` da D-111 tappa A (`0027_conversation_agent.sql`); `task_delegations.context_tokens` da D-111 tappa A2 (`0028_delegation_context.sql`); `conversations.agent` per ogni agente da D-111d (`0029_conversation_any_agent.sql`); `project_hidden_consents` da D-135 (`0030_project_hidden_consents.sql`); `conversations.incognito` e `purge_incognito` da D-136 (`0031_incognito.sql`); il rifiuto di deleghe e turni per una conversazione cancellata dalla revisione di D-136 (`0032_incognito_delegations.sql`); `conversations.trial_model` da D-142 (`0035_trial_conversations.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
+`events`, `tasks` e `jobs` esistono dal task 0.3 (`apps/core/migrations/0001_init.sql`); `approvals`, `label_changes` e `gateway_log` dal task 1.2 (`0002_gateway.sql`); `runs`, `tasks.waiting_reason` e la chiave dei job dal task 1.8 (`0003_runs.sql`); `conversations`, `messages`, `tasks.conversation_id` e la notifica degli eventi dal task 1.11 (`0004_chat.sql`); `router_decisions` dal task 1.7 (`0005_router_decisions.sql`); `telegram_state` dal task 1.15 (`0006_telegram.sql`); il ruolo `arianna_app` e i suoi permessi dal task 1.13 (`0007_app_role.sql`); `task_turns` dal task 1.10 (`0008_task_turns.sql`); `task_delegations`, `conversations.model` e `messages.agent` dalla seconda parte del 1.10 (`0009_delegations.sql`); `task_errors` e le colonne della chat di sistema da D-064 (`0013_task_errors.sql`); `messages.model` e i vincoli di Claude nella chat di sistema dalla seconda parte di D-064 (`0014_claude_direct.sql`); `calls` da D-066 (`0015_calls.sql`); `push_subscriptions` dalla terza parte di D-066 (`0016_push.sql`); `calls.rang_at` dalla sua revisione (`0017_calls_rang.sql`); `conversation_summaries` da D-077 (`0018_conversation_summaries.sql`); `model_evals` da D-081 (`0019_model_evals.sql`); `task_delegations.files` da D-082 (`0020_delegation_files.sql`); `task_activities` da D-083 (`0021_task_activities.sql`); `conversations.pinned_at` da D-089 (`0022_conversation_pins.sql`); `tasks.note` da `task.update` del task 1.10 (`0023_task_notes.sql`); `task_delegations.base_commit` da D-117 (`0024_delegation_base_commit.sql`); il run locale di una delega da D-119 tappa T3 (`0025_local_delegations.sql`); `conversation_participants` da D-125 (`0026_conversation_participants.sql`); `conversations.agent` da D-111 tappa A (`0027_conversation_agent.sql`); `task_delegations.context_tokens` da D-111 tappa A2 (`0028_delegation_context.sql`); `conversations.agent` per ogni agente da D-111d (`0029_conversation_any_agent.sql`); `project_hidden_consents` da D-135 (`0030_project_hidden_consents.sql`); `conversations.incognito` e `purge_incognito` da D-136 (`0031_incognito.sql`); il rifiuto di deleghe e turni per una conversazione cancellata dalla revisione di D-136 (`0032_incognito_delegations.sql`); `conversations.trial_model` da D-142 (`0035_trial_conversations.sql`); `commitments`, `conversations.secretary` e le approvazioni `commitment` da D-144 (`0036_commitments.sql`). Per queste tabelle la definizione che fa fede è la migrazione. Le altre tabelle qui sotto sono una bozza e nascono con il task che le usa. Le migrazioni sono file SQL numerati, solo in avanti, applicati da un runner proprio (D-028): una migrazione già applicata non si modifica, se ne aggiunge una nuova.
 
 ```sql
 CREATE TYPE privacy_label AS ENUM ('L0','L1','L2','L3');
@@ -40,6 +40,7 @@ CREATE TABLE conversations (
   purged_at       timestamptz,                              -- testi cancellati per sempre (purge_conversation o purge_incognito); non compare più
   incognito       boolean NOT NULL DEFAULT false,           -- conversazione incognita (D-136): scelta alla creazione, immutabile; senza titolo, mai archiviata né fissata
   trial_model     text,                                     -- "Prova in chat" (D-142): id del catalogo del modello locale che risponde da solo; solo in un'incognita privata senza agente, immutabile
+  secretary       boolean NOT NULL DEFAULT false,           -- la conversazione del pulsante "Segretaria" (D-144): una sola non cancellata (indice unico), privata, dell'utente, di Arianna, mai incognita né archiviata, titolo "Segretaria" dalla nascita; immutabile; mai nella lista
   origin          text NOT NULL DEFAULT 'user',             -- user | system: chat di sistema, aperta dal sistema (D-064)
   system_reason   text,                                     -- perché il sistema l'ha aperta: failure (task fallito); solo con origin = system
   source_task_id  uuid REFERENCES tasks(id),                -- il task di cui parla; una sola chat di sistema aperta per task e motivo
@@ -145,9 +146,10 @@ CREATE TABLE runs (
 CREATE TABLE approvals (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id     uuid REFERENCES tasks(id),                    -- facoltativo: impostazioni e declassamenti
-  kind        text NOT NULL,                                -- action | declassify | budget | setting | workspace (0010: cartella con modifiche non committate, D-056)
-  action      text NOT NULL,
-  detail      jsonb NOT NULL,                               -- per declassify: text, sha256, from, to
+  kind        text NOT NULL,                                -- action | declassify | budget | setting | workspace (0010: cartella con modifiche non committate, D-056) | commitment (0036: conferma della segretaria, D-144)
+  action      text NOT NULL,                                -- per commitment: commitment.add | commitment.done
+  detail      jsonb NOT NULL,                               -- per declassify: text, sha256, from, to; per commitment: op, text, day, time, dayText, step (e commitmentId per done)
+  -- commitment: etichetta almeno L2, sempre con un task, si decide solo da web; approvata, scrive o chiude l'impegno nella stessa transazione
   state       text NOT NULL DEFAULT 'pending',              -- pending|approved|rejected|expired
   requested_at timestamptz NOT NULL DEFAULT now(),
   decided_at  timestamptz,                                  -- presente se e solo se non è pending
@@ -367,6 +369,25 @@ CREATE TABLE project_hidden_consents (   -- D-135: "Mostra nascosti" della pagin
 -- e ogni "Mostra" di un segreto sono eventi (project.hidden_shown, project.hidden_closed,
 -- project.secret_revealed) con progetto e percorso, mai il contenuto. arianna_app: SELECT,
 -- INSERT, UPDATE.
+
+CREATE TABLE commitments (   -- D-144: gli impegni della segretaria (I-12, tappa S1)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  body text NOT NULL,                    -- il testo dell'utente, una riga, fino a 500 caratteri; immutabile
+  day date NOT NULL,                     -- il giorno calcolato dal codice (ora locale della macchina) e confermato dall'utente
+  at_time time,                          -- l'ora, solo se detta
+  status text NOT NULL DEFAULT 'open',   -- open | done | not_done | postponed | cancelled
+  reason text,                           -- perché non è fatto (tappa S3)
+  label privacy_label NOT NULL DEFAULT 'L2',  -- almeno L2, solo crescente: mai verso il cloud
+  conversation_id uuid REFERENCES conversations(id),  -- la conversazione d'origine
+  task_id uuid REFERENCES tasks(id),
+  approval_id uuid UNIQUE REFERENCES approvals(id),   -- la conferma che l'ha creato: una volta sola
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  done_at timestamptz                    -- presente se e solo se status = done
+);
+-- Trigger commitments_guard: testo e origine non cambiano, l'etichetta non scende. Gli elenchi
+-- ("cosa ho domani?") li scrive il codice da questa tabella, mai il modello. Evento
+-- commitment.changed con id e stato, mai il testo. arianna_app: SELECT, INSERT, UPDATE.
 
 CREATE TABLE documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

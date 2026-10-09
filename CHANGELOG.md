@@ -4,6 +4,22 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Barra a sinistra: il pulsante «Segretaria» apre la sua conversazione privata, una sola che continua nel tempo, dove risponde Arianna (I-12 S1, D-144).
+- La segretaria segna un impegno detto in chat ("giovedì alle 15 devo andare in banca"): il giorno lo calcola il codice dalle tue parole e lo mostra in una scheda da confermare prima di salvarlo (I-12 S1, D-144).
+- «Cosa ho domani?»: l'elenco degli impegni lo scrive il codice dal database, mai il modello; anche "oggi", un giorno della settimana, "questa settimana", "i prossimi 7 giorni", "questo mese" e "il mese prossimo"; con un intervallo che non sa calcolare Arianna non chiede più la data di oggi (I-12 S1, D-144).
+- Un impegno si segna fatto con il pulsante «Fatto» nell'elenco sopra la conversazione della segretaria, o dicendolo in chat con conferma (I-12 S1, D-144).
+- Impostazioni → Segretaria: promemoria accesi o spenti, i tre orari (9:00, 14:30, 18:30) e i giorni, salvati in `arianna.toml`; i promemoria automatici arrivano con la tappa S2 (I-12 S1, D-144).
+
+### Corretto
+
+- Chat: scendendo in fondo a una conversazione lunga scorreva tutta la pagina, finendo sotto i menu; i testi per i lettori di schermo delle liste lunghe allungavano la pagina oltre lo schermo. Ogni area che scorre ora li tiene dentro (regola globale in `style.css`, segnalazione dell'utente del 2026-10-09).
+
+### Sicurezza
+
+- Gli impegni sono privati (almeno L2): la conversazione della segretaria non delega a nessun agente, gli strumenti degli impegni si danno solo a schede che girano sul modello locale, la conferma si decide solo dalla chat web e notifiche ed eventi non ne portano mai il testo (I-12 S1, D-144).
+
 ## [0.32.0] - 2026-10-07
 
 ### Aggiunto
