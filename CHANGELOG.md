@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.38.0] - 2026-10-10
+
 ### Aggiunto
 
 - Il resoconto di fine giornata della segretaria: rispondendo al promemoria della sera ("il pane rimandalo a domani, il forno era chiuso; le piante no, ero fuori") Arianna propone una sola scheda "Resoconto" con l'esito di ogni impegno (fatto, non fatto, rinviato al giorno calcolato dal codice) e il motivo; confermata, annota tutto, e un rinvio crea l'impegno nel giorno nuovo. Anche "rimandalo a domani, ero fuori" detto in un altro momento diventa un rinvio con il suo motivo. Il promemoria del mattino parte dai rinvii, l'elenco mostra esiti e motivi (D-151).
