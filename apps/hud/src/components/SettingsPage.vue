@@ -622,7 +622,7 @@ watch(active, () => {
           :aria-current="active === item.id ? 'page' : undefined"
           @click.prevent="open(item)"
         >
-          <span class="min-w-0 flex-1">{{ item.title }}</span>
+          <span class="min-w-0 flex-1 truncate" :title="item.title">{{ item.title }}</span>
           <span
             v-if="item.id === 'dev-progress' && devDot !== null"
             role="img"
