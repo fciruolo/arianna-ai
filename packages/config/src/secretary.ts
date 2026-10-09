@@ -8,7 +8,7 @@ import { asArray, asString, asTable, ConfigError, onlyKeys } from './validate.ts
  * 18:30, every day, weekend included (the user's choice of 2026-10-09).
  * The times are local time and come in that order. Not a privacy setting:
  * a reminder never carries the text of a commitment outside this machine.
- * Applies without a restart; the reminders themselves come with tappa S2.
+ * Applies without a restart: the ticker of tappa S2 (D-149) reads it at each tick.
  */
 export const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 export type WeekdayKey = (typeof WEEKDAY_KEYS)[number];

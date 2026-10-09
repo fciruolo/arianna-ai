@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
   for (const timer of timers.values()) clearTimeout(timer.handle);
 });
 
-const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(--danger)' } as const;
+const COLOUR = { reply: 'var(--accent)', approval: 'var(--warn)', failure: 'var(--danger)', reminder: 'var(--accent)' } as const;
 </script>
 
 <template>

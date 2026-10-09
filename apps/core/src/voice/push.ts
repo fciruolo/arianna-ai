@@ -105,7 +105,7 @@ export function isGone(status: number): boolean {
 }
 
 /** What a push is about: the service worker learns it from the core, never from the push. */
-export type PushKind = 'call' | 'reply' | 'approval' | 'failure';
+export type PushKind = 'call' | 'reply' | 'approval' | 'failure' | 'reminder';
 
 export interface Pusher {
   readonly publicKey: string;
@@ -121,6 +121,7 @@ export const PUSH_TEXTS: Readonly<Record<PushKind, string>> = {
   reply: 'Arianna ha risposto',
   approval: 'Arianna aspetta una tua decisione',
   failure: 'Un lavoro è fallito',
+  reminder: 'Arianna ha un promemoria',
 };
 
 export interface PusherOptions {

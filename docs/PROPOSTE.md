@@ -2604,7 +2604,7 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 
 **Tappe proposte.**
 - **S1:** tabella degli impegni, strumento di Arianna per segnarli (con conferma della data), pulsante "Segretaria" e la sua conversazione; "cosa ho domani?".
-- **S2:** il ticker con i tre momenti (mattina, dopo pranzo, fine giornata) e le notifiche; è anche la base delle routine di D-110.
+- **S2:** il ticker con i tre momenti (mattina, dopo pranzo, fine giornata) e le notifiche; è anche la base delle routine di D-110. In costruzione (D-149): recupero di un momento perso solo fino al successivo dello stesso giorno, una volta per giorno e momento con l'evento `schedule.fired`, notifica di tipo `reminder`.
 - **S3:** il resoconto di fine giornata con i motivi e i rinvii.
 - **S4 (facoltative):** promemoria a voce con la chiamata, sintesi settimanale, collegamento ai progetti di I-11 (impegni per cliente).
 
