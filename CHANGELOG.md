@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.33.0] - 2026-10-09
+
 ### Aggiunto
 
 - Barra a sinistra: il pulsante «Segretaria» apre la sua conversazione privata, una sola che continua nel tempo, dove risponde Arianna (I-12 S1, D-144).
