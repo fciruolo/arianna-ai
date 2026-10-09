@@ -37,9 +37,10 @@ import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
-import { privateKnowledge } from '../project-knowledge.ts';
+import { KnowledgeError, privateKnowledge } from '../project-knowledge.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
+import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 
@@ -367,7 +368,10 @@ export const DIRECT_LOCAL_TEXT = [
 export const NO_PROJECT = 'no project for the Coder: the user opens a work conversation with one of the approved projects (pnpm arianna:init --reconfigure adds one)';
 
 /** Opens the project folder of a delegation, or says why the step cannot run there. */
-async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ opened: OpenedRepository; repo: string; label: Label } | { error: string }> {
+async function folderOf(
+  env: DelegateEnv,
+  delegation: Delegation,
+): Promise<{ opened: OpenedRepository; repo: string; label: Label; container: string; part: string | null } | { error: string }> {
   const repo = delegation.repo;
   if (repo === null) return { error: NO_PROJECT };
   const config = env.settings();
@@ -401,7 +405,7 @@ async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ ope
     const kinds = opened.decision.decision === 'block' ? [...new Set(opened.decision.findings.map((finding) => finding.kind))].join(', ') : '';
     return { error: `the repository ${repo} cannot go to the cloud (${opened.decision.reason}${kinds === '' ? '' : `: ${kinds}`})` };
   }
-  return { opened, repo, label: project.label };
+  return { opened, repo, label: project.label, container: container.name, part: project.part };
 }
 
 /** The latest budget approval asked for this delegation. */
@@ -530,6 +534,85 @@ async function close(env: DelegateEnv, task: Task, step: number, delegation: Del
   await show(env.sql, task, step, 'error', result.replace(/^error: [^:]+: /, ''));
 }
 
+/** What the diary of a work reads besides the delegation (I-15, D-147). */
+interface WorkRecord {
+  task: Task;
+  runId: string;
+  delegation: Delegation;
+  executor: CloudExecutor;
+  alias: string;
+  container: string;
+  part: string | null;
+  /** The project's label, or the brief's when higher: what the paths and the brief carry. */
+  label: Label;
+  outcome: WorkOutcome;
+  reason?: string;
+  files?: readonly FileChange[];
+  commit?: string;
+  /** The report as the chat stored it, with its label. */
+  report?: { text: string; label: Label };
+}
+
+/** The address of a conversation in the chat that the core serves. */
+export function conversationUrl(server: { host: string; port: number }, conversationId: string): string {
+  const host = server.host.includes(':') ? `[${server.host}]` : server.host;
+  return `http://${host}:${String(server.port)}/c/${conversationId}`;
+}
+
+/**
+ * The entry of the diary of a work on a project (I-15, D-147), written by the
+ * code: the brief only when the gateway let it out towards the cloud in this
+ * run (a row in gateway_log), the report only as the chat stored it. Never in
+ * an incognito conversation (D-136: nothing outlives it). Never fails the
+ * work: an error is logged with its kind only.
+ */
+async function recordWork(env: DelegateEnv, work: WorkRecord): Promise<void> {
+  try {
+    const { sql } = env;
+    if (work.task.conversationId !== null && (await isIncognitoConversation(sql, work.task.conversationId))) return;
+    const [left] = await sql<{ left: boolean }[]>`
+      SELECT EXISTS (SELECT FROM gateway_log WHERE run_id = ${work.runId} AND target_kind = 'executor' AND locality = 'cloud' AND decision = 'allow') AS left`;
+    const [reported] = await sql<{ model: string | null }[]>`
+      SELECT payload ->> 'model' AS model FROM events WHERE run_id = ${work.runId} AND kind = 'executor.model' ORDER BY id DESC LIMIT 1`;
+    const config = env.settings();
+    const label = work.report === undefined ? work.label : maxLabel(work.label, work.report.label);
+    writeWorkDiary(
+      config.projects,
+      work.container,
+      { home: config.home, rules: env.rules },
+      {
+        at: new Date(),
+        agent: work.delegation.agent,
+        executor: work.executor,
+        alias: work.alias,
+        ...(typeof reported?.model === 'string' ? { model: reported.model } : {}),
+        project: work.container,
+        part: work.part,
+        outcome: work.outcome,
+        ...(work.reason === undefined ? {} : { reason: work.reason }),
+        ...(left?.left === true ? { request: work.delegation.brief } : {}),
+        ...(work.files === undefined ? {} : { files: work.files }),
+        ...(work.commit === undefined ? {} : { commit: work.commit }),
+        ...(work.report === undefined ? {} : { report: work.report.text }),
+        ...(work.task.conversationId === null ? {} : { conversationUrl: conversationUrl(config.server, work.task.conversationId) }),
+        label,
+      },
+    );
+  } catch (error) {
+    // The work stays as it ended; the log says only the kind of error, never a text of the work.
+    console.error(`work diary not written: ${error instanceof KnowledgeError ? error.code : error instanceof Error ? error.name : 'error'}`);
+  }
+}
+
+/** Why a work stopped at the time cap says so in the diary. */
+const TIME_CAP = 'limite di tempo del compito';
+
+/** A stop at the task's time cap (AbortSignal.timeout), not a shutdown or a lost lock: the step does not come back. */
+function stoppedAtTimeCap(signal: AbortSignal): boolean {
+  const reason: unknown = signal.reason;
+  return signal.aborted && reason instanceof Error && reason.name === 'TimeoutError';
+}
+
 /** What a cloud step gave, on either executor: the fields the delegation reads are the same (D-140). */
 type CloudStepResult =
   | { kind: 'answer'; result: { text: string; label: Label; sessionRef: string; usage: { context?: number } }; usage: RunUsage }
@@ -647,7 +730,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const folder = await folderOf(env, delegation);
   if ('error' in folder) return failed(folder.error);
   const workspace = folder.opened;
-  const { repo } = folder;
+  const { repo, container, part } = folder;
   // What the live changes of the run carry (D-117): the project's label, or the brief's when higher.
   const editLabel = maxLabel(folder.label, label);
   const before = new Set(workspace.dirty ?? []);
@@ -658,8 +741,27 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const fingerprint = await gitConfigFingerprint(path);
   // Tool configuration (.claude/, .envrc, .vscode/...), ignored by git or not: what changed is told to the user.
   const tools = await toolConfigFiles(path);
+  // The commit the folder starts from: a run that commits moves it (the diary names the new one, I-15).
+  const headBefore = await repositoryHead(path).catch(() => undefined);
   await updateDelegation(sql, delegation.id, { status: 'running', executor, model: plan.model, runId });
   await show(sql, task, step, 'delegate', `${delegation.agent} · ${executor}/${plan.model}`);
+  // From here on the work is the agent's: however it ends, it goes in the diary of the project (I-15, D-147).
+  const diary = (outcome: WorkOutcome, details: Pick<WorkRecord, 'reason' | 'files' | 'commit' | 'report'> = {}): Promise<void> =>
+    recordWork(env, { task, runId, delegation, executor, alias: plan.model, container, part, label: editLabel, outcome, ...details });
+  // What the run left changed: the user's own changes from before, unless the run changed them again, are not counted.
+  const changesOf = async (): Promise<FileChange[] | undefined> => {
+    const after = await repositoryChanges(path).catch(() => undefined);
+    if (after === undefined) return undefined;
+    const again = await fileFingerprints(path, [...before]).catch(() => new Map<string, string>());
+    return after.filter((item) => !before.has(item.path) || dirtyPrints.get(item.path) !== again.get(item.path));
+  };
+  // What a run that did not end well left in the folder, read only while its git configuration is the one from before.
+  const leftBehind = async (): Promise<Pick<WorkRecord, 'files' | 'commit'>> => {
+    if ((await gitConfigFingerprint(path).catch(() => undefined)) !== fingerprint) return {};
+    const listed = await changesOf();
+    const head = await repositoryHead(path).catch(() => undefined);
+    return { ...(listed === undefined ? {} : { files: storableFiles(listed) }), ...(typeof head === 'string' && head !== headBefore ? { commit: head } : {}) };
+  };
 
   // The Coder's own prompt, then the brief: both leave through the gateway.
   // At its first delegation in this conversation the agent also reads how to enter it (D-125): our fixed text, L0.
@@ -735,15 +837,22 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // the new start carries the latest exchanges, as when a session is lost.
   const earlier = direct && session === undefined && task.conversationId !== null ? await directChatHistory(sql, task.conversationId, delegation) : [];
   const carried = earlier.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...earlier];
-  let result = await attempt(session === undefined ? [...opening, ...carried, message] : [message], session);
-  // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
-  if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
-    const history = await directChatHistory(sql, task.conversationId, delegation);
-    const fallback = history.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...history];
-    const lost = result.usage;
-    result = await attempt([...opening, ...fallback, message], null);
-    // The failed resume counts too.
-    if (result.kind !== 'blocked') result = { ...result, usage: addUsage(lost, result.usage) };
+  let result: CloudStepResult;
+  try {
+    result = await attempt(session === undefined ? [...opening, ...carried, message] : [message], session);
+    // The session is gone (refused before it started, or another one began): one new start with the latest exchanges.
+    if (session !== undefined && task.conversationId !== null && result.kind === 'failed' && sessionLost(result.error)) {
+      const history = await directChatHistory(sql, task.conversationId, delegation);
+      const fallback = history.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...history];
+      const lost = result.usage;
+      result = await attempt([...opening, ...fallback, message], null);
+      // The failed resume counts too.
+      if (result.kind !== 'blocked') result = { ...result, usage: addUsage(lost, result.usage) };
+    }
+  } catch (error) {
+    // Stopped at the time cap of the task: the work ends here (a shutdown or a lost lock runs it again, and writes then).
+    if (stoppedAtTimeCap(ctx.signal)) await diary('stopped', { reason: TIME_CAP, ...(await leftBehind()) });
+    throw error;
   }
 
   switch (result.kind) {
@@ -751,16 +860,18 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       // No git command of Arianna's runs in a folder whose git configuration the run changed: the user looks first.
       if ((await gitConfigFingerprint(path)) !== fingerprint) {
         await close(env, task, step, delegation, 'failed', `error: ${TOOL}: the run changed the git configuration of the project ${repo} (.git/config, hooks or .gitattributes): the user must check that folder before using git there`);
+        await diary('failed', { reason: 'il lavoro ha cambiato la configurazione git del progetto: va controllata prima di usare git lì' });
         return { kind: 'continue', usage: result.usage };
       }
       // What the Coder left changed in the folder, for Arianna to tell the user; its own report is stored as it is.
       // The commit the changes are against (D-117): the chat diffs each file from it later.
       const head = await repositoryHead(path).catch(() => undefined);
-      const after = await repositoryChanges(path).catch(() => undefined);
-      const again = await fileFingerprints(path, [...before]).catch(() => new Map<string, string>());
-      const changed = (after ?? []).filter((item) => !before.has(item.path) || dirtyPrints.get(item.path) !== again.get(item.path));
+      const listed = await changesOf();
+      const changed = listed ?? [];
       // Saved before the report (D-082): the chat lists them under it as soon as it appears.
-      if (after !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed), ...(typeof head === 'string' ? { baseCommit: head } : {}) });
+      if (listed !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed), ...(typeof head === 'string' ? { baseCommit: head } : {}) });
+      const commit = typeof head === 'string' && head !== headBefore ? { commit: head } : {};
+      const files = listed === undefined ? {} : { files: storableFiles(changed) };
       const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;
       const toolChanges = changedToolConfig(tools, await toolConfigFiles(path).catch(() => new Map([['(unreadable)', '']])));
       const text = [
@@ -778,6 +889,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
           // The report cannot be shown to the user (a vault value in it, or above the conversation): it is not read either.
           const why = saved.reason === 'blocked' ? `the gateway refused the report (${saved.decision.reason})` : 'the report is above what the conversation may hold';
           await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${why}`);
+          await diary('failed', { reason: 'il rapporto non si poteva mostrare nella conversazione', ...files, ...commit });
           return { kind: 'continue', usage: result.usage };
         }
         messageId = saved.message.id;
@@ -791,10 +903,14 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         ...(result.result.usage.context === undefined ? {} : { contextTokens: result.result.usage.context }),
         ...(messageId === undefined ? {} : { messageId }),
       });
+      // The report only as the chat stored it: without a conversation it passed no gateway towards the user.
+      const stored = messageId !== undefined && result.result.text.trim() !== '';
+      await diary('ok', { ...files, ...commit, ...(stored ? { report: { text: report, label: result.result.label } } : {}) });
       return { kind: 'continue', usage: result.usage };
     }
     case 'blocked':
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: the gateway refused the brief (${result.decision.reason})`);
+      await diary('failed', { reason: 'il gateway ha fermato la richiesta' });
       return { kind: 'continue', usage: { steps: 1 } };
     case 'quota': {
       // Back to pending: the same step runs again when the subscription takes requests.
@@ -804,9 +920,13 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
       await show(sql, task, step, 'wait', `${executor} · ${at.toISOString()}`);
       return { kind: 'retry', at, reason: result.overage ? `${executor} is on paid extra usage` : `${executor} is out of quota`, usage: result.usage };
     }
-    case 'failed':
+    case 'failed': {
       await close(env, task, step, delegation, 'failed', `error: ${TOOL}: ${result.reason}`);
+      // A run stopped by a shutdown or a lost lock comes back and writes then; at the time cap it ends here.
+      if (stoppedAtTimeCap(ctx.signal)) await diary('stopped', { reason: TIME_CAP, ...(await leftBehind()) });
+      else if (!ctx.signal.aborted) await diary('failed', { reason: result.reason, ...(await leftBehind()) });
       return { kind: 'continue', usage: result.usage };
+    }
   }
 }
 

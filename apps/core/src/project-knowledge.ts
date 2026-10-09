@@ -23,8 +23,8 @@ export const PROJECT_PAGES = 'projects';
 const MAX_DEPTH = 6;
 const MAX_NOTES = 2_000;
 /** The header is at the top: what is read to label a note that is only listed. */
-const HEADER_BYTES = 8 * 1024;
-const MAX_NOTE_BYTES = 200_000;
+export const HEADER_BYTES = 8 * 1024;
+export const MAX_NOTE_BYTES = 200_000;
 export const MAX_NOTE_TEXT = 64 * 1024;
 const MAX_TITLE = 200;
 const MAX_ATTEMPTS = 50;
@@ -351,6 +351,70 @@ export function privateKnowledge(project: Project): string[] {
   return found;
 }
 
+/** A management folder to write in: the caller checks with `sameFolder` that it is a real folder directly inside the base, before and after opening. */
+export interface OpenedFolder {
+  project: Project;
+  folder: ManagementFolder;
+  dir: string;
+  sameFolder: () => boolean;
+}
+
+/**
+ * The management folder `folderName` of the project, created (0700) when it is
+ * not there yet (D-145): never a part, a repository, a folder of the code or a
+ * name that differs from an existing one only in case; never through a link.
+ */
+function openFolder(projects: readonly Project[], name: string, env: KnowledgeEnv, folderName: string): OpenedFolder {
+  const look = knowledgeBase(projects, name, env);
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  let folder = look.folders.find((item) => item.path === folderName);
+  if (folder === undefined) {
+    // A new management folder, named by the user (D-145): never a part, a repository, a folder of the code or one that differs only in case.
+    if (look.folders.some((item) => fold(item.path) === fold(folderName))) throw new KnowledgeError('invalid', 'a folder with this name exists with other letter case');
+    if (NOT_MANAGEMENT.has(fold(folderName))) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
+    if (!look.inKb) {
+      if (projectParts(look.project).some((part) => part.part !== null && fold(part.part) === fold(folderName))) throw new KnowledgeError('invalid', 'the folder is a part of the project: notes never go in the code');
+      if (lstatSync(join(look.root, folderName), { throwIfNoEntry: false }) !== undefined) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
+    }
+    const base = knowledgeBase(projects, name, env, true);
+    const created = join(base.root, folderName);
+    try {
+      mkdirSync(created, { mode: 0o700 });
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw new KnowledgeError('unavailable', 'cannot create the folder');
+    }
+    folder = knowledgeBase(projects, name, env).folders.find((item) => item.path === folderName);
+    if (folder === undefined) throw new KnowledgeError('refused', 'the folder is not a plain folder of the project');
+  }
+  const { project, root } = knowledgeBase(projects, name, env);
+
+  const dir = join(root, folder.path);
+  // The folder is a real folder directly inside the container: a link would take the note elsewhere.
+  const sameFolder = (): boolean => {
+    try {
+      return lstatSync(dir).isDirectory() && realpathSync(dir) === dir;
+    } catch {
+      return false;
+    }
+  };
+  return { project, folder, dir, sameFolder };
+}
+
+/** The name of the management folder of the work plan (D-145, I-15). */
+export const WORKPLAN = 'Workplan';
+
+/**
+ * The folder Workplan of a project, with any letter case it already has, or
+ * created as `Workplan` (I-15, D-147): where the core writes the diary of the
+ * works. Same rules as a folder of "+ Conoscenza".
+ */
+export function openWorkplan(projects: readonly Project[], name: string, env: KnowledgeEnv): OpenedFolder {
+  const look = knowledgeBase(projects, name, env);
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  const found = look.folders.find((item) => fold(item.path) === fold(WORKPLAN));
+  return openFolder(projects, name, env, found?.path ?? WORKPLAN);
+}
+
 export interface NoteInput {
   /** The management folder, by its name. */
   folder: string;
@@ -380,40 +444,9 @@ export function writeProjectNote(projects: readonly Project[], name: string, env
   const title = typeof input.title === 'string' ? input.title.trim() : '';
   if (title === '' || title.length > MAX_TITLE || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(title)) throw new KnowledgeError('invalid', `title must be one line of at most ${String(MAX_TITLE)} characters`);
 
-  const look = knowledgeBase(projects, name, env);
-  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
-  let folder = look.folders.find((item) => item.path === input.folder);
-  if (folder === undefined) {
-    // A new management folder, named by the user (D-145): never a part, a repository, a folder of the code or one that differs only in case.
-    if (look.folders.some((item) => fold(item.path) === fold(input.folder))) throw new KnowledgeError('invalid', 'a folder with this name exists with other letter case');
-    if (NOT_MANAGEMENT.has(fold(input.folder))) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
-    if (!look.inKb) {
-      if (projectParts(look.project).some((part) => part.part !== null && fold(part.part) === fold(input.folder))) throw new KnowledgeError('invalid', 'the folder is a part of the project: notes never go in the code');
-      if (lstatSync(join(look.root, input.folder), { throwIfNoEntry: false }) !== undefined) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
-    }
-    const base = knowledgeBase(projects, name, env, true);
-    const created = join(base.root, input.folder);
-    try {
-      mkdirSync(created, { mode: 0o700 });
-    } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw new KnowledgeError('unavailable', 'cannot create the folder');
-    }
-    folder = knowledgeBase(projects, name, env).folders.find((item) => item.path === input.folder);
-    if (folder === undefined) throw new KnowledgeError('refused', 'the folder is not a plain folder of the project');
-  }
+  const { project, folder, dir, sameFolder } = openFolder(projects, name, env, input.folder);
   // The note is never below its folder: the user can only raise it.
   if (!isAtMost(folder.label, input.label)) throw new KnowledgeError('invalid', `the folder ${folder.path} is ${folder.label}: a note in it cannot be lower`);
-  const { project, root } = knowledgeBase(projects, name, env);
-
-  const dir = join(root, folder.path);
-  // The folder is a real folder directly inside the container: a link would take the note elsewhere.
-  const sameFolder = (): boolean => {
-    try {
-      return lstatSync(dir).isDirectory() && realpathSync(dir) === dir;
-    } catch {
-      return false;
-    }
-  };
   if (!sameFolder()) throw new KnowledgeError('refused', `the folder ${folder.path} is not a plain folder of the project`);
 
   const now = input.now ?? new Date();
