@@ -440,6 +440,7 @@ watch(
   () => [props.chat.messages.length, props.chat.streaming.map((reply) => reply.text.length).join(), props.approvals.length],
   async () => {
     await nextTick();
+    observeContent();
     if (stuck) toBottom();
   },
 );
@@ -448,20 +449,24 @@ watch(
   async () => {
     stuck = true;
     await nextTick();
+    observeContent();
     toBottom();
   },
   { immediate: true },
 );
+// The list and what it holds now: Vue may replace the content element when the conversation or
+// its messages change, so the observer follows the current one (content loaded later, as the
+// activity logs of a delegation, grows it without a new message).
 let resizes: ResizeObserver | undefined;
-onMounted(() => {
-  resizes = new ResizeObserver(() => {
+function observeContent(): void {
+  resizes ??= new ResizeObserver(() => {
     if (stuck) toBottom();
   });
-  if (list.value !== null) {
-    resizes.observe(list.value);
-    if (list.value.firstElementChild !== null) resizes.observe(list.value.firstElementChild);
-  }
-});
+  resizes.disconnect();
+  if (list.value === null) return;
+  resizes.observe(list.value);
+  for (const child of list.value.children) resizes.observe(child);
+}
 onBeforeUnmount(() => resizes?.disconnect());
 
 // D-091: the card or message asked for (the "Decisioni in attesa" window, or #approval-<id> / #message-<id>
