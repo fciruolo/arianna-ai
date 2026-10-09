@@ -5,6 +5,7 @@ import { loadApproval, type StoredApproval } from '../approvals.ts';
 import { dayText, localDay, parseRange } from '../commitment-dates.ts';
 import {
   COMMITMENT_LABEL,
+  moveApplied,
   commitmentApprovalAt,
   commitmentLine,
   decisionText,
@@ -14,6 +15,7 @@ import {
   listText,
   proposalOf,
   proposeAdd,
+  proposeMove,
   requestCommitment,
   type CommitmentProposal,
 } from '../commitments.ts';
@@ -27,12 +29,12 @@ import { recordTurn, type NewTurn, type Turn } from './turns.ts';
  * The tools of the secretary (I-12, D-144), offered only in the secretary's
  * conversation. None of them lets the model write what the user reads about
  * a commitment: `commitment.list` writes the list in the chat from SQL and
- * ends the step; `commitment.add` and `commitment.done` compute the day or
- * find the commitment here, and the task waits for the user's confirmation
+ * ends the step; `commitment.add`, `commitment.done` and `commitment.move`
+ * (D-148) compute the day or find the commitment here, and the task waits for the user's confirmation
  * (an approval of kind `commitment`); once decided, the answer is written
  * here too (`decisionAnswer`). Everything stays at L2 at least, on this machine.
  */
-export const SECRETARY_TOOLS = ['commitment.add', 'commitment.list', 'commitment.done'] as const satisfies readonly ToolId[];
+export const SECRETARY_TOOLS = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move'] as const satisfies readonly ToolId[];
 export type SecretaryTool = (typeof SECRETARY_TOOLS)[number];
 
 export function isSecretaryTool(tool: ToolId): tool is SecretaryTool {
@@ -42,6 +44,7 @@ export function isSecretaryTool(tool: ToolId): tool is SecretaryTool {
 /** The result of a call that asked the user to confirm: what the model reads if the task ever runs again. */
 export const WAITING_CONFIRMATION = 'waiting for the user to confirm it in the chat';
 const UNDELIVERED = 'error: the answer was not delivered';
+const NOT_MOVED = 'Non l’ho spostato: nel frattempo l’impegno è stato chiuso o spostato altrove.';
 
 export interface SecretaryCall {
   turn: Omit<NewTurn, 'label' | 'result' | 'messageId'>;
@@ -109,7 +112,13 @@ export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: Secreta
     if ('none' in found) return fail(`no open commitment matches '${which}'. The open ones:\n${open.map(commitmentLine).join('\n')}\nCall again with the id of the one the user means, or ask the user.`, label);
     if ('several' in found) return fail(`more than one open commitment matches '${which}':\n${found.several.map(commitmentLine).join('\n')}\nCall again with the id of the one the user means, or ask the user.`, label);
     const item = found.found;
-    proposal = { op: 'done', commitmentId: item.id, text: item.body, day: item.day, time: item.time, dayText: dayText(item.day) };
+    if (tool === 'commitment.done') {
+      proposal = { op: 'done', commitmentId: item.id, text: item.body, day: item.day, time: item.time, dayText: dayText(item.day) };
+    } else {
+      const moved = proposeMove(item, args, today);
+      if ('error' in moved) return fail(moved.error, label);
+      proposal = moved;
+    }
   }
   // The turn and the confirmation together: after a crash the step finds both, or neither.
   const approvalId = await sql.begin(async (tx) => {
@@ -127,6 +136,8 @@ export async function decisionAnswer(sql: Sql, ctx: StepContext, decided: Stored
   const proposal = decided === undefined ? undefined : proposalOf(decided);
   if (decided === undefined || proposal === undefined) return { kind: 'wait-user', reason: 'the confirmation of the secretary is no longer readable', usage: { steps: 0 } };
   const label = maxLabel(task.effectiveLabel, decided.label, COMMITMENT_LABEL);
+  // An approved move that changed nothing (closed or moved meanwhile, D-148): say so, never "Spostato".
+  if (proposal.op === 'move' && decided.state === 'approved' && !(await moveApplied(sql, decided.id))) return answer(sql, task, runId, NOT_MOVED, label);
   return answer(sql, task, runId, decisionText(proposal, decided.state), label);
 }
 

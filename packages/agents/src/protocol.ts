@@ -24,6 +24,7 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'commitment.add': object({ text: text(300), day: text(80), time: text(20) }, ['text', 'day']),
   'commitment.list': object({ day: text(80) }, []),
   'commitment.done': object({ which: text(200) }, ['which']),
+  'commitment.move': object({ which: text(200), day: text(80), time: text(20) }, ['which']),
 };
 
 /** What the model reads about each tool; the registry's description is for people. */
@@ -44,6 +45,8 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
     'Show the user the commitments of a day or a span ("day" as the user said it: oggi, domani, giovedì, questa settimana, la settimana prossima, i prossimi 7 giorni, questo mese, il mese prossimo); without "day", every open one. The core knows today\'s date and writes the list in the chat, ending your turn: call it for any question about the user\'s commitments, and never ask the user what day it is.',
   'commitment.done':
     'Mark a commitment done when the user says they did it. "which" is the commitment in the user\'s words (or its id); the core finds it and asks the user to confirm. If more than one matches, it answers with the open ones and their ids.',
+  'commitment.move':
+    'Move a commitment to another day or time when the user asks (sposta, rimanda, anticipa). "which" is the commitment in the user\'s words (or its id); "day" is the new day exactly as the user said it (venerdì, domani, 20 ottobre); "time" only if the user said a clock (alone, it moves the clock on the same day). The core computes the date, finds the commitment and asks the user to confirm: never compute the date yourself. If more than one matches, it answers with the open ones and their ids.',
 };
 
 /**

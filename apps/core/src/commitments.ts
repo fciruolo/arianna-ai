@@ -99,14 +99,42 @@ export async function markDone(sql: Queryable, id: string): Promise<Commitment> 
   return row;
 }
 
+/**
+ * Moves the commitment of an approved `commitment.move` (D-148) to its new
+ * day and clock: only if it is still open and still where the card showed it
+ * (a move confirmed later, or "Fatto" meanwhile, wins). It stays open. The
+ * event, with the id of the approval, is how the answer knows the move
+ * happened; it never carries the text. Undefined when nothing changed.
+ */
+export async function moveCommitment(sql: Queryable, approvalId: string, move: Extract<CommitmentProposal, { op: 'move' }>): Promise<Commitment | undefined> {
+  const [row] = await sql.unsafe<Commitment[]>(
+    `UPDATE commitments SET day = $2::date, at_time = $3::time, updated_at = now()
+     WHERE id = $1 AND status = 'open' AND day = $4::date AND at_time IS NOT DISTINCT FROM $5::time RETURNING ${COLUMNS}`,
+    [move.commitmentId, move.day, move.time, move.fromDay, move.fromTime],
+  );
+  if (row !== undefined) await appendEvent(sql, { kind: 'commitment.changed', label: 'L0', payload: { commitmentId: move.commitmentId, status: 'open', moved: true, approvalId } });
+  return row;
+}
+
+/** Whether the approved move `approvalId` changed its commitment: read from its event, not from where the commitment is now. */
+export async function moveApplied(sql: Queryable, approvalId: string): Promise<boolean> {
+  const [row] = await sql<{ found: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM events WHERE kind = 'commitment.changed' AND payload ->> 'approvalId' = ${approvalId}) AS found`;
+  return row?.found === true;
+}
+
 // --- The confirmation: an approval of kind `commitment`, decided in the web chat only.
 
-export type CommitmentAction = 'commitment.add' | 'commitment.done';
+export type CommitmentAction = 'commitment.add' | 'commitment.done' | 'commitment.move';
 
 /** What the approval card shows and what approving it does. */
 export type CommitmentProposal =
   | { op: 'add'; text: string; day: string; time: string | null; dayText: string }
-  | { op: 'done'; commitmentId: string; text: string; day: string; time: string | null; dayText: string };
+  | { op: 'done'; commitmentId: string; text: string; day: string; time: string | null; dayText: string }
+  /** To another day or time (D-148): `day` and `time` are the new ones, `from…` those it had. */
+  | { op: 'move'; commitmentId: string; text: string; day: string; time: string | null; dayText: string; fromDay: string; fromTime: string | null; fromDayText: string };
+
+const ACTIONS: Record<CommitmentProposal['op'], CommitmentAction> = { add: 'commitment.add', done: 'commitment.done', move: 'commitment.move' };
 
 /**
  * Asks the user to confirm `proposal`, as an approval of the task at `step`
@@ -117,7 +145,7 @@ export async function requestCommitment(
   tx: Queryable,
   options: { taskId: string; step: number; label: Label; proposal: CommitmentProposal },
 ): Promise<string> {
-  const action: CommitmentAction = options.proposal.op === 'add' ? 'commitment.add' : 'commitment.done';
+  const action = ACTIONS[options.proposal.op];
   const label = maxLabel(options.label, COMMITMENT_LABEL);
   const [row] = await tx<{ id: string }[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
@@ -146,6 +174,10 @@ export function proposalOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): C
   if (text === undefined || day === undefined) return undefined;
   if (detail.op === 'add') return { op: 'add', text, day, time, dayText: dayText(day) };
   if (detail.op === 'done' && typeof detail.commitmentId === 'string') return { op: 'done', commitmentId: detail.commitmentId, text, day, time, dayText: dayText(day) };
+  if (detail.op === 'move' && typeof detail.commitmentId === 'string' && typeof detail.fromDay === 'string') {
+    const fromTime = typeof detail.fromTime === 'string' ? detail.fromTime : null;
+    return { op: 'move', commitmentId: detail.commitmentId, text, day, time, dayText: dayText(day), fromDay: detail.fromDay, fromTime, fromDayText: dayText(detail.fromDay) };
+  }
   return undefined;
 }
 
@@ -165,6 +197,7 @@ export async function applyCommitmentApproval(tx: Queryable, approval: StoredApp
       throw error;
     }
   }
+  if (proposal.op === 'move') return moveCommitment(tx, approval.id, proposal);
   const [row] = await tx.unsafe<Commitment[]>(
     `INSERT INTO commitments (body, day, at_time, label, conversation_id, task_id, approval_id)
      VALUES ($1, $2::date, $3::time, $4::privacy_label, $5::uuid, $6::uuid, $7::uuid)
@@ -195,6 +228,37 @@ export function proposeAdd(args: Record<string, unknown>, today: string): Commit
     time = given;
   }
   return { op: 'add', text, day: parsed.day, time, dayText: dayText(parsed.day) };
+}
+
+/**
+ * Where to move `item` from the arguments of `commitment.move`, or why not
+ * (an error the model reads). The day from the user's words, computed here;
+ * the clock said with it or in "time", else the one the commitment had.
+ * Without a day, a new clock on the same day.
+ */
+export function proposeMove(item: Commitment, args: Record<string, unknown>, today: string): CommitmentProposal | { error: string } {
+  const said = typeof args.day === 'string' ? args.day.trim() : '';
+  const given = typeof args.time === 'string' && args.time.trim() !== '' ? args.time : undefined;
+  if (said === '' && given === undefined) return { error: 'say where to move it: "day" as the user said it (venerdì, domani, 20 ottobre), "time" if the user said a clock' };
+  let day = item.day;
+  let time = item.time;
+  if (said !== '') {
+    const parsed = parseDay(said, today);
+    if (parsed === undefined) {
+      return { error: `the day '${said}' is not one the core can compute: ask the user for the day (oggi, domani, a weekday, a date such as 15 ottobre)` };
+    }
+    day = parsed.day;
+    if (parsed.time !== undefined) time = parsed.time;
+  } else if (day < today) {
+    return { error: `the commitment was for ${dayText(day)}, a day already past: ask the user which day to move it to` };
+  }
+  if (given !== undefined) {
+    const clock = parseTime(given);
+    if (clock === undefined) return { error: `the time '${given}' is not a clock: pass it as HH:MM, or leave it out` };
+    time = clock;
+  }
+  if (day === item.day && time === item.time) return { error: `the commitment is already on ${dayText(day)}${time === null ? '' : ` at ${time}`}: tell the user` };
+  return { op: 'move', commitmentId: item.id, text: item.body, day, time, dayText: dayText(day), fromDay: item.day, fromTime: item.time, fromDayText: dayText(item.day) };
 }
 
 function words(text: string): string[] {
@@ -280,6 +344,10 @@ export function decisionText(proposal: CommitmentProposal, state: string, today:
   const when = `${relativeDayText(proposal.day, today)}${proposal.time === null ? '' : `, alle ${proposal.time}`}`;
   if (proposal.op === 'add') {
     return state === 'approved' ? `Segnato per ${when}: ${proposal.text}.` : 'Va bene, non l’ho segnato. Dimmi cosa cambiare.';
+  }
+  if (proposal.op === 'move') {
+    const from = `${relativeDayText(proposal.fromDay, today)}${proposal.fromTime === null ? '' : `, alle ${proposal.fromTime}`}`;
+    return state === 'approved' ? `Spostato a ${when}: ${proposal.text}.` : `Va bene, resta per ${from}.`;
   }
   return state === 'approved' ? `Segnato come fatto: ${proposal.text}.` : 'Va bene, resta da fare.';
 }
