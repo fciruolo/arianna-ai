@@ -46,6 +46,7 @@ import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
+import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
@@ -658,6 +659,13 @@ const notifier = createNotifier({
 });
 const stopNotices = await live.subscribe(notifier.subscriber);
 
+// The reminders of the secretary (I-12 S2, D-149): the three moments of
+// [secretary], read at each tick (a change from the settings applies without
+// a restart), once per day and moment; started after the notifier, so that
+// a moment recovered at start-up notifies too.
+const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, onError: report });
+secretaryTicker.start();
+
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
 // anyway: the web chat does not depend on it. Off by the user's choice (D-110,
@@ -672,6 +680,7 @@ async function shutdown(): Promise<void> {
   // The processes started from "Progetti" stop with the core (D-134 g); compose services stay with Docker.
   await services.stopAll();
   settings.close();
+  secretaryTicker.stop();
   incognitoWatch.stop();
   stopNotices();
   await telegram.close();

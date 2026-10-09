@@ -13,8 +13,8 @@ export type ServerMessage =
   | IncognitoSignal
   | { type: 'ready' };
 
-export type NoticeKind = 'reply' | 'approval' | 'failure';
-const NOTICE_KINDS: readonly NoticeKind[] = ['reply', 'approval', 'failure'];
+export type NoticeKind = 'reply' | 'approval' | 'failure' | 'reminder';
+const NOTICE_KINDS: readonly NoticeKind[] = ['reply', 'approval', 'failure', 'reminder'];
 
 const ACTIVITY_KINDS: readonly ActivityKind[] = ['thinking', 'search', 'read', 'write', 'card', 'plan', 'error', 'delegate', 'tool', 'wait'];
 
