@@ -8,6 +8,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Il diario dei lavori: alla fine di ogni lavoro del Coder (o di un altro agente nel cloud, come il Reviewer) su un progetto (riuscito, non riuscito o fermato, su Claude o su Codex, delegato da Arianna o nella chat diretta) Arianna scrive da sola, con il codice, una voce in `Workplan/diario/AAAA-MM-GG.md` della conoscenza del progetto: ora, chi e con quale modello, parte, esito, richiesta, file cambiati, commit, riassunto e collegamento alla conversazione; solo ciò che era già uscito verso il cloud, mai nelle incognite (I-15, D-147).
 
+## [0.34.2] - 2026-10-09
+
+### Cambiato
+
+- Segretaria: ogni clic sul pulsante «Segretaria» apre una sessione nuova; Arianna ricorda solo i messaggi da quel clic in poi, senza riassunti delle parti vecchie, e una riga sottile nella chat segna dove comincia la sessione. Riaprire la conversazione in altri modi non la azzera (I-12, D-146).
+
+## [0.34.1] - 2026-10-09
+
+### Corretto
+
+- Chat: aprendo una conversazione si vede l'ultimo messaggio, anche venendo da un'altra pagina o da un link e quando il riquadro Impegni della segretaria arriva dopo; la lista resta in fondo finché non risali a leggere (segnalazione dell'utente del 2026-10-09).
+
 ## [0.34.0] - 2026-10-09
 
 ### Aggiunto
