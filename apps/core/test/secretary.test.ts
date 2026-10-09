@@ -5,16 +5,16 @@ import { test } from 'node:test';
 import { responseSchema, systemPrompt } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { decisionText, findCommitment, listText, ofRange, proposalOf, proposeAdd, proposeMove, type Commitment } from '../src/commitments.ts';
+import { decisionText, findCommitment, listText, ofRange, proposalOf, proposeAdd, proposeMove, proposeReport, type Commitment } from '../src/commitments.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
-import { isSecretaryTool, SECRETARY_TOOLS } from '../src/orchestrator/secretary.ts';
+import { isPostponement, isSecretaryTool, SECRETARY_TOOLS } from '../src/orchestrator/secretary.ts';
 import { committedAgents } from './support/committed-agents.ts';
 
 const arianna = committedAgents(resolveHome({})).get('arianna');
 const TODAY = '2026-10-09';
 
 function commitment(id: string, body: string, day = TODAY, time: string | null = null, status: Commitment['status'] = 'open'): Commitment {
-  return { id, body, day, time, status, reason: null, label: 'L2', conversationId: null, createdAt: new Date(), doneAt: null };
+  return { id, body, day, time, status, reason: null, label: 'L2', conversationId: null, createdAt: new Date(), doneAt: null, rescheduledFrom: null, postponedFrom: null };
 }
 
 test('the commitment tools only in the secretary’s conversation, which delegates nothing', () => {
@@ -25,7 +25,7 @@ test('the commitment tools only in the secretary’s conversation, which delegat
   const secretary = orchestratorTools(arianna, true, true, false, true);
   assert.deepEqual(
     secretary.filter((tool) => isSecretaryTool(tool)),
-    ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move'],
+    ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move', 'commitment.report'],
   );
   // No step of the secretary leaves in a brief, towards the cloud or another agent.
   assert.ok(!secretary.includes('task.delegate'));
@@ -158,4 +158,122 @@ test('commitment.move: the approval detail read back, and the answers written by
   assert.equal(decisionText(proposal, 'rejected', TODAY), 'Va bene, resta per giovedì 15 ottobre 2026, alle 15:00.');
   // Without where it was, it is not a move.
   assert.equal(proposalOf({ kind: 'commitment', detail: { ...detail, fromDay: undefined } }), undefined);
+});
+
+const BANK = '11111111-1111-4111-8111-111111111111';
+const BREAD = '22222222-2222-4222-8222-222222222222';
+const PLANTS = '33333333-3333-4333-8333-333333333333';
+const OPEN = [
+  commitment(BANK, 'Andare in banca per il mutuo finto', TODAY, '15:00'),
+  commitment(BREAD, 'Comprare il pane finto'),
+  commitment(PLANTS, 'Innaffiare le piante finte', '2026-10-07'),
+];
+
+test('commitment.report (D-151): each commitment with its outcome and reason, the new day computed by the code', () => {
+  const report = proposeReport(
+    OPEN,
+    {
+      items: [
+        { which: 'banca', outcome: 'done' },
+        { which: 'pane', outcome: 'postponed', day: 'domani', reason: '  il forno   era chiuso ' },
+        { which: 'piante', outcome: 'not_done', reason: 'ero fuori casa' },
+      ],
+    },
+    TODAY,
+  );
+  assert.ok(!('error' in report) && report.op === 'report');
+  const [bank, bread, plants] = report.entries;
+  assert.deepEqual(bank, { commitmentId: BANK, text: 'Andare in banca per il mutuo finto', day: TODAY, time: '15:00', dayText: 'venerdì 9 ottobre 2026', outcome: 'done', reason: null });
+  assert.equal(bread?.reason, 'il forno era chiuso', 'the reason in the user’s words, spaces collapsed');
+  assert.equal(bread.toDay, '2026-10-10');
+  assert.equal(bread.toTime, null);
+  assert.equal(bread.toDayText, 'sabato 10 ottobre 2026');
+  assert.equal(plants?.outcome, 'not_done');
+  // The clock goes with a postponement unless another is said.
+  const kept = proposeReport(OPEN, { items: [{ which: 'banca', outcome: 'postponed', day: 'lunedì' }] }, TODAY);
+  assert.ok(!('error' in kept) && kept.op === 'report' && kept.entries[0]?.toTime === '15:00' && kept.entries[0].toDay === '2026-10-12');
+  const clock = proposeReport(OPEN, { items: [{ which: 'banca', outcome: 'postponed', day: 'lunedì', time: '9' }] }, TODAY);
+  assert.ok(!('error' in clock) && clock.op === 'report' && clock.entries[0]?.toTime === '09:00');
+  // A late one can be postponed to today.
+  const late = proposeReport(OPEN, { items: [{ which: 'piante', outcome: 'postponed', day: 'oggi' }] }, TODAY);
+  assert.ok(!('error' in late) && late.op === 'report' && late.entries[0]?.toDay === TODAY);
+});
+
+test('commitment.report: what the code cannot compute or tell apart is an error the model reads, never a guess', () => {
+  const error = (args: Record<string, unknown>): string => {
+    const result = proposeReport(OPEN, args, TODAY);
+    return 'error' in result ? result.error : '';
+  };
+  assert.match(error({}), /"items"/);
+  assert.match(error({ items: [] }), /"items"/);
+  assert.match(error({ items: [{ which: 'banca', outcome: 'maybe' }] }), /not one of done, not_done, postponed/);
+  assert.match(error({ items: [{ which: 'treno', outcome: 'done' }] }), /no open commitment matches 'treno'[\s\S]*\[11111111\]/);
+  assert.match(error({ items: [{ which: 'finto', outcome: 'done' }] }), /more than one open commitment matches/);
+  assert.match(error({ items: [{ which: 'banca', outcome: 'done' }, { which: BANK, outcome: 'not_done' }] }), /already in this report/);
+  assert.match(error({ items: [{ which: 'pane', outcome: 'postponed' }] }), /say the day/);
+  assert.match(error({ items: [{ which: 'pane', outcome: 'postponed', day: 'boh' }] }), /not one the core can compute/);
+  assert.match(error({ items: [{ which: 'pane', outcome: 'postponed', day: 'oggi' }] }), /a later day/);
+  assert.match(error({ items: [{ which: 'pane', outcome: 'postponed', day: 'domani', time: 'presto' }] }), /not a clock/);
+  assert.match(error({ items: [{ which: 'pane', outcome: 'not_done', reason: 'x'.repeat(301) }] }), /longer than 300/);
+  assert.match(error({ items: Array.from({ length: 13 }, () => ({ which: 'pane', outcome: 'done' })) }), /at most 12/);
+});
+
+test('commitment.report: the approval detail read back, and the answer written by the code', () => {
+  const report = proposeReport(
+    OPEN,
+    {
+      items: [
+        { which: 'banca', outcome: 'done' },
+        { which: 'pane', outcome: 'postponed', day: 'domani', reason: 'forno chiuso' },
+        { which: 'piante', outcome: 'not_done', reason: 'ero fuori' },
+      ],
+    },
+    TODAY,
+  );
+  assert.ok(!('error' in report));
+  const read = proposalOf({ kind: 'commitment', detail: JSON.parse(JSON.stringify({ ...report, step: 2 })) as Record<string, never> });
+  assert.deepEqual(read, report);
+  // A malformed entry is dropped; none left, no proposal.
+  assert.equal(proposalOf({ kind: 'commitment', detail: { op: 'report', entries: [{ commitmentId: BANK, text: 'x', day: TODAY, outcome: 'postponed' }] } }), undefined);
+  assert.equal(
+    decisionText(report, 'approved', TODAY),
+    'Annotato:\n- fatto: Andare in banca per il mutuo finto\n- rinviato a domani, sabato 10 ottobre 2026: Comprare il pane finto — forno chiuso\n- non fatto: Innaffiare le piante finte — ero fuori',
+  );
+  const partly = decisionText(report, 'approved', TODAY, new Set([BREAD]));
+  assert.match(partly, /^Annotato:\n- rinviato a domani/);
+  assert.match(partly, /Non annotati, perché nel frattempo chiusi o spostati altrove:\n- Andare in banca per il mutuo finto\n- Innaffiare le piante finte$/);
+  assert.equal(decisionText(report, 'rejected', TODAY), 'Va bene, non ho annotato nulla. Dimmi cosa cambiare.');
+});
+
+test('the list shows the reason of a commitment closed with one', () => {
+  const closed = { ...commitment(BREAD, 'Comprare il pane finto', TODAY, null, 'postponed'), reason: 'forno chiuso' };
+  assert.match(listText([closed], { from: TODAY, to: TODAY, text: 'oggi' }, TODAY), /- Comprare il pane finto \(rinviato\) — forno chiuso/);
+  assert.doesNotMatch(listText([{ ...closed, status: 'open' }], { from: TODAY, to: TODAY, text: 'oggi' }, TODAY), /forno/);
+});
+
+test('commitment.report: a day or a time only with a postponement, and never two different clocks', () => {
+  const error = (item: Record<string, unknown>): string => {
+    const result = proposeReport(OPEN, { items: [item] }, TODAY);
+    return 'error' in result ? result.error : '';
+  };
+  assert.match(error({ which: 'banca', outcome: 'done', day: 'domani' }), /only with outcome postponed/);
+  assert.match(error({ which: 'piante', outcome: 'not_done', time: '10:00' }), /only with outcome postponed/);
+  assert.match(error({ which: 'banca', outcome: 'postponed', day: 'lunedì alle 10', time: '11:00' }), /two clocks/);
+  assert.equal(error({ which: 'banca', outcome: 'postponed', day: 'lunedì alle 10', time: '10:00' }), '', 'the same clock twice is fine');
+  // A placeholder for no clock, as local models write it, is no clock: the old one stays.
+  const placeholder = proposeReport(OPEN, { items: [{ which: 'banca', outcome: 'postponed', day: 'domani', time: 'non specificato' }, { which: 'pane', outcome: 'done', time: 'nessuno', reason: '' }] }, TODAY);
+  assert.ok(!('error' in placeholder) && placeholder.op === 'report');
+  assert.equal(placeholder.entries[0]?.toTime, '15:00');
+  assert.equal(placeholder.entries[1]?.reason, null, 'an empty reason is none');
+  assert.match(error({ which: 'banca', outcome: 'postponed', day: 'domani', time: 'presto' }), /not a clock/, 'a word that is not a placeholder is still asked');
+  assert.equal(error({ which: 'banca', outcome: 'done', day: 'non specificato', reason: '' }), '', 'a placeholder day with done is no day');
+});
+
+test('commitment.move with a reason, or of a day gone, is a postponement (D-151)', () => {
+  const late = commitment(PLANTS, 'Innaffiare le piante finte', '2026-10-07');
+  const today = commitment(BANK, 'Andare in banca per il mutuo finto', TODAY, '15:00');
+  assert.equal(isPostponement(late, { day: 'oggi' }, TODAY), true, 'a day already gone');
+  assert.equal(isPostponement(today, { day: 'venerdì', reason: 'banca chiusa' }, TODAY), true, 'a reason');
+  assert.equal(isPostponement(today, { day: 'venerdì', reason: '  ' }, TODAY), false, 'a blank reason is none');
+  assert.equal(isPostponement(today, { day: 'venerdì' }, TODAY), false, 'a change of plan stays a move');
 });

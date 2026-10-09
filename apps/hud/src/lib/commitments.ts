@@ -70,3 +70,65 @@ export function sessionStart(messages: readonly { ts: string }[], sessionAt: str
   const index = messages.findIndex((message) => Date.parse(message.ts) >= at);
   return index === -1 ? messages.length : index;
 }
+
+/**
+ * How a closed commitment of today reads in the list (D-151): a short tag and
+ * the reason when the user gave one; undefined for an open or cancelled one.
+ */
+export function closedText(item: Pick<Commitment, 'status' | 'reason'>): { tag: string; reason: string | null } | undefined {
+  const tag = item.status === 'done' ? 'Fatto' : item.status === 'not_done' ? 'Non fatto' : item.status === 'postponed' ? 'Rinviato' : undefined;
+  if (tag === undefined) return undefined;
+  const reason = item.status !== 'done' && typeof item.reason === 'string' && item.reason.trim() !== '' ? item.reason.trim() : null;
+  return { tag, reason };
+}
+
+/** "rinviato da giovedì 15 ottobre" under an open commitment born from a postponement (D-151), else undefined. */
+export function postponedText(item: Pick<Commitment, 'status' | 'postponedFrom'>, today: string): string | undefined {
+  if (item.status !== 'open' || typeof item.postponedFrom !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.postponedFrom)) return undefined;
+  const label = dayLabel(item.postponedFrom, today);
+  return `rinviato da ${label === 'Oggi' || label === 'Domani' ? label.toLowerCase() : label}`;
+}
+
+/** One line of the end-of-day report the secretary asks to confirm (D-151). */
+export interface ReportEntry {
+  commitmentId: string;
+  text: string;
+  dayText: string;
+  time: string | null;
+  outcome: 'done' | 'not_done' | 'postponed';
+  reason: string | null;
+  /** Only for a postponement: the new day as the core computed it. */
+  to?: { dayText: string; time: string | null };
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function reportEntry(raw: unknown): ReportEntry | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const { commitmentId, text, dayText, time, outcome: rawOutcome, reason, toDayText, toTime } = raw as Record<string, unknown>;
+  const outcome = (['done', 'not_done', 'postponed'] as const).find((name) => name === rawOutcome);
+  if (outcome === undefined || typeof commitmentId !== 'string' || typeof text !== 'string' || text.trim() === '' || typeof dayText !== 'string') return undefined;
+  const entry: ReportEntry = { commitmentId, text, dayText, time: nullableString(time), outcome, reason: nullableString(reason) };
+  if (outcome === 'postponed') {
+    // A postponement without its new day cannot be checked: the line is dropped.
+    if (typeof toDayText !== 'string' || toDayText.trim() === '') return undefined;
+    entry.to = { dayText: toDayText, time: nullableString(toTime) };
+  }
+  return entry;
+}
+
+/** The valid lines of a report approval's detail (`op: 'report'`, D-151); the malformed ones are left out, none at all for another detail. */
+export function reportEntries(detail: Record<string, unknown>): ReportEntry[] {
+  if (detail.op !== 'report' || !Array.isArray(detail.entries)) return [];
+  return detail.entries.map(reportEntry).filter((entry) => entry !== undefined);
+}
+
+/** The outcome of a report line in words: "Fatto", "Non fatto", "Rinviato a venerdì 16 ottobre, alle 10:00". */
+export function outcomeText(entry: ReportEntry): string {
+  if (entry.outcome === 'done') return 'Fatto';
+  if (entry.outcome === 'not_done') return 'Non fatto';
+  const to = entry.to;
+  return to === undefined ? 'Rinviato' : `Rinviato a ${to.dayText}${to.time === null ? '' : `, alle ${to.time}`}`;
+}

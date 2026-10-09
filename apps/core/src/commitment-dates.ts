@@ -17,6 +17,11 @@ export function localDay(now: Date = new Date()): string {
   return dayOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
 
+/** The start of today in the local time of this machine. */
+export function localMidnight(now: Date = new Date()): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 function dayOf(year: number, month: number, day: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }

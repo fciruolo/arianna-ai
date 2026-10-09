@@ -80,6 +80,7 @@ export const ACTION_TEXT: Record<string, string> = {
   'commitment.add': 'Segno questo impegno?',
   'commitment.done': 'Lo segno come fatto?',
   'commitment.move': 'Lo sposto?',
+  'commitment.report': 'Annoto il resoconto?',
 };
 
 /** The cloud models as the user reads them; an alias not listed is shown as it is. */

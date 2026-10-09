@@ -1,6 +1,6 @@
 import { maxLabel, type Label } from '@arianna/policy';
 
-import { dayText, localDay, parseDay, parseTime, relativeDayText, type DayRange } from './commitment-dates.ts';
+import { dayText, localDay, localMidnight, parseDay, parseTime, relativeDayText, type DayRange } from './commitment-dates.ts';
 import { loadConversation, type Conversation } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -30,6 +30,9 @@ export interface Commitment {
   conversationId: string | null;
   createdAt: Date;
   doneAt: Date | null;
+  /** The commitment this one continues, postponed (D-151), and the day that one had. */
+  rescheduledFrom: string | null;
+  postponedFrom: string | null;
 }
 
 /** The label every commitment has at least. */
@@ -50,7 +53,8 @@ export class CommitmentError extends Error {
 }
 
 const COLUMNS = `id::text, body, day::text AS day, to_char(at_time, 'HH24:MI') AS time, status, reason, label,
-  conversation_id::text AS "conversationId", created_at AS "createdAt", done_at AS "doneAt"`;
+  conversation_id::text AS "conversationId", created_at AS "createdAt", done_at AS "doneAt",
+  rescheduled_from::text AS "rescheduledFrom", (SELECT p.day::text FROM commitments p WHERE p.id = commitments.rescheduled_from) AS "postponedFrom"`;
 
 export async function loadCommitment(sql: Queryable, id: string): Promise<Commitment | undefined> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
@@ -125,16 +129,45 @@ export async function moveApplied(sql: Queryable, approvalId: string): Promise<b
 
 // --- The confirmation: an approval of kind `commitment`, decided in the web chat only.
 
-export type CommitmentAction = 'commitment.add' | 'commitment.done' | 'commitment.move';
+export type CommitmentAction = 'commitment.add' | 'commitment.done' | 'commitment.move' | 'commitment.report';
+
+/** How the user says a commitment went, in the report (D-151). */
+export const REPORT_OUTCOMES = ['done', 'not_done', 'postponed'] as const;
+export type ReportOutcome = (typeof REPORT_OUTCOMES)[number];
+
+/**
+ * One commitment of a report (D-151): where it is (`day`, `time`: it changes
+ * only if still there), how it went and why; a postponed one also the new
+ * day and time, computed by the code.
+ */
+export type ReportEntry = {
+  commitmentId: string;
+  text: string;
+  day: string;
+  time: string | null;
+  dayText: string;
+  outcome: ReportOutcome;
+  reason: string | null;
+  toDay?: string;
+  toTime?: string | null;
+  toDayText?: string;
+};
 
 /** What the approval card shows and what approving it does. */
 export type CommitmentProposal =
   | { op: 'add'; text: string; day: string; time: string | null; dayText: string }
   | { op: 'done'; commitmentId: string; text: string; day: string; time: string | null; dayText: string }
   /** To another day or time (D-148): `day` and `time` are the new ones, `from…` those it had. */
-  | { op: 'move'; commitmentId: string; text: string; day: string; time: string | null; dayText: string; fromDay: string; fromTime: string | null; fromDayText: string };
+  | { op: 'move'; commitmentId: string; text: string; day: string; time: string | null; dayText: string; fromDay: string; fromTime: string | null; fromDayText: string }
+  /** The report of the day (D-151): several commitments closed at once, each with its outcome. */
+  | { op: 'report'; entries: ReportEntry[] };
 
-const ACTIONS: Record<CommitmentProposal['op'], CommitmentAction> = { add: 'commitment.add', done: 'commitment.done', move: 'commitment.move' };
+const ACTIONS: Record<CommitmentProposal['op'], CommitmentAction> = { add: 'commitment.add', done: 'commitment.done', move: 'commitment.move', report: 'commitment.report' };
+
+/** Longest reason of a report entry (the column allows 1000; the tool asks for 300). */
+export const MAX_REASON = 300;
+/** Most commitments in one report. */
+export const MAX_REPORT = 12;
 
 /**
  * Asks the user to confirm `proposal`, as an approval of the task at `step`
@@ -168,6 +201,10 @@ export async function commitmentApprovalAt(sql: Queryable, taskId: string, step:
 export function proposalOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): CommitmentProposal | undefined {
   if (approval.kind !== 'commitment') return undefined;
   const detail = approval.detail;
+  if (detail.op === 'report') {
+    const entries = Array.isArray(detail.entries) ? detail.entries.map(reportEntryOf).filter((entry) => entry !== undefined) : [];
+    return entries.length === 0 ? undefined : { op: 'report', entries };
+  }
   const text = typeof detail.text === 'string' ? detail.text : undefined;
   const day = typeof detail.day === 'string' ? detail.day : undefined;
   const time = typeof detail.time === 'string' ? detail.time : null;
@@ -181,14 +218,75 @@ export function proposalOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): C
   return undefined;
 }
 
+function reportEntryOf(raw: unknown): ReportEntry | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const entry = raw as Record<string, unknown>;
+  const { commitmentId, text, day, outcome } = entry;
+  if (typeof commitmentId !== 'string' || typeof text !== 'string' || typeof day !== 'string') return undefined;
+  if (typeof outcome !== 'string' || !(REPORT_OUTCOMES as readonly string[]).includes(outcome)) return undefined;
+  const base: ReportEntry = {
+    commitmentId,
+    text,
+    day,
+    time: typeof entry.time === 'string' ? entry.time : null,
+    dayText: dayText(day),
+    outcome: outcome as ReportOutcome,
+    reason: typeof entry.reason === 'string' ? entry.reason : null,
+  };
+  if (base.outcome !== 'postponed') return base;
+  if (typeof entry.toDay !== 'string') return undefined;
+  return { ...base, toDay: entry.toDay, toTime: typeof entry.toTime === 'string' ? entry.toTime : null, toDayText: dayText(entry.toDay) };
+}
+
+/**
+ * The report of an approved `commitment.report` (D-151), in the transaction
+ * of the decision: each commitment changes only if still open and still where
+ * the card showed it. A postponed one keeps its day, with its reason, and a
+ * new open commitment with the same text continues it on the new day. Each
+ * change is an event with the approval's id (never the text): the answer
+ * reads from there what the report did.
+ */
+async function applyReport(tx: Queryable, approval: StoredApproval, entries: readonly ReportEntry[]): Promise<void> {
+  for (const entry of entries) {
+    const [row] = await tx.unsafe<Commitment[]>(
+      `UPDATE commitments SET status = $2, reason = $3, done_at = CASE WHEN $2 = 'done' THEN now() END, updated_at = now()
+       WHERE id = $1 AND status = 'open' AND day = $4::date AND at_time IS NOT DISTINCT FROM $5::time RETURNING ${COLUMNS}`,
+      [entry.commitmentId, entry.outcome, entry.reason, entry.day, entry.time],
+    );
+    if (row === undefined) continue;
+    await appendEvent(tx, { kind: 'commitment.changed', label: 'L0', payload: { commitmentId: row.id, status: entry.outcome, approvalId: approval.id } });
+    if (entry.outcome !== 'postponed' || entry.toDay === undefined) continue;
+    const [next] = await tx<{ id: string }[]>`
+      INSERT INTO commitments (body, day, at_time, label, conversation_id, task_id, rescheduled_from)
+      VALUES (${row.body}, ${entry.toDay}::date, ${entry.toTime ?? null}::time, ${maxLabel(row.label, approval.label, COMMITMENT_LABEL)}::privacy_label,
+        ${approval.conversationId}::uuid, ${approval.taskId}::uuid, ${row.id}::uuid)
+      RETURNING id::text`;
+    if (next === undefined) throw new Error('INSERT INTO commitments returned no row');
+    await appendEvent(tx, { kind: 'commitment.changed', label: 'L0', payload: { commitmentId: next.id, status: 'open', rescheduledFrom: row.id, approvalId: approval.id } });
+  }
+}
+
+/** The commitments the approved report `approvalId` closed: read from its events, not from where they are now. */
+export async function reportApplied(sql: Queryable, approvalId: string): Promise<Set<string>> {
+  const rows = await sql<{ id: string }[]>`
+    SELECT payload ->> 'commitmentId' AS id FROM events
+    WHERE kind = 'commitment.changed' AND payload ->> 'approvalId' = ${approvalId} AND NOT payload ? 'rescheduledFrom'`;
+  return new Set(rows.map((row) => row.id));
+}
+
 /**
  * What an approved confirmation does, in the transaction of the decision: a
- * new commitment (once per approval), or one marked done (if still open).
- * Returns the commitment, or undefined when nothing changed.
+ * new commitment (once per approval), one marked done or moved (if still
+ * open), or a report. Returns the commitment, or undefined when nothing
+ * changed or for a report.
  */
 export async function applyCommitmentApproval(tx: Queryable, approval: StoredApproval): Promise<Commitment | undefined> {
   const proposal = proposalOf(approval);
   if (proposal === undefined || approval.state !== 'approved') return undefined;
+  if (proposal.op === 'report') {
+    await applyReport(tx, approval, proposal.entries);
+    return undefined;
+  }
   if (proposal.op === 'done') {
     try {
       return await markDone(tx, proposal.commitmentId);
@@ -261,6 +359,75 @@ export function proposeMove(item: Commitment, args: Record<string, unknown>, tod
   return { op: 'move', commitmentId: item.id, text: item.body, day, time, dayText: dayText(day), fromDay: item.day, fromTime: item.time, fromDayText: dayText(item.day) };
 }
 
+/** A clock or a day the model passed, not a placeholder for none ("non specificato", "nessuno"): local models fill every field. */
+function saidTime(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && !/^\s*(non\s+(specificat[oa]|dett[oa]|indicat[oa])|nessun[oa]?|n\/?a|none|null|-+|—)\s*$/i.test(value);
+}
+
+const NOT_ONE = 'Call again with the id of the one the user means, or ask the user.';
+
+/**
+ * The report to propose from the arguments of `commitment.report` (D-151),
+ * or why not (an error the model reads): each item names one open commitment
+ * (as `findCommitment` does), says how it went and, if the user said it, why;
+ * a postponed one also the new day, computed here from the user's words (the
+ * clock said with it or in "time", else the one it had).
+ */
+export function proposeReport(open: readonly Commitment[], args: Record<string, unknown>, today: string): CommitmentProposal | { error: string } {
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (items.length === 0) return { error: 'say how each commitment went: "items", one per commitment the user reported on' };
+  if (items.length > MAX_REPORT) return { error: `at most ${String(MAX_REPORT)} commitments in one report: split it` };
+  const entries: ReportEntry[] = [];
+  for (const raw of items) {
+    const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const which = typeof item.which === 'string' ? item.which : '';
+    const outcome = typeof item.outcome === 'string' ? item.outcome : '';
+    if (!(REPORT_OUTCOMES as readonly string[]).includes(outcome)) return { error: `the outcome '${outcome}' is not one of done, not_done, postponed` };
+    const found = findCommitment(open, which);
+    if ('none' in found) return { error: `no open commitment matches '${which}'. The open ones:\n${open.map(commitmentLine).join('\n')}\n${NOT_ONE}` };
+    if ('several' in found) return { error: `more than one open commitment matches '${which}':\n${found.several.map(commitmentLine).join('\n')}\n${NOT_ONE}` };
+    const commitment = found.found;
+    if (entries.some((entry) => entry.commitmentId === commitment.id)) return { error: `'${which}' names a commitment already in this report: one item per commitment` };
+    const said = typeof item.reason === 'string' ? item.reason.replace(/\s+/g, ' ').trim() : '';
+    if (Array.from(said).length > MAX_REASON) return { error: `the reason is longer than ${String(MAX_REASON)} characters: keep the user's words short` };
+    const entry: ReportEntry = {
+      commitmentId: commitment.id,
+      text: commitment.body,
+      day: commitment.day,
+      time: commitment.time,
+      dayText: dayText(commitment.day),
+      outcome: outcome as ReportOutcome,
+      reason: said === '' ? null : said,
+    };
+    const hasDay = saidTime(item.day);
+    const hasTime = saidTime(item.time);
+    if (entry.outcome !== 'postponed' && (hasDay || hasTime)) {
+      return { error: `'${commitment.body}' is ${entry.outcome}: a day or a time goes only with outcome postponed` };
+    }
+    if (entry.outcome === 'postponed') {
+      const words = typeof item.day === 'string' ? item.day.trim() : '';
+      if (words === '') return { error: `say the day '${commitment.body}' is postponed to, as the user said it; if the user did not say it, ask` };
+      const parsed = parseDay(words, today);
+      if (parsed === undefined) {
+        return { error: `the day '${words}' is not one the core can compute: ask the user for the day (oggi, domani, a weekday, a date such as 15 ottobre)` };
+      }
+      let time = parsed.time ?? commitment.time;
+      if (saidTime(item.time)) {
+        const clock = parseTime(item.time);
+        if (clock === undefined) return { error: `the time '${item.time}' is not a clock: pass it as HH:MM, or leave it out` };
+        if (parsed.time !== undefined && parsed.time !== clock) return { error: `two clocks for '${commitment.body}': ${parsed.time} in "day" and ${clock} in "time": ask the user which` };
+        time = clock;
+      }
+      if (parsed.day <= commitment.day) return { error: `'${commitment.body}' was for ${dayText(commitment.day)}: a postponement goes to a later day; ask the user which` };
+      entry.toDay = parsed.day;
+      entry.toTime = time;
+      entry.toDayText = dayText(parsed.day);
+    }
+    entries.push(entry);
+  }
+  return { op: 'report', entries };
+}
+
 function words(text: string): string[] {
   return text
     .toLowerCase()
@@ -308,7 +475,9 @@ const STATUS_TEXT: Record<CommitmentStatus, string> = {
 
 function bullet(item: Commitment, withDay: boolean): string {
   const when = [withDay ? dayText(item.day) : '', item.time ?? ''].filter((part) => part !== '').join(', ');
-  return `- ${when === '' ? '' : `${when} · `}${item.body}${STATUS_TEXT[item.status]}`;
+  // The reason of what was not done or postponed (D-151), as the chat shows it.
+  const reason = item.reason !== null && (item.status === 'not_done' || item.status === 'postponed') ? ` — ${item.reason}` : '';
+  return `- ${when === '' ? '' : `${when} · `}${item.body}${STATUS_TEXT[item.status]}${reason}`;
 }
 
 /**
@@ -340,7 +509,8 @@ export function listText(items: readonly Commitment[], range: DayRange | undefin
 }
 
 /** The answer the chat shows once the user decided a confirmation, written here. */
-export function decisionText(proposal: CommitmentProposal, state: string, today: string = localDay()): string {
+export function decisionText(proposal: CommitmentProposal, state: string, today: string = localDay(), applied?: ReadonlySet<string>): string {
+  if (proposal.op === 'report') return reportText(proposal.entries, state, today, applied);
   const when = `${relativeDayText(proposal.day, today)}${proposal.time === null ? '' : `, alle ${proposal.time}`}`;
   if (proposal.op === 'add') {
     return state === 'approved' ? `Segnato per ${when}: ${proposal.text}.` : 'Va bene, non l’ho segnato. Dimmi cosa cambiare.';
@@ -350,6 +520,36 @@ export function decisionText(proposal: CommitmentProposal, state: string, today:
     return state === 'approved' ? `Spostato a ${when}: ${proposal.text}.` : `Va bene, resta per ${from}.`;
   }
   return state === 'approved' ? `Segnato come fatto: ${proposal.text}.` : 'Va bene, resta da fare.';
+}
+
+/**
+ * The answer to a decided report (D-151): what was noted, each commitment
+ * with its outcome and reason; those `applied` leaves out (closed or moved
+ * meanwhile) are named apart, never as noted.
+ */
+export function reportText(entries: readonly ReportEntry[], state: string, today: string, applied?: ReadonlySet<string>): string {
+  if (state !== 'approved') return 'Va bene, non ho annotato nulla. Dimmi cosa cambiare.';
+  const noted = entries.filter((entry) => applied === undefined || applied.has(entry.commitmentId));
+  const skipped = entries.filter((entry) => !noted.includes(entry));
+  const lines: string[] = [];
+  if (noted.length > 0) {
+    lines.push('Annotato:');
+    for (const entry of noted) {
+      const because = entry.reason === null ? '' : ` — ${entry.reason}`;
+      if (entry.outcome === 'done') lines.push(`- fatto: ${entry.text}${because}`);
+      else if (entry.outcome === 'not_done') lines.push(`- non fatto: ${entry.text}${because}`);
+      else {
+        const to = `${relativeDayText(entry.toDay ?? entry.day, today)}${entry.toTime === null || entry.toTime === undefined ? '' : `, alle ${entry.toTime}`}`;
+        lines.push(`- rinviato a ${to}: ${entry.text}${because}`);
+      }
+    }
+  }
+  if (skipped.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('Non annotati, perché nel frattempo chiusi o spostati altrove:');
+    for (const entry of skipped) lines.push(`- ${entry.text}`);
+  }
+  return lines.join('\n');
 }
 
 // --- The conversation of the "Segretaria" button.
@@ -389,10 +589,21 @@ export async function secretaryConversationId(tx: Queryable): Promise<string> {
 export async function openSecretary(sql: Sql): Promise<Conversation> {
   return sql.begin(async (tx) => {
     const id = await secretaryConversationId(tx);
-    // Each click on the button opens a new session (D-146): the model reads from here on.
+    // Each click on the button opens a new session (D-146): the model reads from here on,
+    // or from the reminders of today the user has not answered yet (D-151): the evening
+    // report stays in what the model reads when the user answers it. Never back in time.
+    const midnight = localMidnight();
+    const [unanswered] = await tx<{ from: string | null }[]>`
+      SELECT greatest(min(m.ts), (SELECT secretary_session_at FROM conversations WHERE id = ${id}))::text AS "from"
+      FROM messages m
+      WHERE m.conversation_id = ${id} AND m.role = 'assistant' AND m.task_id IS NULL AND m.ts >= ${midnight}
+        AND EXISTS (SELECT FROM events e WHERE e.kind = 'message.created' AND e.ts >= ${midnight} AND e.payload ->> 'messageId' = m.id::text AND e.payload ? 'reminder')
+        AND m.id > coalesce((SELECT max(u.id) FROM messages u WHERE u.conversation_id = ${id} AND u.role = 'user'), 0)
+      HAVING count(*) > 0`;
+    const from = unanswered?.from ?? null;
     // The event first: tasks find the session in force when they began by it (summaries.ts).
-    const started = await appendEvent(tx, { kind: 'secretary.session', label: 'L0', payload: { conversationId: id } });
-    await tx`UPDATE conversations SET secretary_session_at = (SELECT ts FROM events WHERE id = ${started.id}::bigint) WHERE id = ${id}`;
+    const started = await appendEvent(tx, { kind: 'secretary.session', label: 'L0', payload: from === null ? { conversationId: id } : { conversationId: id, from } });
+    await tx`UPDATE conversations SET secretary_session_at = coalesce(${from}::timestamptz, (SELECT ts FROM events WHERE id = ${started.id}::bigint)) WHERE id = ${id}`;
     const conversation = await loadConversation(tx, id);
     if (conversation === undefined) throw new Error('the secretary conversation is missing');
     return conversation;

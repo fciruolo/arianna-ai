@@ -2,13 +2,14 @@
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { ApiError, listCommitments, markCommitmentDone } from '../lib/api.ts';
-import { dueCount, groupCommitments } from '../lib/commitments.ts';
+import { closedText, dueCount, groupCommitments, postponedText } from '../lib/commitments.ts';
 import type { Commitment } from '../lib/types.ts';
 import Icon from './Icon.vue';
 
 /**
  * The commitments beside the secretary's conversation (I-12, D-144): the open
- * ones by day, the late ones first, those of today already done; "Fatto" on
+ * ones by day, the late ones first, those of today already closed (done, not
+ * done or postponed, with the reason; D-151); "Fatto" on
  * each open one. Read from the core (written from SQL, never by a model) and
  * again whenever one changes (`version`, from the live feed).
  */
@@ -78,11 +79,15 @@ watch(
           <li v-for="item in group.items" :key="item.id" class="flex items-center gap-2.5 rounded-lg px-1.5 py-1 text-[13.5px] hover:bg-surface-2">
             <span v-if="item.time !== null" class="w-11 shrink-0 font-mono text-[12px] text-muted">{{ item.time }}</span>
             <span v-else class="w-11 shrink-0" aria-hidden="true" />
-            <span class="min-w-0 flex-1 break-words" :class="{ 'text-muted line-through': item.status === 'done' }">{{ item.body }}</span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="break-words" :class="{ 'text-muted line-through': closedText(item) !== undefined }">{{ item.body }}</span>
+              <span v-if="closedText(item)?.reason" class="text-[11.5px] break-words text-muted">Perché: {{ closedText(item)?.reason }}</span>
+              <span v-else-if="postponedText(item, today) !== undefined" class="text-[11.5px] text-muted">{{ postponedText(item, today) }}</span>
+            </span>
             <button v-if="item.status === 'open'" type="button" class="btn shrink-0 px-2 py-0.5 text-[12px]" :disabled="busy === item.id" :aria-label="`Fatto: ${item.body}`" @click="done(item)">
               <Icon name="approve" :size="13" />Fatto
             </button>
-            <span v-else-if="item.status === 'done'" class="shrink-0 font-mono text-[11px] text-ok">fatto</span>
+            <span v-else-if="closedText(item) !== undefined" class="shrink-0 font-mono text-[11px] lowercase" :class="item.status === 'done' ? 'text-ok' : 'text-warn'">{{ closedText(item)?.tag }}</span>
           </li>
         </ul>
       </div>

@@ -24,7 +24,23 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'commitment.add': object({ text: text(300), day: text(80), time: text(20) }, ['text', 'day']),
   'commitment.list': object({ day: text(80) }, []),
   'commitment.done': object({ which: text(200) }, ['which']),
-  'commitment.move': object({ which: text(200), day: text(80), time: text(20) }, ['which']),
+  'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
+  'commitment.report': object(
+    {
+      items: {
+        type: 'array',
+        minItems: 1,
+        // MAX_REPORT and MAX_REASON of apps/core/src/commitments.ts.
+        maxItems: 12,
+        items: object(
+          // "reason" right after the outcome and always present (empty for none): local models skip an optional one.
+          { which: text(200), outcome: { type: 'string', enum: ['done', 'not_done', 'postponed'] }, reason: { type: 'string', maxLength: 300 }, day: text(80), time: text(20) },
+          ['which', 'outcome', 'reason'],
+        ),
+      },
+    },
+    ['items'],
+  ),
 };
 
 /** What the model reads about each tool; the registry's description is for people. */
@@ -46,7 +62,9 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'commitment.done':
     'Mark a commitment done when the user says they did it. "which" is the commitment in the user\'s words (or its id); the core finds it and asks the user to confirm. If more than one matches, it answers with the open ones and their ids.',
   'commitment.move':
-    'Move a commitment to another day or time when the user asks (sposta, rimanda, anticipa). "which" is the commitment in the user\'s words (or its id); "day" is the new day exactly as the user said it (venerdì, domani, 20 ottobre); "time" only if the user said a clock (alone, it moves the clock on the same day). The core computes the date, finds the commitment and asks the user to confirm: never compute the date yourself. If more than one matches, it answers with the open ones and their ids.',
+    'Move a commitment to another day or time when the user changes the plan (sposta, anticipa). If the user says why it was not done, pass it in "reason", in the user\'s words: the core notes it as postponed, with the reason. "which" is the commitment in the user\'s words (or its id); "day" is the new day exactly as the user said it (venerdì, domani, 20 ottobre); "time" only if the user said a clock (alone, it moves the clock on the same day). The core computes the date, finds the commitment and asks the user to confirm: never compute the date yourself. If more than one matches, it answers with the open ones and their ids.',
+  'commitment.report':
+    'Note how one or more commitments went, when the user reports on them (usually answering the end-of-day report), or says one was not done (non l\'ho fatto, ero fuori, rimandalo): one item per commitment, all in one call. Do not list the commitments first: the core finds each one from the user\'s words. "which" is the commitment in the user\'s words (or its id); "outcome" is done, not_done (it was not done and will not be done) or postponed (it will be done on another day: "day" exactly as the user said it, "time" only if the user said a clock); "reason" is why, in the user\'s words, short, whenever the user said it ("il forno era chiuso"), and "" when they did not; if the user did not say why something was not done or postponed, ask once before calling. If the user did not say the new day of a postponed one, ask it. The core finds the commitments, computes the dates and asks the user to confirm the whole report at once: never compute a date yourself. If more than one commitment matches, it answers with the open ones and their ids.',
 };
 
 /**

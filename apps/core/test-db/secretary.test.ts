@@ -389,3 +389,126 @@ test('the engine: a confirmation that is not a pending one of this task is refus
     assert.equal(waiting.waitingApprovalId, null);
   }
 });
+
+test('the end-of-day report (D-151): one confirmation closes several, with reasons; a postponement continues on the new day', async () => {
+  const secretary = await openSecretary(db().sql);
+  const today = localDay();
+  const tomorrow = parseDay('domani', today)?.day ?? '';
+  const insert = async (body: string, time: string | null = null) => {
+    const [row] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day, at_time) VALUES (${body}, ${today}::date, ${time}::time) RETURNING id::text`;
+    return row?.id ?? '';
+  };
+  const bulb = await insert('Cambiare la lampadina finta in cantina');
+  const bread = await insert('Comprare i biscotti finti', '18:00');
+  const plants = await insert('Innaffiare i gerani finti');
+  const { task } = await postUserMessage(db().sql, secretary.id, 'La lampadina l’ho cambiata, i biscotti rimandali a domani che il forno era chiuso, i gerani no perché ero fuori');
+  const model = scripted([
+    {
+      action: 'call',
+      tool: 'commitment.report',
+      arguments: {
+        items: [
+          { which: 'lampadina', outcome: 'done', reason: '' },
+          { which: 'biscotti', outcome: 'postponed', day: 'domani', reason: 'il forno era chiuso' },
+          { which: 'gerani', outcome: 'not_done', reason: 'ero fuori' },
+        ],
+      },
+    },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.deepEqual([approval.kind, approval.action, approval.label], ['commitment', 'commitment.report', 'L2']);
+  // Nothing changes before the confirmation, which the web chat only decides.
+  assert.equal((await loadCommitment(db().sql, bread))?.status, 'open');
+  await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'telegram'), /approvals_commitment_via_web/);
+  await recordDecision(db().sql, approval.id, 'approved', 'web');
+
+  const [doneBulb, oldBread, notPlants] = await Promise.all([bulb, bread, plants].map((id) => loadCommitment(db().sql, id)));
+  assert.deepEqual([doneBulb?.status, doneBulb?.doneAt !== null], ['done', true]);
+  assert.deepEqual([oldBread?.status, oldBread?.reason, oldBread?.day], ['postponed', 'il forno era chiuso', today]);
+  assert.deepEqual([notPlants?.status, notPlants?.reason], ['not_done', 'ero fuori']);
+  // The postponed one goes on tomorrow, same text and clock, open, naming the one it continues.
+  const next = (await listCommitments(db().sql, { from: tomorrow, to: tomorrow })).find((item) => item.rescheduledFrom === bread);
+  assert.deepEqual([next?.body, next?.time, next?.status, next?.postponedFrom, next?.conversationId], ['Comprare i biscotti finti', '18:00', 'open', today, secretary.id]);
+  // A commitment is continued once only, and its link never changes.
+  await assert.rejects(db().sql`INSERT INTO commitments (body, day, rescheduled_from) VALUES ('Altri biscotti', ${tomorrow}::date, ${bread}::uuid)`, /rescheduled_from/);
+  await assert.rejects(db().sql`UPDATE commitments SET rescheduled_from = NULL WHERE id = ${next?.id ?? ''}`, /origin never change/);
+
+  assert.deepEqual(await drain(task.id, model), ['answered']);
+  assert.equal(model.requests.length, 1);
+  const body = (await answers(task.id))[0]?.body ?? '';
+  assert.match(body, /^Annotato:\n- fatto: Cambiare la lampadina finta in cantina\n- rinviato a domani, .*, alle 18:00: Comprare i biscotti finti — il forno era chiuso\n- non fatto: Innaffiare i gerani finti — ero fuori$/);
+  // The events say ids and statuses, never a text or a reason.
+  const events = await db().sql<{ payload: unknown }[]>`SELECT payload FROM events WHERE kind = 'commitment.changed' AND payload ->> 'approvalId' = ${approval.id}`;
+  assert.equal(events.length, 4);
+  assert.ok(events.every((event) => !/biscotti|forno|gerani|fuori/.test(JSON.stringify(event.payload))));
+});
+
+test('the report: a commitment closed or moved meanwhile is left as it is and named apart; a rejected one changes nothing', async () => {
+  const secretary = await openSecretary(db().sql);
+  const today = localDay();
+  const [a] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day) VALUES ('Spedire la raccomandata finta', ${today}::date) RETURNING id::text`;
+  const [b] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day) VALUES ('Telefonare al commercialista finto', ${today}::date) RETURNING id::text`;
+  const report = { action: 'call', tool: 'commitment.report', arguments: { items: [{ which: 'raccomandata', outcome: 'not_done', reason: 'ufficio chiuso' }, { which: 'commercialista', outcome: 'done', reason: '' }] } } as const;
+
+  const first = await postUserMessage(db().sql, secretary.id, 'Raccomandata non fatta, commercialista sì');
+  const model = scripted([report]);
+  assert.deepEqual(await drain(first.task.id, model), ['waiting-approval']);
+  await recordDecision(db().sql, (await pendingOf(first.task.id)).id, 'rejected', 'web');
+  assert.deepEqual([(await loadCommitment(db().sql, a?.id ?? ''))?.status, (await loadCommitment(db().sql, b?.id ?? ''))?.status], ['open', 'open']);
+  assert.deepEqual(await drain(first.task.id, model), ['answered']);
+  assert.equal((await answers(first.task.id))[0]?.body, 'Va bene, non ho annotato nulla. Dimmi cosa cambiare.');
+
+  const second = await postUserMessage(db().sql, secretary.id, 'Sì, annotalo');
+  const again = scripted([report]);
+  assert.deepEqual(await drain(second.task.id, again), ['waiting-approval']);
+  // "Fatto" on the call while the confirmation waited.
+  await markDone(db().sql, b?.id ?? '');
+  await recordDecision(db().sql, (await pendingOf(second.task.id)).id, 'approved', 'web');
+  assert.deepEqual([(await loadCommitment(db().sql, a?.id ?? ''))?.status, (await loadCommitment(db().sql, b?.id ?? ''))?.reason], ['not_done', null]);
+  assert.deepEqual(await drain(second.task.id, again), ['answered']);
+  assert.equal(
+    (await answers(second.task.id))[0]?.body,
+    'Annotato:\n- non fatto: Spedire la raccomandata finta — ufficio chiuso\n\nNon annotati, perché nel frattempo chiusi o spostati altrove:\n- Telefonare al commercialista finto',
+  );
+});
+
+test('the report: a commitment moved meanwhile, clock included, stays where the move put it', async () => {
+  const secretary = await openSecretary(db().sql);
+  const today = localDay();
+  const tomorrow = parseDay('domani', today)?.day ?? '';
+  const [row] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day) VALUES ('Lavare la macchina finta', ${today}::date) RETURNING id::text`;
+  const { task } = await postUserMessage(db().sql, secretary.id, 'La macchina rimandala a domani, pioveva');
+  const model = scripted([{ action: 'call', tool: 'commitment.report', arguments: { items: [{ which: 'macchina', outcome: 'postponed', day: 'domani', reason: 'pioveva' }] } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  // Only the clock changes meanwhile (a time where there was none).
+  await db().sql`UPDATE commitments SET at_time = '09:00' WHERE id = ${row?.id ?? ''}`;
+  await recordDecision(db().sql, (await pendingOf(task.id)).id, 'approved', 'web');
+  const after = await loadCommitment(db().sql, row?.id ?? '');
+  assert.deepEqual([after?.status, after?.reason, after?.time], ['open', null, '09:00']);
+  assert.equal((await listCommitments(db().sql, { from: tomorrow, to: tomorrow })).filter((item) => item.rescheduledFrom === row?.id).length, 0);
+  assert.deepEqual(await drain(task.id, model), ['answered']);
+  assert.equal((await answers(task.id))[0]?.body, 'Non annotati, perché nel frattempo chiusi o spostati altrove:\n- Lavare la macchina finta');
+  // A commitment never continues itself.
+  const self = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await assert.rejects(db().sql`INSERT INTO commitments (id, body, day, rescheduled_from) VALUES (${self}::uuid, 'Se stesso', ${today}::date, ${self}::uuid)`, /rescheduled_not_self/);
+});
+
+test('"rimandale a oggi, ero fuori" through commitment.move (D-151): a postponement with its reason, confirmed as a report', async () => {
+  const secretary = await openSecretary(db().sql);
+  const today = localDay();
+  const yesterday = new Date(Date.now() - 86_400_000);
+  const [row] = await db().sql<{ id: string }[]>`INSERT INTO commitments (body, day) VALUES ('Potare le ortensie finte', ${localDay(yesterday)}::date) RETURNING id::text`;
+  const { task } = await postUserMessage(db().sql, secretary.id, 'Le ortensie ieri non le ho potate perché ero fuori, rimandale a oggi');
+  const model = scripted([{ action: 'call', tool: 'commitment.move', arguments: { which: 'ortensie', day: 'oggi', reason: 'ero fuori' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.equal(approval.action, 'commitment.report');
+  await recordDecision(db().sql, approval.id, 'approved', 'web');
+  const old = await loadCommitment(db().sql, row?.id ?? '');
+  assert.deepEqual([old?.status, old?.reason], ['postponed', 'ero fuori']);
+  const next = (await listCommitments(db().sql, { from: today, to: today })).find((item) => item.rescheduledFrom === row?.id);
+  assert.deepEqual([next?.status, next?.body], ['open', 'Potare le ortensie finte']);
+  assert.deepEqual(await drain(task.id, model), ['answered']);
+  assert.match((await answers(task.id))[0]?.body ?? '', /^Annotato:\n- rinviato a oggi, .*: Potare le ortensie finte — ero fuori$/);
+});

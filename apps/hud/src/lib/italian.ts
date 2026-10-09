@@ -43,6 +43,7 @@ const REASONS: Record<string, string> = {
   'approval needed: commitment.add': 'aspetta la tua conferma per segnare l’impegno',
   'approval needed: commitment.done': 'aspetta la tua conferma per segnare l’impegno come fatto',
   'approval needed: commitment.move': 'aspetta la tua conferma per spostare l’impegno',
+  'approval needed: commitment.report': 'aspetta la tua conferma per annotare il resoconto',
   'the secretary answers only in its conversation': 'la segretaria risponde solo nella sua conversazione',
   'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
 };

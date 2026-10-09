@@ -16,7 +16,10 @@ import {
   proposalOf,
   proposeAdd,
   proposeMove,
+  proposeReport,
+  reportApplied,
   requestCommitment,
+  type Commitment,
   type CommitmentProposal,
 } from '../commitments.ts';
 import type { Sql } from '../db/client.ts';
@@ -30,11 +33,11 @@ import { recordTurn, type NewTurn, type Turn } from './turns.ts';
  * conversation. None of them lets the model write what the user reads about
  * a commitment: `commitment.list` writes the list in the chat from SQL and
  * ends the step; `commitment.add`, `commitment.done` and `commitment.move`
- * (D-148) compute the day or find the commitment here, and the task waits for the user's confirmation
+ * (D-148) and `commitment.report` (D-151) compute the day or find the commitment here, and the task waits for the user's confirmation
  * (an approval of kind `commitment`); once decided, the answer is written
  * here too (`decisionAnswer`). Everything stays at L2 at least, on this machine.
  */
-export const SECRETARY_TOOLS = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move'] as const satisfies readonly ToolId[];
+export const SECRETARY_TOOLS = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move', 'commitment.report'] as const satisfies readonly ToolId[];
 export type SecretaryTool = (typeof SECRETARY_TOOLS)[number];
 
 export function isSecretaryTool(tool: ToolId): tool is SecretaryTool {
@@ -67,6 +70,15 @@ async function answer(sql: Sql, task: Task, runId: string, text: string, label: 
   }
   if (record !== undefined) await recordTurn(sql, { ...record, label, messageId: result.message.id });
   return { kind: 'answered', messageId: result.message.id, ...extra };
+}
+
+/**
+ * Whether a `commitment.move` is really a postponement (D-151): the user said
+ * why (a reason), or the commitment's day is already gone, so it was not done.
+ * Local models reach for "move" when the user says "rimandalo".
+ */
+export function isPostponement(item: Pick<Commitment, 'day'>, args: Record<string, unknown>, today: string): boolean {
+  return (typeof args.reason === 'string' && args.reason.trim() !== '') || item.day < today;
 }
 
 export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: SecretaryCall, show: (kind: ActivityKind, detail?: string) => Promise<void>): Promise<StepOutcome> {
@@ -104,6 +116,12 @@ export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: Secreta
     const proposed = proposeAdd(args, today);
     if ('error' in proposed) return fail(proposed.error);
     proposal = proposed;
+  } else if (tool === 'commitment.report') {
+    const open = await listCommitments(sql);
+    if (open.length === 0) return fail('there are no open commitments: tell the user');
+    const reported = proposeReport(open, args, today);
+    if ('error' in reported) return fail(reported.error, label);
+    proposal = reported;
   } else {
     const which = typeof args.which === 'string' ? args.which : '';
     const open = await listCommitments(sql);
@@ -114,6 +132,12 @@ export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: Secreta
     const item = found.found;
     if (tool === 'commitment.done') {
       proposal = { op: 'done', commitmentId: item.id, text: item.body, day: item.day, time: item.time, dayText: dayText(item.day) };
+    } else if (isPostponement(item, args, today)) {
+      // A move with a reason, or of a day already gone, is a postponement (D-151): the commitment
+      // stays on its day as postponed, with why, and goes on the new day; the card is a report.
+      const reported = proposeReport([item], { items: [{ which: item.id, outcome: 'postponed', day: args.day, time: args.time, reason: args.reason }] }, today);
+      if ('error' in reported) return fail(reported.error, label);
+      proposal = reported;
     } else {
       const moved = proposeMove(item, args, today);
       if ('error' in moved) return fail(moved.error, label);
@@ -125,8 +149,8 @@ export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: Secreta
     await recordTurn(tx, { ...turn, label, result: WAITING_CONFIRMATION });
     return requestCommitment(tx, { taskId: task.id, step, label, proposal });
   });
-  // The day only: the text of a commitment never goes in an activity line.
-  await show('tool', `${tool} · ${proposal.day}`);
+  // The day or the count only: the text of a commitment never goes in an activity line.
+  await show('tool', `${tool} · ${proposal.op === 'report' ? String(proposal.entries.length) : proposal.day}`);
   return { kind: 'confirm', approvalId, usage };
 }
 
@@ -138,7 +162,9 @@ export async function decisionAnswer(sql: Sql, ctx: StepContext, decided: Stored
   const label = maxLabel(task.effectiveLabel, decided.label, COMMITMENT_LABEL);
   // An approved move that changed nothing (closed or moved meanwhile, D-148): say so, never "Spostato".
   if (proposal.op === 'move' && decided.state === 'approved' && !(await moveApplied(sql, decided.id))) return answer(sql, task, runId, NOT_MOVED, label);
-  return answer(sql, task, runId, decisionText(proposal, decided.state), label);
+  // A report says what it noted, read from its events (D-151): a commitment closed meanwhile is named apart.
+  const applied = proposal.op === 'report' && decided.state === 'approved' ? await reportApplied(sql, decided.id) : undefined;
+  return answer(sql, task, runId, decisionText(proposal, decided.state, localDay(), applied), label);
 }
 
 /**
