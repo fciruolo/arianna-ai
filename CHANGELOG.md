@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.34.0] - 2026-10-09
+
 ### Aggiunto
 
 - Un progetto è un contenitore: se la sua cartella non è un repository git, le parti sono le sottocartelle con un proprio git (o quelle elencate in `parts`), e il Coder lavora in una parte alla volta, mai nel contenitore; i progetti di oggi restano una parte sola (I-11, D-145).
