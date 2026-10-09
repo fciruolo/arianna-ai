@@ -22,6 +22,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Le etichette delle cartelle di gestione stanno in `[[project.folder]]` di `arianna.toml` e cambiano solo con i due passi della sezione privacy «Progetti» (I-11, D-145).
 - Quando il contenitore è esso stesso un git, una nota o un file sopra Interno nelle sue cartelle di gestione tiene fuori il Coder finché la tappa P3 non nega i file uno a uno (I-11, D-145).
+- `kb/progetti/` è fuori da git come `kb/inbox/`: le note dei progetti scritte con «+ Conoscenza» non finiscono mai nel repository di Arianna (I-11, D-145).
+
 
 ## [0.33.0] - 2026-10-09
 
