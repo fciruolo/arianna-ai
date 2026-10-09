@@ -15,7 +15,7 @@ import PixelAgent from './PixelAgent.vue';
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
  * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Pensieri, Conoscenza, Ufficio, Chiama, Impostazioni) and the theme; one compact row
+ * Segretaria, Pensieri, Conoscenza, Ufficio, Chiama, Impostazioni) and the theme; one compact row
  * of the agents that opens the right bar; the conversations, pinned first.
  */
 const props = defineProps<{
@@ -36,12 +36,15 @@ const props = defineProps<{
   callStarting: boolean;
   /** Open questions of "Sviluppo di Arianna" without an answer (D-120): a dot on "Impostazioni". */
   devPending: number;
+  /** The secretary's conversation is the one open (D-144): its button is marked. */
+  secretaryOpen: boolean;
 }>();
 const emit = defineEmits<{
   fold: [];
   home: [];
   search: [];
   create: [];
+  secretary: [];
   thoughts: [];
   knowledge: [];
   projects: [];
@@ -117,6 +120,17 @@ function itemClass(on: boolean): string {
     <nav aria-label="Aree" class="flex flex-col gap-0.5 text-[13.5px]">
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted hover:bg-surface-2 hover:text-ink" aria-haspopup="dialog" @click="emit('create')">
         <span class="text-accent"><Icon name="new" :size="16" /></span>Nuovo
+      </button>
+      <!-- The secretary (I-12, D-144): always here, opens its one private conversation. -->
+      <button
+        type="button"
+        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+        :class="itemClass(secretaryOpen)"
+        :aria-current="secretaryOpen ? 'page' : undefined"
+        title="Di’ ad Arianna le cose da fare: le segna con il giorno"
+        @click="emit('secretary')"
+      >
+        <Icon name="secretary" :size="16" />Segretaria
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'thoughts')" :aria-current="page === 'thoughts' ? 'page' : undefined" @click="emit('thoughts')">
         <Icon name="thoughts" :size="16" />Pensieri

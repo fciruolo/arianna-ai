@@ -169,6 +169,20 @@ body,
   height: 100%;
 }
 
+/*
+ * Every scrolling area holds what it positions: the screen-reader texts
+ * (`sr-only`, absolute) of a long list otherwise take the page as their box,
+ * stretch it below the screen and make the whole page scroll under the
+ * menus. In the base layer, so a `fixed` or `sticky` of the utilities wins.
+ */
+@layer base {
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    position: relative;
+  }
+}
+
 body {
   margin: 0;
   background-color: var(--bg);

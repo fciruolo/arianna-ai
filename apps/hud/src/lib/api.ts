@@ -11,7 +11,7 @@ import type { SearchResult } from './search.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -84,6 +84,21 @@ export async function purgeConversation(conversationId: string): Promise<void> {
 
 export async function loadConversation(conversationId: string): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('GET', `/api/conversations/${encodeURIComponent(conversationId)}`)).conversation;
+}
+
+/** The secretary's conversation (D-144): the one there is, or a new one the first time. */
+export async function openSecretary(): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', '/api/secretary', {})).conversation;
+}
+
+/** The open commitments and those of today (D-144), by day and time; `today` is the core's local day. */
+export async function listCommitments(): Promise<{ today: string; commitments: Commitment[] }> {
+  return call<{ today: string; commitments: Commitment[] }>('GET', '/api/commitments');
+}
+
+/** "Fatto" on a commitment: the click is the confirmation. */
+export async function markCommitmentDone(id: string): Promise<Commitment> {
+  return (await call<{ commitment: Commitment }>('POST', `/api/commitments/${encodeURIComponent(id)}/done`, {})).commitment;
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {

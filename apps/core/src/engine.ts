@@ -4,6 +4,7 @@ import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type StoredApproval } from './approvals.ts';
+import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
@@ -107,6 +108,12 @@ export type StepOutcome = (
    * again at `at`, without the user. The task stays at work; the run failed.
    */
   | { kind: 'retry'; at: Date; reason: string }
+  /**
+   * The executor wrote an approval of kind `commitment` with the step's turn
+   * (the secretary, D-144): the task waits for the user to confirm it. The
+   * next step finds the decided approval in `approval`.
+   */
+  | { kind: 'confirm'; approvalId: string }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
   | { kind: 'wait-user'; reason: string }
   /** `failure`: the readable error, when the executor knows it (D-064); otherwise a generic one naming the executor. */
@@ -419,6 +426,31 @@ export async function processStepJob(
         });
         return 'waiting-approval';
       }
+      case 'confirm': {
+        // Only a pending confirmation of this very task: anything else is the executor's mistake.
+        const [pending] = await tx<{ action: string; state: string }[]>`
+          SELECT action, state FROM approvals
+          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind = 'commitment'`;
+        // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
+        if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
+          await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });
+          return 'continued';
+        }
+        if (pending?.state !== 'pending') {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid confirmation', cause: 'approval' });
+          return 'waiting-user';
+        }
+        await moveTask(tx, task.id, 'waiting_user', { reason: `approval needed: ${pending.action}`, cause: 'approval', approvalId: outcome.approvalId });
+        // The action only: the text of the commitment stays in the approval.
+        await appendEvent(tx, {
+          kind: 'approval.requested',
+          taskId: task.id,
+          runId,
+          label: 'L0',
+          payload: { approvalId: outcome.approvalId, action: pending.action },
+        });
+        return 'waiting-approval';
+      }
       case 'wait-user':
         await moveTask(tx, task.id, 'waiting_user', { reason: outcome.reason, cause: 'executor' });
         return 'waiting-user';
@@ -474,6 +506,8 @@ export async function recordDecisionIn(
     label: 'L0',
     payload: { approvalId, state, via },
   });
+  // A confirmed commitment (D-144) is noted or marked done with the decision, whatever the task does next.
+  if (decided.kind === 'commitment' && state === 'approved') await applyCommitmentApproval(tx, decided);
   if (decided.taskId !== null) {
     const task = await loadTask(tx, decided.taskId);
     if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {

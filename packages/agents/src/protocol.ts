@@ -21,6 +21,9 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'file.delete': object({ path: text(300) }, ['path']),
   'channel.send': object({ channel: { type: 'string', enum: ['telegram'] }, text: text(1000) }, ['channel', 'text']),
   'web.search': object({ query: text(200) }, ['query']),
+  'commitment.add': object({ text: text(300), day: text(80), time: text(20) }, ['text', 'day']),
+  'commitment.list': object({ day: text(80) }, []),
+  'commitment.done': object({ which: text(200) }, ['which']),
 };
 
 /** What the model reads about each tool; the registry's description is for people. */
@@ -35,6 +38,12 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'file.delete': 'Delete a file (the user approves before it happens).',
   'channel.send': 'Send a message on Telegram (the user approves before it happens).',
   'web.search': 'Search the web.',
+  'commitment.add':
+    'Note something the user has to do on a day. "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
+  'commitment.list':
+    'Show the user the commitments of a day or a span ("day" as the user said it: oggi, domani, giovedì, questa settimana, la settimana prossima, i prossimi 7 giorni, questo mese, il mese prossimo); without "day", every open one. The core knows today\'s date and writes the list in the chat, ending your turn: call it for any question about the user\'s commitments, and never ask the user what day it is.',
+  'commitment.done':
+    'Mark a commitment done when the user says they did it. "which" is the commitment in the user\'s words (or its id); the core finds it and asks the user to confirm. If more than one matches, it answers with the open ones and their ids.',
 };
 
 /**

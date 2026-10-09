@@ -36,6 +36,37 @@ export interface ProjectFolderValues {
   label: Label;
 }
 
+/** The days of `[secretary]`, Monday first, as the core names them. */
+export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export const WEEKDAY_TEXT: Record<Weekday, string> = { mon: 'Lun', tue: 'Mar', wed: 'Mer', thu: 'Gio', fri: 'Ven', sat: 'Sab', sun: 'Dom' };
+
+/** `[secretary]` (I-12, D-144): reminders on or off, three clocks in order, the days. */
+export interface SecretaryValues {
+  enabled: boolean;
+  morning: string;
+  afternoon: string;
+  evening: string;
+  days: Weekday[];
+}
+
+/** As the core reads a file without `[secretary]`: on, 9:00, 14:30, 18:30, every day (D-144). */
+export const DEFAULT_SECRETARY: SecretaryValues = { enabled: true, morning: '09:00', afternoon: '14:30', evening: '18:30', days: [...WEEKDAYS] };
+
+/** Why the Segretaria card cannot be saved, in Italian; undefined when it can. */
+export function secretaryProblem(form: SecretaryValues): string | undefined {
+  const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (![form.morning, form.afternoon, form.evening].every((value) => clock.test(value))) return 'Scrivi i tre orari.';
+  if (!(form.morning < form.afternoon && form.afternoon < form.evening)) return 'Gli orari vanno in ordine: mattina, dopo pranzo, fine giornata.';
+  if (form.days.length === 0) return 'Scegli almeno un giorno, o spegni i promemoria.';
+  return undefined;
+}
+
+/** What the page sends: the days Monday first, once each. */
+export function secretaryBody(form: SecretaryValues): SecretaryValues {
+  return { enabled: form.enabled, morning: form.morning, afternoon: form.afternoon, evening: form.evening, days: WEEKDAYS.filter((day) => form.days.includes(day)) };
+}
+
 export interface ProjectValues {
   name: string;
   path: string;
@@ -68,6 +99,8 @@ export interface SettingsValues {
   voice: VoiceValues | null;
   /** `[notifications]` (I-1); `quiet` "HH:MM-HH:MM" or null. */
   notifications: NotificationsValues;
+  /** `[secretary]` (I-12, D-144). Optional: a core without it sends none. */
+  secretary?: SecretaryValues;
   executors: string[];
   telegram: { chats: number[] } | null;
   projects: ProjectValues[];
@@ -130,7 +163,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'participants' | 'notifications';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'participants' | 'notifications' | 'secretary';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -166,6 +199,7 @@ export const SECTION_TEXT: Record<string, string> = {
   participants: 'Uscita degli agenti',
   voice: 'Voce',
   notifications: 'Notifiche',
+  secretary: 'Segretaria',
   executors: 'Esecutori cloud',
   telegram: 'Telegram',
   projects: 'Progetti',

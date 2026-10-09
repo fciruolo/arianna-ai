@@ -86,6 +86,29 @@ describe('parseAgentCard', () => {
       assert.equal(parseAgentCard(raw, 'archivista').maxLabel, 'L1');
     });
 
+    it('the commitments of the secretary (D-144): only on a card that reads L2 and runs on the local model alone', () => {
+      const tools = ['commitment.add', 'commitment.list', 'commitment.done'];
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);
+      for (const tool of tools) {
+        rejects(
+          card((c) => {
+            c.tools = [tool];
+            c.executors = ['local', 'claude'];
+            c.cloud_max_label = 'L1';
+          }),
+          new RegExp(`${tool.replace('.', '\\.')} reads private data`),
+        );
+        rejects(
+          card((c) => {
+            c.tools = [tool];
+            c.max_label = 'L1';
+            c.trifecta = { private_data: false, untrusted_content: false, external_comms: false };
+          }),
+          /reads private data/,
+        );
+      }
+    });
+
     it('rejects a tool that opens a side declared removed', () => {
       rejects(card((c) => (c.tools = ['kb.read', 'web.search'])), /web.search opens untrusted_content/);
       rejects(

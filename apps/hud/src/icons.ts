@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   Building2,
   Briefcase,
+  CalendarCheck,
   Check,
   ChevronRight,
   Clock,
@@ -27,6 +28,7 @@ import {
   MessageCircle,
   Mic,
   MicOff,
+  NotebookPen,
   Play,
   Square,
   Monitor,
@@ -121,6 +123,9 @@ export const ICONS = {
   external: ExternalLink,
   code: Code2,
   incognito: VenetianMask,
+  // The secretary (D-144): its button and its list of commitments.
+  secretary: NotebookPen,
+  calendar: CalendarCheck,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

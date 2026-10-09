@@ -91,6 +91,8 @@ test('an approval notice names the action and the title, never anything else', (
   assert.equal(approvalNotice('action', 'payment'), 'Approvazione richiesta: pagamento.\nIl dettaglio è nella chat web.');
   assert.equal(approvalNotice('workspace', 'dirty-workspace'), 'Approvazione richiesta: il Coder lavorerebbe in una cartella con modifiche non committate.\nIl dettaglio è nella chat web.');
   assert.equal(approvalNotice('budget', 'budget'), 'Approvazione richiesta: budget per un modello che costa oltre il piano.\nIl dettaglio è nella chat web.');
+  // A commitment of the secretary (D-144): neither its text nor a button, the web chat only.
+  assert.equal(approvalNotice('commitment', 'commitment.add'), 'La segretaria aspetta una conferma: si dà solo dalla chat web.');
   // A name outside the closed list is not quoted.
   assert.doesNotMatch(approvalNotice('budget', 'raise the cap to 1.000 EUR'), /1\.000|cap/);
   assert.match(approvalNotice('declassify', 'declassify', 'Titolo'), /^Richiesta di declassamento: si decide solo dalla chat web\.\nTask: Titolo$/);

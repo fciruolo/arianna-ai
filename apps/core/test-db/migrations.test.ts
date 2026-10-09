@@ -16,6 +16,7 @@ test('migrations apply from zero and create every table', async () => {
     [
       'approvals',
       'calls',
+      'commitments',
       'conversation_participants',
       'conversation_summaries',
       'conversations',

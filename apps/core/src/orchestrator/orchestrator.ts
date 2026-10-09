@@ -47,6 +47,8 @@ import { conversationView, summaryMessage, writeMissingSummaries, type Conversat
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
+import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
+import { isSecretaryConversation } from '../commitments.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
 /**
@@ -114,11 +116,16 @@ export interface OrchestratorOptions {
  * In an incognito conversation (D-136) none of INCOGNITO_OFF_TOOLS: what
  * they write would outlive the closing.
  */
-export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false): ToolId[] {
+export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false, secretary = false): ToolId[] {
   return offerable(agent.card.tools).filter(
     (tool) =>
       !(incognito && (INCOGNITO_OFF_TOOLS as readonly string[]).includes(tool)) &&
-      ((isLocalTool(tool) && (tool !== UPDATE || cards)) || CHAT_TOOLS.includes(tool) || (delegation && tool === DELEGATE)),
+      ((isLocalTool(tool) && (tool !== UPDATE || cards)) ||
+        CHAT_TOOLS.includes(tool) ||
+        // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
+        (delegation && !secretary && tool === DELEGATE) ||
+        // The commitments only there, never in an incognito conversation (what they note outlives it).
+        (secretary && !incognito && isSecretaryTool(tool))),
   );
 }
 
@@ -515,6 +522,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         SELECT id::text FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL ORDER BY id LIMIT 1`;
       if (answered !== undefined) return { kind: 'answered', messageId: answered.id };
 
+      // The user decided a confirmation of the secretary (D-144): the answer is written here, without the model.
+      if (ctx.approval?.kind === 'commitment') return decisionAnswer(sql, ctx);
+
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
       if (direct !== undefined) {
@@ -529,6 +539,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // same outcome again, without calling the model.
       const done = turns.find((turn) => turn.step === step);
       if (done !== undefined) {
+        // A confirmation asked at that step and still pending: wait for it again.
+        const waiting = await secretaryReplay(sql, ctx, done);
+        if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
           const card = options.agents.get(name)?.card;
           return card === undefined ? 'L1' : briefCeiling(card);
@@ -568,7 +581,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const delegates = delegateTargets(env, task.assignee);
       // In an incognito conversation nothing that outlives it is offered (D-136): no KB note, no card.
       const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
-      const tools = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito);
+      // The secretary's conversation (D-144): the commitments, and no delegation.
+      const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
+      const tools = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary);
       await show(task, step, 'thinking');
       let asked;
       try {
@@ -616,6 +631,9 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       }
       if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage, delegates);
+      if (isSecretaryTool(answer.tool)) {
+        return runSecretaryTool(sql, ctx, { turn, label, tool: answer.tool, args: answer.arguments, usage }, (kind, detail) => show(task, step, kind, detail));
+      }
       if (!isLocalTool(answer.tool)) return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       const tool = answer.tool;
       // The same call again is not run (D-076): the model reads where its
