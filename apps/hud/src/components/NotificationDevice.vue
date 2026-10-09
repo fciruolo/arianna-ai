@@ -98,7 +98,7 @@ async function subscribe(): Promise<void> {
       <button v-else type="button" class="btn self-start" :disabled="working" @click="subscribe"><Icon name="bell" :size="16" />Iscrivi questo dispositivo</button>
       <p v-if="problem !== null" role="alert" class="text-sm text-danger">{{ problem }}</p>
       <p class="text-xs text-muted">
-        La notifica dice solo “Arianna ha risposto”, “Arianna aspetta una tua decisione” o “Un lavoro è fallito”, con il link alla conversazione: mai il testo né il titolo.
+        La notifica dice solo “Arianna ha risposto”, “Arianna aspetta una tua decisione”, “Un lavoro è fallito” o “Arianna ha un promemoria”, con il link alla conversazione: mai il testo né il titolo.
         La push passa dal servizio del browser (Apple, Google o Mozilla) senza contenuto, e non parte mentre una pagina della chat è in primo piano.
       </p>
     </div>

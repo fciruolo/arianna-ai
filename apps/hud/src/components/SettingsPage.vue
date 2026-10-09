@@ -808,8 +808,9 @@ watch(active, () => {
                   </label>
                 </div>
               </fieldset>
-              <p class="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-                I promemoria automatici a questi orari arrivano con la prossima tappa: per ora gli orari si salvano e basta. Gli impegni li vedi e li segni fatti nella conversazione «Segretaria».
+              <p class="text-xs text-muted">
+                A ogni orario Arianna scrive il promemoria nella conversazione «Segretaria» e ti avvisa con una notifica; se non c'è niente da ricordare non scrive. Se il
+                Mac era spento, un promemoria perso arriva all'accensione solo fino all'orario successivo. Nelle ore di silenzio la notifica non suona, il messaggio resta.
               </p>
               <p class="text-xs text-muted">Ora locale di questo Mac. Il testo di un impegno resta qui: non va mai al cloud né nelle notifiche fuori dal Mac.</p>
             </SettingsCard>

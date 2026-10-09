@@ -389,6 +389,12 @@ CREATE TABLE commitments (   -- D-144: gli impegni della segretaria (I-12, tappa
 -- Trigger commitments_guard: testo e origine non cambiano, l'etichetta non scende. Gli elenchi
 -- ("cosa ho domani?") li scrive il codice da questa tabella, mai il modello. Evento
 -- commitment.changed con id e stato, mai il testo. arianna_app: SELECT, INSERT, UPDATE.
+-- I promemoria della segretaria (D-149, tappa S2) non hanno tabella: un momento scritto è un
+-- messaggio di Arianna (role assistant, senza task, etichetta almeno L2) nella conversazione della
+-- segretaria, con l'evento message.created che porta anche reminder = morning|afternoon|evening;
+-- "una volta per giorno e momento" è l'evento schedule.fired (L0, payload schedule = 'secretary',
+-- day, slot, written), scritto nella stessa transazione sotto un advisory lock. Lo stesso evento
+-- servirà alle routine di D-110 con un altro schedule.
 
 CREATE TABLE documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

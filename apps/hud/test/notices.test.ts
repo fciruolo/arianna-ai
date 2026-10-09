@@ -45,7 +45,7 @@ test('noticeWhere: one place only, the system notification when allowed, the toa
 });
 
 test('the fixed words, the link and the tag shared with the service worker', () => {
-  assert.deepEqual(NOTICE_TITLE, { reply: 'Arianna ha risposto', approval: 'Arianna aspetta una tua decisione', failure: 'Un lavoro è fallito' });
+  assert.deepEqual(NOTICE_TITLE, { reply: 'Arianna ha risposto', approval: 'Arianna aspetta una tua decisione', failure: 'Un lavoro è fallito', reminder: 'Arianna ha un promemoria' });
   assert.equal(noticeUrl(ID), `/c/${ID}`);
   assert.equal(noticeUrl(null), '/');
   assert.equal(noticeTag('reply', ID), `arianna-reply-${ID}`);

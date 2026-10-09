@@ -8,6 +8,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - La chat web su un portatile (sotto 1600 px di larghezza o 896 px di altezza): la colonna Agenti parte chiusa e si apre sopra la pagina, le conversazioni mostrano l'etichetta come pallino (non sul telefono) e il titolo più lungo, la riga sotto i messaggi va a capo per pezzi interi, spaziature verticali più strette, e nelle Impostazioni indice più stretto, elenco e scheda dei modelli uno sopra l'altro quando lo spazio non basta; sullo schermo grande non cambia nulla (D-150).
 
+## [0.37.0] - 2026-10-10
+
+### Aggiunto
+
+- Segretaria: i promemoria della mattina, del dopo pranzo e il resoconto di fine giornata agli orari e nei giorni della sezione Segretaria delle Impostazioni; il messaggio lo scrive Arianna con il codice nella conversazione della segretaria, una volta per giorno e momento, niente se non c'è nulla da dire, con la notifica «Arianna ha un promemoria» senza il testo degli impegni (I-12 S2, D-149).
+
 ## [0.36.0] - 2026-10-09
 
 ### Aggiunto

@@ -12,11 +12,13 @@ export const NOTICE_TITLE: Readonly<Record<NoticeKind, string>> = {
   reply: 'Arianna ha risposto',
   approval: 'Arianna aspetta una tua decisione',
   failure: 'Un lavoro è fallito',
+  reminder: 'Arianna ha un promemoria',
 };
 export const NOTICE_BODY: Readonly<Record<NoticeKind, string>> = {
   reply: 'Clicca per aprire la conversazione.',
   approval: 'Clicca per vedere cosa approvare.',
   failure: 'Clicca per vedere cosa è successo.',
+  reminder: 'Clicca per aprire la segretaria.',
 };
 /** The logo of Arianna, in place of the browser's own icon (public/notification-icon.png). */
 export const NOTICE_ICON = '/notification-icon.png';
@@ -42,6 +44,7 @@ export const TOAST_KICKER: Readonly<Record<NoticeKind, string>> = {
   reply: 'Risposta',
   approval: 'Approvazione',
   failure: 'Lavoro fallito',
+  reminder: 'Promemoria',
 };
 
 export interface NoticeView {

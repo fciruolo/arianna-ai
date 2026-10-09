@@ -355,6 +355,32 @@ export function decisionText(proposal: CommitmentProposal, state: string, today:
 // --- The conversation of the "Segretaria" button.
 
 /**
+ * The id of the secretary's conversation, created when missing, without
+ * opening a session (D-146): `openSecretary` (a click) and the reminders of
+ * the ticker (D-149) both start here.
+ */
+export async function secretaryConversationId(tx: Queryable): Promise<string> {
+  const find = async (): Promise<string | undefined> => {
+    const [row] = await tx<{ id: string }[]>`SELECT id::text FROM conversations WHERE secretary AND purged_at IS NULL`;
+    return row?.id;
+  };
+  const found = await find();
+  if (found !== undefined) return found;
+  const [created] = await tx<{ id: string }[]>`
+    INSERT INTO conversations (mode, clearance, title, secretary)
+    VALUES ('private', 'L2'::privacy_label, ${SECRETARY_TITLE}, true)
+    ON CONFLICT (secretary) WHERE secretary AND purged_at IS NULL DO NOTHING
+    RETURNING id::text`;
+  if (created !== undefined) {
+    await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: created.id, mode: 'private', secretary: true } });
+    return created.id;
+  }
+  const other = await find();
+  if (other === undefined) throw new Error('the secretary conversation is missing');
+  return other;
+}
+
+/**
  * The secretary's conversation, opened the first time: private, answered by
  * Arianna, titled "Segretaria" from birth. One only (a unique index): two
  * clicks at once find the same one. Each call is a click on the button and
@@ -362,23 +388,7 @@ export function decisionText(proposal: CommitmentProposal, state: string, today:
  */
 export async function openSecretary(sql: Sql): Promise<Conversation> {
   return sql.begin(async (tx) => {
-    const [found] = await tx<{ id: string }[]>`SELECT id::text FROM conversations WHERE secretary AND purged_at IS NULL`;
-    let id = found?.id;
-    if (id === undefined) {
-      const [created] = await tx<{ id: string }[]>`
-        INSERT INTO conversations (mode, clearance, title, secretary)
-        VALUES ('private', 'L2'::privacy_label, ${SECRETARY_TITLE}, true)
-        ON CONFLICT (secretary) WHERE secretary AND purged_at IS NULL DO NOTHING
-        RETURNING id::text`;
-      if (created !== undefined) {
-        await appendEvent(tx, { kind: 'conversation.created', label: 'L0', payload: { conversationId: created.id, mode: 'private', secretary: true } });
-        id = created.id;
-      } else {
-        const [other] = await tx<{ id: string }[]>`SELECT id::text FROM conversations WHERE secretary AND purged_at IS NULL`;
-        id = other?.id;
-      }
-    }
-    if (id === undefined) throw new Error('the secretary conversation is missing');
+    const id = await secretaryConversationId(tx);
     // Each click on the button opens a new session (D-146): the model reads from here on.
     // The event first: tasks find the session in force when they began by it (summaries.ts).
     const started = await appendEvent(tx, { kind: 'secretary.session', label: 'L0', payload: { conversationId: id } });
