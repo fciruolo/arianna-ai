@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Chat: aprendo una conversazione si vede l'ultimo messaggio, anche venendo da un'altra pagina o da un link e quando il riquadro Impegni della segretaria arriva dopo; la lista resta in fondo finché non risali a leggere (segnalazione dell'utente del 2026-10-09).
+
 ## [0.34.0] - 2026-10-09
 
 ### Aggiunto

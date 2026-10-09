@@ -420,24 +420,45 @@ function resize(): void {
   element.style.height = `${String(Math.min(element.scrollHeight, 192))}px`;
 }
 
-// Follow new messages and fragments, unless the user scrolled up to read.
+// The list stays at its last message until the user scrolls up to read (user's request, 2026-10-09):
+// on opening, on new messages and fragments, and when the list changes height without a scroll,
+// as when the secretary's commitments arrive above it after the messages.
+const NEAR_BOTTOM = 80;
+let stuck = true;
+function toBottom(): void {
+  if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+}
+function onListScroll(): void {
+  const element = list.value;
+  if (element !== null) stuck = element.scrollHeight - element.scrollTop - element.clientHeight < NEAR_BOTTOM;
+}
 watch(
   () => [props.chat.messages.length, props.chat.streaming.map((reply) => reply.text.length).join(), props.approvals.length],
   async () => {
-    const element = list.value;
-    if (element === null) return;
-    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
     await nextTick();
-    if (atBottom) element.scrollTop = element.scrollHeight;
+    if (stuck) toBottom();
   },
 );
 watch(
   () => props.chat.conversationId,
   async () => {
+    stuck = true;
     await nextTick();
-    if (list.value !== null) list.value.scrollTop = list.value.scrollHeight;
+    toBottom();
   },
+  { immediate: true },
 );
+let resizes: ResizeObserver | undefined;
+onMounted(() => {
+  resizes = new ResizeObserver(() => {
+    if (stuck) toBottom();
+  });
+  if (list.value !== null) {
+    resizes.observe(list.value);
+    if (list.value.firstElementChild !== null) resizes.observe(list.value.firstElementChild);
+  }
+});
+onBeforeUnmount(() => resizes?.disconnect());
 
 // D-091: the card or message asked for (the "Decisioni in attesa" window, or #approval-<id> / #message-<id>
 // in the address) is brought into view once on the page and lit for a moment. After the watchers above, so it wins.
@@ -448,6 +469,8 @@ async function focusAsked(): Promise<void> {
   const element = anchor === undefined ? null : document.getElementById(anchor);
   if (element === null || list.value?.contains(element) !== true) return;
   clearFocus();
+  // The card asked for wins over the bottom: the list stops following.
+  stuck = false;
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   element.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
   element.classList.add(...HIGHLIGHT_CLASSES);
@@ -481,7 +504,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
 <template>
   <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
-    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
+    <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
       <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5">
         <!-- Persona header with the HUD ring -->
         <section class="flex items-center gap-4 border-b border-line pb-4">
