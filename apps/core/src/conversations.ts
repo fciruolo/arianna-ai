@@ -56,6 +56,12 @@ export interface Conversation {
    * button, never from the list. Chosen at creation, never changed.
    */
   secretary: boolean;
+  /**
+   * When the current session of the secretary began (D-146): the last click on
+   * the "Segretaria" button. The model reads only the messages from here on.
+   * Null on every other conversation, and on the secretary's before a click.
+   */
+  secretarySessionAt: Date | null;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -123,7 +129,7 @@ export class ChatError extends Error {
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary,
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",

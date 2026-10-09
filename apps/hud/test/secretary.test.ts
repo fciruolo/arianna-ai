@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dayLabel, dueCount, groupCommitments } from '../src/lib/commitments.ts';
+import { dayLabel, dueCount, groupCommitments, SESSION_LINE, sessionStart } from '../src/lib/commitments.ts';
 import { reasonText } from '../src/lib/italian.ts';
 import { DEFAULT_SECRETARY, secretaryBody, secretaryProblem } from '../src/lib/settings.ts';
 import { resolveSection } from '../src/lib/settings-index.ts';
@@ -53,4 +53,19 @@ test('the Segretaria card: three clocks in order and at least one day, days sent
 test('the waits of the secretary are said in Italian', () => {
   assert.equal(reasonText('approval needed: commitment.add'), 'aspetta la tua conferma per segnare l’impegno');
   assert.equal(reasonText('approval needed: commitment.done'), 'aspetta la tua conferma per segnare l’impegno come fatto');
+});
+
+test('the session of the secretary (D-146): the line above the first message from the last click', () => {
+  const messages = [{ ts: '2026-10-09T08:00:00.000Z' }, { ts: '2026-10-09T09:00:00.000Z' }, { ts: '2026-10-09T10:00:00.000Z' }];
+  assert.equal(sessionStart(messages, '2026-10-09T08:30:00.000Z'), 1);
+  assert.equal(sessionStart(messages, '2026-10-09T09:00:00.000Z'), 1);
+  assert.equal(sessionStart(messages, '2026-10-09T07:00:00.000Z'), 0);
+  // Clicked after the last message: the line closes the chat, the next message starts below it.
+  assert.equal(sessionStart(messages, '2026-10-09T11:00:00.000Z'), 3);
+  // No session yet, no message, or a core without it: no line.
+  assert.equal(sessionStart(messages, null), -1);
+  assert.equal(sessionStart(messages, undefined), -1);
+  assert.equal(sessionStart([], '2026-10-09T08:30:00.000Z'), -1);
+  assert.equal(sessionStart(messages, 'non una data'), -1);
+  assert.match(SESSION_LINE, /^Nuova sessione/);
 });

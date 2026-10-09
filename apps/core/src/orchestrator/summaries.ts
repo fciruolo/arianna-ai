@@ -159,22 +159,41 @@ export interface ConversationView {
  * D-109, about the wait it closed) is for the user only: neither the model
  * nor the summaries read it. The system messages of a system chat (D-064)
  * have no task and are read.
+ *
+ * The secretary's conversation (D-146) is read by session: only the messages
+ * from the last click on its button before this task began (a later click
+ * changes nothing for it, so its steps keep one prefix), and no summary. What the anchor leaves behind there is
+ * dropped, never summarized: a new session starts clean.
  */
 export async function conversationView(sql: Queryable, conversationId: string, taskId: string, maxText: number): Promise<ConversationView> {
   const [limit] = await sql<{ id: string | null }[]>`
     SELECT max(id)::text AS id FROM messages WHERE task_id = ${taskId} AND role = 'user'`;
   if (limit?.id == null) return { pieces: [], messages: [], missing: [] };
-  const allPieces = await sql<SummaryPiece[]>`
-    SELECT id::text, first_message_id::text AS "firstMessageId", last_message_id::text AS "lastMessageId", label, body
-    FROM conversation_summaries
-    WHERE conversation_id = ${conversationId} AND last_message_id <= ${limit.id}::bigint
-    ORDER BY last_message_id`;
+  // The session of the secretary in force when the task began: the last click before it (D-146).
+  // Null elsewhere, and before the first click: then every message counts.
+  const [conversation] = await sql<{ secretary: boolean; session: string | null }[]>`
+    SELECT c.secretary,
+      CASE WHEN c.secretary THEN (
+        SELECT max(e.ts)::text FROM events e, tasks t
+        WHERE t.id = ${taskId} AND e.kind = 'secretary.session' AND e.payload ->> 'conversationId' = c.id::text AND e.ts <= t.created_at
+      ) END AS session
+    FROM conversations c WHERE c.id = ${conversationId}`;
+  const secretary = conversation?.secretary === true;
+  const session = conversation?.session ?? null;
+  const allPieces = secretary
+    ? []
+    : await sql<SummaryPiece[]>`
+        SELECT id::text, first_message_id::text AS "firstMessageId", last_message_id::text AS "lastMessageId", label, body
+        FROM conversation_summaries
+        WHERE conversation_id = ${conversationId} AND last_message_id <= ${limit.id}::bigint
+        ORDER BY last_message_id`;
   const base = allPieces.at(-1)?.lastMessageId ?? '0';
   const after = await sql<{ id: string; length: number }[]>`
     SELECT id::text, char_length(body) AS length FROM messages
     WHERE conversation_id = ${conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
       AND NOT (role = 'system' AND task_id IS NOT NULL)
       AND id > ${base}::bigint AND id <= ${limit.id}::bigint
+      AND (${session}::timestamptz IS NULL OR ts >= ${session}::timestamptz)
     ORDER BY messages.id`;
   const anchor = anchorIndex(
     after.map((row) => Math.min(row.length, maxText)),
@@ -193,8 +212,11 @@ export async function conversationView(sql: Queryable, conversationId: string, t
           WHERE conversation_id = ${conversationId} AND role IN ('user', 'assistant', 'system') AND agent IS NULL
             AND NOT (role = 'system' AND task_id IS NOT NULL)
             AND id >= ${first.id}::bigint AND id <= ${limit.id}::bigint
+            AND (${session}::timestamptz IS NULL OR ts >= ${session}::timestamptz)
           ORDER BY messages.id`;
-  return { pieces: allPieces.slice(shownFrom), messages: [...messages], missing: after.slice(0, anchor).map((row) => row.id) };
+  // The secretary never summarizes (D-146): nothing is missing there.
+  const missing = secretary ? [] : after.slice(0, anchor).map((row) => row.id);
+  return { pieces: allPieces.slice(shownFrom), messages: [...messages], missing };
 }
 
 /** What the summarizer reads first. */
