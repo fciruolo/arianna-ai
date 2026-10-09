@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { gridColumns, loadLayout, saveLayout } from '../src/lib/layout.ts';
+import { gridColumns, loadLayout, panelIsColumn, saveLayout } from '../src/lib/layout.ts';
 
 test('collapsed bars are remembered when storage works', () => {
   const values = new Map<string, string>();
@@ -31,8 +31,16 @@ test('a broken storage or an unexpected value means both bars open, never an err
 });
 
 test('a collapsed bar takes no column: the page takes the whole width', () => {
-  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)]');
-  assert.equal(gridColumns({ sidebar: true, panel: true }), 'md:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)]');
+  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[264px_minmax(0,1fr)] 3xl:grid-cols-[264px_minmax(0,1fr)_300px]');
+  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[minmax(0,1fr)] 3xl:grid-cols-[minmax(0,1fr)_300px]');
+  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[264px_minmax(0,1fr)] 3xl:grid-cols-[264px_minmax(0,1fr)]');
+  assert.equal(gridColumns({ sidebar: true, panel: true }), 'md:grid-cols-[minmax(0,1fr)] 3xl:grid-cols-[minmax(0,1fr)]');
+});
+
+test('the right bar is a column only on a wide screen: on a laptop it starts closed (D-150)', () => {
+  assert.equal(panelIsColumn(1920), true);
+  assert.equal(panelIsColumn(1600), true);
+  assert.equal(panelIsColumn(1512), false);
+  assert.equal(panelIsColumn(1440), false);
+  assert.equal(panelIsColumn(1280), false);
 });

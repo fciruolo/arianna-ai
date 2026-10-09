@@ -60,8 +60,8 @@ watch(
 </script>
 
 <template>
-  <section class="mx-4 mt-3 flex max-h-[38vh] min-h-0 shrink-0 flex-col rounded-[12px] border border-line bg-surface md:mx-5.5" aria-label="Impegni della segretaria">
-    <header class="flex items-center gap-2 px-3.5 py-2.5" :class="{ 'border-b border-line': !folded }">
+  <section class="mx-4 mt-3 flex max-h-[38vh] min-h-0 shrink-0 flex-col rounded-[12px] border border-line bg-surface md:mx-5.5 short:mt-2 short:max-h-[30vh]" aria-label="Impegni della segretaria">
+    <header class="flex items-center gap-2 px-3.5 py-2.5 short:py-1.5" :class="{ 'border-b border-line': !folded }">
       <Icon name="calendar" :size="15" />
       <h2 class="hud-title flex-1">Impegni</h2>
       <span v-if="due > 0" class="font-mono text-[11px] text-warn">{{ due === 1 ? '1 da fare' : `${String(due)} da fare` }}</span>
@@ -69,7 +69,7 @@ watch(
         <span class="inline-grid transition-transform" :class="{ 'rotate-90': !folded }"><Icon name="expand" :size="14" /></span>
       </button>
     </header>
-    <div v-if="!folded" class="min-h-0 overflow-y-auto px-3.5 py-2.5">
+    <div v-if="!folded" class="min-h-0 overflow-y-auto px-3.5 py-2.5 short:py-1.5">
       <p v-if="error !== null" role="alert" class="mb-2 text-xs text-warn">{{ error }}</p>
       <p v-if="loaded && groups.length === 0" class="text-[13px] text-muted">Nessun impegno aperto. Scrivi qui sotto, per esempio «giovedì alle 15 devo andare in banca».</p>
       <div v-for="group in groups" :key="group.title" class="mb-2 last:mb-0">

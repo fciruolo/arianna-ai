@@ -606,7 +606,7 @@ watch(active, () => {
     <!-- The index (D-105): always on wide screens; on narrow ones it is the page until a section is chosen. -->
     <nav
       :inert="proposal !== null"
-      class="min-h-0 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-5 lg:flex lg:w-[230px] lg:border-r lg:border-line"
+      class="min-h-0 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-5 lg:flex lg:w-[196px] lg:border-r lg:border-line lg:px-2 lg:py-4 3xl:w-[230px] 3xl:px-3 3xl:py-5"
       :class="chosen.explicit ? 'hidden' : 'flex w-full'"
       aria-label="Indice delle impostazioni"
     >
@@ -622,7 +622,7 @@ watch(active, () => {
           :aria-current="active === item.id ? 'page' : undefined"
           @click.prevent="open(item)"
         >
-          <span class="min-w-0 flex-1">{{ item.title }}</span>
+          <span class="min-w-0 flex-1 truncate" :title="item.title">{{ item.title }}</span>
           <span
             v-if="item.id === 'dev-progress' && devDot !== null"
             role="img"
@@ -643,7 +643,7 @@ watch(active, () => {
     </nav>
 
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
-      <div :class="active === 'agents' || active === 'models' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6">
+      <div :class="active === 'agents' || active === 'models' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="@container mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6 short:gap-4 short:pt-4">
         <header>
           <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex">‹ Impostazioni</button>
           <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">{{ chosen.item.title }}</h1>
@@ -663,7 +663,7 @@ watch(active, () => {
         <p v-if="view === null && loadError === null" class="text-muted">Leggo le impostazioni…</p>
 
         <template v-if="view !== null">
-          <p v-if="chosen.item.behaviour === 'now' || chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3.5 py-2.5 text-[13px]">
+          <p v-if="chosen.item.behaviour === 'now' || chosen.item.behaviour === 'confirm'" class="flex items-start gap-2 rounded-[10px] border border-info/45 bg-info/9 px-3 py-1.5 text-xs 3xl:gap-2.5 3xl:px-3.5 3xl:py-2.5 3xl:text-[13px]">
             <Icon name="info" :size="16" class="mt-0.5 text-info" />
             <span>
               Salvare da qui riscrive <code class="font-mono text-xs">config/arianna.toml</code>: i commenti scritti a mano nel file si perdono, come con

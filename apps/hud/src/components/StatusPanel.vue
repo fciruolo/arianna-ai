@@ -95,13 +95,13 @@ function wornBy(packId: string): string[] {
       <h2 class="font-hud text-[15px] leading-none font-semibold tracking-[0.12em] uppercase">Agenti</h2>
       <small class="flex-1 font-mono text-[10.5px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
       <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
-        <span class="hidden xl:inline"><Icon name="panel-collapse" /></span><span class="xl:hidden"><Icon name="close" /></span>
+        <span class="hidden 3xl:inline"><Icon name="panel-collapse" /></span><span class="3xl:hidden"><Icon name="close" /></span>
       </button>
     </div>
 
     <section aria-label="Agenti">
       <div class="flex flex-col gap-2">
-        <div v-for="id in agentIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-3 rounded-[14px] border border-line bg-surface-2 p-2.5">
+        <div v-for="id in agentIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2.5 rounded-[12px] border border-line bg-surface-2 px-2.5 py-1 3xl:gap-3 3xl:rounded-[14px] 3xl:p-2.5">
           <div class="grid h-16 w-14 place-items-end justify-center rounded-[10px] bg-[radial-gradient(circle_at_50%_85%,var(--glow),transparent_70%)] pb-1">
             <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="2" bubble />
           </div>

@@ -118,18 +118,21 @@ function confirmArchive(id: string): void {
           <template v-else>
             <button
               type="button"
-              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-[5.5rem] text-left md:pr-2 md:group-focus-within:pr-[5.5rem] md:group-hover:pr-[5.5rem]"
+              class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-[5.5rem] text-left md:pr-2 md:group-focus-within:pr-[4.5rem] md:group-hover:pr-[4.5rem] 3xl:group-focus-within:pr-[5.5rem] 3xl:group-hover:pr-[5.5rem]"
               :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
               :aria-current="conversation.id === selected ? 'true' : undefined"
+              :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
             >
               <span class="shrink-0" :class="conversation.mode === 'private' ? 'text-l2' : 'text-l1'" :title="conversation.agent !== null ? `Con ${agentName(conversation.agent)}` : MODE_TEXT[conversation.mode]">
                 <Icon :name="conversation.telegram ? 'telegram' : conversation.agent !== null ? 'coder' : conversation.mode" :size="14" />
               </span>
               <span class="min-w-0 flex-1 truncate" :class="conversation.title === null ? 'text-muted' : ''">{{ titleOf(conversation) }}</span>
-              <LabelBadge :label="conversation.clearance" />
+              <!-- D-150: from md to 3xl (a laptop) only the coloured dot, so the title keeps the room; the word in the title and for screen readers. -->
+              <span class="hidden shrink-0 md:inline-flex 3xl:hidden"><LabelBadge :label="conversation.clearance" dot /></span>
+              <span class="shrink-0 md:hidden 3xl:inline-flex"><LabelBadge :label="conversation.clearance" /></span>
             </button>
-            <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+            <div class="absolute top-1.5 right-1.5 flex gap-0.5 rounded-md bg-surface-2 transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100 [&>button]:md:p-0.5 [&>button]:3xl:p-1">
               <button
                 type="button"
                 class="rounded-md p-1 hover:text-ink"
@@ -175,11 +178,13 @@ function confirmArchive(id: string): void {
             class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2 py-2 pr-9 text-left md:pr-2 md:group-focus-within:pr-9 md:group-hover:pr-9"
             :class="conversation.id === selected ? 'border-line-strong bg-surface-2' : 'border-transparent hover:bg-surface-2'"
             :aria-current="conversation.id === selected ? 'true' : undefined"
+            :title="titleOf(conversation)"
             @click="emit('open', conversation.id)"
           >
             <span class="shrink-0 text-warn" title="Chat di sistema"><Icon name="system" :size="14" /></span>
             <span class="min-w-0 flex-1 truncate">{{ titleOf(conversation) }}</span>
-            <LabelBadge :label="conversation.clearance" />
+            <span class="hidden shrink-0 md:inline-flex 3xl:hidden"><LabelBadge :label="conversation.clearance" dot /></span>
+            <span class="shrink-0 md:hidden 3xl:inline-flex"><LabelBadge :label="conversation.clearance" /></span>
           </button>
           <button
             type="button"
@@ -233,6 +238,7 @@ function confirmArchive(id: string): void {
               class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm text-muted"
               :class="conversation.id === selected ? 'border-line-strong bg-surface-2 text-ink' : 'border-transparent hover:bg-surface-2'"
               :aria-current="conversation.id === selected ? 'true' : undefined"
+              :title="titleOf(conversation)"
               @click="emit('open', conversation.id)"
             >
               <span class="truncate">{{ titleOf(conversation) }}</span>
