@@ -650,7 +650,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
   <div class="grid h-full grid-cols-1" :class="gridColumns(layout)">
     <!-- Left bar (D-097): a column on wide screens, a drawer otherwise. -->
     <SideBar
-      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:static md:z-auto md:w-auto md:translate-x-0"
+      class="fixed inset-y-0 left-0 z-30 w-[min(290px,86vw)] transition-transform md:relative md:z-auto md:w-auto md:translate-x-0"
       :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
       :inert="!showSidebar && !wideSidebar"
       :live="live"

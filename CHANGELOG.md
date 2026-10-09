@@ -12,6 +12,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Un impegno si segna fatto con il pulsante «Fatto» nell'elenco sopra la conversazione della segretaria, o dicendolo in chat con conferma (I-12 S1, D-144).
 - Impostazioni → Segretaria: promemoria accesi o spenti, i tre orari (9:00, 14:30, 18:30) e i giorni, salvati in `arianna.toml`; i promemoria automatici arrivano con la tappa S2 (I-12 S1, D-144).
 
+### Corretto
+
+- Chat: scendendo in fondo a una conversazione lunga scorreva tutta la pagina, finendo sotto i menu; i testi per i lettori di schermo delle liste lunghe allungavano la pagina oltre lo schermo. Ogni area che scorre ora li tiene dentro (regola globale in `style.css`, segnalazione dell'utente del 2026-10-09).
+
 ### Sicurezza
 
 - Gli impegni sono privati (almeno L2): la conversazione della segretaria non delega a nessun agente, gli strumenti degli impegni si danno solo a schede che girano sul modello locale, la conferma si decide solo dalla chat web e notifiche ed eventi non ne portano mai il testo (I-12 S1, D-144).
