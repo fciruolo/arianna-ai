@@ -54,3 +54,19 @@ export function groupCommitments(items: readonly Commitment[], today: string): C
 export function dueCount(items: readonly Commitment[], today: string): number {
   return items.filter((item) => item.status === 'open' && item.day <= today).length;
 }
+
+/** The line above the first message of the current session of the secretary (D-146). */
+export const SESSION_LINE = 'Nuova sessione · Arianna ricorda solo da qui';
+
+/**
+ * Where the current session of the secretary begins (D-146): the index of the
+ * first message written from its start on, `messages.length` when none is yet
+ * (the line then closes the chat), -1 without a session or any message.
+ */
+export function sessionStart(messages: readonly { ts: string }[], sessionAt: string | null | undefined): number {
+  if (sessionAt === null || sessionAt === undefined || messages.length === 0) return -1;
+  const at = Date.parse(sessionAt);
+  if (Number.isNaN(at)) return -1;
+  const index = messages.findIndex((message) => Date.parse(message.ts) >= at);
+  return index === -1 ? messages.length : index;
+}

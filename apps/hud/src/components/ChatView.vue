@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
+import { sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
@@ -41,6 +42,7 @@ import MarkdownText from './MarkdownText.vue';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
 import PixelAgent from './PixelAgent.vue';
+import SessionLine from './SessionLine.vue';
 
 const props = defineProps<{
   chat: ChatState;
@@ -92,6 +94,8 @@ const emit = defineEmits<{
 
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
+/** The secretary's conversation (D-146): the index of the first message of its current session, -1 elsewhere. */
+const session = computed(() => (props.conversation.secretary === true ? sessionStart(props.chat.messages, props.conversation.secretarySessionAt) : -1));
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
 function canCallWhenDone(task: Task | undefined): boolean {
@@ -660,6 +664,8 @@ onBeforeUnmount(() => clearInterval(clock));
         </p>
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
+          <!-- The secretary (D-146): where the session Arianna reads begins -->
+          <SessionLine v-if="index === session" />
           <!-- User -->
           <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
@@ -775,6 +781,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
+        <SessionLine v-if="session === chat.messages.length" />
 
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 

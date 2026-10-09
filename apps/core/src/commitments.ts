@@ -289,7 +289,8 @@ export function decisionText(proposal: CommitmentProposal, state: string, today:
 /**
  * The secretary's conversation, opened the first time: private, answered by
  * Arianna, titled "Segretaria" from birth. One only (a unique index): two
- * clicks at once find the same one.
+ * clicks at once find the same one. Each call is a click on the button and
+ * opens a new session (D-146): the model then reads only what follows it.
  */
 export async function openSecretary(sql: Sql): Promise<Conversation> {
   return sql.begin(async (tx) => {
@@ -310,6 +311,10 @@ export async function openSecretary(sql: Sql): Promise<Conversation> {
       }
     }
     if (id === undefined) throw new Error('the secretary conversation is missing');
+    // Each click on the button opens a new session (D-146): the model reads from here on.
+    // The event first: tasks find the session in force when they began by it (summaries.ts).
+    const started = await appendEvent(tx, { kind: 'secretary.session', label: 'L0', payload: { conversationId: id } });
+    await tx`UPDATE conversations SET secretary_session_at = (SELECT ts FROM events WHERE id = ${started.id}::bigint) WHERE id = ${id}`;
     const conversation = await loadConversation(tx, id);
     if (conversation === undefined) throw new Error('the secretary conversation is missing');
     return conversation;
