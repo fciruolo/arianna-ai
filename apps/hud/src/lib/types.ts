@@ -85,7 +85,12 @@ export interface Commitment {
   /** "HH:MM" or null. */
   time: string | null;
   status: 'open' | 'done' | 'not_done' | 'postponed' | 'cancelled';
+  /** Why it was not done or was postponed, as the user said it (D-151). */
   reason: string | null;
+  /** The id of the postponed commitment this one was born from (D-151), or null. */
+  rescheduledFrom: string | null;
+  /** The day ("YYYY-MM-DD") of the commitment this one was postponed from (D-151), or null. */
+  postponedFrom: string | null;
   label: Label;
 }
 

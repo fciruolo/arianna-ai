@@ -37,7 +37,9 @@ export function secretarySchedule(config: SecretaryConfig): DailySchedule {
 
 function line(item: Commitment, withDay: boolean): string {
   const when = [withDay ? dayText(item.day) : '', item.time ?? ''].filter((part) => part !== '').join(', ');
-  return `- ${when === '' ? '' : `${when} · `}${item.body}`;
+  // A commitment postponed here from another day says so (D-151).
+  const from = item.postponedFrom === null ? '' : ` (rinviato da ${dayText(item.postponedFrom)})`;
+  return `- ${when === '' ? '' : `${when} · `}${item.body}${from}`;
 }
 
 /**
@@ -52,15 +54,22 @@ export function reminderText(moment: Moment, day: string, today: readonly Commit
   if (moment === 'morning') lines.push(`Buongiorno. Il promemoria di oggi, ${dayText(day)}.`);
   else if (moment === 'afternoon') lines.push('Promemoria del pomeriggio.');
   else lines.push(`Resoconto di fine giornata, ${dayText(day)}.`);
-  if (today.length > 0) {
-    lines.push('', moment === 'morning' ? 'Da fare oggi:' : moment === 'afternoon' ? 'Di oggi ancora aperti:' : 'Di oggi non risultano fatti:');
-    for (const item of today) lines.push(line(item, false));
+  // The morning starts from what was postponed to today (D-151).
+  const postponed = moment === 'morning' ? today.filter((item) => item.postponedFrom !== null) : [];
+  const rest = today.filter((item) => !postponed.includes(item));
+  if (postponed.length > 0) {
+    lines.push('', 'Rinviati a oggi:');
+    for (const item of postponed) lines.push(line(item, false));
+  }
+  if (rest.length > 0) {
+    lines.push('', moment === 'morning' ? (postponed.length > 0 ? 'Il resto di oggi:' : 'Da fare oggi:') : moment === 'afternoon' ? 'Di oggi ancora aperti:' : 'Di oggi non risultano fatti:');
+    for (const item of rest) lines.push(line(item, false));
   }
   if (shownLate.length > 0) {
     lines.push('', 'Ancora da fare dai giorni scorsi:');
     for (const item of shownLate) lines.push(line(item, true));
   }
-  if (moment === 'evening') lines.push('', 'Per ciascuno dimmi se è fatto, da rinviare o non fatto e perché. Se è fatto puoi anche premere «Fatto» nell’elenco.');
+  if (moment === 'evening') lines.push('', 'Per ciascuno dimmi com’è andata: fatto, non fatto o da rinviare (a quale giorno), e perché. Annoto tutto con una sola conferma.');
   return lines.join('\n');
 }
 

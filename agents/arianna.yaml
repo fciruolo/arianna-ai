@@ -3,7 +3,7 @@ name: arianna
 description: Plans, assigns and reports; the user's main contact
 max_label: L2
 executors: [local]
-tools: [kb.read, kb.search, kb.write, task.create, task.update, task.delegate, user.ask, commitment.add, commitment.list, commitment.done, commitment.move]
+tools: [kb.read, kb.search, kb.write, task.create, task.update, task.delegate, user.ask, commitment.add, commitment.list, commitment.done, commitment.move, commitment.report]
 trifecta:
   private_data: true
   untrusted_content: true

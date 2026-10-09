@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
+import { outcomeText, reportEntries } from '../lib/commitments.ts';
 import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import type { Approval } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
@@ -33,6 +34,12 @@ const commitment = computed(() => {
   if (op === undefined || typeof body !== 'string' || typeof dayText !== 'string') return undefined;
   const from = op === 'move' && typeof fromDayText === 'string' ? { dayText: fromDayText, time: typeof fromTime === 'string' ? fromTime : null } : undefined;
   return { op, body, dayText, time: typeof time === 'string' ? time : null, from };
+});
+/** The end-of-day report of the secretary (D-151): its valid lines; none falls back to the generic view. */
+const report = computed(() => {
+  if (props.approval.kind !== 'commitment') return undefined;
+  const entries = reportEntries(props.approval.detail);
+  return entries.length > 0 ? entries : undefined;
 });
 const COMMITMENT_NOTE = {
   add: 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
@@ -79,6 +86,25 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
         </ul>
       </template>
+      <template v-else-if="report !== undefined">
+        <p class="text-[15px]"><strong>Resoconto</strong></p>
+        <ul class="flex flex-col gap-1.5">
+          <li v-for="entry in report" :key="entry.commitmentId" class="rounded-lg border border-line bg-bg px-3 py-2">
+            <p class="break-words">
+              {{ entry.text }}<span class="text-xs text-muted"> · {{ entry.dayText }}<template v-if="entry.time !== null">, alle {{ entry.time }}</template></span>
+            </p>
+            <p class="text-[13px]" :class="entry.outcome === 'done' ? 'text-ok' : entry.outcome === 'not_done' ? 'text-warn' : ''">
+              <strong>{{ outcomeText(entry) }}</strong>
+            </p>
+            <p v-if="entry.reason !== null" class="text-xs break-words text-muted">Perché: {{ entry.reason }}</p>
+          </li>
+        </ul>
+        <p class="text-xs text-muted">
+          Confermando, Arianna annota esiti e motivi<template v-if="report.some((entry) => entry.outcome === 'postponed')"
+            >; un rinvio crea l’impegno nel giorno nuovo, calcolato dalle tue parole: controllalo</template
+          >.
+        </p>
+      </template>
       <template v-else-if="commitment !== undefined">
         <p v-if="commitment.from !== undefined" class="text-muted line-through">
           <span class="sr-only">Prima: </span>{{ commitment.from.dayText }}<template v-if="commitment.from.time !== null">, alle {{ commitment.from.time }}</template>
@@ -99,9 +125,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
 
     <div class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon name="approve" :size="16" />{{ report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ commitment === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

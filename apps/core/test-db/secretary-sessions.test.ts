@@ -8,6 +8,7 @@ import { type Answer } from '@arianna/agents';
 import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
+import { localDay } from '../src/commitment-dates.ts';
 import { openSecretary } from '../src/commitments.ts';
 import { createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, STEP_QUEUE } from '../src/engine.ts';
@@ -16,6 +17,7 @@ import { startLiveFeed } from '../src/live.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { conversationView } from '../src/orchestrator/summaries.ts';
+import { fireReminder } from '../src/reminders.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -184,4 +186,40 @@ test('only the button opens a session: reading the conversation or writing in it
     await server.close();
     await live.close();
   }
+});
+
+test('a click after a reminder not answered yet starts the session at the reminder (D-151): the model reads the report it answers', async () => {
+  const conversation = await openSecretary(db().sql);
+  const today = localDay();
+  await db().sql`INSERT INTO commitments (body, day) VALUES ('Portare la bici finta dal meccanico', ${today}::date)`;
+  // An assistant message without task that is not a reminder does not count.
+  await seed(conversation.id, 2);
+  assert.equal(await fireReminder(db().sql, today, 'evening'), 'written');
+  const reminder = await db().sql<{ ts: Date }[]>`SELECT ts FROM messages WHERE conversation_id = ${conversation.id} AND body LIKE 'Resoconto di fine giornata%'`;
+  const clicked = await openSecretary(db().sql);
+  assert.equal(clicked.secretarySessionAt?.getTime(), reminder[0]?.ts.getTime());
+  const answered = await ask(conversation.id, 'La bici non l’ho portata', 'Perché?');
+  assert.match(answered, /Resoconto di fine giornata[\s\S]*Portare la bici finta[\s\S]*La bici non l’ho portata/);
+  assert.doesNotMatch(answered, /Messaggio/);
+  // Once answered, the next click starts from itself: the report is behind.
+  const later = await openSecretary(db().sql);
+  assert.ok(later.secretarySessionAt !== null && clicked.secretarySessionAt !== null && later.secretarySessionAt > clicked.secretarySessionAt);
+  assert.doesNotMatch(await ask(conversation.id, 'Cosa ho domani?', 'Niente.'), /Resoconto|bici/);
+});
+
+test('the session never goes back (D-151): a click after a later one keeps it; the model reads from the "from" of the click', async () => {
+  const conversation = await openSecretary(db().sql);
+  const today = localDay();
+  await db().sql`INSERT INTO commitments (body, day) VALUES ('Ritirare le scarpe finte dal calzolaio', ${today}::date)`;
+  assert.equal(await fireReminder(db().sql, today, 'afternoon'), 'written');
+  const atReminder = await openSecretary(db().sql);
+  // A second click, still unanswered: the same start, never earlier.
+  const again = await openSecretary(db().sql);
+  assert.equal(again.secretarySessionAt?.getTime(), atReminder.secretarySessionAt?.getTime());
+  // The event of the click says where the session starts, and the model reads from there.
+  const [event] = await db().sql<{ from: Date | null }[]>`
+    SELECT (payload ->> 'from')::timestamptz AS "from" FROM events WHERE kind = 'secretary.session' AND payload ->> 'conversationId' = ${conversation.id} ORDER BY id DESC LIMIT 1`;
+  assert.ok(event?.from !== null && event?.from !== undefined);
+  assert.equal(event.from.getTime(), atReminder.secretarySessionAt?.getTime());
+  assert.match(await ask(conversation.id, 'Le scarpe le ho ritirate', 'Bene.'), /Promemoria del pomeriggio[\s\S]*scarpe finte/);
 });

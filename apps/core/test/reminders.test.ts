@@ -141,7 +141,7 @@ const item = (body: string, day: string, time: string | null = null): Commitment
   label: 'L2',
   conversationId: null,
   createdAt: new Date(),
-  doneAt: null,
+  doneAt: null, rescheduledFrom: null, postponedFrom: null,
 });
 
 test('reminderText: written by the code, nothing when there is nothing to say', () => {
@@ -155,7 +155,7 @@ test('reminderText: written by the code, nothing when there is nothing to say', 
   const evening = reminderText('evening', '2026-10-08', today, late) ?? '';
   assert.match(evening, /^Resoconto di fine giornata/);
   assert.match(evening, /Di oggi non risultano fatti:\n- 10:00 · Passare in banca/);
-  assert.match(evening, /fatto, da rinviare o non fatto e perché/);
+  assert.match(evening, /fatto, non fatto o da rinviare \(a quale giorno\), e perché/);
   assert.doesNotMatch(evening, /Rossi/, 'the evening reports on the day only');
   assert.equal(reminderText('morning', '2026-10-08', [], []), undefined);
   assert.equal(reminderText('evening', '2026-10-08', [], late), undefined, 'evening with only late ones: nothing');
@@ -168,4 +168,16 @@ test('noticeOf and noticeAllowed: a reminder is its own kind, held back only by 
   const noon = new Date(2026, 9, 8, 12, 0);
   assert.equal(noticeAllowed('reminder', { ...DEFAULT_NOTIFICATIONS, replies: false, approvals: false, failures: false }, noon), 'yes');
   assert.equal(noticeAllowed('reminder', { ...DEFAULT_NOTIFICATIONS, quiet: { from: '11:00', to: '13:00' } }, noon), 'quiet');
+});
+
+test('reminderText (D-151): the morning starts from what was postponed to today, the others only mark it', () => {
+  const bank = item('Passare in banca per la fideiussione finta', '2026-10-08', '10:00');
+  const postponed = { ...item('Comprare il pane finto', '2026-10-08'), postponedFrom: '2026-10-07' };
+  const morning = reminderText('morning', '2026-10-08', [bank, postponed], []) ?? '';
+  assert.match(morning, /Rinviati a oggi:\n- Comprare il pane finto \(rinviato da mercoledì 7 ottobre 2026\)\n\nIl resto di oggi:\n- 10:00 · Passare in banca/);
+  const afternoon = reminderText('afternoon', '2026-10-08', [bank, postponed], []) ?? '';
+  assert.doesNotMatch(afternoon, /Rinviati a oggi/);
+  assert.match(afternoon, /- Comprare il pane finto \(rinviato da mercoledì 7 ottobre 2026\)/);
+  // Without a postponement the morning is as before.
+  assert.match(reminderText('morning', '2026-10-08', [bank], []) ?? '', /\n\nDa fare oggi:\n/);
 });

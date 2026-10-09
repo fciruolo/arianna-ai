@@ -47,6 +47,7 @@ export const TOOLS = {
   'commitment.list': { description: 'List the commitments of a day, written by the core from the database', opens: [], localOnly: true },
   'commitment.done': { description: 'Mark a commitment done, after the user confirms it', opens: [], localOnly: true },
   'commitment.move': { description: 'Move a commitment to another day or time, after the user confirms it', opens: [], localOnly: true },
+  'commitment.report': { description: 'Note how commitments went (done, not done, postponed) and why, after the user confirms it', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only

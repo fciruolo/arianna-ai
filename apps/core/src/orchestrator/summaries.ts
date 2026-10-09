@@ -162,7 +162,8 @@ export interface ConversationView {
  *
  * The secretary's conversation (D-146) is read by session: only the messages
  * from the last click on its button before this task began (a later click
- * changes nothing for it, so its steps keep one prefix), and no summary. What the anchor leaves behind there is
+ * changes nothing for it, so its steps keep one prefix; a click that found
+ * reminders of the day not answered yet starts at them, D-151), and no summary. What the anchor leaves behind there is
  * dropped, never summarized: a new session starts clean.
  */
 export async function conversationView(sql: Queryable, conversationId: string, taskId: string, maxText: number): Promise<ConversationView> {
@@ -174,7 +175,7 @@ export async function conversationView(sql: Queryable, conversationId: string, t
   const [conversation] = await sql<{ secretary: boolean; session: string | null }[]>`
     SELECT c.secretary,
       CASE WHEN c.secretary THEN (
-        SELECT max(e.ts)::text FROM events e, tasks t
+        SELECT max(coalesce((e.payload ->> 'from')::timestamptz, e.ts))::text FROM events e, tasks t
         WHERE t.id = ${taskId} AND e.kind = 'secretary.session' AND e.payload ->> 'conversationId' = c.id::text AND e.ts <= t.created_at
       ) END AS session
     FROM conversations c WHERE c.id = ${conversationId}`;

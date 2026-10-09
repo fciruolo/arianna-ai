@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dayLabel, dueCount, groupCommitments, SESSION_LINE, sessionStart } from '../src/lib/commitments.ts';
+import { closedText, dayLabel, dueCount, groupCommitments, outcomeText, postponedText, reportEntries, SESSION_LINE, sessionStart } from '../src/lib/commitments.ts';
 import { reasonText } from '../src/lib/italian.ts';
 import { DEFAULT_SECRETARY, secretaryBody, secretaryProblem } from '../src/lib/settings.ts';
 import { resolveSection } from '../src/lib/settings-index.ts';
@@ -11,7 +11,7 @@ import type { Commitment } from '../src/lib/types.ts';
 const TODAY = '2026-10-09';
 
 function item(id: string, day: string, status: Commitment['status'] = 'open', time: string | null = null): Commitment {
-  return { id, body: `Impegno ${id}`, day, time, status, reason: null, label: 'L2' };
+  return { id, body: `Impegno ${id}`, day, time, status, reason: null, rescheduledFrom: null, postponedFrom: null, label: 'L2' };
 }
 
 test('days in Italian: Oggi, Domani, then the weekday and the date, the year only when another', () => {
@@ -68,4 +68,62 @@ test('the session of the secretary (D-146): the line above the first message fro
   assert.equal(sessionStart([], '2026-10-09T08:30:00.000Z'), -1);
   assert.equal(sessionStart(messages, 'non una data'), -1);
   assert.match(SESSION_LINE, /^Nuova sessione/);
+});
+
+test('a closed commitment of today (D-151): a short tag, the reason only for not done and postponed', () => {
+  assert.deepEqual(closedText(item('a', TODAY, 'done')), { tag: 'Fatto', reason: null });
+  assert.deepEqual(closedText({ status: 'not_done', reason: ' pioveva ' }), { tag: 'Non fatto', reason: 'pioveva' });
+  assert.deepEqual(closedText({ status: 'postponed', reason: null }), { tag: 'Rinviato', reason: null });
+  assert.deepEqual(closedText({ status: 'postponed', reason: '  ' }), { tag: 'Rinviato', reason: null });
+  assert.equal(closedText(item('b', TODAY)), undefined);
+  assert.equal(closedText(item('c', TODAY, 'cancelled')), undefined);
+  // Closed today stays in the list under Oggi; only the open ones are counted.
+  const list = [item('a', TODAY, 'not_done'), item('b', TODAY, 'postponed'), item('c', TODAY)];
+  assert.deepEqual(groupCommitments(list, TODAY).map((group) => group.items.map((entry) => entry.id)), [['a', 'b', 'c']]);
+  assert.equal(dueCount(list, TODAY), 1);
+});
+
+test('an open commitment born from a postponement says where it comes from (D-151)', () => {
+  assert.equal(postponedText({ status: 'open', postponedFrom: '2026-10-08' }, TODAY), 'rinviato da giovedì 8 ottobre');
+  assert.equal(postponedText({ status: 'open', postponedFrom: TODAY }, TODAY), 'rinviato da oggi');
+  assert.equal(postponedText({ status: 'open', postponedFrom: null }, TODAY), undefined);
+  assert.equal(postponedText({ status: 'done', postponedFrom: '2026-10-08' }, TODAY), undefined);
+  assert.equal(postponedText({ status: 'open', postponedFrom: 'ieri' }, TODAY), undefined);
+});
+
+test('the report card (D-151): the valid lines in words, the malformed ones left out', () => {
+  const entries = reportEntries({
+    op: 'report',
+    step: 3,
+    entries: [
+      { commitmentId: 'a', text: 'Banca', day: TODAY, time: '15:00', dayText: 'venerdì 9 ottobre 2026', outcome: 'done', reason: null },
+      { commitmentId: 'b', text: 'Palestra', day: TODAY, time: null, dayText: 'venerdì 9 ottobre 2026', outcome: 'not_done', reason: 'ero stanco' },
+      { commitmentId: 'c', text: 'Dentista', day: TODAY, time: null, dayText: 'venerdì 9 ottobre 2026', outcome: 'postponed', reason: 'studio chiuso', toDay: '2026-10-12', toTime: '10:00', toDayText: 'lunedì 12 ottobre 2026' },
+      { commitmentId: 'd', text: 'Posta', day: TODAY, time: null, dayText: 'venerdì 9 ottobre 2026', outcome: 'postponed', reason: null, toDay: '2026-10-12', toTime: null, toDayText: 'lunedì 12 ottobre 2026' },
+      // Malformed: unknown outcome, no text, a postponement without its new day, not an object.
+      { commitmentId: 'e', text: 'X', dayText: 'oggi', outcome: 'maybe' },
+      { commitmentId: 'f', dayText: 'oggi', outcome: 'done' },
+      { commitmentId: 'g', text: 'Y', dayText: 'oggi', outcome: 'postponed' },
+      'non una voce',
+      null,
+    ],
+  });
+  assert.deepEqual(
+    entries.map((entry) => [entry.commitmentId, outcomeText(entry), entry.reason]),
+    [
+      ['a', 'Fatto', null],
+      ['b', 'Non fatto', 'ero stanco'],
+      ['c', 'Rinviato a lunedì 12 ottobre 2026, alle 10:00', 'studio chiuso'],
+      ['d', 'Rinviato a lunedì 12 ottobre 2026', null],
+    ],
+  );
+  assert.equal(entries[0]?.time, '15:00');
+  // Another detail, or a report without entries: nothing, and the card falls back.
+  assert.deepEqual(reportEntries({ op: 'add', text: 'Banca', dayText: 'oggi' }), []);
+  assert.deepEqual(reportEntries({ op: 'report', entries: 'tutte' }), []);
+  assert.deepEqual(reportEntries({ op: 'report', entries: [{ outcome: 'done' }] }), []);
+});
+
+test('the wait of the report is said in Italian', () => {
+  assert.equal(reasonText('approval needed: commitment.report'), 'aspetta la tua conferma per annotare il resoconto');
 });
