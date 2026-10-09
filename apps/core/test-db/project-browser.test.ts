@@ -69,7 +69,7 @@ test('the consent is off at first: hidden entries shut and refused, no secret sh
     async (base) => {
       const since = await mark();
       const listed = await json(base);
-      assert.deepEqual(listed.body.projects, [{ name: 'orto', absolute: ROOT, hidden: false }]);
+      assert.deepEqual(listed.body.projects, [{ name: 'orto', absolute: ROOT, hidden: false, project: 'orto', part: null }]);
       const tree = await json(`${base}/orto/tree?dir=`);
       const entries = tree.body.entries as { name: string; shut?: string }[];
       assert.equal(entries.find((entry) => entry.name === '.env')?.shut, 'hidden');

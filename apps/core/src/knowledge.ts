@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { isAtMost, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { headerFields, NoteError, noteLabel } from './notes.ts';
-import { checkPagePath, KB_DIR, parsePage } from './orchestrator/kb.ts';
+import { checkPagePath, KB_DIR, KB_PROJECT_NOTES, parsePage } from './orchestrator/kb.ts';
+
+/** kb/progetti as an id relative to kb/ (D-145). */
+const PROJECT_NOTES_ID = KB_PROJECT_NOTES.slice(KB_DIR.length + 1);
 
 /**
  * The graph of the knowledge base for the "Conoscenza" page (D-087): every
@@ -138,7 +141,10 @@ export function listPageIds(root: string, limit = MAX_GRAPH_PAGES): string[] {
       if (entry.name.startsWith('.')) continue;
       const id = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
       // readdir reports links as links: neither branch takes them.
-      if (entry.isDirectory()) walk(join(dir, entry.name), id);
+      // kb/progetti is the knowledge of the projects (D-145), read with their own folder labels, never twice.
+      if (entry.isDirectory()) {
+        if (id.toLowerCase() !== PROJECT_NOTES_ID) walk(join(dir, entry.name), id);
+      }
       else if (entry.isFile() && entry.name.endsWith('.md')) found.push(id);
     }
   };

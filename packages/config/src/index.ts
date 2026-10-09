@@ -80,13 +80,25 @@ export {
 export { resolveHome, resolveInHome } from './home.ts';
 export { type LocalConfig, type LocalEndpointConfig } from './local.ts';
 export {
+  defaultFolderLabel,
+  isFolderName,
+  isSinglePart,
+  managementFolders,
+  NOT_MANAGEMENT,
+  PART_NAME,
+  PART_SEPARATOR,
   parseProjects,
   PROJECT_LABELS,
   PROJECT_NAME,
   projectNamed,
+  projectParts,
   PROJECTS_DIR,
+  workParts,
+  type ManagementFolder,
   type Project,
+  type ProjectFolder,
   type ProjectLabel,
+  type ProjectPart,
 } from './projects.ts';
 export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
 export {

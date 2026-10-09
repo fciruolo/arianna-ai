@@ -31,6 +31,7 @@
     "voice:vapid": "node scripts/voice.ts vapid",
     "notifier:build": "node apps/notifier/src/cli.ts",
     "kb:capture": "node scripts/kb-capture.ts",
+    "demo:container": "node scripts/demo-container.ts",
     "agency:import": "node scripts/agency-import.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",

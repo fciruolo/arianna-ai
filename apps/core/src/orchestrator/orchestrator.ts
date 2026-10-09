@@ -13,7 +13,7 @@ import {
   type ToolId,
   type TurnMessage,
 } from '@arianna/agents';
-import { enabledCloudModels, type AriannaConfig } from '@arianna/config';
+import { enabledCloudModels, workParts, type AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
@@ -388,7 +388,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const where = target === undefined || !delegates.some((item) => item.name === agentName) ? undefined : delegationRoute(target.card);
     // Only a run on Claude Code or Codex works in a project folder.
     const conversation = isCloudRoute(where) && task.conversationId !== null ? await loadConversation(sql, task.conversationId) : undefined;
-    const repo = isCloudRoute(where) ? repoFor(conversation?.workspace, options.settings().projects) : undefined;
+    const repo = isCloudRoute(where) ? repoFor(conversation?.workspace, workParts(options.settings().projects)) : undefined;
     let error: string | undefined;
     if (target === undefined || where === undefined) error = `${agentName} does not take delegated steps`;
     else if (brief === '') error = 'the brief is empty';

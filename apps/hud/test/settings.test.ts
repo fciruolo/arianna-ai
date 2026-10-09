@@ -165,6 +165,17 @@ test('executors keep their usual order and only the known ones', () => {
   assert.deepEqual(executorsBody(['other']), []);
 });
 
+test('the labels of the management folders of a project (D-145): each change, and "scende" when one goes down', () => {
+  const before = { name: 'box', path: 'repos/box', label: 'L1' as const, folders: [{ path: 'documenti', label: 'L2' as const }] };
+  const after = { ...before, folders: [{ path: 'documenti', label: 'L1' as const }, { path: 'Workplan', label: 'L3' as const }] };
+  assert.deepEqual(changeLines({ projects: { added: [], removed: [], changed: [{ name: 'box', before, after }] } }), [
+    { kind: 'change', text: 'Progetto box: cartella documenti: Privato → Interno (scende); cartella Workplan: come da nome → Segreto' },
+  ]);
+  // From the label by name too: documenti is Privata until chosen.
+  const lowered = { ...before, folders: [{ path: 'documenti', label: 'L2' as const }, { path: 'contratti', label: 'L0' as const }] };
+  assert.match(changeLines({ projects: { added: [], removed: [], changed: [{ name: 'box', before, after: lowered }] } })[0]?.text ?? '', /cartella contratti: come da nome → Pubblico \(scende\)$/);
+});
+
 test('the card lists what changes, section by section', () => {
   const lines = changeLines({
     executors: { before: ['claude', 'codex'], after: ['claude'] },

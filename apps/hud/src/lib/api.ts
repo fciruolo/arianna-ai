@@ -9,7 +9,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { SearchResult } from './search.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
-import type { BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
+import type { BrowsableContainer, BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -637,8 +637,20 @@ export async function loadChangelog(): Promise<Changelog> {
 // The page "Progetti" (D-134): an approved project, read only.
 const browse = (project: string): string => `/api/browse/${encodeURIComponent(project)}`;
 
-export async function listBrowsableProjects(): Promise<BrowsableProject[]> {
-  return (await call<{ projects: BrowsableProject[] }>('GET', '/api/browse')).projects;
+/** The parts File, Git and Servizi read, and the containers they belong to (D-145). */
+export async function listBrowsableProjects(): Promise<{ projects: BrowsableProject[]; containers: BrowsableContainer[] }> {
+  const body = await call<{ projects: BrowsableProject[]; containers?: BrowsableContainer[] }>('GET', '/api/browse');
+  return { projects: body.projects, containers: body.containers ?? [] };
+}
+
+/** The tab "Conoscenza" (D-145): the management folders of a container with their labels, and the notes. */
+export async function readProjectKnowledge(project: string): Promise<ProjectKnowledge> {
+  return (await call<{ knowledge: ProjectKnowledge }>('GET', `${browse(project)}/knowledge`)).knowledge;
+}
+
+/** "+ Conoscenza" (D-145): a new note; the header is written by the core, the label never below the folder's. */
+export async function addProjectNote(project: string, note: { folder: string; title: string; label: Label; text: string }): Promise<{ path: string; label: Label }> {
+  return (await call<{ note: { path: string; label: Label } }>('POST', `${browse(project)}/knowledge`, note)).note;
 }
 
 export async function listProjectDir(project: string, dir: string): Promise<{ entries: TreeEntry[]; more: number }> {

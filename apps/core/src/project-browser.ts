@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
-import type { Project } from '@arianna/config';
+import { isSinglePart, PART_SEPARATOR, projectParts, type Project } from '@arianna/config';
 import { commitChanges, committedFiles, MAX_LOG, repositoryBranches, repositoryChanges, repositoryLog, WorkspaceError, type FileChange, type RepositoryBranch, type RepositoryCommit } from '@arianna/executors';
 
 import type { Queryable, Sql } from './db/client.ts';
@@ -34,19 +35,59 @@ import { listening, listServices, type ListedService, type ServiceManager, type 
  * network. Nothing here goes out: no executor, no model, no channel.
  */
 
-/** An approved project as the page lists it: the folder too, for "Apri in VS Code"; `hidden` is the consent of D-135. */
+/**
+ * A part of an approved project as the page lists it (D-145): the folder too,
+ * for "Apri in VS Code"; `hidden` is the consent of D-135; `project` the
+ * container, `part` the folder of the part in it (null: the container is the part).
+ */
 export interface BrowsableProject {
   name: string;
   absolute: string;
   hidden: boolean;
+  project: string;
+  part: string | null;
 }
 
-/** The approved projects the page may read (a project is L0 or L1 by construction, D-058). */
+/** The parts the page may read (a project is L0 or L1 by construction, D-058). */
 export function browsableProjects(projects: readonly Project[], consents: ReadonlyMap<string, string> = new Map()): BrowsableProject[] {
-  return projects.map(({ name, absolute }) => ({ name, absolute, hidden: consents.get(name) === absolute }));
+  return projects.map((item) => ({
+    name: item.name,
+    absolute: item.absolute,
+    hidden: consents.get(consentKey(item.name)) === item.absolute,
+    project: 'project' in item && typeof item.project === 'string' ? item.project : item.name,
+    part: 'part' in item && typeof item.part === 'string' ? item.part : null,
+  }));
 }
 
-/** The consents of D-135: project name → the folder it was given for. */
+/** A container as the page lists it (D-145): its parts by name; `single` when it is itself its only part. */
+export interface BrowsableContainer {
+  name: string;
+  absolute: string;
+  label: Project['label'];
+  single: boolean;
+  parts: string[];
+}
+
+export function browsableContainers(projects: readonly Project[]): BrowsableContainer[] {
+  return projects.map((project) => ({
+    name: project.name,
+    absolute: project.absolute,
+    label: project.label,
+    single: isSinglePart(project),
+    parts: projectParts(project).map((part) => part.name),
+  }));
+}
+
+/**
+ * The row of a consent of D-135: the project's name, or for a part of a
+ * container (`<project>:<part>`, D-145) a fixed digest of it, which the
+ * column's rule (plain name, at most 100 characters) accepts without a migration.
+ */
+export function consentKey(name: string): string {
+  return name.includes(PART_SEPARATOR) ? `part.${createHash('sha256').update(name).digest('hex')}` : name;
+}
+
+/** The consents of D-135: consent key → the folder it was given for. */
 export async function hiddenConsents(sql: Queryable): Promise<Map<string, string>> {
   const rows = await sql.unsafe<{ project: string; folder: string }[]>('SELECT project, folder FROM project_hidden_consents WHERE shown');
   return new Map(rows.map((row) => [row.project, row.folder]));
@@ -59,7 +100,7 @@ export async function hiddenConsents(sql: Queryable): Promise<Map<string, string
 export async function hiddenShown(sql: Queryable, projects: readonly Project[], name: string): Promise<boolean> {
   const project = projects.find((candidate) => candidate.name === name);
   if (project === undefined) return false;
-  const [row] = await sql.unsafe<{ folder: string }[]>('SELECT folder FROM project_hidden_consents WHERE project = $1 AND shown', [name]);
+  const [row] = await sql.unsafe<{ folder: string }[]>('SELECT folder FROM project_hidden_consents WHERE project = $1 AND shown', [consentKey(name)]);
   return row?.folder === project.absolute;
 }
 
@@ -72,9 +113,9 @@ export async function setHiddenShown(sql: Sql, projects: readonly Project[], nam
       await tx.unsafe(
         `INSERT INTO project_hidden_consents (project, folder) VALUES ($1, $2)
          ON CONFLICT (project) DO UPDATE SET folder = EXCLUDED.folder, shown = true, changed_at = now()`,
-        [name, root],
+        [consentKey(name), root],
       );
-    } else await tx.unsafe('UPDATE project_hidden_consents SET shown = false, changed_at = now() WHERE project = $1 AND shown', [name]);
+    } else await tx.unsafe('UPDATE project_hidden_consents SET shown = false, changed_at = now() WHERE project = $1 AND shown', [consentKey(name)]);
     await appendEvent(tx, { kind: on ? 'project.hidden_shown' : 'project.hidden_closed', label, payload: { project: name } });
   });
 }

@@ -19,6 +19,8 @@ import {
   SHUT_TEXT,
   sizeText,
   vscodeUrl,
+  partTitle,
+  type BrowsableContainer,
   type BrowsableProject,
   type CommitDiff,
   type ProjectFile,
@@ -28,6 +30,7 @@ import {
   type TreeEntry,
 } from '../lib/projects.ts';
 import Icon from './Icon.vue';
+import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
 
 /**
  * "Progetti" (D-134): an approved project read on this computer. File and
@@ -36,13 +39,30 @@ import Icon from './Icon.vue';
  * their diff. "Apri in VS Code" is a vscode:// link: the core runs nothing.
  * "Mostra nascosti" (D-135): with the user's consent, kept per project, the
  * hidden entries too; a secret comes covered until "Mostra".
+ * D-145: a project is a container; File, Git and Servizi read one of its
+ * parts (the container itself when it is one git), "Conoscenza" its
+ * management folders and notes.
  */
 
 const projects = ref<BrowsableProject[] | null>(null);
+const containers = ref<BrowsableContainer[] | null>(null);
+const chosenContainer = ref<string | null>(null);
+const container = computed(() => containers.value?.find((item) => item.name === chosenContainer.value) ?? null);
+const parts = computed(() => (projects.value ?? []).filter((item) => item.project === chosenContainer.value));
 const chosen = ref<string | null>(null);
-const project = computed(() => projects.value?.find((item) => item.name === chosen.value) ?? null);
+const project = computed(() => parts.value.find((item) => item.name === chosen.value) ?? null);
 const switcherOpen = ref(false);
-const tab = ref<'file' | 'git' | 'svc'>('file');
+const tab = ref<'file' | 'git' | 'svc' | 'know'>('file');
+const tabs = computed(() => [
+  ...(project.value === null
+    ? []
+    : ([
+        { id: 'file', text: 'File' },
+        { id: 'git', text: 'Git' },
+        { id: 'svc', text: 'Servizi' },
+      ] as const)),
+  { id: 'know', text: 'Conoscenza' } as const,
+]);
 const problem = ref<string | null>(null);
 
 // Files
@@ -315,11 +335,33 @@ function choose(name: string): void {
   void loadGit();
 }
 
+/** A part of the container: from "Conoscenza" back to its files. */
+function choosePart(name: string): void {
+  if (tab.value === 'know') tab.value = 'file';
+  choose(name);
+}
+
+/** A container: its first part opened in File, or "Conoscenza" when it has no part (D-145). */
+function chooseContainer(name: string): void {
+  switcherOpen.value = false;
+  if (chosenContainer.value === name) return;
+  chosenContainer.value = name;
+  chosen.value = null;
+  const first = parts.value[0];
+  if (first === undefined) tab.value = 'know';
+  else {
+    if (tab.value === 'know') tab.value = 'file';
+    choose(first.name);
+  }
+}
+
 onMounted(async () => {
   try {
-    projects.value = await listBrowsableProjects();
-    const first = projects.value[0];
-    if (first !== undefined) choose(first.name);
+    const found = await listBrowsableProjects();
+    projects.value = found.projects;
+    containers.value = found.containers;
+    const first = found.containers[0];
+    if (first !== undefined) chooseContainer(first.name);
   } catch (cause) {
     problem.value = browseErrorText(cause);
   }
@@ -378,15 +420,15 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
 <template>
   <section class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-4 md:px-6" aria-label="Progetti">
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
-    <p v-else-if="projects === null" class="text-sm text-muted">Carico i progetti…</p>
-    <div v-else-if="projects.length === 0" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm">
+    <p v-else-if="containers === null" class="text-sm text-muted">Carico i progetti…</p>
+    <div v-else-if="containers.length === 0" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm">
       Nessun progetto approvato. Si aggiungono in <b>Impostazioni → Progetti</b>: qui si vedono solo quelli approvati.
     </div>
 
-    <template v-else-if="project">
-      <!-- Masthead: which project, where, how it stands -->
+    <template v-else-if="container">
+      <!-- Masthead: which project, which part, where, how it stands -->
       <header class="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div class="grid size-11 place-items-center rounded-xl border border-accent/40 bg-accent/15 font-hud text-[16px] font-semibold text-accent" aria-hidden="true">{{ initials(project.name) }}</div>
+        <div class="grid size-11 place-items-center rounded-xl border border-accent/40 bg-accent/15 font-hud text-[16px] font-semibold text-accent" aria-hidden="true">{{ initials(container.name) }}</div>
         <div class="min-w-0">
           <div class="relative">
             <button
@@ -396,33 +438,33 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               aria-haspopup="listbox"
               @click="switcherOpen = !switcherOpen"
             >
-              {{ project.name }}<span class="rotate-90 text-muted"><Icon name="expand" :size="15" /></span>
+              {{ container.name }}<span class="rotate-90 text-muted"><Icon name="expand" :size="15" /></span>
             </button>
             <div v-if="switcherOpen" class="absolute top-full left-0 z-20 mt-1.5 min-w-[280px] rounded-xl border border-line-strong bg-surface p-1.5 shadow-[0_14px_40px_#0006]" role="listbox">
               <button
-                v-for="item in projects"
+                v-for="item in containers"
                 :key="item.name"
                 type="button"
                 role="option"
-                :aria-selected="item.name === project.name"
+                :aria-selected="item.name === container.name"
                 class="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-accent/15"
-                :class="item.name === project.name ? 'bg-accent/15' : ''"
-                @click="choose(item.name)"
+                :class="item.name === container.name ? 'bg-accent/15' : ''"
+                @click="chooseContainer(item.name)"
               >
-                <span class="block text-[13.5px]">{{ item.name }}</span>
+                <span class="block text-[13.5px]">{{ item.name }}<span v-if="!item.single" class="text-muted"> · {{ item.parts.length === 1 ? '1 parte' : `${String(item.parts.length)} parti` }}</span></span>
                 <span class="block truncate font-mono text-[11px] text-muted">{{ item.absolute }}</span>
               </button>
               <p class="mt-1 border-t border-line px-2.5 pt-2 pb-1 text-xs text-muted">Altri progetti si approvano in Impostazioni → Progetti.</p>
             </div>
           </div>
           <p class="flex flex-wrap items-center gap-x-2.5 font-mono text-xs text-muted">
-            <span class="truncate">{{ project.absolute }}</span>
-            <a :href="vscodeUrl(project.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" title="Apre la cartella del progetto in Visual Studio Code">
+            <span class="truncate">{{ project?.absolute ?? container.absolute }}</span>
+            <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
               <Icon name="code" :size="13" />Apri in VS Code
             </a>
           </p>
         </div>
-        <div class="ml-auto flex overflow-hidden rounded-xl border border-line bg-surface">
+        <div v-if="project" class="ml-auto flex overflow-hidden rounded-xl border border-line bg-surface">
           <button type="button" class="grid gap-1 px-4 py-2 text-left hover:bg-surface-2" @click="tab = 'git'">
             <span class="hud-title text-[10px]">Branch</span>
             <span class="flex items-center gap-1.5 font-mono text-[13px]"><Icon name="branch" :size="13" />{{ currentBranch ?? (git?.repository === false ? 'niente git' : '…') }}</span>
@@ -441,9 +483,26 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         </div>
       </header>
 
+      <!-- The parts of the container (D-145): File, Git and Servizi read the one chosen here -->
+      <div v-if="!container.single" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Parti del progetto">
+        <span class="hud-title mr-1 text-[10px]">Parti</span>
+        <button
+          v-for="item in parts"
+          :key="item.name"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-xs"
+          :class="item.name === chosen && tab !== 'know' ? 'border-accent bg-accent/15 text-ink' : 'border-line text-muted hover:text-ink'"
+          :aria-pressed="item.name === chosen && tab !== 'know'"
+          @click="choosePart(item.name)"
+        >
+          <Icon name="code" :size="12" />{{ partTitle(item) }}
+        </button>
+        <span v-if="parts.length === 0" class="text-xs text-muted">Nessuna sottocartella con un proprio git: il Coder non ha dove lavorare.</span>
+      </div>
+
       <nav class="flex items-end gap-1 border-b border-line" role="tablist" aria-label="Schede del progetto">
         <button
-          v-for="item in [{ id: 'file', text: 'File' }, { id: 'git', text: 'Git' }, { id: 'svc', text: 'Servizi' }] as const"
+          v-for="item in tabs"
           :key="item.id"
           type="button"
           role="tab"
@@ -455,9 +514,14 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           {{ item.text }}
         </button>
         <span v-if="tab === 'svc'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="play" :size="13" />Avvia e ferma con la tua conferma, ogni volta</span>
+        <span v-else-if="tab === 'know'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Solo su questo computer: il Coder non vede queste cartelle</span>
         <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Sola lettura: niente modifiche, checkout né commit da qui</span>
       </nav>
 
+      <!-- CONOSCENZA (D-145): the management folders of the container and their notes -->
+      <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" />
+
+      <template v-else-if="project">
       <!-- FILE: the tree and the file, one split pane -->
       <div v-if="tab === 'file'" class="grid min-h-[460px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface md:grid-cols-[264px_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col border-b border-line md:border-r md:border-b-0">
@@ -702,6 +766,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           </div>
         </div>
       </div>
+      </template>
     </template>
 
     <!-- The consent of D-135: in the page, never a dialog of the browser -->

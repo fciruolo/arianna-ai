@@ -655,6 +655,52 @@ test('a project outside ARIANNA_HOME (D-058): the Coder works in the approved fo
   }
 });
 
+/** repos/<name> as a container (D-145): Workplan and documenti with a private note, and a git part `<name>-sito`. */
+function containerFixture(name: string, self: boolean): string {
+  const dir = join(HOME, 'repos', name);
+  const part = self ? dir : join(dir, `${name}-sito`);
+  mkdirSync(part, { recursive: true });
+  writeFileSync(join(part, 'README.md'), '# Sito finto\n');
+  writeFileSync(join(part, '.gitignore'), '.fake-claude.json\n');
+  gitIn(part, 'init', '--quiet', '--initial-branch=main');
+  gitIn(part, 'add', '--all');
+  gitIn(part, 'commit', '--quiet', '--message', 'fixture');
+  mkdirSync(join(dir, 'Workplan'), { recursive: true });
+  writeFileSync(join(dir, 'Workplan', 'piano.md'), '# Piano finto\n');
+  mkdirSync(join(dir, 'documenti'), { recursive: true });
+  writeFileSync(join(dir, 'documenti', 'compenso.md'), '# Compenso finto: 100 euro\n');
+  return dir;
+}
+
+test('a part of a container (D-145): the Coder works in the part, never in the container', async () => {
+  const dir = containerFixture('cantiere', false);
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere:cantiere-sito', ['cantiere:cantiere-sito']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere'] })), ['continued', 'continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([delegation?.status, delegation?.repo], ['ok', 'cantiere:cantiere-sito']);
+  assert.ok(existsSync(join(dir, 'cantiere-sito', '.fake-claude.json')));
+  assert.ok(!existsSync(join(dir, '.fake-claude.json')));
+});
+
+test('the container that is not a git repository is never the folder of a step (D-145)', async () => {
+  containerFixture('cantiere-solo', false);
+  const { task } = await ask('work', 'Lavora sul contenitore.', 'cantiere-solo', ['cantiere-solo']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-solo'] })), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.status, 'failed');
+  assert.match(delegation.result ?? '', /no longer among the projects the user approved/);
+});
+
+test('a container that is one git with a private note in its management folders: the Coder does not open it (D-145)', async () => {
+  const dir = containerFixture('cantiere-git', true);
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere-git', ['cantiere-git']);
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-git'] })), ['continued', 'answered']);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.equal(delegation?.status, 'failed');
+  assert.match(delegation.result ?? '', /private knowledge of the project \(1 file\(s\)/);
+  assert.ok(!existsSync(join(dir, '.fake-claude.json')));
+});
+
 test('a project taken off the list: the delegation ends with an error Arianna reads', async () => {
   const { task } = await ask('work', 'Progetto tolto.', 'site');
   const model = scripted([DELEGATE, REPLY]);
