@@ -2581,28 +2581,7 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 - **P4:** cartella degli IM, dopo la spiegazione dell'utente.
 - **P5 (facoltativa):** uscita eccezionale con anonimizzazione locale e master password.
 
-**Domande per l'utente.**
-1. **Le parti del progetto sono repository git separati?**
-   - Contesto: Il Coder lavora su una cartella alla volta e fa i commit lì. Se ogni parte ha il suo git, il Coder lavora su una parte senza vedere le altre; se il git è uno solo per tutto il contenitore, il Coder lavorerebbe nel contenitore, dove ci sono anche le cartelle di gestione.
-   - Opzione consigliata: Un git per ogni parte — il Coder apre solo la parte su cui lavora più le note L1; le cartelle di gestione restano fuori dal suo git e dal cloud.
-   - Opzione: Un git solo per il contenitore — più semplice da gestire, ma Workplan e documenti finiscono nella cronologia di git e il sandbox deve negare cartella per cartella dentro lo stesso repository.
-   - Opzione: Dipende dal progetto — per ogni progetto si sceglie; più flessibile, ma due casi da costruire e provare.
-   - Esempio: `progetto-test-admin` e `progetto-test-client` hanno ognuno il suo git; chiedi "aggiungi il filtro per data al pannello" e il Coder lavora solo in `progetto-test-admin`.
-2. **Che etichetta hanno di base le cartelle di gestione?**
-   - Contesto: Ciò che è Privato (L2) non esce mai verso il cloud; ciò che è Interno (L1) lo può leggere anche il Coder. Si decide da dove parte una cartella nuova come Workplan o documenti.
-   - Opzione consigliata: Tutte Private, Interne a mano — nulla esce finché non lo decidi tu cartella per cartella con una conferma; il Coder all'inizio non vede niente del contenitore.
-   - Opzione: Workplan e documenti Interni — il Coder li legge subito, ma una nota delicata scritta lì per sbaglio uscirebbe se non la etichetti a mano.
-   - Esempio: Crei `progetto-test/Workplan`: nasce Privata; quando vuoi che il Coder segua il piano, la rendi Interna dalla scheda Conoscenza e confermi.
-3. **Dove stanno le note dei progetti?**
-   - Contesto: La conoscenza può stare nella cartella del progetto (vicino al codice, la vedi anche con il Finder) o nella knowledge base di Arianna (`kb/`), collegata al progetto.
-   - Opzione consigliata: Nella cartella del progetto — come hai descritto (Workplan, documenti, IM nel contenitore); Arianna la indicizza lì con le etichette.
-   - Opzione: In kb/progetti/<nome> — tutto in un posto solo con il resto della conoscenza, ma lontano dalle cartelle del progetto.
-   - Esempio: La nota "il cliente vuole il logo blu" finisce in `progetto-test/documenti/` con la sua etichetta e Arianna la trova quando chiedi "cosa voleva il cliente per il logo?".
-4. **L'uscita eccezionale di una nota privata va costruita?**
-   - Contesto: Hai chiesto che le note private non escano mai, salvo casi eccezionali con master password e anonimizzazione. È la tappa più delicata: si decide se farla e quando.
-   - Opzione consigliata: Sì, come ultima tappa — prima tutto il resto senza nessuna uscita; poi, se ti serve davvero, l'uscita con anonimizzazione locale, testo esatto da approvare e master password.
-   - Opzione: No, mai — le note L2 e L3 non escono in nessun caso; se serve qualcosa al Coder la riscrivi tu senza dati.
-   - Esempio: Vuoi che il Coder sappia lo stato dei pagamenti: il modello locale scrive "il cliente A ha pagato la fattura 2 di [importo]", la chat ti mostra il testo, lo approvi con la master password ed esce solo quello.
+**Decisioni dell'utente (2026-10-09).** Domande chiuse: scelte scritte in D-145 (`docs/DECISIONS.md`).
 
 ### I-12, la segretaria (richiesta dell'utente del 2026-10-08, prioritaria)
 
@@ -2631,28 +2610,7 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 
 **Nota sulle fasi.** Promemoria e brief giornaliero erano della Fase 5 (D-110 è già fuori fase): un anticipo va annotato in `ROADMAP.md` come quelli già scelti dall'utente.
 
-**Domande per l'utente.**
-1. **Chi fa la segretaria?**
-   - Contesto: Può essere Arianna stessa, con un pulsante che apre una sua conversazione dedicata, oppure un agente a parte con nome e personaggio suoi nell'ufficio.
-   - Opzione consigliata: Arianna stessa — un'assistente sola che sa tutto; il pulsante apre la conversazione "Segretaria" con lei. Meno pezzi da costruire.
-   - Opzione: Un agente dedicato — nome e personaggio suoi, separato da Arianna; più chiaro chi fa cosa, ma un agente in più da progettare.
-   - Esempio: Premi "Segretaria" e scrivi "giovedì devo andare in banca per la fideiussione"; risponde Arianna: "Segnato per giovedì 9 ottobre. Te lo ricordo la mattina."
-2. **A che ore i tre promemoria?**
-   - Contesto: La segretaria ti ricorda le cose in tre momenti della giornata. Si decidono gli orari di partenza; poi si cambiano nelle Impostazioni.
-   - Opzione consigliata: 9:00, 14:30, 18:30 — mattina, dopo pranzo e fine giornata in orari d'ufficio, dal lunedì al venerdì.
-   - Opzione: Anche nel weekend — gli stessi orari tutti i giorni.
-   - Opzione: Li scelgo io subito — scrivi gli orari nella risposta.
-   - Esempio: Lunedì alle 9:00 arriva "Oggi: rilascio X per il cliente Y"; alle 14:30, se non l'hai segnato fatto, "Ancora da fare: rilascio X"; alle 18:30 "Il rilascio X non risulta fatto: cosa è successo?".
-3. **Come si segna una cosa fatta?**
-   - Contesto: Perché i promemoria del pomeriggio e il resoconto siano giusti, la segretaria deve sapere cosa hai fatto. Si può dire in chat o premere un pulsante.
-   - Opzione consigliata: Tutti e due — un pulsante "Fatto" su ogni promemoria e la frase in chat ("il rilascio l'ho fatto"), che il modello locale collega all'impegno e ti fa confermare.
-   - Opzione: Solo il pulsante — nessun errore di interpretazione, ma devi aprire il promemoria.
-   - Esempio: Alle 11 scrivi "fatto il deploy per Y"; la segretaria risponde "Segno fatto: rilascio X per il cliente Y?" e tu premi Sì.
-4. **Anche a voce?**
-   - Contesto: La chat esiste già con le notifiche; la chiamata di Arianna (D-066) potrebbe leggerti i promemoria della mattina a voce, sul modello locale.
-   - Opzione consigliata: Prima solo chat e notifiche — la voce come tappa facoltativa dopo, quando il resto funziona.
-   - Opzione: Subito anche la chiamata della mattina — più comodo, ma più lavoro e la chiamata va provata con le routine.
-   - Esempio: Alle 9:00 Arianna ti chiama: "Buongiorno, oggi hai il rilascio X per il cliente Y e la banca alle 15."
+**Decisioni dell'utente (2026-10-09).** Domande chiuse: scelte scritte in D-144 (`docs/DECISIONS.md`).
 
 ### I-13, il cardwall (richiesta dell'utente del 2026-10-08, insieme a I-12)
 
