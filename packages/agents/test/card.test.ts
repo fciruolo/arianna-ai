@@ -87,7 +87,7 @@ describe('parseAgentCard', () => {
     });
 
     it('the commitments of the secretary (D-144): only on a card that reads L2 and runs on the local model alone', () => {
-      const tools = ['commitment.add', 'commitment.list', 'commitment.done'];
+      const tools = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move'];
       assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);
       for (const tool of tools) {
         rejects(

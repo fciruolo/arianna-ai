@@ -42,6 +42,7 @@ const REASONS: Record<string, string> = {
   'the agent asked for an invalid confirmation': 'l’agente ha chiesto una conferma non valida',
   'approval needed: commitment.add': 'aspetta la tua conferma per segnare l’impegno',
   'approval needed: commitment.done': 'aspetta la tua conferma per segnare l’impegno come fatto',
+  'approval needed: commitment.move': 'aspetta la tua conferma per spostare l’impegno',
   'the secretary answers only in its conversation': 'la segretaria risponde solo nella sua conversazione',
   'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
 };
