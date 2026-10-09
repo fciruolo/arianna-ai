@@ -78,9 +78,10 @@ describe('management folders (D-145)', () => {
     ]);
   });
 
-  it('in a container that is one git, only the folders known by name or labeled by the user', () => {
-    const project = { ...container('un-git', ['src', 'Workplan', 'Documenti', 'note'], [], true), folders: [{ path: 'note', label: 'L2' as const }] };
-    assert.deepEqual(managementFolders(project).map(({ path, label }) => [path, label]), [['Documenti', 'L2'], ['note', 'L2'], ['Workplan', 'L1']]);
+  it('in a container that is one git, only the folders known by name, always with their label by name', () => {
+    // The choices of [[project.folder]] are for kb/progetti/<project>: they never lower nor add a folder of the code.
+    const project = { ...container('un-git', ['src', 'Workplan', 'Documenti', 'note'], [], true), folders: [{ path: 'note', label: 'L2' as const }, { path: 'Documenti', label: 'L0' as const }] };
+    assert.deepEqual(managementFolders(project).map(({ path, label, chosen }) => [path, label, chosen]), [['Documenti', 'L2', false], ['Workplan', 'L1', false]]);
   });
 });
 

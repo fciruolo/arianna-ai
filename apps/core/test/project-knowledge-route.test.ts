@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { resolveHome, workParts, type Project } from '@arianna/config';
+import { createLabelRules } from '@arianna/policy';
 
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
@@ -47,7 +48,7 @@ function send(port: number, method: string, path: string, body?: unknown): Promi
 
 test('parts and containers, the tab Conoscenza, a note written; the labels of the folders are not written here', async (t) => {
   const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
-  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS });
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
   t.after(async () => {
     await server.close();
   });

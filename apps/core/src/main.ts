@@ -332,7 +332,7 @@ try {
 }
 const adapters = { claude: claude !== undefined, codex: codex !== undefined };
 // D-145: the knowledge of the approved projects is searched and read with kb/, on this computer only.
-const kb = createKb({ home: config.home, rules, projects: createProjectPages(() => settings.current().projects) });
+const kb = createKb({ home: config.home, rules, projects: createProjectPages(() => settings.current().projects, { home: config.home, rules }) });
 const orchestrator = createOrchestrator({
   sql,
   agents,
@@ -531,6 +531,8 @@ const server = await startApiServer({
   projects: approvedProjects,
   approvedProjects,
   projectContainers,
+  // The tab "Conoscenza" (D-145): kb/progetti of this ARIANNA_HOME for the projects that are one git.
+  knowledge: { home: config.home, rules },
   services,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),

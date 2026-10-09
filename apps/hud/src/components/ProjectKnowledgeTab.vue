@@ -5,7 +5,7 @@ import { addProjectNote, confirmPrivacy, loadSettings, preparePrivacy, readProje
 import { ApiError } from '../lib/api.ts';
 import { errorText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
-import { browseErrorText, lowers, noteLabels, withFolderLabel, type BrowsableContainer, type KnowledgeFolder, type ProjectKnowledge } from '../lib/projects.ts';
+import { browseErrorText, folderLabelByName, isFolderName, lowers, noteLabels, withFolderLabel, type BrowsableContainer, type KnowledgeFolder, type ProjectKnowledge } from '../lib/projects.ts';
 import { changeLines, writeError, type ChangeLine, type PrivacyProposal } from '../lib/settings.ts';
 import type { Label } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -40,24 +40,15 @@ async function load(): Promise<void> {
   }
 }
 
-watch(
-  () => props.container.name,
-  () => {
-    knowledge.value = null;
-    relabel.value = null;
-    adding.value = null;
-    void load();
-  },
-  { immediate: true },
-);
-
 const notesByFolder = computed(() => {
   const groups = new Map<string, ProjectKnowledge['notes']>();
   for (const folder of knowledge.value?.folders ?? []) groups.set(folder.path, []);
   for (const note of knowledge.value?.notes ?? []) groups.set(note.folder, [...(groups.get(note.folder) ?? []), note]);
   return [...groups.entries()];
 });
-const folderLabel = (path: string): Label | undefined => knowledge.value?.folders.find((folder) => folder.path === path)?.label;
+/** An existing folder by name, ignoring case as the core does: `workplan` is the existing `Workplan`. */
+const existingFolder = (path: string): KnowledgeFolder | undefined => knowledge.value?.folders.find((folder) => folder.path.toLowerCase() === path.trim().toLowerCase());
+const folderLabel = (path: string): Label | undefined => existingFolder(path)?.label;
 
 // --- A folder relabeled: prepared on the settings, confirmed here.
 const relabel = ref<{ folder: KnowledgeFolder; to: Label; proposal: PrivacyProposal | null; error: string | null; busy: boolean; spent: boolean } | null>(null);
@@ -114,11 +105,15 @@ const adding = ref<{ folder: string; title: string; label: Label; text: string; 
 const saved = ref<string | null>(null);
 const titleInput = ref<HTMLInputElement | null>(null);
 
+/** The label of a folder: the one it has, or for a new one the one its name gives (D-145). */
+const labelOfFolder = (path: string): Label => folderLabel(path.trim()) ?? folderLabelByName(path);
+
 function startAdding(): void {
-  const first = knowledge.value?.folders[0];
-  if (first === undefined) return;
+  if (knowledge.value === null) return;
   saved.value = null;
-  adding.value = { folder: first.path, title: '', label: first.label, text: '', busy: false, error: null };
+  // A first folder to propose: an existing one, or Workplan for a project without folders yet.
+  const folder = knowledge.value.folders[0]?.path ?? 'Workplan';
+  adding.value = { folder, title: '', label: labelOfFolder(folder), text: '', busy: false, error: null };
   void nextTick(() => titleInput.value?.focus());
 }
 
@@ -126,12 +121,14 @@ function startAdding(): void {
 watch(
   () => adding.value?.folder,
   (folder) => {
-    const label = folder === undefined ? undefined : folderLabel(folder);
-    if (adding.value !== null && label !== undefined) adding.value.label = label;
+    if (adding.value !== null && folder !== undefined) adding.value.label = labelOfFolder(folder);
   },
 );
-const addingLabels = computed(() => (adding.value === null ? [] : noteLabels(folderLabel(adding.value.folder) ?? 'L2')));
-const canSave = computed(() => adding.value !== null && !adding.value.busy && adding.value.title.trim() !== '' && adding.value.text.trim() !== '');
+const addingNew = computed(() => adding.value !== null && isFolderName(adding.value.folder.trim()) && folderLabel(adding.value.folder.trim()) === undefined);
+const addingLabels = computed(() => (adding.value === null ? [] : noteLabels(labelOfFolder(adding.value.folder))));
+const canSave = computed(
+  () => adding.value !== null && !adding.value.busy && isFolderName(adding.value.folder.trim()) && adding.value.title.trim() !== '' && adding.value.text.trim() !== '',
+);
 
 async function saveNote(): Promise<void> {
   const note = adding.value;
@@ -139,7 +136,7 @@ async function saveNote(): Promise<void> {
   note.busy = true;
   note.error = null;
   try {
-    const written = await addProjectNote(props.container.name, { folder: note.folder, title: note.title.trim(), label: note.label, text: note.text });
+    const written = await addProjectNote(props.container.name, { folder: existingFolder(note.folder)?.path ?? note.folder.trim(), title: note.title.trim(), label: note.label, text: note.text });
     adding.value = null;
     saved.value = `Nota salvata in ${written.path} (${LABEL_TEXT[written.label]}).`;
     await load();
@@ -148,6 +145,19 @@ async function saveNote(): Promise<void> {
     note.error = cause instanceof ApiError && cause.status === 400 ? `Il nucleo ha rifiutato la nota: ${cause.message}` : browseErrorText(cause);
   }
 }
+
+// Last: it runs at once and resets the state declared above (declared before, or the first run would find none).
+watch(
+  () => props.container.name,
+  () => {
+    knowledge.value = null;
+    relabel.value = null;
+    adding.value = null;
+    saved.value = null;
+    void load();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -161,8 +171,11 @@ async function saveNote(): Promise<void> {
           <Icon name="private" :size="15" class="text-muted" />
           <h2 id="folders-title" class="hud-title flex-1">Cartelle di gestione</h2>
         </header>
+        <p class="border-b border-line px-4 py-2 text-xs text-muted">
+          In <span class="font-mono text-ink">{{ knowledge.where }}</span><template v-if="knowledge.inKb">: il progetto è un solo git, quindi le note stanno nella conoscenza di Arianna, fuori dal codice.</template><template v-else>, accanto alle parti di codice, mai dentro una parte.</template>
+        </p>
         <p v-if="knowledge.folders.length === 0" class="p-4 text-sm text-muted">
-          {{ knowledge.single ? 'Nessuna cartella Workplan, IM o documenti in questo progetto.' : 'Nessuna cartella oltre alle parti di codice.' }}
+          Nessuna cartella di gestione ancora. Con “+ Conoscenza” scrivi il nome di una cartella (per esempio Workplan, IM o documenti): la creo quando salvi la prima nota.
         </p>
         <ul v-else class="divide-y divide-line">
           <li v-for="folder in knowledge.folders" :key="folder.path" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
@@ -178,7 +191,9 @@ async function saveNote(): Promise<void> {
         </ul>
         <p class="border-t border-line px-4 py-2.5 text-xs text-muted">
           Una nota resta almeno al livello della sua cartella; la sua intestazione può alzarla, mai abbassarla. Tutto resta su questo computer: il Coder non vede queste cartelle.
-          <template v-if="knowledge.single"> Qui il codice e la gestione stanno nello stesso git: con una nota sopra Interno il Coder non apre il progetto.</template>
+        </p>
+        <p v-if="knowledge.repoFolders.length > 0" class="border-t border-line px-4 py-2.5 text-xs text-warn">
+          Dentro il repository ci sono anche {{ knowledge.repoFolders.map((folder) => `${folder.path} (${LABEL_TEXT[folder.label]})`).join(', ') }}: stanno nel codice, quindi con un file sopra Interno lì dentro il Coder non apre il progetto.
         </p>
       </section>
 
@@ -187,7 +202,7 @@ async function saveNote(): Promise<void> {
         <header class="flex items-center gap-2 border-b border-line px-4 py-3">
           <Icon name="knowledge" :size="15" class="text-muted" />
           <h2 id="notes-title" class="hud-title flex-1">Note</h2>
-          <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" :disabled="knowledge.folders.length === 0 || adding !== null" @click="startAdding">
+          <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" :disabled="adding !== null" @click="startAdding">
             <Icon name="new" :size="13" />Conoscenza
           </button>
         </header>
@@ -195,10 +210,11 @@ async function saveNote(): Promise<void> {
 
         <form v-if="adding" class="flex flex-col gap-3 border-b border-line px-4 py-3.5" @submit.prevent="saveNote">
           <div class="grid gap-3 sm:grid-cols-2">
-            <label class="flex flex-col gap-1 text-xs text-muted">Cartella
-              <select v-model="adding.folder" class="field px-2 py-1.5 text-[13px] text-ink">
-                <option v-for="folder in knowledge.folders" :key="folder.path" :value="folder.path">{{ folder.path }} ({{ LABEL_TEXT[folder.label] }})</option>
-              </select>
+            <label class="flex flex-col gap-1 text-xs text-muted">Cartella (una di queste, o un nome nuovo)
+              <input v-model="adding.folder" list="knowledge-folders" maxlength="100" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Workplan" />
+              <datalist id="knowledge-folders">
+                <option v-for="folder in knowledge.folders" :key="folder.path" :value="folder.path">{{ LABEL_TEXT[folder.label] }}</option>
+              </datalist>
             </label>
             <label class="flex flex-col gap-1 text-xs text-muted">Etichetta
               <select v-model="adding.label" class="field px-2 py-1.5 text-[13px] text-ink">
@@ -213,9 +229,11 @@ async function saveNote(): Promise<void> {
             <textarea v-model="adding.text" rows="6" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Quello che Arianna deve sapere di questo progetto" />
           </label>
           <p class="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13px]">
-            Si salverà come <LabelBadge :label="adding.label" /> in <span class="font-mono">{{ adding.folder }}</span>.
+            Si salverà come <LabelBadge :label="adding.label" /> in <span class="font-mono">{{ knowledge.where }}/{{ adding.folder.trim() }}</span>.
+            <span v-if="addingNew" class="text-xs text-warn">Cartella nuova: la creo, {{ LABEL_TEXT[labelOfFolder(adding.folder)] }} per il suo nome.</span>
             <span class="text-xs text-muted">L’etichetta si può alzare, non scendere sotto quella della cartella.</span>
           </p>
+          <p v-if="adding.folder.trim() !== '' && !isFolderName(adding.folder.trim())" class="text-xs text-danger">Il nome della cartella è uno solo: niente barre, niente punto all’inizio.</p>
           <p v-if="adding.error" class="text-sm text-danger" role="alert">{{ adding.error }}</p>
           <div class="flex justify-end gap-2">
             <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="adding.busy" @click="adding = null">Annulla</button>

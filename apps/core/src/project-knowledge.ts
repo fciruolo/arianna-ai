@@ -1,11 +1,11 @@
-import { closeSync, constants, lstatSync, openSync, readdirSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { isFolderName, managementFolders, type ManagementFolder, type Project } from '@arianna/config';
+import { defaultFolderLabel, isFolderName, isSinglePart, managementFolders, NOT_MANAGEMENT, projectParts, type ManagementFolder, type Project } from '@arianna/config';
 import { createLabelRules, isAtMost, isLabel, labelForKbPage, labelForPath, LABELS, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { localTimestamp, slugOf } from './capture.ts';
-import { parsePage, type KbPage } from './orchestrator/kb.ts';
+import { KB_PROJECT_NOTES, parsePage, type KbPage } from './orchestrator/kb.ts';
 
 /**
  * The knowledge of a project (I-11, D-145, tappa P2): the management folders
@@ -51,12 +51,135 @@ export interface KnowledgeNote {
 }
 
 export interface ProjectKnowledge {
-  /** True when the container is itself the part (one git): its notes sit inside the Coder's folder. */
-  single: boolean;
+  /** True when the notes live in `kb/progetti/<project>/` of Arianna, outside the code (one git, D-145). */
+  inKb: boolean;
+  /** The folder the management folders are in, as the user reads it (`kb/progetti/demo`, or the container). */
+  where: string;
   folders: ManagementFolder[];
   notes: KnowledgeNote[];
   /** Notes left out past MAX_NOTES. */
   more: number;
+  /**
+   * One git: the management folders found inside the repository itself (as
+   * before), which keep the Coder out while a file above L1 is there.
+   */
+  repoFolders: ManagementFolder[];
+}
+
+/** ARIANNA_HOME and the rules of `labels.toml`: where `kb/progetti` is, and the rules that may raise it. */
+export interface KnowledgeEnv {
+  home: string;
+  rules: LabelRules;
+}
+
+/**
+ * Where the knowledge of a project lives (D-145): the container when it holds
+ * parts, `kb/progetti/<project>` of Arianna when the project is one git (the
+ * notes stay out of the code). `labelOf` labels a path relative to `root`:
+ * the folder rule, the header, and for `kb/progetti` any explicit rule of
+ * labels.toml above it, which only raises.
+ */
+interface KnowledgeBase {
+  project: Project;
+  root: string;
+  inKb: boolean;
+  /** False while `kb/progetti/<project>` does not exist yet: no folder, no note. */
+  exists: boolean;
+  folders: ManagementFolder[];
+  rules: LabelRules;
+  floor: (rel: string) => Label | undefined;
+}
+
+/** The highest label of the rules of labels.toml that contain `path` (relative to ARIANNA_HOME), if any. */
+function explicitLabel(rules: LabelRules, path: string): Label | undefined {
+  const folded = path.toUpperCase().toLowerCase();
+  const found = rules.folders.filter((rule) => {
+    const folder = rule.path.toUpperCase().toLowerCase();
+    return folded === folder || folded.startsWith(`${folder}/`);
+  });
+  return found.length === 0 ? undefined : maxLabel(...found.map((rule) => rule.label));
+}
+
+/**
+ * `kb/progetti/<project>` as a real folder inside ARIANNA_HOME, every segment
+ * a folder and never a link; created (0700) only when `create`.
+ */
+function kbRoot(home: string, name: string, create: boolean): { root: string; exists: boolean } {
+  let dir: string;
+  try {
+    dir = realpathSync(home);
+  } catch {
+    throw new KnowledgeError('unavailable', 'ARIANNA_HOME cannot be read');
+  }
+  const segments = [...KB_PROJECT_NOTES.split('/'), name];
+  for (const [index, segment] of segments.entries()) {
+    dir = join(dir, segment);
+    const stat = lstatSync(dir, { throwIfNoEntry: false });
+    if (stat === undefined) {
+      if (!create) return { root: join(realpathSync(home), ...segments), exists: false };
+      // kb/ itself must be there: Arianna does not make her knowledge base here.
+      if (index === 0) throw new KnowledgeError('unavailable', 'there is no kb/ folder');
+      try {
+        mkdirSync(dir, { mode: 0o700 });
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw new KnowledgeError('unavailable', `cannot create ${segments.slice(0, index + 1).join('/')}`);
+      }
+      if (lstatSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true) throw new KnowledgeError('refused', `${segments.slice(0, index + 1).join('/')} is not a plain folder`);
+      continue;
+    }
+    if (!stat.isDirectory()) throw new KnowledgeError('refused', `${segments.slice(0, index + 1).join('/')} is not a plain folder`);
+  }
+  if (realpathSync(dir) !== dir) throw new KnowledgeError('refused', `${segments.join('/')} goes through a symbolic link`);
+  return { root: dir, exists: true };
+}
+
+/** The first-level folders of `kb/progetti/<project>`: real folders, not hidden, each with its label (D-145). */
+function kbFolders(root: string, project: Project): ManagementFolder[] {
+  let names: string[];
+  try {
+    names = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && isFolderName(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+  const fold = (name: string): string => name.normalize('NFC').toLowerCase();
+  const chosen = new Map((project.folders ?? []).map((folder) => [fold(folder.path), folder.label]));
+  return names
+    .sort((a, b) => a.localeCompare(b, 'it'))
+    .map((path) => {
+      const defaultLabel = defaultFolderLabel(path);
+      const label = chosen.get(fold(path));
+      return { path, label: label ?? defaultLabel, defaultLabel, chosen: label !== undefined };
+    });
+}
+
+/** Where the knowledge of the project `name` is, with its folders and rules (see KnowledgeBase). */
+function knowledgeBase(projects: readonly Project[], name: string, env: KnowledgeEnv, create = false): KnowledgeBase {
+  const project = projects.find((candidate) => candidate.name === name);
+  if (project === undefined) throw new KnowledgeError('not-found', `the project ${name} is not among the approved projects`);
+  if (isSinglePart(project)) {
+    const { root, exists } = kbRoot(env.home, project.name, create);
+    const raw = exists ? kbFolders(root, project) : [];
+    const prefix = `${KB_PROJECT_NOTES}/${project.name}`;
+    const floor = (rel: string): Label | undefined => explicitLabel(env.rules, `${prefix}/${rel}`);
+    // An explicit rule of labels.toml over kb/progetti only raises a folder.
+    const folders = raw.map((folder) => {
+      const above = floor(folder.path);
+      return above === undefined ? folder : { ...folder, label: maxLabel(folder.label, above) };
+    });
+    return { project, root, inKb: true, exists, folders, rules: knowledgeRules(folders), floor };
+  }
+  const { root } = containerOf(projects, name);
+  const folders = managementFolders(project);
+  return { project, root, inKb: false, exists: true, folders, rules: knowledgeRules(folders), floor: () => undefined };
+}
+
+/** The label of a path of the base: folder rule, header lines, and the floor of labels.toml for kb/progetti. */
+function baseLabel(base: KnowledgeBase, rel: string, headerLabels: readonly string[]): Label {
+  const label = pageLabel(base.rules, rel, headerLabels);
+  const floor = base.floor(rel);
+  return floor === undefined ? label : maxLabel(label, floor);
 }
 
 /** The project by name among the approved ones, its container exactly its path on disk (no link). */
@@ -161,31 +284,38 @@ function fileLabel(root: string, rules: LabelRules, path: string, link: boolean)
 }
 
 /** The tab "Conoscenza" (D-145): the management folders with their labels and the notes with theirs. */
-export function readProjectKnowledge(projects: readonly Project[], name: string, single: boolean): ProjectKnowledge {
-  const { project, root } = containerOf(projects, name);
-  const folders = managementFolders(project);
-  const rules = knowledgeRules(folders);
+export function readProjectKnowledge(projects: readonly Project[], name: string, env: KnowledgeEnv): ProjectKnowledge {
+  const base = knowledgeBase(projects, name, env);
   const notes: KnowledgeNote[] = [];
   let more = 0;
-  walk(root, folders, (path, folder, link) => {
-    if (link || !path.toLowerCase().endsWith('.md')) return true;
-    if (notes.length >= MAX_NOTES) {
-      more += 1;
+  if (base.exists) {
+    walk(base.root, base.folders, (path, folder, link) => {
+      if (link || !path.toLowerCase().endsWith('.md')) return true;
+      if (notes.length >= MAX_NOTES) {
+        more += 1;
+        return true;
+      }
+      let title = path.split('/').at(-1)?.replace(/\.md$/i, '') ?? path;
+      let label: Label;
+      try {
+        const { header } = parsePage(readHead(join(base.root, ...path.split('/')), HEADER_BYTES));
+        label = baseLabel(base, path, header.labels);
+        if (header.title !== undefined && header.title !== '') title = header.title;
+      } catch {
+        label = 'L3';
+      }
+      notes.push({ folder, path, title, label });
       return true;
-    }
-    let title = path.split('/').at(-1)?.replace(/\.md$/i, '') ?? path;
-    let label: Label;
-    try {
-      const { header } = parsePage(readHead(join(root, ...path.split('/')), HEADER_BYTES));
-      label = pageLabel(rules, path, header.labels);
-      if (header.title !== undefined && header.title !== '') title = header.title;
-    } catch {
-      label = 'L3';
-    }
-    notes.push({ folder, path, title, label });
-    return true;
-  });
-  return { single, folders, notes, more };
+    });
+  }
+  return {
+    inKb: base.inKb,
+    where: base.inKb ? `${KB_PROJECT_NOTES}/${base.project.name}` : base.project.path,
+    folders: base.folders,
+    notes,
+    more,
+    repoFolders: base.inKb ? managementFolders(base.project) : [],
+  };
 }
 
 /**
@@ -239,19 +369,41 @@ export interface NoteInput {
  * in the body, where it cannot change the label; never through a link, never
  * over a file.
  */
-export function writeProjectNote(projects: readonly Project[], name: string, input: NoteInput): { path: string; label: Label } {
-  const { project, root } = containerOf(projects, name);
-  const folder = managementFolders(project).find((item) => item.path === input.folder);
-  if (folder === undefined || !isFolderName(input.folder)) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
+export function writeProjectNote(projects: readonly Project[], name: string, env: KnowledgeEnv, input: NoteInput): { path: string; label: Label } {
+  // Every check of the input before anything is created on the disk.
+  if (typeof input.folder !== 'string' || !isFolderName(input.folder)) throw new KnowledgeError('invalid', 'the folder must be one plain folder name, not hidden');
   if (!isLabel(input.label)) throw new KnowledgeError('invalid', `label must be one of ${LABELS.join(', ')}`);
-  // The note is never below its folder: the user can only raise it.
-  if (!isAtMost(folder.label, input.label)) throw new KnowledgeError('invalid', `the folder ${folder.path} is ${folder.label}: a note in it cannot be lower`);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.id)) throw new KnowledgeError('invalid', 'invalid source');
   if (typeof input.text !== 'string' || Buffer.byteLength(input.text, 'utf8') > MAX_NOTE_TEXT) throw new KnowledgeError('too-large', 'the text is too long');
   const text = input.text.replace(/\r\n/g, '\n').trim();
   if (text === '' || text.includes('\0')) throw new KnowledgeError('invalid', 'the text is empty');
   const title = typeof input.title === 'string' ? input.title.trim() : '';
   if (title === '' || title.length > MAX_TITLE || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(title)) throw new KnowledgeError('invalid', `title must be one line of at most ${String(MAX_TITLE)} characters`);
+
+  const look = knowledgeBase(projects, name, env);
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  let folder = look.folders.find((item) => item.path === input.folder);
+  if (folder === undefined) {
+    // A new management folder, named by the user (D-145): never a part, a repository, a folder of the code or one that differs only in case.
+    if (look.folders.some((item) => fold(item.path) === fold(input.folder))) throw new KnowledgeError('invalid', 'a folder with this name exists with other letter case');
+    if (NOT_MANAGEMENT.has(fold(input.folder))) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
+    if (!look.inKb) {
+      if (projectParts(look.project).some((part) => part.part !== null && fold(part.part) === fold(input.folder))) throw new KnowledgeError('invalid', 'the folder is a part of the project: notes never go in the code');
+      if (lstatSync(join(look.root, input.folder), { throwIfNoEntry: false }) !== undefined) throw new KnowledgeError('invalid', 'the folder is not a management folder of the project');
+    }
+    const base = knowledgeBase(projects, name, env, true);
+    const created = join(base.root, input.folder);
+    try {
+      mkdirSync(created, { mode: 0o700 });
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw new KnowledgeError('unavailable', 'cannot create the folder');
+    }
+    folder = knowledgeBase(projects, name, env).folders.find((item) => item.path === input.folder);
+    if (folder === undefined) throw new KnowledgeError('refused', 'the folder is not a plain folder of the project');
+  }
+  // The note is never below its folder: the user can only raise it.
+  if (!isAtMost(folder.label, input.label)) throw new KnowledgeError('invalid', `the folder ${folder.path} is ${folder.label}: a note in it cannot be lower`);
+  const { project, root } = knowledgeBase(projects, name, env);
 
   const dir = join(root, folder.path);
   // The folder is a real folder directly inside the container: a link would take the note elsewhere.
@@ -336,12 +488,11 @@ export function isProjectPagePath(path: string): boolean {
 }
 
 /** The pages of the approved projects, read again at each call: a folder relabeled by the user counts at once. */
-export function createProjectPages(projects: () => readonly Project[]): ProjectPages {
-  const containerOrUndefined = (name: string): { project: Project; root: string; rules: LabelRules; folders: ManagementFolder[] } | undefined => {
+export function createProjectPages(projects: () => readonly Project[], env: KnowledgeEnv): ProjectPages {
+  const containerOrUndefined = (name: string): KnowledgeBase | undefined => {
     try {
-      const { project, root } = containerOf(projects(), name);
-      const folders = managementFolders(project);
-      return { project, root, rules: knowledgeRules(folders), folders };
+      const base = knowledgeBase(projects(), name, env);
+      return base.exists ? base : undefined;
     } catch {
       return undefined;
     }
@@ -353,7 +504,7 @@ export function createProjectPages(projects: () => readonly Project[]): ProjectP
         const container = containerOrUndefined(project.name);
         if (container === undefined) continue;
         walk(container.root, container.folders, (path, _folder, link) => {
-          if (!link && path.toLowerCase().endsWith('.md')) found.push({ path: `${PROJECT_PAGES}/${project.name}/${path}`, folderLabel: labelForPath(container.rules, path) });
+          if (!link && path.toLowerCase().endsWith('.md')) found.push({ path: `${PROJECT_PAGES}/${project.name}/${path}`, folderLabel: baseLabel(container, path, []) });
           return found.length < MAX_NOTES * 4;
         });
       }
@@ -364,7 +515,7 @@ export function createProjectPages(projects: () => readonly Project[]): ProjectP
       if (split === undefined) return undefined;
       const container = containerOrUndefined(split.project);
       if (container === undefined) return undefined;
-      return labelForPath(container.rules, split.rel);
+      return baseLabel(container, split.rel, []);
     },
     load(path) {
       const split = splitPagePath(path);
@@ -388,7 +539,7 @@ export function createProjectPages(projects: () => readonly Project[]): ProjectP
       const { header, body } = parsePage(readHead(file, MAX_NOTE_BYTES));
       return {
         path,
-        label: pageLabel(container.rules, split.rel, header.labels),
+        label: baseLabel(container, split.rel, header.labels),
         title: header.title ?? split.rel.split('/').at(-1)?.replace(/\.md$/i, '') ?? path,
         body,
       };

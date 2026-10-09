@@ -9,7 +9,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Un progetto è un contenitore: se la sua cartella non è un repository git, le parti sono le sottocartelle con un proprio git (o quelle elencate in `parts`), e il Coder lavora in una parte alla volta, mai nel contenitore; i progetti di oggi restano una parte sola (I-11, D-145).
 - Pagina Progetti: il progetto con le sue parti, File, Git e Servizi per parte (I-11, D-145).
 - Scheda «Conoscenza» nella pagina Progetti: le cartelle di gestione con il selettore d'etichetta per ciascuna (Workplan e IM Interne, le altre Private, finché non scegli tu), con la conferma che dice «scende» quando un'etichetta si abbassa, e le note con il loro distintivo (I-11, D-145).
-- «+ Conoscenza»: una nota nuova in una cartella di gestione, con titolo ed etichetta mostrata prima di salvare (quella della cartella, o più alta); l'intestazione la scrive il codice come `kb:capture` (I-11, D-145).
+- «+ Conoscenza»: una nota nuova in una cartella di gestione esistente o nuova (il nome lo scrivi tu), con titolo ed etichetta mostrata prima di salvare (quella della cartella, o più alta); l'intestazione la scrive il codice come `kb:capture` (I-11, D-145).
+- Per un progetto che è un solo git (come `demo`) le note stanno in `kb/progetti/<progetto>/`, fuori dal codice, con le stesse cartelle ed etichette (I-11, D-145).
 - La ricerca di Arianna (`kb.search`, `kb.read`) trova anche le note dei progetti, ciascuna con la sua etichetta; solo sul computer (I-11, D-145).
 - `pnpm demo:container` scrive il contenitore finto `repos/progetto-test` per provarlo (I-11, D-145).
 

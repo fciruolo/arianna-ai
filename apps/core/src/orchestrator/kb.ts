@@ -15,6 +15,8 @@ import { isProjectPagePath, KnowledgeError, type ProjectPages } from '../project
 export const KB_DIR = 'kb';
 /** Where an agent with autonomy A1 may write (docs/AGENT-CARDS.md). */
 export const KB_INBOX = 'kb/inbox';
+/** The knowledge of the projects that are one git (D-145): kb/progetti/<project>/<folder>/, outside the code. */
+export const KB_PROJECT_NOTES = 'kb/progetti';
 
 const MAX_PAGE_BYTES = 200_000;
 const MAX_PAGES = 5_000;
@@ -209,7 +211,10 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
       for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
         if (found.length >= MAX_PAGES || entry.name.startsWith('.')) continue;
         const path = `${prefix}/${entry.name}`;
-        if (entry.isDirectory()) walk(join(dir, entry.name), path);
+        // kb/progetti is searched as the knowledge of each project, with its own folder labels (D-145).
+        if (entry.isDirectory()) {
+          if (path.toLowerCase() !== KB_PROJECT_NOTES) walk(join(dir, entry.name), path);
+        }
         else if (entry.isFile() && entry.name.endsWith('.md')) found.push(path);
       }
     };

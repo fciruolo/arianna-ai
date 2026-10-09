@@ -282,7 +282,7 @@ export function workParts(projects: readonly Project[]): ProjectPart[] {
 }
 
 /** Folders not of the project's own: dependencies, never management. */
-const NOT_MANAGEMENT = new Set(['node_modules']);
+export const NOT_MANAGEMENT: ReadonlySet<string> = new Set(['node_modules']);
 /** D-145: management folders recognized by name, ignoring case. */
 const KNOWN_FOLDERS = new Set(['workplan', 'im', 'documenti']);
 /** D-145: the management folders that are Interne (L1) before the user's choice. */
@@ -308,20 +308,24 @@ export interface ManagementFolder {
  * direct subfolders that are real folders, not hidden, not a part, not
  * dependencies. When the container is itself the part (one git), its code
  * and its management share the folder: only the folders recognized by name
- * (Workplan, IM, Documenti) and those the user labeled count.
+ * (Workplan, IM, Documenti) count, always with their label by name. There
+ * `[[project.folder]]` labels the folders of kb/progetti/<project> (D-145,
+ * point 8), never these: a choice made for the notes must not lower a folder
+ * of the code the Coder opens.
  */
 export function managementFolders(project: Project): ManagementFolder[] {
   let names: string[];
   try {
     names = readdirSync(project.absolute, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && isFolderName(entry.name) && !NOT_MANAGEMENT.has(entry.name))
+      .filter((entry) => entry.isDirectory() && isFolderName(entry.name) && !NOT_MANAGEMENT.has(fold(entry.name)))
       .map((entry) => entry.name);
   } catch {
     return [];
   }
-  const chosen = new Map((project.folders ?? []).map((folder) => [fold(folder.path), folder.label]));
-  if (isSinglePart(project)) {
-    names = names.filter((name) => KNOWN_FOLDERS.has(fold(name)) || chosen.has(fold(name)));
+  const single = isSinglePart(project);
+  const chosen = new Map(single ? [] : (project.folders ?? []).map((folder) => [fold(folder.path), folder.label]));
+  if (single) {
+    names = names.filter((name) => KNOWN_FOLDERS.has(fold(name)));
   } else {
     // A repository is code, a part or not (a name the parts refuse, one left out of `parts`).
     names = names.filter((name) => !hasGit(join(project.absolute, name)));

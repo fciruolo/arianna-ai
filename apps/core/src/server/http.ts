@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import type { NewUserAgent } from '@arianna/agents';
-import { isSinglePart, type CharacterChoices, type Project } from '@arianna/config';
+import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
@@ -45,7 +45,7 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { KnowledgeError, readProjectKnowledge, writeProjectNote } from '../project-knowledge.ts';
+import { KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
@@ -156,6 +156,8 @@ export interface ApiServerOptions {
    * their parts.
    */
   projectContainers?: () => readonly Project[];
+  /** ARIANNA_HOME and labels.toml for the tab "Conoscenza" (kb/progetti, D-145); without it its routes answer 404. */
+  knowledge?: KnowledgeEnv;
   /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
@@ -344,6 +346,7 @@ interface RouteOptions {
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
   projectContainers: () => readonly Project[];
+  knowledge?: KnowledgeEnv | undefined;
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
@@ -944,7 +947,11 @@ const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
  * a privacy setting, changed only with the two steps of the Settings
  * (`/api/settings/privacy`), never by an agent or a tool of Arianna.
  */
-function projectKnowledgeRoutes(containers: () => readonly Project[]): Route[] {
+function projectKnowledgeRoutes(containers: () => readonly Project[], env: KnowledgeEnv | undefined): Route[] {
+  const need = (): KnowledgeEnv => {
+    if (env === undefined) throw new HttpError(404, 'not found');
+    return env;
+  };
   const containerParam = (params: Params): Project => {
     const name = params.project ?? '';
     const project = PROJECT_PARAM.test(name) ? containers().find((item) => item.name === name) : undefined;
@@ -954,7 +961,7 @@ function projectKnowledgeRoutes(containers: () => readonly Project[]): Route[] {
   return [
     route('GET', '/api/browse/:project/knowledge', (_request, _url, params) => {
       const project = containerParam(params);
-      return Promise.resolve({ body: { knowledge: readProjectKnowledge(containers(), project.name, isSinglePart(project)) } });
+      return Promise.resolve({ body: { knowledge: readProjectKnowledge(containers(), project.name, need()) } });
     }),
     route('POST', '/api/browse/:project/knowledge', async (request, _url, params) => {
       const project = containerParam(params);
@@ -963,7 +970,7 @@ function projectKnowledgeRoutes(containers: () => readonly Project[]): Route[] {
       if (typeof body.folder !== 'string' || typeof body.title !== 'string' || typeof body.text !== 'string' || !isLabel(body.label)) {
         throw new HttpError(400, 'folder, title, label and text are required');
       }
-      const note = writeProjectNote(containers(), project.name, { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
+      const note = writeProjectNote(containers(), project.name, need(), { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
       return { status: 201, body: { note } };
     }),
   ];
@@ -1087,13 +1094,13 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
-    ...projectKnowledgeRoutes(projectContainers),
+    ...projectKnowledgeRoutes(projectContainers, knowledge),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
@@ -1789,6 +1796,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     modelEvals: options.modelEvals,
     approvedProjects: options.approvedProjects ?? (() => []),
     projectContainers: options.projectContainers ?? (() => []),
+    knowledge: options.knowledge,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,

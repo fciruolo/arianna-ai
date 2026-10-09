@@ -84,6 +84,7 @@ export {
   isFolderName,
   isSinglePart,
   managementFolders,
+  NOT_MANAGEMENT,
   PART_NAME,
   PART_SEPARATOR,
   parseProjects,

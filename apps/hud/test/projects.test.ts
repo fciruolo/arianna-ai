@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { agoText, changeMark, childPath, commandText, confirmText, fileBadge, firstChangedLine, highlightLine, isProjectsPath, lowers, noteLabels, partTitle, serviceStateText, sizeText, vscodeUrl, withFolderLabel, type ServiceState } from '../src/lib/projects.ts';
+import { agoText, changeMark, childPath, commandText, confirmText, fileBadge, firstChangedLine, folderLabelByName, highlightLine, isFolderName, isProjectsPath, lowers, noteLabels, partTitle, serviceStateText, sizeText, vscodeUrl, withFolderLabel, type ServiceState } from '../src/lib/projects.ts';
 
 test('Conoscenza (D-145): a label that goes down, the labels a note may have, a folder relabeled', () => {
   assert.equal(lowers('L2', 'L1'), true);
@@ -23,6 +23,12 @@ test('Conoscenza (D-145): a label that goes down, the labels a note may have, a 
   assert.deepEqual(projects[0]?.folders, [{ path: 'IM', label: 'L1' }], 'the input is left as it is');
   assert.equal(partTitle({ project: 'box', part: 'box-admin' }), 'box-admin');
   assert.equal(partTitle({ project: 'box', part: null }), 'box');
+  // A new folder of "+ Conoscenza": its label by name, and only a plain name.
+  assert.equal(folderLabelByName('workplan'), 'L1');
+  assert.equal(folderLabelByName(' IM '), 'L1');
+  assert.equal(folderLabelByName('Clienti'), 'L2');
+  assert.equal(isFolderName('Clienti 2026'), true);
+  for (const name of ['', '.nascosta', 'a/b', '..', ' spazio']) assert.equal(isFolderName(name), false, name);
 });
 
 test('the address of the page', () => {

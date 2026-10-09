@@ -52,10 +52,25 @@ export interface KnowledgeNote {
 
 /** The tab "Conoscenza" (D-145). */
 export interface ProjectKnowledge {
-  single: boolean;
+  /** One git: the notes live in kb/progetti/<project> of Arianna, outside the code. */
+  inKb: boolean;
+  /** Where the management folders are, as the user reads it. */
+  where: string;
   folders: KnowledgeFolder[];
   notes: KnowledgeNote[];
   more: number;
+  /** One git: management folders found inside the repository itself. */
+  repoFolders: KnowledgeFolder[];
+}
+
+/** The label a new folder takes by its name (D-145): Workplan and IM Interne, every other Privata. */
+export function folderLabelByName(name: string): Label {
+  return ['workplan', 'im'].includes(name.trim().toLowerCase()) ? 'L1' : 'L2';
+}
+
+/** A folder name the core takes: one plain name, not hidden, no separator. */
+export function isFolderName(name: string): boolean {
+  return name.length > 0 && name.length <= 100 && !name.startsWith('.') && name.trim() === name && !/[/\\\p{Cc}]/u.test(name);
 }
 
 const LABEL_RANK: Readonly<Record<Label, number>> = { L0: 0, L1: 1, L2: 2, L3: 3 };
