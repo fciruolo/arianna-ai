@@ -83,7 +83,11 @@ export async function runSecretaryTool(sql: Sql, ctx: StepContext, call: Secreta
   if (tool === 'commitment.list') {
     const words = typeof args.day === 'string' ? args.day.trim() : '';
     const range = words === '' ? undefined : parseRange(words, today);
-    if (words !== '' && range === undefined) return fail(`the day '${words}' is not one the core can compute: ask the user which day, or list every open commitment without "day"`);
+    if (words !== '' && range === undefined) {
+      return fail(
+        `the day '${words}' is not one the core can compute (today is ${dayText(today)}): call commitment.list again with words it reads ("oggi", "domani", a weekday, "questa settimana", "la settimana prossima", "i prossimi 7 giorni", "questo mese", "il mese prossimo") or without "day" for every open commitment; never ask the user today's date`,
+      );
+    }
     const items = await listCommitments(sql, range);
     const late = range !== undefined && range.from <= today && today <= range.to ? await lateCommitments(sql, today) : [];
     await show('tool', `${tool}${range === undefined ? '' : ` · ${range.from}`}`);

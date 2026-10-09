@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { responseSchema, systemPrompt } from '@arianna/agents';
 import { resolveHome } from '@arianna/config';
 
-import { decisionText, findCommitment, listText, proposalOf, proposeAdd, type Commitment } from '../src/commitments.ts';
+import { decisionText, findCommitment, listText, ofRange, proposalOf, proposeAdd, type Commitment } from '../src/commitments.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { isSecretaryTool, SECRETARY_TOOLS } from '../src/orchestrator/secretary.ts';
 import { committedAgents } from './support/committed-agents.ts';
@@ -107,4 +107,12 @@ test('an approval detail that is not a proposal (purged, another kind) is not re
   assert.equal(proposalOf({ kind: 'commitment', detail: { purged: true } }), undefined);
   assert.equal(proposalOf({ kind: 'declassify', detail: { op: 'add', text: 'x', day: TODAY } }), undefined);
   assert.equal(proposalOf({ kind: 'commitment', detail: { op: 'add', text: 'x', day: TODAY } })?.op, 'add');
+});
+
+test('a range is named with "di" joined to its article', () => {
+  assert.equal(ofRange('questa settimana'), 'di questa settimana');
+  assert.equal(ofRange('la settimana prossima'), 'della settimana prossima');
+  assert.equal(ofRange('i prossimi 7 giorni'), 'dei prossimi 7 giorni');
+  assert.equal(ofRange('il mese prossimo'), 'del mese prossimo');
+  assert.equal(ofRange('questo mese'), 'di questo mese');
 });

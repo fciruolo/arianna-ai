@@ -74,6 +74,22 @@ test('ranges of a question: one day, this week, next week', () => {
   assert.equal(parseRange('tutti', TODAY), undefined);
 });
 
+test('ranges from today: the next days and weeks, this month and the next', () => {
+  assert.deepEqual(parseRange('i prossimi 7 giorni', TODAY), { from: '2026-10-09', to: '2026-10-15', text: 'i prossimi 7 giorni' });
+  assert.deepEqual(parseRange('nei prossimi tre giorni', TODAY), { from: '2026-10-09', to: '2026-10-11', text: 'i prossimi 3 giorni' });
+  assert.deepEqual(parseRange('prossimi giorni', TODAY), { from: '2026-10-09', to: '2026-10-15', text: 'i prossimi 7 giorni' });
+  assert.deepEqual(parseRange('le prossime due settimane', TODAY), { from: '2026-10-09', to: '2026-10-22', text: 'i prossimi 14 giorni' });
+  assert.deepEqual(parseRange('questo mese', TODAY), { from: '2026-10-09', to: '2026-10-31', text: 'questo mese' });
+  assert.deepEqual(parseRange('il mese prossimo', TODAY), { from: '2026-11-01', to: '2026-11-30', text: 'il mese prossimo' });
+  assert.deepEqual(parseRange('il mese prossimo', '2026-12-20'), { from: '2027-01-01', to: '2027-01-31', text: 'il mese prossimo' });
+  // A count the core cannot read, or out of bounds: the model asks.
+  assert.equal(parseRange('i prossimi tanti giorni', TODAY), undefined);
+  assert.equal(parseRange('i prossimi 0 giorni', TODAY), undefined);
+  assert.equal(parseRange('i prossimi 400 giorni', TODAY), undefined);
+  // A weekday named keeps the meaning of one day.
+  assert.deepEqual(parseRange('giovedì prossimo', TODAY), parseRange('giovedì', TODAY));
+});
+
 test('calendar helpers', () => {
   assert.equal(addDays('2026-12-31', 1), '2027-01-01');
   assert.equal(addDays('2026-03-28', 2), '2026-03-30');

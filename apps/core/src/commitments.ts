@@ -251,13 +251,20 @@ function bullet(item: Commitment, withDay: boolean): string {
  * The list the chat shows for "cosa ho domani?", written here from SQL:
  * the commitments of the range, and for today also the late ones.
  */
+/** "di" joined to the article of a range: "della settimana prossima", "dei prossimi 7 giorni", "di questo mese". */
+export function ofRange(text: string): string {
+  const joined = { 'il ': 'del ', 'la ': 'della ', 'i ': 'dei ' };
+  for (const [article, contracted] of Object.entries(joined)) if (text.startsWith(article)) return contracted + text.slice(article.length);
+  return `di ${text}`;
+}
+
 export function listText(items: readonly Commitment[], range: DayRange | undefined, today: string, late: readonly Commitment[] = []): string {
   const oneDay = range !== undefined && range.from === range.to;
   const lines: string[] = [];
   if (range === undefined) {
     lines.push(items.length === 0 ? 'Non hai impegni aperti.' : 'I tuoi impegni aperti:');
   } else {
-    const label = oneDay ? range.text.charAt(0).toUpperCase() + range.text.slice(1) : `Impegni di ${range.text}`;
+    const label = oneDay ? range.text.charAt(0).toUpperCase() + range.text.slice(1) : `Impegni ${ofRange(range.text)}`;
     lines.push(items.length === 0 ? `${label}: nessun impegno segnato.` : `${label}:`);
   }
   for (const item of items) lines.push(bullet(item, !oneDay));

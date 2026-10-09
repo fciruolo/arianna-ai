@@ -98,6 +98,11 @@ function count(word: string): number | undefined {
 }
 
 const PLAIN_WEEKDAYS = WEEKDAYS.map((name) => plain(name));
+
+/** The first day of the month of `day`. */
+function monthStart(day: string): string {
+  return `${day.slice(0, 7)}-01`;
+}
 const PLAIN_MONTHS = MONTHS.map((name) => plain(name));
 
 /** Words around a day that say nothing about which day it is. */
@@ -242,6 +247,22 @@ export function parseRange(words: string, today: string): DayRange | undefined {
   const text = plain(words);
   // A weekday named with the week is one day ("giovedì della settimana prossima").
   const day = PLAIN_WEEKDAYS.some((name) => ` ${text} `.includes(` ${name} `));
+  // "i prossimi 7 giorni", "nei prossimi giorni" (a week), "prossime due settimane": from today on.
+  const next = /\bprossim[ie] (?:(\S+) )?(giorni|settimane)\b/.exec(text);
+  if (!day && next !== null) {
+    const amount = next[1] === undefined ? (next[2] === 'giorni' ? 7 : 2) : count(next[1]);
+    const days = amount === undefined ? undefined : next[2] === 'giorni' ? amount : amount * 7;
+    if (days === undefined || days < 1 || days > 92) return undefined;
+    return { from: today, to: addDays(today, days - 1), text: `i prossimi ${String(days)} giorni` };
+  }
+  if (!day && /\b(?:mese prossimo|prossimo mese)\b/.test(text)) {
+    const [year, month] = today.split('-').map(Number) as [number, number];
+    const from = `${String(month === 12 ? year + 1 : year)}-${String((month % 12) + 1).padStart(2, '0')}-01`;
+    return { from, to: addDays(monthStart(addDays(from, 31)), -1), text: 'il mese prossimo' };
+  }
+  if (!day && /\bquesto mese\b/.test(text)) {
+    return { from: today, to: addDays(monthStart(addDays(monthStart(today), 31)), -1), text: 'questo mese' };
+  }
   if (!day && /\bsettimana prossima\b|\bprossima settimana\b/.test(text)) {
     const from = addDays(today, ((8 - weekdayOf(today)) % 7) || 7);
     return { from, to: addDays(from, 6), text: 'la settimana prossima' };
