@@ -41,7 +41,7 @@ import {
   type SpriteModel,
   type VoiceConfig,
 } from '@arianna/config';
-import { scanText } from '@arianna/policy';
+import { isLabel, scanText } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 /**
@@ -451,10 +451,24 @@ function projectsFromBody(value: unknown): ProjectSettings[] {
   return value.map((item, index) => {
     const where = `projects[${String(index)}]`;
     const project = record(item, where);
-    only(project, ['name', 'path', 'label'], where);
+    only(project, ['name', 'path', 'label', 'parts', 'folders'], where);
     const label = text(project.label, `${where}.label`);
     if (label !== 'L0' && label !== 'L1') invalid(`${where}.label must be L0 or L1`);
-    return { name: text(project.name, `${where}.name`), path: text(project.path, `${where}.path`), label };
+    const next: ProjectSettings = { name: text(project.name, `${where}.name`), path: text(project.path, `${where}.path`), label };
+    // D-145: the parts the user listed and the labels of the management folders; parseConfig checks the rest.
+    if (project.parts !== undefined && project.parts !== null) next.parts = strings(project.parts, `${where}.parts`);
+    if (project.folders !== undefined && project.folders !== null) {
+      if (!Array.isArray(project.folders)) invalid(`${where}.folders must be a list`);
+      next.folders = project.folders.map((item, at) => {
+        const place = `${where}.folders[${String(at)}]`;
+        const folder = record(item, place);
+        only(folder, ['path', 'label'], place);
+        const folderLabel = text(folder.label, `${place}.label`);
+        if (!isLabel(folderLabel)) invalid(`${place}.label must be L0, L1, L2 or L3`);
+        return { path: text(folder.path, `${place}.path`), label: folderLabel };
+      });
+    }
+    return next;
   });
 }
 

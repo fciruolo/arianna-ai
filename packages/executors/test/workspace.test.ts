@@ -312,6 +312,50 @@ describe('openRepository (D-056)', () => {
     assert.equal(preparedPath(blocked), undefined);
   });
 
+  describe('a part of a container (D-145)', () => {
+    /** repos/<name>: a container that is not a repository, with a git part, a management folder and its notes. */
+    function container(name: string): string {
+      const dir = join(HOME, 'repos', name);
+      mkdirSync(dir, { recursive: true });
+      write(dir, { 'Workplan/piano.md': '# Piano\n', 'documenti/fattura.md': '---\nlabel: L3\n---\nFattura finta\n' });
+      const admin = join(dir, `${name}-admin`);
+      mkdirSync(admin);
+      git(admin, 'init', '--quiet', '--initial-branch=main');
+      write(admin, { 'src/a.ts': 'x\n' });
+      git(admin, 'add', '--all');
+      git(admin, 'commit', '--quiet', '--message', 'fixture');
+      return dir;
+    }
+
+    it('opens the part, never the container: nothing of the management folders is scanned or reachable from it', async () => {
+      const dir = container('box');
+      const opened = await openRepository({ home: HOME, project: project('repos/box'), part: 'box-admin' });
+      assert.equal(opened.decision.decision, 'allow');
+      assert.equal(opened.path, join(dir, 'box-admin'));
+      assert.equal(preparedPath(opened), join(dir, 'box-admin'));
+      assert.match(opened.decision.reason, /^1 entries/);
+    });
+
+    it('the container that is not a repository is never opened without a part', async () => {
+      container('box-whole');
+      await assert.rejects(openRepository({ home: HOME, project: project('repos/box-whole') }), /not the top folder of a git repository/);
+    });
+
+    it('refuses a part that is a path, hidden, a link, missing, not a repository, or of a container that is itself a repository', async () => {
+      const dir = container('box-bad');
+      const box = project('repos/box-bad');
+      for (const part of ['../inplace', 'box-bad-admin/src', '.git', '..', '']) {
+        await assert.rejects(openRepository({ home: HOME, project: box, part }), /folder of the container/, part);
+      }
+      symlinkSync(join(dir, 'box-bad-admin'), join(dir, 'alias'));
+      await assert.rejects(openRepository({ home: HOME, project: box, part: 'alias' }), /symbolic link/);
+      await assert.rejects(openRepository({ home: HOME, project: box, part: 'missing' }), /does not exist/);
+      await assert.rejects(openRepository({ home: HOME, project: box, part: 'Workplan' }), /not the top folder of a git repository/);
+      const single = makeRepo('box-single', { 'a.ts': 'x\n', 'inner/b.ts': 'y\n' });
+      await assert.rejects(openRepository({ home: HOME, project: project(single), part: 'inner' }), /container is a git repository/);
+    });
+  });
+
   // Outside ARIANNA_HOME (D-058): a sibling of the scratch ARIANNA_HOME stands for a folder under the user's home.
   const USER = `${HOME}-user`;
   after(() => {

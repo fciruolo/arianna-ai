@@ -1,5 +1,5 @@
 import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
-import { projectNamed, type AriannaConfig, type Project } from '@arianna/config';
+import { projectNamed, workParts, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
   fileFingerprints,
@@ -37,6 +37,7 @@ import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
 import { ENTRY_TEXT, isEntryDelegation } from '../participants.ts';
 import { isIncognitoConversation } from '../incognito.ts';
+import { privateKnowledge } from '../project-knowledge.ts';
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
@@ -371,11 +372,27 @@ async function folderOf(env: DelegateEnv, delegation: Delegation): Promise<{ ope
   if (repo === null) return { error: NO_PROJECT };
   const config = env.settings();
   // Read again at every attempt: a project taken off the list closes the delegation.
-  const project = projectNamed(config.projects, repo);
+  // D-145: a part of a container (`<project>:<part>`), or the container that is itself the only part.
+  const project = projectNamed(workParts(config.projects), repo);
   if (project === undefined) return { error: `the project ${repo} is no longer among the projects the user approved: tell the user` };
+  const container = config.projects.find((item) => item.name === project.project);
+  if (container === undefined) return { error: `the project ${repo} is no longer among the projects the user approved: tell the user` };
+  if (project.part === null) {
+    // The container is the Coder's folder: its management folders sit inside it. Until P3 denies them file by
+    // file, a note or a file above L1 there keeps the Coder out (D-145).
+    let held: string[];
+    try {
+      held = privateKnowledge(container);
+    } catch {
+      return { error: `the management folders of ${repo} cannot be checked for private knowledge: the Coder does not open it; tell the user` };
+    }
+    if (held.length > 0) {
+      return { error: `the folder of ${repo} holds private knowledge of the project (${String(held.length)} file(s) above Interno in its management folders): the Coder does not open it; tell the user` };
+    }
+  }
   let opened: OpenedRepository;
   try {
-    opened = await openRepository({ home: config.home, project });
+    opened = await openRepository({ home: config.home, project: container, ...(project.part === null ? {} : { part: project.part }) });
   } catch (error) {
     if (!(error instanceof WorkspaceError)) throw error;
     return { error: `the folder of ${repo} cannot be opened: ${error.message}` };

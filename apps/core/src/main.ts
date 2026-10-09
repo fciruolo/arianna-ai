@@ -19,6 +19,7 @@ import {
   VOICE_ALIAS,
   voicePaths,
   watchConfig,
+  workParts,
   type TelegramConfig,
 } from '@arianna/config';
 import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
@@ -50,6 +51,7 @@ import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
 import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
+import { createProjectPages } from './project-knowledge.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
@@ -329,7 +331,8 @@ try {
   if (config.cloud.executors.includes('codex')) console.error('codex off: its sandbox folders are refused (see the error above)');
 }
 const adapters = { claude: claude !== undefined, codex: codex !== undefined };
-const kb = createKb({ home: config.home, rules });
+// D-145: the knowledge of the approved projects is searched and read with kb/, on this computer only.
+const kb = createKb({ home: config.home, rules, projects: createProjectPages(() => settings.current().projects) });
 const orchestrator = createOrchestrator({
   sql,
   agents,
@@ -508,7 +511,9 @@ const sprites = createSpriteGenerator({
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
-const approvedProjects = () => settings.current().projects;
+// D-145: the parts of the approved projects, read from the disk at each request: what the Coder and the tabs File, Git and Servizi work on.
+const approvedProjects = () => workParts(settings.current().projects);
+const projectContainers = () => settings.current().projects;
 // The tab Servizi of "Progetti" (D-134, tappa 2): each start and stop in the chain of events, project and service only.
 const services = createServiceManager({
   onEvent: (kind, payload) => {
@@ -525,6 +530,7 @@ const server = await startApiServer({
   // The approved projects: listed for a new conversation, and where the preview of a changed file is read (D-082).
   projects: approvedProjects,
   approvedProjects,
+  projectContainers,
   services,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),

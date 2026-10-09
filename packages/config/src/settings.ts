@@ -11,7 +11,7 @@ import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, 
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
-import type { ProjectLabel } from './projects.ts';
+import type { ProjectFolder, ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
 import { DEFAULT_SPRITE_MODEL, type SpriteModel } from './sprites.ts';
@@ -30,6 +30,10 @@ export interface ProjectSettings {
   name: string;
   path: string;
   label: ProjectLabel;
+  /** D-145: the parts the user listed; absent, every git subfolder of the container. */
+  parts?: string[];
+  /** D-145: `[[project.folder]]`, the labels the user gave the management folders. */
+  folders?: ProjectFolder[];
 }
 
 export interface Settings {
@@ -118,7 +122,13 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       // Absent means every alias on under its own name: kept absent, as written.
       ...(isDeepStrictEqual(config.cloud.models, defaultCloudModels()) ? {} : { models: structuredClone(config.cloud.models) }),
     },
-    projects: config.projects.map(({ name, path, label }) => ({ name, path, label })),
+    projects: config.projects.map(({ name, path, label, parts, folders }) => ({
+      name,
+      path,
+      label,
+      ...(parts === undefined ? {} : { parts: [...parts] }),
+      ...(folders === undefined ? {} : { folders: folders.map((folder) => ({ ...folder })) }),
+    })),
     characters: { ...config.characters },
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
     // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
@@ -347,22 +357,32 @@ export function renderSettings(settings: Settings): string {
     '# on. Applies without a restart.',
     ...cloudModelsSection(cloud),
     '',
-    '# Projects (D-058): the folders a cloud executor may work on, as the user',
-    '# does with the CLI. `path` is ~/<folder> under your home (never the home',
-    '# itself, hidden folders, Library or Arianna) or repos/<name> for a folder',
-    '# inside Arianna; it must be the top of a git repository. `label` is L0 or',
-    '# L1 (default L1): every file of the project goes to the cloud with it. The',
-    '# wizard links repos/<name> to each folder under your home, as a shortcut:',
-    '# the executor always uses `path`. A privacy setting: only the user edits',
-    '# it, never an agent; it applies without a restart.',
+    '# Projects (D-058, D-145): the folders a cloud executor may work on, as the',
+    '# user does with the CLI. `path` is ~/<folder> under your home (never the',
+    '# home itself, hidden folders, Library or Arianna) or repos/<name> for a',
+    '# folder inside Arianna. A project is a container: when `path` is the top',
+    '# of a git repository it is one part, as before; otherwise its parts are',
+    '# the direct subfolders that are the top of a git repository (or only those',
+    '# listed in `parts = ["site-admin", "site-client"]`), and the Coder works',
+    '# in one part at a time, never in the container. `label` is L0 or L1',
+    '# (default L1): every file of a part goes to the cloud with it. The other',
+    '# subfolders are management folders, the knowledge of the project, read',
+    '# only on this computer: Workplan and IM are L1, every other one L2, unless',
+    '# a [[project.folder]] gives its label (path = the folder name, label L0-L3;',
+    '# the page Progetti writes them). The wizard links repos/<name> to each',
+    '# folder under your home, as a shortcut: the executor always uses `path`.',
+    '# A privacy setting: only the user edits it, never an agent; it applies',
+    '# without a restart.',
     ...(settings.projects.length === 0
-      ? ['#', '# [[project]]', '# name = "site"', '# path = "~/Projects/site"', '# label = "L1"']
+      ? ['#', '# [[project]]', '# name = "site"', '# path = "~/Projects/site"', '# label = "L1"', '#', '# [[project.folder]]', '# path = "Workplan"', '# label = "L1"']
       : settings.projects.flatMap((project, index) => [
           ...(index === 0 ? [] : ['']),
           '[[project]]',
           `name = ${str(project.name)}`,
           `path = ${str(project.path)}`,
           `label = ${str(project.label)}`,
+          ...(project.parts === undefined ? [] : [`parts = [${project.parts.map(str).join(', ')}]`]),
+          ...(project.folders ?? []).flatMap((folder) => ['', '[[project.folder]]', `path = ${str(folder.path)}`, `label = ${str(folder.label)}`]),
         ])),
     '',
     '# Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder',

@@ -6,6 +6,7 @@
  */
 import { EXECUTOR_TEXT, labelWord } from './labels.ts';
 import { personasBody, type PersonaForm, type PersonaValues } from './persona.ts';
+import type { Label } from './types.ts';
 
 export const MODEL_ROLES = ['orchestrator', 'extractor', 'embedder', 'voice', 'stt', 'tts'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
@@ -29,10 +30,20 @@ export interface NotificationsValues {
   quiet: string | null;
 }
 
+/** D-145: the label the user gave a management folder of a project. */
+export interface ProjectFolderValues {
+  path: string;
+  label: Label;
+}
+
 export interface ProjectValues {
   name: string;
   path: string;
   label: 'L0' | 'L1';
+  /** D-145: the parts the user listed; absent, every git subfolder of the container. */
+  parts?: string[];
+  /** D-145: `[[project.folder]]`, written from the tab "Conoscenza" of Progetti. */
+  folders?: ProjectFolderValues[];
 }
 
 export interface EndpointValues {
@@ -392,6 +403,32 @@ function projectText(project: ProjectValues): string {
   return `${project.name} (${labelWord(project.label)}, ${project.path})`;
 }
 
+const LABEL_ORDER: readonly string[] = ['L0', 'L1', 'L2', 'L3'];
+
+/**
+ * A changed project, one line: its label and path when they change, then
+ * each management folder whose label changes (D-145), with "scende" when it
+ * goes down; "come da nome" is the label a folder has without a choice.
+ */
+function projectChange(before: ProjectValues, after: ProjectValues): string {
+  const head = before.label !== after.label || before.path !== after.path ? `Progetto ${projectText(before)} → ${labelWord(after.label)}, ${after.path}` : `Progetto ${after.name}`;
+  const parts: string[] = [];
+  if (!sameValue(before.parts ?? null, after.parts ?? null)) parts.push(after.parts === undefined ? 'parti: tutte le cartelle git' : `parti: ${after.parts.join(', ')}`);
+  const old = new Map((before.folders ?? []).map((folder) => [folder.path.toLowerCase(), folder.label]));
+  const now = new Map((after.folders ?? []).map((folder) => [folder.path.toLowerCase(), folder.label]));
+  const names = new Map([...(before.folders ?? []), ...(after.folders ?? [])].map((folder) => [folder.path.toLowerCase(), folder.path]));
+  for (const [key, name] of names) {
+    const from = old.get(key);
+    const to = now.get(key);
+    if (from === to) continue;
+    // Without a choice a folder has its label by name (D-145): Workplan and IM Interne, the others Private.
+    const byName = ['workplan', 'im'].includes(key) ? 'L1' : 'L2';
+    const down = LABEL_ORDER.indexOf(to ?? byName) < LABEL_ORDER.indexOf(from ?? byName);
+    parts.push(`cartella ${name}: ${from === undefined ? 'come da nome' : labelWord(from)} → ${to === undefined ? 'come da nome' : labelWord(to)}${down ? ' (scende)' : ''}`);
+  }
+  return parts.length === 0 ? head : `${head}: ${parts.join('; ')}`;
+}
+
 /** A command as the core runs it: an argument that is empty or holds spaces or quotes is quoted, so ["sh -c x"] never reads as ["sh", "-c", "x"]. */
 export function commandText(command: readonly string[]): string {
   return command.map((arg) => (arg === '' || /[\s"'\\]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ');
@@ -435,7 +472,7 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
   if (changes.projects !== undefined) {
     for (const project of changes.projects.added) lines.push({ kind: 'add', text: `Progetto ${projectText(project)}` });
     for (const project of changes.projects.removed) lines.push({ kind: 'remove', text: `Progetto ${projectText(project)}` });
-    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: `Progetto ${projectText(before)} → ${labelWord(after.label)}, ${after.path}` });
+    for (const { before, after } of changes.projects.changed) lines.push({ kind: 'change', text: projectChange(before, after) });
   }
   if (changes.endpoints !== undefined) {
     for (const endpoint of changes.endpoints.added) lines.push({ kind: 'add', text: `Server ${endpointText(endpoint)}` });

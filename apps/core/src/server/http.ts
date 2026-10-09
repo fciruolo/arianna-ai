@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
 import type { NewUserAgent } from '@arianna/agents';
-import type { CharacterChoices, Project } from '@arianna/config';
+import { isSinglePart, type CharacterChoices, type Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
@@ -45,7 +45,8 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
+import { KnowledgeError, readProjectKnowledge, writeProjectNote } from '../project-knowledge.ts';
+import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
@@ -148,6 +149,13 @@ export interface ApiServerOptions {
    * where the preview of a file changed by the Coder is read (D-082).
    */
   approvedProjects?: () => readonly Project[];
+  /**
+   * The approved projects as containers (D-145), read at each request: the
+   * page Progetti lists them with their parts, and the tab "Conoscenza" reads
+   * and writes the notes of their management folders. `approvedProjects` are
+   * their parts.
+   */
+  projectContainers?: () => readonly Project[];
   /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
@@ -335,6 +343,7 @@ interface RouteOptions {
   capture: ApiServerOptions['capture'];
   modelEvals: ApiServerOptions['modelEvals'];
   approvedProjects: () => readonly Project[];
+  projectContainers: () => readonly Project[];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
@@ -925,7 +934,40 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
   ];
 }
 
-const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
+/** A project or a part of a container (`<project>:<part>`, D-145): one URL segment, never a path. */
+const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
+
+/**
+ * The tab "Conoscenza" of "Progetti" (D-145, tappa P2): the management folders
+ * of a container with their labels and the notes in them; "+ Conoscenza"
+ * writes a new note. The labels of the folders are not written here: they are
+ * a privacy setting, changed only with the two steps of the Settings
+ * (`/api/settings/privacy`), never by an agent or a tool of Arianna.
+ */
+function projectKnowledgeRoutes(containers: () => readonly Project[]): Route[] {
+  const containerParam = (params: Params): Project => {
+    const name = params.project ?? '';
+    const project = PROJECT_PARAM.test(name) ? containers().find((item) => item.name === name) : undefined;
+    if (project === undefined) throw new HttpError(404, 'not found');
+    return project;
+  };
+  return [
+    route('GET', '/api/browse/:project/knowledge', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { knowledge: readProjectKnowledge(containers(), project.name, isSinglePart(project)) } });
+    }),
+    route('POST', '/api/browse/:project/knowledge', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['folder', 'title', 'label', 'text']);
+      if (typeof body.folder !== 'string' || typeof body.title !== 'string' || typeof body.text !== 'string' || !isLabel(body.label)) {
+        throw new HttpError(400, 'folder, title, label and text are required');
+      }
+      const note = writeProjectNote(containers(), project.name, { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
+      return { status: 201, body: { note } };
+    }),
+  ];
+}
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
@@ -934,7 +976,7 @@ const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
  * in the project, nothing goes out. Hidden entries only with the consent of
  * D-135, which the core reads for each request.
  */
-function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks): Route[] {
+function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks, containers: () => readonly Project[]): Route[] {
   const projectParam = (params: Params): string => {
     const name = params.project ?? '';
     if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
@@ -946,7 +988,8 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
     return value;
   };
   return [
-    route('GET', '/api/browse', async () => ({ body: { projects: browsableProjects(approvedProjects(), await hiddenConsents(sql)) } })),
+    // The parts (D-145) and the containers they belong to.
+    route('GET', '/api/browse', async () => ({ body: { projects: browsableProjects(approvedProjects(), await hiddenConsents(sql)), containers: browsableContainers(containers()) } })),
     route('POST', '/api/browse/:project/hidden', async (request, _url, params) => {
       const name = projectParam(params);
       const body = await readJson(request);
@@ -1044,12 +1087,13 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
-    ...projectBrowserRoutes(sql, approvedProjects, openLinks),
+    ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
+    ...projectKnowledgeRoutes(projectContainers),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
@@ -1653,6 +1697,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof KnowledgeError) {
+    const status = { invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
+    return { status, message: error.message };
+  }
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
@@ -1740,6 +1788,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     capture: options.capture,
     modelEvals: options.modelEvals,
     approvedProjects: options.approvedProjects ?? (() => []),
+    projectContainers: options.projectContainers ?? (() => []),
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,

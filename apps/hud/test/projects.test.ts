@@ -2,7 +2,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { agoText, changeMark, childPath, commandText, confirmText, fileBadge, firstChangedLine, highlightLine, isProjectsPath, serviceStateText, sizeText, vscodeUrl, type ServiceState } from '../src/lib/projects.ts';
+import { agoText, changeMark, childPath, commandText, confirmText, fileBadge, firstChangedLine, highlightLine, isProjectsPath, lowers, noteLabels, partTitle, serviceStateText, sizeText, vscodeUrl, withFolderLabel, type ServiceState } from '../src/lib/projects.ts';
+
+test('Conoscenza (D-145): a label that goes down, the labels a note may have, a folder relabeled', () => {
+  assert.equal(lowers('L2', 'L1'), true);
+  assert.equal(lowers('L1', 'L0'), true);
+  assert.equal(lowers('L1', 'L2'), false);
+  assert.equal(lowers('L2', 'L2'), false);
+  assert.deepEqual(noteLabels('L1'), ['L1', 'L2', 'L3']);
+  assert.deepEqual(noteLabels('L3'), ['L3']);
+  const projects = [
+    { name: 'box', path: 'repos/box', label: 'L1' as const, folders: [{ path: 'IM', label: 'L1' as const }] },
+    { name: 'altro', path: 'repos/altro', label: 'L0' as const },
+  ];
+  const next = withFolderLabel(projects, 'box', 'documenti', 'L1');
+  assert.deepEqual(next[0]?.folders, [{ path: 'documenti', label: 'L1' }, { path: 'IM', label: 'L1' }]);
+  assert.deepEqual(next[1], projects[1]);
+  // The same folder in another case is replaced, not added.
+  assert.deepEqual(withFolderLabel(projects, 'box', 'im', 'L3')[0]?.folders, [{ path: 'im', label: 'L3' }]);
+  assert.deepEqual(projects[0]?.folders, [{ path: 'IM', label: 'L1' }], 'the input is left as it is');
+  assert.equal(partTitle({ project: 'box', part: 'box-admin' }), 'box-admin');
+  assert.equal(partTitle({ project: 'box', part: null }), 'box');
+});
 
 test('the address of the page', () => {
   assert.equal(isProjectsPath('/progetti'), true);

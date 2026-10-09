@@ -1,6 +1,6 @@
 import { ApiError } from './api.ts';
 import { errorText } from './italian.ts';
-import type { DiffHunk, FileChangeKind } from './types.ts';
+import type { DiffHunk, FileChangeKind, Label } from './types.ts';
 
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
@@ -14,11 +14,79 @@ export function isProjectsPath(pathname: string): boolean {
   return pathname === PROJECTS_PATH || pathname === `${PROJECTS_PATH}/`;
 }
 
+/** A part of a project (D-145): `name` is `<project>` or `<project>:<part>`; File, Git and Servizi read it. */
 export interface BrowsableProject {
   name: string;
   absolute: string;
-  /** "Mostra nascosti" is on for this project (D-135). */
+  /** "Mostra nascosti" is on for this part (D-135). */
   hidden: boolean;
+  /** The container. */
+  project: string;
+  /** The folder of the part in the container; null when the container is itself the part. */
+  part: string | null;
+}
+
+/** A project as a container (D-145): its parts by name; `single` when it is itself its only part. */
+export interface BrowsableContainer {
+  name: string;
+  absolute: string;
+  label: 'L0' | 'L1';
+  single: boolean;
+  parts: string[];
+}
+
+/** A management folder of a container (D-145) and its label; `defaultLabel` the one it has by its name. */
+export interface KnowledgeFolder {
+  path: string;
+  label: Label;
+  defaultLabel: Label;
+  chosen: boolean;
+}
+
+export interface KnowledgeNote {
+  folder: string;
+  path: string;
+  title: string;
+  label: Label;
+}
+
+/** The tab "Conoscenza" (D-145). */
+export interface ProjectKnowledge {
+  single: boolean;
+  folders: KnowledgeFolder[];
+  notes: KnowledgeNote[];
+  more: number;
+}
+
+const LABEL_RANK: Readonly<Record<Label, number>> = { L0: 0, L1: 1, L2: 2, L3: 3 };
+
+/** True when `to` is below `from`: lowering a folder asks an explicit confirmation (D-145). */
+export function lowers(from: Label, to: Label): boolean {
+  return LABEL_RANK[to] < LABEL_RANK[from];
+}
+
+/** The labels a note in a folder may have: the folder's or higher (a note is never below its folder). */
+export function noteLabels(folder: Label): Label[] {
+  return (['L0', 'L1', 'L2', 'L3'] as const).filter((label) => LABEL_RANK[label] >= LABEL_RANK[folder]);
+}
+
+/**
+ * The projects of the settings with one management folder relabeled (D-145):
+ * what "Conoscenza" sends to the two steps of the Settings. The folder goes
+ * in `folders` with its label, also when it equals the one by name: the
+ * user chose it. Every other project and field as it is.
+ */
+export function withFolderLabel<T extends { name: string; folders?: { path: string; label: Label }[] }>(projects: readonly T[], project: string, folder: string, label: Label): T[] {
+  return projects.map((item) => {
+    if (item.name !== project) return { ...item };
+    const others = (item.folders ?? []).filter((entry) => entry.path.toLowerCase() !== folder.toLowerCase());
+    return { ...item, folders: [...others, { path: folder, label }].sort((a, b) => a.path.localeCompare(b.path, 'it')) };
+  });
+}
+
+/** The name of a part as the page shows it: the folder, or the project when the container is the part. */
+export function partTitle(part: Pick<BrowsableProject, 'project' | 'part'>): string {
+  return part.part ?? part.project;
 }
 
 export interface TreeEntry {

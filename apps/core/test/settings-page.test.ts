@@ -386,6 +386,24 @@ describe('prepare and confirm (privacy)', () => {
     assert.deepEqual(config.local.endpoints.map(({ id }) => id), ['omlx', 'spare']);
   });
 
+  it('the labels of the management folders of a project (D-145): only through prepare and confirm, kept in [[project.folder]]', () => {
+    const projects = [{ name: 'demo', path: 'repos/demo', label: 'L1', parts: ['demo-admin'], folders: [{ path: 'Workplan', label: 'L2' }, { path: 'documenti', label: 'L3' }] }];
+    // Not an ordinary change: an agent or a page that saves the ordinary sections cannot lower a folder.
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { projects } }), refused('invalid', /unknown field/));
+    const proposal = page.prepare({ fingerprint: fingerprint(), values: { projects } });
+    assert.deepEqual(proposal.changes.projects?.changed.map(({ name, after: changed }) => [name, changed.folders]), [['demo', projects[0]?.folders]]);
+    assert.match(text(), /^\[\[project\]\]\nname = "demo"\npath = "repos\/demo"\nlabel = "L1"$/m, 'nothing written before the confirmation');
+    page.confirm({ id: proposal.id });
+    const config = parseConfig(text(), home, loadCatalog(home), userHome);
+    assert.deepEqual(config.projects[0]?.folders, [{ path: 'Workplan', label: 'L2' }, { path: 'documenti', label: 'L3' }]);
+    assert.deepEqual(config.projects[0].parts, ['demo-admin']);
+    assert.match(text(), /\[\[project\.folder\]\]\npath = "Workplan"\nlabel = "L2"/);
+    // A label that is not one, a folder that is a path, a field that is not a folder's: refused, nothing written.
+    for (const folders of [[{ path: 'Workplan', label: 'L4' }], [{ path: '../fuori', label: 'L1' }], [{ path: 'IM', label: 'L1', note: 'x' }], [{ path: 'IM', label: 'L1' }, { path: 'im', label: 'L2' }]]) {
+      assert.throws(() => page.prepare({ fingerprint: fingerprint(), values: { projects: [{ name: 'demo', path: 'repos/demo', label: 'L1', folders }] } }), refused('invalid'));
+    }
+  });
+
   it('an expired confirmation writes nothing and cannot be used again', () => {
     const before = text();
     const proposal = page.prepare({ fingerprint: fingerprint(), values: { executors: [] } });

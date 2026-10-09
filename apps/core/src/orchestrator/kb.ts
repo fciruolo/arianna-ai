@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { canRead, isAtMost, labelForKbPage, labelForPath, maxLabel, type Context, type Label, type LabelRules } from '@arianna/policy';
 
+import { isProjectPagePath, KnowledgeError, type ProjectPages } from '../project-knowledge.ts';
+
 /**
  * The knowledge base as the orchestrator's tools see it (task 1.10, D-053):
  * markdown pages under `kb/` of ARIANNA_HOME, each labeled by the folder
@@ -147,8 +149,25 @@ function snippetOf(body: string, words: readonly string[]): string {
   return `${start > 0 ? '…' : ''}${piece}${start + SNIPPET < body.length ? '…' : ''}`;
 }
 
-export function createKb(options: { home: string; rules: LabelRules }): Kb {
+/**
+ * `projects`: the knowledge of the approved projects (D-145), searched and
+ * read with the same rules as kb/ (folder label first, then the header);
+ * never written by the tools: `kb.write` stays in kb/inbox.
+ */
+export function createKb(options: { home: string; rules: LabelRules; projects?: ProjectPages }): Kb {
   const root = join(options.home, KB_DIR);
+  const projects = options.projects;
+
+  /** A page of a project, its errors as the tools' own. */
+  function loadProjectPage(path: string): KbPage {
+    if (projects === undefined) throw new KbError('not-found', `page ${path} not found`);
+    try {
+      return projects.load(path);
+    } catch (error) {
+      if (error instanceof KnowledgeError) throw new KbError(error.code === 'too-large' ? 'too-large' : 'not-found', error.message);
+      throw error;
+    }
+  }
 
   /** The file of a page, refusing symbolic links anywhere under kb/. */
   function fileOf(path: string): string {
@@ -200,6 +219,16 @@ export function createKb(options: { home: string; rules: LabelRules }): Kb {
 
   return {
     read(path, context) {
+      const trimmed = path.trim();
+      if (isProjectPagePath(trimmed)) {
+        const refuseProject = () =>
+          new KbError('above-clearance', `page ${trimmed} is above what this conversation may read: for private documents open a private conversation`);
+        // A path no project has counts as L2 (default-deny): the same answer whether it exists or not.
+        if (!canRead(context, projects?.folderLabel(trimmed) ?? 'L2')) throw refuseProject();
+        const page = loadProjectPage(trimmed);
+        if (!canRead(context, page.label)) throw refuseProject();
+        return page;
+      }
       const checked = checkPagePath(path);
       // The folder label first: above the clearance the file is not touched,
       // so the answer is the same whether the page exists or not.
@@ -217,15 +246,20 @@ export function createKb(options: { home: string; rules: LabelRules }): Kb {
       const words = terms(query);
       let skippedAbove = false;
       const scored: (KbHit & { score: number })[] = [];
-      for (const path of list()) {
+      // The pages of kb/, then those of the projects (D-145), each with its folder label known before opening it.
+      const pages: { path: string; folderLabel: Label; load: () => KbPage }[] = [
+        ...list().map((path) => ({ path, folderLabel: labelForPath(options.rules, path), load: () => load(path) })),
+        ...(projects?.list() ?? []).map(({ path, folderLabel }) => ({ path, folderLabel, load: () => loadProjectPage(path) })),
+      ];
+      for (const { path, folderLabel, load: open } of pages) {
         // Folders above the clearance are skipped without opening their pages.
-        if (!canRead(context, labelForPath(options.rules, path))) {
+        if (!canRead(context, folderLabel)) {
           skippedAbove = true;
           continue;
         }
         let page: KbPage;
         try {
-          page = load(path);
+          page = open();
         } catch {
           continue;
         }
