@@ -113,10 +113,13 @@ const wanted = ref<string | null>(null);
 const currentKey = computed(() => chosenKey(visible.value, wanted.value));
 const current = computed(() => entries.value.find((entry) => entry.key === currentKey.value));
 const detail = ref<HTMLElement | null>(null);
+/** The grid of list and card: one column when the page is narrow (a container query, D-150). */
+const pair = ref<HTMLElement | null>(null);
 async function choose(key: string): Promise<void> {
   wanted.value = key;
-  // On a narrow screen the card is under the list: bring it into view.
-  if (window.matchMedia('(max-width: 1023px)').matches) {
+  // When the card is under the list (narrow page, not only narrow window): bring it into view.
+  if (pair.value === null) return;
+  if (window.getComputedStyle(pair.value).gridTemplateColumns.trim().split(/\s+/).length < 2) {
     await nextTick();
     detail.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -347,7 +350,7 @@ onBeforeUnmount(() => {
     <p class="text-[13px] text-muted">Locali e cloud in un posto solo: cosa sono, chi li usa e come sono andati alle prove. Tutto ciò che vedi qui è Pubblico: numeri e nomi, nessun testo.</p>
 
     <!-- Summary -->
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
         <span class="hud-title text-[10px]">Memoria dei modelli locali</span>
         <template v-if="memory !== null">
@@ -411,7 +414,7 @@ onBeforeUnmount(() => {
       <input v-model="filter.query" type="search" class="field min-w-[160px] flex-1 px-2.5 py-1 text-[13px]" placeholder="Cerca un modello" aria-label="Cerca un modello" />
     </div>
 
-    <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
+    <div ref="pair" class="grid grid-cols-1 items-start gap-4 @4xl:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] @5xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
       <!-- The list -->
       <section class="hud-card flex flex-col" aria-label="Elenco dei modelli">
         <header class="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
@@ -713,7 +716,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Roles and switches, compact: the same forms as the cards -->
-    <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+    <div class="grid grid-cols-1 items-start gap-4 @4xl:grid-cols-2">
       <section class="hud-card flex flex-col gap-2.5 px-4 py-3.5" aria-labelledby="models-roles">
         <h2 id="models-roles" class="hud-title">Ruoli dei modelli locali</h2>
         <div class="flex flex-col">

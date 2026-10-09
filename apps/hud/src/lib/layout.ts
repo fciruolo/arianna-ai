@@ -42,20 +42,35 @@ export function saveLayout(storage: StorageLike | undefined, layout: Layout): vo
 }
 
 /**
+ * From this width (CSS pixels, the `3xl` breakpoint of style.css: 100rem) the
+ * right bar is a column beside the page (D-150). Below it, as on a laptop
+ * (MacBook Pro 14": about 1512 px), the bar starts closed and opens over the
+ * page from its button, so the chat, the projects and the knowledge keep the
+ * width. Keep it equal to `--breakpoint-3xl`; App.vue reads it with matchMedia
+ * in rem (PANEL_COLUMN_PX / 16), like the CSS, so a bigger browser font moves both.
+ */
+export const PANEL_COLUMN_PX = 1600;
+
+/** Whether the right bar is a column at this window width (true) or a drawer that starts closed (false). */
+export function panelIsColumn(width: number): boolean {
+  return width >= PANEL_COLUMN_PX;
+}
+
+/**
  * The grid columns of the page for each pair of collapsed bars: a collapsed
  * bar takes no column at all, the page takes the whole width and only the
  * icon that opens the bar again stays, in the top bar. The right bar is a
- * column only from `xl`; below it is a drawer. Written out in full because
- * Tailwind only generates classes it finds as whole strings.
+ * column only from `3xl` (D-150); below it is a drawer. Written out in full
+ * because Tailwind only generates classes it finds as whole strings.
  */
 export function gridColumns(layout: Layout): string {
   const md = layout.sidebar ? 'md:grid-cols-[minmax(0,1fr)]' : 'md:grid-cols-[264px_minmax(0,1fr)]';
-  const xl = layout.sidebar
+  const wide = layout.sidebar
     ? layout.panel
-      ? 'xl:grid-cols-[minmax(0,1fr)]'
-      : 'xl:grid-cols-[minmax(0,1fr)_300px]'
+      ? '3xl:grid-cols-[minmax(0,1fr)]'
+      : '3xl:grid-cols-[minmax(0,1fr)_300px]'
     : layout.panel
-      ? 'xl:grid-cols-[264px_minmax(0,1fr)]'
-      : 'xl:grid-cols-[264px_minmax(0,1fr)_300px]';
-  return `${md} ${xl}`;
+      ? '3xl:grid-cols-[264px_minmax(0,1fr)]'
+      : '3xl:grid-cols-[264px_minmax(0,1fr)_300px]';
+  return `${md} ${wide}`;
 }

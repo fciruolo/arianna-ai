@@ -39,7 +39,7 @@ import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
 import { isProjectsPath, PROJECTS_PATH } from './lib/projects.ts';
 import { callTarget } from './lib/sidebar.ts';
-import { gridColumns, loadLayout, saveLayout } from './lib/layout.ts';
+import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
   CHANGELOG_PATH,
   conversationFromPath,
@@ -156,16 +156,20 @@ try {
 const layout = ref(loadLayout(storage));
 watch(layout, (value) => saveLayout(storage, value), { deep: true });
 
-/** Wide enough for the bar to be a column (Tailwind md, xl) rather than a drawer. */
+/** Wide enough for the left bar to be a column (Tailwind md) rather than a drawer. */
 function wide(rem: number): boolean {
   return typeof window !== 'undefined' && window.matchMedia(`(min-width: ${String(rem)}rem)`).matches;
 }
+/** The right bar is a column only from 3xl (D-150): on a laptop it is a drawer that starts closed. */
+function panelColumn(): boolean {
+  return wide(PANEL_COLUMN_PX / 16);
+}
 /** Followed live: a closed drawer is inert (out of Tab and of screen readers), a column never. */
 const wideSidebar = ref(wide(48));
-const widePanel = ref(wide(80));
+const widePanel = ref(panelColumn());
 function measureWidth(): void {
   wideSidebar.value = wide(48);
-  widePanel.value = wide(80);
+  widePanel.value = panelColumn();
 }
 
 /** The fold button of the left bar: a thin column on wide screens, the drawer closes on narrow ones. */
@@ -174,14 +178,14 @@ function foldSidebar(): void {
   showSidebar.value = false;
 }
 
-/** The right bar: a column from xl, a drawer below. */
+/** The right bar: a column from 3xl, a drawer below (D-150). */
 function openPanel(): void {
   showSidebar.value = false;
-  if (wide(80)) layout.value.panel = false;
+  if (panelColumn()) layout.value.panel = false;
   else showPanel.value = true;
 }
 function closePanel(): void {
-  if (wide(80)) layout.value.panel = true;
+  if (panelColumn()) layout.value.panel = true;
   showPanel.value = false;
 }
 
@@ -692,7 +696,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <!-- Main -->
     <main id="main" tabindex="-1" class="flex min-h-0 min-w-0 flex-col outline-none">
       <header
-        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5"
+        class="flex h-[60px] shrink-0 items-center gap-3.5 border-b px-4 backdrop-blur-sm md:px-5.5 short:h-[52px]"
         :class="incognitoHeader ? 'border-incognito-line bg-incognito text-incognito-ink' : 'border-line bg-bg/85'"
       >
         <button
@@ -791,7 +795,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 xl:hidden"
+          class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 3xl:hidden"
           :aria-label="showPanel ? 'Chiudi la barra degli agenti' : 'Apri la barra degli agenti'"
           @click="showPanel = !showPanel"
         >
@@ -805,7 +809,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <button
           v-if="layout.panel"
           type="button"
-          class="relative -mr-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink xl:grid"
+          class="relative -mr-1.5 hidden size-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink 3xl:grid"
           aria-label="Apri la barra degli agenti"
           title="Apri la barra degli agenti"
           @click="layout.panel = false"
@@ -921,8 +925,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
     <!-- Status panel: on the right on wide screens, a drawer otherwise -->
     <StatusPanel
-      class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform xl:static xl:z-auto xl:w-auto xl:translate-x-0"
-      :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { 'xl:hidden': layout.panel }]"
+      class="fixed inset-y-0 right-0 z-30 w-[min(320px,90vw)] transition-transform 3xl:static 3xl:z-auto 3xl:w-auto 3xl:translate-x-0"
+      :class="[showPanel ? 'translate-x-0' : 'translate-x-full', { '3xl:hidden': layout.panel }]"
       :inert="!showPanel && !widePanel"
       :status="status"
       :characters="characters"
@@ -936,7 +940,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @close="closePanel"
       @open="(id) => { showPanel = false; void openConversation(id); }"
     />
-    <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 xl:hidden" aria-hidden="true" @click="showPanel = false" />
+    <div v-if="showPanel" class="fixed inset-0 z-20 bg-black/50 3xl:hidden" aria-hidden="true" @click="showPanel = false" />
 
     <SearchDialog v-if="showSearch" @close="showSearch = false" @go="goTo" />
     <LabelLegend v-if="showLegend" @close="showLegend = false" />

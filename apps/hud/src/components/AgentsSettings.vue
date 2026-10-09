@@ -436,9 +436,9 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
 </script>
 
 <template>
-  <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(250px,310px)_minmax(0,1fr)]">
+  <div class="grid grid-cols-1 items-start gap-4 @3xl:grid-cols-[minmax(250px,310px)_minmax(0,1fr)]">
     <!-- The list -->
-    <aside class="flex flex-col gap-3 lg:sticky lg:top-0" aria-label="Elenco degli agenti">
+    <aside class="flex flex-col gap-3 @3xl:sticky @3xl:top-0" aria-label="Elenco degli agenti">
       <div class="flex items-center gap-2">
         <span class="hud-title flex-1">Agenti</span>
         <a href="/impostazioni/agenti/nuovo" class="btn btn-primary px-2.5 py-1 text-xs" @click.prevent="emit('newAgent')">+ Nuovo agente</a>
@@ -770,7 +770,7 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
     <!-- One bar for look, persona, model and texts: the cards' own buttons are gone -->
     <div
       v-if="dirty || working || saved || barError"
-      class="sticky bottom-4 z-10 mx-auto flex max-w-full flex-wrap items-center gap-3 rounded-xl border bg-surface py-2 pr-3 pl-4 shadow-[0_10px_30px_#0006,0_0_0_4px_var(--glow)] lg:col-span-2"
+      class="sticky bottom-4 z-10 mx-auto flex max-w-full flex-wrap items-center gap-3 rounded-xl border bg-surface py-2 pr-3 pl-4 shadow-[0_10px_30px_#0006,0_0_0_4px_var(--glow)] @3xl:col-span-2"
       :class="barError || props.error || blocked ? 'border-danger' : 'border-accent'"
       role="status"
     >

@@ -10,6 +10,19 @@
 @import "@fontsource/jetbrains-mono/latin-500.css";
 
 /*
+ * Laptop and big screen (D-150). `3xl` (100rem, 1600 px; PANEL_COLUMN_PX in
+ * lib/layout.ts) is where the right bar becomes a column: below it, as on a
+ * MacBook Pro 14" (about 1512 px), it is a drawer that starts closed. `short`
+ * is a window from md up lower than 56rem (896 px; the phone keeps its own
+ * rules): fewer vertical spacings, so the
+ * messages keep their room. Above both the layout stays the big screen's one.
+ */
+@theme {
+  --breakpoint-3xl: 100rem;
+}
+@custom-variant short (@media (min-width: 48rem) and (max-height: 56rem));
+
+/*
  * Identity of the web chat (D-060, docs/mockups/arianna-hud.html): the OpenDots
  * layout fused with a Jarvis-style HUD. Dark first; light and warm when the
  * system is light, unless the user chose a theme (data-theme on <html>).

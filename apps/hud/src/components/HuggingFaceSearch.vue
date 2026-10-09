@@ -107,7 +107,7 @@ const blockers = computed(() => (card.value === null ? [] : cardBlockers(card.va
       </form>
       <p v-if="searchError !== null" role="alert" class="text-xs text-danger">{{ searchError }}</p>
 
-      <div v-if="results !== null" class="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(240px,340px)_minmax(0,1fr)]">
+      <div v-if="results !== null" class="grid grid-cols-1 items-start gap-3 @4xl:grid-cols-[minmax(240px,340px)_minmax(0,1fr)]">
         <!-- Results -->
         <div class="flex max-h-[420px] flex-col overflow-y-auto rounded-[10px] border border-line" aria-label="Risultati">
           <p v-if="results.length === 0" class="px-3 py-2.5 text-xs text-muted">Nessun modello MLX con questo nome.</p>

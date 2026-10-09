@@ -514,7 +514,7 @@ onBeforeUnmount(() => clearInterval(clock));
 <template>
   <section class="flex flex-col" :aria-label="`Conversazione ${MODE_TEXT[conversation.mode]}`">
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto" aria-live="polite" @scroll.passive="onListScroll">
-      <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5">
+      <div class="mx-auto flex max-w-[780px] flex-col gap-[18px] px-4 pt-5.5 pb-7.5 md:px-5.5 short:gap-3.5 short:pt-4 short:pb-5">
         <!-- Persona header with the HUD ring -->
         <section class="flex items-center gap-4 border-b border-line pb-4">
           <div class="relative grid size-[74px] shrink-0 place-items-center">
@@ -699,9 +699,10 @@ onBeforeUnmount(() => clearInterval(clock));
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
               {{ message.body }}
             </div>
-            <div class="flex items-center gap-2 px-1 font-mono text-[10.5px] text-muted">
+            <!-- D-150: each piece whole (never "Attende / te"); when the row is short they go under, aligned on the right. -->
+            <div class="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-0.5 px-1 font-mono text-[10.5px] whitespace-nowrap text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <span v-if="message.channel === 'telegram'" class="inline-flex items-center gap-1 text-info" title="Scritto da Telegram"><Icon name="telegram" :size="12" />Telegram</span>
@@ -716,7 +717,7 @@ onBeforeUnmount(() => clearInterval(clock));
                   title="Perché è fallito"
                   @click="emit('explain', taskOf(message)!)"
                 >!</button>
-                <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
+                <span v-if="reasonText(taskOf(message)!.waitingReason) !== undefined" class="max-w-full min-w-0 truncate" :title="reasonText(taskOf(message)!.waitingReason)">— {{ reasonText(taskOf(message)!.waitingReason) }}</span>
                 <button
                   v-if="canCallWhenDone(taskOf(message))"
                   type="button"
@@ -741,7 +742,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
               <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
-              <MessageActions :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
+              <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
             <MarkdownText class="px-[15px] py-3" :source="message.body" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
@@ -824,7 +825,7 @@ onBeforeUnmount(() => clearInterval(clock));
       <span>Conversazione archiviata: ripristinala per scrivere.</span>
       <button type="button" class="btn btn-primary" @click="emit('restore')"><Icon name="restore" :size="16" />Ripristina</button>
     </div>
-    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
+    <div v-else class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5 short:pt-2 short:pb-2.5">
       <div class="relative mx-auto max-w-[780px]">
         <!-- The "/" menu (D-090) -->
         <div v-if="menuOpen" class="hud-card absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden bg-surface py-1.5 shadow-lg">
@@ -890,9 +891,9 @@ onBeforeUnmount(() => clearInterval(clock));
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
-      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted">
-        <span v-if="incognito" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
-        <span v-else>Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
+      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted short:mt-1.5">
+        <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
+        <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
         <span class="inline-flex flex-wrap items-center gap-1.5">
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
