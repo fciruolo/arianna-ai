@@ -2705,3 +2705,15 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
    - Opzione consigliata: Nelle Impostazioni — una pagina "Regole dei progetti" con il modello comune; ogni progetto ha poi la sua scheda nella pagina Progetti.
    - Opzione: Solo per progetto — niente modello comune; ogni bozza parte da zero e la scrivi ogni volta.
    - Esempio: Nel modello comune scrivi "commenti in inglese, niente co-autore"; aggiungi progetto-test e la bozza le contiene già, più "usa pnpm" letto dal package.json.
+
+### I-15, il diario dei lavori (richiesta dell'utente del 2026-10-09)
+
+**Cosa ha chiesto l'utente.** "Documenti che poi Arianna scrive nella memoria, in modo da avere sempre la memoria aggiornata": a ogni lavoro del Coder su un progetto resta una traccia nella conoscenza di quel progetto, senza doverla scrivere a mano.
+
+**La scelta dell'utente** (domande a opzioni del 2026-10-09): **la nota la scrive Arianna in automatico, con il codice, non un modello** (né Claude né Codex, né il modello locale). Così la voce dice solo ciò che è successo, con i dati che il core ha già, e non costa quota.
+
+**Come funziona (D-147).** Alla fine di ogni lavoro di un agente nel cloud su un progetto (delega dalla conversazione con Arianna o chat diretta con il Coder, su Claude o su Codex; riuscito, non riuscito o fermato al limite di tempo) il core aggiunge una voce in `Workplan/diario/AAAA-MM-GG.md` della conoscenza del progetto: nel contenitore per i progetti con parti, in `kb/progetti/<progetto>/` per quelli di un solo git. Un file per giorno, una voce per lavoro in coda: in Obsidian si legge la giornata dall'alto in basso. La voce porta ora, agente ed esecutore con il modello, la parte, l'esito, la richiesta così come è uscita dal gateway, i file cambiati, il commit se c'è, il riassunto finale dell'agente e il collegamento alla conversazione; niente che non sia già uscito verso il cloud, quindi mai sopra L1. Le incognite non lasciano voci.
+
+**Tappe.**
+- **D1 (questa):** il diario scritto dal codice, trovato dalla ricerca di Arianna e mostrato nella scheda Conoscenza come nota di Workplan.
+- **D2 (da decidere):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario.
