@@ -20,6 +20,9 @@ import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type Remote
 import { withoutParticipant } from './lib/participants.ts';
 import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
+/** The events after which the cardwall reads its cards again (I-13, D-152). */
+const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
+
 /**
  * State of the page. Every change comes from the API; the socket only says
  * what changed (events carry ids, never content) and streams the answers.
@@ -47,6 +50,8 @@ export function createChatStore() {
   const approvals = ref<Approval[]>([]);
   /** Goes up when a commitment of the secretary changes (D-144): its list reads them again. */
   const commitmentsVersion = ref(0);
+  /** Goes up when a card of the cardwall or a commitment may have changed (I-13, D-152): the page reads the wall again. */
+  const cardsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
   const participants = ref<Participant[]>([]);
   /** The cloud models a work conversation may choose (task 1.10). */
@@ -889,6 +894,7 @@ export function createChatStore() {
     const conversationId = payloadString(event, 'conversationId');
     const known = event.taskId !== null && event.taskId in tasks.value;
     const work: Promise<unknown>[] = [];
+    if (CARD_EVENTS.has(event.kind)) cardsVersion.value += 1;
     switch (event.kind) {
       case 'conversation.model':
       case 'conversation.pinned':
@@ -1071,7 +1077,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { commitmentsVersion, openSecretary, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { commitmentsVersion, cardsVersion, openSecretary, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

@@ -206,7 +206,7 @@ export function activityText(activity: Activity | SavedActivity): string {
     case 'write':
       return `Scrivo ${activity.detail}`;
     case 'card':
-      return `Creo la carta «${activity.detail}»`;
+      return `Creo la card «${activity.detail}»`;
     case 'plan':
       return `Piano: ${activity.detail}`;
     case 'error':

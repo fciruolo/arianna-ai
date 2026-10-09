@@ -534,6 +534,8 @@ const server = await startApiServer({
   projectContainers,
   // The tab "Conoscenza" (D-145): kb/progetti of this ARIANNA_HOME for the projects that are one git.
   knowledge: { home: config.home, rules },
+  // The files attached to cards (D-152): private copies, outside git.
+  cards: { dir: join(config.home, 'data', 'cards') },
   services,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),

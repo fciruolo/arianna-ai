@@ -16,6 +16,9 @@ test('migrations apply from zero and create every table', async () => {
     [
       'approvals',
       'calls',
+      'card_checklist',
+      'card_files',
+      'card_links',
       'commitments',
       'conversation_participants',
       'conversation_summaries',
@@ -33,6 +36,7 @@ test('migrations apply from zero and create every table', async () => {
       'schema_migrations',
       'task_activities',
       'task_delegations',
+      'task_dependencies',
       'task_errors',
       'task_turns',
       'tasks',

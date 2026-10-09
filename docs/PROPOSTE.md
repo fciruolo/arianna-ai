@@ -2488,7 +2488,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-10 | Cercare i modelli su Hugging Face dalla pagina Modelli e scaricare quelli scelti (oggi si scarica solo dagli URL del catalogo, con sha256 scritto: D-137). Da progettare: ricerca come uscita in rete (solo il testo cercato, L0), scheda e sha256 presi dalla pagina del modello, modello aggiunto al catalogo come `experimental` prima di poter avere un ruolo | funzione | 8-12 h (tappe H1-H3 fatte in circa 6 h) | D-137 | detta dall'utente alla prova di I-3, 2026-10-07; progetto `docs/I-10-huggingface.md`, D-139 applicata sul ramo `task/i10-huggingface`, da provare |
 | I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-12 | **Prioritaria per l'utente.** Arianna (o un agente) come segretaria: le dici "domani dobbiamo rilasciare X per il cliente Y", se lo segna, te lo ricorda la mattina, di nuovo dopo pranzo se non è fatto, e a fine giornata fa il resoconto di ciò che non è stato fatto chiedendoti perché e annotando la risposta; pulsante dedicato per parlarle subito | funzione | 20-30 h (tappe S1-S4) | D-110 (routine, ancora da costruire), D-126/D-128 (notifiche), D-066 (chiamate, facoltative) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
-| I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
+| I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; domande chiuse il 2026-10-10 (D-152); C1-C2 costruite, restano C3 e C4 |
 | I-14 | Regole del progetto proposte in bozza quando si aggiunge un progetto (parallelismo degli agenti secondo la quota, codice che non sembri scritto da un'IA, regole per gli IM, niente commit o niente co-autore, mai leggere segreti…), uguali per Claude e per Codex | funzione | 12-18 h (tappe R1-R3) | D-058/D-134 (progetti), I-11, D-050/D-138 (profili), D-135 (segreti) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 
 ### I-1, notifiche delle risposte
@@ -2638,28 +2638,7 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 
 **Ordine con I-11 e I-12.** I tre lavori si toccano: i progetti (I-11) danno il filtro per progetto, gli impegni (I-12) sono carte, le dipendenze (I-13) servono allo sviluppo. Proposta: I-12 S1 (impegni), poi I-13 C1-C2 (cardwall con i filtri), poi I-11 P1-P2 (progetti e conoscenza), poi il resto. Va annotato in `ROADMAP.md` come anticipo della Fase 2 scelto dall'utente.
 
-**Domande per l'utente.**
-1. **Quali colonne?**
-   - Contesto: Le carte stanno in colonne per stato. Oggi i task hanno sette stati tecnici; per l'uso quotidiano si possono raggruppare in meno colonne.
-   - Opzione consigliata: Cinque colonne — Da fare, In corso, Aspetta (te o un altro task), Da verificare, Fatto; i falliti compaiono in Aspetta con un segno rosso.
-   - Opzione: Tutti e sette gli stati — più preciso ma più affollato.
-   - Esempio: La carta "Codice della landing" sta in Aspetta con la scritta "aspetta: Grafica della landing"; quando la grafica passa in Fatto, la carta va da sola in Da fare.
-2. **La scomposizione di Arianna va approvata?**
-   - Contesto: Per una richiesta grande Arianna può creare da sola più task con chi li fa e le dipendenze, oppure proporli e aspettare il tuo sì.
-   - Opzione consigliata: Proposta da approvare — vedi il piano come scheda, lo correggi o lo approvi; solo allora diventano carte e partono.
-   - Opzione: Crea da sola — più veloce, ma un piano sbagliato parte senza che tu l'abbia visto.
-   - Esempio: Chiedi "sviluppa una landing page per il cliente Y"; Arianna propone "1. Grafica (designer), 2. Codice (Coder, dopo la 1)"; premi Approva.
-3. **Chi fa la grafica?**
-   - Contesto: Nell'esempio della landing un task è la grafica. Oggi nessun agente di Arianna fa grafica; può farla l'utente, un agente nuovo o il Coder con un modello che sappia di design.
-   - Opzione consigliata: Tu, o un agente da creare dopo — la carta della grafica è assegnata a te finché non esiste un agente adatto (si può creare con la pagina Agenti, D-133).
-   - Opzione: Il Coder — scrive anche la parte grafica (HTML e CSS) partendo da una descrizione; nessun file di design separato.
-   - Esempio: La carta "Grafica della landing" è assegnata a te; quando carichi il file e la segni fatta, il Coder parte con il codice.
-4. **In che ordine I-11, I-12 e I-13?**
-   - Contesto: Sono tre lavori prioritari che si toccano; si fanno uno alla volta, dopo il reset della quota di Claude.
-   - Opzione consigliata: Impegni, cardwall, progetti — prima la segretaria minima (S1), poi il cardwall con i filtri (C1-C2), poi progetti e conoscenza (P1-P2), poi il resto.
-   - Opzione: Progetti per primi — prima I-11, perché il cardwall per progetto e la conoscenza del Coder si appoggiano lì.
-   - Opzione: Cardwall per primo — prima la vista delle carte, poi impegni e progetti ci entrano dentro.
-   - Esempio: Sabato si parte dalla segretaria: "segnati che giovedì vado in banca"; la settimana dopo lo stesso impegno compare come carta nel cardwall, filtrabile come "generale".
+**Risposte dell'utente (2026-10-10, D-152).** Colonne: le cinque proposte, con interruttori per separare Inbox e Falliti e per nascondere una colonna. Scomposizione: proposta da approvare. Grafica: un agente dedicato, "Designer", da creare con la tappa C3. Ordine: impegni, cardwall, progetti (già seguito). Tappe C1-C2 costruite sul ramo `task/i13-c1c2-cardwall` (D-152); restano C3 (scomposizione approvata, agente Designer) e C4 (il cardwall nell'ufficio).
 
 ### I-14, le regole del progetto (richiesta dell'utente del 2026-10-08)
 

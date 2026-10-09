@@ -222,7 +222,7 @@ function confirmArchive(id: string): void {
             <p class="text-xs leading-snug text-muted">
               Spariscono messaggi, titoli, passi di Arianna, brief e rapporti del Coder, testi delle schede e le chat di sistema sui suoi task; i task
               ancora aperti si chiudono. Resta il
-              registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche le carte e le pagine della base di
+              registro di controllo senza testi (cosa è uscito verso il cloud e con quale regola). Restano anche le card e le pagine della base di
               conoscenza create da questa conversazione, i messaggi già arrivati su Telegram e le sessioni di Claude Code dei lavori delegati. Non si
               può annullare.
             </p>
