@@ -287,7 +287,7 @@ export function clientIssues(form: ClientForm): Issue[] {
 
   if (form.vatRate !== null) {
     if (typeof form.vatRate !== 'number' || !Number.isFinite(form.vatRate)) add('vatRate', 'type');
-    else if (form.vatRate < 0 || form.vatRate > 100 || Math.round(form.vatRate * 100) !== form.vatRate * 100) add('vatRate', 'format');
+    else if (form.vatRate < 0 || form.vatRate > 100 || Math.abs(Math.round(form.vatRate * 100) - form.vatRate * 100) > 1e-6) add('vatRate', 'format');
   }
   const nature = codeOf(form.vatNature, /\s/g);
   if (nature !== '' && !(VAT_NATURES as readonly string[]).includes(nature)) add('vatNature', 'format');

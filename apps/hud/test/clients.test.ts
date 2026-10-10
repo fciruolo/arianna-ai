@@ -118,6 +118,7 @@ test('the messages under the fields, in Italian', () => {
   assert.match(issueText({ field: 'vatRate', code: 'format' }), /da 0 a 100/);
   assert.match(issueText({ field: 'cig', code: 'not-allowed' }), /non si scrive il CIG/);
   assert.equal(clientProblems(form({ displayName: 'Rossi', vatRate: Number.NaN })).vatRate !== undefined, true);
+  for (const rate of [1.1, 19.6, 0.07]) assert.equal(clientProblems(form({ displayName: 'Rossi', vatRate: rate })).vatRate, undefined, String(rate));
 });
 
 test('a contact: a name, e-mail and phones in their form', () => {
@@ -131,6 +132,9 @@ test('what is missing to send an electronic invoice', () => {
   const ready = form({ legalName: 'Rossi Srl', vatNumber: PIVA, sdiCode: 'ABC1234', registeredAddress: { street: 'Via Finta', number: '1', postalCode: '20100', city: 'Milano', province: 'MI', country: 'IT' } });
   assert.deepEqual(billingGaps(ready), []);
   assert.deepEqual(billingGaps({ ...ready, sdiCode: null, pec: 'rossi@pec.example.it' }), []);
+  assert.deepEqual(billingGaps({ ...ready, vatRate: 0 }), ['natura IVA per l’aliquota 0']);
+  assert.deepEqual(billingGaps({ ...ready, vatRate: 0, vatNature: 'N2.2' }), []);
+  assert.deepEqual(billingGaps({ ...ready, vatRate: 22 }), []);
   assert.deepEqual(billingGaps(form({ kind: 'individual', firstName: 'Mario', lastName: 'Rossi' })), ['codice fiscale', 'indirizzo della sede']);
   assert.deepEqual(billingGaps(form({ kind: 'public_administration', legalName: 'Comune di Finta' })), ['codice IPA', 'codice fiscale', 'indirizzo della sede']);
   const french = form({ legalName: 'Dupont SARL', country: 'FR', registeredAddress: { street: 'Rue Finte', number: '1', postalCode: '75001', city: 'Paris', province: null, country: 'FR' } });

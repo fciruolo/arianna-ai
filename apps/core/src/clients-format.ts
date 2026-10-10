@@ -5,7 +5,7 @@
  * the codes of the electronic invoice (SDI, IPA), the addresses and the
  * terms of payment. Pure functions: the core writes only what passes here.
  * The web chat repeats the same rules for its inline messages
- * (apps/hud/src/lib/clients.ts); a test keeps the two in step.
+ * (apps/hud/src/lib/client-codes.ts); a test keeps the two in step.
  * No check goes on the network: a VAT number of the EU is checked for its
  * form only, never asked to VIES (that would be data leaving the machine).
  */
@@ -563,7 +563,7 @@ export function checkClient(input: Record<string, unknown>, base: Readonly<Clien
   const rateValue = raw('vatRate');
   if (rateValue !== null && rateValue !== undefined && rateValue !== '') {
     if (typeof rateValue !== 'number' || !Number.isFinite(rateValue)) out.add('vatRate', 'type');
-    else if (rateValue < 0 || rateValue > 100 || Math.round(rateValue * 100) !== rateValue * 100) out.add('vatRate', 'format');
+    else if (rateValue < 0 || rateValue > 100 || Math.abs(Math.round(rateValue * 100) - rateValue * 100) > 1e-6) out.add('vatRate', 'format');
     else vatRate = rateValue;
   }
   const vatNature = oneOf(code(raw('vatNature'), 'vatNature', out, /\s/g), VAT_NATURES, 'vatNature', out);

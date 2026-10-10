@@ -362,9 +362,15 @@ export async function archiveClient(sql: Sql, id: string, archived: boolean): Pr
     sql.begin(async (tx) => {
       const row = await loadRow(tx, id, true);
       if ((row.status === 'archived') === archived) return { id, status: row.status };
-      const status: ClientStatus = archived ? 'archived' : 'active';
+      // Restored, a client goes back to the status it had: the archive event keeps it (a word, not data).
+      let status: ClientStatus = 'archived';
+      if (!archived) {
+        const [last] = await tx<{ from: string | null }[]>`
+          SELECT payload ->> 'from' AS from FROM events WHERE kind = 'client.archived' AND payload ->> 'clientId' = ${id} ORDER BY id DESC LIMIT 1`;
+        status = last?.from === 'prospect' ? 'prospect' : 'active';
+      }
       await tx`UPDATE clients SET status = ${status}, archived_at = ${archived ? tx`now()` : null}, updated_at = now() WHERE id = ${id}`;
-      await appendEvent(tx, { kind: archived ? 'client.archived' : 'client.restored', payload: { clientId: id } });
+      await appendEvent(tx, { kind: archived ? 'client.archived' : 'client.restored', payload: archived ? { clientId: id, from: row.status } : { clientId: id } });
       return { id, status };
     }),
   );
@@ -502,6 +508,25 @@ function removeLogos(dir: string, id: string, keep: LogoType | null): void {
 }
 
 /**
+ * The logo writes of each client, one after the other: two uploads of
+ * different types must not cross between the commit and the rename (the
+ * database would name a file the other one removed). The core is one process.
+ */
+const logoQueues = new Map<string, Promise<unknown>>();
+
+async function oneLogoAtATime<T>(id: string, work: () => Promise<T>): Promise<T> {
+  const before = logoQueues.get(id) ?? Promise.resolve();
+  const turn = before.then(work, work);
+  const settled = turn.catch(() => undefined);
+  logoQueues.set(id, settled);
+  try {
+    return await turn;
+  } finally {
+    if (logoQueues.get(id) === settled) logoQueues.delete(id);
+  }
+}
+
+/**
  * The logo, from the chat as base64: PNG, JPEG or WebP by its first bytes
  * (never SVG, which can carry a script), 1 MB at most. Written to a new file
  * (O_EXCL, O_NOFOLLOW, 0600), recorded with its hash, then moved in place of
@@ -516,6 +541,10 @@ export async function setLogo(sql: Sql, dir: string, id: string, input: { type?:
   if (type === undefined) throw new ClientError('invalid', 'the logo must be a PNG, JPEG or WebP image', [{ field: 'logo', code: 'format' }]);
   if (input.type !== undefined && input.type !== type) throw new ClientError('invalid', 'the type does not match the image', [{ field: 'logo', code: 'format' }]);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
+  return oneLogoAtATime(id, () => writeLogo(sql, dir, id, type, bytes, sha256));
+}
+
+async function writeLogo(sql: Sql, dir: string, id: string, type: LogoType, bytes: Buffer, sha256: string): Promise<ClientLogo> {
   await loadRow(sql, id);
   const folder = clientFolder(dir, id);
   const temporary = join(folder, `.logo-${randomUUID()}`);
@@ -541,14 +570,16 @@ export async function setLogo(sql: Sql, dir: string, id: string, input: { type?:
 }
 
 export async function removeLogo(sql: Sql, dir: string, id: string): Promise<void> {
-  const had = await sql.begin(async (tx) => {
-    const row = await openClient(tx, id);
-    if (row.logoType === null) return false;
-    await tx`UPDATE clients SET logo_type = NULL, logo_sha256 = NULL, updated_at = now() WHERE id = ${id}`;
-    await appendEvent(tx, { kind: 'client.logo.removed', payload: { clientId: id } });
-    return true;
+  await oneLogoAtATime(id, async () => {
+    const had = await sql.begin(async (tx) => {
+      const row = await openClient(tx, id);
+      if (row.logoType === null) return false;
+      await tx`UPDATE clients SET logo_type = NULL, logo_sha256 = NULL, updated_at = now() WHERE id = ${id}`;
+      await appendEvent(tx, { kind: 'client.logo.removed', payload: { clientId: id } });
+      return true;
+    });
+    if (had) removeLogos(dir, id, null);
   });
-  if (had) removeLogos(dir, id, null);
 }
 
 /** The bytes of the logo, checked against the hash recorded: neither the folder nor the file may be a link. */

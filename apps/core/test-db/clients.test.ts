@@ -131,6 +131,10 @@ test('archive and restore; an archived client is not changed; one partita IVA am
   // "status: archived" is not a field.
   await rejectsWith(updateClient(sql, first.id, { status: 'archived' }), 'invalid');
   assert.deepEqual((await updateClient(sql, first.id, { status: 'prospect' })).changed, ['status']);
+  // Restored, a client goes back to the status it had before.
+  await archiveClient(sql, first.id, true);
+  assert.equal((await archiveClient(sql, first.id, false)).status, 'prospect');
+  assert.equal((await readClient(sql, first.id)).status, 'prospect');
 });
 
 test('contacts: one primary, changed in part, removed and never changed again', async () => {
@@ -172,8 +176,12 @@ test('projects: only approved ones, one client each; unlinked, free again', asyn
   assert.deepEqual((await clientOfProject(sql, 'sito-rossi'))?.displayName, 'Rossi progetti');
   assert.deepEqual((await listClients(sql)).find((client) => client.id === rossi.id)?.projects, ['demo', 'sito-rossi']);
 
+  // An archived client: no new project, but one is freed for another client.
+  await archiveClient(sql, rossi.id, true);
+  await rejectsWith(linkProject(sql, rossi.id, 'progetto-test', NAMES), 'conflict');
   await unlinkProject(sql, rossi.id, link.id);
   await rejectsWith(unlinkProject(sql, rossi.id, link.id), 'not-found');
+  await archiveClient(sql, rossi.id, false);
   assert.equal(await clientOfProject(sql, 'sito-rossi'), null);
   await linkProject(sql, neri.id, 'sito-rossi', NAMES);
   assert.equal((await clientOfProject(sql, 'sito-rossi'))?.id, neri.id);
@@ -213,8 +221,16 @@ test('the logo: PNG, JPEG or WebP by its bytes, 0600, replaced, checked by its h
   assert.equal(statSync(jpegPath).isFile(), true);
   assert.deepEqual((await readLogo(sql, DIR, id)).bytes, JPEG);
 
+  // Uploads of different types at once never cross: the file is the one the database names.
+  for (let round = 0; round < 5; round += 1) {
+    await Promise.all([setLogo(sql, DIR, id, { data: PNG.toString('base64') }), setLogo(sql, DIR, id, { data: JPEG.toString('base64') }), round === 2 ? removeLogo(sql, DIR, id) : Promise.resolve()]);
+    const recorded = (await readClient(sql, id)).logo;
+    if (recorded !== null) assert.deepEqual((await readLogo(sql, DIR, id)).bytes, recorded.type === 'image/png' ? PNG : JPEG);
+  }
+
   await removeLogo(sql, DIR, id);
   assert.equal(existsSync(jpegPath), false);
+  assert.equal(existsSync(pngPath), false);
   assert.equal((await readClient(sql, id)).logo, null);
   await rejectsWith(readLogo(sql, DIR, id), 'not-found');
 });

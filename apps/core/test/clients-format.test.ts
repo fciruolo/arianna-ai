@@ -187,6 +187,8 @@ test('VAT: a rate of 0-100 with two decimals, the nature of FatturaPA, no nature
   assert.equal(value({ displayName: 'Rossi', vatNature: 'n6.2' }).vatNature, 'N6.2');
   assert.deepEqual(issues({ displayName: 'Rossi', vatRate: 101 }), [{ field: 'vatRate', code: 'format' }]);
   assert.deepEqual(issues({ displayName: 'Rossi', vatRate: 22.555 }), [{ field: 'vatRate', code: 'format' }]);
+  // Two decimals despite the rounding of floating point numbers.
+  for (const rate of [1.1, 19.6, 0.07, 2.55, 4, 0]) assert.deepEqual(issues({ displayName: 'Rossi', vatRate: rate }), [], String(rate));
   assert.deepEqual(issues({ displayName: 'Rossi', vatRate: '22' }), [{ field: 'vatRate', code: 'type' }]);
   assert.deepEqual(issues({ displayName: 'Rossi', vatNature: 'N8' }), [{ field: 'vatNature', code: 'format' }]);
   assert.deepEqual(issues({ displayName: 'Rossi', vatNature: 'N3' }), [{ field: 'vatNature', code: 'format' }]);
@@ -264,6 +266,9 @@ test('the web chat gives the same verdict on the codes (apps/hud/src/lib/client-
     { kind: 'public_administration', displayName: 'Comune', sdiCode: 'ABC1234', ipaCode: 'UF12', cig: 'Z1A2B3C4D5', splitPayment: true },
     { kind: 'individual', displayName: 'Mario', splitPayment: true, vatRate: 22, vatNature: 'N2.2', website: 'javascript:alert(1)' },
     { displayName: 'Rossi Srl', firstName: 'Mario', email: 'info@rossi', phone: 'chiamami', iban: 'IT60X0542811101000000123457' },
+    { displayName: 'Rossi', vatRate: 19.6 },
+    { displayName: 'Rossi', vatRate: 1.1 },
+    { displayName: 'Rossi', vatRate: 22.555 },
     { displayName: 'Rossi', country: 'GB', registeredAddress: address({ postalCode: 'SW1A 1AA', province: 'Greater London', country: 'GB' }), vatNature: 'N8' },
   ];
   for (const sample of samples) {

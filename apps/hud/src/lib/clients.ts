@@ -468,6 +468,8 @@ export function billingGaps(form: ClientForm): string[] {
   } else if (area === 'EU' && !person) {
     if (clean(form.euVatNumber) === '') gaps.push('partita IVA UE');
   }
+  // A rate of 0 says why there is no VAT with its nature (FatturaPA wants it).
+  if (form.vatRate === 0 && clean(form.vatNature) === '') gaps.push('natura IVA per l’aliquota 0');
   if (form.kind !== 'individual' && clean(form.legalName) === '' && form.kind !== 'freelancer') gaps.push('ragione sociale');
   if (form.kind === 'freelancer' && (clean(form.firstName) === '' || clean(form.lastName) === '')) gaps.push('nome e cognome');
   const office = form.registeredAddress;

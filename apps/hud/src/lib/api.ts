@@ -980,9 +980,9 @@ export async function unlinkClientProject(id: string, linkId: string): Promise<v
   await call('DELETE', `/api/clients/${encodeURIComponent(id)}/projects/${encodeURIComponent(linkId)}`, {});
 }
 
-/** The logo as base64 in JSON (the core takes only JSON); the core checks the bytes again. */
-export async function uploadClientLogo(id: string, type: string, data: string): Promise<ClientLogo> {
-  return (await call<{ logo: ClientLogo }>('POST', `/api/clients/${encodeURIComponent(id)}/logo`, { type, data })).logo;
+/** The logo as base64 in JSON (the core takes only JSON); the core finds its type from the bytes. */
+export async function uploadClientLogo(id: string, data: string): Promise<ClientLogo> {
+  return (await call<{ logo: ClientLogo }>('POST', `/api/clients/${encodeURIComponent(id)}/logo`, { data })).logo;
 }
 
 export async function removeClientLogo(id: string): Promise<void> {

@@ -138,7 +138,7 @@ async function chooseLogo(event: Event): Promise<void> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = '';
     for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-    await uploadClientLogo(detail.value.id, file.type, btoa(binary));
+    await uploadClientLogo(detail.value.id, btoa(binary));
     await refresh();
   } catch (cause) {
     actionProblem.value = clientErrorText(cause);
@@ -150,6 +150,7 @@ async function chooseLogo(event: Event): Promise<void> {
 async function dropLogo(): Promise<void> {
   if (detail.value === null) return;
   busy.value = true;
+  actionProblem.value = null;
   try {
     await removeClientLogo(detail.value.id);
     await refresh();
@@ -301,13 +302,12 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           <span>Per la fattura elettronica mancano: {{ gaps.join(', ') }}.</span>
         </p>
 
-        <nav class="flex items-end gap-1 overflow-x-auto border-b border-line" role="tablist" aria-label="Schede del cliente">
+        <nav class="flex items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
           <button
             v-for="item in tabs"
             :key="item.id"
             type="button"
-            role="tab"
-            :aria-selected="tab === item.id"
+            :aria-current="tab === item.id ? 'true' : undefined"
             class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pt-2 pb-2.5 text-[13.5px] font-medium whitespace-nowrap"
             :class="tab === item.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
             @click="tab = item.id"
@@ -328,7 +328,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
               <span v-if="!item.approved" class="chip text-warn">non più approvato</span>
               <span class="ml-auto flex gap-1.5">
                 <button v-if="item.approved" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('project', item.project)"><Icon name="external" :size="12" />Apri il progetto</button>
-                <button v-if="detail.status !== 'archived'" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="unlink(item.id)">Scollega</button>
+                <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" :title="detail.status === 'archived' ? 'Libera il progetto per un altro cliente' : undefined" @click="unlink(item.id)">Scollega</button>
               </span>
             </li>
           </ul>
