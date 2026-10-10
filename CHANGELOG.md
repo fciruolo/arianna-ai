@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.40.1] - 2026-10-10
+
+### Cambiato
+
+- Le domande della pagina «Sviluppo di Arianna» riscritte in modo chiaro (contesto semplice, opzioni con le conseguenze, esempio); chiuse, con la fonte, le 27 già decise (D-122).
+
 ## [0.40.0] - 2026-10-10
 
 ### Aggiunto
