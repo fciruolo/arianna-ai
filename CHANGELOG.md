@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.57.1] - 2026-10-10
+
 ### Cambiato
 
 - Il provino della voce non è più una voce a sé dell'indice delle Impostazioni: si apre dal pulsante "Provino della voce" nella sezione Voce, e la sua pagina (sempre su `/voce/provino`) ha "‹ Voce" per tornare indietro (D-066).
