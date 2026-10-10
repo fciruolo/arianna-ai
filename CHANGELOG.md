@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.39.0] - 2026-10-10
+
 ### Aggiunto
 
 - Il cardwall: una pagina con le card di Arianna, quelle scritte a mano ("+ Card") e gli impegni della segretaria, in cinque colonne (Da fare, In corso, Aspetta, Da verificare, Fatto) con interruttori per separare Inbox e Falliti o nascondere una colonna; filtri per progetto, tipo, chi lo fa, scadenza ed etichetta; card da trascinare, e una vista Lista come una tabella (D-152).
