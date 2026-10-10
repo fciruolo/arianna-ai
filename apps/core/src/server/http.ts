@@ -1628,13 +1628,15 @@ function secretaryRoutes(sql: Sql): Route[] {
 
 /**
  * What the adopted catalogs hold, for the style and the skills of a Designer
- * card (D-163): read at each check, as the menus of the chat list them. A
- * catalog the core does not have holds nothing.
+ * card (D-163): read once per request, at the first check, as the menus of
+ * the chat list them. A catalog the core does not have holds nothing.
  */
 function cardCatalog(design: DesignCatalog | undefined, skills: SkillsCatalog | undefined): CardCatalog {
+  let styles: ReadonlySet<string> | undefined;
+  let skillIds: ReadonlySet<string> | undefined;
   return {
-    style: (slug) => (design?.list().styles ?? []).some((item) => item.slug === slug),
-    skill: (id) => (skills?.list().skills ?? []).some((item) => item.id === id),
+    style: (slug) => (styles ??= new Set((design?.list().styles ?? []).map((item) => item.slug))).has(slug),
+    skill: (id) => (skillIds ??= new Set((skills?.list().skills ?? []).map((item) => item.id))).has(id),
   };
 }
 
