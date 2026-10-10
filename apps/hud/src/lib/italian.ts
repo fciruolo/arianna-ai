@@ -46,7 +46,19 @@ const REASONS: Record<string, string> = {
   'approval needed: commitment.report': 'aspetta la tua conferma per annotare il resoconto',
   'the secretary answers only in its conversation': 'la segretaria risponde solo nella sua conversazione',
   'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
+  // The cardwall (D-159).
+  'approval needed: task.plan': 'aspetta che tu approvi le card del piano',
+  'approval needed: card.executor': 'aspetta che tu scelga con chi lavora',
+  'the plan is no longer readable': 'il piano non è più leggibile',
+  'a plan is answered only in its conversation': 'un piano si approva solo nella sua conversazione',
 };
+
+/** The waits of a card of an agent (D-159): the agent's name, then why. */
+const CARD_REASONS: [RegExp, (agent: string) => string][] = [
+  [/^the user did not choose where ([a-z0-9-]+) works/, () => 'non hai scelto con chi lavora: «Riprendi» per scegliere di nuovo'],
+  [/^no way for ([a-z0-9-]+) to work on this card now$/, (agent) => `${agentTitle(agent)} non ha una strada per lavorarci ora (esecutori spenti o nessun modello locale)`],
+  [/^(claude|codex|local) can no longer take this card/, () => 'la strada scelta non è più ammessa: «Riprendi» per scegliere di nuovo'],
+];
 
 function actionName(action: string): string {
   return (ACTION_TEXT[action] ?? 'un’azione').toLowerCase();
@@ -60,6 +72,13 @@ export function reasonText(reason: string | null): string | undefined {
   if (reason === null) return undefined;
   const known = REASONS[reason];
   if (known !== undefined) return known;
+  for (const [pattern, text] of CARD_REASONS) {
+    const match = pattern.exec(reason);
+    if (match !== null) return text(match[1] ?? '');
+  }
+  // Why in the core's words stays out (never English here): the card says only who did not finish.
+  const unfinished = /^([a-z0-9-]+) could not finish the card: /.exec(reason);
+  if (unfinished !== null) return `${agentTitle(unfinished[1] ?? '')} non ha finito la card: «Riprendi» per riprovare`;
   const approval = /^approval needed: ([a-z_]+)$/.exec(reason);
   if (approval?.[1] !== undefined) return `serve la tua approvazione (${actionName(approval[1])})`;
   const limit = /^limit reached: ([\d.]+) of ([\d.]+) (steps|minutes|euro)$/.exec(reason);
@@ -249,7 +268,7 @@ function waitText(detail: string): string {
   return 'In attesa dell’esecutore';
 }
 
-const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna' };
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer' };
 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
@@ -271,6 +290,7 @@ export function agentTitle(agent: string): string {
 const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
   coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
   reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
+  designer: { en: 'Designs pages and screens as self-contained HTML mockups in the project', it: 'Disegna pagine e schermate come mockup HTML autonomi nel progetto' },
 };
 
 /** The description of an agent's card as the chat shows it: the Italian text of an official card, the card's own otherwise. */

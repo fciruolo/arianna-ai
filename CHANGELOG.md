@@ -4,6 +4,30 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.47.0] - 2026-10-10
+
+### Aggiunto
+
+- Arianna scompone un lavoro grande in card: lo strumento `task.plan` propone da 2 a 8 card con chi le fa e cosa aspettano, e la chat le mostra in una scheda con "Crea le card" e "Non ora"; le card nascono solo con il sì, con le loro dipendenze, e Arianna risponde con l'elenco senza richiamare il modello (D-159).
+- Le card degli agenti partono: "Avvia" nel dettaglio di una card di un agente mai partita; quelle di un piano approvato partono da sole appena non aspettano più nulla; per un agente con esecutori cloud il lavoro passa dalla strada della delega (progetto approvato, sandbox, gateway, `cloud_max_label`), altrimenti dal modello locale; il rapporto finisce nella card, che va in Da verificare (D-159).
+- Scelta del modello a ogni lavoro: chiave `executor_choice: ask` delle schede agente; prima di lavorare la card chiede "Claude, ChatGPT o Modello locale?" con le sole strade ammesse e il perché di quelle escluse, in "Decisioni in attesa", nel dettaglio della card e, per le card di un piano, nella chat del piano (D-159).
+- "Riprendi" e "Riprova" nel dettaglio di una card che il motore ha fermato o che è fallita (`POST /api/cards/:id/resume` e `/retry`); trascinarla in Da fare fa lo stesso (D-159).
+- Agente Designer (`agents/designer.yaml`): mockup HTML autonomi in `mockups/` del progetto (`docs/mockups/` per Arianna), varianti numerate, legge il `DESIGN.md` del progetto; Claude Code, Codex o modello locale, a scelta dell'utente a ogni card (D-159).
+- Migrazione `0045_card_plans.sql`: approvazioni `plan` ed `executor`, colonna `approvals.choice` (D-159).
+- Guida di stile di Arianna in `docs/DESIGN.md`, dai token della chat web: il Designer la legge prima di disegnare per Arianna (D-159).
+
+### Cambiato
+
+- Il dettaglio di una card di un agente mostra il suo lavoro: decisioni in attesa, ultima scelta del modello, rapporto con i file scritti nel progetto (D-159).
+- Una card fermata dal motore non è più rifiutata quando torna in Da fare: riprende o riprova (supera il rifiuto "arriverà con C3" di D-152) (D-159).
+- Il modello locale prende una card solo entro il `max_label` dell'agente; sopra, la card aspetta in Aspetta con il motivo di ogni strada esclusa (D-159).
+- Su Telegram un piano e la scelta del modello arrivano come avviso senza pulsanti: si decidono solo dalla chat web (D-159).
+- "Avvia" rifiuta con un motivo chiaro una card di Arianna o di un agente che non esiste più; il Designer in locale sa che non scrive file e descrive la proposta (D-159).
+
+### Corretto
+
+- Anche la delega di Arianna al Designer dalla chat chiede prima con chi lavorare (Claude, ChatGPT o modello locale, solo le strade ammesse con il perché delle escluse), nella scheda sotto il messaggio: prima la delega partiva su Claude Code senza chiedere. "Non ora" fa rispondere ad Arianna che il lavoro non è partito; la scelta si ricontrolla quando il lavoro parte (D-159).
+
 ## [0.46.0] - 2026-10-10
 
 ### Aggiunto

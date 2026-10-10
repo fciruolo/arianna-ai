@@ -1,14 +1,29 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
+import { executorChoices, planRows } from '../lib/cardwall.ts';
 import { outcomeText, reportEntries } from '../lib/commitments.ts';
-import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
-import type { Approval } from '../lib/types.ts';
+import { ACTION_TEXT, CHOICE_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
+import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ approval: Approval; decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void> }>();
+const props = defineProps<{ approval: Approval; decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void> }>();
 const busy = ref(false);
+
+/** A plan of Arianna (D-159): the cards it would create, who does each and what each waits for. */
+const plan = computed(() => (props.approval.kind === 'plan' ? planRows(props.approval.detail) : undefined));
+/** Where a card of an agent runs (D-159): the ways allowed, and the ones left out with why. */
+const executor = computed(() => (props.approval.kind === 'executor' ? executorChoices(props.approval.detail) : undefined));
+
+async function chooseExecutor(choice: ExecutorChoice): Promise<void> {
+  busy.value = true;
+  try {
+    await props.decide(props.approval, 'approved', choice);
+  } finally {
+    busy.value = false;
+  }
+}
 
 const title = computed(() => ACTION_TEXT[props.approval.action] ?? props.approval.action);
 const isDeclassify = computed(() => props.approval.kind === 'declassify');
@@ -86,6 +101,31 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
         </ul>
       </template>
+      <template v-else-if="plan !== undefined">
+        <p>
+          Arianna propone {{ plan.rows.length }} card per <strong>{{ plan.title }}</strong>. Nessuna esiste finché non le crei; quelle degli agenti partono da sole
+          appena non aspettano più nulla.
+        </p>
+        <ol class="flex flex-col gap-1.5">
+          <li v-for="row in plan.rows" :key="row.number" class="rounded-lg border border-line bg-bg px-3 py-2">
+            <p class="flex flex-wrap items-baseline gap-x-2 break-words">
+              <span class="font-mono text-[11.5px] text-muted">{{ row.number }}.</span>
+              <strong class="min-w-0 flex-1">{{ row.title }}</strong>
+              <span class="chip text-[11.5px]">{{ row.who }}</span>
+            </p>
+            <p v-if="row.goal !== ''" class="mt-0.5 text-[12.5px] break-words text-muted">{{ row.goal }}</p>
+            <p v-if="row.blockedBy !== undefined" class="mt-0.5 text-[12px] text-warn">{{ row.blockedBy }}</p>
+          </li>
+        </ol>
+      </template>
+      <template v-else-if="executor !== undefined">
+        <p>
+          <strong>{{ executor.title }}</strong>: con chi lavora {{ executor.agent }}? Scegli tu per questo lavoro.
+        </p>
+        <ul v-if="executor.excluded.length > 0" class="flex flex-col gap-0.5 text-[12.5px] text-muted">
+          <li v-for="item in executor.excluded" :key="item.executor">{{ item.executor }}: {{ item.why }}.</li>
+        </ul>
+      </template>
       <template v-else-if="report !== undefined">
         <p class="text-[15px]"><strong>Resoconto</strong></p>
         <ul class="flex flex-col gap-1.5">
@@ -123,7 +163,17 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       <pre v-else class="max-h-48 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-xs break-words whitespace-pre-wrap">{{ detail }}</pre>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
+    <div v-if="executor !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
+      <button v-for="(option, index) in executor.options" :key="option" type="button" :disabled="busy" class="btn" :class="{ 'btn-primary': index === 0 }" @click="chooseExecutor(option)">
+        {{ CHOICE_TEXT[option] }}
+      </button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
+    </div>
+    <div v-else-if="plan !== undefined" class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
+      <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')"><Icon name="approve" :size="16" />Crea le card</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">Non ora</button>
+    </div>
+    <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
         <Icon name="approve" :size="16" />{{ report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>

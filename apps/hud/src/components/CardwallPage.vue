@@ -32,6 +32,7 @@ import {
 } from '../lib/cardwall.ts';
 import { agentName } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
+import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import CardDetail from './CardDetail.vue';
 import FilterMenu from './FilterMenu.vue';
 import Icon from './Icon.vue';
@@ -44,9 +45,14 @@ import LabelBadge from './LabelBadge.vue';
  * and "Falliti a parte" split two of them, any column can be hidden; the
  * filters and the order on top. A drag moves a card, the detail offers the
  * same moves as buttons. Read again (debounced) whenever the live feed says a
- * card or a commitment changed (`version`).
+ * card or a commitment changed (`version`). The detail of an agent's card
+ * shows the decisions it waits for (`approvals`, decided with `decide`, D-159).
  */
-const props = defineProps<{ version: number }>();
+const props = defineProps<{
+  version: number;
+  approvals: Approval[];
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+}>();
 
 const storage = (() => {
   try {
@@ -467,6 +473,8 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       :today="today"
       :version="version"
       :split-inbox="state.prefs.splitInbox"
+      :approvals="approvals"
+      :decide="decide"
       @close="selectedId = null"
       @changed="refresh"
     />

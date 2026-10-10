@@ -14,7 +14,7 @@ import type { SearchResult } from './search.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
-import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
+import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
 /**
  * Calls to the core's API from the page, same origin. Writes send JSON, which
@@ -176,6 +176,11 @@ export async function moveCard(id: string, to: MoveTarget): Promise<void> {
   await call('POST', `/api/cards/${encodeURIComponent(id)}/move`, { to });
 }
 
+/** "Avvia", "Riprendi" and "Riprova" of a card (D-159); the core refuses (409) what it does not allow. */
+export async function cardAction(id: string, action: 'start' | 'resume' | 'retry'): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/${action}`, {});
+}
+
 /** "Aspetta anche…": `id` waits for `on` to be done. */
 export async function addCardDependency(id: string, on: string): Promise<void> {
   await call('POST', `/api/cards/${encodeURIComponent(id)}/dependencies`, { on });
@@ -298,8 +303,9 @@ export async function listDecidedApprovals(state: 'approved' | 'rejected', limit
   return (await call<{ approvals: Approval[] }>('GET', `/api/approvals?state=${state}&limit=${String(limit)}`)).approvals;
 }
 
-export async function decide(approvalId: string, state: 'approved' | 'rejected'): Promise<Approval> {
-  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state })).approval;
+/** `choice`: the executor chosen for a card, with an approval of kind executor (D-159). */
+export async function decide(approvalId: string, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<Approval> {
+  return (await call<{ approval: Approval }>('POST', `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { state, ...(choice === undefined ? {} : { choice }) })).approval;
 }
 
 /** The status panel: agents, last router decision, gateway today. */

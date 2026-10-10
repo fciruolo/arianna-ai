@@ -293,6 +293,28 @@ describe('parseAgentCard', () => {
       rejects(card((c) => (c.prompt_label = 'public')), /prompt_label/);
     });
   });
+
+  // D-159: the user chooses where each card of the agent runs.
+  describe('executor_choice', () => {
+    const cloud = (c: Record<string, unknown>) => {
+      c.executors = ['claude', 'codex', 'local'];
+      c.cloud_max_label = 'L1';
+    };
+    it('accepts ask on a card with several executors', () => {
+      assert.equal(parseAgentCard(card((c) => {
+        cloud(c);
+        c.executor_choice = 'ask';
+      }), 'archivista').executorChoice, 'ask');
+      assert.equal(parseAgentCard(card(cloud), 'archivista').executorChoice, undefined);
+    });
+    it('refuses another value, and ask with nothing to choose from', () => {
+      rejects(card((c) => {
+        cloud(c);
+        c.executor_choice = 'always';
+      }), /executor_choice: expected one of ask/);
+      rejects(card((c) => (c.executor_choice = 'ask')), /executor_choice ask needs at least two executors/);
+    });
+  });
 });
 
 describe('promptLabelOf', () => {

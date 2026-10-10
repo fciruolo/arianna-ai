@@ -45,7 +45,16 @@ export interface AgentCard {
    * of agents/ is L0, as the ones in git.
    */
   promptLabel?: Label;
+  /**
+   * `ask`: before each card of this agent, the user chooses where it runs
+   * (D-159): one of its cloud executors or the local model, among the ones
+   * allowed for that card. Absent: the router chooses, as for a delegation.
+   */
+  executorChoice?: 'ask';
 }
+
+/** Values of `executor_choice` (D-159). */
+export const EXECUTOR_CHOICES = ['ask'] as const;
 
 export class AgentCardError extends Error {
   override name = 'AgentCardError';
@@ -68,6 +77,7 @@ const KEYS = [
   'approvals',
   'prompt',
   'prompt_label',
+  'executor_choice',
 ];
 
 /**
@@ -78,7 +88,8 @@ const KEYS = [
  * - a cloud executor next to an L2 clearance needs `cloud_max_label` at most L1;
  * - every approval a tool needs is listed in `approvals`;
  * - autonomy above A1 needs the decision that granted it;
- * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance).
+ * - `prompt_label` is L0 or L1, and not above `max_label` (an agent never reads above its clearance);
+ * - `executor_choice: ask` needs at least two executors to choose from (D-159).
  */
 export function parseAgentCard(raw: unknown, name: string): AgentCard {
   const where = `agents/${name}.yaml`;
@@ -189,6 +200,12 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     if (!isAtMost(promptLabel, maxLabel)) fail(`prompt_label ${promptLabel} is above max_label ${maxLabel}`);
   }
 
+  let executorChoice: 'ask' | undefined;
+  if (card.executor_choice !== undefined) {
+    executorChoice = oneOf(card.executor_choice, EXECUTOR_CHOICES, `${where}: executor_choice`);
+    if (executors.length < 2) fail('executor_choice ask needs at least two executors to choose from');
+  }
+
   const result: AgentCard = {
     name,
     description,
@@ -205,6 +222,7 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
   if (cloudMaxLabel !== undefined) result.cloudMaxLabel = cloudMaxLabel;
   if (autonomyDecision !== undefined) result.autonomyDecision = autonomyDecision;
   if (promptLabel !== undefined) result.promptLabel = promptLabel;
+  if (executorChoice !== undefined) result.executorChoice = executorChoice;
   return result;
 }
 

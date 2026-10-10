@@ -19,12 +19,30 @@ export interface StoredApproval extends DeclassifyApproval {
   conversationId: string | null;
   /** Its task is in an incognito conversation (D-136): the chat shows it only in that conversation's page. */
   incognito: boolean;
+  /** The executor the user chose, on an approved approval of kind `executor` (D-159); null otherwise. */
+  choice: ExecutorChoice | null;
+  /**
+   * The chat task an approval of kind `executor` shows under (D-159): the task
+   * of the plan the card came from, whose conversation is `conversationId`.
+   * Null for every other approval, and for a card that came from no chat.
+   */
+  chatTaskId: string | null;
 }
+
+/** Where a card of an agent with `executor_choice: ask` runs (D-159): the column `approvals.choice`. */
+export const EXECUTOR_CHOICES = ['claude', 'codex', 'local'] as const;
+export type ExecutorChoice = (typeof EXECUTOR_CHOICES)[number];
+
+/** The chat task of a card's executor approval: the card's parent, when the card has no conversation and the parent has one. */
+const CHAT_TASK = `(CASE WHEN approvals.kind = 'executor' THEN (SELECT p.id FROM tasks t JOIN tasks p ON p.id = t.parent_id
+  WHERE t.id = approvals.task_id AND t.conversation_id IS NULL AND p.conversation_id IS NOT NULL) END)`;
 
 const COLUMNS = `id::text, task_id::text AS "taskId", kind, action, detail, label, state,
   requested_at AS "requestedAt", decided_at AS "decidedAt", decided_via AS "decidedVia",
-  (SELECT t.conversation_id::text FROM tasks t WHERE t.id = approvals.task_id) AS "conversationId",
-  coalesce((SELECT c.incognito FROM tasks t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = approvals.task_id), false) AS incognito`;
+  coalesce((SELECT t.conversation_id FROM tasks t WHERE t.id = approvals.task_id),
+    (SELECT t.conversation_id FROM tasks t WHERE t.id = ${CHAT_TASK}))::text AS "conversationId",
+  coalesce((SELECT c.incognito FROM tasks t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = coalesce(${CHAT_TASK}, approvals.task_id)), false) AS incognito,
+  choice, ${CHAT_TASK}::text AS "chatTaskId"`;
 
 /**
  * Asks the user to approve lowering `item` to `to`. The approval stores the
@@ -58,7 +76,12 @@ export async function requestDeclassify(
  */
 export async function listApprovals(sql: Queryable, state: ApprovalState, limit = 100, options: { conversationId?: string } = {}): Promise<StoredApproval[]> {
   const order = state === 'pending' ? 'requested_at, id' : 'decided_at DESC, id';
-  const where = options.conversationId === undefined ? '' : 'AND task_id IN (SELECT id FROM tasks WHERE conversation_id = $3::uuid)';
+  // The executor approvals of the cards a plan of the conversation created go with it (D-159).
+  const where =
+    options.conversationId === undefined
+      ? ''
+      : `AND (task_id IN (SELECT id FROM tasks WHERE conversation_id = $3::uuid)
+          OR (kind = 'executor' AND task_id IN (SELECT t.id FROM tasks t JOIN tasks p ON p.id = t.parent_id WHERE t.conversation_id IS NULL AND p.conversation_id = $3::uuid)))`;
   const rows = await sql.unsafe<StoredApproval[]>(
     `SELECT ${COLUMNS} FROM approvals WHERE state = $1 ${where} ORDER BY ${order} LIMIT $2`,
     options.conversationId === undefined ? [state, limit] : [state, limit, options.conversationId],
@@ -71,19 +94,43 @@ export async function loadApproval(sql: Queryable, id: string): Promise<StoredAp
   return row;
 }
 
-/** Records the user's decision. An approval is decided once: a second decision throws. */
+/**
+ * Records the user's decision. An approval is decided once: a second decision
+ * throws. `choice`: the executor chosen on an approval of kind `executor`
+ * (D-159), one of its `detail.options`; required to approve one, refused on
+ * any other approval and on a rejection (the database checks it too).
+ */
 export async function decideApproval(
   sql: Queryable,
   id: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
+  choice?: ExecutorChoice,
 ): Promise<StoredApproval> {
+  if (choice !== undefined || state === 'approved') {
+    const current = await loadApproval(sql, id);
+    if (current !== undefined && current.kind === 'executor' && state === 'approved') {
+      const options = Array.isArray(current.detail.options) ? current.detail.options : [];
+      if (choice === undefined || !options.includes(choice)) throw new ApprovalChoiceError('choose one of the executors the approval offers');
+    } else if (choice !== undefined) {
+      throw new ApprovalChoiceError('only an approved choice of executor carries a choice');
+    }
+  }
   const [row] = await sql.unsafe<StoredApproval[]>(
-    `UPDATE approvals SET state = $2, decided_at = now(), decided_via = $3
+    `UPDATE approvals SET state = $2, decided_at = now(), decided_via = $3, choice = $4
      WHERE id = $1 AND state = 'pending'
      RETURNING ${COLUMNS}`,
-    [id, state, via],
+    [id, state, via, choice ?? null],
   );
   if (row === undefined) throw new Error(`approval ${id} does not exist or is already decided`);
   return row;
+}
+
+/** A decision whose choice of executor does not fit the approval (D-159). */
+export class ApprovalChoiceError extends Error {
+  override name = 'ApprovalChoiceError';
+}
+
+export function isExecutorChoice(value: unknown): value is ExecutorChoice {
+  return (EXECUTOR_CHOICES as readonly unknown[]).includes(value);
 }
