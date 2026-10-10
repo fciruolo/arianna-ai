@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.56.0] - 2026-10-10
+
 ### Aggiunto
 
 - "Scrivi il report" nella vista IM del cardwall: scegli ogni volta se lo scrive Arianna sul Mac o Claude nel cloud, in italiano o in inglese; il report per il cliente (fatto, in corso e prossimi passi) nasce dalle voci dell'IM e dal diario dei lavori della settimana, senza percorsi, commit, nomi degli agenti né importi, e va nella sezione `## Report` dell'IM, dove si rilegge e si copia (D-167, I-11 P4c).
