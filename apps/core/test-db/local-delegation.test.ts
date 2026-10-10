@@ -75,7 +75,7 @@ function scripted(answers: Answer[], reports: unknown[]): LocalModel & { request
   };
 }
 
-function orchestrator(model: LocalModel, extra: LoadedAgent[]): StepExecutor {
+function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => string | undefined): StepExecutor {
   const agents = new Map<string, LoadedAgent>(loaded);
   for (const agent of extra) agents.set(agent.card.name, agent);
   const settings = () => ({
@@ -86,7 +86,7 @@ function orchestrator(model: LocalModel, extra: LoadedAgent[]): StepExecutor {
     cloud: { executors: [], models: defaultCloudModels() },
     projects: [{ name: 'site', path: 'repos/site', absolute: join(HOME, 'repos', 'site'), label: 'L1' } satisfies Project],
   });
-  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES });
+  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(skills === undefined ? {} : { skills }) });
 }
 
 async function drain(taskId: string, executor: StepExecutor): Promise<string[]> {
@@ -254,4 +254,22 @@ test('a rejected declassification, an empty report or a deactivated agent: the d
   await recordDecision(db().sql, await waitingFor(gone.task.id), 'approved', 'web');
   assert.deepEqual(await drain(gone.task.id, orchestrator(third, [])), ['answered']);
   assert.match((await loadDelegations(db().sql, gone.task.id))[0]?.result ?? '', /no agent card for traduttore/);
+});
+
+test('the skills of an agent on the local model join its instructions, within the smaller limit (D-161)', async () => {
+  const { task } = await ask('Traduci: buongiorno a tutti.');
+  const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
+  const asked: [string, number][] = [];
+  const skills = (agent: string, maxBytes: number): string => {
+    asked.push([agent, maxBytes]);
+    return '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----';
+  };
+  assert.deepEqual(await drain(task.id, orchestrator(model, [translator()], skills)), ['continued', 'continued', 'answered']);
+  assert.deepEqual(asked, [['traduttore', 16 * 1024]]);
+  const call = model.requests.find((request) => request.schema?.name === LOCAL_REPORT_SCHEMA_NAME);
+  assert.equal(
+    call?.messages[0]?.content,
+    `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n\n\n----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----\n\n${ENTRY_TEXT}`,
+  );
+  assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'Traduci: buongiorno a tutti.' }], 'the brief stays the last turn');
 });

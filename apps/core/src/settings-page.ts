@@ -22,6 +22,7 @@ import {
   loadCatalog,
   MODEL_ROLES,
   parseConfig,
+  parseSkillIds,
   parseQuiet,
   quietText,
   readSettings,
@@ -70,7 +71,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -115,6 +116,8 @@ export interface SettingsValues {
   personas: Record<string, Persona>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModel }>;
+  /** Agent → the skills of the catalog it reads in each delivery (D-161): `[agents.<id>] skills`. */
+  skills: Record<string, string[]>;
   /** The model that draws a character (D-123): opus when the file has no [sprites] (D-132). */
   sprites: SpriteModel;
   /** Messages of the user before an idle agent leaves (I-8, D-130): `[participants] leave_after`; 0 never, ten when absent. */
@@ -162,6 +165,8 @@ export interface SettingsView {
   voiceDefaults: NonNullable<SettingsValues['voice']>;
   /** Agent → the cloud models its card allows as its model, on or off (D-116); empty for Arianna. */
   agentModels: Record<string, CloudModel[]>;
+  /** Agent → why it may receive no skills (D-161), null when it may: every agent with a card. */
+  agentSkills: Record<string, string | null>;
 }
 
 /** What a privacy change would change, section by section. */
@@ -213,6 +218,8 @@ export interface SettingsPageOptions {
   running: () => AriannaConfig;
   /** Agent → the cloud models its card allows (D-116): `[agents]` names only these agents and models. */
   agentModels: () => Record<string, readonly CloudModel[]>;
+  /** Agent → why it may receive no skills, null when it may (D-161); absent, no agent may. */
+  agentSkills?: () => Record<string, string | null>;
   /** After each write, for the event log. */
   onChanged?: (change: SettingsChange) => void;
   now?: () => number;
@@ -310,7 +317,10 @@ function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudMo
   const table = record(value, 'agents');
   const agents: NonNullable<Settings['agents']> = {};
   for (const [agent, settings] of Object.entries(current ?? {})) {
-    if (!Object.hasOwn(allowed, agent) && settings.model !== undefined) agents[agent] = { model: settings.model };
+    // The skills are their own section (D-161): a save of the models keeps them.
+    const skills = settings.skills === undefined ? {} : { skills: [...settings.skills] };
+    if (!Object.hasOwn(allowed, agent) && settings.model !== undefined) agents[agent] = { model: settings.model, ...skills };
+    else if (settings.skills !== undefined) agents[agent] = skills;
   }
   for (const [agent, raw] of Object.entries(table)) {
     if (!AGENT_KEY.test(agent)) invalid('agents: an agent id is lowercase letters, digits, - and _');
@@ -324,9 +334,42 @@ function agentsFromBody(value: unknown, allowed: Record<string, readonly CloudMo
     if (!unchanged && !models.includes(item.model as CloudModel)) {
       invalid(models.length === 0 ? `${where}.model: this agent runs on local models only` : `${where}.model must be one of ${models.join(', ')} or null`);
     }
-    agents[agent] = { model: item.model as CloudModel };
+    agents[agent] = { ...agents[agent], model: item.model as CloudModel };
   }
   return agents;
+}
+
+/**
+ * `skills` from the page (D-161): agent → the ids of the catalog, every
+ * agent offered. Arianna and an agent whose card closes untrusted_content
+ * are refused with the reason; a list sent back unchanged is kept (a card
+ * changed since), and the agents the page does not offer keep theirs. The
+ * models stay as they are.
+ */
+function skillsFromBody(value: unknown, refusals: Record<string, string | null>, current: Settings['agents']): NonNullable<Settings['agents']> {
+  const table = record(value, 'skills');
+  const agents = new Map(Object.entries(structuredClone(current ?? {})));
+  for (const [agent, raw] of Object.entries(table)) {
+    if (!AGENT_KEY.test(agent)) invalid('skills: an agent id is lowercase letters, digits, - and _');
+    const where = `skills.${agent}`;
+    let skills: string[];
+    try {
+      skills = parseSkillIds(raw, where);
+    } catch (error) {
+      invalid(error instanceof Error ? error.message : String(error));
+    }
+    const before = current !== undefined && Object.hasOwn(current, agent) ? (current[agent]?.skills ?? []) : [];
+    const unchanged = before.length === skills.length && before.every((id, index) => id === skills[index]);
+    if (!unchanged && skills.length > 0) {
+      if (!Object.hasOwn(refusals, agent)) invalid(`${where}: no such agent`);
+      const refused = refusals[agent];
+      if (refused !== null && refused !== undefined) invalid(`${where}: ${refused}`);
+    }
+    const { model } = agents.get(agent) ?? {};
+    if (skills.length === 0 && model === undefined) agents.delete(agent);
+    else agents.set(agent, { ...(model === undefined ? {} : { model }), ...(skills.length === 0 ? {} : { skills }) });
+  }
+  return Object.fromEntries(agents);
 }
 
 function voiceFromBody(value: unknown, current: VoiceConfig | undefined): VoiceConfig | undefined {
@@ -539,6 +582,13 @@ function cloudModelsOf(cloud: Settings['cloud']): SettingsValues['cloudModels'] 
   return { models };
 }
 
+/** The agents with skills, as compared and shown (D-161). */
+function skillsOf(settings: Settings): SettingsValues['skills'] {
+  const skills: SettingsValues['skills'] = {};
+  for (const [agent, item] of Object.entries(settings.agents ?? {})) if (item.skills !== undefined && item.skills.length > 0) skills[agent] = [...item.skills];
+  return skills;
+}
+
 /** The agents with a model, as compared and shown. */
 function agentsOf(settings: Settings): SettingsValues['agents'] {
   const agents: SettingsValues['agents'] = {};
@@ -559,6 +609,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
     agents: agentsOf(settings),
+    skills: skillsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
     participants: settings.leaveAfter ?? DEFAULT_LEAVE_AFTER,
     voice: voiceOf(settings.voice),
@@ -579,6 +630,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return cloudModelsOf(settings.cloud);
     case 'agents':
       return agentsOf(settings);
+    case 'skills':
+      return skillsOf(settings);
     case 'sprites':
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
     case 'participants':
@@ -759,6 +812,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       restartOnly: RESTART_SECTIONS,
       voiceDefaults: { ...structuredClone(DEFAULT_VOICE), push: null },
       agentModels: Object.fromEntries(Object.entries(options.agentModels()).map(([agent, models]) => [agent, [...models]])),
+      agentSkills: { ...(options.agentSkills?.() ?? {}) },
     };
     let labels: string | null;
     try {
@@ -804,6 +858,11 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       }
       if (given.agents !== undefined) {
         const agents = agentsFromBody(given.agents, options.agentModels(), settings.agents);
+        if (Object.keys(agents).length === 0) delete next.agents;
+        else next.agents = agents;
+      }
+      if (given.skills !== undefined) {
+        const agents = skillsFromBody(given.skills, options.agentSkills?.() ?? {}, next.agents);
         if (Object.keys(agents).length === 0) delete next.agents;
         else next.agents = agents;
       }

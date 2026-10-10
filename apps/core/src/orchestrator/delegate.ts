@@ -71,7 +71,16 @@ export interface DelegateEnv {
   directPrompt?: string;
   /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */
   model?: () => LocalModel;
+  /**
+   * The skills assigned to an agent (D-161), as one delimited block of
+   * third-party data within `maxBytes`; undefined for none. Absent, no agent
+   * reads skills.
+   */
+  skills?: (agent: string, maxBytes: number) => string | undefined;
 }
+
+/** The size of the skills block in a delivery to a cloud agent, and to an agent on the local model (D-161). */
+export const SKILLS_BYTES = { cloud: 128 * 1024, local: 16 * 1024 } as const;
 
 /** What the step with an open delegation will do. */
 export type DelegationPlan =
@@ -717,6 +726,17 @@ function promptPart(agent: LoadedAgent, name: string): { text: string; label: La
 }
 
 /**
+ * The skills of the agent (D-161) after its prompt: public text (L0) that is
+ * not trusted, a block of data delimited, never an instruction to Arianna.
+ * None for a card that closes untrusted_content, whatever the settings say.
+ */
+export function skillsPart(env: Pick<DelegateEnv, 'skills'>, agent: LoadedAgent, name: string, maxBytes: number): BriefFragment | undefined {
+  if (env.skills === undefined || !agent.card.trifecta.untrusted_content) return undefined;
+  const block = env.skills(name, maxBytes);
+  return block === undefined || block === '' ? undefined : { text: block, label: 'L0', source: `skills:${name}` };
+}
+
+/**
  * The limits of a Claude run for an agent written from the Agents page (a
  * card of data/agents, or promoted with its `prompt_label`): the steps and
  * minutes the user chose (tappa T3b). The cards in git keep the executor's
@@ -807,8 +827,10 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
+  const skills = skillsPart(env, agent, delegation.agent, SKILLS_BYTES.cloud);
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
+    ...(skills === undefined ? [] : [skills]),
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];
@@ -1044,8 +1066,11 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation, { voice: true })).filter((part) => isAtMost(part.label, ceiling)) : [];
   // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
+  // The skills of the agent join its instructions (D-161), as data within a smaller limit.
+  const skills = skillsPart(env, agent, delegation.agent, SKILLS_BYTES.local);
   const parts = [
     prompt,
+    ...(skills === undefined ? [] : [skills]),
     ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     ...history,
     { text: delegation.brief, label, source: `task:${task.id}` },
@@ -1060,9 +1085,11 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   );
   if (decision.decision === 'block') return failed(`the gateway refused the brief (${decision.reason})`);
   if (decision.texts.length !== parts.length) throw new Error('the gateway allowed a different number of texts');
-  const instructions = decision.texts[0] ?? '';
   const brief = decision.texts.at(-1) ?? '';
-  const middle = decision.texts.slice(1, -1);
+  const between = decision.texts.slice(1, -1);
+  const allowedSkills = skills === undefined ? undefined : between.shift();
+  const instructions = `${decision.texts[0] ?? ''}${allowedSkills === undefined ? '' : `\n\n${allowedSkills}`}`;
+  const middle = between;
   // The fixed text of the direct chat joins the instructions; each earlier exchange is a turn of the chat.
   const system = direct ? `${instructions}\n\n${middle[0] ?? ''}` : instructions;
   const turns = (direct ? middle.slice(1) : middle).map((text, index) => {

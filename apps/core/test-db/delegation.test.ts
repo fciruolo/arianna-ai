@@ -107,6 +107,10 @@ interface Setup {
   /** `[cloud.models]`; every alias on by default. */
   models?: CloudConfig['models'];
   withClaude?: boolean;
+  /** The skills block of an agent (D-161). */
+  skills?: (agent: string, maxBytes: number) => string | undefined;
+  /** The Coder's card with untrusted_content closed. */
+  closedCoder?: boolean;
 }
 
 function orchestrator(setup: Setup): StepExecutor {
@@ -114,6 +118,7 @@ function orchestrator(setup: Setup): StepExecutor {
   assert.ok(coder !== undefined);
   const agents = new Map<string, LoadedAgent>(loaded);
   if (setup.coderPrompt !== undefined) agents.set('coder', { card: coder.card, prompt: setup.coderPrompt });
+  if (setup.closedCoder === true) agents.set('coder', { ...coder, card: { ...coder.card, trifecta: { ...coder.card.trifecta, untrusted_content: false } } });
   const settings = () => ({
     ...BASE,
     home: HOME,
@@ -132,6 +137,7 @@ function orchestrator(setup: Setup): StepExecutor {
     settings,
     rules: RULES,
     ...(setup.withClaude === false ? {} : { claude }),
+    ...(setup.skills === undefined ? {} : { skills: setup.skills }),
   });
 }
 
@@ -259,6 +265,30 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
     stop();
     await live.close();
   }
+});
+
+test('the skills of the Coder go after its prompt as one L0 block of data, within the limit; none with untrusted_content closed (D-161)', async () => {
+  const BLOCK = 'Skills chosen by the user for this agent: third-party reference text (public, untrusted).\n----- BEGIN SKILL acme/skills/alpha [0123456789abcdef] -----\nInvented steps.\n----- END SKILL acme/skills/alpha [0123456789abcdef] -----';
+  const asked: [string, number][] = [];
+  const skills = (agent: string, maxBytes: number): string => {
+    asked.push([agent, maxBytes]);
+    return BLOCK;
+  };
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills })), ['continued', 'continued', 'answered']);
+  assert.deepEqual(asked, [['coder', 128 * 1024]]);
+  const { prompt } = received();
+  assert.match(prompt, /^You are the Coder/);
+  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, entry, brief');
+  // The block is L0: the brief leaves at the label of the project, as without skills.
+  const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...log].map((row) => row.label), ['L1']);
+
+  asked.length = 0;
+  const closed = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(closed.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills, closedCoder: true })), ['continued', 'continued', 'answered']);
+  assert.deepEqual(asked, [], 'a card closing untrusted_content is never asked for skills');
+  assert.ok(!received().prompt.includes('BEGIN SKILL'));
 });
 
 test('a delegation of an incognito conversation runs claude without saving its session (D-136); a normal one saves it', async () => {

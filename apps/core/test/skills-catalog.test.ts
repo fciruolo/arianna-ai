@@ -4,9 +4,13 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { after, describe, it } from 'node:test';
 
+import type { Sql } from '../src/db/client.ts';
 import { createDesignCatalog } from '../src/design-catalog.ts';
+import type { LiveFeed } from '../src/live.ts';
+import { startApiServer } from '../src/server/http.ts';
 import { CatalogError, gitEnv } from '../src/git-catalog.ts';
 import {
   createSkillsCatalog,
@@ -44,7 +48,7 @@ const STARTING: Record<string, string> = {
   'skills/alpha/SKILL.md': skill('alpha', 'Writes fake reports.'),
   'skills/alpha/scripts/run.py': 'print("never")\n',
   'skills/alpha/reference/notes.md': 'never checked out\n',
-  'skills/beta/SKILL.md': skill('beta', 'Makes fake slides.', 'license: Apache-2.0\n'),
+  'skills/beta/SKILL.md': skill('beta', 'Makes fake slides.', 'license: Complete terms in LICENSE.txt\n'),
   'skills/beta/LICENSE.txt': APACHE,
   'skills/group/Gamma_Two/SKILL.md': skill('gamma two', 'Nested one level more.'),
   'skills/nofront/SKILL.md': '# No frontmatter\n',
@@ -358,5 +362,59 @@ describe('Open Design as a source', () => {
     assert.match(text.text, /Invented steps for deck\./);
     assert.throws(() => catalog.update('nexu-io/open-design'), isCode('conflict'));
     assert.throws(() => catalog.remove('nexu-io/open-design'), isCode('conflict'));
+  });
+});
+
+describe('routes', () => {
+  async function call(origin: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+    return new Promise((resolve, reject) => {
+      const payload = body === undefined ? '' : JSON.stringify(body);
+      const headers = body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) };
+      const request = httpRequest(`${origin}${path}`, { method, headers }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          resolve({ status: response.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown> });
+        });
+      });
+      request.on('error', reject);
+      request.end(payload);
+    });
+  }
+
+  it('answers with the status codes of the API, and 404 without the catalog', async () => {
+    const { url } = upstream(STARTING);
+    const { catalog } = catalogFor();
+    const api = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, skillsCatalog: catalog });
+    const bare = await startApiServer({ sql: undefined as unknown as Sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0 });
+    const origin = `http://127.0.0.1:${String(api.port)}`;
+    try {
+      assert.equal((await call(origin, 'GET', '/api/skills-catalog')).status, 200);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/sources', { url: 'https://example.com/a/b' })).status, 400);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/sources', { url, extra: 1 })).status, 400);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/sources', { url })).status, 201);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/sources', { url })).status, 409);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/update', { source: 'other/repo' })).status, 404);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/update', { source: 'acme/skills' })).status, 202);
+      await catalog.idle();
+      const status = (await call(origin, 'GET', '/api/skills-catalog')).body as unknown as { sources: { pending: { commit: string } | null }[] };
+      const commit = status.sources[0]?.pending?.commit ?? '';
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/update', { source: 'acme/skills' })).status, 409, 'a version waits');
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/adopt', { source: 'acme/skills', commit: 'nope' })).status, 400);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/adopt', { source: 'acme/skills', commit })).status, 200);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/discard', { source: 'acme/skills' })).status, 404);
+      const listing = await call(origin, 'GET', '/api/skills-catalog/skills');
+      assert.deepEqual((listing.body.skills as { id: string }[]).map((item) => item.id), ['acme/skills/alpha', 'acme/skills/beta', 'acme/skills/gamma-two']);
+      const text = await call(origin, 'GET', '/api/skills-catalog/skill?id=acme%2Fskills%2Fbeta');
+      assert.equal(text.status, 200);
+      assert.match((text.body.skill as { text: string }).text, /^Source: file:\/\//);
+      assert.equal((await call(origin, 'GET', '/api/skills-catalog/skill?id=..%2Fbeta')).status, 400);
+      assert.equal((await call(origin, 'GET', '/api/skills-catalog/skill?id=acme%2Fskills%2Fmissing')).status, 404);
+      assert.equal((await call(origin, 'POST', '/api/skills-catalog/remove', { source: 'acme/skills' })).status, 200);
+      assert.equal((await call(`http://127.0.0.1:${String(bare.port)}`, 'GET', '/api/skills-catalog')).status, 404);
+    } finally {
+      await api.close();
+      await bare.close();
+    }
   });
 });

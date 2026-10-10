@@ -71,7 +71,7 @@ const MAX_NAME = 120;
 const MAX_DESCRIPTION = 400;
 const MAX_LICENSE_FIELD = 160;
 /** The skills block of one delivery to a cloud agent. */
-export const MAX_DELIVERY_BYTES = 64 * 1024;
+export const MAX_DELIVERY_BYTES = 128 * 1024;
 /** The same for an agent on the local model, whose context is smaller. */
 export const MAX_LOCAL_DELIVERY_BYTES = 16 * 1024;
 
@@ -364,7 +364,8 @@ export function scanSkills(root: string, plan: SkillPlan): Pick<SkillIndex, 'ent
       if (front === undefined) throw new CatalogError('invalid', 'no frontmatter');
       const own = licenseOf(root, skill.licenseFile);
       const declared = cleanLine(front.license, MAX_LICENSE_FIELD);
-      let license: string | null = declared === '' ? own : declared;
+      // "Complete terms in LICENSE.txt": the license recognised in that file says more.
+      let license: string | null = declared === '' || (own !== null && /licen[cs]e/i.test(declared)) ? own : declared;
       let licenseFile = skill.licenseFile;
       if (license === null && licenseFile !== null) license = `see ${licenseFile}`;
       if (license === null && repository.file !== null) {

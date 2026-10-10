@@ -44,6 +44,7 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
+import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
@@ -344,9 +345,39 @@ const kb = createKb({
   projects: createProjectPages(() => settings.current().projects, { home: config.home, rules }),
   arianna: ariannaDocs,
 });
+/**
+ * The gateway of a catalog of text from GitHub (D-160, D-161): only the
+ * address of the repository leaves, L0, towards the web, and the decision
+ * is spent on that exact text.
+ */
+function catalogGateway(source: string, summary: string): (repository: string) => Promise<void> {
+  return async (repository) => {
+    const decision = await passGateway(sql, [{ value: repository, label: 'L0', source }], createContext('L0'), { kind: 'web' }, { summary });
+    if (decision.decision !== 'allow') throw new Error(`${decision.rule}: ${decision.reason}`);
+    const spent = spendAllowed(decision);
+    if (spent?.target.kind !== 'web' || spent.texts[0] !== repository) throw new Error('the gateway decision cannot be spent');
+  };
+}
+// The catalog of skills (D-161): SKILL.md files of the GitHub repositories the user follows, as
+// text in data/catalogs/skills, downloaded only when the user presses the button. A skill reaches
+// an agent only when assigned in [agents.<id>] skills, as L0 data in its delivery; never Arianna,
+// never a card that closes untrusted_content.
+const skillsCatalog = createSkillsCatalog({
+  dir: join(config.paths.data, 'catalogs'),
+  gateway: catalogGateway('settings:skills-catalog', 'github.com: catalogo di skill'),
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+  assigned: (agent) => {
+    const all = settings.current().agents;
+    return Object.hasOwn(all, agent) ? (all[agent]?.skills ?? []) : [];
+  },
+  refusal: (agent) => skillRefusalOf(agent, agents.get(agent)?.card),
+});
 const orchestrator = createOrchestrator({
   sql,
   agents,
+  skills: (agent, maxBytes) => skillsCatalog.skillTexts(agent, [], maxBytes).block,
   kb,
   model: localModel,
   settings: () => settings.current(),
@@ -423,6 +454,8 @@ const settingsPage = createSettingsPage({
   dataDir: config.paths.data,
   running: () => settings.current(),
   agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
+  // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
+  agentSkills: () => Object.fromEntries([...agents].map(([id, agent]) => [id, skillRefusalOf(id, agent.card)])),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
@@ -534,12 +567,7 @@ const sprites = createSpriteGenerator({
 // (L0, web) and is all that leaves. Nothing of the clone runs.
 const designCatalog = createDesignCatalog({
   dir: join(config.paths.data, 'catalogs'),
-  gateway: async (repository) => {
-    const decision = await passGateway(sql, [{ value: repository, label: 'L0', source: 'settings:design-catalog' }], createContext('L0'), { kind: 'web' }, { summary: 'github.com: catalogo di Open Design' });
-    if (decision.decision !== 'allow') throw new Error(`${decision.rule}: ${decision.reason}`);
-    const spent = spendAllowed(decision);
-    if (spent?.target.kind !== 'web' || spent.texts[0] !== repository) throw new Error('the gateway decision cannot be spent');
-  },
+  gateway: catalogGateway('settings:design-catalog', 'github.com: catalogo di Open Design'),
   onEvent: (kind, payload) => {
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
   },
@@ -573,6 +601,7 @@ const server = await startApiServer({
   cards: { dir: join(config.home, 'data', 'cards') },
   services,
   designCatalog,
+  skillsCatalog,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
   defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),

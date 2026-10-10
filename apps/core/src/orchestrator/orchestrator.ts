@@ -105,6 +105,8 @@ export interface OrchestratorOptions {
   maxTokens?: number;
   /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
   trialModel?: (modelId: string) => LocalModel;
+  /** The skills block of an agent's delivery (D-161); absent, no agent reads skills. */
+  skills?: (agent: string, maxBytes: number) => string | undefined;
 }
 
 /**
@@ -270,6 +272,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.claude === undefined ? {} : { claude: options.claude }),
     ...(options.codex === undefined ? {} : { codex: options.codex }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
+    ...(options.skills === undefined ? {} : { skills: options.skills }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
   const plans = new Map<string, DelegationPlan>();
