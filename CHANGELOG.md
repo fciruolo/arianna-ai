@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- La scheda Documenti del cliente: trascini o scegli un file (PDF, immagini, Office, testo, al più 25 MB), indichi tipo (Contratto, Preventivo firmato, NDA, Ordine o Altro con il tipo scritto), progetto, data e scadenza; lista con filtri per tipo, ricerca e archiviati; anteprima di PDF e immagini; "Apri" con l'app del Mac, "Mostra nel Finder", "Scarica", cambio di tipo o progetto, archivia e ripristina. Tutto nella cartella Privata del cliente (D-171, I-16 C2).
+- Il messaggio del mattino della segretaria ricorda, una volta, i documenti dei clienti che scadono entro 30 giorni, con il solo nome del cliente e il tipo (D-171, I-16 C2).
+
 ## [0.59.0] - 2026-10-10
 
 ### Aggiunto

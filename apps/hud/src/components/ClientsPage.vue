@@ -25,13 +25,14 @@ import {
 } from '../lib/clients.ts';
 import ClientContacts from './ClientContacts.vue';
 import ClientDashboard from './ClientDashboard.vue';
+import ClientDocuments from './ClientDocuments.vue';
 import ClientRegistry from './ClientRegistry.vue';
 import Icon from './Icon.vue';
 
 /**
  * "Clienti" (I-16, D-168, tappa C1): the list with logo, name, area and
  * projects; a client in full with "Anagrafica", "Contatti", "Progetti", and
- * "Dashboard" (tappa C3, D-170) and "Documenti" still to come (tappa C2). Everything is
+ * "Documenti" (tappa C2, D-171) and "Dashboard" (tappa C3, D-170). Everything is
  * private (L2): it stays between this page and the core of this Mac.
  * `client` comes from the address (`/clienti/<id>`); "new" writes a new one.
  */
@@ -196,11 +197,11 @@ async function unlink(linkId: string): Promise<void> {
 const gaps = computed(() => (detail.value === null ? [] : billingGaps(formOf(detail.value))));
 const payment = computed(() => (detail.value === null ? null : paymentText(detail.value.paymentMethod, detail.value.paymentDays, detail.value.paymentEndOfMonth)));
 const tabs = computed(() => [
-  { id: 'registry', text: 'Anagrafica', soon: false },
-  { id: 'contacts', text: `Contatti${detail.value !== null && detail.value.contacts.length > 0 ? ` · ${String(detail.value.contacts.length)}` : ''}`, soon: false },
-  { id: 'projects', text: `Progetti${detail.value !== null && detail.value.projects.length > 0 ? ` · ${String(detail.value.projects.length)}` : ''}`, soon: false },
-  { id: 'documents', text: 'Documenti', soon: true },
-  { id: 'dashboard', text: 'Dashboard', soon: false },
+  { id: 'registry', text: 'Anagrafica' },
+  { id: 'contacts', text: `Contatti${detail.value !== null && detail.value.contacts.length > 0 ? ` · ${String(detail.value.contacts.length)}` : ''}` },
+  { id: 'projects', text: `Progetti${detail.value !== null && detail.value.projects.length > 0 ? ` · ${String(detail.value.projects.length)}` : ''}` },
+  { id: 'documents', text: 'Documenti' },
+  { id: 'dashboard', text: 'Dashboard' },
 ] as const);
 
 const areaClass: Record<ClientArea, string> = { IT: 'text-ok', EU: 'text-info', 'extra-EU': 'text-warn' };
@@ -313,7 +314,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
             :class="tab === item.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
             @click="tab = item.id"
           >
-            {{ item.text }}<span v-if="item.soon" class="chip text-[9.5px]">in arrivo</span>
+            {{ item.text }}
           </button>
         </nav>
 
@@ -343,10 +344,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </form>
         </div>
 
-        <div v-else-if="tab === 'documents'" class="max-w-xl rounded-xl border border-dashed border-line-strong bg-surface p-5 text-sm">
-          <p class="mb-1.5 flex items-center gap-2 font-medium"><Icon name="file" :size="15" />Documenti · in arrivo</p>
-          <p class="text-muted">Contratti, preventivi firmati e altri file del cliente, in una sua cartella privata su questo computer (tappa C2).</p>
-        </div>
+        <ClientDocuments v-else-if="tab === 'documents'" :client="detail" />
         <ClientDashboard v-else :client-id="detail.id" @project="emit('project', $event)" />
       </template>
     </template>

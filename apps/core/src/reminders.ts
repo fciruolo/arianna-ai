@@ -1,6 +1,7 @@
 import type { Project, SecretaryConfig } from '@arianna/config';
 import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
+import { expiringDocuments, markReminded } from './client-documents.ts';
 import { dayText } from './commitment-dates.ts';
 import { COMMITMENT_LABEL, lateCommitments, listCommitments, secretaryConversationId, type Commitment } from './commitments.ts';
 import { createDailyTicker, fireOnce, type DailySchedule, type DailyTicker } from './daily-ticker.ts';
@@ -50,10 +51,11 @@ function line(item: Commitment, withDay: boolean): string {
  * `today`: the open commitments of the day; `late`: the open ones of the
  * days before (not in the evening, which reports on the day only).
  */
-export function reminderText(moment: Moment, day: string, today: readonly Commitment[], late: readonly Commitment[], ims: readonly string[] = []): string | undefined {
+export function reminderText(moment: Moment, day: string, today: readonly Commitment[], late: readonly Commitment[], ims: readonly string[] = [], expiries: readonly string[] = []): string | undefined {
   const shownLate = moment === 'evening' ? [] : late;
   const shownIms = moment === 'morning' ? ims : [];
-  if (today.length === 0 && shownLate.length === 0 && shownIms.length === 0) return undefined;
+  const shownExpiries = moment === 'morning' ? expiries : [];
+  if (today.length === 0 && shownLate.length === 0 && shownIms.length === 0 && shownExpiries.length === 0) return undefined;
   const lines: string[] = [];
   if (moment === 'morning') lines.push(`Buongiorno. Il promemoria di oggi, ${dayText(day)}.`);
   else if (moment === 'afternoon') lines.push('Promemoria del pomeriggio.');
@@ -75,6 +77,8 @@ export function reminderText(moment: Moment, day: string, today: readonly Commit
   }
   // The IM of tomorrow (D-167, P4c): one line each, written by code.
   if (shownIms.length > 0) lines.push('', ...shownIms);
+  // The documents of the clients due within 30 days (D-171): client and type only, written by code.
+  if (shownExpiries.length > 0) lines.push('', 'Documenti dei clienti in scadenza:', ...shownExpiries.map((text) => `- ${text}`));
   if (moment === 'evening') lines.push('', 'Per ciascuno dimmi com’è andata: fatto, non fatto o da rinviare (a quale giorno), e perché. Annoto tutto con una sola conferma.');
   return lines.join('\n');
 }
@@ -143,21 +147,26 @@ export async function fireReminder(sql: Sql, day: string, moment: Moment, ims?: 
     // The morning of the day before an IM names it (D-167, P4c), also when nothing else is due.
     // Only what the secretary conversation can hold (L2): an IM above it does not even open the conversation.
     const imLines = moment === 'morning' && ims !== undefined ? imReminderLines(ims, day, onError).filter((line) => isAtMost(line.label, COMMITMENT_LABEL)) : [];
-    const conversation = (today.length > 0 || late.length > 0 || imLines.length > 0) ? await secretaryConversation(tx) : undefined;
+    // The documents of the clients due within 30 days (D-171, I-16 C2): marked as reminded only when this message shows them.
+    const expiries = moment === 'morning' ? await expiringDocuments(tx, day) : [];
+    const conversation = (today.length > 0 || late.length > 0 || imLines.length > 0 || expiries.length > 0) ? await secretaryConversation(tx) : undefined;
     // A commitment above what the conversation may hold is left out (none is, today: both are L2).
     const fits = (item: { label: Label }): boolean => conversation !== undefined && isAtMost(item.label, conversation.clearance);
     const shownIms = imLines.filter(fits);
-    const text = reminderText(moment, day, today.filter(fits), late.filter(fits), shownIms.map((line) => line.text));
+    // Client documents are Privati (L2): the secretary conversation holds them.
+    const shownExpiries = conversation !== undefined && isAtMost('L2', conversation.clearance) ? expiries.map((item) => item.text) : [];
+    const text = reminderText(moment, day, today.filter(fits), late.filter(fits), shownIms.map((line) => line.text), shownExpiries);
     if (conversation === undefined || text === undefined) {
       outcome = 'empty';
       return { written: false };
     }
-    const label = maxLabel(COMMITMENT_LABEL, ...today.filter(fits).map((item) => item.label), ...late.filter(fits).map((item) => item.label), ...shownIms.map((line) => line.label));
+    const label = maxLabel(COMMITMENT_LABEL, ...today.filter(fits).map((item) => item.label), ...late.filter(fits).map((item) => item.label), ...shownIms.map((line) => line.label), ...(shownExpiries.length > 0 ? (['L2'] as const) : []));
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO messages (conversation_id, role, channel, label, body)
       VALUES (${conversation.id}, 'assistant', 'web', ${label}::privacy_label, ${text})
       RETURNING id::text`;
     if (row === undefined) throw new Error('INSERT INTO messages returned no row');
+    if (shownExpiries.length > 0) await markReminded(tx, expiries.map((item) => item.id), day);
     await appendEvent(tx, { kind: 'message.created', label: 'L0', payload: { conversationId: conversation.id, messageId: row.id, role: 'assistant', reminder: moment } });
     outcome = 'written';
     return { written: true };

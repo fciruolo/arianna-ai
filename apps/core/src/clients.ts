@@ -212,7 +212,7 @@ function contactOf(row: ContactRow): ClientContact {
 
 const CONTACT_SELECT = 'id::text, name, role, email, phone, mobile, notes, is_primary AS "primary", created_at AS "createdAt", updated_at AS "updatedAt"';
 
-async function loadRow(sql: Queryable, id: string, lock = false): Promise<ClientRow> {
+export async function loadRow(sql: Queryable, id: string, lock = false): Promise<ClientRow> {
   const [row] = lock
     ? await sql<ClientRow[]>`${selectClient(sql)} WHERE id = ${id} FOR UPDATE`
     : await sql<ClientRow[]>`${selectClient(sql)} WHERE id = ${id}`;
@@ -380,7 +380,7 @@ async function touch(tx: Queryable, id: string): Promise<void> {
   await tx`UPDATE clients SET updated_at = now() WHERE id = ${id}`;
 }
 
-async function openClient(tx: Queryable, id: string): Promise<ClientRow> {
+export async function openClient(tx: Queryable, id: string): Promise<ClientRow> {
   const row = await loadRow(tx, id, true);
   if (row.status === 'archived') throw new ClientError('conflict', 'the client is archived: restore it first');
   return row;
@@ -486,7 +486,7 @@ function logoPath(dir: string, id: string, type: LogoType): string {
 }
 
 /** The folder of a client's files, created private; never a link. */
-function clientFolder(dir: string, id: string): string {
+export function clientFolder(dir: string, id: string): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (!lstatSync(dir).isDirectory()) throw new Error('data/clients is not a folder');
   const folder = join(dir, id);
