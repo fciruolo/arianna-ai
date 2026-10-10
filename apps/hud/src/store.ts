@@ -20,7 +20,7 @@ import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
-import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
+import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
 const CARD_EVENTS: ReadonlySet<string> = new Set(['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'commitment.changed']);
@@ -858,10 +858,10 @@ export function createChatStore() {
     }
   }
 
-  async function decide(approval: Approval, state: 'approved' | 'rejected'): Promise<void> {
+  async function decide(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
     error.value = null;
     try {
-      await api.decide(approval.id, state);
+      await api.decide(approval.id, state, choice);
       approvals.value = approvals.value.filter((item) => item.id !== approval.id);
     } catch (cause) {
       fail(cause);

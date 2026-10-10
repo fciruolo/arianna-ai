@@ -1,7 +1,8 @@
 import { ApiError } from './api.ts';
 import { dayLabel } from './commitments.ts';
-import { errorText, relativeTimeText } from './italian.ts';
-import type { Label, TaskStatus } from './types.ts';
+import { agentTitle, errorText, relativeTimeText } from './italian.ts';
+import { CHOICE_TEXT, EXCLUDED_TEXT } from './labels.ts';
+import type { ExecutorChoice, Label, TaskStatus } from './types.ts';
 
 /**
  * The page "Cardwall" (I-13 tappa C2, D-152): the cards (tasks without a
@@ -106,6 +107,20 @@ export interface CardDetailData {
   checklist: ChecklistItem[];
   files: CardFile[];
   history: HistoryEntry[];
+  /** What the agent reported (D-159): its last delegation that ended well, or its last answer on the local model. */
+  report: CardReport | null;
+  /** Where the user chose the card runs, the last time it was asked (D-159). */
+  executor: string | null;
+}
+
+export interface CardReport {
+  text: string;
+  label: Label;
+  executor: string | null;
+  model: string | null;
+  /** Paths in the project the agent changed. */
+  files: string[];
+  at: string;
 }
 
 /** The longest texts the core takes (cardwall.ts, card-details.ts). */
@@ -206,7 +221,6 @@ const MOVES_FROM: Record<MoveTarget, readonly TaskStatus[]> = {
   failed: ['inbox', 'ready', 'waiting_user', 'to_verify'],
 };
 
-export const ENGINE_STOPPED_TEXT = 'Questa card l’ha fermata il motore: per ora non torna in Da fare a mano (arriverà con la tappa C3).';
 export const AGENT_DONE_TEXT = 'La card di un agente si chiude da «Da verificare», con le sue prove.';
 export const RUNNING_TEXT = 'La card è al lavoro: la sposta il motore, non si trascina.';
 export const NOT_BY_HAND_TEXT = 'Questo spostamento non si fa a mano.';
@@ -220,8 +234,30 @@ export function moveRefusal(card: Movable, to: MoveTarget): string | undefined {
   if (status === 'running') return RUNNING_TEXT;
   if (!MOVES_FROM[to].includes(status)) return NOT_BY_HAND_TEXT;
   if (to === 'done' && card.assignee !== 'user' && status !== 'to_verify') return AGENT_DONE_TEXT;
-  if (to === 'ready' && card.started && (status === 'waiting_user' || status === 'failed')) return ENGINE_STOPPED_TEXT;
+  // A card the engine stopped goes back to do as "Riprendi" or "Riprova" (D-159): the core does it.
   return undefined;
+}
+
+/** The buttons of the detail that set a card going (D-159). */
+export type CardAction = 'start' | 'resume' | 'retry';
+
+export const CARD_ACTION_TEXT: Record<CardAction, string> = { start: 'Avvia', resume: 'Riprendi', retry: 'Riprova' };
+
+type Actionable = Pick<Card, 'kind' | 'status' | 'assignee' | 'started'> & { waitingApprovalId?: string | null };
+
+/**
+ * What the detail offers to set a card going, as the core allows it (D-159):
+ * "Avvia" for an agent's card the engine never had, still to do; "Riprendi"
+ * for one it had, waiting in Aspetta and not for a decision; "Riprova" for
+ * one it had that failed. None for a commitment or a card of the user's.
+ */
+export function cardActions(card: Actionable, waitsForDecision: boolean): CardAction[] {
+  if (card.kind !== 'task') return [];
+  const status = card.status as TaskStatus;
+  if (!card.started) return card.assignee !== 'user' && (status === 'inbox' || status === 'ready') ? ['start'] : [];
+  if (status === 'waiting_user' && !waitsForDecision) return ['resume'];
+  if (status === 'failed') return ['retry'];
+  return [];
 }
 
 /** Who does a card stays once the engine had it, once done, or while it is at work. */
@@ -341,7 +377,11 @@ export function moveButtons(card: Movable, splitInbox = false): { to: MoveTarget
     { to: 'done', text: 'Fatto' },
     { to: 'failed', text: 'Fallito' },
   ];
-  return all.filter(({ to }) => card.status !== to && !(to === 'ready' && card.status === 'inbox' && !splitInbox) && moveRefusal(card, to) === undefined);
+  // A card the engine stopped goes back to do with "Riprendi" or "Riprova" (cardActions), not with a second button.
+  const restarts = card.started && (card.status === 'waiting_user' || card.status === 'failed');
+  return all.filter(
+    ({ to }) => card.status !== to && !(to === 'ready' && ((card.status === 'inbox' && !splitInbox) || restarts)) && moveRefusal(card, to) === undefined,
+  );
 }
 
 // Filters (the bar on top). Projects and agents carry a prefix so no name can be taken for "all".
@@ -679,7 +719,14 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^the card is at work/, 'La card è al lavoro: aspetta che finisca.'],
   [/^an agent's card is done only from Da verificare/, AGENT_DONE_TEXT],
   [/^a card already started or done keeps who does it/, 'Una card già partita o fatta non cambia chi la fa.'],
-  [/^the engine stopped this card/, ENGINE_STOPPED_TEXT],
+  // "Avvia", "Riprendi", "Riprova" (D-159).
+  [/^only the card of an agent starts/, 'Si avvia solo la card di un agente: le tue le fai tu.'],
+  [/^only a card still to do starts/, 'Si avvia solo una card ancora da fare.'],
+  [/^the card has already started/, 'La card è già partita: riprendila o riprovala.'],
+  [/^only a card in Aspetta resumes/, 'Si riprende solo una card in Aspetta.'],
+  [/^the card never started/, 'La card non è mai partita: avviala, o spostala in Da fare.'],
+  [/^the card waits for another card/, 'La card aspetta un’altra card: riparte da sola quando quella è fatta.'],
+  [/^only a failed card is retried/, 'Si riprova solo una card fallita.'],
   [/^the two cards would wait for each other/, 'Le due card si aspetterebbero a vicenda.'],
   [/^a card waits for (\d+) cards at most/, (match) => `Una card aspetta al massimo ${match[1] ?? ''} card.`],
   [/^a card holds (\d+) (links|items|files) at most/, (match) => `Una card tiene al massimo ${match[1] ?? ''} ${PART_NAMES[match[2] ?? ''] ?? ''}.`],
@@ -721,4 +768,58 @@ export function cardErrorText(cause: unknown): string {
     if (cause.status === 409) return 'Questo spostamento non è permesso.';
   }
   return errorText(cause);
+}
+
+// The approvals of the cardwall in the chat (D-159): a plan of Arianna, the choice of where a card runs.
+
+/** One card of a proposed plan, as the approval card shows it. */
+export interface PlanRow {
+  number: number;
+  title: string;
+  goal: string;
+  /** "Tu", or the agent's name. */
+  who: string;
+  /** "bloccata da: 1. Grafica della landing", or undefined when it waits for none. */
+  blockedBy: string | undefined;
+}
+
+/** The plan in an approval of kind plan; undefined when its detail is not one. */
+export function planRows(detail: Record<string, unknown>): { title: string; rows: PlanRow[] } | undefined {
+  const { title, cards } = detail;
+  if (typeof title !== 'string' || !Array.isArray(cards) || cards.length === 0) return undefined;
+  const titles: string[] = [];
+  const rows: PlanRow[] = [];
+  for (const [index, item] of (cards as unknown[]).entries()) {
+    if (typeof item !== 'object' || item === null) return undefined;
+    const card = item as Record<string, unknown>;
+    if (typeof card.title !== 'string' || typeof card.assignee !== 'string') return undefined;
+    titles.push(card.title);
+    const blocked = Array.isArray(card.blockedBy) ? (card.blockedBy as unknown[]).filter((on): on is number => typeof on === 'number' && Number.isInteger(on) && on >= 1 && on <= index) : [];
+    rows.push({
+      number: index + 1,
+      title: card.title,
+      goal: typeof card.goal === 'string' ? card.goal : '',
+      who: card.assignee === 'user' ? 'Tu' : agentTitle(card.assignee),
+      blockedBy: blocked.length === 0 ? undefined : `bloccata da: ${blocked.map((on) => `${String(on)}. ${titles[on - 1] ?? ''}`).join(', ')}`,
+    });
+  }
+  return { title, rows };
+}
+
+/** The ways offered in an approval of kind executor, and the ones left out with why (D-159). */
+export function executorChoices(
+  detail: Record<string, unknown>,
+): { title: string; agent: string; options: ExecutorChoice[]; excluded: { executor: string; why: string }[] } | undefined {
+  const { title, agent, options, excluded } = detail;
+  if (typeof title !== 'string' || typeof agent !== 'string' || !Array.isArray(options)) return undefined;
+  const known: readonly string[] = ['claude', 'codex', 'local'];
+  const offered = (options as unknown[]).filter((option): option is ExecutorChoice => typeof option === 'string' && known.includes(option));
+  const left = Array.isArray(excluded)
+    ? (excluded as unknown[]).flatMap((item) => {
+        if (typeof item !== 'object' || item === null) return [];
+        const { executor, reason } = item as Record<string, unknown>;
+        return typeof executor === 'string' && typeof reason === 'string' ? [{ executor: CHOICE_TEXT[executor] ?? executor, why: EXCLUDED_TEXT[reason] ?? reason }] : [];
+      })
+    : [];
+  return offered.length === 0 ? undefined : { title, agent: agentTitle(agent), options: offered, excluded: left };
 }

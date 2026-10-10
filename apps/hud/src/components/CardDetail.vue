@@ -5,6 +5,7 @@ import {
   addCardDependency,
   addCardLink,
   addChecklistItem,
+  cardAction,
   cardFileUrl,
   loadCardDetail,
   markCommitmentDone,
@@ -22,6 +23,9 @@ import {
   assigneeLocked,
   blockedText,
   type Card,
+  type CardAction,
+  CARD_ACTION_TEXT,
+  cardActions,
   type CardDetailData,
   cardErrorText,
   type ChecklistItem,
@@ -48,8 +52,11 @@ import {
   stateText,
   STATUS_COLUMN_TEXT,
 } from '../lib/cardwall.ts';
-import { agentName } from '../lib/italian.ts';
+import { agentName, reasonText } from '../lib/italian.ts';
+import { CHOICE_TEXT } from '../lib/labels.ts';
 import { useModal } from '../lib/modal.ts';
+import type { Approval, ExecutorChoice } from '../lib/types.ts';
+import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -63,9 +70,22 @@ import MarkdownText from './MarkdownText.vue';
  * blur and a moment after typing stops; "Salvato" says so. Read again
  * (debounced) whenever the live feed says something changed (`version`). A
  * commitment shows its data and "Fatto"; rinvii and motivi go to the
- * Segretaria in the chat.
+ * Segretaria in the chat. An agent's card (D-159) also has "Avvia",
+ * "Riprendi" or "Riprova", the decisions it waits for (where it runs) and the
+ * agent's report.
  */
-const props = defineProps<{ card: Card; cards: Card[]; projects: string[]; agents: string[]; today: string; version: number; splitInbox: boolean }>();
+const props = defineProps<{
+  card: Card;
+  cards: Card[];
+  projects: string[];
+  agents: string[];
+  today: string;
+  version: number;
+  splitInbox: boolean;
+  /** The pending approvals of the chat: those of this card show here (D-159). */
+  approvals?: Approval[];
+  decide?: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
+}>();
 const emit = defineEmits<{ close: []; changed: [] }>();
 
 const dialog = ref<HTMLElement | null>(null);
@@ -78,6 +98,11 @@ const problem = ref<string | null>(null);
 const isTask = computed(() => props.card.kind === 'task');
 const blocked = computed(() => blockedText(props.card));
 const moves = computed(() => moveButtons(props.card, props.splitInbox));
+/** The decisions this card waits for (D-159): where it runs, a declassification, a folder with changes. */
+const cardApprovals = computed(() => (props.approvals ?? []).filter((approval) => approval.taskId === props.card.id));
+const actions = computed(() => cardActions(props.card, cardApprovals.value.length > 0));
+const report = computed(() => detail.value?.report ?? null);
+const chosen = computed(() => (detail.value?.executor === null || detail.value?.executor === undefined ? undefined : (CHOICE_TEXT[detail.value.executor] ?? detail.value.executor)));
 const choices = computed(() => dependencyChoices(props.card, props.cards));
 /** Agents the select offers: the registry's, and the card's own when it is no longer there. */
 const agentChoices = computed(() => (props.card.assignee === 'user' || props.agents.includes(props.card.assignee) ? props.agents : [...props.agents, props.card.assignee]));
@@ -423,6 +448,17 @@ function move(to: MoveTarget): void {
   void act(() => moveCard(props.card.id, to));
 }
 
+function runAction(action: CardAction): void {
+  void act(() => cardAction(props.card.id, action));
+}
+
+async function decideHere(approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice): Promise<void> {
+  if (props.decide === undefined) return;
+  await props.decide(approval, state, choice);
+  emit('changed');
+  void loadDetail();
+}
+
 function commitmentDone(): void {
   void act(() => markCommitmentDone(props.card.id));
 }
@@ -667,6 +703,33 @@ function absoluteTime(at: string): string {
           </section>
         </template>
 
+        <!-- The agent's work (D-159): the decisions it waits for, Avvia / Riprendi / Riprova, its report. -->
+        <section v-if="card.assignee !== 'user'" aria-labelledby="card-work">
+          <h3 id="card-work" class="hud-title mb-2">Lavoro di {{ agentName(card.assignee) }}</h3>
+          <div class="flex flex-col gap-2.5">
+            <ApprovalCard v-for="approval in cardApprovals" :key="approval.id" :approval="approval" :decide="decideHere" />
+            <div v-if="actions.length > 0 || chosen !== undefined" class="flex flex-wrap items-center gap-2">
+              <button v-for="action in actions" :key="action" type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy" @click="runAction(action)">
+                {{ CARD_ACTION_TEXT[action] }}
+              </button>
+              <span v-if="chosen !== undefined" class="text-[12.5px] text-muted">Ultima scelta: {{ chosen }}</span>
+            </div>
+            <p v-if="actions.includes('start')" class="text-[12.5px] text-muted">
+              Avviata, la card parte appena non aspetta più nulla<template v-if="card.assignee === 'designer'">; prima ti chiedo con chi lavora</template>.
+            </p>
+            <div v-if="report !== null" class="rounded-lg border border-line bg-bg px-3 py-2.5">
+              <p class="mb-1.5 flex items-center gap-2 text-[12px] text-muted">
+                <span class="flex-1">Rapporto · {{ CHOICE_TEXT[report.executor ?? ''] ?? report.executor ?? '' }}{{ report.model === null ? '' : ` / ${report.model}` }}</span>
+                <LabelBadge :label="report.label" />
+              </p>
+              <MarkdownText :source="report.text" class="max-h-72 overflow-y-auto text-[13px] break-words" />
+              <ul v-if="report.files.length > 0" class="mt-2 flex flex-wrap gap-1.5" aria-label="File scritti nel progetto">
+                <li v-for="file in report.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
         <!-- Aspetta -->
         <section aria-labelledby="card-deps">
           <h3 id="card-deps" class="hud-title mb-2">Aspetta</h3>
@@ -695,7 +758,7 @@ function absoluteTime(at: string): string {
 
         <section v-if="card.waitingReason !== null || card.note !== null" aria-labelledby="card-note">
           <h3 id="card-note" class="hud-title mb-2">Nota</h3>
-          <p v-if="card.waitingReason !== null" class="mb-1.5 break-words whitespace-pre-line"><span class="text-muted">In attesa perché:</span> {{ card.waitingReason }}</p>
+          <p v-if="card.waitingReason !== null" class="mb-1.5 break-words whitespace-pre-line"><span class="text-muted">In attesa perché:</span> {{ reasonText(card.waitingReason) ?? card.waitingReason }}</p>
           <p v-if="card.note !== null && card.note !== card.waitingReason" class="break-words whitespace-pre-line">{{ card.note }}</p>
         </section>
 

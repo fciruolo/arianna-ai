@@ -870,7 +870,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <ProjectsPage v-else-if="page === 'projects'" />
-      <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" />
+      <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
       <OfficePage
         v-else-if="page === 'office'"
         :status="status"

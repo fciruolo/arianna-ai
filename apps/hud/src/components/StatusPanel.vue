@@ -10,7 +10,7 @@ import type { RemoteDecision } from '../lib/remote-decisions.ts';
 import { routerReasonText } from '../lib/router-reasons.ts';
 import { activeText } from '../lib/sidebar.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Approval, CharacterChoice, CharacterListing, StatusSnapshot } from '../lib/types.ts';
+import type { Approval, CharacterChoice, CharacterListing, ExecutorChoice, StatusSnapshot } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import Icon from './Icon.vue';
@@ -30,7 +30,7 @@ const props = defineProps<{
   poseFor: (id: string) => Pose;
   approvals: Approval[];
   remoteDecisions: RemoteDecision[];
-  decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
 }>();
 const emit = defineEmits<{ dismiss: [approvalId: string]; refreshCharacters: []; close: []; open: [conversationId: string] }>();
 

@@ -81,6 +81,23 @@ export const ACTION_TEXT: Record<string, string> = {
   'commitment.done': 'Lo segno come fatto?',
   'commitment.move': 'Lo sposto?',
   'commitment.report': 'Annoto il resoconto?',
+  // The cardwall (D-159).
+  'task.plan': 'Creo queste card?',
+  'card.executor': 'Con chi lavora?',
+};
+
+/** The ways a card of an agent may run, as the user chooses them (D-159). */
+export const CHOICE_TEXT: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'ChatGPT',
+  local: 'Modello locale',
+};
+
+/** Why a way is not offered for a card (D-159, apps/core/src/orchestrator/card-run.ts). */
+export const EXCLUDED_TEXT: Record<string, string> = {
+  label: 'la card è privata: nel cloud l’agente legge al massimo dati Interni',
+  project: 'la card non ha un progetto approvato con la sua cartella',
+  off: 'è spento in questo momento',
 };
 
 /** The cloud models as the user reads them; an alias not listed is shown as it is. */

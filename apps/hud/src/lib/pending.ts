@@ -97,7 +97,9 @@ export function pendingItems(
   const waitingById = new Map(waiting.map((task) => [task.id, task]));
   const rows = pending.map((approval): PendingItem => {
     const behind = approval.taskId === null ? undefined : waitingById.get(approval.taskId);
-    const conversationId = behind !== undefined ? behind.conversationId : approval.taskId === null ? null : (tasks[approval.taskId]?.conversationId ?? null);
+    // The choice of a card from a plan opens the plan's conversation (D-159): the core says which.
+    const placed = typeof approval.conversationId === 'string' ? approval.conversationId : undefined;
+    const conversationId = placed ?? (behind !== undefined ? behind.conversationId : approval.taskId === null ? null : (tasks[approval.taskId]?.conversationId ?? null));
     const title = behind !== undefined ? behind.conversationTitle : conversationId === null ? null : titles[conversationId];
     return {
       key: `approval-${approval.id}`,

@@ -64,6 +64,13 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
         : 'Usare un modello che costa oltre il piano';
     case 'setting':
       return 'Applicare un cambio alle impostazioni';
+    // The cardwall (D-159): a plan of Arianna, the choice of where a card runs.
+    case 'plan': {
+      const count = Array.isArray(detail.cards) ? detail.cards.length : 0;
+      return typeof detail.title === 'string' && count > 0 ? `Creare ${String(count)} card per «${detail.title}»` : 'Creare le card di un piano';
+    }
+    case 'executor':
+      return typeof detail.title === 'string' ? `Scegliere con chi lavora la card «${detail.title}»` : 'Scegliere con chi lavora una card';
     default: {
       const action = ACTION_TEXT[approval.action];
       return action === undefined ? 'Serve la tua approvazione per un’azione' : `Serve la tua approvazione: ${action.toLowerCase()}`;
