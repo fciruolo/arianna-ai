@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.52.0] - 2026-10-10
+
 ### Aggiunto
 
 - Nell'ufficio pixel il cardwall appeso al muro in alto, accanto alla libreria: un clic, o E quando sei vicino, apre sopra l'ufficio il cardwall con gli stessi filtri della pagina; Esc o "Torna all'ufficio" tornano all'ufficio, e l'elenco accanto ha "Vai al cardwall" e "Apri subito" (D-165).
