@@ -23,7 +23,7 @@ import {
   type TelegramConfig,
 } from '@arianna/config';
 import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
-import { createContext } from '@arianna/policy';
+import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
 import { directPolicies } from './direct-chat.ts';
@@ -43,6 +43,7 @@ import { startLiveFeed } from './live.ts';
 import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
+import { createDesignCatalog } from './design-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
@@ -528,6 +529,21 @@ const sprites = createSpriteGenerator({
   gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
   dataDir: config.paths.data,
 });
+// The catalog of Open Design (D-160): styles and skills as text in data/catalogs, downloaded
+// only when the user presses the button; the address of the repository passes the gateway
+// (L0, web) and is all that leaves. Nothing of the clone runs.
+const designCatalog = createDesignCatalog({
+  dir: join(config.paths.data, 'catalogs'),
+  gateway: async (repository) => {
+    const decision = await passGateway(sql, [{ value: repository, label: 'L0', source: 'settings:design-catalog' }], createContext('L0'), { kind: 'web' }, { summary: 'github.com: catalogo di Open Design' });
+    if (decision.decision !== 'allow') throw new Error(`${decision.rule}: ${decision.reason}`);
+    const spent = spendAllowed(decision);
+    if (spent?.target.kind !== 'web' || spent.texts[0] !== repository) throw new Error('the gateway decision cannot be spent');
+  },
+  onEvent: (kind, payload) => {
+    appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+  },
+});
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
@@ -556,6 +572,7 @@ const server = await startApiServer({
   // The files attached to cards (D-152): private copies, outside git.
   cards: { dir: join(config.home, 'data', 'cards') },
   services,
+  designCatalog,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
   defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),

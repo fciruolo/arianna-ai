@@ -61,6 +61,7 @@ import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
+import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
@@ -156,6 +157,8 @@ export interface ApiServerOptions {
   modelActions?: ModelActions;
   /** Search and add models from Hugging Face, promote them, take them out (I-10, D-139); without it the routes answer 404. */
   huggingface?: HuggingFace;
+  /** The catalog of Open Design (D-160): download, adopt, discard, read a style; without it the routes answer 404. */
+  designCatalog?: DesignCatalog;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -915,6 +918,39 @@ function huggingFaceRoutes(hub: HuggingFace | undefined): Route[] {
       onlyFields(body, ['confirm']);
       return { body: need().forget(params.id ?? '', body.confirm) };
     }),
+  ];
+}
+
+/**
+ * The catalog of Open Design in Impostazioni → Agenti (D-160): its status
+ * (polled while a download runs), "Scarica/Aggiorna catalogo" in the
+ * background (202), "Usa questa versione" with the commit the user saw,
+ * "Scarta", the list of styles and skills, the text of one style with the
+ * license notice at the head. A slug is checked by the catalog; no route
+ * takes a path.
+ */
+function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
+  const need = (): DesignCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  return [
+    route('GET', '/api/design-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/design-catalog/update', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: need().update() };
+    }),
+    route('POST', '/api/design-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['commit']);
+      return { body: need().adopt(body.commit) };
+    }),
+    route('POST', '/api/design-catalog/discard', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: need().discard() };
+    }),
+    route('GET', '/api/design-catalog/styles', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/design-catalog/styles/:slug', (_request, _url, params) => Promise.resolve({ body: { style: need().styleText(params.slug ?? '') } })),
   ];
 }
 
@@ -1996,6 +2032,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
+  if (error instanceof DesignCatalogError) return { status: { invalid: 400, 'not-found': 404, conflict: 409, blocked: 403, failed: 502 }[error.code], message: error.message };
   if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof VoiceError) return { status: 503, message: error.code === 'off' ? 'voice not ready' : 'voice unreachable' };
@@ -2138,6 +2175,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   );
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
+  table.push(...designCatalogRoutes(options.designCatalog));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
