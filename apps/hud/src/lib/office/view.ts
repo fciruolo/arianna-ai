@@ -1,12 +1,13 @@
 import type { Label } from '../types.ts';
-import { TILE, tileAt, type OfficeMap, type Point, type Room } from './map.ts';
+import { boardTiles, TILE, tileAt, type OfficeMap, type Point, type Room } from './map.ts';
 import type { Actor } from './motion.ts';
-import type { OfficeSnapshot } from './snapshot.ts';
+import { UNKNOWN_AGENT, type OfficeSnapshot } from './snapshot.ts';
 
 /**
  * The rules of the office canvas (D-106) that need no canvas: when the loop
  * stops, which keys are steps, where the tags go, what a click on the
- * archive hits, when the photograph really changed. OfficeCanvas.vue calls
+ * archive or the cardwall hits, what is within reach and its hint, when the
+ * photograph really changed. OfficeCanvas.vue calls
  * them; the tests check them without a browser.
  */
 
@@ -81,6 +82,52 @@ const CABINET_TOP = 10;
 /** A point of the map on the archive's cabinet: any of its tiles, or the part drawn above them. */
 export function hitsArchive(tiles: readonly Point[], x: number, y: number): boolean {
   return tiles.some(([c, r]) => x >= c * TILE && x < (c + 1) * TILE && y >= r * TILE - CABINET_TOP && y < (r + 1) * TILE);
+}
+
+/** The cardwall's name (D-165): on the wall above it, never on the floor where the user stands; null without a cardwall. */
+export function boardTag(map: Pick<OfficeMap, 'width' | 'tiles'>): AreaTag | null {
+  const first = boardTiles(map)[0];
+  if (first === undefined) return null;
+  return { x: first[0] * TILE + 1, y: first[1] * TILE, text: 'Cardwall', label: null, muted: false };
+}
+
+/** A point of the map on the cardwall: any of its tiles on the wall. */
+export function hitsBoard(tiles: readonly Point[], x: number, y: number): boolean {
+  return tiles.some(([c, r]) => x >= c * TILE && x < (c + 1) * TILE && y >= r * TILE && y < (r + 1) * TILE);
+}
+
+/** Something the user can open: an agent, the Decisioni desk, the archive, the cardwall (D-165). */
+export interface Target {
+  id: string;
+  point: Point;
+  /** Closer than this (pixels) it is within reach. */
+  reach: number;
+}
+
+/** The target within reach of the user, the closest one; null with none. On a tie the first in the list wins. */
+export function closestTarget(at: Point, targets: readonly Target[]): string | null {
+  let best: string | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const target of targets) {
+    const d = Math.hypot(target.point[0] - at[0], target.point[1] - at[1]);
+    if (d < target.reach && d < distance) {
+      best = target.id;
+      distance = d;
+    }
+  }
+  return best;
+}
+
+/** The hint over the user near a target: counts and fixed names, never a title. */
+export function hintText(target: string, snapshot: Pick<OfficeSnapshot, 'agents' | 'decisions' | 'archived' | 'unnamed'>): string {
+  if (target === 'decisions') {
+    const total = snapshot.decisions.total;
+    return total > 0 ? `Decisioni in attesa (${String(total)})` : 'Nessuna decisione in attesa';
+  }
+  if (target === 'archive') return `Archivio (${String(archiveCount(snapshot))})`;
+  if (target === 'cardwall') return 'Apri il cardwall';
+  const name = snapshot.agents.find((agent) => agent.id === target)?.name ?? UNKNOWN_AGENT;
+  return `Parla con ${name}`;
 }
 
 /** The photograph as a key: the page makes a new one every second, the canvas wakes only when it differs. */

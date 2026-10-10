@@ -7,7 +7,8 @@
  * in the legend, a size or a file too big, an anchor out of place, and a
  * seat that cannot be reached from the entrance. It accepts only what the
  * engine draws: the seat of an island just above its desk, the archive seat
- * just below a cabinet.
+ * just below a cabinet. A map may hang the cardwall on a wall (D-165): the
+ * `board` tiles, one run of 1 to MAX_BOARD in a row, above the floor.
  */
 
 export const TILE = 16;
@@ -33,10 +34,13 @@ export const DESK_TALK_REACH = 30;
 /** Closer than this a tile is under the thing itself: not a place to stand next to it. */
 export const MIN_REACH = 9;
 
-export const TILE_KINDS = ['wall', 'window', 'shelf', 'floor', 'desk', 'counter', 'sofa', 'coffee', 'plant', 'cabinet'] as const;
+export const TILE_KINDS = ['wall', 'window', 'shelf', 'board', 'floor', 'desk', 'counter', 'sofa', 'coffee', 'plant', 'cabinet'] as const;
 export type TileKind = (typeof TILE_KINDS)[number];
 
-const WALLS: ReadonlySet<TileKind> = new Set(['wall', 'window', 'shelf']);
+/** The cardwall on the wall (D-165): at most this many tiles, in one row. */
+export const MAX_BOARD = 4;
+
+const WALLS: ReadonlySet<TileKind> = new Set(['wall', 'window', 'shelf', 'board']);
 
 export type Point = readonly [number, number];
 /** Columns and rows, both inclusive: [c0, r0, c1, r1]. */
@@ -288,6 +292,33 @@ function checkPlaces(map: OfficeMap): void {
     withinReach(`l'agente di «islands[${String(index)}]»`, seatPoint(map, item.seat), WALK_REACH);
   });
   withinReach('l\'armadio dell\'Archivio', archivePoint(map), WALK_REACH);
+  checkBoard(map, withinReach);
+}
+
+/** The cardwall (D-165) is optional: if there, one run of tiles in a row, drawn as a wall face, with a floor tile in reach. */
+function checkBoard(map: OfficeMap, withinReach: (where: string, at: Point, reach: number) => void): void {
+  const tiles = boardTiles(map);
+  const first = tiles[0];
+  if (first === undefined) return;
+  if (tiles.length > MAX_BOARD) throw new MapError(`il cardwall è largo al massimo ${String(MAX_BOARD)} tessere`);
+  if (tiles.some(([c, r], index) => r !== first[1] || c !== first[0] + index)) throw new MapError('il cardwall deve essere una sola fila di tessere «board» contigue');
+  if (tiles.some(([c, r]) => tileAt(map, c, r + 1) === undefined || isWall(tileAt(map, c, r + 1)))) throw new MapError('sotto il cardwall serve la stanza, non un muro');
+  const point = boardPoint(map);
+  if (point !== null) withinReach('il cardwall', point, WALK_REACH);
+}
+
+/** The tiles of the cardwall on the wall (D-165), left to right; none in a map without it. */
+export function boardTiles(map: Pick<OfficeMap, 'width' | 'tiles'>): Point[] {
+  return map.tiles.flatMap((kind, index): Point[] => (kind === 'board' ? [[index % map.width, Math.floor(index / map.width)]] : []));
+}
+
+/** The point of the cardwall the user walks to: the middle of its bottom edge; null without a cardwall. */
+export function boardPoint(map: Pick<OfficeMap, 'width' | 'tiles'>): Point | null {
+  const tiles = boardTiles(map);
+  const first = tiles[0];
+  const last = tiles.at(-1);
+  if (first === undefined || last === undefined) return null;
+  return [((first[0] + last[0] + 1) / 2) * TILE, (first[1] + 1) * TILE];
 }
 
 /** The floor tiles from which something at pixel (x, y) is within `reach` pixels (and not on top of it). */
