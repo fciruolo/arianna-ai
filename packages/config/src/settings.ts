@@ -214,11 +214,16 @@ function personasSection(personas: Personas | undefined): string[] {
   ]);
 }
 
-/** `[agents.<id>]`: only the agents with a model. */
+/** `[agents.<id>]`: only the agents with a model or skills (D-161). */
 function agentsSection(agents: AgentsSettings | undefined): string[] {
-  const chosen = Object.entries(agents ?? {}).filter((entry): entry is [string, Required<AgentsSettings[string]>] => entry[1].model !== undefined);
-  if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"'];
-  return chosen.flatMap(([agent, { model }], index) => [...(index === 0 ? [] : ['']), `[agents.${agent}]`, `model = ${str(model)}`]);
+  const chosen = Object.entries(agents ?? {}).filter(([, settings]) => settings.model !== undefined || (settings.skills?.length ?? 0) > 0);
+  if (chosen.length === 0) return ['#', '# [agents.coder]', '# model = "sonnet"', '# skills = ["anthropics/skills/pdf"]'];
+  return chosen.flatMap(([agent, { model, skills }], index) => [
+    ...(index === 0 ? [] : ['']),
+    `[agents.${agent}]`,
+    ...(model === undefined ? [] : [`model = ${str(model)}`]),
+    ...(skills === undefined || skills.length === 0 ? [] : [`skills = [${skills.map(str).join(', ')}]`]),
+  ]);
 }
 
 function notificationsSection(notifications: NotificationsConfig | undefined): string[] {
@@ -436,6 +441,10 @@ export function renderSettings(settings: Settings): string {
     '# and the card in agents/<id>.yaml allows the cloud: never for arianna,',
     '# whose model is the orchestrator of [roles], local only. Not a privacy',
     '# setting: it never turns an executor on. Applies without a restart.',
+    '# `skills` (D-161) are skills of the catalog in data/catalogs/skills, as',
+    '# owner/repo/slug: their text goes in each delivery to the agent as',
+    '# third-party data, never to arianna, never to an agent whose card closes',
+    '# untrusted_content.',
     ...agentsSection(settings.agents),
     '',
     '# Characters drawn by a model (D-123): `model` is the one that draws the',

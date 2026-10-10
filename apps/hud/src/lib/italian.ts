@@ -247,6 +247,14 @@ const TOOL_TEXT: Record<string, string> = { command: 'il terminale', file_change
 
 // `coder` when the step is handed over, `coder · claude/sonnet` when it starts.
 function delegateText(detail: string): string {
+  // `coder · skills-skipped · 2` (D-161): skills assigned that did not reach the delivery.
+  const skipped = /^(\S+) · skills-skipped · (\d+)$/.exec(detail);
+  if (skipped !== null) {
+    const [, agent = '', count = '0'] = skipped;
+    return count === '1'
+      ? `1 skill del ${agentName(agent)} non entra nella consegna (oltre il limite o non più nel catalogo)`
+      : `${count} skill del ${agentName(agent)} non entrano nella consegna (oltre il limite o non più nel catalogo)`;
+  }
   const started = /^(\S+) · (\w+)\/(\S+)$/.exec(detail);
   if (started === null) return `Passo delegato al ${agentName(detail)}`;
   const [, agent = '', executor = '', model = ''] = started;

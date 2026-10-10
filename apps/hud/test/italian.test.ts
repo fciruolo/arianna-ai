@@ -87,6 +87,8 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   const line = (kind: 'delegate' | 'tool' | 'wait' | 'error', detail: string) => activityText({ conversationId: 'c', taskId: 't', step: 2, kind, detail });
   assert.equal(line('delegate', 'coder'), 'Passo delegato al Coder');
   assert.equal(line('delegate', 'coder · claude/sonnet'), 'Il Coder lavora su Claude Code (Claude Sonnet)');
+  assert.equal(line('delegate', 'coder · skills-skipped · 2'), '2 skill del Coder non entrano nella consegna (oltre il limite o non più nel catalogo)');
+  assert.equal(line('delegate', 'coder · skills-skipped · 1'), '1 skill del Coder non entra nella consegna (oltre il limite o non più nel catalogo)');
   assert.equal(line('tool', 'Edit'), 'Il Coder usa Edit');
   // Codex names no tool, only the kind (D-140).
   assert.equal(line('tool', 'command'), 'Il Coder usa il terminale');

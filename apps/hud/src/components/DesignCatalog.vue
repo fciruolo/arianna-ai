@@ -207,7 +207,7 @@ async function choose(slug: string): Promise<void> {
               </div>
             </li>
           </ul>
-          <p v-if="listing && listing.skills.length > 0" class="text-xs text-muted">Nel catalogo ci sono anche {{ listing.skills.length }} skill: per ora si usano solo gli stili.</p>
+          <p v-if="listing && listing.skills.length > 0" class="text-xs text-muted">Nel catalogo ci sono anche {{ listing.skills.length }} skill: si assegnano agli agenti dalla sezione Skill.</p>
         </div>
       </details>
 

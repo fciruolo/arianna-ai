@@ -21,7 +21,6 @@
 | ~~STT/TTS italiani~~ | **Deciso dall'utente con il provino del 2026-10-04:** trascrizione con Parakeet v3 (D-066), voce con Qwen3-TTS e la voce Serena (D-067, D-069) | |
 | Numero e operatore telefonico | Decidere dopo costi e qualità | Fase 4 |
 | Licenza degli sprite di pixel-agents (JIK-A-4, Metro City) | Uso personale ok; sostituire con asset a licenza chiara prima di condividere la cartella | Fase 3 |
-| Skill nel formato agentskills.io | Verificare compatibilità con Hermes, Claude Code e Codex (idea 7); il task 1.9 si è chiuso senza la verifica | Prima di adottarlo, al più tardi in Fase 2 |
 | ~~Conferma delle decisioni della notte del 2026-10-05 (D-077, D-079 prima parte, D-080 prima parte, D-081…D-087)~~ | **Chiusa:** doppione delle conferme singole (`conf-D-077` … `conf-D-087b`), che restano aperte una per una | |
 | Incognito: tetto di durata con la pagina aperta | Oggi un'incognita resta aperta finché una pagina la tiene aperta, anche nascosta (D-136): proposta di Claude, nessun tetto | D-136 è unita (0.25.0): prima di usare le incognite con dati veri |
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
@@ -178,14 +177,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Tenere gli sprite per uso personale — vanno bene finché la cartella non si condivide; prima di condividerla vanno tolti.
 - Opzione: Comprare un pacchetto a licenza chiara — personaggi diversi ma condivisibili; costa e va scelto lo stile.
 - Esempio: Se un giorno vuoi mostrare Arianna a un amico mandandogli la cartella, con i personaggi originali puoi farlo; con quelli di pixel-agents no, perché la loro licenza non lo permette.
-
-### oq-skill-nel-formato-agentskills-io
-
-- Contesto: Le "skill" sono istruzioni pronte che insegnano a un agente un compito, per esempio "come preparare il riassunto di una riunione". agentskills.io è un formato comune per scriverle, letto da più programmi. La proposta era verificare se lo stesso file funziona con Claude Code, Codex e Hermes durante il task 1.9 (le schede degli agenti), che però si è chiuso senza la verifica. Si decide quando farla.
-- Opzione consigliata: Verificare prima di adottarlo — Claude prova una skill d'esempio con i programmi, al più tardi in Fase 2; se funziona, il formato si adotta.
-- Opzione: Adottarlo subito — le skill nuove nascono già in quel formato, con il rischio che un programma non lo legga bene.
-- Opzione: Formato proprio di Arianna — massimo controllo, ma ogni skill va riscritta per ogni programma.
-- Esempio: La skill "riassumi una riunione" scritta una volta in quel formato: Claude Code e Codex la leggono allo stesso modo e producono lo stesso tipo di riassunto, invece di tenerne due versioni.
 
 ### oq-D-088-come-si-porta-il-codice
 

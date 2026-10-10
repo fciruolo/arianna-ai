@@ -138,9 +138,14 @@ astra = true
 # and the card in agents/<id>.yaml allows the cloud: never for arianna,
 # whose model is the orchestrator of [roles], local only. Not a privacy
 # setting: it never turns an executor on. Applies without a restart.
+# `skills` (D-161) are skills of the catalog in data/catalogs/skills, as
+# owner/repo/slug: their text goes in each delivery to the agent as
+# third-party data, never to arianna, never to an agent whose card closes
+# untrusted_content.
 #
 # [agents.coder]
 # model = "sonnet"
+# skills = ["anthropics/skills/pdf"]
 
 # Characters drawn by a model (D-123): `model` is the one that draws the
 # character of an agent from its name, description, prompt and persona:
