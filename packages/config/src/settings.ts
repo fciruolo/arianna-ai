@@ -70,6 +70,8 @@ export interface Settings {
   notifications?: NotificationsConfig;
   /** `[secretary]` (I-12, D-144): written only when the file has it; absent, the defaults. */
   secretary?: SecretaryConfig;
+  /** `[capture] fetch_sites` (D-154): written only when the file has it; absent, no site. */
+  fetchSites?: string[];
   telegram?: { token: string; chats: number[] };
   /** Calls (D-066): written with every key, defaults included. */
   voice?: VoiceConfig;
@@ -142,6 +144,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
     // Kept absent when the file has no section: saving another card does not add it.
     ...(raw.notifications === undefined ? {} : { notifications: structuredClone(config.notifications) }),
     ...(raw.secretary === undefined ? {} : { secretary: structuredClone(config.secretary) }),
+    ...(raw.capture === undefined ? {} : { fetchSites: [...config.capture.fetchSites] }),
     ...(config.telegram === undefined ? {} : { telegram: { token: config.telegram.token, chats: [...config.telegram.chats] } }),
     ...(config.voice === undefined ? {} : { voice: structuredClone(config.voice) }),
     ...(config.installation === undefined ? {} : { installation: { ...config.installation } }),
@@ -240,6 +243,10 @@ function secretarySection(secretary: SecretaryConfig | undefined): string[] {
     `days = ${list(days)}`,
   ];
   return secretary === undefined ? ['#', ...lines.map((line) => `# ${line}`)] : lines;
+}
+
+function captureSection(fetchSites: string[] | undefined): string[] {
+  return fetchSites === undefined ? ['#', '# [capture]', '# fetch_sites = ["x.com"]'] : ['[capture]', `fetch_sites = ${list(fetchSites)}`];
 }
 
 function voiceSection(voice: VoiceConfig | undefined): string[] {
@@ -495,6 +502,16 @@ export function renderSettings(settings: Settings): string {
     '# machine. Absent: on, 09:00, 14:30, 18:30, every day. Applies without a',
     '# restart.',
     ...secretarySection(settings.secretary),
+    '',
+    '# Links fetched and summarized (D-154): the links of these sites saved in',
+    '# kb/inbox are downloaded by the core and summarized by the local model',
+    '# when the note is organized. A site covers its subdomains (x.com also',
+    '# mobile.x.com). Downloading sends the address of the link to its site',
+    '# (for x.com and twitter.com to publish.twitter.com, the official oEmbed of',
+    '# X); nothing else leaves. A link of any other site stays a link, with a',
+    '# "Scarica e riassumi" button in Pensieri. Absent: no site. Changed from the',
+    '# settings page with a confirmation. Applies without a restart.',
+    ...captureSection(settings.fetchSites),
     '',
     '# What the web chat says this installation is (D-089): development while the',
     '# database uses the development passwords or while mode = "development";',

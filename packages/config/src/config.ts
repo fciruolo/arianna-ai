@@ -6,6 +6,7 @@ import { parse as parseToml, TomlError } from 'smol-toml';
 
 import { parseAgents, type AgentsSettings } from './agents.ts';
 import { EMPTY_CATALOG, loadCatalog, type ModelCatalog } from './catalog.ts';
+import { parseCapture, type CaptureConfig } from './capture.ts';
 import { parseCharacters, type CharacterChoices } from './characters.ts';
 import { legacyDefaultModel, parseCloud, type CloudConfig } from './cloud.ts';
 import { resolveHome, resolveInHome } from './home.ts';
@@ -82,6 +83,8 @@ export interface AriannaConfig {
   notifications: NotificationsConfig;
   /** `[secretary]` (I-12, D-144): reminders on or off, the three moments and the days; absent, the defaults. Applied without a restart. */
   secretary: SecretaryConfig;
+  /** `[capture]` (D-154): the sites whose links are fetched and summarized by themselves; absent, none. Applied without a restart. */
+  capture: CaptureConfig;
   /** Absent when `[telegram]` is not configured: the channel is off. */
   telegram?: TelegramConfig;
   /** Absent when `[voice]` is not configured: no apps/voice, no calls (D-066). */
@@ -110,7 +113,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -153,6 +156,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     participants: parseParticipants(root.participants),
     notifications: parseNotifications(root.notifications),
     secretary: parseSecretary(root.secretary),
+    capture: parseCapture(root.capture),
     ...(telegram === undefined ? {} : { telegram }),
     ...(voice === undefined ? {} : { voice }),
     ...(installation === undefined ? {} : { installation }),

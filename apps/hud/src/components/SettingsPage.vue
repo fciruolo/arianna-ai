@@ -29,6 +29,7 @@ import {
   agentsForm,
   charactersBody,
   chatId,
+  fetchSiteOf,
   CLOUD_EXECUTORS,
   copy,
   cloudModelsBody,
@@ -130,6 +131,7 @@ interface Forms {
   telegram: TelegramForm;
   projects: ProjectValues[];
   endpoints: EndpointForm[];
+  fetchSites: string[];
 }
 
 function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: SettingsView['agentModels']): Forms {
@@ -148,10 +150,11 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     telegram: telegramForm(values.telegram),
     projects: values.projects.map((project) => ({ ...project })),
     endpoints: endpointsForm(values.endpoints),
+    fetchSites: [...(values.fetchSites ?? [])],
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -285,6 +288,7 @@ async function prepare(section: PrivacySection): Promise<void> {
   if (section === 'telegram') values.telegram = telegramBody(current.telegram);
   if (section === 'projects') values.projects = current.projects.map((project) => ({ ...project }));
   if (section === 'endpoints') values.endpoints = endpointsBody(current.endpoints, view.value?.values?.endpoints);
+  if (section === 'fetchSites') values.fetchSites = [...current.fetchSites];
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -463,6 +467,14 @@ function addChat(): void {
   if (id === undefined || forms.value === null) return;
   if (!forms.value.telegram.chats.includes(id)) forms.value.telegram.chats.push(id);
   newChat.value = '';
+}
+// Sites whose links are downloaded by themselves (D-154): an address or a name, kept as the host name.
+const newSite = ref('');
+function addSite(): void {
+  const site = fetchSiteOf(newSite.value);
+  if (site === undefined || forms.value === null) return;
+  if (!forms.value.fetchSites.includes(site)) forms.value.fetchSites.push(site);
+  newSite.value = '';
 }
 const newProject = ref<ProjectValues>({ name: '', path: '', label: 'L1' });
 const projectAddable = computed(() => {
@@ -850,6 +862,24 @@ watch(active, () => {
                 </label>
               </div>
               <p class="text-xs text-muted">Un esecutore acceso può ricevere testi Pubblici o Interni passati dal gateway e lavorare nei progetti qui sotto. Una delega già partita finisce con i valori di prima.</p>
+            </SettingsCard>
+
+            <!-- Links downloaded and summarized (D-154) -->
+            <SettingsCard v-if="active === 'links'" id="links" title="Link scaricati" kind="privacy" :changed="changed('fetchSites')" :saved="saved === 'fetchSites'" :busy="busy === 'fetchSites'" :error="errors.fetchSites" @cancel="reset('fetchSites')" @save="prepare('fetchSites')">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span v-for="(site, index) in forms.fetchSites" :key="site" class="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-surface-2 py-1 pr-1.5 pl-2.5 font-mono text-xs">
+                  {{ site }}
+                  <button type="button" class="text-muted hover:text-danger" :aria-label="`Togli ${site}`" @click="forms.fetchSites.splice(index, 1)"><Icon name="close" :size="13" /></button>
+                </span>
+                <span v-if="forms.fetchSites.length === 0" class="text-sm text-muted">Nessun sito.</span>
+                <form class="flex items-center gap-1.5" @submit.prevent="addSite">
+                  <input v-model="newSite" class="field w-48 px-2 py-1 font-mono text-xs" placeholder="x.com o un indirizzo" aria-label="Sito da aggiungere" />
+                  <button type="submit" class="btn px-2.5 py-1 text-xs" :disabled="fetchSiteOf(newSite) === undefined"><Icon name="new" :size="14" />Aggiungi</button>
+                </form>
+              </div>
+              <p class="text-xs text-muted">
+                Quando salvi un link di questi siti (anche dei sottodomini, per esempio mobile.x.com), il nucleo scarica la pagina e il modello locale la riassume nel pensiero. Il sito riceve solo l’indirizzo del link; per i post di X l’indirizzo va al servizio ufficiale publish.twitter.com. I link degli altri siti restano link: nel pensiero c’è «Scarica e riassumi».
+              </p>
             </SettingsCard>
 
             <!-- Telegram: off by the user's choice (D-110, question 12), not in the settings index, so unreachable; kept to turn back on -->

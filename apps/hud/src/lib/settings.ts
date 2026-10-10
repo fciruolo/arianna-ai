@@ -105,6 +105,8 @@ export interface SettingsValues {
   telegram: { chats: number[] } | null;
   projects: ProjectValues[];
   endpoints: EndpointValues[];
+  /** `[capture] fetch_sites` (D-154): sites whose links are downloaded by themselves. Optional: an older core sends none. */
+  fetchSites?: string[];
 }
 
 export interface CatalogModel {
@@ -146,6 +148,7 @@ export interface PrivacyChanges {
   telegram?: { before: { chats: number[] } | null; after: { chats: number[] } | null };
   projects?: { added: ProjectValues[]; removed: ProjectValues[]; changed: { name: string; before: ProjectValues; after: ProjectValues }[] };
   endpoints?: { added: EndpointValues[]; removed: EndpointValues[]; changed: { id: string; before: EndpointValues; after: EndpointValues }[] };
+  fetchSites?: { before: string[]; after: string[] };
 }
 
 export interface PrivacyExits {
@@ -153,6 +156,8 @@ export interface PrivacyExits {
   projects: { name: string; label: string }[];
   telegram: { chats: number } | null;
   endpoints: { id: string; url: string; command: string[] | null }[];
+  /** Optional: an older core sends none. */
+  fetchSites?: string[];
 }
 
 export interface PrivacyProposal {
@@ -167,7 +172,7 @@ export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' |
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
-export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints';
+export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints' | 'fetchSites';
 export type Section = OrdinarySection | PrivacySection;
 
 export const ROLE_TEXT: Record<ModelRole, { title: string; hint: string }> = {
@@ -204,6 +209,7 @@ export const SECTION_TEXT: Record<string, string> = {
   telegram: 'Telegram',
   projects: 'Progetti',
   endpoints: 'Server locali',
+  fetchSites: 'Link scaricati',
   paths: 'percorsi',
   database: 'database',
   server: 'server',
@@ -513,6 +519,11 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
     for (const endpoint of changes.endpoints.removed) lines.push({ kind: 'remove', text: `Server ${endpointText(endpoint)}` });
     for (const { before, after } of changes.endpoints.changed) lines.push({ kind: 'change', text: endpointChange(before, after) });
   }
+  if (changes.fetchSites !== undefined) {
+    const { before, after } = changes.fetchSites;
+    for (const site of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `Link di ${site} scaricati da soli` });
+    for (const site of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `Link di ${site} non più scaricati da soli` });
+  }
   if (lines.length === 0) lines.push({ kind: 'change', text: 'Cambia solo l’ordine o la forma nel file: le uscite restano le stesse.' });
   return lines;
 }
@@ -538,6 +549,12 @@ export function exitLines(exits: PrivacyExits): string[] {
         : `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
     );
   }
+  const sites = exits.fetchSites ?? [];
+  lines.push(
+    sites.length === 0
+      ? 'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».'
+      : `Al riordino il nucleo scarica i link di: ${sites.join(', ')} (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.`,
+  );
   return lines;
 }
 
@@ -562,7 +579,7 @@ export function writeError(status: number, message: string): { text: string; rel
 export function sectionChanged(section: Section, form: unknown, base: unknown): boolean {
   // An agent added with the defaults is no change: compared as sent.
   if (section === 'personas') return !sameValue(personasBody(form as Record<string, PersonaForm>), personasBody(base as Record<string, PersonaForm>));
-  if (section === 'executors') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
+  if (section === 'executors' || section === 'fetchSites') return !sameValue([...(form as string[])].sort(), [...(base as string[])].sort());
   if (section === 'telegram') {
     const sorted = (value: TelegramForm): TelegramForm => ({ enabled: value.enabled, chats: [...value.chats].sort((a, b) => a - b) });
     return !sameValue(sorted(form as TelegramForm), sorted(base as TelegramForm));
@@ -593,6 +610,28 @@ export function voiceProblem(form: VoiceForm): string | undefined {
   if (numbers.some((value) => typeof value !== 'number' || !Number.isInteger(value))) return 'Un numero è vuoto o non intero.';
   if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche push servono chiave pubblica e contatto.';
   return undefined;
+}
+
+/**
+ * A site as typed in the card "Link scaricati" (D-154): an address or a host
+ * name becomes the host name, lowercase, without `www.`; undefined when it is
+ * not a name like "example.com".
+ */
+export function fetchSiteOf(typed: string): string | undefined {
+  let text = typed.trim().toLowerCase();
+  if (text === '') return undefined;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//.test(text)) text = `https://${text}`;
+  let host: string;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    host = url.hostname.replace(/^www\./, '').replace(/\.$/, '');
+  } catch {
+    return undefined;
+  }
+  const labels = host.split('.');
+  if (host.length > 253 || labels.length < 2 || !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) || /^\d+$/.test(labels.at(-1) ?? '')) return undefined;
+  return host;
 }
 
 /** The largest `[participants] leave_after` the core takes (I-8, D-130). */

@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- I link salvati in Conoscenza si scaricano e si riassumono col modello locale: la nota ha Riassunto, Punti chiave, Contesto, il contenuto citato e il testo originale; per i post di X il testo arriva dall'oEmbed ufficiale di X (D-154).
+- Impostazioni → Link scaricati: l'elenco dei siti i cui link si scaricano da soli al riordino, con la conferma delle uscite; all'inizio è vuoto (D-154).
+- Nella pagina Pensieri, «Scarica e riassumi» per un link di un sito non in elenco o non ancora scaricato, anche su una nota già riordinata (D-154).
+
+### Sicurezza
+
+- Lo scaricamento dei link non raggiunge mai questa macchina né la rete locale (ogni indirizzo controllato alla connessione e a ogni rimando), manda solo l'indirizzo del link senza cookie, ha un tempo e una dimensione massimi, e il testo della pagina arriva al modello come contenuto, mai come istruzioni (D-154).
+
 ## [0.42.0] - 2026-10-10
 
 ### Aggiunto

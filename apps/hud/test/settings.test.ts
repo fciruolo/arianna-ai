@@ -33,6 +33,7 @@ import {
   type AgentsForm,
   type CatalogModel,
   type VoiceValues,
+  fetchSiteOf,
 } from '../src/lib/settings.ts';
 
 const DEFAULTS: VoiceValues = {
@@ -214,11 +215,13 @@ test('the card lists every exit after the change, not only the changed ones', ()
     'Claude Code potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: demo (Interno).',
     'Telegram: 2 chat, al massimo Interno.',
     'omlx (http://127.0.0.1:7001/v1) vede i dati Privati in chiaro; il nucleo esegue: omlx serve',
+    'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».',
   ]);
   assert.deepEqual(exitLines({ executors: [], projects: [], telegram: null, endpoints: [{ id: 'x', url: 'u', command: null }] }), [
     'Nessun esecutore cloud: niente esce verso Claude Code o Codex.',
     'Telegram spento.',
     'x (u) vede i dati Privati in chiaro.',
+    'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».',
   ]);
 });
 
@@ -320,4 +323,20 @@ test('leaveAfterProblem (I-8, D-130): a whole number from 0 (never) to 100', asy
   const { leaveAfterProblem } = await import('../src/lib/settings.ts');
   for (const good of [0, 1, 10, 100]) assert.equal(leaveAfterProblem(good), undefined, String(good));
   for (const bad of [-1, 101, 2.5, '10', Number.NaN]) assert.match(leaveAfterProblem(bad) ?? '', /da 0 \(mai\) a 100/, String(bad));
+});
+
+test('the card "Link scaricati" (D-154): an address or a name becomes the host name', () => {
+  assert.equal(fetchSiteOf('x.com'), 'x.com');
+  assert.equal(fetchSiteOf('  https://www.YouTube.com/watch?v=1 '), 'youtube.com');
+  assert.equal(fetchSiteOf('mobile.x.com'), 'mobile.x.com');
+  for (const bad of ['', 'localhost', 'ftp://x.com', '10.0.0.1', 'x', 'a b.com', 'javascript:alert(1)']) assert.equal(fetchSiteOf(bad), undefined, bad);
+  assert.deepEqual(changeLines({ fetchSites: { before: ['x.com'], after: ['youtube.com'] } }), [
+    { kind: 'add', text: 'Link di youtube.com scaricati da soli' },
+    { kind: 'remove', text: 'Link di x.com non più scaricati da soli' },
+  ]);
+  assert.equal(
+    exitLines({ executors: [], projects: [], telegram: null, endpoints: [], fetchSites: ['x.com'] }).at(-1),
+    'Al riordino il nucleo scarica i link di: x.com (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.',
+  );
+  assert.equal(sectionChanged('fetchSites', ['a.com', 'b.com'], ['b.com', 'a.com']), false);
 });

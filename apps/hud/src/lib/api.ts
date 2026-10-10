@@ -696,6 +696,11 @@ export async function organizeNote(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/organize`, {});
 }
 
+/** "Scarica e riassumi" (D-154): the link of the note downloaded and summarized, whatever its site. */
+export async function fetchNoteLink(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/fetch`, {});
+}
+
 /** "Sviluppo di Arianna" (D-102): progress read from the documents, and the longest answer the core takes. */
 export async function loadDevProgress(): Promise<{ progress: DevProgress; maxAnswer: number }> {
   return call<{ progress: DevProgress; maxAnswer: number }>('GET', '/api/dev/progress');

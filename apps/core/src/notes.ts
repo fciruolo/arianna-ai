@@ -142,6 +142,10 @@ export interface NoteSummary {
 export interface Note extends NoteSummary {
   organizedAt: string | null;
   url: string | null;
+  /** When the link was downloaded and summarized (D-154); null when it was not. */
+  fetchedAt: string | null;
+  /** Why the last download of the link failed (a code of link-fetch.ts); null otherwise. */
+  fetchFailed: string | null;
   body: string;
 }
 
@@ -285,7 +289,15 @@ export function readNote(home: string, rules: LabelRules, name: string): Note {
   const note = summaryOf(rules, path, raw);
   if (!isAtMost(note.label, 'L2')) throw refuse();
   const fields = headerFields(raw);
-  return { ...note, organizedAt: fields.get('organized_at') ?? null, url: fields.get('url') ?? null, body: parsePage(raw).body };
+  const fetchFailed = fields.get('fetch_failed');
+  return {
+    ...note,
+    organizedAt: fields.get('organized_at') ?? null,
+    url: fields.get('url') ?? null,
+    fetchedAt: fields.get('fetched_at') ?? null,
+    fetchFailed: fetchFailed !== undefined && /^[a-z-]{1,40}$/.test(fetchFailed) ? fetchFailed : null,
+    body: parsePage(raw).body,
+  };
 }
 
 /** The header fields of a capture kept when the note is organized, each checked again: the file may have been edited. */

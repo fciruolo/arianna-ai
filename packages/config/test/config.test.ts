@@ -46,6 +46,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     agents: {},
     notifications: { replies: true, approvals: true, failures: true },
     secretary: { enabled: true, morning: '09:00', afternoon: '14:30', evening: '18:30', days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
+    capture: { fetchSites: [] },
     sprites: { model: 'opus' },
     participants: { leaveAfter: 10 },
   });

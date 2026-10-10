@@ -110,6 +110,7 @@ export {
   type NotificationsConfig,
   type QuietHours,
 } from './notifications.ts';
+export { checkFetchSites, DEFAULT_CAPTURE, isFetchSite, MAX_FETCH_SITES, parseCapture, siteListed, type CaptureConfig } from './capture.ts';
 export { checkSecretary, DEFAULT_SECRETARY, isClock, parseSecretary, WEEKDAY_KEYS, type SecretaryConfig, type WeekdayKey } from './secretary.ts';
 export { type TelegramConfig } from './telegram.ts';
 export { LABELS_FILE, loadLabelRules, parseLabelRules } from './labels.ts';
