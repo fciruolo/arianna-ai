@@ -54,7 +54,8 @@ import { addContact, archiveClient, ClientError, PROJECT_NAME as CLIENT_PROJECT_
 import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format.ts';
 import { completeItemCard, itemCard } from '../im-cards.ts';
 import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
-import { addImItem, closeImItem, createIm, ImError, listIms, readIm, setImItemState, type ImItemRef, type ImOutcome } from '../im.ts';
+import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
+import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
@@ -1153,6 +1154,102 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
       onlyFields(body, ['line', 'title', 'part']);
       return { body: await itemCard(sql, containers(), need(), names(), project.name, number, itemRefOf(body)) };
     }),
+    // The tab "IM" of "Progetti" (P4d, D-169): the calendar in the file, prices and invoices private (L2) in the database.
+    route('GET', '/api/browse/:project/im-overview', async (_request, _url, params) => {
+      const project = projectOf(params);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im-calendar', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['weekday', 'time', 'every', 'version']);
+      if (typeof body.weekday !== 'number' || typeof body.time !== 'string' || typeof body.every !== 'number' || typeof body.version !== 'string') {
+        throw new HttpError(400, 'weekday, time, every and version are required');
+      }
+      writeImCalendar(containers(), project.name, need(), { weekday: body.weekday, time: body.time, every: body.every }, body.version);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    // The last day of the IM (D-169), `fine` in the same file; null takes it away and the IM go on.
+    route('POST', '/api/browse/:project/im-end', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['end', 'version']);
+      if ((body.end !== null && typeof body.end !== 'string') || typeof body.version !== 'string') throw new HttpError(400, 'end (YYYY-MM-DD or null) and version are required');
+      writeImEnd(containers(), project.name, need(), body.end, body.version);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im-price', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['amountCents', 'currency']);
+      if ((body.amountCents !== null && typeof body.amountCents !== 'number') || typeof body.currency !== 'string' || !CURRENCY.test(body.currency)) {
+        throw new HttpError(400, 'amountCents (cents or null) and currency are required');
+      }
+      await setImPrice(sql, project.name, body.amountCents, body.currency);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/im/:number/billing', async (request, _url, params) => {
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['overrideCents', 'notBilled']);
+      if ((body.overrideCents !== null && typeof body.overrideCents !== 'number') || typeof body.notBilled !== 'boolean') throw new HttpError(400, 'overrideCents (cents or null) and notBilled are required');
+      // Only an IM that is there.
+      if (!listIms(containers(), project.name, need()).some((im) => im.number === number)) throw new HttpError(404, 'not found');
+      await setImBilling(sql, project.name, number, body.overrideCents, body.notBilled);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices', async (request, _url, params) => {
+      const project = projectOf(params);
+      const body = await readJson(request);
+      onlyFields(body, ['number', 'issuedOn', 'note', 'ims']);
+      const ims: unknown = body.ims;
+      if (typeof body.number !== 'string' || typeof body.issuedOn !== 'string' || !Array.isArray(ims) || !ims.every((im): im is number => typeof im === 'number')) {
+        throw new HttpError(400, 'number, issuedOn and ims are required');
+      }
+      if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string');
+      const invoice = await createInvoice(sql, containers(), need(), project.name, { number: body.number, issuedOn: body.issuedOn, note: typeof body.note === 'string' ? body.note : null, ims });
+      return { status: 201, body: { invoice, overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id', async (request, _url, params) => {
+      const project = projectOf(params);
+      const id = invoiceParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['number', 'issuedOn', 'paidOn', 'note']);
+      const change: InvoiceChange = {};
+      if (body.number !== undefined) {
+        if (typeof body.number !== 'string') throw new HttpError(400, 'number must be a string');
+        change.number = body.number;
+      }
+      if (body.issuedOn !== undefined) {
+        if (typeof body.issuedOn !== 'string') throw new HttpError(400, 'issuedOn must be a string');
+        change.issuedOn = body.issuedOn;
+      }
+      if (body.paidOn !== undefined) {
+        if (body.paidOn !== null && typeof body.paidOn !== 'string') throw new HttpError(400, 'paidOn must be a string or null');
+        change.paidOn = body.paidOn;
+      }
+      if (body.note !== undefined) {
+        if (body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string or null');
+        change.note = body.note;
+      }
+      await updateInvoice(sql, project.name, id, change);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id/cancel', async (_request, _url, params) => {
+      const project = projectOf(params);
+      await cancelInvoice(sql, project.name, invoiceParam(params));
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    route('POST', '/api/browse/:project/invoices/:id/remove', async (request, _url, params) => {
+      const project = projectOf(params);
+      const id = invoiceParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['im']);
+      if (typeof body.im !== 'number' || !Number.isInteger(body.im)) throw new HttpError(400, 'im is required');
+      await removeFromInvoice(sql, project.name, id, body.im);
+      return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
     route('GET', '/api/im/closings', async () => {
       const known = new Set(containers().map((project) => project.name));
       return { body: { closings: (await listImClosings(sql)).filter((closing) => known.has(closing.project)) } };
@@ -1169,6 +1266,8 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
       const outcome = IM_OUTCOMES.find((value) => value === body.outcome);
       if (outcome === undefined) throw new HttpError(400, 'outcome must be done, part or not-done');
       const ref = itemRefOf(body);
+      // The last IM (D-169): an item not finished keeps its card open in the cardwall, made now when missing.
+      if (outcome !== 'done' && isLastIm(containers(), closing.project, need(), closing.im)) await itemCard(sql, containers(), need(), names(), closing.project, closing.im, ref);
       const { item } = closeImItem(containers(), closing.project, need(), closing.im, ref, outcome);
       // In part, the card goes on with the next part: only a finished item moves it.
       if (outcome === 'done') await completeItemCard(sql, containers(), need(), closing.project, item.card).catch(onError);
@@ -1176,6 +1275,13 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
       return { body: { closing: await loadImClosing(sql, closing.id), im: readIm(containers(), closing.project, need(), closing.im), closed } };
     }),
   ];
+}
+
+/** The id of an invoice in the URL (P4d). */
+function invoiceParam(params: Params): string {
+  const value = params.id ?? '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) throw new HttpError(404, 'not found');
+  return value;
 }
 
 /** The number of an IM in the URL (D-167). */
@@ -2423,9 +2529,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ImError) {
-    const status = { invalid: 400, 'not-found': 404, changed: 409, refused: 403, unavailable: 503 }[error.code];
+    const status = { invalid: 400, 'not-found': 404, changed: 409, refused: 403, unavailable: 503, ended: 409 }[error.code];
     return { status, message: error.message };
   }
+  if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
   if (error instanceof KnowledgeError) {
     const status = { invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };

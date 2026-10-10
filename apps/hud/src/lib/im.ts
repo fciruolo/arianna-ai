@@ -164,10 +164,18 @@ export const IM_CHANGED_TEXT = 'L’IM è cambiato nel file: ricaricato';
 
 /** The file changed on disk since it was read (edited in Obsidian, for example): read it again. */
 export function isStale(cause: unknown): boolean {
-  return cause instanceof ApiError && cause.status === 409;
+  return cause instanceof ApiError && cause.status === 409 && !isEnded(cause);
 }
 
+/** The IM of the project have ended (D-169): no new IM after the last day of the calendar. */
+export function isEnded(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.message === 'the IM of the project have ended';
+}
+
+export const IM_ENDED_TEXT = 'Gli IM del progetto sono terminati: c’è una data di fine nel calendario (Progetti → IM). Toglila per crearne di nuovi.';
+
 export function imErrorText(cause: unknown): string {
+  if (isEnded(cause)) return IM_ENDED_TEXT;
   if (cause instanceof ApiError && cause.status === 404) return 'Questo IM non c’è più: ricarica la pagina.';
   return errorText(cause);
 }

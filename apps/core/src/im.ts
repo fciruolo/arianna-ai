@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Project } from '@arianna/config';
 import type { Label } from '@arianna/policy';
 
+import { afterEnd, CALENDAR_FILE, firstCalendarDate, ImCalendarError, newCalendarText, nextCalendarDate, parseCalendar, setCalendar, setEnd, type CalendarIssue, type ImCalendar } from './im-calendar.ts';
 import { addDays, addItem, imFileName, ImFormatError, imNumberOf, isImDate, localImDate, meetingTime, newImText, parseIm, raiseLabel, rewriteItem, setItemState, setStatus, type ImItem, type ImState, type ImStatus, type NewItem } from './im-format.ts';
 import { parsePage } from './orchestrator/kb.ts';
 import { imFolder, MAX_NOTE_BYTES, type ImFolder, type KnowledgeEnv } from './project-knowledge.ts';
@@ -19,7 +20,7 @@ import { imFolder, MAX_NOTE_BYTES, type ImFolder, type KnowledgeEnv } from './pr
 
 const MAX_IMS = 1_000;
 
-export type ImErrorCode = 'invalid' | 'not-found' | 'changed' | 'refused' | 'unavailable';
+export type ImErrorCode = 'invalid' | 'not-found' | 'changed' | 'refused' | 'unavailable' | 'ended';
 
 /** Messages name fixed reasons, never the text of an IM. */
 export class ImError extends Error {
@@ -251,6 +252,52 @@ export function addImItem(projects: readonly Project[], project: string, env: Kn
 }
 
 /**
+ * The date of the IM after the last one of `files`: from the calendar of the
+ * project when it has one (P4d, D-169), else seven days after the last IM (a
+ * moved call does not count); with `notBefore`, the first meeting not over at
+ * that moment. Refused when there is no IM with a date and no calendar.
+ */
+function plannedDate(folder: ImFolder, files: Map<number, string>, notBefore?: Date): string {
+  const last = Math.max(0, ...files.keys());
+  const lastFile = last === 0 ? undefined : readImFile(folder, files.get(last) ?? '');
+  const lastDate = lastFile === undefined ? null : parseIm(lastFile.text).date;
+  const calendar = calendarOf(folder).calendar;
+  if (lastDate === null) {
+    if (calendar === null) throw new ImError('invalid', 'the date of the IM is needed: there is no IM with a date before it');
+    return firstCalendarDate(localImDate(notBefore ?? new Date()), calendar);
+  }
+  let when = calendar === null ? addDays(lastDate, 7) : nextCalendarDate(lastDate, calendar);
+  // Made by code after an old IM: the first meeting of the calendar that is not over yet.
+  if (notBefore !== undefined) {
+    const floor = localImDate(notBefore);
+    const step = 7 * (calendar?.every ?? 1);
+    for (let count = 0; when < floor && count < 520; count += 1) when = addDays(when, step);
+  }
+  return when;
+}
+
+/**
+ * The number and date the next IM of the project would have, without
+ * writing; `ended` when that date falls after the last day of the calendar
+ * (`fine`, D-169), so no such IM will be made; null when it cannot be known yet.
+ */
+export function nextImPlan(projects: readonly Project[], project: string, env: KnowledgeEnv, notBefore?: Date): { number: number; date: string; ended: boolean } | null {
+  const folder = imFolder(projects, project, env, false);
+  if (folder === null) return null;
+  const files = imFiles(folder);
+  try {
+    const date = plannedDate(folder, files, notBefore);
+    return { number: Math.max(0, ...files.keys()) + 1, date, ended: afterEnd(date, calendarOf(folder).end) };
+  } catch (error) {
+    if (error instanceof ImError && error.code === 'invalid') return null;
+    throw error;
+  }
+}
+
+/** The IM of a project have ended (D-169): no IM after the last day of the calendar. */
+export const IM_ENDED = 'the IM of the project have ended';
+
+/**
  * The next IM: the number after the highest, seven days after the date of the
  * last one at the same time (D-167; a moved call does not count), or on
  * `date` when given; `date` is needed for the first IM of a project.
@@ -261,18 +308,8 @@ export function createIm(projects: readonly Project[], project: string, env: Kno
   if (folder === null) throw new ImError('unavailable', 'cannot create the folder IM');
   const files = imFiles(folder);
   const last = Math.max(0, ...files.keys());
-  let when = date;
-  if (when === undefined) {
-    const lastFile = last === 0 ? undefined : readImFile(folder, files.get(last) ?? '');
-    const lastDate = lastFile === undefined ? null : parseIm(lastFile.text).date;
-    if (lastDate === null) throw new ImError('invalid', 'the date of the IM is needed: there is no IM with a date before it');
-    when = addDays(lastDate, 7);
-    // Made by code after an old IM: the first meeting of the calendar that is not over yet.
-    if (notBefore !== undefined) {
-      const floor = localImDate(notBefore);
-      for (let step = 0; when < floor && step < 520; step += 1) when = addDays(when, 7);
-    }
-  }
+  const when = date ?? plannedDate(folder, files, notBefore);
+  if (afterEnd(when, calendarOf(folder).end)) throw new ImError('ended', IM_ENDED);
   const number = last + 1;
   const fileName = imFileName(number);
   const text = newImText(number, when);
@@ -299,6 +336,99 @@ export function createIm(projects: readonly Project[], project: string, env: Kno
   return viewOf(folder, { number, fileName, text, mode: 0o600 });
 }
 
+export interface ImCalendarView {
+  /** Null when the file is missing or wrong: new IM come seven days after the last one. */
+  calendar: ImCalendar | null;
+  /** The field that is wrong in a file that is there; null when it is fine or missing. */
+  issue: CalendarIssue | null;
+  /** The last day of the IM (`fine`, D-169): no IM after it; null when they go on. */
+  end: string | null;
+  exists: boolean;
+  /** `IM/calendario.md`, relative to where the knowledge of the project is. */
+  path: string;
+  /** A digest of the file (empty when missing): a change is refused when the file is no longer this one. */
+  version: string;
+}
+
+function calendarOf(folder: ImFolder): ImCalendarView {
+  const path = `${folder.path}/${CALENDAR_FILE}`;
+  let file: { text: string; mode: number } | undefined;
+  try {
+    file = readImFile(folder, CALENDAR_FILE);
+  } catch (error) {
+    // Too large: there, but not a calendar.
+    if (error instanceof ImError) return { calendar: null, issue: 'intestazione', end: null, exists: true, path, version: 'too-large' };
+    throw error;
+  }
+  if (file === undefined) return { calendar: null, issue: null, end: null, exists: false, path, version: '' };
+  const parsed = parseCalendar(file.text);
+  return { calendar: parsed.calendar, issue: parsed.issue, end: parsed.end, exists: true, path, version: versionOf(file.text) };
+}
+
+/** The calendar of the IM of the project (D-167 punto 3), as the file says it. */
+export function readImCalendar(projects: readonly Project[], project: string, env: KnowledgeEnv): ImCalendarView {
+  const folder = imFolder(projects, project, env, false);
+  if (folder === null) return { calendar: null, issue: null, end: null, exists: false, path: 'IM/calendario.md', version: '' };
+  if (!folder.sameFolder()) throw new ImError('refused', `the folder ${folder.path} is not a plain folder of the project`);
+  return calendarOf(folder);
+}
+
+/**
+ * The calendar written in the file, when the file is still `version` (empty:
+ * when there is no file yet). Only the three fields change.
+ */
+export function writeImCalendar(projects: readonly Project[], project: string, env: KnowledgeEnv, calendar: ImCalendar, version: string): ImCalendarView {
+  return writeCalendarFile(projects, project, env, version, (text) => (text === null ? newCalendarText(calendar) : setCalendar(text, calendar)));
+}
+
+/** The last day of the IM written in the calendar (`fine`), or taken away (null): the IM go on. */
+export function writeImEnd(projects: readonly Project[], project: string, env: KnowledgeEnv, end: string | null, version: string): ImCalendarView {
+  // No file and no end: nothing to write.
+  if (end === null && version === '') return readImCalendar(projects, project, env);
+  return writeCalendarFile(projects, project, env, version, (text) => setEnd(text ?? '# Calendario degli IM\n', end));
+}
+
+function writeCalendarFile(projects: readonly Project[], project: string, env: KnowledgeEnv, version: string, transform: (text: string | null) => string): ImCalendarView {
+  const folder = imFolder(projects, project, env, true);
+  if (folder === null) throw new ImError('unavailable', 'cannot create the folder IM');
+  if (!folder.sameFolder()) throw new ImError('refused', `the folder ${folder.path} is not a plain folder of the project`);
+  const current = readImFile(folder, CALENDAR_FILE);
+  const now = current === undefined ? '' : versionOf(current.text);
+  if (now !== version) throw new ImError('changed', 'the calendar changed in the file');
+  let text: string;
+  try {
+    text = transform(current === undefined ? null : current.text);
+  } catch (error) {
+    if (error instanceof ImCalendarError) throw new ImError('invalid', error.message);
+    throw error;
+  }
+  if (current === undefined) {
+    let fd: number;
+    try {
+      fd = openSync(join(folder.dir, CALENDAR_FILE), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'EEXIST') throw new ImError('changed', 'the calendar changed in the file');
+      throw new ImError('unavailable', 'cannot write the calendar');
+    }
+    try {
+      if (!folder.sameFolder()) throw new ImError('refused', `the folder ${folder.path} is not a plain folder of the project`);
+      writeFileSync(fd, text);
+    } catch (error) {
+      closeSync(fd);
+      try {
+        unlinkSync(join(folder.dir, CALENDAR_FILE));
+      } catch {
+        // Already gone.
+      }
+      throw error instanceof ImError ? error : new ImError('unavailable', 'cannot write the calendar');
+    }
+    closeSync(fd);
+  } else {
+    replaceFile(folder, CALENDAR_FILE, text, current.mode, () => readImFile(folder, CALENDAR_FILE)?.text === current.text);
+  }
+  return calendarOf(folder);
+}
+
 /**
  * The IM being worked on: the first one not closed whose meeting (the moved
  * call, else the date) is not over at `now`; undefined when there is none.
@@ -323,9 +453,28 @@ function holds(items: readonly ImItem[], title: string, part: number | null): bo
  * chain of IM already over).
  */
 function followingIm(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now: Date): ImView {
+  const following = followingOrEnd(projects, project, env, number, now);
+  if (following === null) throw new ImError('ended', IM_ENDED);
+  return following;
+}
+
+/** The IM after `number`, made when missing; null when the next one would fall after the last day of the calendar (D-169). */
+function followingOrEnd(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now: Date): ImView | null {
   const after = listIms(projects, project, env).find((im) => im.number > number);
-  if (after !== undefined) return readIm(projects, project, env, after.number);
+  // An IM made before the end was set and falling after it does not count: the user takes it away, its items would go with it.
+  if (after !== undefined) return afterEnd(after.date ?? '', readImCalendar(projects, project, env).end) ? null : readIm(projects, project, env, after.number);
+  if (nextImPlan(projects, project, env, now)?.ended === true) return null;
   return createIm(projects, project, env, undefined, now);
+}
+
+/**
+ * True when `number` is the last IM of the project: no IM after it and the
+ * next one would fall after the last day of the calendar (D-169).
+ */
+export function isLastIm(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now = new Date()): boolean {
+  const after = listIms(projects, project, env).find((im) => im.number > number);
+  if (after !== undefined) return afterEnd(after.date ?? '', readImCalendar(projects, project, env).end);
+  return nextImPlan(projects, project, env, now)?.ended === true;
 }
 
 /**
@@ -352,7 +501,7 @@ export function addItemTo(projects: readonly Project[], project: string, env: Kn
   if (current !== undefined) {
     target = which === 'current' ? readIm(projects, project, env, current.number) : followingIm(projects, project, env, current.number, now);
   } else {
-    // Every IM is over or closed: the next meeting is a new IM after the last one.
+    // Every IM is over or closed: the next meeting is a new IM after the last one (createIm refuses one after the end).
     const last = listIms(projects, project, env).at(-1);
     if (last === undefined || last.date === null) throw new ImError('not-found', 'the project has no IM with a date: make the first one in the cardwall');
     target = createIm(projects, project, env, undefined, now);
@@ -381,6 +530,9 @@ function findItem(text: string, ref: ImItemRef): ImItem | undefined {
  * had no part) and puts `— Parte N+1` in the next IM, with the same card;
  * not done is `[>]` and the same item in the next IM. The next IM is written
  * first (adding there twice does nothing), so a failure never loses an item.
+ * At the last IM of the project (D-169) there is no next IM: in part closes
+ * the part done, not done cancels the item (`[-]`); its card stays open in
+ * the cardwall (the caller makes it when missing, with isLastIm).
  */
 export function closeImItem(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, ref: ImItemRef, outcome: ImOutcome, now = new Date()): { im: ImView; item: ImItem } {
   const open = (text: string): boolean => {
@@ -392,7 +544,11 @@ export function closeImItem(projects: readonly Project[], project: string, env: 
   if (item === undefined) throw new ImError('changed', 'the item changed in the file');
   if (item.state !== 'todo' && item.state !== 'doing') throw new ImError('changed', 'the item is not open any more');
   if (outcome === 'done') return { im: changeIm(projects, project, env, number, open, (text) => setItemState(text, ref.line, 'done')), item };
-  const next = followingIm(projects, project, env, number, now);
+  const next = followingOrEnd(projects, project, env, number, now);
+  if (next === null) {
+    if (outcome === 'part') return { im: changeIm(projects, project, env, number, open, (text) => rewriteItem(text, ref.line, { title: item.title, state: 'done', part: item.part ?? 1, card: item.card })), item };
+    return { im: changeIm(projects, project, env, number, open, (text) => setItemState(text, ref.line, 'cancelled')), item };
+  }
   if (outcome === 'part') {
     const part = item.part ?? 1;
     appendItem(projects, project, env, next, { title: item.title, part: part + 1, card: item.card }, current.label);
@@ -406,13 +562,20 @@ export function closeImItem(projects: readonly Project[], project: string, env: 
  * The end of the closing (D-167): when no item is to do or in progress, the
  * items postponed by hand go to the next IM too, the next IM is there (made
  * when missing, never in the past) and the IM becomes `chiuso`. Returns
- * false, writing nothing, while an item is still open.
+ * false, writing nothing, while an item is still open. At the last IM of the
+ * project (D-169) there is no next IM: the items postponed by hand stay `[>]`
+ * in the file, where the user sees them (never cancelled without a card).
  */
 export function finishImClosing(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now = new Date()): boolean {
   const current = readIm(projects, project, env, number);
   if (current.status === 'chiuso') return true;
   if (current.items.some((item) => item.state === 'todo' || item.state === 'doing')) return false;
-  let next = followingIm(projects, project, env, number, now);
+  const following = followingOrEnd(projects, project, env, number, now);
+  if (following === null) {
+    changeIm(projects, project, env, number, current.version, (text) => setStatus(text, 'chiuso'));
+    return true;
+  }
+  let next = following;
   for (const item of current.items.filter((candidate) => candidate.state === 'postponed')) {
     next = appendItem(projects, project, env, next, { title: item.title, part: item.part, card: item.card }, current.label);
   }

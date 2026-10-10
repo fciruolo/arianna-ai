@@ -4,8 +4,9 @@ import { secretaryConversationId } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { cardOfShortId } from './im-cards.ts';
+import { fixAllClosedPrices } from './im-billing.ts';
 import { localImDate, longDate, meetingTime } from './im-format.ts';
-import { finishImClosing, ImError, listIms, markCardItems, readIm, type ImSummary } from './im.ts';
+import { finishImClosing, ImError, isLastIm, listIms, markCardItems, readIm, type ImSummary } from './im.ts';
 import { KnowledgeError, type KnowledgeEnv } from './project-knowledge.ts';
 
 /**
@@ -54,6 +55,11 @@ export function closingText(project: string, im: ImSummary): string {
   return `È passato l'IM-${String(im.number)} di ${project}${when}. ${items}: dimmi qui sotto, voce per voce, se è finita. Quelle non finite passano all'IM successivo.`;
 }
 
+/** The text at the end of the closing of the last IM of the project (D-169). */
+export function endedText(project: string, number: number): string {
+  return `Chiuso l'IM-${String(number)} di ${project}, l'ultimo: gli IM del progetto sono terminati. Le voci non finite restano come card nel cardwall.`;
+}
+
 /** The text at the end of a closing. */
 export function closedText(project: string, number: number): string {
   return `Chiuso l'IM-${String(number)} di ${project}: le voci rimaste sono nell'IM successivo.`;
@@ -98,10 +104,12 @@ async function openClosing(sql: Sql, projects: readonly Project[], env: Knowledg
  */
 export async function finishClosing(sql: Sql, projects: readonly Project[], env: KnowledgeEnv, closing: ImClosing, now = new Date()): Promise<boolean> {
   if (closing.closedAt !== null) return true;
+  // Asked before: the last IM of the project (D-169) makes no next one, and says so.
+  const last = isLastIm(projects, closing.project, env, closing.im, now);
   if (!finishImClosing(projects, closing.project, env, closing.im, now)) return false;
   await sql.begin(async (tx) => {
     const closed = await tx`UPDATE im_closings SET closed_at = now() WHERE id = ${closing.id} AND closed_at IS NULL RETURNING id`;
-    if (closed.length > 0) await postMessage(tx, closedText(closing.project, closing.im), { imClosing: closing.id });
+    if (closed.length > 0) await postMessage(tx, last ? endedText(closing.project, closing.im) : closedText(closing.project, closing.im), { imClosing: closing.id });
   });
   return true;
 }
@@ -164,6 +172,8 @@ export function createImWatcher(options: ImWatcherOptions): ImWatcher {
         if (!(error instanceof KnowledgeError)) onError(error);
       }
     }
+    // The price of the project fixed on the IM closed meanwhile (P4d, D-169), in Obsidian too.
+    await fixAllClosedPrices(sql, projects, env, onError);
     const moment = now();
     const at = localImDate(moment);
     // A closing whose last item was closed elsewhere (Obsidian, the cardwall, a card) ends here.

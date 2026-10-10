@@ -8,6 +8,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
+import type { ImCalendar, ImInvoice, ImOverview } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
@@ -890,6 +891,47 @@ export async function startImReport(project: string, number: number, agent: Repo
 /** The last report job of the IM since the core started; null when none. */
 export async function loadImReport(project: string, number: number): Promise<ImReportJob | null> {
   return (await call<{ job: ImReportJob | null }>('GET', `${browse(project)}/im/${String(number)}/report`)).job;
+}
+
+// The tab "IM" of "Progetti" (P4d, D-169): the calendar in IM/calendario.md, prices and invoices Privati (L2) in the database.
+export async function readImOverview(project: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('GET', `${browse(project)}/im-overview`)).overview;
+}
+
+/** The calendar written in its file; `version` is the one read ('' when there is no file): 409 when it changed meanwhile. */
+export async function saveImCalendar(project: string, calendar: ImCalendar, version: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-calendar`, { ...calendar, version })).overview;
+}
+
+/** The last day of the IM (`fine` in IM/calendario.md, D-169); null takes it away and the IM go on. */
+export async function saveImEnd(project: string, end: string | null, version: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-end`, { end, version })).overview;
+}
+
+/** The price of one IM of the project, in cents; null: no price. */
+export async function saveImPrice(project: string, amountCents: number | null, currency: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im-price`, { amountCents, currency })).overview;
+}
+
+/** The exception of one IM (its own price, null for the project's) and "non fatturato". */
+export async function saveImBilling(project: string, number: number, overrideCents: number | null, notBilled: boolean): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im/${String(number)}/billing`, { overrideCents, notBilled })).overview;
+}
+
+export async function createImInvoice(project: string, invoice: { number: string; issuedOn: string; note: string | null; ims: number[] }): Promise<{ invoice: ImInvoice; overview: ImOverview }> {
+  return call('POST', `${browse(project)}/invoices`, invoice);
+}
+
+export async function updateImInvoice(project: string, id: string, change: { number?: string; issuedOn?: string; paidOn?: string | null; note?: string | null }): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}`, change)).overview;
+}
+
+export async function cancelImInvoice(project: string, id: string): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}/cancel`, {})).overview;
+}
+
+export async function removeFromImInvoice(project: string, id: string, im: number): Promise<ImOverview> {
+  return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}/remove`, { im })).overview;
 }
 
 /** The closings of the IM asked in the secretary conversation, most recent first. */
