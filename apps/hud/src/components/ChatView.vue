@@ -29,7 +29,7 @@ import {
   type SavedNotes,
 } from '../lib/message-actions.ts';
 import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
-import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
+import { isAddingLine, isEventLine, participantPose, withText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
@@ -41,6 +41,7 @@ import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
+import ParticipantStack from './ParticipantStack.vue';
 import PixelAgent from './PixelAgent.vue';
 import SessionLine from './SessionLine.vue';
 
@@ -533,6 +534,15 @@ onBeforeUnmount(() => clearInterval(clock));
             <PixelAgent v-if="direct !== null" :choice="characters?.[direct]" :pose="directPose" :scale="2" bubble :label="directName" />
             <PixelAgent v-else :choice="arianna.choice" :pose="arianna.pose" :scale="2" bubble label="Arianna" />
           </div>
+          <!-- Who else is here (D-162, presenting D-125): small avatars overlapping the ring, each opens its menu -->
+          <ParticipantStack
+            v-if="participants.length > 0"
+            class="-ml-8 shrink-0 self-end"
+            :participants="participants"
+            :characters="characters"
+            :agents="status?.agents"
+            @remove="(agent) => emit('removeParticipant', agent)"
+          />
           <div class="min-w-0">
             <h2 class="flex flex-wrap items-center gap-2 font-hud text-lg leading-tight font-semibold tracking-[0.05em]">
               {{ directName }}
@@ -551,7 +561,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <span v-if="(directPose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
                 <i v-for="dot in 3" :key="dot" class="animate-hud-bob size-[5px] rounded-full bg-accent" :style="{ animationDelay: `${String((dot - 1) * 0.15)}s` }" />
               </span>
-              {{ POSE_TEXT[directPose] }}
+              <span class="min-w-0 truncate" :title="participants.length > 0 ? withText(participants) : undefined">{{ POSE_TEXT[directPose] }}<template v-if="participants.length > 0"> · {{ withText(participants) }}</template></span>
             </p>
             <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
@@ -616,25 +626,6 @@ onBeforeUnmount(() => clearInterval(clock));
           <span v-if="wholeNote !== null" role="status" :class="wholeNote.ok ? 'text-muted' : 'text-warn'">{{ wholeNote.text }}</span>
           <span v-else-if="wholeSaved && wholeWhen !== undefined" class="text-muted" :title="wholePath === null ? wholeWhen.full : `${wholeWhen.full} · ${wholePath}`">{{ wholeWhen.text }}</span>
         </div>
-
-        <!-- Who else is here (D-125): the agents Arianna brought in, each can be taken out -->
-        <section v-if="participants.length > 0" class="flex flex-wrap items-center gap-2" aria-label="Partecipanti della conversazione">
-          <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-muted uppercase">Con te e Arianna</span>
-          <div v-for="participant in participants" :key="participant.agent" class="hud-card flex items-center gap-2 py-1 pr-1 pl-2">
-            <PixelAgent :choice="characters?.[participant.agent]" :pose="participantPose(participant.agent, status?.agents)" :scale="1" :label="agentName(participant.agent)" />
-            <div class="min-w-0 leading-tight">
-              <div class="text-[13px] font-medium">{{ agentName(participant.agent) }}</div>
-              <div class="font-mono text-[10.5px] text-muted">{{ executorText(participant) }}</div>
-            </div>
-            <button
-              type="button"
-              class="grid size-6 place-items-center rounded-md text-muted hover:text-ink"
-              :aria-label="removeText(participant)"
-              :title="removeText(participant)"
-              @click="emit('removeParticipant', participant.agent)"
-            ><Icon name="close" :size="14" /></button>
-          </div>
-        </section>
 
         <!-- The model selector on small screens -->
         <label v-if="conversation.mode === 'work' && (direct === null || cloud)" class="flex items-center gap-2 text-xs text-muted sm:hidden">
