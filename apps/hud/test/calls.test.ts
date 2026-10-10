@@ -33,6 +33,7 @@ test('receiptText: who called, how long, how it ended', () => {
   assert.equal(receiptText(call({ direction: 'out', reason: 'waiting', status: 'missed', answeredAt: null })), 'Arianna ti ha cercato: chiamata persa');
   assert.equal(receiptText(call({ status: 'active', endedAt: null, endReason: null })), 'Hai chiamato Arianna: in corso');
   assert.match(receiptText(call({ direction: 'out', reason: 'scheduled', status: 'skipped', endReason: 'quiet-hours' })), /fascia di silenzio/);
+  assert.match(receiptText(call({ direction: 'out', reason: 'scheduled', status: 'skipped', endReason: 'agent-off' })), /l’agente non poteva rispondere/);
 });
 
 test('receiptAnchors: after the last message before the end; before everything when there is none', () => {
@@ -108,5 +109,6 @@ test('who answers is said by name (D-158)', () => {
   assert.equal(receiptText(call({}), calleeOf('coder')), 'Hai chiamato il Coder · 3:07');
   assert.equal(receiptText(call({ direction: 'out', status: 'missed', answeredAt: null }), calleeOf('traduttore')), 'traduttore ti ha cercato: chiamata persa');
   assert.match(callErrorText('invalid: not a private or direct conversation'), /Qui non si può chiamare/);
+  assert.match(callErrorText('agent-off: no local model can answer for oroscopo now'), /L’agente non può rispondere adesso/);
   assert.doesNotMatch(callErrorText('busy'), /Qui non si può chiamare/);
 });

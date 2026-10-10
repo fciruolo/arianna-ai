@@ -97,6 +97,7 @@ const SKIP_TEXT: Record<string, string> = {
   'quiet-hours': 'fascia di silenzio',
   'daily-limit': 'massimo di chiamate al giorno',
   cancelled: 'annullata',
+  'agent-off': 'l’agente non poteva rispondere',
 };
 
 /**
@@ -136,6 +137,7 @@ export function callErrorText(message: string): string {
       'voice-off': 'Il servizio voce non risponde: guarda il provino della voce.',
       'not-ready': 'Mancano dei modelli: assegna stt, tts e voice in [roles] e scaricali (vedi il provino della voce).',
       'not-found': 'La conversazione non esiste più.',
+      'agent-off': 'L’agente non può rispondere adesso: la sua scheda è spenta, il suo esecutore non è disponibile o non c’è un modello locale per lui.',
       invalid: 'Qui non si può chiamare: solo nelle conversazioni private con Arianna e nelle chat dirette con un agente, mai in incognito.',
     }[code] ?? 'La chiamata non è partita.'
   );
