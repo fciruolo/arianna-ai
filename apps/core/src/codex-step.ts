@@ -6,6 +6,7 @@ import {
   type CodexModel,
   type CodexResult,
   type CodexUsage,
+  type PreparedNotes,
   type PreparedWorkspace,
 } from '@arianna/executors';
 import type { Context, Decision } from '@arianna/policy';
@@ -22,6 +23,8 @@ export interface CodexStepInput {
   context: Context;
   brief: readonly BriefFragment[];
   workspace: PreparedWorkspace;
+  /** The read-only copy of the project's notes for this run (`prepareProjectNotes`, D-166); absent, none. */
+  notes?: PreparedNotes;
   model: CodexModel;
   /** `read`: the sandbox opens the workspace read only; `write`: the workspace only (D-138). */
   access: CodexAccess;
@@ -90,6 +93,7 @@ export async function runCodexStep(sql: Sql, executor: CodexExecutor, step: Step
   const sessionRef = sessionToResume(step, input);
   const launch = {
     workspace: input.workspace,
+    ...(input.notes === undefined ? {} : { notes: input.notes }),
     model: input.model,
     access: input.access,
     ...(input.persistSession === undefined ? {} : { persistSession: input.persistSession }),

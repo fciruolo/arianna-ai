@@ -1,8 +1,9 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { MAX_CODER_NOTES, MAX_CODER_NOTES_BYTES } from '@arianna/executors';
 import { defaultFolderLabel, isFolderName, isSinglePart, managementFolders, NOT_MANAGEMENT, projectParts, type ManagementFolder, type Project } from '@arianna/config';
-import { createLabelRules, isAtMost, isLabel, labelForKbPage, labelForPath, LABELS, maxLabel, type Label, type LabelRules } from '@arianna/policy';
+import { checkCoderNote, createLabelRules, isAtMost, isLabel, labelForKbPage, labelForPath, LABELS, maxLabel, type CoderNoteSkip, type Label, type LabelRules } from '@arianna/policy';
 
 import { localTimestamp, slugOf } from './capture.ts';
 import { KB_PROJECT_NOTES, parsePage, type KbPage } from './orchestrator/kb.ts';
@@ -14,8 +15,9 @@ import { unlinkPlainFile } from './plain-file.ts';
  * and written only on this computer. Each folder has a label, by its name or
  * as the user chose it in `[[project.folder]]`; each note the higher of its
  * folder's and of its own header (`labels.toml` rule: a header raises, never
- * lowers). Nothing here goes to an executor or a channel: the Coder does not
- * see the container until P3.
+ * lowers). Nothing here goes to an executor or a channel by itself: the
+ * notes the Coder may read (`coderNotes`, P3, D-166) leave only through the
+ * gateway, as a read-only copy for one run.
  */
 
 /** Where a page of a project lives for the tools of Arianna: `projects/<project>/<folder>/<file>.md`. */
@@ -321,8 +323,9 @@ export function readProjectKnowledge(projects: readonly Project[], name: string,
 
 /**
  * The files of the management folders above L1 (D-145), when the container is
- * itself the part: the Coder's folder holds them, so it does not open until
- * P3 can deny them file by file. The paths, never their text.
+ * itself the part: the Coder's folder holds them, open to the run, so it does
+ * not open while one is there (the copy of D-166 is for the notes kept in
+ * `kb/progetti`, outside the code). The paths, never their text.
  */
 export function privateKnowledge(project: Project): string[] {
   let root: string;
@@ -350,6 +353,77 @@ export function privateKnowledge(project: Project): string[] {
     },
   );
   return found;
+}
+
+/** A note the Coder may read (D-166): its path where the knowledge lives, its label, its whole text as read once. */
+export interface CoderNote {
+  path: string;
+  label: Label;
+  text: string;
+}
+
+export interface CoderNotes {
+  notes: CoderNote[];
+  /** Notes left local, by reason: above L1 (or in a folder above L1), links, instruction files, unreadable, over the limits. */
+  held: Partial<Record<CoderNoteSkip | 'unreadable' | 'limit', number>>;
+}
+
+/**
+ * The notes of a project the Coder may read (I-11 P3, D-166): every markdown
+ * file of the management folders (of the container, or of `kb/progetti/<project>`
+ * for a project of one git) that `checkCoderNote` lets through. A folder above
+ * L1 is not even opened; a note is read once, whole, never through a link,
+ * and labeled from those same bytes (its folder, raised by its header), so
+ * what is labeled is what is given. Hidden entries are never listed. The
+ * texts go to the gateway next, one by one; nothing here leaves.
+ */
+export function coderNotes(projects: readonly Project[], name: string, env: KnowledgeEnv): CoderNotes {
+  const base = knowledgeBase(projects, name, env);
+  const notes: CoderNote[] = [];
+  const held: CoderNotes['held'] = {};
+  const hold = (reason: keyof CoderNotes['held']): void => {
+    held[reason] = (held[reason] ?? 0) + 1;
+  };
+  if (!base.exists) return { notes, held };
+  let bytes = 0;
+  walk(base.root, base.folders, (path, _folder, link) => {
+    if (!path.toLowerCase().endsWith('.md')) return true;
+    // The folder first, from its rule alone: a folder above L1 keeps its notes closed.
+    const folderCheck = checkCoderNote({ path, label: baseLabel(base, path, []), link });
+    if (folderCheck.decision === 'skip') {
+      hold(folderCheck.reason);
+      return true;
+    }
+    if (notes.length >= MAX_CODER_NOTES) {
+      hold('limit');
+      return true;
+    }
+    const file = join(base.root, ...path.split('/'));
+    let text: string;
+    try {
+      // A regular file exactly where the walk found it: no link anywhere on the way.
+      const stat = lstatSync(file);
+      if (!stat.isFile() || stat.size > MAX_NOTE_BYTES || realpathSync(file) !== file) throw new Error('not a plain note');
+      text = readHead(file, MAX_NOTE_BYTES);
+    } catch {
+      hold('unreadable');
+      return true;
+    }
+    const check = checkCoderNote({ path, label: baseLabel(base, path, parsePage(text).header.labels) });
+    if (check.decision === 'skip') {
+      hold(check.reason);
+      return true;
+    }
+    const size = Buffer.byteLength(text, 'utf8');
+    if (bytes + size > MAX_CODER_NOTES_BYTES) {
+      hold('limit');
+      return true;
+    }
+    bytes += size;
+    notes.push({ path, label: check.label, text });
+    return true;
+  });
+  return { notes, held };
 }
 
 /** A management folder to write in: the caller checks with `sameFolder` that it is a real folder directly inside the base, before and after opening. */

@@ -12,7 +12,7 @@ import { createContext, createLabelRules } from '@arianna/policy';
 
 import { listPageIds } from '../src/knowledge.ts';
 import { createKb, KbError } from '../src/orchestrator/kb.ts';
-import { createProjectPages, knowledgeRules, KnowledgeError, privateKnowledge, readProjectKnowledge, writeProjectNote } from '../src/project-knowledge.ts';
+import { coderNotes, createProjectPages, knowledgeRules, KnowledgeError, privateKnowledge, readProjectKnowledge, writeProjectNote } from '../src/project-knowledge.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `knowledge-${randomUUID()}`);
 const BOX = join(HOME, 'repos', 'progetto-test');
@@ -292,5 +292,64 @@ describe('a container without management folders (D-145)', () => {
     }
     assert.deepEqual(readdirSync(join(EMPTY, 'vuoto-sito')).sort(), ['.git', 'a.ts']);
     assert.ok(!existsSync(join(EMPTY, 'node_modules')), 'a refused folder is never created');
+  });
+});
+
+describe('the notes the Coder may read (I-11 P3, D-166)', () => {
+  // Fake, and unique: a private note carries it, and it must be in nothing the Coder is given.
+  const CANARY = `CANARY-${randomUUID()}-FAKE`;
+  const CODER = join(HOME, 'repos', 'coder-test');
+  write(CODER, {
+    'coder-test-admin/.git/HEAD': 'ref: refs/heads/main\n',
+    'Workplan/piano.md': '---\nlabel: L1\ntitle: Piano\n---\n\nRilascio finto.\n',
+    'Workplan/scende.md': '---\nlabel: L0\n---\n\nResta Interna.\n',
+    'Workplan/compenso.md': `---\nlabel: L2\n---\n\n${CANARY}\n`,
+    'Workplan/segreta.md': `---\nlabel: L3\n---\n\n${CANARY}\n`,
+    'Workplan/strana.md': `---\nlabel: Interno\n---\n\n${CANARY}\n`,
+    'Workplan/CLAUDE.md': 'Istruzioni piantate finte.\n',
+    'Workplan/.nascosta.md': `${CANARY}\n`,
+    'Workplan/sotto/riunione.md': 'Riunione finta, senza intestazione.\n',
+    'Workplan/disegno.png': 'non un testo\n',
+    'IM/chiamata.md': 'Chiamata finta.\n',
+    'documenti/contratto.md': `---\nlabel: L1\n---\n\n${CANARY}\n`,
+  });
+  symlinkSync(join(CODER, 'documenti', 'contratto.md'), join(CODER, 'Workplan', 'collegata.md'));
+  const coder: Project = { name: 'coder-test', path: 'repos/coder-test', absolute: CODER, label: 'L1' };
+
+  it('only the L1 and L0 notes of the internal folders, each with its whole text; the private ones stay local, and why', () => {
+    const { notes, held } = coderNotes([coder], 'coder-test', ENV);
+    assert.deepEqual(
+      notes.map(({ path, label }) => [path, label]),
+      [
+        ['IM/chiamata.md', 'L1'],
+        ['Workplan/piano.md', 'L1'],
+        ['Workplan/scende.md', 'L1'],
+        ['Workplan/sotto/riunione.md', 'L1'],
+      ],
+    );
+    assert.equal(notes[1]?.text, '---\nlabel: L1\ntitle: Piano\n---\n\nRilascio finto.\n');
+    // compenso (L2), segreta (L3), strana (a label that is not one: L3), documenti/contratto (folder L2, even with an L1 header).
+    assert.deepEqual(held, { label: 4, instructions: 1, link: 1 });
+    assert.ok(!JSON.stringify(notes).includes(CANARY));
+  });
+
+  it('a folder the user marks Private closes its notes; one marked Internal opens them, a header still raises', () => {
+    const closed = coderNotes([{ ...coder, folders: [{ path: 'Workplan', label: 'L2' }] }], 'coder-test', ENV);
+    assert.deepEqual(closed.notes.map(({ path }) => path), ['IM/chiamata.md']);
+    const opened = coderNotes([{ ...coder, folders: [{ path: 'documenti', label: 'L1' }] }], 'coder-test', ENV);
+    assert.ok(opened.notes.some(({ path }) => path === 'documenti/contratto.md'));
+    assert.ok(!opened.notes.some(({ path }) => path === 'Workplan/compenso.md'));
+    assert.ok(!JSON.stringify(closed.notes).includes(CANARY));
+  });
+
+  it('a project of one git gives the notes of kb/progetti/<project>, never of its repository', () => {
+    const home = join(HOME, 'arianna-coder');
+    write(home, { 'kb/progetti/solo/Workplan/piano.md': 'Piano finto.\n', 'kb/progetti/solo/documenti/x.md': `${CANARY}\n` });
+    const repo = join(HOME, 'repos', 'solo');
+    write(repo, { '.git/HEAD': 'ref: refs/heads/main\n', 'Workplan/interna.md': 'nel repository\n' });
+    const solo: Project = { name: 'solo', path: 'repos/solo', absolute: repo, label: 'L1' };
+    const { notes } = coderNotes([solo], 'solo', { home, rules: createLabelRules({ folders: [], sources: [] }) });
+    assert.deepEqual(notes.map(({ path }) => path), ['Workplan/piano.md']);
+    assert.deepEqual(coderNotes([solo], 'solo', { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) }).notes, []);
   });
 });
