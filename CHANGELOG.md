@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.54.0] - 2026-10-10
+
 ### Aggiunto
 
 - Gli IM del progetto (Iteration Meeting, la riunione settimanale con il cliente): un file `IM-<n>.md` per riunione nella cartella IM, con le voci a caselle (da fare, in corso, fatto, rimandato, annullato), `— Parte N` e la call spostata che non cambia la data (D-167, I-11 P4a).
