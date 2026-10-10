@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
-import { cloudWarning, localNote, shortTarget, type DraftChoice } from '../lib/draft.ts';
-import { agentName } from '../lib/italian.ts';
+import { arrowChoice, cloudNotice, localNote, shortTarget, type DraftChoice } from '../lib/draft.ts';
+import { agentDescription, agentTitle } from '../lib/italian.ts';
 import { MODE_HINT, MODE_TEXT } from '../lib/labels.ts';
 import type { CharacterChoice, ConversationMode, DirectAgent, ProjectInfo } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -22,7 +22,8 @@ const incognitoMode = ref<ConversationMode>('private');
 const kinds: { id: Kind; text: string; icon: 'private' | 'work' | 'coder' | 'incognito' }[] = [
   { id: 'private', text: MODE_TEXT.private, icon: 'private' },
   { id: 'work', text: MODE_TEXT.work, icon: 'work' },
-  { id: 'agent', text: 'Con un agente', icon: 'coder' },
+  // Short, so that the four never wrap (D-158); the hint below says the rest.
+  { id: 'agent', text: 'Agente', icon: 'coder' },
   { id: 'incognito', text: 'Incognito', icon: 'incognito' },
 ];
 const modes: ConversationMode[] = ['private', 'work'];
@@ -68,6 +69,27 @@ watch(
   { immediate: true },
 );
 
+/** The arrows move the choice inside a group, as in any radio group (D-158); the focus follows the chosen option. */
+async function arrows<T>(event: KeyboardEvent, options: readonly T[], current: T, choose: (value: T) => void): Promise<void> {
+  const next = arrowChoice(options, current, event.key);
+  if (next === undefined) return;
+  event.preventDefault();
+  const group = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
+  choose(next);
+  await nextTick();
+  group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+}
+const kindIds = kinds.map((option) => option.id);
+const agentIds = computed(() => props.agents.map((entry) => entry.agent));
+/** Enter on a choice opens the conversation, as the button does (D-158); Space chooses. */
+function enter(event: KeyboardEvent): void {
+  const target = event.target instanceof HTMLElement ? event.target : undefined;
+  if (target?.getAttribute('role') !== 'radio') return;
+  event.preventDefault();
+  submit();
+}
+const notice = computed(() => (policy.value?.cloud === true ? cloudNotice(policy.value.agent, policy.value.project ? agentProject.value : undefined, policy.value.executors) : undefined));
+
 function submit(): void {
   if (kind.value === 'agent') {
     const chosen = policy.value;
@@ -87,32 +109,46 @@ function submit(): void {
 </script>
 
 <template>
-  <form class="flex flex-col gap-2" @submit.prevent="submit">
-    <div class="grid grid-cols-2 gap-1 rounded-[9px] sm:grid-cols-4 border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Con chi parli">
+  <form class="flex flex-col gap-3" @submit.prevent="submit" @keydown.enter="enter">
+    <!-- The kind: never wrapped, two rows of two under 640 px (D-158). -->
+    <div
+      class="grid grid-cols-2 gap-1 rounded-[10px] border border-line bg-surface-2 p-1 sm:grid-cols-4"
+      role="radiogroup"
+      aria-label="Con chi parli"
+      @keydown="arrows($event, kindIds, kind, (value) => (kind = value))"
+    >
       <button
         v-for="option in kinds"
         :key="option.id"
         type="button"
         role="radio"
         :aria-checked="kind === option.id"
-        class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium transition"
+        :tabindex="kind === option.id ? 0 : -1"
+        class="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[13px] font-medium whitespace-nowrap transition"
         :class="kind === option.id ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
         @click="kind = option.id"
       >
-        <Icon :name="option.icon" :size="14" />{{ option.text }}
+        <Icon :name="option.icon" :size="15" />{{ option.text }}
       </button>
     </div>
-    <p class="px-0.5 text-xs leading-snug text-muted">{{ hint }}</p>
+    <p class="-mt-1 px-0.5 text-[12.5px] leading-snug text-muted">{{ hint }}</p>
 
     <!-- Incognito (D-136): then private or work, as for a normal conversation. -->
-    <div v-if="kind === 'incognito'" class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità della conversazione incognita">
+    <div
+      v-if="kind === 'incognito'"
+      class="grid grid-cols-2 gap-1 rounded-[10px] border border-line bg-surface-2 p-1"
+      role="radiogroup"
+      aria-label="Modalità della conversazione incognita"
+      @keydown="arrows($event, modes, incognitoMode, (value) => (incognitoMode = value))"
+    >
       <button
         v-for="option in modes"
         :key="option"
         type="button"
         role="radio"
         :aria-checked="incognitoMode === option"
-        class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition"
+        :tabindex="incognitoMode === option ? 0 : -1"
+        class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition"
         :class="incognitoMode === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
         @click="incognitoMode = option"
       >
@@ -122,37 +158,53 @@ function submit(): void {
 
     <template v-if="kind === 'agent'">
       <!-- One card per agent (the user's choice after the trial of D-111d): character, name, where it runs, what it does. -->
-      <div v-if="agents.length > 0" class="grid max-h-[46vh] grid-cols-2 gap-2 overflow-y-auto p-0.5" role="radiogroup" aria-label="Agente">
+      <div
+        v-if="agents.length > 0"
+        class="grid max-h-[40vh] grid-cols-1 gap-2 overflow-y-auto p-0.5 min-[420px]:grid-cols-2"
+        role="radiogroup"
+        aria-label="Agente"
+        @keydown="arrows($event, agentIds, agent, (value) => (agent = value))"
+      >
         <button
           v-for="entry in agents"
           :key="entry.agent"
           type="button"
           role="radio"
           :aria-checked="agent === entry.agent"
-          class="flex flex-col items-start gap-1.5 rounded-[10px] border p-2.5 text-left transition"
+          :tabindex="agent === entry.agent ? 0 : -1"
+          class="flex flex-col items-start gap-1 rounded-[10px] border p-2.5 text-left transition"
           :class="agent === entry.agent ? 'border-accent bg-surface shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line bg-surface-2 hover:border-line-strong'"
           @click="agent = entry.agent"
         >
           <span class="flex w-full items-center gap-2">
             <PixelAgent :choice="characters?.[entry.agent]" pose="idle" :scale="1" />
-            <span class="min-w-0 flex-1 truncate text-[13px] font-medium">{{ agentName(entry.agent) }}</span>
+            <span class="min-w-0 flex-1 truncate text-[13.5px] font-medium">{{ agentTitle(entry.agent) }}</span>
+            <span
+              class="shrink-0 rounded-full border px-1.5 py-px font-mono text-[10px] whitespace-nowrap"
+              :class="entry.cloud ? 'border-l1/60 text-l1' : 'border-line-strong text-muted'"
+            >{{ entry.cloud ? shortTarget(entry.executors?.length ? entry.executors : ['claude']) : 'locale' }}</span>
           </span>
-          <span
-            class="rounded-full border px-1.5 py-px font-mono text-[10px]"
-            :class="entry.cloud ? 'border-l1/60 text-l1' : 'border-line-strong text-muted'"
-          >{{ entry.cloud ? shortTarget(entry.executors?.length ? entry.executors : ['claude']) : 'locale' }}</span>
-          <span v-if="entry.description !== ''" class="line-clamp-2 text-[11.5px] leading-snug text-muted" :title="entry.description">{{ entry.description }}</span>
+          <span v-if="entry.description !== ''" class="line-clamp-2 text-xs leading-snug text-muted" :title="agentDescription(entry.agent, entry.description)">{{
+            agentDescription(entry.agent, entry.description)
+          }}</span>
         </button>
       </div>
-      <p v-else class="text-xs leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
-      <div v-if="policy !== undefined && policy.modes.length > 1" class="grid grid-cols-2 gap-1 rounded-[9px] border border-line bg-surface-2 p-1" role="radiogroup" aria-label="Modalità">
+      <p v-else class="text-[12.5px] leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
+      <div
+        v-if="policy !== undefined && policy.modes.length > 1"
+        class="grid grid-cols-2 gap-1 rounded-[10px] border border-line bg-surface-2 p-1"
+        role="radiogroup"
+        aria-label="Modalità"
+        @keydown="arrows($event, policy.modes, mode, (value) => (agentMode = value))"
+      >
         <button
           v-for="option in policy.modes"
           :key="option"
           type="button"
           role="radio"
           :aria-checked="mode === option"
-          class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition"
+          :tabindex="mode === option ? 0 : -1"
+          class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition"
           :class="mode === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
           @click="agentMode = option"
         >
@@ -160,49 +212,53 @@ function submit(): void {
         </button>
       </div>
       <template v-if="policy?.project === true">
-        <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
+        <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs font-medium text-muted">
           Progetto
-          <select :value="agentProject" class="field px-2.5 py-1.5 text-[13px]" @change="project = ($event.target as HTMLSelectElement).value">
+          <select :value="agentProject" class="field px-2.5 py-2 text-[13px] font-normal text-ink" @change="project = ($event.target as HTMLSelectElement).value">
             <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           </select>
         </label>
-        <p v-else class="text-xs leading-snug text-muted">
-          {{ agentName(policy.agent) }} lavora in un progetto, e non ce n'è uno approvato: aggiungilo con
+        <p v-else class="text-[12.5px] leading-snug text-muted">
+          {{ agentTitle(policy.agent) }} lavora in un progetto, e non ce n'è uno approvato: aggiungilo con
           <code class="font-mono">pnpm arianna:init --reconfigure</code>.
         </p>
       </template>
-      <p
-        v-if="policy !== undefined"
-        role="note"
-        class="rounded-lg border px-3 py-2 text-xs leading-snug"
-        :class="policy.cloud ? 'border-warn/50 bg-warn/10 text-warn' : 'border-line bg-surface-2 text-muted'"
-      >
-        {{ policy.cloud ? cloudWarning(policy.agent, policy.project ? agentProject : undefined, policy.executors) : localNote(policy.agent) }}
-      </p>
+      <!-- On the cloud: a short title, one sentence, the rest behind "Dettagli" (D-158). -->
+      <div v-if="notice !== undefined" role="note" class="flex gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[12.5px] leading-snug">
+        <span class="mt-px shrink-0 text-warn"><Icon name="warning" :size="15" /></span>
+        <div class="flex min-w-0 flex-col gap-1">
+          <strong class="font-semibold text-warn">{{ notice.title }}</strong>
+          <span class="text-ink">{{ notice.text }}</span>
+          <details class="text-muted">
+            <summary class="w-fit cursor-pointer rounded text-xs hover:text-ink">Dettagli</summary>
+            <p class="mt-1 text-xs">{{ notice.details }}</p>
+          </details>
+        </div>
+      </div>
+      <p v-else-if="policy !== undefined" role="note" class="rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-[12.5px] leading-snug text-muted">{{ localNote(policy.agent) }}</p>
     </template>
 
     <template v-else-if="kind === 'work' || (kind === 'incognito' && incognitoMode === 'work')">
-      <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs text-muted">
+      <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs font-medium text-muted">
         Progetto
-        <select v-model="project" class="field px-2.5 py-1.5 text-[13px]">
+        <select v-model="project" class="field px-2.5 py-2 text-[13px] font-normal text-ink">
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           <option value="">Nessun progetto</option>
         </select>
       </label>
-      <p v-else class="text-xs leading-snug text-muted">
+      <p v-else class="text-[12.5px] leading-snug text-muted">
         Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno con
         <code class="font-mono">pnpm arianna:init --reconfigure</code>.
       </p>
     </template>
 
-    <button
-      type="submit"
-      :disabled="!ready"
-      class="flex w-full items-center gap-2 rounded-[9px] border border-line-strong bg-surface-2 px-3 py-2.5 text-left font-medium hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      <Icon :name="kind === 'agent' ? 'coder' : kind === 'incognito' ? 'incognito' : 'new'" />{{
-        kind === 'agent' && policy !== undefined ? `Parla con ${agentName(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
-      }}
-    </button>
+    <!-- The action: a primary button on the right, as Invio on a choice (D-158). -->
+    <div class="mt-1 flex justify-end border-t border-line pt-3">
+      <button type="submit" :disabled="!ready" class="btn btn-primary w-full px-4 py-2 text-[13.5px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">
+        <Icon :name="kind === 'agent' ? 'coder' : kind === 'incognito' ? 'incognito' : 'new'" :size="16" />{{
+          kind === 'agent' && policy !== undefined ? `Parla con ${agentTitle(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
+        }}
+      </button>
+    </div>
   </form>
 </template>

@@ -6,7 +6,7 @@ import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_M
 import { canSaveToInbox } from '../lib/capture.ts';
 import { sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
-import { receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
+import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
@@ -687,7 +687,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
         <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
-          <Icon name="phone" :size="12" />{{ receiptText(call) }}
+          <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
           <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
         </p>
 
@@ -806,7 +806,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
           <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
-            <Icon name="phone" :size="12" />{{ receiptText(call) }}
+            <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>

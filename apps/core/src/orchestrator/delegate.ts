@@ -297,20 +297,37 @@ export async function directChatSession(sql: Sql, conversationId: string, delega
  * refused never reached the Coder and is not sent now either. Capped by
  * exchanges and characters, the newest kept.
  */
-export async function directChatHistory(sql: Sql, conversationId: string, delegation: Delegation): Promise<BriefFragment[]> {
-  const rows = await sql<{ brief: string; label: Label; answer: string | null; answerLabel: Label | null; taskId: string }[]>`
-    SELECT d.brief, d.label, m.body AS answer, m.label AS "answerLabel", d.task_id::text AS "taskId"
+export async function directChatHistory(sql: Sql, conversationId: string, delegation: Delegation, options: { voice?: boolean } = {}): Promise<BriefFragment[]> {
+  const rows = await sql<{ brief: string; label: Label; answer: string | null; answerLabel: Label | null; taskId: string; at: Date }[]>`
+    SELECT d.brief, d.label, m.body AS answer, m.label AS "answerLabel", d.task_id::text AS "taskId", d.created_at AS at
       FROM task_delegations d JOIN tasks t ON t.id = d.task_id LEFT JOIN messages m ON m.id = d.message_id
       WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
         AND d.status = 'ok' AND d.id <> ${delegation.id}
       ORDER BY d.created_at DESC, d.id DESC LIMIT ${DIRECT_HISTORY_EXCHANGES}`;
-  const kept: BriefFragment[][] = [];
-  let chars = 0;
-  for (const row of rows) {
+  const units: { at: Date; exchange: BriefFragment[] }[] = rows.map((row) => {
     const exchange: BriefFragment[] = [{ text: `${EARLIER_MESSAGE}${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
     if (row.answer !== null && row.answerLabel !== null) {
       exchange.push({ text: `${EARLIER_ANSWER}${row.answer}`, label: row.answerLabel, source: `task:${row.taskId}` });
     }
+    return { at: row.at, exchange };
+  });
+  // D-158: what was said in a call with a local agent, before this message. Its words and the agent's spoken answers
+  // have no delegation (a call answers on the spot); a cloud brief never reads them: the caller asks for them (`voice`).
+  if (options.voice === true) {
+    const said = await sql<{ id: string; role: 'user' | 'assistant'; body: string; label: Label; at: Date }[]>`
+      SELECT m.id::text, m.role, m.body, m.label, m.ts AS at FROM messages m
+        WHERE m.conversation_id = ${conversationId} AND m.channel = 'voice' AND m.task_id IS NULL AND m.role IN ('user', 'assistant')
+          AND m.ts < (SELECT d.created_at FROM task_delegations d WHERE d.id = ${delegation.id})
+        ORDER BY m.ts DESC, m.id DESC LIMIT ${DIRECT_HISTORY_EXCHANGES * 2}`;
+    for (const message of said) {
+      const opening = message.role === 'user' ? EARLIER_MESSAGE : EARLIER_ANSWER;
+      units.push({ at: message.at, exchange: [{ text: `${opening}${message.body}`, label: message.label, source: `message:${message.id}` }] });
+    }
+    units.sort((a, b) => b.at.getTime() - a.at.getTime());
+  }
+  const kept: BriefFragment[][] = [];
+  let chars = 0;
+  for (const { exchange } of units.slice(0, options.voice === true ? DIRECT_HISTORY_EXCHANGES * 3 : DIRECT_HISTORY_EXCHANGES)) {
     const size = exchange.reduce((sum, fragment) => sum + fragment.text.length, 0);
     if (chars + size > DIRECT_HISTORY_CHARS) {
       // The latest exchange alone above the cap is cut, not left out: the start of the message, the end of the answer.
@@ -452,7 +469,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 
   if (where === 'local') {
     // One call to the local model: no folder, no quota; the router checks the label against the agent.
-    const decision = route({ kind: 'judge', agent: agent.card, text: delegation.brief }, createContext(task.clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
+    const decision = await routeLocalAgent(env, agent.card, task.clearance, label, delegation.brief);
     if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
@@ -516,6 +533,27 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     return { kind: 'cloud', ...rest, executor: 'codex', model };
   }
   return closed('failed', `${delegation.agent} runs delegated steps on Claude Code or Codex only, and neither is available for this step`, decision);
+}
+
+/**
+ * The router's choice for one answer of an agent on the local model: the
+ * step of a delegation (D-119), or a turn of a call in its direct chat (D-158).
+ */
+export async function routeLocalAgent(
+  env: Pick<DelegateEnv, 'sql' | 'settings' | 'claude' | 'codex'>,
+  card: AgentCard,
+  clearance: Label,
+  label: Label,
+  text?: string,
+): Promise<RouteDecision> {
+  return route({ kind: 'judge', agent: card, ...(text === undefined ? {} : { text }) }, createContext(clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
+}
+
+/** The local model an agent answers on now, or undefined when none can (D-158: the calls of its direct chat). */
+export async function localAgentModel(env: Pick<DelegateEnv, 'sql' | 'settings' | 'claude' | 'codex' | 'model'>, card: AgentCard, clearance: Label, label: Label): Promise<string | undefined> {
+  if (env.model === undefined || delegationRoute(card) !== 'local') return undefined;
+  const decision = await routeLocalAgent(env, card, clearance, label);
+  return decision.decision !== 'wait' && decision.locality === 'local' ? decision.model : undefined;
 }
 
 /** Which cloud adapters run on this machine, for the router's candidates. */
@@ -1003,7 +1041,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   const direct = task.conversationId !== null && (await directChatOf(sql, task, delegation.agent)) !== undefined;
   // Never an earlier exchange above what the card may read now: a card lowered after the conversation began reads less.
   const ceiling = briefCeiling(agent.card);
-  const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation)).filter((part) => isAtMost(part.label, ceiling)) : [];
+  const history = direct && task.conversationId !== null ? (await directChatHistory(sql, task.conversationId, delegation, { voice: true })).filter((part) => isAtMost(part.label, ceiling)) : [];
   // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
   const parts = [

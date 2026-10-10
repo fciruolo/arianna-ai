@@ -4,8 +4,8 @@ import type { Queryable, Sql } from '../db/client.ts';
 import { ChatError } from '../conversations.ts';
 import { appendEvent } from '../events.ts';
 import { loadTask } from '../tasks.ts';
-import { CALL_COLUMNS, loadCall, writeNote, type Call } from './calls.ts';
-import { FAILED_TEXT, mayCall, OUTGOING_TEXT, startOfDay, type CallReason } from './outgoing.ts';
+import { CALL_COLUMNS, CallError, loadCall, writeNote, type Call } from './calls.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, mayCall, OUTGOING_TEXT, startOfDay, type CallReason } from './outgoing.ts';
 
 /**
  * The calls Arianna makes (D-066, choice 8): a task waiting for the user for
@@ -24,6 +24,11 @@ export interface RingerOptions {
   hold?: <T>(work: () => Promise<T>) => Promise<T>;
   /** Web Push "Arianna ti chiama", read at each ring; undefined without [voice.push]. */
   notify?: () => (() => Promise<void>) | undefined;
+  /**
+   * Whether the conversation's call can be answered now (D-158: in a direct
+   * chat, by its agent; `Calls.check` with `answer`). Absent, every call may ring.
+   */
+  check?: (conversationId: string) => Promise<void>;
   /** How many pages hold the live feed now: with none, the push is the only way to ring. */
   clientsOnline: () => number;
   onError?: (error: unknown) => void;
@@ -99,6 +104,18 @@ export function createRinger(options: RingerOptions): Ringer {
     for (const row of rows) await writeNote(sql, row.conversationId, row.reason === 'task-done' && row.failed ? FAILED_TEXT.missed : OUTGOING_TEXT[row.reason].missed, callId);
   }
 
+  async function refusedByAgent(conversationId: string): Promise<boolean | 'later'> {
+    if (options.check === undefined) return false;
+    try {
+      await options.check(conversationId);
+      return false;
+    } catch (error) {
+      if (error instanceof CallError && error.code === 'agent-off') return true;
+      if (error instanceof CallError && error.code === 'not-ready') return 'later';
+      throw error;
+    }
+  }
+
   async function tick(): Promise<Call | undefined> {
     if (running) return undefined;
     return options.hold === undefined ? ring() : options.hold(ring);
@@ -118,6 +135,10 @@ export function createRinger(options: RingerOptions): Ringer {
       const candidate = await nextCandidate(sql, real, rules.waitingMinutes, at);
       if (candidate === undefined) return undefined;
       const reason: CallReason = candidate.kind === 'waiting' ? 'waiting' : (candidate.call.reason ?? 'scheduled');
+      // The agent of a direct chat that cannot answer (D-158): skipped, as answering would refuse it.
+      // No local model for it just now (the router waits) is not a refusal: the call waits for the next check.
+      const agentOff = await refusedByAgent(candidate.kind === 'waiting' ? candidate.conversationId : candidate.call.conversationId);
+      if (agentOff === 'later') return undefined;
       // Counted by when they rang (answered, missed or failed alike), not by when they were scheduled.
       const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM calls WHERE rang_at >= ${startOfDay(real)}`;
@@ -125,7 +146,11 @@ export function createRinger(options: RingerOptions): Ringer {
       // With no page open and no push, nobody can hear it ring: Arianna writes at once.
       const notify = options.notify?.();
       const deaf = allowed.ok && options.clientsOnline() === 0 && notify === undefined;
-      const verdict: { ok: true } | { ok: false; reason: 'quiet-hours' | 'daily-limit' | 'no-answer' } = deaf ? { ok: false, reason: 'no-answer' } : allowed;
+      const verdict: { ok: true } | { ok: false; reason: 'quiet-hours' | 'daily-limit' | 'no-answer' | 'agent-off' } = agentOff
+        ? { ok: false, reason: 'agent-off' }
+        : deaf
+          ? { ok: false, reason: 'no-answer' }
+          : allowed;
       const task = candidate.kind === 'waiting' ? undefined : candidate.call.taskId === null ? undefined : await loadTask(sql, candidate.call.taskId);
       const failed = reason === 'task-done' && task?.status === 'failed';
 
@@ -152,6 +177,7 @@ export function createRinger(options: RingerOptions): Ringer {
           await appendEvent(tx, {
             kind: verdict.ok ? 'call.ringing' : 'call.ended',
             label: 'L0',
+            // L0: never the agent of a direct chat (a user's agent is named at L1, D-125); the chat reads it from the conversation.
             payload: { callId: row.id, conversationId: row.conversationId, reason, ...(verdict.ok ? {} : { status: 'skipped', endReason: verdict.reason }) },
           });
           return row;
@@ -164,7 +190,7 @@ export function createRinger(options: RingerOptions): Ringer {
       if (call === undefined) return undefined;
 
       if (!verdict.ok) {
-        await writeNote(sql, call.conversationId, failed ? FAILED_TEXT.skipped : OUTGOING_TEXT[reason].skipped, call.id);
+        await writeNote(sql, call.conversationId, agentOff ? AGENT_OFF_TEXT : failed ? FAILED_TEXT.skipped : OUTGOING_TEXT[reason].skipped, call.id);
         return call;
       }
       // No chat open: the push is the only way to ring.
@@ -196,11 +222,18 @@ export function createRinger(options: RingerOptions): Ringer {
   };
 }
 
+/**
+ * Whether the conversation may have calls (D-158): in a direct chat, its agent
+ * must answer them (`Calls.check`). Throws the refusal.
+ */
+export type CallCheck = (conversationId: string) => Promise<void>;
+
 /** The user schedules a call: within a week, in the future. */
-export async function scheduleCall(sql: Sql, conversationId: string, at: Date, now: Date = new Date()): Promise<Call> {
+export async function scheduleCall(sql: Sql, conversationId: string, at: Date, now: Date = new Date(), check?: CallCheck): Promise<Call> {
   if (Number.isNaN(at.getTime()) || at.getTime() < now.getTime() - 60_000 || at.getTime() > now.getTime() + 7 * 86_400_000) {
     throw new ScheduleError('the time must be within the next seven days');
   }
+  await check?.(conversationId);
   return sql.begin(async (tx) => {
     const [conversation] = await tx<{ archived: boolean; incognito: boolean }[]>`
       SELECT archived_at IS NOT NULL AS archived, incognito FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL AND origin = 'user'`;
@@ -219,7 +252,7 @@ export async function scheduleCall(sql: Sql, conversationId: string, at: Date, n
 }
 
 /** "Chiamami quando finisci": a call waiting for the task to end (once per task). */
-export async function callWhenDone(sql: Sql, taskId: string): Promise<Call> {
+export async function callWhenDone(sql: Sql, taskId: string, check?: CallCheck): Promise<Call> {
   const task = await loadTask(sql, taskId);
   if (task?.conversationId === null || task === undefined) throw new ScheduleError('no such task in a conversation');
   if (task.status === 'done' || task.status === 'failed') throw new ScheduleError('the task is already over');
@@ -227,6 +260,7 @@ export async function callWhenDone(sql: Sql, taskId: string): Promise<Call> {
     SELECT incognito FROM conversations WHERE id = ${task.conversationId} AND archived_at IS NULL AND purged_at IS NULL AND origin = 'user'`;
   if (open === undefined) throw new ScheduleError('the conversation is archived, deleted or a system chat');
   if (open.incognito) throw new ChatError('incognito', 'incognito');
+  await check?.(task.conversationId);
   return sql.begin(async (tx) => {
     const [existing] = await tx.unsafe<Call[]>(`SELECT ${CALL_COLUMNS} FROM calls WHERE task_id = $1 AND reason = 'task-done' AND status = 'scheduled'`, [taskId]);
     if (existing !== undefined) return existing;

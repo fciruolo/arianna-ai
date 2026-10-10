@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { loadTheme, nextTheme, saveTheme, themeAttribute } from '../src/lib/theme.ts';
+import { loadTheme, nextTheme, saveTheme, THEME_ICON, THEME_TEXT, themeAttribute, themeLabel, THEMES } from '../src/lib/theme.ts';
 
-test('the theme cycles system → dark → light and is remembered when storage works', () => {
-  assert.equal(nextTheme('system'), 'dark');
-  assert.equal(nextTheme('dark'), 'light');
-  assert.equal(nextTheme('light'), 'system');
+test('the theme cycles light → dark → system (D-158) and is remembered when storage works', () => {
+  assert.equal(nextTheme('light'), 'dark');
+  assert.equal(nextTheme('dark'), 'system');
+  assert.equal(nextTheme('system'), 'light');
+  assert.notEqual(nextTheme('dark'), 'light');
+  assert.deepEqual(THEMES.map((theme) => THEME_TEXT[theme]), ['Chiaro', 'Scuro', 'Auto']);
   const values = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) };
   assert.equal(loadTheme(storage), 'system');
@@ -29,4 +31,14 @@ test('a broken or blocked storage means the system theme, never an error', () =>
   assert.doesNotThrow(() => { saveTheme(broken, 'dark'); });
   assert.equal(loadTheme({ getItem: () => 'purple', setItem: () => undefined }), 'system');
   assert.equal(loadTheme(undefined), 'system');
+});
+
+test('the header button says and shows the active theme (D-158)', () => {
+  assert.equal(themeLabel('light'), 'Tema: chiaro');
+  assert.equal(themeLabel('dark'), 'Tema: scuro');
+  assert.equal(themeLabel('system'), 'Tema: automatico');
+  assert.equal(THEME_ICON.light, 'theme-light');
+  assert.equal(THEME_ICON.dark, 'theme-dark');
+  assert.equal(THEME_ICON.system, 'theme-system');
+  assert.notEqual(THEME_ICON.light, THEME_ICON.system);
 });

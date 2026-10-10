@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import type { CallSession } from '../lib/call-session.ts';
-import { clock } from '../lib/calls.ts';
+import { clock, type Callee } from '../lib/calls.ts';
 import type { CharacterChoice, Message } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import PixelAgent from './PixelAgent.vue';
@@ -17,6 +17,8 @@ const props = defineProps<{
   session: CallSession;
   title: string;
   messages: readonly Message[];
+  /** Who answers (D-158): Arianna, or the agent of the direct chat. */
+  callee: Callee;
   choice: CharacterChoice | undefined;
 }>();
 const emit = defineEmits<{ hangUp: [] }>();
@@ -37,7 +39,7 @@ const captions = computed(() =>
   props.messages
     .filter((message) => message.channel === 'voice' && Date.parse(message.ts) >= started.value - 1000)
     .slice(-2)
-    .map((message) => ({ id: message.id, who: message.role === 'user' ? 'Tu' : 'Arianna', text: message.body })),
+    .map((message) => ({ id: message.id, who: message.role === 'user' ? 'Tu' : props.callee.name, text: message.body })),
 );
 
 function measure(): void {
@@ -74,7 +76,7 @@ onBeforeUnmount(() => {
         : 'fixed inset-0 z-50 flex flex-col items-center justify-between bg-gradient-to-b from-teal-700 via-teal-900 to-[#06201f] px-6 py-10 text-white'
     "
     role="dialog"
-    aria-label="Chiamata con Arianna"
+    :aria-label="`Chiamata con ${callee.the}`"
   >
     <audio ref="audio" autoplay class="hidden" />
 
@@ -87,14 +89,14 @@ onBeforeUnmount(() => {
         <div class="transition-transform duration-300" :class="speaking ? 'animate-call-breathe' : ''">
           <PixelAgent :choice="choice" :pose="speaking ? 'working' : 'idle'" :scale="5" />
         </div>
-        <p class="font-hud text-2xl font-semibold tracking-[0.08em]">Arianna</p>
+        <p class="font-hud text-2xl font-semibold tracking-[0.08em]">{{ callee.name }}</p>
         <p class="font-mono text-lg text-white/80" aria-live="off">{{ elapsed }}</p>
       </div>
       <ul class="flex min-h-[96px] w-full max-w-md flex-col gap-2" aria-live="polite">
         <li v-for="line in captions" :key="line.id" class="rounded-xl bg-white/10 px-3 py-2 text-[15px] leading-snug">
           <span class="mr-1.5 text-xs font-semibold tracking-wide text-teal-200 uppercase">{{ line.who }}</span>{{ line.text }}
         </li>
-        <li v-if="captions.length === 0" class="text-center text-sm text-white/60">Parla pure: Arianna ti sente.</li>
+        <li v-if="captions.length === 0" class="text-center text-sm text-white/60">Parla pure: {{ callee.the }} ti sente.</li>
       </ul>
       <footer class="flex items-center gap-8">
         <button
@@ -117,7 +119,7 @@ onBeforeUnmount(() => {
       <button type="button" class="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label="Ingrandisci la chiamata" @click="small = false">
         <span :class="speaking ? 'animate-call-breathe' : ''"><PixelAgent :choice="choice" :pose="speaking ? 'working' : 'idle'" :scale="1" /></span>
         <span class="min-w-0">
-          <span class="block text-sm font-semibold">Arianna</span>
+          <span class="block text-sm font-semibold">{{ callee.name }}</span>
           <span class="block font-mono text-xs text-white/75">{{ elapsed }}</span>
         </span>
       </button>

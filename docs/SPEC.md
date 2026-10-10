@@ -293,7 +293,7 @@ Cosa mostra già la chat web, oltre alle risposte (tutto "applicato, da conferma
 - a task fermo, il pulsante "Mostra i passi" con le righe di attività salvate: cosa Arianna ha cercato, letto, scritto o delegato, con la stessa etichetta del task (D-083);
 - "Copia" sui blocchi di codice e "Salva in inbox" sotto i messaggi (D-084).
 
-In corso, su richiesta dell'utente del 2026-10-05: barra sinistra rifatta come quella di Claude Code (collassabile; Cerca su tutto il sistema; Nuovo, Pensieri, Conoscenza, Chiama, Impostazioni, tema; poi agenti e conversazioni con "Fissa"); barra destra "Agenti" collassabile con la stessa logica; menu dei comandi che si apre scrivendo "/"; azioni del messaggio al passaggio del mouse; una finestra con tutte le decisioni in attesa.
+In corso, su richiesta dell'utente del 2026-10-05: barra sinistra rifatta come quella di Claude Code (collassabile; Cerca su tutto il sistema; Nuovo, Segretaria, Pensieri, Conoscenza, Progetti, Cardwall, Ufficio, Impostazioni; poi le conversazioni con "Fissa"; dal 2026-10-10, D-158, il telefono "Chiama" sta nell'intestazione della chat, il tema in alto accanto al pulsante degli agenti e in Impostazioni → Aspetto, e la colonna Agenti si apre solo dal pulsante in alto); barra destra "Agenti" collassabile con la stessa logica; menu dei comandi che si apre scrivendo "/"; azioni del messaggio al passaggio del mouse; una finestra con tutte le decisioni in attesa.
 
 **HUD Arianna (Fase 3).** Un pannello scuro in stile Jarvis, pensato per essere letto, non solo bello:
 
@@ -334,6 +334,8 @@ La voce si costruisce su un framework open source per agenti vocali in tempo rea
 - risponde solo al tuo numero, verificato, e ignora tutti gli altri.
 
 **Quando ti chiama.** Arianna chiama nella chat web e, se la chat è chiusa, manda una notifica push senza contenuto ("Arianna ti chiama"; D-066: scelte 3 e 7), anche sul telefono con l'app installata (D-110). La chiamata scatta solo in pochi casi: una scadenza vicina senza risposta, una carta in "Attende te" marcata urgente (finché le carte non hanno l'urgenza: un task che ti aspetta da più di mezz'ora), o un briefing che hai richiesto, programmato ("chiamami alle 18") o legato a un lavoro ("chiamami quando finisci"). Ci sono fasce orarie di silenzio, un massimo di chiamate al giorno e, se non rispondi, un messaggio scritto invece di insistere. Prima della telefonia la chiamata è via internet, dalla chat web ad `apps/voice` con WebRTC (D-066).
+
+**Chiamate con i singoli agenti (D-158).** Si chiama anche nella chat diretta con un agente, mai in incognito. Un agente locale risponde lui, sul suo modello locale (quello che il router gli dà per le deleghe), con le istruzioni della sua scheda adattate al parlato e la cronologia della chat fino a ciò che la sua scheda può leggere; niente esce. Il Coder (cloud) non ha un modello che parli per lui: una voce locale fa da ponte, passa la frase come un messaggio scritto (stessi controlli), dice subito "Lo passo al Coder, ti dico quando ha finito" e legge l'inizio della risposta quando arriva, nella stessa chiamata o con "chiamami quando finisci"; un lavoro alla volta, come in chat. Saluti e testi fissi dicono il nome di chi risponde. Se l'agente non può rispondere (scheda spenta, esecutore spento, modo della conversazione che non legge, nessun modello locale) la chiamata è rifiutata con il motivo, anche quella programmata.
 
 ## Modulo apprendimento
 

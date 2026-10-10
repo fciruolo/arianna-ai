@@ -4,6 +4,33 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Telefono "Chiama" nell'intestazione della chat: in ogni conversazione privata con Arianna (Segretaria compresa) e in ogni chat diretta con un agente, mai in incognito, nelle chat di sistema o di lavoro con Arianna; spento con il motivo al passaggio quando la voce non è pronta, la conversazione è archiviata o c'è già una chiamata (D-158).
+- Il telefono anche nella pagina vuota di una chat nuova, privata o diretta: la chiamata crea la conversazione e chiama lì (D-158).
+- Pulsante del tema nella barra in alto, accanto a quello degli agenti: ogni clic passa Chiaro → Scuro → Auto e l'icona mostra il tema attivo; la stessa scelta in Impostazioni → Aspetto (D-158).
+- Chiamate nella chat diretta con un agente locale: risponde lui sul suo modello locale, con le istruzioni della sua scheda adattate al parlato e la cronologia della chat fino a ciò che la scheda può leggere (D-158).
+- Chiamate nella chat diretta del Coder: una voce locale fa da ponte, passa la frase come un messaggio, dice "Lo passo al Coder, ti dico quando ha finito" e legge la risposta quando arriva; un lavoro alla volta (D-158).
+- Le chiamate dicono chi risponde: campi `agent` e `answerer` nelle risposte dell'API delle chiamate e nell'evento `call.ringing` (D-158).
+- La chat scritta con un agente locale ricorda quanto detto in chiamata: le frasi a voce entrano nella sua cronologia, entro il tetto della scheda (D-158).
+
+### Cambiato
+
+- La voce "Chiama" esce dalla barra laterale (D-158, supera D-097 in questo punto).
+- Schermata della chiamata, chiamata in arrivo e ricevute nella chat dicono il nome di chi risponde: Arianna o l'agente della chat diretta (D-158).
+- Escono dalla barra laterale il selettore del tema e la riga degli agenti: la colonna Agenti si apre dal pulsante in alto a destra (D-158).
+- Finestra "Nuova conversazione" più larga e ordinata: le quattro schede non vanno mai a capo ("Agente" al posto di "Con un agente", due righe sotto i 640 px), frecce per cambiare scelta e Invio per aprire, nomi degli agenti con l'iniziale maiuscola, descrizioni delle schede ufficiali in italiano, avviso del cloud con titolo breve e "Dettagli", pulsante principale in colore d'accento (D-158).
+- Una chiamata programmata o "quando finisci" in una chat diretta non squilla se l'agente non può rispondere: diventa saltata (`agent-off`, migrazione `0044`) con una nota in chat (D-158).
+- Saluti e testi fissi di una chiamata in una chat diretta dicono il nome dell'agente; le chiamate programmate e "chiamami quando finisci" in una chat diretta seguono le regole della scheda dell'agente (rifiuto `agent-off`, 409) (D-158).
+
+### Corretto
+
+- Le classi `dark:` della chat seguono il tema scelto e non solo quello del sistema: con "Chiaro" su un Mac scuro i colori della sintassi nei Progetti restavano quelli scuri (D-158).
+
+### Rimosso
+
+- L'orologio "Fatti chiamare più tardi" e il modulo "Chiamami alle…" dall'intestazione della chat: per le chiamate a un'ora ci sono le routine (D-158).
+
 ## [0.44.0] - 2026-10-10
 
 ### Aggiunto

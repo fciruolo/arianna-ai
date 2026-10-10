@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 
+import type { LoadedAgent } from '@arianna/agents';
 import { DEFAULT_VOICE, type OutgoingRules } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 import { createContext } from '@arianna/policy';
@@ -9,7 +10,7 @@ import { createContext } from '@arianna/policy';
 import { createConversation, listMessages, postUserMessage } from '../src/conversations.ts';
 import { passGateway } from '../src/gateway.ts';
 import { createCalls, listCalls, loadCall, type Calls } from '../src/voice/calls.ts';
-import { FAILED_TEXT, OUTGOING_TEXT } from '../src/voice/outgoing.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from '../src/voice/outgoing.ts';
 import { createPusher, generateVapidKeys, vapidKey } from '../src/voice/push.ts';
 import { callWhenDone, cancelCall, createRinger, scheduleCall, type Ringer } from '../src/voice/ringer.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
@@ -30,6 +31,15 @@ let voiceUp = true;
 let push = true;
 let ringer: Ringer;
 let calls: Calls;
+/** D-158: the calls of a direct chat with a local agent, answered while a local model is there for it. */
+let agentCalls: Calls;
+let agentModelOf: string | undefined = 'local-large';
+let ringerAgents = new Map<string, LoadedAgent>();
+const TRANSLATOR = {
+  card: { name: 'traduttore', description: 'Agente di prova', maxLabel: 'L1', executors: ['local'], tools: [], limits: { maxSteps: 5, maxMinutes: 5, maxCost: 0 } },
+  prompt: 'Traduci.',
+  origin: 'user',
+} as unknown as LoadedAgent;
 const voiceCalls: { path: string; json: unknown }[] = [];
 const voice = {
   state: 'up' as const,
@@ -63,6 +73,17 @@ before(async () => {
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
   });
+  agentCalls = createCalls({
+    sql: db().sql,
+    voice,
+    config: () => ({ roles: { voice: 'q' }, voice: DEFAULT_VOICE, local: { endpoints: [{ models: { 'local-voice': 'q' } }] } }),
+    candidates: () => READY,
+    model: () => model,
+    coreUrl: 'http://127.0.0.1:7420',
+    agents: () => ringerAgents,
+    cloud: () => ({ claude: false, codex: false }),
+    agentModel: () => Promise.resolve(agentModelOf),
+  });
   ringer = createRinger({
     sql: db().sql,
     rules: () => rules,
@@ -75,6 +96,7 @@ before(async () => {
           }
         : undefined,
     clientsOnline: () => online,
+    check: (conversationId) => agentCalls.check(conversationId, { answer: true }),
     now: () => clock,
     intervalMs: 3_600_000,
   });
@@ -83,6 +105,7 @@ before(async () => {
 after(async () => {
   ringer.stop();
   await calls.close();
+  await agentCalls.close();
   await database?.close();
 });
 
@@ -99,6 +122,8 @@ beforeEach(async () => {
   pushes = 0;
   voiceUp = true;
   push = true;
+  agentModelOf = 'local-large';
+  ringerAgents = new Map([['traduttore', TRANSLATOR]]);
 });
 
 /** A task of Arianna waiting for the user since `minutes` ago. */
@@ -343,4 +368,53 @@ test('Web Push: subscriptions are kept, a push goes only after the gateway, a go
   assert.equal(await pusher.notify('call'), 0, 'nobody left');
   await pusher.subscribe(sub('https://web.push.apple.com/gone'));
   assert.equal(await pusher.notify('call'), 0, 'subscribed again, and gone again');
+});
+
+test('a call of a direct chat rings only while its agent can answer; otherwise it is skipped as agent-off, with a note and no content (D-158)', async () => {
+  const direct = await createConversation(db().sql, { mode: 'work', agent: { name: 'traduttore', modes: ['work'], project: false } });
+  // The agent can answer: the scheduled call rings, and says who answers.
+  const first = await scheduleCall(db().sql, direct.id, new Date(clock.getTime() + 60_000), clock);
+  clock = new Date(clock.getTime() + 120_000);
+  const rang = await ringer.tick();
+  assert.equal(rang?.id, first.id);
+  assert.equal(rang.status, 'ringing');
+  assert.equal(rang.agent, 'traduttore');
+  // The event is L0: never the agent (a user's agent is named at L1, D-125).
+  const [ringing] = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'call.ringing' AND payload ->> 'callId' = ${first.id}`;
+  assert.ok(ringing !== undefined);
+  assert.deepEqual(Object.keys(ringing.payload).sort(), ['callId', 'conversationId', 'reason']);
+  assert.ok(!JSON.stringify(ringing.payload).includes('traduttore'));
+  await calls.decline(first.id);
+
+  // No local model for it just now: passing, the call waits for the next check instead of being skipped.
+  agentModelOf = undefined;
+  const second = await scheduleCall(db().sql, direct.id, new Date(clock.getTime() + 60_000), clock);
+  clock = new Date(clock.getTime() + 120_000);
+  assert.equal(await ringer.tick(), undefined);
+  assert.equal((await loadCall(db().sql, second.id))?.status, 'scheduled');
+  // The agent deactivated: a refusal, the call is skipped.
+  agentModelOf = 'local-large';
+  ringerAgents.delete('traduttore');
+  const skipped = await ringer.tick();
+  assert.equal(skipped?.id, second.id);
+  assert.equal(skipped.status, 'skipped');
+  assert.equal(skipped.endReason, 'agent-off');
+  const [ended] = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'call.ended' AND payload ->> 'callId' = ${second.id}`;
+  assert.deepEqual({ ...ended?.payload }, { callId: second.id, conversationId: direct.id, reason: 'scheduled', status: 'skipped', endReason: 'agent-off' });
+  const notes = (await listMessages(db().sql, direct.id, { limit: 20 })).filter((message) => message.body === AGENT_OFF_TEXT);
+  assert.deepEqual(notes.map(({ label }) => label), ['L0']);
+
+  // "Chiamami quando finisci" the same.
+  const { task } = await postUserMessage(db().sql, direct.id, 'Traduci questo');
+  const later = await callWhenDone(db().sql, task.id);
+  await db().sql`UPDATE tasks SET status = 'done', evidence = ${db().sql.json([{ kind: 'message' }])} WHERE id = ${task.id}`;
+  const done = await ringer.tick();
+  assert.equal(done?.id, later.id);
+  assert.equal(done.endReason, 'agent-off');
+  // A conversation of Arianna is never checked against an agent.
+  const plain = await createConversation(db().sql, { mode: 'private' });
+  const own = await scheduleCall(db().sql, plain.id, new Date(clock.getTime() + 60_000), clock);
+  clock = new Date(clock.getTime() + 120_000);
+  assert.equal((await ringer.tick())?.id, own.id);
+  await calls.decline(own.id);
 });

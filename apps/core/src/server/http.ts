@@ -441,17 +441,17 @@ function callRoutes(sql: Sql, voice: VoiceApi | undefined, calls: Calls | undefi
     route('POST', '/api/calls/schedule', async (request) => {
       const body = await readJson(request);
       onlyFields(body, ['conversationId', 'at']);
-      need();
+      const scheduling = need();
       if (typeof body.conversationId === 'string' && (await isIncognitoConversation(sql, body.conversationId))) return { status: 409, body: { error: 'incognito' } };
       const { conversationId, at } = body;
       if (typeof conversationId !== 'string' || !isUuid(conversationId) || typeof at !== 'string') throw new HttpError(400, 'conversationId and at (ISO time) are required');
-      return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at)) } };
+      return { status: 201, body: { call: await scheduleCall(sql, conversationId, new Date(at), new Date(), (id) => scheduling.check(id)) } };
     }),
     route('POST', '/api/tasks/:id/call-when-done', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
-      need();
+      const scheduling = need();
       if (await isIncognitoTask(sql, idParam(params, 'id'))) return { status: 409, body: { error: 'incognito' } };
-      return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id')) } };
+      return { status: 201, body: { call: await callWhenDone(sql, idParam(params, 'id'), (id) => scheduling.check(id)) } };
     }),
     route('POST', '/api/calls/:id/cancel', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
@@ -1969,7 +1969,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof TaskError) return { status: 409, message: 'the task cannot do this now' };
   if (error instanceof TrialError || error instanceof CloneError || error instanceof PushError || error instanceof ScheduleError) return { status: 400, message: error.message };
   if (error instanceof CallError) {
-    const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409 }[error.code];
+    const status = { 'not-found': 404, invalid: 400, archived: 409, busy: 409, 'voice-off': 503, 'not-ready': 409, unauthorized: 401, ended: 409, 'agent-off': 409 }[error.code];
     return { status, message: error.code === 'unauthorized' ? 'unauthorized' : `${error.code}: ${error.message}` };
   }
   if (error instanceof SettingsError) {
