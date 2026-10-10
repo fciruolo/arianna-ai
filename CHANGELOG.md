@@ -6,12 +6,6 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Catalogo degli stili e delle skill di Open Design (nexu-io/open-design, Apache-2.0) come solo testo in `data/catalogs/open-design/`: download superficiale e parziale con git (solo `DESIGN.md`, `manifest.json`, `SKILL.md`, licenza e NOTICE), indice di nomi e descrizioni senza i corpi, commit adottato in `open-design.lock.json` (D-160).
-- Impostazioni → Agenti, sezione "Stili di Open Design": "Scarica catalogo" (poi "Aggiorna catalogo") scarica la versione nuova a parte e mostra quanti stili e skill sono nuovi, cambiati o tolti; si adotta solo con "Usa questa versione", "Scarta" la cancella; elenco degli stili da sfogliare con il testo e la riga di credito con la licenza (D-160).
-- Rotte `/api/design-catalog` (stato, aggiorna, adotta, scarta, elenco, testo di uno stile con l'avviso di licenza in testa) e funzione `designStyleText` per la consegna al Designer (D-160).
-- Comando `pnpm design:catalog [status|update|adopt|discard]`, gli stessi passi dal terminale (D-160).
-- Il core e il comando non si pestano i piedi sul catalogo: file di blocco `data/catalogs/open-design.busy` con il pid (uno lasciato da un processo morto si riprende), "Il catalogo è occupato da un altro processo" mentre l'altro scarica, adotta o scarta; `status` legge soltanto; uno scambio di versione interrotto torna indietro o va avanti al riavvio, mai a metà; niente download nuovo mentre una versione scaricata aspetta (D-160).
-
 - Catalogo generale di skill nel formato `SKILL.md` di agentskills.io dai repository GitHub che scegli, in `data/catalogs/skills/`: per ogni sorgente "Scarica"/"Aggiorna" con il riepilogo (nuove, cambiate, tolte), "Usa questa versione" o "Scarta", commit fissato; `anthropics/skills`, `mattpocock/skills` e `vercel-labs/skills` suggerite con un clic; le skill di Open Design come sorgente fra le altre (D-161).
 - Impostazioni → Agenti, sezione "Skill": sorgenti, ricerca nelle skill e lettura del testo con sorgente, commit e licenza; nel dettaglio di ogni agente la scheda "Skill" per assegnarle, salvate con la barra delle modifiche in `[agents.<id>] skills` (D-161).
 - Le skill assegnate entrano nella consegna delle deleghe a Claude, Codex e agli agenti locali, dopo il prompt dell'agente, come blocco di dati delimitato entro un limite di dimensione (D-161).
@@ -28,6 +22,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Il percorso di una skill letto dall'indice si ricontrolla (niente `..`, cartelle nascoste, file diversi da `SKILL.md`, slug di un'altra cartella) e deve stare dentro la cartella della sorgente; "Togli" tiene il blocco della sorgente fino alla fine e non cambia nulla se lo tiene un altro processo (D-161).
 - Delle skill si scaricano solo i `SKILL.md` e i file di licenza, nominati uno per uno dai nomi dell'albero: script e risorse non si scaricano né si eseguono mai; l'indirizzo passa dal gateway (L0, web); il testo è L0 non fidato, mai un'istruzione per Arianna, che non riceve skill, né per un agente con `untrusted_content` chiuso (D-161).
+
+## [0.46.0] - 2026-10-10
+
+### Aggiunto
+
+- Catalogo degli stili e delle skill di Open Design (nexu-io/open-design, Apache-2.0) come solo testo in `data/catalogs/open-design/`: download superficiale e parziale con git (solo `DESIGN.md`, `manifest.json`, `SKILL.md`, licenza e NOTICE), indice di nomi e descrizioni senza i corpi, commit adottato in `open-design.lock.json` (D-160).
+- Impostazioni → Agenti, sezione "Stili di Open Design": "Scarica catalogo" (poi "Aggiorna catalogo") scarica la versione nuova a parte e mostra quanti stili e skill sono nuovi, cambiati o tolti; si adotta solo con "Usa questa versione", "Scarta" la cancella; elenco degli stili da sfogliare con il testo e la riga di credito con la licenza (D-160).
+- Rotte `/api/design-catalog` (stato, aggiorna, adotta, scarta, elenco, testo di uno stile con l'avviso di licenza in testa) e funzione `designStyleText` per la consegna al Designer (D-160).
+- Comando `pnpm design:catalog [status|update|adopt|discard]`, gli stessi passi dal terminale (D-160).
+- Il core e il comando non si pestano i piedi sul catalogo: file di blocco `data/catalogs/open-design.busy` con il pid (uno lasciato da un processo morto si riprende), "Il catalogo è occupato da un altro processo" mentre l'altro scarica, adotta o scarta; `status` legge soltanto; uno scambio di versione interrotto torna indietro o va avanti al riavvio, mai a metà; niente download nuovo mentre una versione scaricata aspetta (D-160).
+
+### Sicurezza
+
 - Del catalogo di Open Design non si esegue nulla: git con argomenti fissi, senza hook, configurazione globale, credenziali né LFS, link simbolici scritti come file, cartella `.git` cancellata dopo la lettura del commit; limiti di dimensione e numero dei file, link e nomi non validi scartati, licenza non Apache-2.0 rifiutata; l'indirizzo del repository passa dal gateway (L0, web) (D-160).
 - Catalogo di Open Design: il numero dei file si controlla dai nomi degli alberi prima di scaricarne i contenuti; git ha come HOME una cartella vuota (niente `.netrc` né attributi dell'utente); il testo di uno stile e il NOTICE perdono i caratteri di controllo, bidirezionali e di larghezza zero, tenendo a capo e tabulazioni (D-160).
 
