@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.44.0] - 2026-10-10
+
 ### Aggiunto
 
 - "Elimina" per sempre di una conversazione direttamente dalla lista, dalle chat di sistema e dalle Archiviate, con la conferma "Eliminare per sempre?": sparisce tutto ciò che ha lasciato, registro di cosa è uscito verso il cloud compreso; le card create da lì restano senza il legame; i lavori in corso si fermano prima (D-157).
