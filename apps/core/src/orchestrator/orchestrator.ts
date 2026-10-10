@@ -776,9 +776,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const incognito = task.conversationId !== null && (await isIncognitoConversation(sql, task.conversationId));
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
-      const tools = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary);
+      const offered = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary);
       // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
-      const plannerModel = tools.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
+      const plannerModel = offered.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
+      // A plan of Claude that failed in this task is not asked again by the local model: one call per task.
+      const tools = plannerModel !== undefined && turns.some(failedPlan) ? offered.filter((tool) => tool !== PLAN) : offered;
       const planner: Planner = plannerModel === undefined ? 'self' : 'claude';
       await show(task, step, 'thinking');
       let asked;
@@ -837,12 +839,12 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           steps: usage.steps,
           tokensIn: usage.tokensIn + (written.usage?.tokensIn ?? 0),
           tokensOut: usage.tokensOut + (written.usage?.tokensOut ?? 0),
-          ...(written.usage?.cost === undefined ? {} : { cost: written.usage.cost }),
+          ...(written.usage?.cost === undefined ? {} : { cost: written.usage.cost }), // the local step costs nothing
         };
         // Out of quota: the step runs again then, the local model too; nothing was recorded.
         if (written.kind === 'retry') return { kind: 'retry', at: written.at, reason: written.reason, usage: total };
         if (written.kind === 'error') {
-          await recordTurn(sql, { ...turn, label, result: `error: ${PLAN}: ${written.reason}. Tell the user the plan could not be written now.` });
+          await recordTurn(sql, { ...turn, label, result: `error: ${PLAN}: ${written.reason}. Tell the user in plain words that the plan was not written.` });
           await show(task, step, 'error', `${PLAN}: ${written.reason}`);
           return { kind: 'continue', usage: total };
         }
@@ -890,6 +892,11 @@ function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' ? 'title' : 'path';
   return String(args[field]);
+}
+
+/** A `task.plan` call of this task that ended in an error (D-164). */
+function failedPlan(turn: Turn): boolean {
+  return turn.answer.action === 'call' && turn.answer.tool === PLAN && turn.result?.startsWith(`error: ${PLAN}: `) === true;
 }
 
 const INVALID_ANSWER = 'the local model did not give a valid answer';

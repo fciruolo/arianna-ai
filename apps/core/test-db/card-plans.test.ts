@@ -627,6 +627,8 @@ test('cards of Claude the code refuses, or no plan at all, are an error the loca
   assert.deepEqual(await drain([task.id], orchestrator(model, ['claude'], `scenario: answer\nanswer: ${unknown}`)), ['continued', 'answered']);
   const [turn] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${task.id} ORDER BY step LIMIT 1`;
   assert.match(turn?.result ?? '', /^error: task\.plan: card 1/);
+  // Claude is not asked again in the same task: the next step has no task.plan.
+  assert.doesNotMatch(JSON.stringify(model.requests[1]?.schema?.schema), /task\.plan/);
   assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
 
   const other = await postUserMessage(db().sql, conversation.id, 'E la pagina dei contatti?');
@@ -640,8 +642,10 @@ test('Claude out of quota: the plan step waits for the reset, nothing recorded (
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Mi serve una pagina per prenotare.');
   const results = await drain([task.id], orchestrator(scripted([ASK_PLANNER]), ['claude'], 'scenario: quota'));
-  assert.equal(results.length, 1);
-  assert.notEqual(results[0], 'waiting-approval');
+  // The engine puts the step back in the queue for the reset; Claude ran once and said why.
+  assert.deepEqual(results, ['continued']);
+  assert.equal((await db().sql`SELECT 1 FROM events WHERE task_id = ${task.id} AND kind = 'executor.quota'`).length, 1);
+  assert.notEqual((await loadTask(db().sql, task.id))?.status, 'failed');
   assert.equal((await db().sql`SELECT 1 FROM task_turns WHERE task_id = ${task.id}`).length, 0);
   assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
 });

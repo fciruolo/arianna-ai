@@ -5,7 +5,8 @@ import { test } from 'node:test';
 
 import { responseSchema, systemPrompt, validate } from '@arianna/agents';
 
-import { PLANNER_PROMPT, planInAnswer, plannerBrief, plannerModelOf } from '../src/orchestrator/claude-plan.ts';
+import type { DelegateEnv } from '../src/orchestrator/delegate.ts';
+import { PLANNER_PROMPT, planInAnswer, plannerBrief, plannerFor, plannerModelOf } from '../src/orchestrator/claude-plan.ts';
 
 test('Claude plans only in a work conversation: the model chosen there, else Sonnet, else Opus, among those switched on', () => {
   assert.equal(plannerModelOf({ mode: 'work', model: null }, ['sonnet', 'opus', 'gpt-5']), 'sonnet');
@@ -53,4 +54,12 @@ test('task.plan for Claude: the local model writes the title and the request, ne
   assert.equal(systemPrompt('P', ['task.plan']), systemPrompt('P', ['task.plan'], true, '', undefined, 'self'));
   assert.match(systemPrompt('P', ['task.plan'], true, '', undefined, 'claude'), /the planner writes the cards/);
   assert.doesNotMatch(systemPrompt('P', ['task.plan']), /planner/);
+});
+
+test('above L1, or without a conversation, the local model plans: nothing is asked of Claude', async () => {
+  // An environment that would fail if read: the label alone decides.
+  const env = {} as DelegateEnv;
+  assert.equal(await plannerFor(env, 'c1', 'L2'), undefined);
+  assert.equal(await plannerFor(env, 'c1', 'L3'), undefined);
+  assert.equal(await plannerFor(env, null, 'L0'), undefined);
 });
