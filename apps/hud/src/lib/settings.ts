@@ -84,6 +84,36 @@ export interface EndpointValues {
   models?: Record<string, string>;
 }
 
+/** `[project_rules]` as the core sends it (I-14, D-174): template null when there is none. */
+export interface ProjectRulesValues {
+  template: string | null;
+  /** Project (container) name → its own rules; an empty text is "no rules". */
+  projects: Record<string, string>;
+}
+
+/** The longest text of a rule set, as the core checks it. */
+export const MAX_PROJECT_RULES = 4000;
+
+/** What the page edits: the template as text, '' for none. */
+export interface ProjectRulesForm {
+  template: string;
+  projects: Record<string, string>;
+}
+
+export function projectRulesForm(values: ProjectRulesValues | undefined): ProjectRulesForm {
+  return { template: values?.template ?? '', projects: { ...(values?.projects ?? {}) } };
+}
+
+export function projectRulesBody(form: ProjectRulesForm): ProjectRulesValues {
+  return { template: form.template.trim() === '' ? null : form.template, projects: { ...form.projects } };
+}
+
+/** Why the rules cannot be saved yet, or undefined. */
+export function projectRulesProblem(form: ProjectRulesForm): string | undefined {
+  const long = [form.template, ...Object.values(form.projects)].some((text) => text.length > MAX_PROJECT_RULES);
+  return long ? `Al massimo ${String(MAX_PROJECT_RULES)} caratteri per testo.` : undefined;
+}
+
 export interface SettingsValues {
   roles: Partial<Record<ModelRole, string>>;
   cloudModels: { models: Record<CloudModelAlias, boolean | string> };
@@ -92,6 +122,8 @@ export interface SettingsValues {
   personas: Record<string, PersonaValues>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModelAlias }>;
+  /** `[project_rules]` (I-14, D-174): the common template and the projects with their own rules. Optional: an older core sends none. */
+  projectRules?: ProjectRulesValues;
   /** Agent → the skills of the catalog it reads in each delivery (D-161); optional: an older core sends none. */
   skills?: Record<string, string[]>;
   /** The model that draws a character (D-123): `[sprites] model`, opus when absent (D-132). */
@@ -172,7 +204,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'projectRules' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -203,6 +235,7 @@ export const SECTION_TEXT: Record<string, string> = {
   cloudModels: 'Modelli cloud accesi',
   characters: 'Personaggi',
   personas: 'Personalità',
+  projectRules: 'Regole dei progetti',
   agents: 'Modelli degli agenti',
   sprites: 'Modello dei personaggi',
   participants: 'Uscita degli agenti',

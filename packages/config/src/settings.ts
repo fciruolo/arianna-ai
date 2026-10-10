@@ -11,6 +11,7 @@ import { CLOUD_MODELS, defaultCloudModels, type CloudExecutor, type CloudModel, 
 import { DATA_DIR, DEFAULT_SERVER, parseConfig, type InstallationMode } from './config.ts';
 import { quietText, type NotificationsConfig } from './notifications.ts';
 import type { Personas } from './personas.ts';
+import type { ProjectRules } from './project-rules.ts';
 import type { ProjectFolder, ProjectLabel } from './projects.ts';
 import type { Roles } from './roles.ts';
 import { DEFAULT_LEAVE_AFTER } from './participants.ts';
@@ -56,6 +57,8 @@ export interface Settings {
   };
   /** As written in the file: `path` keeps its form. */
   projects: ProjectSettings[];
+  /** `[project_rules]` (I-14, D-174); absent, no template and no project with its own rules. */
+  projectRules?: ProjectRules;
   /** Agent → "<pack>/<character>" (D-060). */
   characters: Record<string, string>;
   /** `[personas.<agent>]` (D-107); absent or empty, every agent has the defaults. */
@@ -134,6 +137,7 @@ export function readSettings(text: string, home: string, catalog: ModelCatalog, 
       ...(parts === undefined ? {} : { parts: [...parts] }),
       ...(folders === undefined ? {} : { folders: folders.map((folder) => ({ ...folder })) }),
     })),
+    ...(config.projectRules.template === undefined && Object.keys(config.projectRules.projects).length === 0 ? {} : { projectRules: structuredClone(config.projectRules) }),
     characters: { ...config.characters },
     ...(Object.keys(config.personas).length === 0 ? {} : { personas: structuredClone(config.personas) }),
     // The `default` of [cloud.models] comes back here, as the Coder's model: the file is written in the new form.
@@ -187,6 +191,27 @@ function cloudModelsSection(cloud: Settings['cloud']): string[] {
   return [
     '[cloud.models]',
     ...CLOUD_MODELS.map((model) => `${model} = ${value(models[model])}`),
+  ];
+}
+
+/**
+ * A text of the user over several lines, as a multi-line literal string when
+ * it can be one (readable when edited by hand), a basic string otherwise.
+ */
+function longText(value: string): string {
+  return value.includes('\n') && !value.includes("'''") && !value.endsWith("'") && !/[\p{Cc}--[\t\n]]/v.test(value) ? `'''\n${value}'''` : str(value);
+}
+
+/** `[project_rules]` (I-14, D-174): the template, then the projects with their own rules. */
+function projectRulesSection(rules: ProjectRules | undefined): string[] {
+  const projects = Object.entries(rules?.projects ?? {});
+  if (rules === undefined || (rules.template === undefined && projects.length === 0)) {
+    return ['#', '# [project_rules]', '# template = "Comments in English. Never add a Co-Authored-By line."', '#', '# [project_rules.projects]', '# site = "Use pnpm, never npm."'];
+  }
+  return [
+    '[project_rules]',
+    ...(rules.template === undefined ? [] : [`template = ${longText(rules.template)}`]),
+    ...(projects.length === 0 ? [] : ['', '[project_rules.projects]', ...projects.map(([name, text]) => `${name} = ${longText(text)}`)]),
   ];
 }
 
@@ -413,6 +438,16 @@ export function renderSettings(settings: Settings): string {
           ...(project.parts === undefined ? [] : [`parts = [${project.parts.map(str).join(', ')}]`]),
           ...(project.folders ?? []).flatMap((folder) => ['', '[[project.folder]]', `path = ${str(folder.path)}`, `label = ${str(folder.label)}`]),
         ])),
+    '',
+    '# Rules of the projects (I-14, D-174): your text, L1 by your declaration,',
+    '# at the head of every delegation on a project, the same for Claude and for',
+    '# Codex, through the gateway: no personal data here. `template` is the',
+    '# common model; a line of [project_rules.projects] (project = "text") gives',
+    '# a project its own rules instead, an empty text none. At most 4000',
+    '# characters each. Whatever the text says, the agents never commit: the',
+    '# .git folder of the project is read only for them. Applies without a',
+    '# restart.',
+    ...projectRulesSection(settings.projectRules),
     '',
     '# Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder',
     '# of data/characters/ you copy there by hand (PNG sheets in the format of',

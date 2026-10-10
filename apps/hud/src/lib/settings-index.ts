@@ -61,6 +61,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       // Telegram is off by the user's choice (D-110, question 12): its card stays in
       // SettingsPage, unreachable until this entry comes back.
       { id: 'projects', slug: 'progetti', title: 'Progetti', behaviour: 'confirm', privacy: true },
+      // The rules of the projects (I-14, D-174): the common template; each project's own in the page Progetti.
+      { id: 'project-rules', slug: 'regole-dei-progetti', title: 'Regole dei progetti', behaviour: 'now' },
       { id: 'servers', slug: 'server-locali', title: 'Server locali', behaviour: 'confirm', privacy: true },
       // Links downloaded and summarized (D-154): the sites whose links the core downloads by itself.
       { id: 'links', slug: 'link-scaricati', title: 'Link scaricati', behaviour: 'confirm', privacy: true },
@@ -126,6 +128,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   secretary: ['secretary'],
   executors: ['executors'],
   projects: ['projects'],
+  'project-rules': ['projectRules'],
   servers: ['endpoints'],
   links: ['fetchSites'],
 };

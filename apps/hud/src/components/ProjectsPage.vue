@@ -33,6 +33,7 @@ import {
 import { initialsOf, logoUrl, type ClientLogo } from '../lib/clients.ts';
 import Icon from './Icon.vue';
 import ProjectImTab from './ProjectImTab.vue';
+import ProjectRulesTab from './ProjectRulesTab.vue';
 import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
 
 /**
@@ -57,7 +58,7 @@ const parts = computed(() => (projects.value ?? []).filter((item) => item.projec
 const chosen = ref<string | null>(null);
 const project = computed(() => parts.value.find((item) => item.name === chosen.value) ?? null);
 const switcherOpen = ref(false);
-const tab = ref<'file' | 'git' | 'svc' | 'know' | 'im'>('file');
+const tab = ref<'file' | 'git' | 'svc' | 'know' | 'im' | 'rules'>('file');
 const tabs = computed(() => [
   ...(project.value === null
     ? []
@@ -68,6 +69,7 @@ const tabs = computed(() => [
       ] as const)),
   { id: 'know', text: 'Conoscenza' } as const,
   { id: 'im', text: 'IM' } as const,
+  { id: 'rules', text: 'Regole' } as const,
 ]);
 const problem = ref<string | null>(null);
 
@@ -343,7 +345,7 @@ function choose(name: string): void {
 
 /** A part of the container: from "Conoscenza" back to its files. */
 function choosePart(name: string): void {
-  if (tab.value === 'know' || tab.value === 'im') tab.value = 'file';
+  if (tab.value === 'know' || tab.value === 'im' || tab.value === 'rules') tab.value = 'file';
   choose(name);
 }
 
@@ -355,7 +357,7 @@ function chooseContainer(name: string): void {
   chosen.value = null;
   const first = parts.value[0];
   if (first === undefined) {
-    if (tab.value !== 'im') tab.value = 'know';
+    if (tab.value !== 'im' && tab.value !== 'rules') tab.value = 'know';
   } else {
     if (tab.value === 'know') tab.value = 'file';
     choose(first.name);
@@ -542,6 +544,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         </button>
         <span v-if="tab === 'svc'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="play" :size="13" />Avvia e ferma con la tua conferma, ogni volta</span>
         <span v-else-if="tab === 'im'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Prezzi e fatture restano su questo computer, mai nei file IM</span>
+        <span v-else-if="tab === 'rules'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="gateway" :size="13" />Vanno a Claude e Codex come Interno</span>
         <span v-else-if="tab === 'know'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Solo su questo computer: il Coder non vede queste cartelle</span>
         <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Sola lettura: niente modifiche, checkout né commit da qui</span>
       </nav>
@@ -550,6 +553,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" />
       <!-- IM (D-167, P4d): calendar, price, every IM with its money, the invoices -->
       <ProjectImTab v-else-if="tab === 'im'" :container="container" />
+      <!-- REGOLE (I-14, D-174): the rules at the head of every delegation on the project -->
+      <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" />
 
       <template v-else-if="project">
       <!-- FILE: the tree and the file, one split pane -->

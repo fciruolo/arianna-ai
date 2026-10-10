@@ -16,6 +16,7 @@ export {
 } from './context.ts';
 export { PolicyError } from './errors.ts';
 export { PERSONA_LABEL, personaFits } from './persona.ts';
+export { PROJECT_RULES_LABEL, projectRulesFit } from './project-rules.ts';
 export {
   canSendTo,
   isAtMost,

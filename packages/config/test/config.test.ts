@@ -41,6 +41,7 @@ test('a valid configuration is parsed and its paths are resolved inside home', (
     local: { endpoints: [] },
     cloud: { executors: [], models: defaultCloudModels() },
     projects: [],
+    projectRules: { projects: {} },
     characters: {},
     personas: {},
     agents: {},

@@ -1,5 +1,5 @@
 import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
-import { ORCHESTRATOR_AGENT, projectNamed, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, projectNamed, rulesOfProject, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
   fileFingerprints,
@@ -28,7 +28,7 @@ import {
   type PreparedNotes,
   type ProjectNoteInput,
 } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
+import { createContext, isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
@@ -767,6 +767,29 @@ function promptPart(agent: LoadedAgent, name: string): { text: string; label: La
 }
 
 /**
+ * What every agent working in a project folder reads (I-14, D-174): our fixed
+ * text, L0. The guarantee is the sandbox, where `.git` is read only for Claude
+ * and for Codex; the sentence only spares the agent a refused command.
+ */
+export const NO_COMMIT_TEXT =
+  'Never commit, stash, switch branch or run any other command that writes the .git folder: it is read only for you. Leave your changes in the working tree: the user reviews and commits them.';
+
+/** How the rules of a project open, before the user's text. */
+export const PROJECT_RULES_INTRO = 'Rules of this project, written by the user: follow them in this work.';
+
+/**
+ * The rules of the project (I-14, D-174) after the agent's prompt: the user's
+ * text of [project_rules], L1 by declaration, the same for Claude and for
+ * Codex. None when the project has none, or when the task's clearance is
+ * below L1 (an L0 task never reads it).
+ */
+export function projectRulesPart(config: Pick<AriannaConfig, 'projectRules'>, container: string, clearance: Label): BriefFragment | undefined {
+  const text = rulesOfProject(config.projectRules, container);
+  if (text === undefined || !projectRulesFit(clearance)) return undefined;
+  return { text: `${PROJECT_RULES_INTRO}\n\n${text}`, label: PROJECT_RULES_LABEL, source: `project-rules:${container}` };
+}
+
+/**
  * The skills of the agent (D-161) after its prompt: public text (L0) that is
  * not trusted, a block of data delimited, never an instruction to Arianna.
  * None for a card that closes untrusted_content, whatever the settings say.
@@ -986,9 +1009,12 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
+  const rules = projectRulesPart(env.settings(), container, task.clearance);
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
+    { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
+    ...(rules === undefined ? [] : [rules]),
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];

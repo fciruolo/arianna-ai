@@ -13,6 +13,7 @@ import { resolveHome, resolveInHome } from './home.ts';
 import { parseLocal, type LocalConfig } from './local.ts';
 import { parseNotifications, type NotificationsConfig } from './notifications.ts';
 import { parsePersonas, type Personas } from './personas.ts';
+import { parseProjectRules, type ProjectRules } from './project-rules.ts';
 import { parseProjects, type Project } from './projects.ts';
 import { parseRoles, type Roles } from './roles.ts';
 import { parseParticipants, type ParticipantsConfig } from './participants.ts';
@@ -69,6 +70,8 @@ export interface AriannaConfig {
   cloud: CloudConfig;
   /** The folders a cloud executor may work on (D-058); applied without a restart. */
   projects: Project[];
+  /** `[project_rules]` (I-14, D-174): the rules a delegation on a project reads; applied without a restart. */
+  projectRules: ProjectRules;
   /** Agent → "<pack>/<character>" (D-060); applied without a restart. */
   characters: CharacterChoices;
   /** Agent → persona (D-107); an agent without one has the defaults. Applied without a restart. */
@@ -113,7 +116,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     throw new ConfigError('arianna.toml: invalid TOML');
   }
   const root = asTable(raw, 'arianna.toml');
-  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
+  onlyKeys(root, ['paths', 'database', 'server', 'roles', 'local', 'cloud', 'project', 'project_rules', 'characters', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary', 'capture', 'telegram', 'voice', 'installation'], 'arianna.toml');
 
   const paths = asTable(root.paths, 'paths');
   onlyKeys(paths, ['data'], 'paths');
@@ -149,6 +152,7 @@ export function parseConfig(text: string, home: string, catalog: ModelCatalog = 
     local: parseLocal(root.local, roles),
     cloud,
     projects: parseProjects(root.project, home, userHome, data),
+    projectRules: parseProjectRules(root.project_rules),
     characters: parseCharacters(root.characters),
     personas: parsePersonas(root.personas),
     agents: parseAgents(root.agents, legacyDefaultModel(root.cloud)),

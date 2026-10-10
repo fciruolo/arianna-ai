@@ -22,6 +22,7 @@ import {
   loadCatalog,
   MODEL_ROLES,
   parseConfig,
+  PROJECT_NAME,
   parseSkillIds,
   parseQuiet,
   quietText,
@@ -71,7 +72,7 @@ import { knownSecrets } from '@arianna/vault';
  * fingerprint), and when the new text would change a section the request may
  * not touch: an ordinary save can never open an exit.
  */
-export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary'] as const;
+export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'projectRules', 'agents', 'skills', 'sprites', 'participants', 'notifications', 'secretary'] as const;
 export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
@@ -114,6 +115,8 @@ export interface SettingsValues {
   characters: Record<string, string>;
   /** Agent → persona (D-107), as `[personas]` holds it; an agent without one has the defaults. */
   personas: Record<string, Persona>;
+  /** `[project_rules]` (I-14, D-174): the common template (null when none) and the projects with their own rules. */
+  projectRules: { template: string | null; projects: Record<string, string> };
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModel }>;
   /** Agent → the skills of the catalog it reads in each delivery (D-161): `[agents.<id>] skills`. */
@@ -502,6 +505,33 @@ function personasFromBody(value: unknown): NonNullable<Settings['personas']> {
   return personas;
 }
 
+/**
+ * `[project_rules]` from the page (I-14, D-174): `{ template, projects }`,
+ * template null or empty for none; a project's line, empty text included,
+ * stays its own. The user's text is L1 by declaration and reaches the cloud:
+ * a finding of the scanner or a value of the vault refuses it, naming the
+ * field and the kind, never the text; parseConfig checks the rest.
+ */
+function projectRulesFromBody(value: unknown): Settings['projectRules'] {
+  const table = record(value, 'projectRules');
+  only(table, ['template', 'projects'], 'projectRules');
+  const checked = (item: unknown, where: string): string => {
+    const given = text(item, where);
+    const kinds = [...new Set(scanText(given).map((finding) => finding.kind))];
+    if (kinds.length > 0) invalid(`${where} looks like personal data or a secret (${kinds.join(', ')}): not saved`);
+    if (knownSecrets.find(given).length > 0) invalid(`${where} holds a value of the vault: not saved`);
+    return given;
+  };
+  const projects: Record<string, string> = {};
+  for (const [name, item] of Object.entries(table.projects === undefined || table.projects === null ? {} : record(table.projects, 'projectRules.projects'))) {
+    if (!PROJECT_NAME.test(name)) invalid('projectRules.projects: a project name is lowercase letters, digits and dashes');
+    projects[name] = checked(item, `projectRules.projects.${name}`);
+  }
+  const template = table.template === undefined || table.template === null || table.template === '' ? undefined : checked(table.template, 'projectRules.template');
+  if (template === undefined && Object.keys(projects).length === 0) return undefined;
+  return { ...(template === undefined ? {} : { template }), projects };
+}
+
 function executorsFromBody(value: unknown): Settings['cloud']['executors'] {
   const executors = strings(value, 'executors');
   for (const executor of executors) {
@@ -589,6 +619,11 @@ function skillsOf(settings: Settings): SettingsValues['skills'] {
   return skills;
 }
 
+/** `[project_rules]` as compared and shown (I-14, D-174). */
+function projectRulesOf(settings: Settings): SettingsValues['projectRules'] {
+  return { template: settings.projectRules?.template ?? null, projects: { ...(settings.projectRules?.projects ?? {}) } };
+}
+
 /** The agents with a model, as compared and shown. */
 function agentsOf(settings: Settings): SettingsValues['agents'] {
   const agents: SettingsValues['agents'] = {};
@@ -608,6 +643,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     cloudModels: cloudModelsOf(settings.cloud),
     characters: { ...settings.characters },
     personas: structuredClone(settings.personas ?? {}),
+    projectRules: projectRulesOf(settings),
     agents: agentsOf(settings),
     skills: skillsOf(settings),
     sprites: settings.sprites ?? DEFAULT_SPRITE_MODEL,
@@ -632,6 +668,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return agentsOf(settings);
     case 'skills':
       return skillsOf(settings);
+    case 'projectRules':
+      return projectRulesOf(settings);
     case 'sprites':
       return settings.sprites ?? DEFAULT_SPRITE_MODEL;
     case 'participants':
@@ -855,6 +893,11 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
         const personas = personasFromBody(given.personas);
         if (Object.keys(personas).length === 0) delete next.personas;
         else next.personas = personas;
+      }
+      if (given.projectRules !== undefined) {
+        const rules = projectRulesFromBody(given.projectRules);
+        if (rules === undefined) delete next.projectRules;
+        else next.projectRules = rules;
       }
       if (given.agents !== undefined) {
         const agents = agentsFromBody(given.agents, options.agentModels(), settings.agents);

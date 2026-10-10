@@ -3,7 +3,7 @@
 // environment and what the binary must report in its `init` message. Checked
 // on `claude --help` of 2.1.288 (`--no-session-persistence` on 2.1.292) and with real runs; the live contract and
 // canary evals check them again.
-import { isAbsolute, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 
 /**
  * Built-in tools a run may be given. Bash runs inside the sandbox of
@@ -73,6 +73,11 @@ function checkFolders(name: string, folders: unknown): readonly string[] {
   return folders as readonly string[];
 }
 
+/** A path as a literal in a gitignore-style pattern of a permission rule. */
+function globEscape(path: string): string {
+  return path.replace(/[\\*?[\]{}!#]/g, (char) => `\\${char}`);
+}
+
 /**
  * The settings passed with `--settings`, which hold under `--restricted`
  * (D-050):
@@ -87,7 +92,9 @@ function checkFolders(name: string, folders: unknown): readonly string[] {
  *   wherever they are; the workspace and `readable` are opened again (the
  *   narrower rule wins). What stays readable: the system folders (`/usr`,
  *   `/etc`, `/opt`, `/Library`…) and the toolchain;
- * - writes: only the workspace and the binary's temp folder;
+ * - writes: only the workspace and the binary's temp folder, never the
+ *   workspace's `.git` (I-14, D-174: the agents never commit, the user does),
+ *   closed for Bash in the sandbox and for the file tools by a deny rule;
  * - no network: an empty allowlist that refuses instead of asking, no local
  *   binding (on macOS the loopback services, database and local model
  *   included, stay out of reach), no Unix sockets.
@@ -97,15 +104,21 @@ export function claudeSettings(paths: SandboxPaths): string {
   const readable = checkFolders('readable', paths.readable);
   const denied = checkFolders('denied', paths.denied);
   if (denied.length === 0) throw new TypeError('claude: the sandbox needs the folders to deny (ARIANNA_HOME at least)');
+  const git = join(paths.workspace, '.git');
   return JSON.stringify({
-    permissions: { blockReadsOutsideWorkingDirectories: true, disableBypassPermissionsMode: 'disable' },
+    permissions: {
+      blockReadsOutsideWorkingDirectories: true,
+      disableBypassPermissionsMode: 'disable',
+      // `//` starts an absolute path; the rule covers every file tool that writes.
+      deny: [`Edit(/${globEscape(git)}/**)`, `Edit(/${globEscape(git)})`],
+    },
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: true,
       excludedCommands: [],
-      filesystem: { denyRead: [...denied], allowRead: [...workspace, ...readable] },
+      filesystem: { denyRead: [...denied], allowRead: [...workspace, ...readable], denyWrite: [git] },
       network: { allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowUnixSockets: [], allowAllUnixSockets: false },
     },
   });

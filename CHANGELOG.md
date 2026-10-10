@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Le regole dei progetti: un modello comune in Impostazioni → Regole dei progetti e regole proprie per progetto nella scheda «Regole» di Progetti; Arianna le mette in testa a ogni lavoro di Claude o di Codex sul progetto, uguali per tutti e due (D-174, I-14 R1).
+
+### Sicurezza
+
+- Gli agenti non fanno mai commit: la cartella `.git` del progetto è in sola lettura anche per Claude, come già per Codex; le modifiche restano da rivedere (D-174, I-14 R1).
+
 ## [0.61.0] - 2026-10-11
 
 ### Aggiunto

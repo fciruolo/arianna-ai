@@ -299,6 +299,44 @@ describe('update (ordinary)', () => {
   });
 });
 
+describe('rules of the projects (I-14, D-174)', () => {
+  it('are an ordinary section: written at once, read back, the event names the section only', () => {
+    const projectRules = { template: 'Comments in English.\nNever add a Co-Authored-By line.', projects: { demo: 'Use pnpm.', other: '' } };
+    const view = page.update({ fingerprint: fingerprint(), values: { projectRules } });
+    assert.deepEqual(view.values?.projectRules, projectRules);
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).projectRules, { template: projectRules.template, projects: projectRules.projects });
+    assert.deepEqual(changes, [{ sections: ['projectRules'], privacy: false }]);
+  });
+
+  it('a template null or empty and no project take the section away', () => {
+    page.update({ fingerprint: fingerprint(), values: { projectRules: { template: 'x', projects: {} } } });
+    page.update({ fingerprint: fingerprint(), values: { projectRules: { template: null, projects: {} } } });
+    assert.deepEqual(page.read().values?.projectRules, { template: null, projects: {} });
+    assert.equal(text(), renderSettings(START));
+  });
+
+  it('refuses a text the scanner flags or that holds a value of the vault, naming the field and never the text', () => {
+    const iban = 'IT60X0542811101000000123456';
+    const value = new Secret('vault://rules-test', `segreto-${randomUUID()}`).reveal();
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ template: `Paga su ${iban}.`, projects: {} }, /projectRules\.template .*iban/],
+      [{ template: null, projects: { demo: `Usa ${value}.` } }, /projectRules\.projects\.demo holds a value of the vault/],
+      [{ template: 'x', projects: { 'Not A Name': 'x' } }, /project name/],
+      [{ template: 'x', projects: {}, extra: 1 }, /extra/],
+      [{ template: 7, projects: {} }, /template must be a string/],
+    ];
+    for (const [projectRules, message] of cases) {
+      assert.throws(
+        () => page.update({ fingerprint: fingerprint(), values: { projectRules } }),
+        (error: unknown) => error instanceof Error && message.test(error.message) && !error.message.includes(iban) && !error.message.includes(value),
+        JSON.stringify(projectRules),
+      );
+    }
+    assert.equal(text(), renderSettings(START));
+    assert.deepEqual(changes, []);
+  });
+});
+
 describe('personas (D-107)', () => {
   const coder = { tone: 'asciutto', address: 'lei', displayName: 'Dario', traits: 'Preciso e calmo.', specialization: 'Sviluppatore senior TypeScript.' };
 

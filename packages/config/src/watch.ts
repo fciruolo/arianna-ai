@@ -79,6 +79,7 @@ export function diffConfig(before: AriannaConfig, after: AriannaConfig): ConfigC
       ...(isDeepStrictEqual(before.cloud.executors, after.cloud.executors) ? [] : ['cloud.executors']),
       ...(isDeepStrictEqual(cloudModels(before), cloudModels(after)) ? [] : ['cloud.models']),
       ...(changed('projects') ? ['projects'] : []),
+      ...(changed('projectRules') ? ['projectRules'] : []),
       ...(changed('telegram') ? ['telegram'] : []),
       ...(changed('voice') ? ['voice'] : []),
       ...(changed('characters') ? ['characters'] : []),
@@ -105,7 +106,7 @@ function empty(change: ConfigChange): boolean {
  */
 function closeExits(config: AriannaConfig): AriannaConfig {
   const personas = Object.fromEntries(Object.entries(config.personas).map(([agent, persona]) => [agent, { tone: persona.tone, address: persona.address }]));
-  const closed: AriannaConfig = { ...config, projects: [], cloud: { ...config.cloud, executors: [] }, personas };
+  const closed: AriannaConfig = { ...config, projects: [], projectRules: { projects: {} }, cloud: { ...config.cloud, executors: [] }, personas };
   delete closed.telegram;
   return closed;
 }

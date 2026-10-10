@@ -104,6 +104,21 @@ astra = true
 # path = "Workplan"
 # label = "L1"
 
+# Rules of the projects (I-14, D-174): your text, L1 by your declaration,
+# at the head of every delegation on a project, the same for Claude and for
+# Codex, through the gateway: no personal data here. `template` is the
+# common model; a line of [project_rules.projects] (project = "text") gives
+# a project its own rules instead, an empty text none. At most 4000
+# characters each. Whatever the text says, the agents never commit: the
+# .git folder of the project is read only for them. Applies without a
+# restart.
+#
+# [project_rules]
+# template = "Comments in English. Never add a Co-Authored-By line."
+#
+# [project_rules.projects]
+# site = "Use pnpm, never npm."
+
 # Pixel characters (D-060): agent = "<pack>/<character>". A pack is a folder
 # of data/characters/ you copy there by hand (PNG sheets in the format of
 # pixel-agents and a pack.json); "originali" is the pack in git. Without a

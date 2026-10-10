@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { type Answer, type LoadedAgent } from '@arianna/agents';
-import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project } from '@arianna/config';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type CloudConfig, type Project, type ProjectRules } from '@arianna/config';
 import { createClaudeExecutor, LocalModelError, type ChatRequest, type LocalModel } from '@arianna/executors';
 
 import { Secret } from '@arianna/vault';
@@ -21,7 +21,7 @@ import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '.
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
-import { MAX_QUOTA_RETRIES, type AgentSkills } from '../src/orchestrator/delegate.ts';
+import { MAX_QUOTA_RETRIES, NO_COMMIT_TEXT, PROJECT_RULES_INTRO, projectRulesPart, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
@@ -103,6 +103,8 @@ interface Setup {
   projects?: string[];
   /** Approved projects as they are, for folders elsewhere. */
   extraProjects?: Project[];
+  /** `[project_rules]` (D-174); absent, none, whatever the development file says. */
+  projectRules?: ProjectRules;
   executors?: ('claude' | 'codex')[];
   /** `[cloud.models]`; every alias on by default. */
   models?: CloudConfig['models'];
@@ -128,6 +130,7 @@ function orchestrator(setup: Setup): StepExecutor {
       ...(setup.projects ?? ['site']).map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
       ...(setup.extraProjects ?? []),
     ],
+    projectRules: setup.projectRules ?? { projects: {} },
   });
   return createOrchestrator({
     sql: db().sql,
@@ -279,7 +282,7 @@ test('the skills of the Coder go after its prompt as one L0 block of data, withi
   assert.deepEqual(asked, [['coder', 128 * 1024]]);
   const { prompt } = received();
   assert.match(prompt, /^You are the Coder/);
-  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, entry, brief');
+  assert.ok(prompt.includes(`\n\n${BLOCK}\n\n${NO_COMMIT_TEXT}\n\n${ENTRY_TEXT}\n\nAdd a line`), 'prompt, skills, no commit, entry, brief');
   // The block is L0: the brief leaves at the label of the project, as without skills.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
   assert.deepEqual([...log].map((row) => row.label), ['L1']);
@@ -292,6 +295,33 @@ test('the skills of the Coder go after its prompt as one L0 block of data, withi
   assert.deepEqual(await drain(closed.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills, closedCoder: true })), ['continued', 'continued', 'answered']);
   assert.deepEqual(asked, [], 'a card closing untrusted_content is never asked for skills');
   assert.ok(!received().prompt.includes('BEGIN SKILL'));
+});
+
+test('the rules of the project go after the prompt, L1, the same text for every delegation on it; none for another project or an L0 task (D-174)', async () => {
+  const projectRules: ProjectRules = { template: 'Comments in English.', projects: { other: 'Use pnpm, never npm.' } };
+  const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules })), ['continued', 'continued', 'answered']);
+  const { prompt } = received();
+  assert.ok(prompt.includes(`\n\n${NO_COMMIT_TEXT}\n\n${PROJECT_RULES_INTRO}\n\nComments in English.\n\n${ENTRY_TEXT}`), 'no commit, the template, entry');
+  assert.ok(!prompt.includes('Use pnpm'), "another project's rules stay out");
+  // The rules are L1 like the project: the brief leaves at L1, through the gateway.
+  const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
+  assert.deepEqual([...log].map((row) => row.label), ['L1']);
+
+  // A project with its own empty text has none, the sentence on commits stays.
+  const bare = await ask('work', 'Aggiungi una riga al README.', 'site');
+  assert.deepEqual(await drain(bare.task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projectRules: { ...projectRules, projects: { site: '' } } })), ['continued', 'continued', 'answered']);
+  assert.ok(!received().prompt.includes(PROJECT_RULES_INTRO));
+  assert.ok(received().prompt.includes(NO_COMMIT_TEXT));
+});
+
+test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {
+  const config = { projectRules: { template: 'T', projects: { own: 'O', empty: '' } } };
+  assert.deepEqual(projectRulesPart(config, 'own', 'L1'), { text: `${PROJECT_RULES_INTRO}\n\nO`, label: 'L1', source: 'project-rules:own' });
+  assert.equal(projectRulesPart(config, 'any', 'L2')?.text, `${PROJECT_RULES_INTRO}\n\nT`);
+  assert.equal(projectRulesPart(config, 'empty', 'L1'), undefined);
+  assert.equal(projectRulesPart(config, 'own', 'L0'), undefined, 'an L0 task never reads them');
+  assert.equal(projectRulesPart({ projectRules: { projects: {} } }, 'own', 'L1'), undefined);
 });
 
 test('a delegation of an incognito conversation runs claude without saving its session (D-136); a normal one saves it', async () => {

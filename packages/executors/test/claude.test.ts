@@ -607,8 +607,20 @@ describe('claude sandbox (task 1.6)', () => {
     assert.equal(settings.sandbox.allowUnsandboxedCommands, false);
     assert.deepEqual(settings.sandbox.excludedCommands, []);
     assert.deepEqual(settings.sandbox.network, { allowedDomains: [], strictAllowlist: true, allowLocalBinding: false, allowUnixSockets: [], allowAllUnixSockets: false });
-    assert.deepEqual(settings.sandbox.filesystem, { denyRead: ['/arianna'], allowRead: ['/w', ...SANDBOX.readable] });
+    assert.deepEqual(settings.sandbox.filesystem, { denyRead: ['/arianna'], allowRead: ['/w', ...SANDBOX.readable], denyWrite: ['/w/.git'] });
     assert.equal(args[args.indexOf('--allowedTools') + 1], 'Bash');
+  });
+
+  it('the workspace .git is read only for Bash and for the file tools: the agents never commit (D-174)', () => {
+    const settings = settingsOf(claudeArgs({ model: 'sonnet', tools: ['Edit', 'Write', 'Bash'], sandbox: SANDBOX }));
+    assert.deepEqual(settings.sandbox.filesystem.denyWrite, ['/w/.git']);
+    assert.deepEqual(settings.permissions.deny, ['Edit(//w/.git/**)', 'Edit(//w/.git)']);
+  });
+
+  it('a workspace path with glob characters is a literal in the deny rule, the sandbox path stays as it is', () => {
+    const settings = settingsOf(claudeArgs({ model: 'sonnet', tools: ['Edit'], sandbox: { ...SANDBOX, workspace: '/w/[a]*?{b}!#' } }));
+    assert.deepEqual(settings.sandbox.filesystem.denyWrite, ['/w/[a]*?{b}!#/.git']);
+    assert.deepEqual(settings.permissions.deny, ['Edit(//w/\\[a\\]\\*\\?\\{b\\}\\!\\#/.git/**)', 'Edit(//w/\\[a\\]\\*\\?\\{b\\}\\!\\#/.git)']);
   });
 
   it('sandbox folders must be absolute and normalized, never the root, and something must be denied', () => {

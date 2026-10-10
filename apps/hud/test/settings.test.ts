@@ -3,6 +3,10 @@ import { test } from 'node:test';
 
 import { isSettingsPath, SETTINGS_PATH } from '../src/lib/route.ts';
 import {
+  MAX_PROJECT_RULES,
+  projectRulesBody,
+  projectRulesForm,
+  projectRulesProblem,
   agentsBody,
   agentsForm,
   skillsBody,
@@ -348,4 +352,14 @@ test('the card "Link scaricati" (D-154): an address or a name becomes the host n
     'Al riordino il nucleo scarica i link di: x.com (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.',
   );
   assert.equal(sectionChanged('fetchSites', ['a.com', 'b.com'], ['b.com', 'a.com']), false);
+});
+
+test('rules of the projects (D-174): an empty template is none, the projects stay as written, the limit is the core’s', () => {
+  const form = projectRulesForm({ template: null, projects: { site: '' } });
+  assert.deepEqual(form, { template: '', projects: { site: '' } });
+  assert.deepEqual(projectRulesBody({ template: '  ', projects: { site: 'x' } }), { template: null, projects: { site: 'x' } });
+  assert.deepEqual(projectRulesBody({ template: 'Comments in English.', projects: {} }), { template: 'Comments in English.', projects: {} });
+  assert.deepEqual(projectRulesForm(undefined), { template: '', projects: {} });
+  assert.equal(projectRulesProblem({ template: 'a'.repeat(MAX_PROJECT_RULES), projects: {} }), undefined);
+  assert.match(projectRulesProblem({ template: '', projects: { site: 'a'.repeat(MAX_PROJECT_RULES + 1) } }) ?? '', /4000/);
 });

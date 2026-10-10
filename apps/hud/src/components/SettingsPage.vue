@@ -46,6 +46,11 @@ import {
   rolesBody,
   DEFAULT_SECRETARY,
   secretaryBody,
+  projectRulesBody,
+  projectRulesForm,
+  projectRulesProblem,
+  MAX_PROJECT_RULES,
+  type ProjectRulesForm,
   secretaryProblem,
   WEEKDAY_TEXT,
   WEEKDAYS,
@@ -129,6 +134,7 @@ interface Forms {
   cloudModels: CloudModelsForm;
   characters: Record<string, string>;
   personas: Record<string, PersonaForm>;
+  projectRules: ProjectRulesForm;
   agents: AgentsForm;
   skills: SkillsForm;
   sprites: SettingsValues['sprites'];
@@ -149,6 +155,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
     cloudModels: cloudModelsForm(values.cloudModels),
     characters: { ...values.characters },
     personas: personasForm(values.personas),
+    projectRules: projectRulesForm(values.projectRules),
     agents: agentsForm(values.agents, agentModels),
     skills: skillsForm(values.skills, agentSkills),
     sprites: values.sprites,
@@ -164,7 +171,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'projectRules', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -274,6 +281,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('participants')) values.participants = current.participants;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
   if (parts.includes('secretary')) values.secretary = secretaryBody(current.secretary);
+  // An older core has no rules of the projects (D-174): nothing to send.
+  if (parts.includes('projectRules') && view.value?.values?.projectRules !== undefined) values.projectRules = projectRulesBody(current.projectRules);
   generation += 1;
   busy.value = section;
   delete errors.value[section];
@@ -951,6 +960,50 @@ watch(active, () => {
               <p class="text-xs text-muted">
                 Un esecutore cloud vede i file del progetto: l’etichetta dice quanto sono riservati (solo Pubblico o Interno). Un progetto aggiunto da qui non crea il link
                 <code class="font-mono">repos/&lt;nome&gt;</code> del wizard: conta la cartella.
+              </p>
+            </SettingsCard>
+
+            <!-- The rules of the projects (I-14, D-174): the common template; each project's own in Progetti → Regole -->
+            <SettingsCard
+              v-if="active === 'project-rules'"
+              id="project-rules"
+              title="Modello comune"
+              kind="now"
+              :changed="changed('projectRules')"
+              :saved="saved === 'projectRules'"
+              :invalid="projectRulesProblem(forms.projectRules)"
+              :busy="busy === 'projectRules'"
+              :error="errors.projectRules"
+              @cancel="reset('projectRules')"
+              @save="save('projectRules')"
+            >
+              <p class="text-xs text-muted">
+                Le regole che valgono per tutti i progetti: Arianna le mette in testa a ogni lavoro di Claude o di Codex su un progetto, uguali per tutti e due. Un
+                progetto può avere regole proprie al posto di queste, nella pagina Progetti, scheda «Regole».
+              </p>
+              <label class="flex flex-col gap-1 text-xs text-muted">
+                Regole
+                <textarea
+                  v-model="forms.projectRules.template"
+                  rows="9"
+                  :maxlength="MAX_PROJECT_RULES"
+                  class="field px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
+                  placeholder="Commenti in inglese.&#10;Niente firme o commenti tipo «generato da»: commenti solo dove servono, nomi e formattazione come il codice che c’è già."
+                />
+              </label>
+              <p class="flex items-start gap-1.5 text-xs text-muted">
+                <Icon name="gateway" :size="14" class="mt-px shrink-0 text-warn" />
+                <span>
+                  Il testo va al cloud come Interno, dal gateway, come le personalità: niente dati personali, nomi di clienti, importi o password (il nucleo rifiuta il
+                  salvataggio se ne trova).
+                </span>
+              </p>
+              <p class="flex items-start gap-1.5 text-xs text-muted">
+                <Icon name="private" :size="14" class="mt-px shrink-0" />
+                <span>Qualunque cosa dicano le regole, gli agenti non fanno mai commit: la cartella <code class="font-mono">.git</code> del progetto è in sola lettura per loro, e le modifiche restano da rivedere.</span>
+              </p>
+              <p v-if="Object.keys(forms.projectRules.projects).length > 0" class="text-xs text-muted">
+                Con regole proprie: {{ Object.keys(forms.projectRules.projects).sort().join(', ') }}.
               </p>
             </SettingsCard>
           </template>

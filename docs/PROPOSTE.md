@@ -2439,7 +2439,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-11 | **Prioritaria per l'utente.** Progetti come cartelle contenitore con la loro conoscenza: dentro `progetto-test/` cartelle di gestione (Workplan, documenti, IM…) e le cartelle delle parti (`progetto-test-admin`, `progetto-test-client`…). Pulsante nella pagina Progetti per aggiungere conoscenza a un progetto; Arianna la trova con le sue ricerche, il Coder la legge se serve, **ma le note private non escono mai** (salvo eccezioni con master password e anonimizzazione locale) | funzione di privacy | 25-40 h (tappe P1-P5) | D-058, D-134, D-080, D-086, gateway, profili di confinamento D-050/D-138 | detta dall'utente il 2026-10-08; scelte in D-145; P1-P2 costruite (0.34.0), P3 costruita (D-166, da provare), P4a-P4c unite (0.54.0-0.56.0), P4d unita (0.58.0, D-169), resta P5 |
 | I-12 | **Prioritaria per l'utente.** Arianna (o un agente) come segretaria: le dici "domani dobbiamo rilasciare X per il cliente Y", se lo segna, te lo ricorda la mattina, di nuovo dopo pranzo se non è fatto, e a fine giornata fa il resoconto di ciò che non è stato fatto chiedendoti perché e annotando la risposta; pulsante dedicato per parlarle subito | funzione | 20-30 h (tappe S1-S4) | D-110 (routine, ancora da costruire), D-126/D-128 (notifiche), D-066 (chiamate, facoltative) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; domande chiuse il 2026-10-10 (D-152); C1-C2 costruite, restano C3 e C4 |
-| I-14 | Regole del progetto proposte in bozza quando si aggiunge un progetto (parallelismo degli agenti secondo la quota, codice che non sembri scritto da un'IA, regole per gli IM, niente commit o niente co-autore, mai leggere segreti…), uguali per Claude e per Codex | funzione | 12-18 h (tappe R1-R3) | D-058/D-134 (progetti), I-11, D-050/D-138 (profili), D-135 (segreti) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
+| I-14 | Regole del progetto proposte in bozza quando si aggiunge un progetto (parallelismo degli agenti secondo la quota, codice che non sembri scritto da un'IA, regole per gli IM, niente commit o niente co-autore, mai leggere segreti…), uguali per Claude e per Codex | funzione | 12-18 h (tappe R1-R3) | D-058/D-134 (progetti), I-11, D-050/D-138 (profili), D-135 (segreti) | detta dall'utente il 2026-10-08; domande chiuse il 2026-10-11; **R1 fatta (D-174, ramo `task/regole-progetto`)**, R2-R3 da fare |
 | I-16 | I clienti: anagrafica completa per fatturare legata a uno o più progetti, dashboard dei guadagni dagli IM chiusi (prezzo per progetto con eccezioni), documenti e contatti; tutto Privato (L2) | funzione | da stimare | D-167 (IM e prezzi), D-145 (progetti), I-12 | detta dall'utente il 2026-10-10; scelte in D-168, proposta qui sotto; tappa C1 costruita (ramo `task/clienti`), in prova |
 | I-17 | Comandi da Spotlight: un'azione "Di' ad Arianna" dell'aiutante nativo, con la risposta in notifica, e la variante "Annota" | funzione | 4-8 h (tappe S1-S3) | D-128 (aiutante), D-167 (conferma da chat privata), I-16 | detta dall'utente il 2026-10-10; idea accettata, da fare dopo I-16 |
 
@@ -2621,23 +2621,9 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 - **R2:** bozza proposta dal modello locale quando si aggiunge un progetto, partendo dal modello comune dell'utente.
 - **R3:** il Reviewer controlla le regole di testo sul diff; esportazione facoltativa in `CLAUDE.md` e `AGENTS.md`.
 
-**Domande per l'utente.**
-1. **I commit sul progetto: chi li fa?**
-   - Contesto: Oggi è Arianna a fare il commit delle modifiche del Coder, non il modello. Hai chiesto "non committare mai" oppure "senza co-autore": si sceglie cosa succede di base nei progetti nuovi.
-   - Opzione consigliata: Arianna, senza co-autore — il commit lo fa Arianna con il tuo nome come autore e nessuna riga "Co-Authored-By"; lo vedi e puoi annullarlo.
-   - Opzione: Nessun commit — le modifiche restano nella cartella da rivedere; il commit lo fai tu.
-   - Opzione: Si sceglie per progetto — nella bozza delle regole, ogni volta.
-   - Esempio: Il Coder sistema il modulo di contatto di progetto-test-client; nel git compare "Modulo di contatto: validazione dell'email", autore tu, senza altre righe.
-2. **Codice "che non sembri scritto da un'IA": cosa vuol dire per te?**
-   - Contesto: È una regola di testo per il modello. Serve sapere cosa evitare in concreto, perché il modello la segua e il Reviewer la possa controllare.
-   - Opzione consigliata: Niente tracce e stile del progetto — niente firme o commenti tipo "generato da", commenti solo dove servono, nomi e formattazione uguali al codice che c'è già.
-   - Opzione: Lo scrivo io — elenchi tu nella risposta cosa non vuoi vedere.
-   - Esempio: Il Coder aggiunge una funzione senza il commento "// Added by AI to handle the edge case", con i nomi in camelCase come il resto del file.
-3. **Dove scrivi il modello comune delle regole?**
-   - Contesto: Le regole valide per tutti i progetti (per esempio niente co-autore) si scrivono una volta e ogni bozza le copia.
-   - Opzione consigliata: Nelle Impostazioni — una pagina "Regole dei progetti" con il modello comune; ogni progetto ha poi la sua scheda nella pagina Progetti.
-   - Opzione: Solo per progetto — niente modello comune; ogni bozza parte da zero e la scrivi ogni volta.
-   - Esempio: Nel modello comune scrivi "commenti in inglese, niente co-autore"; aggiungi progetto-test e la bozza le contiene già, più "usa pnpm" letto dal package.json.
+**Scelte dell'utente** (domande a opzioni del 2026-10-11): (1) **nessun commit**: le modifiche restano nella cartella da rivedere e il commit lo fa l'utente; Arianna lo garantisce con il confinamento (`.git` in sola lettura per Claude e per Codex), non con un interruttore; (2) codice "che non sembri scritto da un'IA" = **niente tracce e stile del progetto** (niente firme o commenti tipo "generato da", commenti solo dove servono, nomi e formattazione come il codice che c'è già): è una regola di testo, il punto di partenza del modello comune; (3) **modello comune nelle Impostazioni** (pagina "Regole dei progetti"), regole proprie del progetto nella pagina Progetti. Dettagli in D-174.
+
+- **R1 (fatta, D-174):** `[project_rules]` di `arianna.toml`, modello comune e regole proprie, in testa a ogni delega su Claude e Codex; `.git` in sola lettura. Il parallelismo secondo la quota resta per dopo (un'impostazione dell'orchestratore, non del testo).
 
 ### I-15, il diario dei lavori (richiesta dell'utente del 2026-10-09)
 
