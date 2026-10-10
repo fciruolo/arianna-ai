@@ -78,6 +78,22 @@ export function checkCaptureUrl(value: string): string {
   return parsed.href;
 }
 
+/**
+ * The first http(s) address in a text the user wrote, or undefined: for a link
+ * pasted as a thought, whose header has no `url` (D-154). Trailing
+ * punctuation of the sentence is not part of it.
+ */
+export function linkInText(text: string): string | undefined {
+  const match = /https?:\/\/[^\s<>"'`]+/i.exec(text);
+  if (match === null) return undefined;
+  const candidate = match[0].replace(/[.,;:!?)\]}]+$/, '');
+  try {
+    return checkCaptureUrl(candidate);
+  } catch {
+    return undefined;
+  }
+}
+
 /** ASCII, lowercase, dashes: "Càparra dell'affitto!" → "caparra-dell-affitto". */
 export function slugOf(text: string): string {
   const slug = text

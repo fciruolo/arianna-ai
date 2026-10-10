@@ -5,7 +5,7 @@ import { siteListed } from '@arianna/config';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForKbPage, maxLabel, spendAllowed, type Label, type LabelRules, type Target } from '@arianna/policy';
 
-import { isCaptureKind, localTimestamp } from './capture.ts';
+import { isCaptureKind, linkInText, localTimestamp } from './capture.ts';
 import type { Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
@@ -325,6 +325,16 @@ export interface CaptureView {
  * when an organized note has no such line (edited by hand).
  */
 export function captureOf(raw: string): CaptureView | undefined {
+  const view = captureParts(raw);
+  if (view === undefined || view.kept.url !== undefined) return view;
+  // A link pasted as a thought: its header has no `url`, its text has the address (D-154).
+  // The capture's kind or the model's: "thought" with a pasted link becomes "link" once organized.
+  const link = view.kept.capturedKind === 'link' || headerFields(raw).get('kind') === 'link';
+  const url = link ? linkInText(view.original) : undefined;
+  return url === undefined ? view : { ...view, kept: { ...view.kept, url } };
+}
+
+function captureParts(raw: string): CaptureView | undefined {
   const fields = headerFields(raw);
   const kept = keptCaptureFields(raw);
   if (fields.get('status') !== 'organized') return { kept, original: rawBody(raw) };
