@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.59.0] - 2026-10-10
+
 ### Aggiunto
 
 - La Dashboard del cliente: guadagno dell'anno, da fatturare, in attesa di pagamento e incassato; grafico per mese (per anno con "Tutto"), per progetto e per anno; interruttore Competenza (mese dell'IM, fattura divisa sui suoi IM) o Cassa (mese del pagamento); filtro per progetto; avvisi per IM senza prezzo o non fatturati (D-170, I-16 C3).
