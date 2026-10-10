@@ -9,7 +9,7 @@ import { after, describe, it } from 'node:test';
 import { resolveHome, type Project } from '@arianna/config';
 import { createContext, createLabelRules } from '@arianna/policy';
 
-import { addImTool, applyImProposal, clientProject, imProposalOf, matchClients, type ImProposal, type ImToolEnv, type ImToolOutcome } from '../src/orchestrator/im-tool.ts';
+import { addImTool, applyImProposal, clientInText, clientProject, namesInText, imProposalOf, matchClients, type ImProposal, type ImToolEnv, type ImToolOutcome } from '../src/orchestrator/im-tool.ts';
 import { runTool, type ToolEnv } from '../src/orchestrator/tools.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `im-tool-${randomUUID()}`);
@@ -77,7 +77,7 @@ describe('im.add (D-167, P4b)', () => {
 
   it('an unknown project is refused with the known names; none at all asks which', () => {
     assert.equal(errorOf(call({ project: 'altro', title: 'Fatture' })), "il progetto 'altro' non esiste fra quelli approvati (progetti noti: progetto-test, vuoto, riservato)");
-    assert.match(errorOf(call({ title: 'Fatture' })), /^manca il progetto: .*progetto-test, vuoto, riservato/);
+    assert.match(errorOf(call({ title: 'Fatture' })), /^manca il progetto: se l'utente ha nominato un cliente.*"client".*progetto-test, vuoto, riservato/);
   });
 
   it('an empty, multi-line or too long title is refused', () => {
@@ -148,7 +148,7 @@ describe('im.add (D-167, P4b)', () => {
     const env = (ims?: ImToolEnv): ToolEnv => ({
       sql: undefined as never,
       kb: undefined as never,
-      task: { id: 't1', conversationId: null } as never,
+      task: { id: 't1', conversationId: null, clearance: 'L1' } as never,
       context: createContext('L1', 'L1'),
       autonomy: 'A1',
       ...(ims === undefined ? {} : { ims }),
@@ -214,5 +214,38 @@ describe('im.add with a client', () => {
     assert.ok(empty.kind === 'error' && /nessun cliente/.test(empty.error));
     const unknown = clientProject(clients, 'Neri', undefined, 'L2');
     assert.ok(unknown.kind === 'error' && /nessun cliente/.test(unknown.error));
+  });
+});
+
+describe('the client in the user\'s words', () => {
+  it('takes the capitalized words after "cliente", or one lowercase word', () => {
+    assert.equal(clientInText('Segna che per il prossimo IM del cliente Rossi dobbiamo implementare la pagina'), 'Rossi');
+    assert.equal(clientInText('per il cliente Pasticceria Finta Rossi: il menu'), 'Pasticceria Finta Rossi');
+    assert.equal(clientInText('del cliente rossi, il logo'), 'rossi');
+    assert.equal(clientInText("Clienti D'Amico e altri"), "D'Amico");
+  });
+  it('finds nothing without a client named', () => {
+    assert.equal(clientInText('per il prossimo IM di progetto-test le fatture'), undefined);
+    assert.equal(clientInText('il cliente il'), undefined);
+    assert.equal(clientInText('chiedere al cliente se va bene il menu'), undefined);
+    assert.equal(clientInText('il cliente che ha chiamato'), undefined);
+    // A sentence ends the name.
+    assert.equal(clientInText('per il cliente Rossi. Domani il resto'), 'Rossi');
+    assert.equal(clientInText(''), undefined);
+  });
+});
+
+describe('the project and the client in the user\'s last messages', () => {
+  const projects = ['demo', 'progetto-test'];
+  it('the newest project named as a whole word and the newest client', () => {
+    assert.deepEqual(namesInText(['progetto-test', 'Per il prossimo IM del cliente Rossi la pagina'], projects), { project: 'progetto-test', client: 'Rossi' });
+    assert.deepEqual(namesInText(['per il prossimo IM di demo le fatture'], projects), { project: 'demo' });
+  });
+  it('a word that only contains a project name is not one', () => {
+    assert.deepEqual(namesInText(['la demodue e la democrazia'], projects), {});
+    assert.deepEqual(namesInText(['progetto-test-admin'], projects), {});
+    assert.deepEqual(namesInText(['apri demo.md'], projects), {});
+    // Two projects in one message: none, the older messages are not looked at for it.
+    assert.deepEqual(namesInText(['demo o progetto-test?'], projects), {});
   });
 });

@@ -31,6 +31,8 @@ export interface ImToolCall {
   workspace: string | undefined;
   /** The effective label of the step: what the title was written from. */
   effective: Label;
+  /** The project was not said by the model but found by the core in the user's words (D-173): the user confirms it, always. */
+  confirm?: boolean;
 }
 
 /** What the user confirms (the detail of an approval of kind `im`): the IM resolved when it was asked, and the exact title. */
@@ -72,7 +74,8 @@ export function addImTool(env: ImToolEnv | undefined, call: ImToolCall): ImToolO
   const known = names.length === 0 ? 'nessun progetto approvato' : `progetti noti: ${names.join(', ')}`;
 
   const asked = typeof call.args.project === 'string' && call.args.project.trim() !== '' ? call.args.project.trim() : call.workspace;
-  if (asked === undefined) return { kind: 'error', error: `manca il progetto: chiedi all'utente di quale si tratta (${known})` };
+  // A client said by the user goes in "client" (D-173): the model is reminded before it asks.
+  if (asked === undefined) return { kind: 'error', error: `manca il progetto: se l'utente ha nominato un cliente ("del cliente Rossi"), richiama im.add con "client"; altrimenti chiedi all'utente di quale progetto si tratta (${known})` };
   const project = projects.find((item) => item.name === asked) ?? projects.find((item) => item.name.toLowerCase() === asked.toLowerCase());
   if (project === undefined) return { kind: 'error', error: `il progetto '${asked}' non esiste fra quelli approvati (${known})` };
 
@@ -94,7 +97,7 @@ export function addImTool(env: ImToolEnv | undefined, call: ImToolCall): ImToolO
     if (target === null) return { kind: 'error', error: NO_IM };
     if (target.ended) return { kind: 'error', error: ended(project.name) };
     // The title comes from a step that read data up to `effective`: below it, the user decides.
-    if (!isAtMost(call.effective, target.label)) {
+    if (call.confirm === true || !isAtMost(call.effective, target.label)) {
       return {
         kind: 'confirm',
         proposal: { project: project.name, which, number: target.number, date: target.date, dateText: longDate(target.date), imLabel: target.label, title },
@@ -217,9 +220,11 @@ export interface ImClientInfo {
 }
 
 /** What "del cliente Rossi" became: the project to write in, or an error for the model; both carry the label they were read at. */
-export type ImClientOutcome = { kind: 'project'; project: string; client: string; label: Label } | { kind: 'error'; error: string; label: Label };
+export type ImClientOutcome = { kind: 'project'; project: string; client: string; label: Label } | { kind: 'error'; error: string; label: Label; none?: true };
 
 /** Words a model may add around a name ("cliente Rossi", "il Rossi"): left out of the match, unless nothing else is said. */
+/** Lowercase words after "cliente" that are not a name ("chiedere al cliente se va bene"). */
+const COMMON = new Set(['che', 'non', 'per', 'con', 'una', 'uno', 'vuole', 'deve', 'dice', 'chiede', 'nuovo', 'nuova', 'finale', 'sono', 'era', 'sta', 'quando', 'come', 'perché', 'oggi', 'domani', 'anche', 'già', 'però']);
 const FILLERS = new Set(['cliente', 'client', 'il', 'lo', 'la', 'i', 'gli', 'le', 'di', 'del', 'dello', 'della', 'dei', 'degli', 'delle', 'da', 'per', 'the']);
 
 const words = (value: string): string[] =>
@@ -264,7 +269,7 @@ export function clientProject(clients: readonly ImClientInfo[], asked: string, p
   }
   const visible = clients.filter((client) => isAtMost(client.label, clearance));
   const found = matchClients(visible, asked);
-  if (found.length === 0) return { kind: 'error', error: `nessun cliente corrisponde a '${asked}': chiedi all’utente il progetto o il nome del cliente`, label: 'L2' };
+  if (found.length === 0) return { kind: 'error', error: `nessun cliente corrisponde a '${asked}': chiedi all’utente il progetto o il nome del cliente`, label: 'L2', none: true };
   const label = maxLabel('L2', ...found.map((client) => client.label));
   const [only] = found;
   if (only === undefined || found.length > 1) {
@@ -281,4 +286,39 @@ export function clientProject(clients: readonly ImClientInfo[], asked: string, p
     return { kind: 'error', error: `il cliente ${only.name} ha più progetti (${only.projects.join(', ')}): chiedi all’utente per quale progetto`, label };
   }
   return { kind: 'project', project: single, client: only.name, label };
+}
+
+/**
+ * The client named in the user's words, "del cliente Rossi" or "cliente
+ * Pasticceria Rossi": the capitalized words after "cliente", or the one word
+ * after it when written in lowercase. Undefined when no client is named.
+ */
+export function clientInText(text: string): string | undefined {
+  const found = /\b[Cc]lient[ei]\s+((?:\p{Lu}[\p{L}\p{N}'’&-]*)(?:[ \t]+\p{Lu}[\p{L}\p{N}'’&-]*)*|[\p{L}\p{N}'’&-]+)/u.exec(text);
+  const name = found?.[1];
+  if (name === undefined || name === '' || FILLERS.has(name.toLowerCase())) return undefined;
+  // A lowercase word is a name only when it is not one of the short words that follow "cliente" in a sentence.
+  if (name === name.toLowerCase() && (name.length < 3 || COMMON.has(name))) return undefined;
+  return name;
+}
+
+/**
+ * A project and a client the user named in their last messages (newest
+ * first), for when the model left them out: the newest message naming an
+ * approved project as a whole word, and the newest "cliente <Nome>".
+ */
+export function namesInText(texts: readonly string[], projects: readonly string[]): { project?: string; client?: string } {
+  const found: { project?: string; client?: string } = {};
+  for (const text of texts) {
+    if (found.project === undefined) {
+      const lower = text.toLowerCase();
+      const named = projects.filter((name) => new RegExp(`(^|[^\\p{L}\\p{N}_.-])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}_.-])`, 'u').test(lower));
+      // Two projects in one message: which one is not known, so none.
+      const [only] = named;
+      if (only !== undefined && named.length === 1) found.project = only;
+    }
+    const client = found.client === undefined ? clientInText(text) : undefined;
+    if (client !== undefined) found.client = client;
+  }
+  return found;
 }

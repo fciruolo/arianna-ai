@@ -230,3 +230,49 @@ test('a client named the project: the approval and the answer once decided keep 
   assert.equal(reply?.label, 'L2');
   assert.match(im(34), /- \[ \] Vetrine\n/);
 });
+
+test('a client said as the project ("Rossi") is tried as a client in a private conversation', async () => {
+  await rossi();
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Per il prossimo IM di Rossi: il menu');
+  const model = scripted([{ action: 'call', tool: 'im.add', arguments: { project: 'Rossi', title: 'Menu' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.deepEqual([approval.detail.project, approval.detail.title], ['progetto-test', 'Menu']);
+});
+
+test('the model leaves the client out: "del cliente Rossi" in the user\'s message is used', async () => {
+  await rossi();
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Segna che per il prossimo IM del cliente Rossi dobbiamo fare il carrello');
+  const model = scripted([{ action: 'call', tool: 'im.add', arguments: { title: 'Carrello' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.deepEqual([approval.detail.project, approval.detail.title, approval.detail.readLabel], ['progetto-test', 'Carrello', 'L2']);
+});
+
+test('a project heard in an older message of a work conversation is never written without the user\'s yes', async () => {
+  const before = im(33);
+  const conversation = await createConversation(db().sql, { mode: 'work' });
+  // An older message of the conversation, about something else (its task is left in the queue: drain skips it).
+  await postUserMessage(db().sql, conversation.id, 'Com\'è andata la riunione di progetto-test?');
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Segna per questo IM: rivedere le fatture');
+  const model = scripted([{ action: 'call', tool: 'im.add', arguments: { title: 'Rivedere le fatture', which: 'current' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.equal(approval.detail.project, 'progetto-test');
+  assert.equal(im(33), before);
+});
+
+test('a message the user sent after the task began is not looked at', async () => {
+  await rossi();
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Per il prossimo IM: il logo');
+  await postUserMessage(db().sql, conversation.id, 'ah, è del cliente Rossi');
+  const model = scripted([
+    { action: 'call', tool: 'im.add', arguments: { title: 'Logo' } },
+    { action: 'reply', text: 'Di quale progetto?' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
+  assert.match(JSON.stringify(model.requests[1]?.messages), /manca il progetto/);
+});
