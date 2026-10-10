@@ -16,6 +16,8 @@ import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
 import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
+import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
+import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, updateCard, type CardNames } from '../cardwall.ts';
 import { CommitmentError, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -164,6 +166,8 @@ export interface ApiServerOptions {
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
   devProgress?: DevProgressApi;
+  /** The cardwall (D-152): the folder of the files attached to cards (data/cards); without it the file routes answer 404. */
+  cards?: { dir: string };
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
@@ -247,6 +251,10 @@ export interface ApiServer {
 
 // A message of MAX_MESSAGE_LENGTH 4-byte characters, JSON-escaped, fits.
 export const MAX_BODY_BYTES = 128 * 1024;
+/** A file attached to a card, in base64 with its name: a third more than the file, and some room. */
+const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
+/** What the user writes on a card, new or changed (cardwall.ts). */
+const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned'];
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 /** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
@@ -334,6 +342,7 @@ function idParam(params: Params, key: string): string {
 const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejected', 'expired'];
 
 interface RouteOptions {
+  cards: ApiServerOptions['cards'];
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
   defaultModel: () => string | undefined;
@@ -1096,7 +1105,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -1105,6 +1114,7 @@ function routes(sql: Sql, { projects, models, defaultModel, agents, characters, 
     ...projectKnowledgeRoutes(projectContainers, knowledge),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents() }), cards),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1438,6 +1448,153 @@ function secretaryRoutes(sql: Sql): Route[] {
         if (error instanceof CommitmentError) throw new HttpError(error.code === 'not-found' ? 404 : 409, error.code === 'not-found' ? 'not found' : 'the commitment is not open');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * The cardwall (I-13 tappe C1-C2, D-152): the cards and the commitments with
+ * their column, and what the user changes on a card by hand. Cards only
+ * (tasks without a conversation): a task of a chat is the engine's.
+ */
+function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOptions['cards']): Route[] {
+  const filesDir = (): string => {
+    if (cards === undefined) throw new HttpError(404, 'not found');
+    return cards.dir;
+  };
+  const guard = async <T>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof CardError) throw new HttpError(error.code === 'not-found' ? 404 : error.code === 'invalid' ? 400 : 409, error.message);
+      throw error;
+    }
+  };
+  // Arianna does not take cards from the wall: she is the one who hands them out.
+  const known = (): CardNames => {
+    const current = names();
+    return { projects: current.projects, agents: current.agents.filter((agent) => agent !== 'arianna') };
+  };
+  return [
+    route('GET', '/api/cards', async () => {
+      const today = localDay();
+      const current = known();
+      return { body: { today, cards: await listCards(sql, today), projects: current.projects, agents: current.agents } };
+    }),
+    route('POST', '/api/cards', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, CARD_FIELDS);
+      return guard(async () => ({ status: 201, body: { card: { id: (await createCard(sql, body, known())).id } } }));
+    }),
+    route('POST', '/api/cards/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CARD_FIELDS);
+      return guard(async () => ({ body: { card: { id: (await updateCard(sql, id, body, known())).id } } }));
+    }),
+    route('GET', '/api/cards/:id', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { card: await cardDetail(sql, id) } }));
+    }),
+    route('POST', '/api/cards/:id/links', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['url', 'title']);
+      return guard(async () => ({ status: 201, body: { link: await addLink(sql, id, body) } }));
+    }),
+    route('DELETE', '/api/cards/:id/links/:link', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const link = idParam(params, 'link');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeLink(sql, id, link);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/cards/:id/checklist', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['body']);
+      return guard(async () => ({ status: 201, body: { item: await addChecklistItem(sql, id, body) } }));
+    }),
+    route('POST', '/api/cards/:id/checklist/:item', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const item = idParam(params, 'item');
+      const body = await readJson(request);
+      onlyFields(body, ['body', 'done']);
+      return guard(async () => ({ body: { item: await updateChecklistItem(sql, id, item, body) } }));
+    }),
+    route('DELETE', '/api/cards/:id/checklist/:item', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const item = idParam(params, 'item');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeChecklistItem(sql, id, item);
+        return { body: { ok: true } };
+      });
+    }),
+    // A file comes as JSON with its bytes in base64: the API takes only JSON (security.ts).
+    route('POST', '/api/cards/:id/files', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = filesDir();
+      const body = await readJson(request, MAX_CARD_FILE_BODY);
+      onlyFields(body, ['name', 'type', 'data']);
+      return guard(async () => ({ status: 201, body: { file: await addFile(sql, dir, id, body) } }));
+    }),
+    route('GET', '/api/cards/:id/files/:file', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const fileId = idParam(params, 'file');
+      const dir = filesDir();
+      return guard(async () => {
+        const { file, bytes } = await readCardFile(sql, dir, id, fileId);
+        const inline = isInline(file.mediaType);
+        const ascii = file.name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        return {
+          raw: bytes,
+          type: !inline ? 'application/octet-stream' : file.mediaType === 'text/plain' ? 'text/plain; charset=utf-8' : file.mediaType,
+          headers: {
+            'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+            // A file of the user's is shown, never run: no script, no form, no frame of ours.
+            'content-security-policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+          },
+          noStore: true,
+        };
+      });
+    }),
+    route('DELETE', '/api/cards/:id/files/:file', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const fileId = idParam(params, 'file');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeFile(sql, id, fileId);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/cards/:id/move', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['to', 'reason']);
+      return guard(async () => ({ body: { card: { id, status: (await moveCard(sql, id, body.to, body.reason)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/dependencies', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['on']);
+      const on = typeof body.on === 'string' && isUuid(body.on) ? body.on : undefined;
+      if (on === undefined) throw new HttpError(400, 'on must be the id of a card');
+      return guard(async () => {
+        await addDependency(sql, id, on);
+        return { body: { ok: true } };
+      });
+    }),
+    route('DELETE', '/api/cards/:id/dependencies/:on', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const on = idParam(params, 'on');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeDependency(sql, id, on);
+        return { body: { ok: true } };
+      });
     }),
   ];
 }
@@ -1835,6 +1992,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     modelEvals: options.modelEvals,
     approvedProjects: options.approvedProjects ?? (() => []),
     projectContainers: options.projectContainers ?? (() => []),
+    cards: options.cards,
     knowledge: options.knowledge,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),

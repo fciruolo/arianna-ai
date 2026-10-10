@@ -472,8 +472,10 @@ async function cardIn(mode: 'work' | 'private', title: string): Promise<{ cardId
   assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
   // No card when the task started: not offered, not even after the card exists (fixed for the task).
   assert.ok(model.requests.every((request) => !offered(request).includes('task.update')));
-  const [card] = await db().sql<{ id: string }[]>`SELECT id::text FROM tasks WHERE parent_id = ${task.id}`;
+  const [card] = await db().sql<{ id: string; project: string | null }[]>`SELECT id::text, project FROM tasks WHERE parent_id = ${task.id}`;
   assert.ok(card !== undefined && task.conversationId !== null);
+  // The card has the project of the conversation's workspace on the wall (D-152); a private one is general.
+  assert.equal(card.project, mode === 'work' ? 'demo' : null);
   return { cardId: card.id, conversationId: task.conversationId, parentId: task.id };
 }
 

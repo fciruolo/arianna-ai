@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
@@ -99,6 +100,86 @@ export async function listCommitments(): Promise<{ today: string; commitments: C
 /** "Fatto" on a commitment: the click is the confirmation. */
 export async function markCommitmentDone(id: string): Promise<Commitment> {
   return (await call<{ commitment: Commitment }>('POST', `/api/commitments/${encodeURIComponent(id)}/done`, {})).commitment;
+}
+
+/** The cardwall (I-13, D-152): cards and commitments with their column, the projects and agents a card may name. */
+export async function loadCards(): Promise<CardWall> {
+  return call<CardWall>('GET', '/api/cards');
+}
+
+/** What the user writes on a card: `goal` is the "Descrizione" (Markdown), `criteria` "Fatto quando", `priority` 0-4, `planned` "Data esecuzione". */
+export interface CardFieldsInput {
+  title?: string;
+  project?: string | null;
+  assignee?: string;
+  due?: string | null;
+  goal?: string | null;
+  criteria?: string | null;
+  priority?: number;
+  planned?: string | null;
+}
+
+/** A card written on the wall: it starts in the inbox. Its id. */
+export async function createCard(input: CardFieldsInput & { title: string }): Promise<string> {
+  return (await call<{ card: { id: string } }>('POST', '/api/cards', input)).card.id;
+}
+
+/** Changes a card; null takes a project, a day or a text away. */
+export async function updateCard(id: string, fields: CardFieldsInput): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}`, fields);
+}
+
+/** The card in full: body, criteria, links, checklist, files, history (tasks only). */
+export async function loadCardDetail(id: string): Promise<CardDetailData> {
+  return (await call<{ card: CardDetailData }>('GET', `/api/cards/${encodeURIComponent(id)}`)).card;
+}
+
+export async function addCardLink(id: string, url: string, title?: string): Promise<CardLink> {
+  return (await call<{ link: CardLink }>('POST', `/api/cards/${encodeURIComponent(id)}/links`, { url, ...(title === undefined || title === '' ? {} : { title }) })).link;
+}
+
+export async function removeCardLink(id: string, link: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`, {});
+}
+
+export async function addChecklistItem(id: string, body: string): Promise<ChecklistItem> {
+  return (await call<{ item: ChecklistItem }>('POST', `/api/cards/${encodeURIComponent(id)}/checklist`, { body })).item;
+}
+
+export async function updateChecklistItem(id: string, item: string, fields: { body?: string; done?: boolean }): Promise<ChecklistItem> {
+  return (await call<{ item: ChecklistItem }>('POST', `/api/cards/${encodeURIComponent(id)}/checklist/${encodeURIComponent(item)}`, fields)).item;
+}
+
+export async function removeChecklistItem(id: string, item: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/checklist/${encodeURIComponent(item)}`, {});
+}
+
+/** Attaches a file: its bytes in base64, since the API takes only JSON. */
+export async function uploadCardFile(id: string, file: { name: string; type: string; data: string }): Promise<CardFile> {
+  return (await call<{ file: CardFile }>('POST', `/api/cards/${encodeURIComponent(id)}/files`, file)).file;
+}
+
+export async function removeCardFile(id: string, file: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/files/${encodeURIComponent(file)}`, {});
+}
+
+/** Where the browser opens (or downloads) an attached file; also the `src` of a thumbnail. */
+export function cardFileUrl(id: string, file: string): string {
+  return `/api/cards/${encodeURIComponent(id)}/files/${encodeURIComponent(file)}`;
+}
+
+/** A card moved by hand; the core refuses (409) a move it does not allow. */
+export async function moveCard(id: string, to: MoveTarget): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/move`, { to });
+}
+
+/** "Aspetta anche…": `id` waits for `on` to be done. */
+export async function addCardDependency(id: string, on: string): Promise<void> {
+  await call('POST', `/api/cards/${encodeURIComponent(id)}/dependencies`, { on });
+}
+
+export async function removeCardDependency(id: string, on: string): Promise<void> {
+  await call('DELETE', `/api/cards/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(on)}`, {});
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {

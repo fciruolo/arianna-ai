@@ -1,6 +1,7 @@
 import type { Autonomy, ToolId } from '@arianna/agents';
 import { maxLabel, type Context, type Label } from '@arianna/policy';
 
+import { PROJECT_NAME } from '../cardwall.ts';
 import type { Queryable } from '../db/client.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { updateCard } from './cards.ts';
@@ -92,8 +93,13 @@ function write(args: Record<string, unknown>, env: ToolEnv): ToolResult {
 async function card(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
   const title = String(args.title).trim();
   const goal = typeof args.goal === 'string' && args.goal.trim() !== '' ? args.goal.trim() : undefined;
+  // The project of the conversation's workspace (a container, or `container:part`, D-145): the card's on the wall (D-152).
+  const [conversation] =
+    env.task.conversationId === null ? [] : await env.sql<{ workspace: string | null }[]>`SELECT workspace FROM conversations WHERE id = ${env.task.conversationId}`;
+  const project = conversation?.workspace?.split(':')[0];
   // Created in the transaction of the step's turn: a step that runs again finds its turn, not a second card.
   const created = await createTask(env.sql, {
+    ...(project !== undefined && PROJECT_NAME.test(project) ? { project } : {}),
     title,
     ...(goal === undefined ? {} : { goal }),
     parentId: env.task.id,

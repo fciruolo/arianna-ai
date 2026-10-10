@@ -22,7 +22,7 @@ import {
   touchRuns,
   type RunUsage,
 } from './runs.ts';
-import { createTask, loadTask, moveTask, setTaskLimits, TaskError, type NewTask, type Task } from './tasks.ts';
+import { createTask, loadTask, moveTask, openDependencies, setTaskLimits, STEP_QUEUE, TaskError, type NewTask, type Task } from './tasks.ts';
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -35,7 +35,7 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
  * After a crash the job comes back to the queue and the step runs again,
  * resuming the interrupted run's session: steps must be idempotent.
  */
-export const STEP_QUEUE = 'task.step';
+export { STEP_QUEUE };
 /** Longest text a declassification may cover: the user reads all of it on the card. */
 export const MAX_DECLASSIFY_LENGTH = 20_000;
 /** A `retry` outcome waits at least this long: an executor that just refused is not asked again at once. */
@@ -139,6 +139,8 @@ export type StepResult =
   | 'limit'
   | 'failed'
   | 'skipped'
+  /** The task waits for another task to be done (D-152): its step goes on when that one is. */
+  | 'blocked'
   | 'interrupted'
   | 'lost';
 
@@ -204,6 +206,20 @@ export async function processStepJob(
     // Stale or malformed job: nothing to do.
     await completeJob(sql, job.id, worker);
     return 'skipped';
+  }
+
+  // A task that has not started yet waits for its dependencies (D-152): the
+  // step is held back and queued again when the last one is done (tasks.ts).
+  if (task.status === 'ready' && (await openDependencies(sql, task.id)) > 0) {
+    const held = await sql.begin(async (tx) => {
+      if (!(await holds(tx, job, worker))) return false;
+      // Done in the meantime: the step goes on below.
+      if ((await openDependencies(tx, task.id, true)) === 0) return undefined;
+      await appendEvent(tx, { kind: 'task.blocked', taskId: task.id, label: 'L0', payload: {} });
+      await completeJob(tx, job.id, worker);
+      return true;
+    });
+    if (held !== undefined) return held ? 'blocked' : 'lost';
   }
 
   // A run left running belongs to a worker that died: close it at its last heartbeat.
