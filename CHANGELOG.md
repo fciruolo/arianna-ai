@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.45.0] - 2026-10-10
+
 ### Aggiunto
 
 - Telefono "Chiama" nell'intestazione della chat: in ogni conversazione privata con Arianna (Segretaria compresa) e in ogni chat diretta con un agente, mai in incognito, nelle chat di sistema o di lavoro con Arianna; spento con il motivo al passaggio quando la voce non è pronta, la conversazione è archiviata o c'è già una chiamata (D-158).
