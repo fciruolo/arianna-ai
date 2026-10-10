@@ -429,7 +429,7 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 ## D-094 — "Claude Design" locale: mockup del Coder nel progetto, anteprima isolata in chat
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Chiusa il 2026-10-10: sostituita da D-159 (agente Designer nuovo) e D-160 (catalogo di Open Design)
 - **Collegate:** D-002, D-055/D-056/D-058 (Coder nel progetto), D-060 (identità grafica), D-063, D-082 (file modificati), regola "mai artefatti pubblicati" di `CLAUDE.md` (2026-10-04)
 
 ### Contesto
@@ -482,33 +482,12 @@ Un "Claude Design" locale è **il Coder già esistente con un modo di lavorare e
 - **Test:** scheda `designer` valida e rifiutata con `max_label: L2` o con `kb.read` (`packages/agents/test`); in `apps/hud/test` la funzione mette il `<meta>` della CSP prima di qualsiasi contenuto del file (anche se il file comincia con `<!doctype>`, un commento o un `<meta>` suo), la CSP contiene `default-src 'none'` e `connect-src 'none'`, gli attributi dell'iframe sono `sandbox="allow-scripts"` senza `allow-same-origin`, l'anteprima si offre solo per i file `.html` della delega. I controlli di lettura restano quelli già testati di `readDelegationFile`.
 - **Senza codice, subito:** chiedere al Coder di oggi, in una conversazione di lavoro su un progetto L1, "fai un mockup HTML autonomo in `mockups/`" e aprirlo a mano. Prova che il flusso regge prima di scrivere il pannello.
 
-### Domande per l'utente
-
-1. **Il "Claude Design" di Arianna è un agente nuovo sul Coder, invece di installare Open Design?** Raccomandazione: sì, una scheda `designer` sul Coder esistente, con anteprima in chat; Open Design lancia `claude`/`codex` senza il nostro confinamento e ha telemetria sempre attiva.
-   - Contesto: Vorresti un "Claude Design" locale, cioè un agente che disegna mockup di pagine (prototipi HTML). Open Design, un progetto libero, fa questo, ma lancia claude e codex senza la gabbia (sandbox) di Arianna e invia sempre dati di diagnostica ai suoi autori. Si decide se costruirlo come una scheda nuova, "designer", sul Coder che esiste già, o installare Open Design. Oggi i file HTML scritti dal Coder si aprono già dalla chat con "Apri", in una pagina isolata (D-117, tappa 3), e per il cardwall hai scelto un agente "Designer" dedicato, da creare nella tappa C3 (D-152): questa domanda decide se quell'agente nasce sul Coder o si appoggia a Open Design.
-   - Opzione consigliata: Agente designer sul Coder — scrive file HTML autonomi nel progetto, con la gabbia e senza rete; li apri dalla chat in una pagina isolata; nessuna dipendenza nuova.
-   - Opzione: Installare Open Design — molte funzioni pronte (slide, video, 151 stili), ma i programmi girano senza il nostro confinamento e con la diagnostica sempre attiva: viola due regole non negoziabili.
-   - Opzione: Non farlo per ora — continui a chiedere mockup al Coder normale e ad aprirli con "Apri".
-   - Esempio: Nella conversazione del progetto finto "Bottega Verdi" scrivi "fammi tre varianti della pagina dei prezzi". Il designer crea mockups/prezzi-1.html, -2.html e -3.html e sotto la risposta li apri uno per uno.
-2. **In quale cartella del progetto finiscono i mockup?** Raccomandazione: `mockups/` (e `docs/mockups/` per il repository di Arianna), configurabile per progetto.
-   - Contesto: I mockup del designer devono finire in una cartella del progetto, così li ritrovi anche fuori da Arianna. Si decide il nome predefinito della cartella.
-   - Opzione consigliata: mockups/ (docs/mockups/ per Arianna) — nome chiaro e uguale ovunque, cambiabile progetto per progetto; per Arianna stessa resta docs/mockups/ come oggi.
-   - Opzione: Un'altra cartella che scegli tu — scrivi il nome che preferisci (per esempio design/): stesso funzionamento, solo un nome diverso.
-   - Opzione: Chiedere a ogni lavoro — nessun nome predefinito: più flessibile, ma una domanda in più ogni volta.
-   - Esempio: Nel progetto finto "Studio Bianchi" il designer salva mockups/home-1.html; in Arianna stessa salverebbe docs/mockups/impostazioni-1.html.
-4. **Si scrive una guida di stile di Arianna, così i mockup nascono già con i suoi colori?** Raccomandazione: sì, `docs/DESIGN.md` dai token di D-060/D-062; è un file di testo senza rischi.
-   - Contesto: Un file DESIGN.md descrive colori, caratteri e stile di un'interfaccia. Scriverlo per Arianna, partendo dai colori e dai caratteri già approvati (D-060, D-062), farebbe sì che i mockup futuri abbiano subito il suo aspetto invece di uno stile inventato.
-   - Opzione consigliata: Sì, scrivere docs/DESIGN.md — un file di testo senza rischi; i mockup di Arianna usano da subito l'identità approvata.
-   - Opzione: No, per ora no — nessun lavoro; ogni mockup va corretto a mano per colori e caratteri.
-   - Esempio: Chiedi il mockup di una nuova pagina "Backup". Con DESIGN.md il designer usa gli stessi verdi, sfondi e caratteri della chat; senza, potrebbe proporre un blu e un carattere diversi da sistemare dopo.
-5. **Si importano in blocco gli stili e le skill di Open Design?** Raccomandazione: non ora; solo se un progetto lo chiede, copiando un file alla volta con l'avviso Apache-2.0 (la forma a catalogo sarebbe quella di D-079).
-   - Contesto: Open Design offre 151 stili pronti (molti imitano marchi noti) e più di 100 skill, cioè istruzioni pronte per l'agente. Si decide se importarli tutti come catalogo, come si è fatto per agency-agents (D-079), o prenderne uno solo quando serve.
-   - Opzione consigliata: Non ora; un file alla volta se serve — se un progetto lo chiede copi un solo stile, con l'avviso di licenza in testa; nessun catalogo da mantenere.
-   - Opzione: Sì, un catalogo come per agency-agents — tanti stili subito disponibili, ma un catalogo di terzi da aggiornare e controllare, e stili che imitano marchi da tenere fuori da git.
-   - Esempio: Per il progetto finto "Caffè Neri" vuoi uno stile minimal; copi nel progetto un solo DESIGN.md di Open Design con l'avviso di licenza in testa, senza importare gli altri 150.
-
 ### Domande chiuse
 
+- 1. Chiusa (2026-10-10, D-159): un agente nuovo e separato, "designer", non il Coder con un altro nome; a ogni lavoro chiede se usare Claude, ChatGPT o il modello locale. L'app Open Design non si installa.
+- 2. Chiusa (2026-10-10, D-159): `mockups/` del progetto, `docs/mockups/` per Arianna.
+- 4. Chiusa (2026-10-10, D-159): si scrive `docs/DESIGN.md` dai token approvati.
+- 5. Chiusa (2026-10-10, D-160): catalogo degli stili e delle skill come per agency-agents, con il pulsante "Aggiorna catalogo" che adotta la versione nuova solo con conferma.
 - 3. Chiusa: decisa in D-117, tappa 3 (scelta dell'utente del 2026-10-06, provata e unita in 0.16.0): "Apri" accanto ai file .html e alle immagini in "File modificati", serviti dal core con `Content-Security-Policy: sandbox allow-scripts` (origine opaca, niente rete verso l'esterno).
 
 ---
