@@ -9,6 +9,7 @@ import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleL
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ClientDashboard } from './client-dashboard.ts';
+import type { ClientDocument, DocumentForm } from './client-documents.ts';
 import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
@@ -995,6 +996,29 @@ export async function stopService(project: string, service: string): Promise<Ser
 /** Every client, archived included, and the approved projects a client may take. */
 export async function listClients(): Promise<{ clients: ClientSummary[]; projects: string[] }> {
   return call<{ clients: ClientSummary[]; projects: string[] }>('GET', '/api/clients');
+}
+
+/** The documents of a client (I-16 C2, D-171), the archived ones too. */
+export async function listClientDocuments(id: string): Promise<ClientDocument[]> {
+  return (await call<{ documents: ClientDocument[] }>('GET', `/api/clients/${encodeURIComponent(id)}/documents`)).documents;
+}
+
+/** A new document: its bytes in base64, since the API takes only JSON; the core checks them against the name. */
+export async function addClientDocument(id: string, document: DocumentForm & { fileName: string; data: string }): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents`, document)).document;
+}
+
+export async function updateClientDocument(id: string, document: string, change: Partial<DocumentForm>): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}`, change)).document;
+}
+
+export async function archiveClientDocument(id: string, document: string, archived: boolean): Promise<ClientDocument> {
+  return (await call<{ document: ClientDocument }>('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}/archive`, { archived })).document;
+}
+
+/** "Apri" with the app of the Mac, or "Mostra nel Finder" (reveal): run by the core. */
+export async function openClientDocument(id: string, document: string, reveal: boolean): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}/documents/${encodeURIComponent(document)}/open`, { reveal });
 }
 
 /** The dashboard of a client (I-16 C3, D-170): the money of the IM of its projects. */

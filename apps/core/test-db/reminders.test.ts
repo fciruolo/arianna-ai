@@ -11,6 +11,8 @@ import { after, test } from 'node:test';
 import { DEFAULT_SECRETARY, resolveHome, type Project } from '@arianna/config';
 import { createLabelRules } from '@arianna/policy';
 
+import { addDocument } from '../src/client-documents.ts';
+import { createClient } from '../src/clients.ts';
 import { noticeOf } from '../src/notifications.ts';
 import { createSecretaryTicker, fireReminder } from '../src/reminders.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -144,4 +146,22 @@ test('the morning of the day before an IM names it, also with nothing else to sa
   before = (await secretaryMessages()).length;
   assert.equal(await fireReminder(db().sql, '2026-11-05', 'morning', ims), 'empty');
   assert.equal((await secretaryMessages()).length, before);
+});
+
+test('a document of a client due within 30 days is named once, in the morning only, also as the only line (D-171)', async () => {
+  const { sql } = db();
+  const dir = join(resolveHome({}), 'data', 'test-tmp', `reminders-documents-${randomUUID()}`);
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const { id } = await createClient(sql, { displayName: 'Promemoria Finto Srl' });
+  await addDocument(sql, dir, id, { name: 'Contratto segreto', fileName: 'Contratto segreto.pdf', kind: 'contract', expiresOn: '2092-03-20', data: Buffer.from('%PDF-1.7\nfinto').toString('base64') });
+  assert.equal(await fireReminder(sql, '2092-02-25', 'afternoon'), 'empty');
+  assert.equal(await fireReminder(sql, '2092-02-25', 'morning'), 'written');
+  const last = (await secretaryMessages()).at(-1);
+  assert.match(last?.body ?? '', /Documenti dei clienti in scadenza:\n- Il contratto di Promemoria Finto Srl scade il 20 marzo 2092\./);
+  assert.doesNotMatch(last?.body ?? '', /segreto/);
+  assert.equal(last?.label, 'L2');
+  // Once: the next morning has nothing to say.
+  assert.equal(await fireReminder(sql, '2092-02-26', 'morning'), 'empty');
 });

@@ -55,6 +55,7 @@ import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format
 import { completeItemCard, itemCard } from '../im-cards.ts';
 import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
+import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
@@ -194,7 +195,8 @@ export interface ApiServerOptions {
   /** The cardwall (D-152): the folder of the files attached to cards (data/cards); without it the file routes answer 404. */
   cards?: { dir: string };
   /** The clients (D-168): the folder of their logos (data/clients); without it the logo routes answer 404. */
-  clients?: { dir: string };
+  /** `opener`: "Apri" and "Mostra nel Finder" of the documents (D-171); `open` of macOS when absent, a fake in the tests. */
+  clients?: { dir: string; opener?: Opener };
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
@@ -291,6 +293,8 @@ const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
 const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills'];
 /** A logo comes as JSON with its bytes in base64: a third more than the image, and some room. */
 const MAX_LOGO_BODY = Math.ceil((MAX_LOGO_BYTES * 4) / 3) + 4 * 1024;
+const MAX_DOCUMENT_BODY = Math.ceil((MAX_DOCUMENT_BYTES * 4) / 3) + 64 * 1024;
+const DOCUMENT_FIELDS = ['name', 'kind', 'otherType', 'project', 'documentOn', 'expiresOn'];
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 /** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
@@ -1997,6 +2001,78 @@ function clientRoutes(sql: Sql, names: () => ClientNames, clients: ApiServerOpti
       return guard(async () => {
         await removeLogo(sql, dir, id);
         return { body: { ok: true } };
+      });
+    }),
+    // The documents of the client (D-171, tappa C2): in its private folder, the file as JSON with base64 like the logo.
+    route('GET', '/api/clients/:id/documents', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { documents: await listDocuments(sql, id) } }));
+    }),
+    route('POST', '/api/clients/:id/documents', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(request, MAX_DOCUMENT_BODY);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) return { status: 413, body: { error: 'a document is 25 MB at most', issues: [{ field: 'file', code: 'too-long' }] } };
+        throw error;
+      }
+      onlyFields(body, [...DOCUMENT_FIELDS, 'fileName', 'data']);
+      return guard(async () => ({ status: 201, body: { document: await addDocument(sql, dir, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/documents/:document', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const body = await readJson(request);
+      onlyFields(body, DOCUMENT_FIELDS);
+      return guard(async () => ({ body: { document: await updateDocument(sql, id, document, body) } }));
+    }),
+    route('POST', '/api/clients/:id/documents/:document/archive', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const body = await readJson(request);
+      onlyFields(body, ['archived']);
+      if (typeof body.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      const archived = body.archived;
+      return guard(async () => ({ body: { document: await archiveDocument(sql, id, document, archived) } }));
+    }),
+    // "Apri" (the app of the Mac) and "Mostra nel Finder" (reveal): `open` of macOS, run by the core on this machine.
+    route('POST', '/api/clients/:id/documents/:document/open', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const dir = logosDir();
+      const body = await readJson(request);
+      onlyFields(body, ['reveal']);
+      if (typeof body.reveal !== 'boolean') throw new HttpError(400, 'reveal must be true or false');
+      const reveal = body.reveal;
+      return guard(async () => {
+        await openDocument(sql, dir, id, document, reveal, clients?.opener);
+        return { body: { ok: true } };
+      });
+    }),
+    route('GET', '/api/clients/:id/documents/:document/file', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const document = idParam(params, 'document');
+      const dir = logosDir();
+      return guard(async () => {
+        const { document: found, bytes } = await readDocument(sql, dir, id, document);
+        // The extension once: kept when the name already ends with it.
+        const file = found.name.toLowerCase().endsWith(`.${found.extension}`) ? found.name : `${found.name}.${found.extension}`;
+        const ascii = file.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        return {
+          raw: bytes,
+          // Only PDF and images in the page; the rest is a download, never shown as a page of ours.
+          type: found.preview ? found.mediaType : 'application/octet-stream',
+          headers: {
+            'content-disposition': `${found.preview ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+            // A PDF is shown in a frame of the page Documenti only (same origin), by the viewer of the browser; never run as a page of ours.
+            'content-security-policy':
+              found.mediaType === 'application/pdf' ? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" : "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+            ...(found.mediaType === 'application/pdf' ? { 'x-frame-options': 'SAMEORIGIN' } : {}),
+          },
+          noStore: true,
+        };
       });
     }),
     route('GET', '/api/clients/:id/logo', async (_request, _url, params) => {
