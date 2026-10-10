@@ -134,8 +134,12 @@ $$;
 -- D-152), unlinked from their parent; a commitment, without its origin.
 -- The chain: from the first event deleted on, every hash is written again
 -- in order, then one event `events.rewoven` without content (no id, no
--- text, the time only) says the log was sewn. Every lock is taken before
--- the chain's, so a writer holding the chain never waits on this one.
+-- text, the time only) says the log was sewn. Every row it updates, and
+-- every job it deletes, is locked before the chain's; after the chain's it
+-- deletes only rows of append-only tables (events, label_changes, messages,
+-- turns, summaries...) that no writer updates.
+-- Refused (55000) when an id of these rows is also the id of a row of
+-- another table: a forged id would take that row's events with it.
 -- ---------------------------------------------------------------------------
 
 CREATE FUNCTION erase_conversation(p_id uuid) RETURNS jsonb
@@ -148,6 +152,10 @@ DECLARE
   v_approvals uuid[];
   v_calls uuid[];
   v_ids text[];
+  v_uuids uuid[];
+  v_table regclass;
+  v_found bigint;
+  v_total bigint := 0;
   v_cards bigint;
   v_events bigint;
   v_first bigint;
@@ -189,7 +197,27 @@ BEGIN
   END IF;
 
   -- Every id that may stand in a payload or a key, as text.
-  v_ids := ARRAY(SELECT x::text FROM unnest(v_convs || v_tasks || v_runs || v_approvals || v_calls) x);
+  v_uuids := ARRAY(SELECT DISTINCT x FROM unnest(v_convs || v_tasks || v_runs || v_approvals || v_calls) x);
+  v_ids := ARRAY(SELECT x::text FROM unnest(v_uuids) x);
+
+  -- Each of them is the id of its own row only: the core writes these ids,
+  -- and one equal to another row's (the secretary, a card, a commitment)
+  -- would take that row's events and labels with this conversation.
+  FOR v_table IN
+    SELECT r.oid::regclass FROM pg_class r JOIN pg_attribute col ON col.attrelid = r.oid
+    WHERE r.relnamespace = current_schema()::regnamespace AND r.relkind IN ('r', 'p')
+      AND col.attname = 'id' AND col.atttypid = 'uuid'::regtype AND NOT col.attisdropped
+  LOOP
+    EXECUTE format('SELECT count(*) FROM %s WHERE id = ANY ($1)', v_table) INTO v_found USING v_uuids;
+    v_total := v_total + v_found;
+  END LOOP;
+  IF v_total <> cardinality(v_uuids) THEN
+    RAISE EXCEPTION 'conversation %: an id of its rows is also the id of another row', p_id
+      USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
+
+  -- The jobs found by their payload too, before the chain's lock.
+  PERFORM FROM jobs WHERE EXISTS (SELECT FROM unnest(v_ids) x WHERE strpos(payload::text, x) > 0) ORDER BY id FOR UPDATE;
 
   PERFORM set_config('arianna.erase', p_id::text, true);
 
@@ -225,6 +253,7 @@ BEGIN
   DELETE FROM task_activities WHERE task_id = ANY (v_tasks);
   DELETE FROM messages WHERE conversation_id = ANY (v_convs) OR task_id = ANY (v_tasks);
   DELETE FROM calls WHERE id = ANY (v_calls);
+  -- Parts and dependencies are of cards only, which have no conversation: none here, deleted for safety.
   DELETE FROM task_dependencies WHERE task_id = ANY (v_tasks) OR depends_on = ANY (v_tasks);
   DELETE FROM card_checklist WHERE task_id = ANY (v_tasks);
   DELETE FROM card_links WHERE task_id = ANY (v_tasks);

@@ -1,3 +1,5 @@
+import { removeWorkspace } from '@arianna/executors';
+
 import { ChatError, isUuid } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 
@@ -20,6 +22,10 @@ export interface EraseOptions {
    * claimed answers busy.
    */
   stopTask?: (taskId: string) => boolean;
+  /** Absolute `data/`: the folders `data/worktrees/<runId>` of the erased runs go too. */
+  dataDir?: string;
+  /** A folder that could not be removed: the erase is done all the same. */
+  onError?: (error: unknown) => void;
   /** How long to wait for a stopped step to give its job back. Default 15 s. */
   waitMs?: number;
   pollMs?: number;
@@ -73,11 +79,38 @@ async function waitForSteps(sql: Sql, taskIds: readonly string[], waitMs: number
   }
 }
 
-/** Stops every step of these tasks the worker runs now; waits for them to give their jobs back. */
-async function stopSteps(sql: Sql, taskIds: readonly string[], options: EraseOptions): Promise<void> {
+/** Stops every step of these tasks the worker runs now; waits for them to give their jobs back. True when one was stopped. */
+async function stopSteps(sql: Sql, taskIds: readonly string[], options: EraseOptions): Promise<boolean> {
   let stopped = false;
   for (const taskId of taskIds) stopped = (options.stopTask?.(taskId) ?? false) || stopped;
   if (stopped) await waitForSteps(sql, taskIds, options.waitMs ?? 15_000, options.pollMs ?? 100);
+  return stopped;
+}
+
+/** A live call keeps the conversation: refused before any step is stopped. */
+async function liveCall(sql: Queryable, id: string, taskIds: readonly string[]): Promise<boolean> {
+  const [row] = await sql<{ live: boolean }[]>`
+    SELECT EXISTS (
+      SELECT FROM calls
+      WHERE (conversation_id = ${id} OR task_id = ANY (${taskIds}::uuid[])) AND status IN ('ringing', 'connecting', 'active')
+    ) AS live`;
+  return row?.live === true;
+}
+
+/**
+ * The erase refused after a stop: the steps stopped for it go back to the
+ * queue, as a step stopped on purpose (the worker's release), so nothing of
+ * the conversation changes.
+ */
+async function requeueStopped(sql: Queryable, taskIds: readonly string[]): Promise<void> {
+  await sql`
+    UPDATE jobs SET status = 'queued', locked_at = NULL, locked_by = NULL, last_error = NULL, attempts = greatest(attempts - 1, 0)
+    WHERE key = ANY (${taskIds.map((taskId) => `task:${taskId}`)}) AND status = 'failed' AND last_error = 'erase'`;
+}
+
+async function runsOf(sql: Queryable, taskIds: readonly string[]): Promise<string[]> {
+  const rows = await sql<{ id: string }[]>`SELECT id::text FROM runs WHERE task_id = ANY (${taskIds}::uuid[])`;
+  return rows.map((row) => row.id);
 }
 
 /**
@@ -93,17 +126,27 @@ export async function eraseConversation(sql: Sql, id: string, options: EraseOpti
   if (found.telegram) throw new ChatError('invalid', 'the conversation of Telegram cannot be erased');
   if (found.incognito) throw new ChatError('incognito', 'an incognito conversation ends with Termina');
 
+  if (await liveCall(sql, id, await tasksOf(sql, id))) throw new ChatError('busy', 'a call of the conversation is still at work: try again when it ends');
+
   // Two attempts: a step claimed between the stop and the locks is stopped again.
+  let stopped = false;
   for (let attempt = 1; ; attempt += 1) {
-    await stopSteps(sql, await tasksOf(sql, id), options);
+    const taskIds = await tasksOf(sql, id);
+    stopped = (await stopSteps(sql, taskIds, options)) || stopped;
+    const runIds = await runsOf(sql, taskIds);
     try {
       const [row] = await sql<{ erased: EraseResult }[]>`SELECT erase_conversation(${id}::uuid) AS erased`;
+      const dataDir = options.dataDir;
+      if (dataDir !== undefined) {
+        await Promise.all(runIds.map((runId) => removeWorkspace({ data: dataDir, runId }).catch((error: unknown) => options.onError?.(error))));
+      }
       return row?.erased ?? { conversations: 0, tasks: 0, cards: 0, events: 0 };
     } catch (error) {
       const code = (error as { code?: unknown }).code;
+      if (code === '55006' && attempt < 2 && options.stopTask !== undefined) continue;
+      if (stopped) await requeueStopped(sql, taskIds).catch((requeue: unknown) => options.onError?.(requeue));
       if (code === 'P0002') throw new ChatError('not-found', `conversation ${id} does not exist`);
       if (code === '55000') throw new ChatError('invalid', 'this conversation cannot be erased');
-      if (code === '55006' && attempt < 2 && options.stopTask !== undefined) continue;
       if (code === '55006') throw new ChatError('busy', 'a step or a call of the conversation is still at work: try again in a moment');
       if (code === '55P03' || code === '40P01') throw new ChatError('busy', 'the conversation is in use: try again in a moment');
       throw error;

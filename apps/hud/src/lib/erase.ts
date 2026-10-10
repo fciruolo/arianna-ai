@@ -10,7 +10,7 @@ export const ERASE_QUESTION = 'Eliminare per sempre?';
 
 /** What goes and what stays when a conversation is erased: the user reads it before the click. */
 export const ERASE_CONVERSATION_TEXT =
-  'Sparisce tutto quello che la conversazione ha lasciato in Arianna: messaggi, passi, deleghe del Coder, schede, chat di sistema sui suoi task e il registro di cosa è uscito verso il cloud. I lavori in corso si fermano. Restano le card create da qui (senza il legame), le note salvate nella Conoscenza, i file cambiati dal Coder nei progetti e ciò che un fornitore cloud ha già ricevuto. Non si può annullare.';
+  'Sparisce tutto quello che la conversazione ha lasciato in Arianna: messaggi, passi, deleghe del Coder, schede, chat di sistema sui suoi task e il registro di cosa è uscito verso il cloud. I lavori in corso si fermano. Restano le card create da qui (senza il legame), le note salvate nella Conoscenza, i file cambiati dal Coder nei progetti, ciò che un fornitore cloud ha già ricevuto e, nel registro, le impronte senza testo delle frasi dette in una chiamata. Non si può annullare.';
 
 /** The same for a note: its file goes from the disk. */
 export const DELETE_NOTE_TEXT = 'Il file della nota si cancella dal disco: non si recupera. I collegamenti dei Pensieri che la nominano diventano “nota eliminata”.';

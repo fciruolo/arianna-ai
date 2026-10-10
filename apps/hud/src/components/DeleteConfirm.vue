@@ -13,7 +13,7 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>();
 <template>
   <div class="flex flex-col gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm" role="group" aria-label="Conferma dell'eliminazione definitiva">
     <p class="font-medium">
-      {{ ERASE_QUESTION }}<template v-if="subject !== null"> <span class="break-words text-muted">“{{ subject }}”</span></template>
+      {{ ERASE_QUESTION }}<template v-if="subject !== null">{{ ' ' }}<span class="break-words text-muted">“{{ subject }}”</span></template>
     </p>
     <p class="text-xs leading-snug text-muted">{{ text }}</p>
     <p v-if="extra !== null" class="text-xs leading-snug text-warn">{{ extra }}</p>

@@ -217,6 +217,63 @@ test('a step claimed by a worker is stopped first; without a stop the erase answ
   assert.deepEqual(await verifyEventChain(sql), { ok: true });
 });
 
+test('refused after a stop (a call started meanwhile): the stopped step goes back to the queue and nothing changes', async () => {
+  const { sql, owner } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  const { task } = await postUserMessage(sql, conversation.id, 'Lavoro in corso finto');
+  const key = `task:${task.id}`;
+  await owner`UPDATE jobs SET status = 'running', locked_at = now(), locked_by = 'worker-test', attempts = 1 WHERE key = ${key}`;
+  await owner`UPDATE tasks SET status = 'running' WHERE id = ${task.id}`;
+  // A call rings on the conversation while the worker gives the job back failed with `erase`.
+  const stopTask = (taskId: string): boolean => {
+    // The call first: the erase goes on once the job is no longer running.
+    owner`INSERT INTO calls (conversation_id, direction, reason, status) VALUES (${conversation.id}, 'in', NULL, 'ringing')`
+      .then(() => owner`UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = 'erase' WHERE key = ${`task:${taskId}`}`)
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    return true;
+  };
+  await assert.rejects(
+    eraseConversation(sql, conversation.id, { stopTask, pollMs: 10, waitMs: 5_000 }),
+    (error) => error instanceof ChatError && error.code === 'busy',
+  );
+  const [job] = await owner<{ status: string; last_error: string | null; attempts: number }[]>`SELECT status, last_error, attempts FROM jobs WHERE key = ${key}`;
+  assert.deepEqual(job, { status: 'queued', last_error: null, attempts: 0 });
+  assert.equal((await owner`SELECT 1 FROM messages WHERE conversation_id = ${conversation.id}`).length, 1);
+  await owner`UPDATE calls SET status = 'ended', end_reason = 'hangup', ended_at = now() WHERE conversation_id = ${conversation.id}`;
+});
+
+test('a live call refuses the erase before any step is stopped', async () => {
+  const { sql, owner } = db();
+  const conversation = await createConversation(sql, { mode: 'private' });
+  await postUserMessage(sql, conversation.id, 'Messaggio finto');
+  await owner`INSERT INTO calls (conversation_id, direction, reason, status) VALUES (${conversation.id}, 'in', NULL, 'active')`;
+  const stopped: string[] = [];
+  await assert.rejects(
+    eraseConversation(sql, conversation.id, { stopTask: (taskId) => stopped.push(taskId) > 0 }),
+    (error) => error instanceof ChatError && error.code === 'busy',
+  );
+  assert.deepEqual(stopped, []);
+  await owner`UPDATE calls SET status = 'ended', end_reason = 'hangup', ended_at = now() WHERE conversation_id = ${conversation.id}`;
+});
+
+test('an id of its rows equal to the id of another row (forged) refuses the erase: the other row keeps its events', async () => {
+  const { sql, owner } = db();
+  const other = await createConversation(sql, { mode: 'private' });
+  await postUserMessage(sql, other.id, 'Altra conversazione finta');
+  const conversation = await createConversation(sql, { mode: 'private' });
+  await postUserMessage(sql, conversation.id, 'Messaggio finto');
+  // A task of this conversation that takes the id of the other one.
+  await owner`INSERT INTO tasks (id, conversation_id, title, label, status) VALUES (${other.id}, ${conversation.id}, 'finto', 'L1', 'done')`;
+  const before = await owner`SELECT id FROM events WHERE payload::text LIKE ${`%${other.id}%`}`;
+  assert.ok(before.length > 0);
+  await assert.rejects(eraseConversation(sql, conversation.id), (error) => error instanceof ChatError && error.code === 'invalid');
+  assert.equal((await owner`SELECT id FROM events WHERE payload::text LIKE ${`%${other.id}%`}`).length, before.length);
+  assert.equal((await owner`SELECT 1 FROM conversations WHERE id = ${conversation.id}`).length, 1);
+});
+
 test('a live call on the conversation keeps it until the call ends', async () => {
   const { sql, owner } = db();
   const conversation = await createConversation(sql, { mode: 'private' });

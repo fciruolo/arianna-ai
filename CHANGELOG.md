@@ -14,6 +14,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - La catena degli eventi si ricuce dopo un'eliminazione chiesta dall'utente, con una sola riga `events.rewoven` senza contenuto: il doctor la dà integra (migrazione `0043`, D-157; supera D-046 e D-057 in questo punto).
 - La conferma della cancellazione nelle Archiviate ora elimina tutto, registro compreso, come dalla lista (D-157).
 
+### Sicurezza
+
+- L'eliminazione di una conversazione è rifiutata se un id delle sue righe coincide con quello di un'altra riga: un id falsificato non porta via gli eventi di altre conversazioni (D-157).
+- Una chiamata viva rifiuta l'eliminazione prima di fermare i lavori; un rifiuto dopo lo stop rimette in coda i passi fermati, e le cartelle di lavoro dei run eliminati si cancellano (D-157).
+
 ## [0.43.0] - 2026-10-10
 
 ### Aggiunto
