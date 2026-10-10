@@ -627,6 +627,8 @@ const server = await startApiServer({
   knowledge: { home: config.home, rules },
   // The files attached to cards (D-152): private copies, outside git.
   cards: { dir: join(config.home, 'data', 'cards') },
+  // The logos of the clients (D-168): private copies, outside git, shown only in the web chat.
+  clients: { dir: join(config.home, 'data', 'clients') },
   services,
   designCatalog,
   skillsCatalog,
