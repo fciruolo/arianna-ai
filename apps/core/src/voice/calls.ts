@@ -14,7 +14,7 @@ import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
 import { nameLabelOf, participantName } from '../participants.ts';
 import { loadTask } from '../tasks.ts';
-import { FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
 import {
@@ -63,10 +63,8 @@ export interface Call {
   endedAt: Date | null;
   endReason: CallEndReason | null;
   delegations: number;
-  /** The agent of the direct chat that answers (D-158), or null when Arianna does. */
+  /** The agent of the direct chat that answers (D-158), or null when Arianna does: only in the local API, never in an event. */
   agent: string | null;
-  /** The name of who answers, for the chat: "Arianna", "Coder", or the id of the agent. */
-  answerer: string;
 }
 
 export type CallErrorCode = 'not-found' | 'invalid' | 'archived' | 'busy' | 'voice-off' | 'not-ready' | 'unauthorized' | 'ended' | 'agent-off';
@@ -84,8 +82,7 @@ export class CallError extends Error {
 export const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId", direction, reason, task_id::text AS "taskId", status,
   scheduled_at AS "scheduledAt", created_at AS "createdAt", answered_at AS "answeredAt", ended_at AS "endedAt",
   end_reason AS "endReason", delegations,
-  (SELECT c.agent FROM conversations c WHERE c.id = calls.conversation_id) AS agent,
-  coalesce((SELECT CASE c.agent WHEN 'coder' THEN 'Coder' ELSE c.agent END FROM conversations c WHERE c.id = calls.conversation_id), 'Arianna') AS answerer`;
+  (SELECT c.agent FROM conversations c WHERE c.id = calls.conversation_id) AS agent`;
 
 const LIVE: readonly CallStatus[] = ['ringing', 'connecting', 'active'];
 /** How long the voice may take to open a call: the first one loads the models (GBs). */
@@ -641,7 +638,8 @@ export function createCalls(options: CallsOptions): Calls {
     const nameLabel = nameLabelOf(direct.agent);
     if (direct.cloud) return { kind: 'cloud', agent: direct.id, name, nameLabel };
     const model = await options.agentModel?.(direct.agent.card, conversation.clearance, labelForUserMessage(createContext(conversation.clearance)));
-    if (model === undefined) throw new CallError('agent-off', `no local model can answer for ${name} now`);
+    // Passing (the router waits for a model): not a refusal of the agent; the ringer tries again later.
+    if (model === undefined) throw new CallError('not-ready', `no local model can answer for ${name} now`);
     return { kind: 'local', agent: direct.id, name, nameLabel, model };
   }
 
@@ -653,7 +651,7 @@ export function createCalls(options: CallsOptions): Calls {
   /** Transcription and voice are always needed; the model of the voice role only when Arianna answers. */
   function readiness(speaker: Speaker): CallReadiness {
     const { voice, roles, local } = options.config();
-    if (speaker.kind !== 'arianna') return callReadiness({ voice: 'agent' }, options.candidates(), true, voice.voice);
+    if (speaker.kind !== 'arianna') return callReadiness(roles, options.candidates(), true, voice.voice, false);
     return callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
   }
 
@@ -811,12 +809,13 @@ export function createCalls(options: CallsOptions): Calls {
         await finish(callId, 'missed', 'cancelled').catch(() => undefined);
         throw new CallError('archived', 'the conversation is archived');
       }
-      // The agent of a direct chat that cannot answer now (D-158): the call ends unanswered.
+      // The agent of a direct chat that cannot answer now (D-158): the call ends unanswered, as the ringer skips it.
       let speaker: Speaker;
       try {
         speaker = await speakerOf(conversation);
       } catch (error) {
-        await finish(callId, 'missed', 'cancelled').catch(() => undefined);
+        const ended = await finish(callId, 'missed', 'agent-off').catch(() => undefined);
+        if (ended?.endReason === 'agent-off') await writeNote(sql, ended.conversationId, AGENT_OFF_TEXT, callId).catch((noteError: unknown) => options.onError?.(noteError));
         throw error;
       }
       const call = await sql.begin(async (tx) => {

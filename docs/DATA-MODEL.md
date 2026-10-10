@@ -333,7 +333,8 @@ CREATE TABLE conversation_summaries (
 -- 'in' la fa l'utente dalla chat; 'out' la fa Arianna, con il motivo ammesso
 -- dalle regole di [voice.outgoing]. Una sola chiamata viva alla volta.
 -- In una chat diretta (D-158) risponde l'agente di conversations.agent: la riga
--- non lo copia, l'API lo legge dalla conversazione (campi agent e answerer).
+-- non lo copia, l'API locale lo legge dalla conversazione (campo agent),
+-- mai negli eventi (L0: il nome di un agente dell'utente è L1).
 -- Se l'agente non può rispondere, la chiamata in uscita è skipped con
 -- end_reason 'agent-off' (migrazione 0044).
 CREATE TABLE calls (

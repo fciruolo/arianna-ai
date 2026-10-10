@@ -12,6 +12,7 @@ import { archiveConversation, ChatError, createConversation, listMessages } from
 import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { createCalls, liveCall, listCalls, loadCall, type Calls } from '../src/voice/calls.ts';
+import { AGENT_OFF_TEXT } from '../src/voice/outgoing.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 import { callWhenDone, scheduleCall } from '../src/voice/ringer.ts';
 import { AGENT_VOICE_FRAME, agentCallText, CALL_TEXT, HISTORY_MESSAGES, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
@@ -581,8 +582,7 @@ test('a call in a direct chat with a local agent: it answers on its own model, w
   const unloadedBefore = unloaded.length;
   const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
   assert.equal(call.agent, 'traduttore');
-  assert.equal(call.answerer, 'traduttore');
-  assert.equal((await liveCall(db().sql))?.answerer, 'traduttore');
+  assert.equal((await liveCall(db().sql))?.agent, 'traduttore');
   assert.equal(greetingSent(call.id), 'Ciao, sono traduttore. Dimmi pure.');
   // The warm-up reads the agent's prompt on its model, never the voice role.
   await until(() => asked.length > before);
@@ -620,8 +620,9 @@ test('a direct chat refuses the call when its agent cannot answer: card off, mod
   directAgents.set('traduttore', localAgent('L1'));
   await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
   directAgents.set('traduttore', localAgent('L2'));
+  // No local model for it just now: passing, not a refusal of the agent.
   agentModelOf = undefined;
-  await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'not-ready' });
   agentModelOf = 'local-large';
   directAgents.delete('traduttore');
   await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
@@ -640,7 +641,6 @@ test('a direct chat refuses the call when its agent cannot answer: card off, mod
   await assert.rejects(scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => calls.check(id)), { name: 'CallError', code: 'agent-off' });
   const scheduled = await scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => directCalls().check(id));
   assert.equal(scheduled.agent, 'coder');
-  assert.equal(scheduled.answerer, 'Coder');
   claudeOn = false;
   await assert.rejects(scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => directCalls().check(id)), { code: 'agent-off' });
   claudeOn = true;
@@ -651,7 +651,7 @@ test('the Coder in a call: a bridge passes the words on as its message, says so 
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], agent: CODER });
   const before = asked.length;
   const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
-  assert.equal(call.answerer, 'Coder');
+  assert.equal(call.agent, 'coder');
   assert.equal(greetingSent(call.id), 'Ciao, sono la linea del Coder: quello che mi dici lo passo al Coder. Dimmi pure.');
   const texts = agentCallText('Coder');
 
@@ -694,7 +694,7 @@ test('the Coder still at work when the time is over: the call says it, and "chia
 
   const [task] = await db().sql<{ id: string }[]>`SELECT id::text FROM tasks WHERE conversation_id = ${conversation.id}`;
   const later = await callWhenDone(db().sql, task?.id ?? '', (id) => directCalls().check(id));
-  assert.equal(later.answerer, 'Coder');
+  assert.equal(later.agent, 'coder');
   // It rings (as the ringer makes it), and the greeting is the Coder's line.
   await db().sql`UPDATE tasks SET status = 'done', evidence = ${db().sql.json([{ kind: 'message' }])} WHERE id = ${task?.id ?? ''}`;
   await db().sql`UPDATE calls SET status = 'ringing', rang_at = now() WHERE id = ${later.id}`;
@@ -709,5 +709,34 @@ test('the Coder still at work when the time is over: the call says it, and "chia
   claudeOn = false;
   await assert.rejects(directCalls().answer(again?.id ?? '', { sdp: SDP, type: 'offer' }), { code: 'agent-off' });
   claudeOn = true;
-  assert.equal((await loadCall(db().sql, again?.id ?? ''))?.status, 'missed');
+  const missed = await loadCall(db().sql, again?.id ?? '');
+  assert.deepEqual([missed?.status, missed?.endReason], ['missed', 'agent-off']);
+  const notes = (await listMessages(db().sql, conversation.id, { limit: 50 })).filter((message) => message.body === AGENT_OFF_TEXT);
+  assert.deepEqual(notes.map(({ label }) => label), ['L0']);
+});
+
+test('a local agent in a call never reads above its card: what it may not read stays out, a turn above it is refused, an agent gone says so (D-158)', async () => {
+  // A card that reads only Pubblico, in a work chat (Interno): its written history stays out of the prompt.
+  // A card of agents/ (its prompt L0) that reads only Pubblico.
+  directAgents.set('traduttore', { card: { ...localAgent('L1').card, maxLabel: 'L0' }, prompt: 'Traduci.' });
+  const conversation = await createConversation(db().sql, { mode: 'work', agent: { name: 'traduttore', modes: ['work'], project: false } });
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${conversation.id}, 'user', 'web', 'L1', 'Riga interna scritta prima')`;
+  const before = asked.length;
+  const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+  await until(() => asked.length > before);
+  const warm = lastAsked();
+  assert.equal(warm.messages.length, 1, 'only its system prompt');
+  assert.ok(!warm.messages.some((message) => message.content.includes('Riga interna')));
+  // The user's words in this chat are Interno, above the card: refused, never stored nor read.
+  const texts = agentCallText('traduttore');
+  const asking = asked.length;
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'Mi senti?'), { say: texts.cannotRead });
+  assert.equal(asked.length, asking);
+  assert.ok(!(await listMessages(db().sql, conversation.id, { limit: 10 })).some((message) => message.body === 'Mi senti?'));
+  // Deactivated during the call: the voice says so.
+  directAgents.delete('traduttore');
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'Ci sei?'), { say: texts.gone });
+  assert.equal(asked.length, asking);
+  directAgents.set('traduttore', localAgent('L2'));
+  await directCalls().end(call.id, 'hangup');
 });
