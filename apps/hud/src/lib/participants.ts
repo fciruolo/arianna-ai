@@ -5,7 +5,7 @@ import type { AgentStatus, Message, Participant } from './types.ts';
 import type { Pose } from './sprites.ts';
 
 /**
- * The agents in the conversation as colleagues (D-125): the participant bar
+ * The agents in the conversation as colleagues (D-125): the avatars (D-162)
  * in the head of the chat, and the lines of the system that tell who joined
  * and who left.
  */
@@ -49,4 +49,26 @@ export function withoutParticipant(participants: readonly Participant[], agent: 
 export function participantPose(agent: string, agents: readonly Pick<AgentStatus, 'id' | 'state'>[] | undefined): Pose {
   const state = agents?.find((item) => item.id === agent)?.state;
   return state === 'working' ? 'working' : state === 'thinking' ? 'thinking' : 'idle';
+}
+
+/**
+ * Who is in the chat, as the status line under the name says it (D-162):
+ * "con Designer, Coder", the first `max` names and "+N" for the others;
+ * empty without participants.
+ */
+export function withText(participants: readonly Pick<Participant, 'agent'>[], max = 3): string {
+  if (participants.length === 0) return '';
+  const names = participants.slice(0, max).map((participant) => agentName(participant.agent)).join(', ');
+  const rest = participants.length - max;
+  return rest > 0 ? `con ${names} +${String(rest)}` : `con ${names}`;
+}
+
+/**
+ * The avatars in the head of the chat (D-162): the first `max` one by one,
+ * the others behind a "+N" that opens them as a list. With one more than
+ * `max` all are shown: a "+1" would take the same room as the avatar.
+ */
+export function stackOf<T>(participants: readonly T[], max = 4): { shown: T[]; hidden: T[] } {
+  if (participants.length <= max + 1) return { shown: [...participants], hidden: [] };
+  return { shown: participants.slice(0, max), hidden: participants.slice(max) };
 }

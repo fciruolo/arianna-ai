@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- I partecipanti della chat sono avatar piccoli nell'intestazione, accanto ad Arianna, con "· con Designer, Coder" nella riga di stato e un menu al clic con "Togli dalla chat"; sparisce la fascia "Con te e Arianna" (D-162).
+
 ## [0.47.0] - 2026-10-10
 
 ### Aggiunto
