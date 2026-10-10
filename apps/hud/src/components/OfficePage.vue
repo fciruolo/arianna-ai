@@ -3,16 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import baseMapText from '../office/maps/base.json?raw';
 import { listDelegations } from '../lib/api.ts';
-import { parseMapText } from '../lib/office/map.ts';
+import { boardPoint, parseMapText } from '../lib/office/map.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
 import { pendingItems, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Approval, CharacterListing, Conversation, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
+import type { Approval, CharacterListing, Conversation, ExecutorChoice, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
 import { labelWord } from '../lib/labels.ts';
 import OfficeCanvas from './OfficeCanvas.vue';
+import OfficeCardwall from './OfficeCardwall.vue';
 import PendingDecisions from './PendingDecisions.vue';
 import PixelAgent from './PixelAgent.vue';
 
@@ -22,6 +23,8 @@ import PixelAgent from './PixelAgent.vue';
  * approved projects). This page holds the conversations and turns them into
  * "where to talk"; the canvas gets only the photograph. The list "Nell'ufficio"
  * next to it does everything the canvas does: the office never replaces the chat.
+ * The cardwall on the wall opens the cardwall over the office (D-165): the
+ * same component as the page, with `cardsVersion`, the approvals and `decide`.
  */
 const props = defineProps<{
   status: StatusSnapshot | null;
@@ -30,12 +33,16 @@ const props = defineProps<{
   conversations: Conversation[];
   characters: CharacterListing | null;
   signals: OfficeSignals;
+  cardsVersion: number;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
 }>();
 const emit = defineEmits<{ open: [conversationId: string]; draft: [mode: 'work' | 'private', project?: string] }>();
 
 const parsed = parseMapText(baseMapText);
 const map = parsed.ok ? parsed.map : null;
 const mapProblem = parsed.ok ? null : parsed.reason;
+/** The map hangs a cardwall on a wall (D-165). */
+const hasBoard = map !== null && boardPoint(map) !== null;
 
 // What waits for the user: the same total as the panel's row (D-091), the folder requests counted as the Coder's.
 const pendingSignal = computed(() => [props.status, props.approvals]);
@@ -154,6 +161,7 @@ function reach(target: string): void {
 }
 
 const showPending = ref(false);
+const showCardwall = ref(false);
 const showArchive = ref(false);
 const archiveHeading = ref<HTMLElement | null>(null);
 async function openArchive(): Promise<void> {
@@ -197,13 +205,14 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           @talk="talk"
           @decisions="showPending = true"
           @archive="void openArchive()"
+          @cardwall="showCardwall = true"
           @escape="leaveCanvas"
         />
         <p id="office-help" class="mt-3 text-[12.5px] leading-relaxed text-muted">
           Clicca nell'ufficio o raggiungilo con <kbd class="kbd">Tab</kbd>, poi <kbd class="kbd">←</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">→</kbd><kbd class="kbd">↓</kbd>
           o <kbd class="kbd">W</kbd><kbd class="kbd">A</kbd><kbd class="kbd">S</kbd><kbd class="kbd">D</kbd> per camminare, oppure clicca un punto del pavimento o un
           agente. Vicino a un agente <kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd> apre nella chat la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le
-          decisioni in attesa. <kbd class="kbd">Esc</kbd> esce dall'ufficio. L'ufficio mostra solo stati, etichette e nomi dei progetti, mai il testo delle conversazioni.
+          decisioni in attesa, al cardwall sul muro le card, sopra l'ufficio. <kbd class="kbd">Esc</kbd> esce dall'ufficio. L'ufficio mostra solo stati, etichette e nomi dei progetti, mai il testo delle conversazioni.
         </p>
       </section>
 
@@ -241,6 +250,15 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           </template>
         </section>
 
+        <section v-if="hasBoard" class="hud-card p-3.5" aria-labelledby="office-cardwall">
+          <h2 id="office-cardwall" class="hud-title mb-2">Cardwall</h2>
+          <p class="text-xs text-muted">Sul muro in alto, accanto alla libreria: le card e gli impegni, con i filtri della pagina Cardwall.</p>
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            <button type="button" class="btn px-2.5 py-1 text-xs" @click="reach('cardwall')">Vai al cardwall</button>
+            <button type="button" class="btn px-2.5 py-1 text-xs" aria-haspopup="dialog" @click="showCardwall = true">Apri subito</button>
+          </div>
+        </section>
+
         <section v-if="archiveCount > 0 || showArchive" class="hud-card p-3.5" aria-labelledby="office-archive">
           <h2 id="office-archive" ref="archiveHeading" tabindex="-1" class="hud-title mb-2 outline-none">Archivio</h2>
           <p v-if="archiveCount === 0" class="text-xs text-muted">Tutti i progetti approvati hanno un'isola.</p>
@@ -264,6 +282,13 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
         :signal="pendingSignal"
         @close="showPending = false; office?.focus()"
         @open="(id) => emit('open', id)"
+      />
+      <OfficeCardwall
+        v-if="showCardwall"
+        :version="cardsVersion"
+        :approvals="approvals"
+        :decide="decide"
+        @close="showCardwall = false"
       />
     </Teleport>
   </div>

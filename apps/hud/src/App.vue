@@ -879,6 +879,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :conversations="conversations"
         :characters="characters"
         :signals="officeSignals"
+        :cards-version="cardsVersion"
+        :decide="store.decide"
         @open="openConversation"
         @draft="(mode, project) => openDraft({ mode, project })"
       />
