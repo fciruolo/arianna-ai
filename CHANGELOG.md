@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.42.0] - 2026-10-10
+
 ### Aggiunto
 
 - La conversazione della Segretaria ha il suo indirizzo `/segretaria`: il pulsante porta lì, una ricarica la riapre senza una sessione nuova, un vecchio `/c/<id>` diventa `/segretaria` (D-156).
