@@ -7,7 +7,7 @@ import { Secret } from '@arianna/vault';
 import type { Sql } from '../src/db/client.ts';
 import { createBotApi, TelegramApiError, type BotApi } from '../src/telegram/api.ts';
 import { isCleared, MAX_MESSAGE_UNITS, passToTelegram, splitCleared, type ClearedText } from '../src/telegram/outgoing.ts';
-import { approvalNotice, scannerRefusal, TEXTS } from '../src/telegram/texts.ts';
+import { approvalNotice, isWebOnly, scannerRefusal, TEXTS } from '../src/telegram/texts.ts';
 import { decodeDecision, encodeDecision, isAllowed, parseUpdates, type Update } from '../src/telegram/updates.ts';
 import { buttonPress, privateMessage, startFakeTelegram, type FakeTelegram } from './support/fake-telegram.ts';
 
@@ -93,6 +93,11 @@ test('an approval notice names the action and the title, never anything else', (
   assert.equal(approvalNotice('budget', 'budget'), 'Approvazione richiesta: budget per un modello che costa oltre il piano.\nIl dettaglio è nella chat web.');
   // A commitment of the secretary (D-144): neither its text nor a button, the web chat only.
   assert.equal(approvalNotice('commitment', 'commitment.add'), 'La segretaria aspetta una conferma: si dà solo dalla chat web.');
+  // A plan and the choice of an executor (D-159): no detail, no button, the web chat only.
+  assert.equal(approvalNotice('plan', 'task.plan', 'Landing'), 'Arianna propone un piano di card: si approva solo dalla chat web.\nTask: Landing');
+  assert.equal(approvalNotice('executor', 'card.executor'), 'Una card aspetta che tu scelga chi la fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.');
+  assert.deepEqual(['declassify', 'commitment', 'plan', 'executor'].map(isWebOnly), [true, true, true, true]);
+  assert.deepEqual(['action', 'workspace', 'budget', 'setting'].map(isWebOnly), [false, false, false, false]);
   // A name outside the closed list is not quoted.
   assert.doesNotMatch(approvalNotice('budget', 'raise the cap to 1.000 EUR'), /1\.000|cap/);
   assert.match(approvalNotice('declassify', 'declassify', 'Titolo'), /^Richiesta di declassamento: si decide solo dalla chat web\.\nTask: Titolo$/);

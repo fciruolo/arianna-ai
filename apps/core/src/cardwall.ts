@@ -2,6 +2,7 @@ import { isAtMost, type Label } from '@arianna/policy';
 
 import { addDays, isDay, localDay } from './commitment-dates.ts';
 import type { CommitmentStatus } from './commitments.ts';
+import { CHAT_AGENT } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
@@ -390,6 +391,7 @@ export const HAND_WAIT = 'Messa in attesa a mano.';
 export async function moveCard(sql: Sql, id: string, to: unknown, reason?: unknown): Promise<Task> {
   if (to !== 'ready' && to !== 'waiting_user' && to !== 'done' && to !== 'failed') throw new CardError('invalid', 'unknown column');
   return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
     const card = await loadCard(tx, id, true);
     if (card.status === to) return card;
     if (!userMovesInto(to).includes(card.status)) throw new CardError('conflict', `a card cannot move from ${card.status} to ${to} by hand`);
@@ -419,6 +421,16 @@ export async function moveCard(sql: Sql, id: string, to: unknown, reason?: unkno
   });
 }
 
+/**
+ * Locks the card's pending approvals before the card: the order of
+ * recordDecisionIn and dismissWaitingTask (waiting.ts), so that a decision
+ * arriving while "Riprendi" expires those approvals waits instead of
+ * deadlocking.
+ */
+async function lockPendingApprovals(tx: Queryable, id: string): Promise<void> {
+  await tx`SELECT id FROM approvals WHERE task_id = ${id} AND state = 'pending' ORDER BY id FOR UPDATE`;
+}
+
 /** "Riprendi" or "Riprova" of a card the engine had and stopped (D-159): the same task goes on. */
 async function goOn(tx: Queryable, card: Task): Promise<Task> {
   try {
@@ -434,10 +446,12 @@ async function goOn(tx: Queryable, card: Task): Promise<Task> {
  * its first step is queued. One that waits for another card is held back by
  * the engine until that one is done (D-152).
  */
-export async function startCard(sql: Sql, id: string): Promise<Task> {
+export async function startCard(sql: Sql, id: string, agents?: readonly string[]): Promise<Task> {
   return sql.begin(async (tx) => {
     const card = await loadCard(tx, id, true);
     if (card.assignee === 'user') throw new CardError('conflict', 'only the card of an agent starts: your own you do yourself');
+    if (card.assignee === CHAT_AGENT) throw new CardError('conflict', 'Arianna does not work on cards from the wall: assign the card to an agent');
+    if (agents !== undefined && !agents.includes(card.assignee)) throw new CardError('conflict', `the agent ${card.assignee} no longer exists: assign the card to another one`);
     if (card.status !== 'inbox' && card.status !== 'ready') throw new CardError('conflict', 'only a card still to do starts');
     if (await engineHad(tx, id)) throw new CardError('conflict', 'the card has already started: resume it or retry it');
     const started = card.status === 'ready' ? card : await moveTask(tx, id, 'ready', { cause: 'user' });
@@ -450,6 +464,7 @@ export async function startCard(sql: Sql, id: string): Promise<Task> {
 /** "Riprendi" (D-159): a card the engine had, waiting in "Aspetta", goes on; not one that waits for a decision. */
 export async function resumeCard(sql: Sql, id: string): Promise<Task> {
   return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
     const card = await loadCard(tx, id, true);
     if (card.status !== 'waiting_user') throw new CardError('conflict', 'only a card in Aspetta resumes');
     if (card.waitingApprovalId !== null) throw new CardError('conflict', 'the card waits for a decision: decide it first');
@@ -464,6 +479,7 @@ export async function resumeCard(sql: Sql, id: string): Promise<Task> {
 /** "Riprova" (D-159): a failed card the engine had runs again from the step that failed. */
 export async function retryCard(sql: Sql, id: string): Promise<Task> {
   return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
     const card = await loadCard(tx, id, true);
     if (card.status !== 'failed') throw new CardError('conflict', 'only a failed card is retried');
     if (!(await engineHad(tx, id))) throw new CardError('conflict', 'the card never started: move it to Da fare, or start it');

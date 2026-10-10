@@ -14,13 +14,16 @@ import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@ariann
 
 import { ApprovalChoiceError, listApprovals, loadApproval } from '../src/approvals.ts';
 import { cardDetail } from '../src/card-details.ts';
-import { CardError, createCard, listCards, moveCard, resumeCard, retryCard, startCard } from '../src/cardwall.ts';
+import { CardError, createCard, listCards, moveCard, resumeCard, retryCard, startCard, updateCard } from '../src/cardwall.ts';
 import { createConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { startLiveFeed } from '../src/live.ts';
+import { requestExecutor } from '../src/orchestrator/card-run.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { startApiServer } from '../src/server/http.ts';
 import { createTask, loadTask, moveTask, type Task } from '../src/tasks.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -241,6 +244,8 @@ test('"Avvia" on a Designer card written by hand: the user chooses among the all
   assert.deepEqual(await drain([created.id], executor), ['to-verify']);
   assert.equal(model.requests.length, 1);
   assert.match(String(model.requests[0]?.messages[0]?.content), /^You are the Designer/);
+  // Here it writes no file: it reads so, and describes the proposal.
+  assert.match(JSON.stringify(model.requests[0]?.messages.slice(1)), /cannot write or read files/);
   const detail = await cardDetail(db().sql, created.id);
   assert.equal(detail.executor, 'local');
   assert.deepEqual([detail.report?.text, detail.report?.executor, detail.report?.label], ['Proposta: intestazione, modulo e mappa in due varianti.', 'local', 'L2']);
@@ -316,4 +321,172 @@ test('"Riprendi" and "Riprova": a card the engine stopped goes on, from the deta
   await assert.rejects(resumeCard(db().sql, card.id), /only a card in Aspetta/);
   assert.equal((await retryCard(db().sql, card.id)).status, 'ready');
   assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+});
+
+/** A Designer card from a plan (L1, in the project), started: the user is asked where it runs. */
+async function askedCard(title: string, executor: StepExecutor) {
+  const parent = await createTask(db().sql, { title: 'Piano', label: 'L1', clearance: 'L1', status: 'inbox' });
+  const card = await createTask(db().sql, {
+    title,
+    goal: 'Due varianti.',
+    parentId: parent.id,
+    label: 'L1',
+    clearance: 'L1',
+    effectiveLabel: 'L1',
+    assignee: 'designer',
+    project: 'site',
+    status: 'inbox',
+  });
+  await startCard(db().sql, card.id);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  return { card, approval: await waitingApproval(card.id) };
+}
+
+async function nothingSentToClaude(taskId: string): Promise<void> {
+  assert.deepEqual(await loadDelegations(db().sql, taskId), [], 'no delegation');
+  const log = await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${taskId} AND target = 'claude'`;
+  assert.equal(log.length, 0, 'nothing went to Claude');
+}
+
+test('the choice is checked again when the card runs: a card now private, or Claude off, waits for the user and nothing leaves (D-159)', async () => {
+  const executor = orchestrator(scripted([]), ['claude']);
+  // The user writes on the card after choosing Claude: the card is L2 now.
+  const written = await askedCard('Grafica scritta dopo', executor);
+  assert.deepEqual(written.approval.detail.options, ['claude', 'local']);
+  await recordDecision(db().sql, written.approval.id, 'approved', 'web', 'claude');
+  assert.equal((await updateCard(db().sql, written.card.id, { goal: 'Il listino finto del cliente.' }, NAMES)).label, 'L2');
+  assert.deepEqual(await drain([written.card.id], executor), ['waiting-user']);
+  assert.match((await loadTask(db().sql, written.card.id))?.waitingReason ?? '', /^claude can no longer take this card/);
+  await nothingSentToClaude(written.card.id);
+
+  // Claude turned off between the choice and the step.
+  const off = await askedCard('Grafica senza Claude', executor);
+  await recordDecision(db().sql, off.approval.id, 'approved', 'web', 'claude');
+  assert.deepEqual(await drain([off.card.id], orchestrator(scripted([]), [])), ['waiting-user']);
+  assert.match((await loadTask(db().sql, off.card.id))?.waitingReason ?? '', /^claude can no longer take this card/);
+  await nothingSentToClaude(off.card.id);
+
+  // The local model chosen, then the card goes above what the Designer may read (L2): the model is never called.
+  const model = scripted([{ action: 'reply', text: 'Mai.' }]);
+  const local = await askedCard('Grafica troppo privata', orchestrator(model, ['claude']));
+  await recordDecision(db().sql, local.approval.id, 'approved', 'web', 'local');
+  await db().sql`UPDATE tasks SET label = 'L3' WHERE id = ${local.card.id}`;
+  assert.deepEqual(await drain([local.card.id], orchestrator(model, ['claude'])), ['waiting-user']);
+  assert.match((await loadTask(db().sql, local.card.id))?.waitingReason ?? '', /^local can no longer take this card/);
+  assert.equal(model.requests.length, 0);
+});
+
+test('the local model keeps to the agent’s max_label: a card above it offers no way and runs nowhere; one within it runs (D-159)', async () => {
+  const model = scripted([{ action: 'reply', text: 'Il rapporto del Coder in locale.' }]);
+  const executor = orchestrator(model, ['claude']);
+  // The Designer asks: nothing to offer, the card waits with why, no approval asked.
+  const secret = await createTask(db().sql, { title: 'Grafica segreta', label: 'L3', clearance: 'L2', assignee: 'designer', project: 'site', status: 'inbox' });
+  await startCard(db().sql, secret.id);
+  assert.deepEqual(await drain([secret.id], executor), ['waiting-user']);
+  assert.match((await loadTask(db().sql, secret.id))?.waitingReason ?? '', /local: the card is above what designer may read there \(L2\)/);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${secret.id}`).length, 0);
+  // The Coder does not ask: without Claude, an L3 card has no way; an L2 one runs on the local model.
+  const local = orchestrator(model, []);
+  const above = await createTask(db().sql, { title: 'Codice segreto', label: 'L3', clearance: 'L2', assignee: 'coder', project: 'site', status: 'inbox' });
+  await startCard(db().sql, above.id);
+  assert.deepEqual(await drain([above.id], local), ['waiting-user']);
+  assert.match((await loadTask(db().sql, above.id))?.waitingReason ?? '', /local: the card is above what coder may read there \(L2\)/);
+  assert.equal(model.requests.length, 0);
+  const within = await createTask(db().sql, { title: 'Codice privato', label: 'L2', clearance: 'L2', assignee: 'coder', project: 'site', status: 'inbox' });
+  await startCard(db().sql, within.id);
+  assert.deepEqual(await drain([within.id], local), ['to-verify']);
+  assert.equal(model.requests.length, 1);
+});
+
+test('a plan step replayed after a crash: the same approval while pending, the answer once decided meanwhile (D-159)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Dividi il lavoro del sito.');
+  const model = scripted([PLAN]);
+  const executor = orchestrator(model, ['claude']);
+  assert.deepEqual(await drain([task.id], executor), ['waiting-approval']);
+  const approval = await waitingApproval(task.id);
+  const [turn] = await db().sql<{ step: number }[]>`SELECT step FROM task_turns WHERE task_id = ${task.id} ORDER BY step DESC LIMIT 1`;
+  const [run] = await db().sql<{ id: string }[]>`SELECT id::text FROM runs WHERE task_id = ${task.id} ORDER BY id DESC LIMIT 1`;
+  assert.ok(turn !== undefined && run !== undefined);
+  // The step runs again as after a crash before the engine recorded it: no new approval, no model call.
+  const replay = async () =>
+    executor.run({ task: (await loadTask(db().sql, task.id)) as Task, step: turn.step, runId: run.id, signal: new AbortController().signal, setSessionRef: () => Promise.resolve() });
+  const pending = await replay();
+  assert.deepEqual([pending.kind, pending.kind === 'confirm' ? pending.approvalId : undefined], ['confirm', approval.id]);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 1);
+  // Decided meanwhile: the replayed step writes the answer, without the model and without new cards.
+  await recordDecision(db().sql, approval.id, 'approved', 'web');
+  const answered = await replay();
+  assert.equal(answered.kind, 'answered');
+  assert.equal(model.requests.length, 1);
+  assert.equal((await childrenOf(task.id)).length, 3);
+  const [reply] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'assistant'`;
+  assert.match(reply?.body ?? '', /^Ho creato 3 card per «Landing del sito»/);
+});
+
+test('"Riprendi" locks the card’s pending approvals before the card, as a decision does: no deadlock (D-159)', async () => {
+  const card = await createTask(db().sql, { title: 'Grafica da riprendere', label: 'L2', clearance: 'L2', assignee: 'designer', status: 'inbox' });
+  await startCard(db().sql, card.id);
+  const executor = orchestrator(scripted([]), []);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  await recordDecision(db().sql, (await waitingApproval(card.id)).id, 'rejected', 'web');
+  assert.deepEqual(await drain([card.id], executor), ['waiting-user']);
+  // A pending approval the card does not wait for (another tab asked meanwhile).
+  const waiting = (await loadTask(db().sql, card.id)) as Task;
+  const pending = await requestExecutor(db().sql, waiting, 9, 'designer', { options: ['local'], excluded: [] });
+
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held = (): void => undefined;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  // A decision at work on that approval holds its row.
+  const decision = db().sql.begin(async (tx) => {
+    await tx`SELECT id FROM approvals WHERE id = ${pending} FOR UPDATE`;
+    held();
+    await gate;
+  });
+  await holding;
+  const resumed = resumeCard(db().sql, card.id);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  try {
+    // "Riprendi" waits on the approvals and has not locked the card yet.
+    await db().sql.begin((tx) => tx`SELECT id FROM tasks WHERE id = ${card.id} FOR UPDATE NOWAIT`);
+  } finally {
+    release();
+    await decision;
+  }
+  assert.equal((await resumed).status, 'ready');
+  assert.equal((await loadApproval(db().sql, pending))?.state, 'expired');
+});
+
+test('the routes: a choice outside the options or of a stranger is a 400; "Avvia" of Arianna’s card or of an agent gone is a 409 (D-159)', async () => {
+  const live = await startLiveFeed(db().sql);
+  const server = await startApiServer({ sql: db().sql, live, host: '127.0.0.1', port: 0, projects: () => [], agents: () => ['arianna', 'coder'] });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const send = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const card = await createTask(db().sql, { title: 'Grafica privata', label: 'L2', clearance: 'L2', assignee: 'designer', status: 'inbox' });
+    await startCard(db().sql, card.id);
+    assert.deepEqual(await drain([card.id], orchestrator(scripted([]), ['claude'])), ['waiting-approval']);
+    const approval = await waitingApproval(card.id);
+    assert.equal((await send(`/api/approvals/${approval.id}/decision`, { state: 'approved', choice: 'gemini' })).status, 400);
+    assert.equal((await send(`/api/approvals/${approval.id}/decision`, { state: 'approved', choice: 'claude' })).status, 400, 'not among the options');
+    assert.equal((await send(`/api/approvals/${approval.id}/decision`, { state: 'approved' })).status, 400, 'no choice');
+    assert.equal((await loadApproval(db().sql, approval.id))?.state, 'pending');
+    assert.equal((await send(`/api/approvals/${approval.id}/decision`, { state: 'approved', choice: 'local' })).status, 200);
+
+    const hers = await createTask(db().sql, { title: 'Di Arianna', label: 'L2', clearance: 'L2', assignee: 'arianna', status: 'inbox' });
+    const started = await send(`/api/cards/${hers.id}/start`);
+    assert.equal(started.status, 409);
+    assert.match(((await started.json()) as { error: string }).error, /Arianna does not work on cards/);
+    // The Designer is not among the agents of this server: its card does not start.
+    const gone = await createTask(db().sql, { title: 'Di un agente tolto', label: 'L2', clearance: 'L2', assignee: 'designer', status: 'inbox' });
+    const refused = await send(`/api/cards/${gone.id}/start`);
+    assert.equal(refused.status, 409);
+    assert.match(((await refused.json()) as { error: string }).error, /no longer exists/);
+    assert.equal((await loadTask(db().sql, gone.id))?.status, 'inbox');
+  } finally {
+    await server.close();
+    await live.close();
+  }
 });

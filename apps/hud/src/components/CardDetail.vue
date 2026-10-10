@@ -54,6 +54,7 @@ import {
 } from '../lib/cardwall.ts';
 import { agentName, reasonText } from '../lib/italian.ts';
 import { CHOICE_TEXT } from '../lib/labels.ts';
+import { listUserAgents } from '../lib/user-agents.ts';
 import { useModal } from '../lib/modal.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import ApprovalCard from './ApprovalCard.vue';
@@ -141,6 +142,25 @@ watch(
   },
 );
 onMounted(loadDetail);
+
+// Whether the agent asks where each card runs (executor_choice: ask, D-159): from its card, read from the core.
+const asks = ref(false);
+async function loadAsks(): Promise<void> {
+  const assignee = props.card.assignee;
+  if (assignee === 'user') {
+    asks.value = false;
+    return;
+  }
+  try {
+    const listing = await listUserAgents();
+    const agent = [...listing.official, ...listing.user].find((item) => item.name === assignee);
+    if (props.card.assignee === assignee) asks.value = agent?.card.executorChoice === 'ask';
+  } catch {
+    asks.value = false;
+  }
+}
+watch(() => props.card.assignee, () => void loadAsks());
+onMounted(loadAsks);
 
 // "Salvato": a moment after each change the core took.
 const saved = ref(false);
@@ -715,7 +735,7 @@ function absoluteTime(at: string): string {
               <span v-if="chosen !== undefined" class="text-[12.5px] text-muted">Ultima scelta: {{ chosen }}</span>
             </div>
             <p v-if="actions.includes('start')" class="text-[12.5px] text-muted">
-              Avviata, la card parte appena non aspetta più nulla<template v-if="card.assignee === 'designer'">; prima ti chiedo con chi lavora</template>.
+              Con Avvia, la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template>.
             </p>
             <div v-if="report !== null" class="rounded-lg border border-line bg-bg px-3 py-2.5">
               <p class="mb-1.5 flex items-center gap-2 text-[12px] text-muted">

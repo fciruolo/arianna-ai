@@ -61,6 +61,8 @@ import {
   defaultWay,
   executorOptions,
   isAgentCard,
+  localCardRequest,
+  noWayReason,
   pendingExecutorApproval,
   requestExecutor,
 } from './card-run.ts';
@@ -182,7 +184,8 @@ async function historyOf(
   const history: Labeled<TurnMessage>[] = [];
   if (task.conversationId === null) {
     // A task without a conversation: its title and goal are the request.
-    const content = [task.title, task.goal].filter((part) => part !== null && part !== '').join('\n\n');
+    // A card of an agent that writes files elsewhere reads that here it does not (D-159).
+    const content = isAgentCard(task) ? localCardRequest(task, agents.get(task.assignee)?.card) : [task.title, task.goal].filter((part) => part !== null && part !== '').join('\n\n');
     history.push({ value: { role: 'user', content }, label: task.label, source: `task:${task.id}` });
   } else {
     // Up to the message that started this task: later ones belong to other tasks.
@@ -363,6 +366,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     // The cloud executor the user chose for a card (D-159): the router takes that one only.
     const ask = isAgentCard(task) && options.agents.get(task.assignee)?.card.executorChoice === 'ask';
     const only = ask ? cloudOf(await chosenExecutor(sql, task.id)) : undefined;
+    // An agent that asks never delegates without a cloud choice of the user's: the delegation is closed, never routed.
+    if (ask && only === undefined) {
+      return { kind: 'closed', delegation, status: 'refused', result: `error: task.delegate: the user did not choose a cloud executor for ${task.assignee}` };
+    }
     return planDelegation(env, task, delegation, only);
   }
 
@@ -375,8 +382,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
    */
   async function cardStart(ctx: StepContext, agent: LoadedAgent): Promise<StepOutcome | undefined> {
     const { task, step } = ctx;
-    // Already at work on the local model: the steps go on.
-    if ((await loadTurns(sql, task.id)).length > 0) return undefined;
+    // Already at work on the local model: the steps go on, while the card stays within what the agent may read.
+    if ((await loadTurns(sql, task.id)).length > 0) {
+      if (isAtMost(cardLabel(task), agent.card.maxLabel)) return undefined;
+      return { kind: 'wait-user', reason: `the card is above what ${task.assignee} may read (${agent.card.maxLabel}): the local model does not take it`, usage: { steps: 0 } };
+    }
     const latest = (await loadDelegations(sql, task.id)).at(-1);
     const ceiling = briefCeiling(agent.card);
     const opened = (label: Label, brief: string): StepOutcome =>
@@ -395,7 +405,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         const pending = await pendingExecutorApproval(sql, task.id);
         if (pending !== undefined) return { kind: 'confirm', approvalId: pending, usage: { steps: 0 } };
         const choices = executorOptions(env, agent.card, task);
-        if (choices.options.length === 0) return { kind: 'wait-user', reason: `no way for ${task.assignee} to work on this card now`, usage: { steps: 0 } };
+        if (choices.options.length === 0) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, choices.excluded), usage: { steps: 0 } };
         return { kind: 'confirm', approvalId: await requestExecutor(sql, task, step, task.assignee, choices), usage: { steps: 0 } };
       }
       // Checked again: what was allowed when the user chose may not be now.
@@ -406,7 +416,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (only === undefined) return undefined;
     } else {
       const way = defaultWay(env, agent.card, task);
-      if (way === undefined) return { kind: 'wait-user', reason: `no way for ${task.assignee} to work on this card now`, usage: { steps: 0 } };
+      if (way === undefined) return { kind: 'wait-user', reason: noWayReason(task.assignee, agent.card, executorOptions(env, agent.card, task).excluded), usage: { steps: 0 } };
       if (way === 'local') return undefined;
     }
     // The card itself is the brief, in the card's project: the way of a delegation (delegate.ts).

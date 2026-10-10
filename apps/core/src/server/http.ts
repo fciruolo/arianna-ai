@@ -1668,7 +1668,7 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
     route('POST', '/api/cards/:id/start', async (request, _url, params) => {
       const id = idParam(params, 'id');
       onlyFields(await readJson(request), []);
-      return guard(async () => ({ body: { card: { id, status: (await startCard(sql, id)).status } } }));
+      return guard(async () => ({ body: { card: { id, status: (await startCard(sql, id, known().agents)).status } } }));
     }),
     route('POST', '/api/cards/:id/resume', async (request, _url, params) => {
       const id = idParam(params, 'id');

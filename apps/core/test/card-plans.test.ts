@@ -8,7 +8,7 @@ import { readAnswer, responseSchema, systemPrompt, type ToolId } from '@arianna/
 import { resolveHome } from '@arianna/config';
 
 import { assigneeText, checkPlan, planAnswerText, planOf } from '../src/card-plans.ts';
-import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard } from '../src/orchestrator/card-run.ts';
+import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason } from '../src/orchestrator/card-run.ts';
 import { claudeToolsOf, codexAccessOf, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { committedAgents } from './support/committed-agents.ts';
@@ -111,7 +111,7 @@ function env(cloud: ('claude' | 'codex')[], local = true, projects = ['sito']): 
   };
 }
 
-const task = (label: 'L0' | 'L1' | 'L2', project: string | null = 'sito') => ({ label, effectiveLabel: 'L0' as const, project });
+const task = (label: 'L0' | 'L1' | 'L2' | 'L3', project: string | null = 'sito') => ({ label, effectiveLabel: 'L0' as const, project });
 
 test('the Designer: its own card, asked where each card runs, writing in the project but never running commands (D-159)', () => {
   assert.ok(designer !== undefined);
@@ -130,7 +130,7 @@ test('the Designer: its own card, asked where each card runs, writing in the pro
   assert.equal(coder?.card.executorChoice, undefined);
 });
 
-test('the ways a card may run: the cloud only within the cloud ceiling, with an approved project and the executor on; the local model always', () => {
+test('the ways a card may run: the cloud only within the cloud ceiling, with an approved project and the executor on; the local model within max_label', () => {
   assert.ok(designer !== undefined);
   const d = designer.card;
   assert.deepEqual(executorOptions(env(['claude', 'codex']), d, task('L1')), { options: ['claude', 'codex', 'local'], excluded: [] });
@@ -151,6 +151,19 @@ test('the ways a card may run: the cloud only within the cloud ceiling, with an 
   assert.deepEqual(executorOptions(env(['claude']), d, task('L0')), { options: ['claude', 'local'], excluded: [{ executor: 'codex', reason: 'off' }] });
   // No local model: nothing there either.
   assert.deepEqual(executorOptions(env([], false), d, task('L2')).options, []);
+  // Above what the agent may read (its max_label, L2): not even the local model.
+  assert.deepEqual(executorOptions(env(['claude', 'codex']), d, task('L3')), {
+    options: [],
+    excluded: [
+      { executor: 'claude', reason: 'label' },
+      { executor: 'codex', reason: 'label' },
+      { executor: 'local', reason: 'label' },
+    ],
+  });
+  assert.equal(
+    noWayReason('designer', d, executorOptions(env([]), d, task('L3')).excluded),
+    'no way for designer to work on this card now (claude: the card is above what designer may read there (cloud_max_label); codex: the card is above what designer may read there (cloud_max_label); local: the card is above what designer may read there (L2))',
+  );
 });
 
 test('an agent that does not ask: the cloud way when it can run, else the local model, else none', () => {
@@ -163,6 +176,18 @@ test('an agent that does not ask: the cloud way when it can run, else the local 
   const reviewer = official.get('reviewer');
   assert.ok(reviewer !== undefined);
   assert.equal(defaultWay(env([]), reviewer.card, task('L1')), undefined);
+  // The local model only within the agent's max_label (L2 for the Coder).
+  assert.equal(defaultWay(env([]), coder.card, task('L2')), 'local');
+  assert.equal(defaultWay(env([]), coder.card, task('L3')), undefined);
+});
+
+test('a card on the local model: the Designer reads that it writes no file there; an agent that writes none does not', () => {
+  assert.ok(designer !== undefined && coder !== undefined);
+  assert.equal(localCardRequest({ title: 'Grafica', goal: 'La landing.' }, designer.card), `Grafica\n\nLa landing.\n\n${LOCAL_CARD_NO_FILES}`);
+  assert.match(LOCAL_CARD_NO_FILES, /cannot write or read files/);
+  const reviewer = official.get('reviewer');
+  assert.ok(reviewer !== undefined && !reviewer.card.tools.includes('repo.write'));
+  assert.equal(localCardRequest({ title: 'Rivedi', goal: null }, reviewer.card), 'Rivedi');
 });
 
 test('a card of an agent, its brief, its label and how it ends', () => {

@@ -56,8 +56,9 @@ export function cardRepo(env: Pick<DelegateEnv, 'settings'>, task: Pick<Task, 'p
  * The ways a card of `card` may run now (D-159): a cloud executor of the card
  * only when the card is within what the agent may send to the cloud (its
  * `cloud_max_label`, at most L1), its project is approved with a folder and
- * the executor is on; the local model whenever the card names it and a local
- * model serves the agents.
+ * the executor is on; the local model when the card names it, the card is
+ * within what the agent may read (its `max_label`) and a local model serves
+ * the agents.
  */
 export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, task: Pick<Task, 'project' | 'label' | 'effectiveLabel'>): ExecutorOptions {
   const options: ExecutorChoice[] = [];
@@ -74,7 +75,8 @@ export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'set
     else options.push(executor);
   }
   if (card.executors.includes('local')) {
-    if (env.model === undefined) excluded.push({ executor: 'local', reason: 'off' });
+    if (!isAtMost(cardLabel(task), card.maxLabel)) excluded.push({ executor: 'local', reason: 'label' });
+    else if (env.model === undefined) excluded.push({ executor: 'local', reason: 'off' });
     else options.push('local');
   }
   return { options, excluded };
@@ -85,14 +87,41 @@ export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'set
  * when one of its cloud executors is on and the project is approved (the
  * router chooses between them, and a card above the agent's cloud ceiling
  * leaves only as the text the user approves); else the local model, when the
- * card names it. Undefined: no way now.
+ * card names it and the card is within the agent's `max_label`. Undefined: no
+ * way now.
  */
-export function defaultWay(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, task: Pick<Task, 'project'>): 'cloud' | 'local' | undefined {
+export function defaultWay(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, task: Pick<Task, 'project' | 'label' | 'effectiveLabel'>): 'cloud' | 'local' | undefined {
   const route = delegationRoute(card);
   const available: readonly string[] = availableCloud(env);
   if (isCloudRoute(route) && card.executors.some((executor) => available.includes(executor)) && cardRepo(env, task) !== undefined) return 'cloud';
-  if (card.executors.includes('local') && env.model !== undefined) return 'local';
+  if (card.executors.includes('local') && env.model !== undefined && isAtMost(cardLabel(task), card.maxLabel)) return 'local';
   return undefined;
+}
+
+/** Why no way is left for a card, for the user: what each executor of the card lacks (D-159). */
+export function noWayReason(agent: string, card: AgentCard, excluded: ExecutorOptions['excluded']): string {
+  const why = (item: ExecutorOptions['excluded'][number]): string =>
+    item.reason === 'label'
+      ? `${item.executor}: the card is above what ${agent} may read there (${item.executor === 'local' ? card.maxLabel : 'cloud_max_label'})`
+      : item.reason === 'project'
+        ? `${item.executor}: no approved project with a folder`
+        : `${item.executor}: off`;
+  return excluded.length === 0 ? `no way for ${agent} to work on this card now` : `no way for ${agent} to work on this card now (${excluded.map(why).join('; ')})`;
+}
+
+/**
+ * The line a card on the local model reads when its agent writes files
+ * elsewhere (the Designer, D-159): here it has no file tools, so it describes
+ * its proposal and names no file it did not write.
+ */
+export const LOCAL_CARD_NO_FILES =
+  'In this mode you cannot write or read files: describe your proposal in your answer (structure, sections, colors, text), and never name or link a file as if you had written it.';
+
+/** The request of a card on the local model: its title and goal, and the line above for an agent that writes files. */
+export function localCardRequest(task: Pick<Task, 'title' | 'goal'>, card: Pick<AgentCard, 'tools'> | undefined): string {
+  const parts = [task.title, task.goal].filter((part): part is string => part !== null && part !== '');
+  if (card?.tools.includes('repo.write') === true) parts.push(LOCAL_CARD_NO_FILES);
+  return parts.join('\n\n');
 }
 
 /** The brief of a card's delegation: what the user wrote on it, as the agent reads it. */
