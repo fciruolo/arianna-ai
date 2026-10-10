@@ -150,7 +150,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 export interface Approval {
   id: string;
   taskId: string | null;
-  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment' | 'plan' | 'executor';
+  kind: 'action' | 'declassify' | 'budget' | 'setting' | 'workspace' | 'commitment' | 'plan' | 'executor' | 'im';
   action: string;
   detail: Record<string, unknown>;
   label: Label;

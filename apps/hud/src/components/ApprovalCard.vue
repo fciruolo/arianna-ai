@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 
 import { executorChoices, planRows } from '../lib/cardwall.ts';
 import { outcomeText, reportEntries } from '../lib/commitments.ts';
+import { IM_NO, IM_YES, imConfirmation } from '../lib/im-approval.ts';
 import { ACTION_TEXT, CHOICE_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
@@ -56,6 +57,8 @@ const report = computed(() => {
   const entries = reportEntries(props.approval.detail);
   return entries.length > 0 ? entries : undefined;
 });
+/** An IM item from a private conversation (D-167, P4b): the exact text and the IM it goes down to. */
+const im = computed(() => (props.approval.kind === 'im' ? imConfirmation(props.approval.detail) : undefined));
 const COMMITMENT_NOTE = {
   add: 'Il giorno l’ha calcolato Arianna dalle tue parole: controllalo prima di confermare.',
   done: 'Confermando, l’impegno risulta fatto.',
@@ -145,6 +148,11 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           >.
         </p>
       </template>
+      <template v-else-if="im !== undefined">
+        <p>{{ im.sentence }}</p>
+        <p class="rounded-lg border border-line bg-bg px-3 py-2 break-words">{{ im.title }}</p>
+        <p class="text-xs text-muted">{{ im.where }}</p>
+      </template>
       <template v-else-if="commitment !== undefined">
         <p v-if="commitment.from !== undefined" class="text-muted line-through">
           <span class="sr-only">Prima: </span>{{ commitment.from.dayText }}<template v-if="commitment.from.time !== null">, alle {{ commitment.from.time }}</template>
@@ -175,9 +183,9 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
     </div>
     <div v-else class="flex flex-wrap items-center gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[15px] py-3">
       <button type="button" :disabled="busy" class="btn btn-primary" @click="choose('approved')">
-        <Icon name="approve" :size="16" />{{ report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
+        <Icon name="approve" :size="16" />{{ im !== undefined ? IM_YES : report !== undefined ? 'Sì, annota' : commitment === undefined ? 'Approva' : COMMITMENT_YES[commitment.op] }}
       </button>
-      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
+      <button type="button" :disabled="busy" class="btn" @click="choose('rejected')">{{ im !== undefined ? IM_NO : commitment === undefined && report === undefined ? 'Rifiuta' : 'No' }}</button>
     </div>
   </article>
 </template>

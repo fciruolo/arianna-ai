@@ -4,7 +4,7 @@ import type { Approval } from './types.ts';
 
 // The Italian texts of the "Decisioni in attesa" window (D-091).
 
-export type PendingKind = 'declassify' | 'budget' | 'workspace' | 'setting' | 'action' | 'question' | 'stopped';
+export type PendingKind = 'declassify' | 'budget' | 'workspace' | 'setting' | 'action' | 'question' | 'stopped' | 'im';
 
 export const PENDING_KIND_TEXT: Record<PendingKind, string> = {
   declassify: 'Privacy · declassamento',
@@ -14,6 +14,7 @@ export const PENDING_KIND_TEXT: Record<PendingKind, string> = {
   action: 'Azione da approvare',
   question: 'Domanda di Arianna',
   stopped: 'Task fermo',
+  im: 'Chiusura dell’IM',
 };
 
 export const PENDING_TITLE = 'Decisioni in attesa';

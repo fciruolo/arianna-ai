@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Project } from '@arianna/config';
 import type { Label } from '@arianna/policy';
 
-import { addDays, addItem, imFileName, ImFormatError, imNumberOf, isImDate, newImText, parseIm, setItemState, type ImItem, type ImState, type ImStatus } from './im-format.ts';
+import { addDays, addItem, imFileName, ImFormatError, imNumberOf, isImDate, localImDate, meetingTime, newImText, parseIm, raiseLabel, rewriteItem, setItemState, setStatus, type ImItem, type ImState, type ImStatus, type NewItem } from './im-format.ts';
 import { parsePage } from './orchestrator/kb.ts';
 import { imFolder, MAX_NOTE_BYTES, type ImFolder, type KnowledgeEnv } from './project-knowledge.ts';
 
@@ -208,11 +208,17 @@ function replaceFile(folder: ImFolder, fileName: string, text: string, mode: num
   }
 }
 
-function change(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, version: string, transform: (text: string) => string): ImView {
+/**
+ * Rewrites the IM `number` with `transform`, when the file is still `version`
+ * (the web chat) or when `version` is a check that accepts its text (code that
+ * read the file a moment ago, or an answer that names its item by line and title).
+ */
+export function changeIm(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, version: string | ((text: string) => boolean), transform: (text: string) => string): ImView {
   const folder = imFolder(projects, project, env, false);
   if (folder === null) throw new ImError('not-found', `IM-${String(number)} not found`);
   const file = loadIm(folder, number);
-  if (versionOf(file.text) !== version) throw new ImError('changed', `IM-${String(number)} changed in the file`);
+  const same = typeof version === 'string' ? versionOf(file.text) === version : version(file.text);
+  if (!same) throw new ImError('changed', `IM-${String(number)} changed in the file`);
   let text: string;
   try {
     text = transform(file.text);
@@ -226,12 +232,12 @@ function change(projects: readonly Project[], project: string, env: KnowledgeEnv
 
 /** One item of the IM to another state, when the file is still `version`. */
 export function setImItemState(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, line: number, state: ImState, version: string): ImView {
-  return change(projects, project, env, number, version, (text) => setItemState(text, line, state));
+  return changeIm(projects, project, env, number, version, (text) => setItemState(text, line, state));
 }
 
 /** A new item at the end of `## Lavori`, when the file is still `version`. */
 export function addImItem(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, title: string, version: string): ImView {
-  return change(projects, project, env, number, version, (text) => addItem(text, { title }));
+  return changeIm(projects, project, env, number, version, (text) => addItem(text, { title }));
 }
 
 /**
@@ -239,7 +245,7 @@ export function addImItem(projects: readonly Project[], project: string, env: Kn
  * last one at the same time (D-167; a moved call does not count), or on
  * `date` when given; `date` is needed for the first IM of a project.
  */
-export function createIm(projects: readonly Project[], project: string, env: KnowledgeEnv, date?: string): ImView {
+export function createIm(projects: readonly Project[], project: string, env: KnowledgeEnv, date?: string, notBefore?: Date): ImView {
   if (date !== undefined && !isImDate(date)) throw new ImError('invalid', 'the date must be YYYY-MM-DD HH:MM');
   const folder = imFolder(projects, project, env, true);
   if (folder === null) throw new ImError('unavailable', 'cannot create the folder IM');
@@ -251,6 +257,11 @@ export function createIm(projects: readonly Project[], project: string, env: Kno
     const lastDate = lastFile === undefined ? null : parseIm(lastFile.text).date;
     if (lastDate === null) throw new ImError('invalid', 'the date of the IM is needed: there is no IM with a date before it');
     when = addDays(lastDate, 7);
+    // Made by code after an old IM: the first meeting of the calendar that is not over yet.
+    if (notBefore !== undefined) {
+      const floor = localImDate(notBefore);
+      for (let step = 0; when < floor && step < 520; step += 1) when = addDays(when, 7);
+    }
   }
   const number = last + 1;
   const fileName = imFileName(number);
@@ -276,4 +287,151 @@ export function createIm(projects: readonly Project[], project: string, env: Kno
   }
   closeSync(fd);
   return viewOf(folder, { number, fileName, text, mode: 0o600 });
+}
+
+/**
+ * The IM being worked on: the first one not closed whose meeting (the moved
+ * call, else the date) is not over at `now`; undefined when there is none.
+ */
+export function currentIm(projects: readonly Project[], project: string, env: KnowledgeEnv, now: Date): ImSummary | undefined {
+  const at = localImDate(now);
+  return listIms(projects, project, env).find((im) => {
+    const when = meetingTime(im);
+    return im.status !== 'chiuso' && when !== null && when >= at;
+  });
+}
+
+/** True when the items of `next` already hold this title and part (an item is never copied twice). */
+function holds(items: readonly ImItem[], title: string, part: number | null): boolean {
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  return items.some((item) => fold(item.title) === fold(title) && item.part === part);
+}
+
+/**
+ * The IM after `number`, created when it is not there yet: seven days after
+ * the last one, and never in the past (a closing of an old IM does not make a
+ * chain of IM already over).
+ */
+function followingIm(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now: Date): ImView {
+  const after = listIms(projects, project, env).find((im) => im.number > number);
+  if (after !== undefined) return readIm(projects, project, env, after.number);
+  return createIm(projects, project, env, undefined, now);
+}
+
+/**
+ * `item` at the end of `target`, unless it is there already. An item from a
+ * file with a higher label raises `target` first (D-145: a private title
+ * never lands in an Interno file the Coder reads).
+ */
+function appendItem(projects: readonly Project[], project: string, env: KnowledgeEnv, target: ImView, item: NewItem, from: Label = 'L0'): ImView {
+  if (holds(target.items, item.title, item.part ?? null)) return target;
+  return changeIm(projects, project, env, target.number, target.version, (text) => addItem(raiseLabel(text, from, target.label), item));
+}
+
+export type ImWhich = 'current' | 'next';
+
+/**
+ * "Per il prossimo IM: le fatture" (D-167, P4b): an item in the current IM or
+ * in the one after it (created seven days later when missing). A project
+ * without an IM with a date has no calendar: the first IM is made in the
+ * cardwall, never guessed.
+ */
+export function addItemTo(projects: readonly Project[], project: string, env: KnowledgeEnv, which: ImWhich, title: string, now: Date): ImView {
+  const current = currentIm(projects, project, env, now);
+  let target: ImView;
+  if (current !== undefined) {
+    target = which === 'current' ? readIm(projects, project, env, current.number) : followingIm(projects, project, env, current.number, now);
+  } else {
+    // Every IM is over or closed: the next meeting is a new IM after the last one.
+    const last = listIms(projects, project, env).at(-1);
+    if (last === undefined || last.date === null) throw new ImError('not-found', 'the project has no IM with a date: make the first one in the cardwall');
+    target = createIm(projects, project, env, undefined, now);
+  }
+  const after = appendItem(projects, project, env, target, { title });
+  if (after === target) throw new ImError('invalid', `IM-${String(target.number)} has this item already`);
+  return after;
+}
+
+export type ImOutcome = 'done' | 'part' | 'not-done';
+
+/** An item named by its line and title: the answer refers to the file as it was when the question was asked. */
+export interface ImItemRef {
+  line: number;
+  title: string;
+  part: number | null;
+}
+
+function findItem(text: string, ref: ImItemRef): ImItem | undefined {
+  return parseIm(text).items.find((item) => item.line === ref.line && item.title === ref.title && item.part === ref.part);
+}
+
+/**
+ * The answer to "È finita?" for one open item at the closing of an IM
+ * (D-167): done is `[x]`; in part closes it as done (as `— Parte 1` when it
+ * had no part) and puts `— Parte N+1` in the next IM, with the same card;
+ * not done is `[>]` and the same item in the next IM. The next IM is written
+ * first (adding there twice does nothing), so a failure never loses an item.
+ */
+export function closeImItem(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, ref: ImItemRef, outcome: ImOutcome, now = new Date()): { im: ImView; item: ImItem } {
+  const open = (text: string): boolean => {
+    const item = findItem(text, ref);
+    return item !== undefined && (item.state === 'todo' || item.state === 'doing');
+  };
+  const current = readIm(projects, project, env, number);
+  const item = current.items.find((candidate) => candidate.line === ref.line && candidate.title === ref.title && candidate.part === ref.part);
+  if (item === undefined) throw new ImError('changed', 'the item changed in the file');
+  if (item.state !== 'todo' && item.state !== 'doing') throw new ImError('changed', 'the item is not open any more');
+  if (outcome === 'done') return { im: changeIm(projects, project, env, number, open, (text) => setItemState(text, ref.line, 'done')), item };
+  const next = followingIm(projects, project, env, number, now);
+  if (outcome === 'part') {
+    const part = item.part ?? 1;
+    appendItem(projects, project, env, next, { title: item.title, part: part + 1, card: item.card }, current.label);
+    return { im: changeIm(projects, project, env, number, open, (text) => rewriteItem(text, ref.line, { title: item.title, state: 'done', part, card: item.card })), item };
+  }
+  appendItem(projects, project, env, next, { title: item.title, part: item.part, card: item.card }, current.label);
+  return { im: changeIm(projects, project, env, number, open, (text) => setItemState(text, ref.line, 'postponed')), item };
+}
+
+/**
+ * The end of the closing (D-167): when no item is to do or in progress, the
+ * items postponed by hand go to the next IM too, the next IM is there (made
+ * when missing, never in the past) and the IM becomes `chiuso`. Returns
+ * false, writing nothing, while an item is still open.
+ */
+export function finishImClosing(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number, now = new Date()): boolean {
+  const current = readIm(projects, project, env, number);
+  if (current.status === 'chiuso') return true;
+  if (current.items.some((item) => item.state === 'todo' || item.state === 'doing')) return false;
+  let next = followingIm(projects, project, env, number, now);
+  for (const item of current.items.filter((candidate) => candidate.state === 'postponed')) {
+    next = appendItem(projects, project, env, next, { title: item.title, part: item.part, card: item.card }, current.label);
+  }
+  changeIm(projects, project, env, number, current.version, (text) => setStatus(text, 'chiuso'));
+  return true;
+}
+
+/** True when an item still open in an IM not closed carries this card (Parte N+1 of a work going on). */
+export function cardStillOpen(projects: readonly Project[], project: string, env: KnowledgeEnv, card: string): boolean {
+  return listIms(projects, project, env)
+    .filter((summary) => summary.status !== 'chiuso')
+    .some((summary) => readIm(projects, project, env, summary.number).items.some((item) => item.card === card && (item.state === 'todo' || item.state === 'doing')));
+}
+
+/**
+ * A card arrived in "Fatto" (D-167): its items in the IM not closed of its
+ * project become `[x]`. `card` is the short id the items carry; the caller
+ * makes sure it names one card only. Returns the IM changed.
+ */
+export function markCardItems(projects: readonly Project[], project: string, env: KnowledgeEnv, card: string): number[] {
+  if (!/^[0-9a-f]{8}$/.test(card)) return [];
+  const changed: number[] = [];
+  for (const summary of listIms(projects, project, env)) {
+    if (summary.status === 'chiuso') continue;
+    const im = readIm(projects, project, env, summary.number);
+    const lines = im.items.filter((item) => item.card === card && (item.state === 'todo' || item.state === 'doing')).map((item) => item.line);
+    if (lines.length === 0) continue;
+    changeIm(projects, project, env, im.number, im.version, (text) => lines.reduce((acc, line) => setItemState(acc, line, 'done'), text));
+    changed.push(im.number);
+  }
+  return changed;
 }

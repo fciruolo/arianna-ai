@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { approvalAnchor, clearFocus, FOCUS_WAIT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../src/lib/chat-focus.ts';
-import { dismissMode, dismissStep, pendingItems, pendingTotal, sortOldestFirst, type WaitingTask } from '../src/lib/pending.ts';
+import type { ImClosing } from '../src/lib/im.ts';
+import { closingItems, dismissMode, dismissStep, pendingItems, pendingRows, pendingTotal, sortOldestFirst, type WaitingTask } from '../src/lib/pending.ts';
 import {
   hiddenText,
   PENDING_APPROVAL_ELSEWHERE,
@@ -365,4 +366,55 @@ test('the cardwall in the window: a plan and the choice of where a card runs; th
   assert.equal(pendingKindText({ kind: 'executor', action: 'card.executor' }), 'Con chi lavora?');
   const [row] = pendingItems([approval('e1', { kind: 'executor', action: 'card.executor', taskId: 'card', conversationId: 'c1', chatTaskId: 'chat' })], { card: { conversationId: null } }, { c1: 'Sito' });
   assert.deepEqual([row?.conversationId, row?.conversationTitle], ['c1', 'Sito']);
+});
+
+// The closings of the IM (D-167, P4b) in "Decisioni in attesa".
+const imClosing = (id: string, over: Partial<ImClosing> = {}): ImClosing => ({
+  id,
+  project: 'progetto-test',
+  im: 33,
+  messageId: `msg-${id}`,
+  openedAt: '2026-10-05T07:00:00.000Z',
+  closedAt: null,
+  ...over,
+});
+
+test('closingItems: an open closing opens the secretary at its message; a closed one is not there', () => {
+  const rows = closingItems([imClosing('1'), imClosing('2', { closedAt: '2026-10-05T08:00:00.000Z' })], { id: 'sec', title: null });
+  assert.equal(rows.length, 1);
+  const [row] = rows;
+  assert.ok(row);
+  assert.equal(row.key, 'im-closing-1');
+  assert.equal(row.kindText, PENDING_KIND_TEXT.im);
+  assert.equal(row.conversationId, 'sec');
+  assert.equal(row.conversationTitle, 'Segretaria');
+  assert.equal(row.ask, 'Chiudere l’IM-33 di progetto-test');
+  assert.equal(row.anchor, messageAnchor('msg-1'));
+  assert.equal(row.taskId, null);
+  assert.equal(row.dismiss, 'none');
+});
+
+test('closingItems: without the secretary conversation the row cannot be opened; without a message no anchor', () => {
+  const [row] = closingItems([imClosing('1')], null);
+  assert.ok(row);
+  assert.equal(row.conversationId, null);
+  assert.equal(row.conversationTitle, PENDING_NO_CONVERSATION);
+  assert.equal(row.anchor, null);
+  const [loose] = closingItems([imClosing('2', { messageId: null })], { id: 'sec', title: 'La mia segretaria' });
+  assert.ok(loose);
+  assert.equal(loose.anchor, null);
+  assert.equal(loose.conversationTitle, 'La mia segretaria');
+});
+
+test('pendingRows puts the closings among the other rows, oldest first', () => {
+  const rows = pendingRows({
+    approvals: [approval('a', { requestedAt: '2026-10-05T09:00:00.000Z' })],
+    tasks: {},
+    titles: {},
+    waiting: [],
+    closings: [imClosing('1')],
+    secretary: { id: 'sec', title: null },
+  });
+  assert.deepEqual(rows.map((row) => row.key), ['im-closing-1', 'approval-a']);
+  assert.equal(pendingRows({ approvals: [], tasks: {}, titles: {}, waiting: [] }).length, 0);
 });

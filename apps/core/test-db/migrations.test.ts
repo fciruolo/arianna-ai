@@ -25,6 +25,7 @@ test('migrations apply from zero and create every table', async () => {
       'conversations',
       'events',
       'gateway_log',
+      'im_closings',
       'jobs',
       'label_changes',
       'messages',

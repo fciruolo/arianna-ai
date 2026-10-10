@@ -5,6 +5,7 @@ import { PROJECT_NAME } from '../cardwall.ts';
 import type { Queryable } from '../db/client.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { updateCard } from './cards.ts';
+import { addImTool, type ImProposal, type ImToolEnv } from './im-tool.ts';
 import { KbError, type Kb } from './kb.ts';
 
 /**
@@ -16,8 +17,9 @@ import { KbError, type Kb } from './kb.ts';
  * `user.ask` is not here: like a reply, it ends the step with a message in
  * the chat. Neither is `task.delegate`, whose next step runs elsewhere
  * (delegate.ts). `task.update` moves a card of the conversation (cards.ts).
+ * `im.add` writes an item in an IM file of a project (im-tool.ts, D-167).
  */
-export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update'] as const satisfies readonly ToolId[];
+export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update', 'im.add'] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
 export function isLocalTool(tool: ToolId): tool is LocalTool {
@@ -33,12 +35,16 @@ export interface ToolEnv {
   context: Context;
   /** Autonomy of the agent's card: with A0 and A1 a card leaves the inbox only through the user. */
   autonomy: Autonomy;
+  /** The IM of the projects (D-167); without it `im.add` answers with an error. */
+  ims?: ImToolEnv;
 }
 
 export interface ToolResult {
   text: string;
   /** Highest label of the data the tool returned; L0 when it returned none. */
   label: Label;
+  /** `im.add` above the label of the IM (D-167): nothing written, the user confirms this first. */
+  confirm?: ImProposal;
 }
 
 /** Longest page text shown to the model in one result. */
@@ -60,6 +66,8 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await card(args, env);
       case 'task.update':
         return await updateCard(args, env);
+      case 'im.add':
+        return await imItem(args, env);
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };
@@ -89,17 +97,36 @@ function write(args: Record<string, unknown>, env: ToolEnv): ToolResult {
   return { text: `written ${written.path}`, label: 'L0' };
 }
 
+/** The project of the conversation's workspace (a container, or `container:part`, D-145), when it has one. */
+async function workspaceProject(env: ToolEnv): Promise<string | undefined> {
+  if (env.task.conversationId === null) return undefined;
+  const [conversation] = await env.sql<{ workspace: string | null }[]>`SELECT workspace FROM conversations WHERE id = ${env.task.conversationId}`;
+  const project = conversation?.workspace?.split(':')[0];
+  return project !== undefined && PROJECT_NAME.test(project) ? project : undefined;
+}
+
+/** An item in the current or next IM of a project (D-167, P4b): the file is written by code, the model reads one line. */
+async function imItem(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const outcome = addImTool(env.ims, { args, workspace: await workspaceProject(env), effective: env.context.effective });
+  switch (outcome.kind) {
+    case 'done':
+      return { text: outcome.text, label: outcome.label };
+    case 'error':
+      return { text: `error: im.add: ${outcome.error}`, label: 'L0' };
+    case 'confirm':
+      return { text: '', label: 'L0', confirm: outcome.proposal };
+  }
+}
+
 /** A card in the inbox (autonomy A1), child of this task, labeled as what it was written from. */
 async function card(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
   const title = String(args.title).trim();
   const goal = typeof args.goal === 'string' && args.goal.trim() !== '' ? args.goal.trim() : undefined;
-  // The project of the conversation's workspace (a container, or `container:part`, D-145): the card's on the wall (D-152).
-  const [conversation] =
-    env.task.conversationId === null ? [] : await env.sql<{ workspace: string | null }[]>`SELECT workspace FROM conversations WHERE id = ${env.task.conversationId}`;
-  const project = conversation?.workspace?.split(':')[0];
+  // The project of the conversation's workspace: the card's on the wall (D-152).
+  const project = await workspaceProject(env);
   // Created in the transaction of the step's turn: a step that runs again finds its turn, not a second card.
   const created = await createTask(env.sql, {
-    ...(project !== undefined && PROJECT_NAME.test(project) ? { project } : {}),
+    ...(project === undefined ? {} : { project }),
     title,
     ...(goal === undefined ? {} : { goal }),
     parentId: env.task.id,

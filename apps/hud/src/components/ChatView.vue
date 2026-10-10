@@ -11,6 +11,8 @@ import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/
 import { contextMeter, contextTitle } from '../lib/direct-chat.ts';
 import { cloudTargets, longMessageStep, providerText, shortTarget, toAgent, whoAnswers } from '../lib/draft.ts';
 import { DIRECT_MODELS } from '../lib/failures.ts';
+import { listImClosings } from '../lib/api.ts';
+import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
@@ -36,6 +38,7 @@ import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import CreditLine from './CreditLine.vue';
+import ImClosingCard from './ImClosingCard.vue';
 import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -300,6 +303,28 @@ const unplaced = computed(() => {
   const shown = new Set(props.chat.messages.filter((message) => message.role === 'user').map((message) => message.taskId));
   return props.approvals.filter((approval) => !shown.has(placeOf(approval)));
 });
+
+/**
+ * The closings of the IM (D-167, P4b) in the secretary's conversation, by the
+ * message of Arianna they show under; read when it opens and whenever a
+ * message arrives (the core writes the closing's message with it).
+ */
+const closings = ref<Map<string, ImClosing>>(new Map());
+let closingsRead = 0;
+async function readClosings(): Promise<void> {
+  const request = ++closingsRead;
+  if (props.conversation.secretary !== true) {
+    closings.value = new Map();
+    return;
+  }
+  try {
+    const listed = await listImClosings();
+    if (request === closingsRead) closings.value = closingsByMessage(listed);
+  } catch {
+    // Keeps the last ones: the next message reads them again.
+  }
+}
+watch(() => [props.conversation.secretary === true, props.chat.conversationId, props.chat.messages.length], () => void readClosings(), { immediate: true });
 
 /** The Coder's run while it works for this conversation: shown in the persona header. */
 const coderRun = computed(() => props.status?.agents.find((agent) => agent.id === 'coder')?.run ?? null);
@@ -801,6 +826,7 @@ onBeforeUnmount(() => clearInterval(clock));
           <ActivityLog v-if="steps.get(message.id) !== undefined" :key="`steps-${steps.get(message.id)!.taskId}`" :task-id="steps.get(message.id)!.taskId" :count="steps.get(message.id)!.count" />
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
+          <ImClosingCard v-if="closings.get(message.id) !== undefined" :key="`im-closing-${closings.get(message.id)!.id}`" :closing="closings.get(message.id)!" />
           <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
             <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
