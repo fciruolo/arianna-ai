@@ -2,14 +2,18 @@
 // local time (hours, days, recovery, change of day), the ticker on an
 // injected clock, the text written by the code and the notice it becomes.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
-import { DEFAULT_NOTIFICATIONS, DEFAULT_SECRETARY, type SecretaryConfig } from '@arianna/config';
+import { DEFAULT_NOTIFICATIONS, DEFAULT_SECRETARY, resolveHome, type Project, type SecretaryConfig } from '@arianna/config';
+import { createLabelRules } from '@arianna/policy';
 
 import type { Commitment } from '../src/commitments.ts';
 import { createDailyTicker, dueSlot } from '../src/daily-ticker.ts';
 import { noticeAllowed, noticeOf } from '../src/notifications.ts';
-import { reminderText, secretarySchedule } from '../src/reminders.ts';
+import { imReminderLines, reminderText, secretarySchedule } from '../src/reminders.ts';
 
 const CONVERSATION = '11111111-2222-4333-8444-555555555555';
 // 2026-10-08 is a Thursday, 2026-10-10 a Saturday, 2026-10-11 a Sunday.
@@ -180,4 +184,45 @@ test('reminderText (D-151): the morning starts from what was postponed to today,
   assert.match(afternoon, /- Comprare il pane finto \(rinviato da mercoledì 7 ottobre 2026\)/);
   // Without a postponement the morning is as before.
   assert.match(reminderText('morning', '2026-10-08', [bank], []) ?? '', /\n\nDa fare oggi:\n/);
+});
+
+// The day before an IM (D-167, P4c): one line per IM, written by code.
+const IM_HOME = join(resolveHome({}), 'data', 'test-tmp', `reminders-im-${randomUUID()}`);
+after(() => {
+  rmSync(IM_HOME, { recursive: true, force: true });
+});
+
+test('imReminderLines names the IM of tomorrow (the moved call counts), not the closed nor the others', () => {
+  const box = join(IM_HOME, 'repos', 'progetto-test');
+  mkdirSync(join(box, 'IM'), { recursive: true });
+  mkdirSync(join(box, 'parte', '.git'), { recursive: true });
+  mkdirSync(join(IM_HOME, 'arianna', 'kb'), { recursive: true });
+  writeFileSync(join(box, 'parte', '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(box, 'IM', 'IM-33.md'), '---\nim: 33\ndata: 2026-10-15 10:00\nstato: previsto\n---\n\n## Lavori\n\n- [ ] Fatture segrete finte\n- [/] Esportazione\n- [x] Filtro\n- [ ] Altro\n');
+  writeFileSync(join(box, 'IM', 'IM-34.md'), '---\nim: 34\ndata: 2026-10-22 10:00\nchiamata: 2026-10-15 16:30\nstato: previsto\n---\n\n## Lavori\n\n- [ ] Una\n');
+  writeFileSync(join(box, 'IM', 'IM-32.md'), '---\nim: 32\ndata: 2026-10-15 09:00\nstato: chiuso\n---\n\n## Lavori\n\n- [ ] Vecchia\n');
+  writeFileSync(join(box, 'IM', 'IM-35.md'), '---\nim: 35\ndata: 2026-10-15 11:00\nchiamata: 2026-10-16 11:00\nstato: previsto\n---\n\n## Lavori\n\n- [x] Fatta\n');
+  const projects: Project[] = [{ name: 'progetto-test', path: 'repos/progetto-test', absolute: box, label: 'L1' }];
+  const source = { projects: () => projects, env: { home: join(IM_HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } };
+  const lines = imReminderLines(source, '2026-10-14');
+  assert.deepEqual(
+    lines.map((line) => line.text),
+    ['Domani c’è l’IM-33 di progetto-test (giovedì 15 ottobre, 10:00): 3 voci ancora aperte.', 'Domani c’è l’IM-34 di progetto-test (giovedì 15 ottobre, 16:30): 1 voce ancora aperta.'],
+  );
+  assert.ok(lines.every((line) => line.label === 'L1'));
+  assert.ok(!lines.some((line) => line.text.includes('Fatture')), 'never the titles of the items');
+  assert.deepEqual(imReminderLines(source, '2026-10-15').map((line) => line.text), ['Domani c’è l’IM-35 di progetto-test (venerdì 16 ottobre, 11:00): nessuna voce aperta.']);
+  assert.deepEqual(imReminderLines(source, '2026-10-20'), []);
+  // A project without IM gives no line.
+  const empty = { projects: () => [{ name: 'vuoto', path: 'repos/vuoto', absolute: join(IM_HOME, 'repos', 'vuoto'), label: 'L1' as const }], env: source.env };
+  assert.deepEqual(imReminderLines(empty, '2026-10-14'), []);
+});
+
+test('reminderText: the IM lines in the morning, alone too; never in the afternoon or evening', () => {
+  const line = 'Domani c’è l’IM-33 di progetto-test (giovedì 15 ottobre, 10:00): 3 voci ancora aperte.';
+  assert.match(reminderText('morning', '2026-10-14', [], [], [line]) ?? '', /^Buongiorno\. Il promemoria di oggi, [^\n]+\.\n\n/);
+  assert.ok(reminderText('morning', '2026-10-14', [], [], [line])?.endsWith(`\n\n${line}`));
+  assert.equal(reminderText('afternoon', '2026-10-14', [], [], [line]), undefined);
+  assert.equal(reminderText('evening', '2026-10-14', [], [], [line]), undefined);
+  assert.equal(reminderText('morning', '2026-10-14', [], []), undefined);
 });

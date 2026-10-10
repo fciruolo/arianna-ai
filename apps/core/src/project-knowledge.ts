@@ -699,3 +699,27 @@ export function createProjectPages(projects: () => readonly Project[], env: Know
     },
   };
 }
+
+/**
+ * The diary of the works of a project to read (D-147), `Workplan/diario` with
+ * any letter case of Workplan: null when either folder is missing, never
+ * created here. `labelOf` labels a file of the diary as the tab "Conoscenza"
+ * does (the folder Workplan's rule at least, its header raises it).
+ */
+export function diaryFolder(projects: readonly Project[], name: string, env: KnowledgeEnv): ImFolder | null {
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  const base = knowledgeBase(projects, name, env);
+  const workplan = base.folders.find((item) => fold(item.path) === fold(WORKPLAN));
+  if (workplan === undefined) return null;
+  const path = `${workplan.path}/diario`;
+  const dir = join(base.root, workplan.path, 'diario');
+  const sameFolder = (): boolean => {
+    try {
+      return lstatSync(join(base.root, workplan.path)).isDirectory() && lstatSync(dir).isDirectory() && realpathSync(dir) === dir;
+    } catch {
+      return false;
+    }
+  };
+  if (!sameFolder()) return null;
+  return { path, dir, sameFolder, labelOf: (fileName, headerLabels) => baseLabel(base, `${path}/${fileName}`, headerLabels) };
+}
