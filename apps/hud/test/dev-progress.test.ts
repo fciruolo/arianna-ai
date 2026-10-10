@@ -6,6 +6,7 @@ import {
   answerStatus,
   answerTooLongText,
   barSegments,
+  canAskRewrite,
   checkAnswer,
   countStates,
   filterItems,
@@ -14,6 +15,7 @@ import {
   groupQuestions,
   isPicked,
   markAnswered,
+  markRewrite,
   pendingBadge,
   pendingCount,
   pendingFromBody,
@@ -21,6 +23,8 @@ import {
   percentDone,
   phases,
   pickOption,
+  REWRITE_TEXT,
+  rewriteStatus,
   skippedText,
   type OpenQuestion,
   type ProgressItem,
@@ -37,7 +41,7 @@ const ITEMS: ProgressItem[] = [
 ];
 
 function question(key: string, overrides: Partial<OpenQuestion> = {}): OpenQuestion {
-  return { key, kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Domanda?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null, ...overrides };
+  return { key, kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Domanda?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null, rewrite: null, ...overrides };
 }
 
 test('the bar has three parts summing to 100, empty without items', () => {
@@ -197,4 +201,26 @@ test('an option shows pressed only when a line of the draft is its label', () =>
   assert.equal(isPicked(' Clone separato ', 'Clone separato'), true);
   assert.equal(isPicked('Clone separato, ma...', 'Clone separato'), false);
   assert.equal(isPicked(undefined, 'Clone separato'), false);
+});
+
+test('a rewrite asked is shown, keeps the question open and hides the button (D-153)', () => {
+  assert.equal(REWRITE_TEXT, 'Riscrivi più chiara');
+  assert.equal(canAskRewrite(question('a')), true);
+  assert.equal(rewriteStatus(question('a')), null);
+  const asked = markRewrite([question('a'), question('b')], 'b', '2026-10-10 09:00');
+  assert.equal(asked[0]?.rewrite, null);
+  assert.deepEqual(asked[1]?.rewrite, { at: '2026-10-10 09:00' });
+  assert.equal(asked[1].answer, null);
+  assert.equal(rewriteStatus(asked[1]), 'Riscrittura chiesta (2026-10-10 09:00)');
+  assert.equal(rewriteStatus(question('c', { rewrite: { at: '' } })), 'Riscrittura chiesta');
+  assert.equal(canAskRewrite(asked[1]), false);
+  // Not an answer: still open, still counted by the dot.
+  assert.equal(pendingCount(asked), 2);
+  assert.equal(filterQuestions(asked, 'open').length, 2);
+  // An answered question has no button: the answer already went to Claude.
+  assert.equal(canAskRewrite(question('d', { answer: { state: 'new', at: '2026-10-10 09:01' } })), false);
+  // Answering after asking: the answer counts as always.
+  const answered = markAnswered(asked, 'b', '2026-10-10 09:05');
+  assert.deepEqual(answered[1]?.answer, { state: 'new', at: '2026-10-10 09:05' });
+  assert.equal(pendingCount(answered), 1);
 });

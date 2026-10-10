@@ -22,6 +22,7 @@ import {
   eventKey,
   explainField,
   formatAnswer,
+  formatRewrite,
   loadProgress,
   MAX_ANSWER_CHARS,
   parseAnswers,
@@ -34,7 +35,9 @@ import {
   parseProposals,
   parseTasks,
   pendingQuestions,
+  REWRITE_LINE,
   saveAnswer,
+  saveRewrite,
   type AnswerGate,
   type OpenQuestion,
 } from '../src/dev-progress.ts';
@@ -646,7 +649,7 @@ describe('the page', () => {
 
   it('parses the answers file by its heading lines only', () => {
     const entries = parseAnswers('## 2026-10-05 07:40 · D-078#1 · nuova\n> ## 2026-10-05 07:40 · D-078#2 · evasa\n## titolo qualsiasi\n');
-    assert.deepEqual(entries, [{ at: '2026-10-05 07:40', key: 'D-078#1', state: 'new' }]);
+    assert.deepEqual(entries, [{ at: '2026-10-05 07:40', key: 'D-078#1', state: 'new', rewrite: false }]);
   });
 });
 
@@ -671,7 +674,7 @@ const GATE: AnswerGate = (answer) => {
 
 describe('answers', () => {
   it('formats an entry whose lines cannot look like a heading', () => {
-    const question: OpenQuestion = { key: 'D-078#3', kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Chi fa il commit nel clone?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null };
+    const question: OpenQuestion = { key: 'D-078#3', kind: 'proposal', ref: 'D-078', topic: 'Arianna sviluppata da dentro Arianna', text: 'Chi fa il commit nel clone?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null, rewrite: null };
     const entry = formatAnswer(question, 'Io.\n\n## 2026-10-05 07:40 · D-078#1 · evasa', NOW);
     assert.equal(
       entry,
@@ -777,6 +780,63 @@ describe('answers', () => {
     assert.deepEqual(readdirSync(join(folder, 'altrove')), []);
   });
 
+  it('asks a rewrite with a fixed entry, once while it is new, and keeps the question open (D-153)', async () => {
+    const home = makeHome();
+    const before = pendingQuestions(loadProgress(home));
+    const first = saveRewrite(home, 'D-078#3', NOW);
+    assert.deepEqual([first.key, first.at, first.already], ['D-078#3', '2026-10-05 07:45', false]);
+    const text = readFileSync(join(home, ANSWERS_FILE), 'utf8');
+    assert.ok(text.startsWith(ANSWERS_HEADER));
+    assert.ok(text.endsWith(`## 2026-10-05 07:45 · D-078#3 · nuova\n\n- **Domanda** (D-078, docs/PROPOSTE.md) (Arianna sviluppata da dentro Arianna): Chi fa il commit nel clone?\n${REWRITE_LINE}\n`));
+    assert.deepEqual(parseAnswers(text), [{ at: '2026-10-05 07:45', key: 'D-078#3', state: 'new', rewrite: true }]);
+
+    // A second click while the request is new: the same request, nothing appended.
+    const again = saveRewrite(home, 'D-078#3', new Date(2026, 9, 5, 8, 0));
+    assert.deepEqual([again.at, again.already], ['2026-10-05 07:45', true]);
+    assert.equal(readFileSync(join(home, ANSWERS_FILE), 'utf8'), text);
+
+    // Not an answer: still open, still counted by the dot, shown as asked.
+    const progress = loadProgress(home);
+    const question = progress.questions.find((item) => item.key === 'D-078#3');
+    assert.equal(question?.answer, null);
+    assert.deepEqual(question.rewrite, { at: '2026-10-05 07:45' });
+    assert.equal(pendingQuestions(progress), before);
+    assert.equal(progress.questions.find((item) => item.key === 'D-078#1')?.rewrite, null);
+
+    // The user answers anyway: the answer counts as always, the request stays.
+    await saveAnswer(home, 'D-078#3', 'Io.', GATE, NOW);
+    const answered = loadProgress(home).questions.find((item) => item.key === 'D-078#3');
+    assert.deepEqual(answered?.answer, { state: 'new', at: '2026-10-05 07:45' });
+    assert.deepEqual(answered.rewrite, { at: '2026-10-05 07:45' });
+    assert.equal(pendingQuestions(loadProgress(home)), before - 1);
+  });
+
+  it('asks a rewrite again once Claude has applied the previous one, and refuses unknown questions', () => {
+    const home = makeHome();
+    saveRewrite(home, 'D-078#1', NOW);
+    const path = join(home, ANSWERS_FILE);
+    writeFileSync(path, readFileSync(path, 'utf8').replace('· D-078#1 · nuova', '· D-078#1 · evasa'));
+    assert.equal(loadProgress(home).questions.find((item) => item.key === 'D-078#1')?.rewrite, null);
+    assert.equal(saveRewrite(home, 'D-078#1', new Date(2026, 9, 6, 9, 0)).already, false);
+    assert.deepEqual(
+      parseAnswers(readFileSync(path, 'utf8')).map((entry) => `${entry.key} ${entry.state}`),
+      ['D-078#1 done', 'D-078#1 new'],
+    );
+    assert.throws(() => saveRewrite(home, 'D-078#9', NOW), (error) => error instanceof DevAnswerError && error.code === 'unknown-question');
+  });
+
+  it('tells a rewrite from an answer only by the fixed line written by the code', () => {
+    const question: OpenQuestion = { key: 'conf-D-081', kind: 'confirm', ref: 'D-081', topic: 'x', text: 'Confermi D-081: x?', detail: null, explain: null, source: 'DECISIONS.md', answer: null, rewrite: null };
+    assert.equal(parseAnswers(formatRewrite(question, NOW))[0]?.rewrite, true);
+    // An answer that quotes the line is still an answer: it is quoted with "> ".
+    const quoted = formatAnswer(question, REWRITE_LINE, NOW);
+    assert.equal(parseAnswers(quoted)[0]?.rewrite, false);
+    // The line in the header, before any entry, marks nothing.
+    assert.deepEqual(parseAnswers(`${ANSWERS_HEADER}\n${REWRITE_LINE}\n`), []);
+    assert.ok(ANSWERS_HEADER.includes(REWRITE_LINE));
+    assert.match(ANSWERS_HEADER, /senza cambiarne la chiave/);
+  });
+
   it('keeps in the event the keys of proposals and confirmations, and only a hash of keys made from a row', () => {
     assert.equal(eventKey('D-078#3'), 'D-078#3');
     assert.equal(eventKey('conf-D-087b'), 'conf-D-087b');
@@ -850,6 +910,53 @@ describe('routes', () => {
     // Another site cannot answer for the user.
     assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#2', text: 'sì' }, { origin: 'http://evil.example' })).status, 403);
     assert.equal(recorded.length, 1);
+    assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
+  });
+
+  it('asks a rewrite with rewrite: true and no text, idempotent while new (D-153)', async (t) => {
+    const home = makeHome();
+    const recorded: { key: string; rewrite: boolean }[] = [];
+    const server = await startApiServer({
+      sql: undefined as unknown as Sql,
+      live: undefined as unknown as LiveFeed,
+      host: '127.0.0.1',
+      port: 0,
+      devProgress: {
+        home,
+        gate: () => Promise.reject(new Error('a rewrite never reaches the gateway')),
+        recorded: (saved) => {
+          recorded.push({ key: saved.key, rewrite: saved.rewrite === true });
+          return Promise.resolve();
+        },
+      },
+    });
+    t.after(() => server.close());
+    const pending = (await send(server.port, 'GET', '/api/dev/pending')).body.pending;
+
+    const first = await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#2', rewrite: true });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.rewrite, true);
+    assert.equal(first.body.already, false);
+    const again = await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#2', rewrite: true });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.already, true);
+    assert.equal(again.body.at, first.body.at);
+    assert.deepEqual(recorded, [{ key: 'D-078#2', rewrite: true }]);
+    assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
+
+    // The question stays open and in the count of the dot.
+    assert.deepEqual((await send(server.port, 'GET', '/api/dev/pending')).body, { pending });
+    const progress = (await send(server.port, 'GET', '/api/dev/progress')).body.progress as { questions: OpenQuestion[] };
+    const question = progress.questions.find((item) => item.key === 'D-078#2');
+    assert.equal(question?.answer, null);
+    assert.equal(question.rewrite?.at, first.body.at);
+
+    // Text and rewrite together, rewrite not true, unknown questions: refused, nothing written.
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#1', rewrite: true, text: 'sì' })).status, 400);
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#1', rewrite: false })).status, 400);
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#1', rewrite: 'sì' })).status, 400);
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#8', rewrite: true })).status, 404);
+    assert.equal((await send(server.port, 'POST', '/api/dev/answers', { key: 'D-078#1', rewrite: true }, { origin: 'http://evil.example' })).status, 403);
     assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
   });
 

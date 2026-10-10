@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { loadDevProgress, sendDevAnswer } from '../lib/api.ts';
+import { askDevRewrite, loadDevProgress, sendDevAnswer } from '../lib/api.ts';
 import {
   answerStatus,
   barSegments,
+  canAskRewrite,
   checkAnswer,
   countStates,
   filterItems,
@@ -13,12 +14,15 @@ import {
   groupQuestions,
   isPicked,
   markAnswered,
+  markRewrite,
   pendingBadge,
   pendingCount,
   pendingText,
   percentDone,
   phases,
   pickOption,
+  REWRITE_TEXT,
+  rewriteStatus,
   phaseText,
   QUESTION_FILTERS,
   skippedText,
@@ -60,6 +64,11 @@ const sendErrors = ref<Record<string, string>>({});
 const unlogged = ref<Record<string, boolean>>({});
 /** Questions already answered whose field the user opened again to add something. */
 const reopened = ref<Record<string, boolean>>({});
+/** "Riscrivi più chiara" (D-153): the question being sent to Claude to rewrite, and why one failed. */
+const rewriting = ref<string | null>(null);
+const rewriteErrors = ref<Record<string, string>>({});
+/** Rewrites asked whose event did not reach the chain: apart from the answers, so an answer logged later is not marked. */
+const rewriteUnlogged = ref<Record<string, boolean>>({});
 
 const segments = computed(() => (progress.value === null ? [] : barSegments(progress.value.counts)));
 const done = computed(() => (progress.value === null ? 0 : percentDone(progress.value.counts)));
@@ -129,6 +138,24 @@ async function send(question: OpenQuestion): Promise<void> {
     sendErrors.value = { ...sendErrors.value, [question.key]: errorText(cause) };
   } finally {
     sending.value = null;
+  }
+}
+
+/** Asks Claude Code to rewrite the question more clearly (D-153): no model, a fixed entry in the answers file. */
+async function askRewrite(question: OpenQuestion): Promise<void> {
+  if (rewriting.value !== null) return;
+  rewriting.value = question.key;
+  const { [question.key]: _cleared, ...others } = rewriteErrors.value;
+  rewriteErrors.value = others;
+  try {
+    const saved = await askDevRewrite(question.key);
+    if (progress.value !== null) progress.value = { ...progress.value, questions: markRewrite(progress.value.questions, saved.key, saved.at) };
+    if (saved.logged === false) rewriteUnlogged.value = { ...rewriteUnlogged.value, [saved.key]: true };
+    void refresh();
+  } catch (cause) {
+    rewriteErrors.value = { ...rewriteErrors.value, [question.key]: `Non riesco a chiedere la riscrittura. ${errorText(cause)}` };
+  } finally {
+    rewriting.value = null;
   }
 }
 
@@ -266,7 +293,24 @@ onMounted(refresh);
                 </details>
               </template>
               <p v-else-if="question.detail !== null" class="text-xs leading-relaxed text-muted">{{ question.detail }}</p>
-              <p class="font-mono text-[10.5px] text-muted">{{ question.key }} · docs/{{ question.source }}</p>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10.5px] text-muted">
+                <span>{{ question.key }} · docs/{{ question.source }}</span>
+                <button
+                  v-if="canAskRewrite(question)"
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md px-1 text-muted underline decoration-dotted underline-offset-2 hover:text-ink disabled:cursor-default disabled:opacity-60"
+                  :title="REWRITE_TEXT"
+                  :aria-label="`${REWRITE_TEXT}: ${question.text}`"
+                  :disabled="rewriting !== null"
+                  @click="askRewrite(question)"
+                >
+                  <Icon name="rename" :size="12" />{{ rewriting === question.key ? 'Invio…' : REWRITE_TEXT }}
+                </button>
+                <span v-if="rewriteStatus(question) !== null" role="status" class="text-info" title="Claude Code la riscriverà nel documento; puoi comunque rispondere">
+                  {{ rewriteStatus(question) }}<template v-if="rewriteUnlogged[question.key]"> · evento non registrato</template>
+                </span>
+              </div>
+              <p v-if="rewriteErrors[question.key] !== undefined" role="alert" class="text-xs text-danger">{{ rewriteErrors[question.key] }}</p>
               <p v-if="answerStatus(question) !== null" role="status" class="flex flex-wrap items-center gap-2 font-mono text-xs" :class="question.answer?.state === 'new' ? 'text-info' : 'text-ink'">
                 <Icon name="saved" :size="13" />{{ answerStatus(question) }}
                 <span v-if="unlogged[question.key]" class="text-warn">· salvata, evento non registrato</span>
