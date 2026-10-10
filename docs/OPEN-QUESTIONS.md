@@ -134,7 +134,7 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 ### oq-remote-git-github-privato-nas-nessuno
 
 - Contesto: Il codice di Arianna è salvato con git, che tiene la storia delle modifiche. Un "remoto" è una copia di quella storia su un'altra macchina, utile come backup. Può stare su GitHub (nel cloud), sul NAS di casa o da nessuna parte. La proposta di partenza era NAS o nessuno; oggi però il remoto origin è su GitHub e i push li fai tu. Si decide quale tenere come regola.
-- Opzione consigliata: NAS o nessuno all'inizio — la storia del codice non esce di casa e il NAS fa da copia; il remoto su GitHub di oggi si toglie o resta solo come specchio, a tua scelta.
+- Opzione consigliata: NAS o nessuno all'inizio — il NAS fa da copia in casa; cosa fare del remoto su GitHub di oggi è una scelta a parte.
 - Opzione: GitHub privato, com'è oggi — copia nel cloud raggiungibile da ovunque e controlli automatici gratuiti; il codice (non i tuoi dati, che stanno fuori da git) è su un servizio esterno.
 - Opzione: Nessun remoto — zero configurazione, ma se il disco del Mac si rompe la storia del codice si perde.
 - Esempio: A fine giornata un git push copia gli ultimi commit sul NAS. Se il Mac si guasta, sul Mac nuovo scarichi tutto dal NAS e riprendi dal punto esatto.

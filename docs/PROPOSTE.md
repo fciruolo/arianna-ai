@@ -292,7 +292,7 @@ Seconda parte, dopo le risposte: strumento `kb.capture` per Arianna (tocca `pack
 
 1. **Tutto ciò che salvi nasce privato e si rende meno privato solo col tuo sì?** Raccomandazione: sì, ogni cosa catturata nasce L2 in `kb/inbox/`, anche da una conversazione di lavoro, e si abbassa solo con la tua approvazione; è il default-deny applicato all'ingresso, e costa solo un clic quando vuoi davvero declassare.
    - Contesto: Arianna salva in kb/inbox/ ciò che le passi: pensieri, link, note. Ogni nota ha un'etichetta di riservatezza: L2 vuol dire privato, resta sul Mac e non arriva mai a Claude o Codex; L1 vuol dire di lavoro, può andare al cloud passando dal controllo. Oggi funziona già così (prima parte di D-080, da confermare): tutto nasce L2, anche se lo salvi da una conversazione di lavoro, e si abbassa solo con la tua approvazione.
-   - Opzione consigliata: Sì, tutto nasce privato (L2) — un pensiero privato detto di passaggio non esce mai per sbaglio; rendere pubblica una nota costa un clic.
+   - Opzione consigliata: Sì, tutto nasce privato (L2) — un pensiero privato detto di passaggio non esce mai per sbaglio; rendere una nota meno privata costa un clic.
    - Opzione: Come la conversazione — L1 se la salvi da una chat di lavoro: meno approvazioni, ma una cosa privata detta in una chat di lavoro sarebbe meno protetta.
    - Esempio: In una conversazione di lavoro scrivi "/nota ricordami il controllo dal dentista giovedì". La nota nasce privata anche se la chat è di lavoro, e non potrà mai arrivare a un agente cloud senza il tuo sì.
 2. **Chi riordina le note dell'inbox decide da solo o ti propone e decidi tu?** Raccomandazione: propone (A1) per qualche settimana; poi, se le proposte sono buone, A2 per lo spostamento con una decisione registrata, mai per abbassare l'etichetta.
@@ -2191,7 +2191,7 @@ Due parti indipendenti; la seconda non serve alla prima.
    - Esempio: Per decidere se una nota è un "pensiero" o un "link", invece di far scrivere una risposta al 27B si legge in una sola passata quale delle due opzioni preferisce, in molto meno tempo.
 5. **Su quale scelta si prova per prima la via veloce?** Raccomandazione: `kind` e tag del riordino delle note (D-086), dove un errore si corregge a mano e non cambia etichette; poi chi risponde fra più agenti (D-111 B), solo fra quelli già ammessi.
    - Contesto: Le scelte veloci vanno provate prima dove un errore costa poco e si corregge a mano. Mai per etichette di privacy, gateway o approvazioni: lì decide sempre il codice. Si decide da quale scelta partire.
-   - Opzione consigliata: Tipo e tag delle note — un errore si corregge con un clic e non cambia nessuna etichetta; poi chi risponde fra più agenti.
+   - Opzione consigliata: Tipo e tag delle note — un errore si corregge a mano e non cambia nessuna etichetta; poi chi risponde fra più agenti.
    - Opzione: Chi risponde fra più agenti — più visibile in chat, ma un errore si nota di più.
    - Opzione: Se una routine chiama o scrive — utile per le routine (D-110), che però non esistono ancora.
    - Esempio: Salvi "leggere l'articolo sui server MCP"; la scelta veloce le dà tipo "link" e tag "lettura"; se sbaglia, cambi il tag con un clic.
