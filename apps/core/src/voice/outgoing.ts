@@ -46,6 +46,12 @@ export const FAILED_TEXT = {
   skipped: 'Il lavoro non è riuscito; non era il momento di chiamarti, l’errore è qui.',
 } as const;
 
+/**
+ * A call of a direct chat whose agent cannot answer now (D-158): it does not
+ * ring, and this is written instead. No name: the note is L0.
+ */
+export const AGENT_OFF_TEXT = 'Volevo chiamarti, ma l’agente di questa chat adesso non può rispondere al telefono: te lo scrivo qui.';
+
 /** What Arianna says first when the user answers, and what she writes when they do not. */
 export const OUTGOING_TEXT: Record<CallReason, { greeting: string; missed: string; skipped: string }> = {
   waiting: {

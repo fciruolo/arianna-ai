@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Message } from '../src/conversations.ts';
-import { callReadiness, delegationRequest, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
+import { agentCallText, agentVoiceSystem, AGENT_VOICE_FRAME, CALL_TEXT, callReadiness, delegationRequest, greetingFor, HISTORY_CHARS, HISTORY_MAX_MESSAGES, HISTORY_MESSAGES, opensDelegation, parseReply, sentenceSplitter, speakable, summaryToSay, voicePrompt, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
 
 const message = (role: Message['role'], body: string, label: Message['label'] = 'L1', id = '1'): Message => ({
@@ -165,3 +165,28 @@ test('a delegation is seen once the piece is cleaned as it would be said', () =>
   assert.equal(delegationRequest(['**DELEGA:** cerca le fatture.', 'Di ottobre.']), 'cerca le fatture. Di ottobre.');
 });
 
+
+test('an agent of a direct chat in a call (D-158): its greeting says its name, the cloud one says it passes the words on; Arianna keeps hers', () => {
+  assert.equal(greetingFor(CALL_TEXT.greeting, { kind: 'arianna' }), CALL_TEXT.greeting);
+  assert.equal(greetingFor(CALL_TEXT.greeting, { kind: 'local', agent: 'traduttore', name: 'traduttore', nameLabel: 'L1', model: 'local-large' }), 'Ciao, sono traduttore. Dimmi pure.');
+  const coder = greetingFor(CALL_TEXT.greeting, { kind: 'cloud', agent: 'coder', name: 'Coder', nameLabel: 'L0' });
+  assert.equal(coder, 'Ciao, sono la linea del Coder: quello che mi dici lo passo al Coder. Dimmi pure.');
+  assert.ok(!coder.includes('Arianna'));
+  // A greeting that does not start with Arianna's name keeps all its words after the agent's.
+  assert.equal(greetingFor('Ti chiamo.', { kind: 'local', agent: 'x', name: 'x', nameLabel: 'L1', model: 'm' }), 'Ciao, sono x. Ti chiamo.');
+  assert.equal(agentCallText('Coder').bridged, 'Lo passo al Coder, ti dico quando ha finito.');
+  assert.equal(agentCallText('scrittore').bridged, 'Lo passo a scrittore, ti dico quando ha finito.');
+  assert.ok(agentCallText('Coder').busy.startsWith('Coder sta ancora lavorando'));
+});
+
+test('voicePrompt with the system of an agent: its instructions after our frame, their label counted; never the prompt of Arianna', () => {
+  const system = { content: agentVoiceSystem('Traduci in inglese.'), label: 'L1' as const };
+  const prompt = voicePrompt([message('user', 'ciao', 'L0')], 'L0', undefined, system);
+  assert.ok(prompt.messages[0]?.content.startsWith(AGENT_VOICE_FRAME));
+  assert.ok(prompt.messages[0]?.content.endsWith('Traduci in inglese.'));
+  assert.notEqual(prompt.messages[0]?.content, VOICE_SYSTEM_PROMPT);
+  assert.equal(prompt.messages[0]?.label, 'L1');
+  assert.equal(prompt.label, 'L1');
+  // Without a system, Arianna's L0 prompt as before.
+  assert.equal(voicePrompt([message('user', 'ciao', 'L0')], 'L0').label, 'L0');
+});
