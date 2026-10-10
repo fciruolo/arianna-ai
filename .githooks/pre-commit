@@ -1,4 +1,6 @@
 #!/bin/sh
 # Rejects the commit unless type-check, tests, lint and deterministic evals pass (docs/DECISIONS.md, D-018).
+# First, no staged file may still hold the markers of a merge conflict (scripts/conflict-markers.ts).
 # Enabled by `pnpm install` through the "prepare" script (core.hooksPath).
+node scripts/conflict-markers.ts || exit 1
 exec pnpm --silent check
