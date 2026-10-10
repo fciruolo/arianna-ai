@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Cardwall: i filtri, l'ordine e le colonne sono chip con un menu al posto delle select di sistema; il filtro attivo mostra il suo valore colorato con la x per toglierlo, e la barra resta su una riga (D-152).
+
 ## [0.40.0] - 2026-10-10
 
 ### Aggiunto
