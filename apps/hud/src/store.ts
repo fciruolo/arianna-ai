@@ -2,7 +2,7 @@ import { computed, ref, shallowRef, watch } from 'vue';
 
 import * as api from './lib/api.ts';
 import { startCall as openCallSession, type CallSession } from './lib/call-session.ts';
-import { callErrorText, type CallInfo } from './lib/calls.ts';
+import { callErrorText, draftCallee, type CallInfo } from './lib/calls.ts';
 import { applyActivity, applyDelta, applyEdit, emptyChat, mergeMessages, restoreActivity, settleReply, taskIds, type ChatState } from './lib/chat-state.ts';
 import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
@@ -589,19 +589,6 @@ export function createChatStore() {
     await api.declineCall(ringing.callId).catch(() => undefined);
   }
 
-  async function scheduleCall(at: Date): Promise<boolean> {
-    const id = chat.value?.conversationId;
-    if (id === undefined) return false;
-    try {
-      await api.scheduleCall(id, at);
-      await refreshCalls();
-      return true;
-    } catch {
-      callError.value = 'Non sono riuscito a programmare la chiamata: scegli un’ora nei prossimi sette giorni.';
-      return false;
-    }
-  }
-
   async function callWhenDone(taskId: string): Promise<void> {
     try {
       await api.callWhenDone(taskId);
@@ -709,6 +696,41 @@ export function createChatStore() {
     } finally {
       sending.value = false;
     }
+  }
+
+  /**
+   * The phone of an empty new conversation (D-158): creates the conversation
+   * as the first message would (once, as in sendDraft), opens it, then calls
+   * Arianna or the agent in it. Never in incognito.
+   */
+  async function callDraft(): Promise<void> {
+    const start = draft.value;
+    if (start === null || draftCallee(start) === undefined || sending.value || callSession.value !== null || callStarting.value) return;
+    error.value = null;
+    callError.value = null;
+    sending.value = true;
+    let id: string;
+    try {
+      const step = draftStep(start);
+      if (step.kind === 'create') {
+        const created = await api.createConversation(start.mode, start.project, start.agent);
+        id = created.id;
+        // The user left the draft while it was created: no call.
+        if (draft.value?.key !== start.key) return;
+        draft.value = { ...start, conversationId: id };
+        conversations.value = [created, ...conversations.value.filter((item) => item.id !== id)];
+      } else {
+        id = step.conversationId;
+      }
+      await open(id);
+      void refreshConversations().catch(() => undefined);
+    } catch (cause) {
+      fail(cause);
+      return;
+    } finally {
+      sending.value = false;
+    }
+    if (chat.value?.conversationId === id) await startCall();
   }
 
   async function create(mode: ConversationMode, project?: string): Promise<void> {
@@ -1113,7 +1135,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

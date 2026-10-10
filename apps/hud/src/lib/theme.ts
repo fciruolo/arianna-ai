@@ -6,13 +6,23 @@
 export type Theme = 'system' | 'dark' | 'light';
 
 const KEY = 'arianna.theme';
-export const THEMES: readonly Theme[] = ['system', 'dark', 'light'];
+/** The order of the cycle of the header button (D-158): Chiaro → Scuro → Auto. */
+export const THEMES: readonly Theme[] = ['light', 'dark', 'system'];
 
+/** The short names of the three buttons of Impostazioni → Aspetto. */
 export const THEME_TEXT: Record<Theme, string> = {
-  system: 'Tema del sistema',
-  dark: 'Tema scuro',
-  light: 'Tema chiaro',
+  light: 'Chiaro',
+  dark: 'Scuro',
+  system: 'Auto',
 };
+
+/** The icon of each theme, the one the header button shows for the active theme. */
+export const THEME_ICON = { light: 'theme-light', dark: 'theme-dark', system: 'theme-system' } as const satisfies Record<Theme, string>;
+
+/** "Tema: chiaro", the title and the name of the header button. */
+export function themeLabel(theme: Theme): string {
+  return `Tema: ${{ light: 'chiaro', dark: 'scuro', system: 'automatico' }[theme]}`;
+}
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -36,9 +46,9 @@ export function saveTheme(storage: StorageLike | undefined, theme: Theme): void 
   }
 }
 
-/** The next theme of the cycle system → dark → light. */
+/** The next theme of the cycle light → dark → system (D-158). */
 export function nextTheme(theme: Theme): Theme {
-  return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length] ?? 'system';
+  return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length] ?? 'light';
 }
 
 /** The value of data-theme on <html>: absent for "system". */

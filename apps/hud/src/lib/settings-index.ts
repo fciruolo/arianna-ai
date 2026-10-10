@@ -7,7 +7,7 @@
 import { CHANGELOG_PATH, DEV_PATH, SETTINGS_PATH, VOICE_TRIAL_PATH } from './route.ts';
 
 /** How a section takes effect, as checked in the code of the core (settings-page.ts, D-071). */
-export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action';
+export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action' | 'browser';
 
 export const BEHAVIOUR_TEXT: Record<SectionBehaviour, string> = {
   now: 'Vale subito',
@@ -15,6 +15,7 @@ export const BEHAVIOUR_TEXT: Record<SectionBehaviour, string> = {
   confirm: 'Chiede conferma prima di salvare',
   read: 'Solo lettura',
   action: 'Non cambia le impostazioni: avvia prove in background',
+  browser: 'Vale subito, solo in questo browser',
 };
 
 export interface IndexItem {
@@ -69,6 +70,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
   {
     group: 'Sistema',
     items: [
+      // The theme (D-158): a choice of this browser, the same as the button of the top bar.
+      { id: 'appearance', slug: 'aspetto', title: 'Aspetto', behaviour: 'browser' },
       { id: 'labels', slug: 'etichette', title: 'Etichette', behaviour: 'read' },
       { id: 'installation', slug: 'installazione', title: 'Installazione', behaviour: 'read' },
       { id: 'dev-progress', slug: 'sviluppo', title: 'Sviluppo di Arianna', behaviour: 'read', page: DEV_PATH },

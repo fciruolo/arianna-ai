@@ -21,6 +21,22 @@
   --breakpoint-3xl: 100rem;
 }
 @custom-variant short (@media (min-width: 48rem) and (max-height: 56rem));
+/*
+ * `dark:` follows the theme the chat shows, as the tokens below do (D-158):
+ * the user's choice (data-theme on <html>) first, the system's otherwise.
+ * Tailwind's default reads the system only, so a light choice on a dark Mac
+ * kept the dark colors of those utilities.
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media not (prefers-color-scheme: light) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
 /*
  * Identity of the web chat (D-060, docs/mockups/arianna-hud.html): the OpenDots

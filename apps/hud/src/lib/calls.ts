@@ -1,3 +1,6 @@
+import { agentName } from './italian.ts';
+import type { Conversation, ConversationAgent, ConversationMode } from './types.ts';
+
 /**
  * Calls in the web chat (D-066), pure for the tests: the receipts among the
  * messages, the duration, the Italian texts. The call itself (WebRTC) is in
@@ -27,11 +30,54 @@ export function clock(seconds: number): string {
   return hours > 0 ? `${String(hours)}:${pad(minutes)}:${pad(whole % 60)}` : `${String(minutes)}:${pad(whole % 60)}`;
 }
 
+/**
+ * Who answers a call (D-158): Arianna, or the agent of a direct chat. `name`
+ * is the bare name ("Arianna", "Coder"), `the` the name in a sentence ("il
+ * Coder"), `subject` the same at the start of one ("Il Coder"), `from`
+ * after "da" ("da Arianna", "dal Coder").
+ */
+export interface Callee {
+  agent: ConversationAgent | null;
+  name: string;
+  the: string;
+  subject: string;
+  from: string;
+}
+
+const ARIANNA: Callee = { agent: null, name: 'Arianna', the: 'Arianna', subject: 'Arianna', from: 'da Arianna' };
+
+/** Arianna for null, otherwise the agent; the Coder takes the article, as elsewhere in the chat. */
+export function calleeOf(agent: ConversationAgent | null | undefined): Callee {
+  if (agent === null || agent === undefined || agent === 'arianna') return ARIANNA;
+  const name = agentName(agent);
+  return agent === 'coder' ? { agent, name, the: `il ${name}`, subject: `Il ${name}`, from: `dal ${name}` } : { agent, name, the: name, subject: name, from: `da ${name}` };
+}
+
+/**
+ * Whether a conversation has the phone (D-158) and who answers: every private
+ * conversation with Arianna (the secretary's too) and every direct chat with
+ * an agent, whatever its mode. Never an incognito conversation (D-136), a
+ * system chat or a work conversation with Arianna. Archived ones keep the
+ * phone, off (see callBlocker).
+ */
+export function conversationCallee(conversation: Pick<Conversation, 'mode' | 'agent' | 'origin' | 'incognito'> | undefined): Callee | undefined {
+  if (conversation === undefined || conversation.incognito === true || conversation.origin === 'system') return undefined;
+  if (conversation.agent !== null) return calleeOf(conversation.agent);
+  return conversation.mode === 'private' ? ARIANNA : undefined;
+}
+
+/** The same rule for the empty page of a new conversation (D-158): the call creates it. */
+export function draftCallee(draft: { mode: ConversationMode; agent?: ConversationAgent | undefined; incognito?: boolean | undefined } | null): Callee | undefined {
+  if (draft === null || draft.incognito === true) return undefined;
+  if (draft.agent !== undefined) return calleeOf(draft.agent);
+  return draft.mode === 'private' ? ARIANNA : undefined;
+}
+
 /** The line of a receipt: who called, how long, how it ended. */
-export function receiptText(call: CallInfo): string {
-  const who = call.direction === 'in' ? 'Hai chiamato Arianna' : 'Arianna ti ha chiamato';
+export function receiptText(call: CallInfo, callee: Callee = ARIANNA): string {
+  const who = call.direction === 'in' ? `Hai chiamato ${callee.the}` : `${callee.subject} ti ha chiamato`;
   if (call.status === 'scheduled') return `Chiamata programmata per le ${new Date(call.scheduledAt ?? call.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
-  if (call.status === 'missed') return 'Arianna ti ha cercato: chiamata persa';
+  if (call.status === 'missed') return `${callee.subject} ti ha cercato: chiamata persa`;
   if (call.status === 'skipped') return `Chiamata non fatta (${SKIP_TEXT[call.endReason ?? ''] ?? 'regole delle chiamate'})`;
   if (call.status === 'failed') return `${who}: la chiamata non è partita`;
   if (call.endedAt === null) return `${who}: in corso`;
@@ -90,6 +136,7 @@ export function callErrorText(message: string): string {
       'voice-off': 'Il servizio voce non risponde: guarda il provino della voce.',
       'not-ready': 'Mancano dei modelli: assegna stt, tts e voice in [roles] e scaricali (vedi il provino della voce).',
       'not-found': 'La conversazione non esiste più.',
+      invalid: 'Qui non si può chiamare: solo nelle conversazioni private con Arianna e nelle chat dirette con un agente, mai in incognito.',
     }[code] ?? 'La chiamata non è partita.'
   );
 }
@@ -100,20 +147,3 @@ export const RING_TEXT: Record<'waiting' | 'task-done' | 'scheduled', string> = 
   'task-done': 'Ti chiama per il lavoro che le avevi chiesto',
   scheduled: 'È l’ora della chiamata che avevi programmato',
 };
-
-/** The value of an <input type="datetime-local"> as a Date in local time; undefined when empty or invalid. */
-export function localDateTime(value: string): Date | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
-  if (match === null) return undefined;
-  const [, year, month, day, hours, minutes] = match.map(Number);
-  const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0);
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
-
-/** The default of the scheduling field: in one hour, rounded to five minutes, in local time. */
-export function inAnHour(now: Date = new Date()): string {
-  const date = new Date(now.getTime() + 3_600_000);
-  date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5, 0, 0);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}

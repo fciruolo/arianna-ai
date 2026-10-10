@@ -30,7 +30,7 @@ import ThoughtsPage from './components/ThoughtsPage.vue';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { loadDevPending, loadInstallation } from './lib/api.ts';
 import { pendingText } from './lib/dev-progress.ts';
-import { callBlocker, inAnHour, localDateTime } from './lib/calls.ts';
+import { callBlocker, calleeOf, conversationCallee, draftCallee, type Callee } from './lib/calls.ts';
 import { FOCUS_EVENT, messageAnchor, requestFocus } from './lib/chat-focus.ts';
 import type { CommandAction } from './lib/commands.ts';
 import { draftFromAddress, draftPath, draftProjectProblem, sameChoice, type DraftChoice } from './lib/draft.ts';
@@ -40,7 +40,6 @@ import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
 import { isProjectsPath, PROJECTS_PATH } from './lib/projects.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
-import { callTarget } from './lib/sidebar.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
   CHANGELOG_PATH,
@@ -69,8 +68,8 @@ import {
   type KnowledgeSource,
 } from './lib/route.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
-import { loadTheme, saveTheme, themeAttribute, type Theme } from './lib/theme.ts';
-import type { Activity, Approval } from './lib/types.ts';
+import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
+import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
@@ -108,43 +107,45 @@ function leaveClosed(): void {
   setTitle(undefined);
 }
 
-// "Chiamami alle…" (D-066): a small form under the clock button.
-const showSchedule = ref(false);
-const scheduleAt = ref('');
-function openSchedule(): void {
-  scheduleAt.value = inAnHour();
-  showSchedule.value = !showSchedule.value;
-}
-async function confirmSchedule(): Promise<void> {
-  const at = localDateTime(scheduleAt.value);
-  if (at === undefined) return;
-  if (await store.scheduleCall(at)) showSchedule.value = false;
-}
+// Calls (D-066, D-158): the phone in the header of a private conversation with Arianna, of a direct chat with an agent, or of their empty new page.
+const callee = computed<Callee | undefined>(() => {
+  if (page.value !== 'chat') return undefined;
+  return current.value !== undefined ? conversationCallee(current.value) : draftCallee(draft.value);
+});
 
-// Calls (D-066): "Chiama" of the left bar (D-097) calls Arianna in the open private conversation, or in a new private one.
-const callBlocked = computed(() => callBlocker(voiceState.value, false, callSession.value !== null));
+/** Why the phone cannot call now, or undefined: the voice, an archived conversation, a call on; on a new page, an agent that cannot answer or a project not approved. */
+const callBlocked = computed(() => {
+  const blocked = callBlocker(voiceState.value, (current.value?.archivedAt ?? null) !== null, callSession.value !== null);
+  if (blocked !== undefined || current.value !== undefined) return blocked;
+  const start = draft.value;
+  if (start === null) return undefined;
+  if (start.agent !== undefined && !directAgents.value.some((entry) => entry.agent === start.agent)) return `${callee.value?.subject ?? 'L’agente'} non può rispondere adesso`;
+  return draftProjectProblem(start, projects.value.length > 0 ? projects.value.map((entry) => entry.name) : undefined);
+});
 
-/** True from the click on "Chiama" until the call started or failed: a second click does nothing. */
+/** True from the click on the phone until the call started or failed: a second click does nothing. */
 const calling = ref(false);
+const callOff = computed(() => callBlocked.value !== undefined || calling.value || callStarting.value || (draft.value !== null && sending.value));
 
-async function callArianna(): Promise<void> {
-  if (callBlocked.value !== undefined || calling.value || callStarting.value) return;
+async function placeCall(): Promise<void> {
+  if (callee.value === undefined || callOff.value) return;
   calling.value = true;
   try {
-    const target = callTarget(current.value, page.value === 'chat');
-    if (target === 'new') {
-      const before = chat.value?.conversationId;
-      await createConversation('private');
-      // The core refused the new conversation: no call in the one that was open.
-      if (chat.value === null || chat.value.conversationId === before) return;
-    } else if (chat.value?.conversationId !== target.here) {
-      return;
-    }
-    showSidebar.value = false;
-    await store.startCall();
+    if (current.value !== undefined) await store.startCall();
+    else await store.callDraft();
   } finally {
     calling.value = false;
   }
+}
+
+/** Who answers in the call of a conversation: Arianna, or the agent of its direct chat. */
+function calleeIn(id: string | undefined): Callee {
+  const conversation = current.value?.id === id ? current.value : conversations.value.find((item) => item.id === id);
+  return calleeOf(conversation?.agent);
+}
+/** The character of who answers, Arianna's when the agent has none. */
+function characterOf(who: Callee): CharacterChoice | undefined {
+  return (who.agent === null ? undefined : characters.value?.agents[who.agent]) ?? characters.value?.agents.arianna;
 }
 
 // Drawers on narrow screens; collapsed bars on wide ones, remembered in this browser (D-097).
@@ -182,12 +183,7 @@ function foldSidebar(): void {
   showSidebar.value = false;
 }
 
-/** The right bar: a column from 3xl, a drawer below (D-150). */
-function openPanel(): void {
-  showSidebar.value = false;
-  if (panelColumn()) layout.value.panel = false;
-  else showPanel.value = true;
-}
+/** The right bar: a column from 3xl, a drawer below (D-150); its button is in the top bar. */
 function closePanel(): void {
   if (panelColumn()) layout.value.panel = true;
   showPanel.value = false;
@@ -685,18 +681,12 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :inert="!showSidebar && !wideSidebar"
       :live="live"
       :page="page === 'dev' || page === 'changelog' || page === 'new-agent' ? 'settings' : page"
-      :theme="theme"
       :conversations="conversations"
       :archived="archived"
       :system-chats="systemChats"
       :selected="chat?.conversationId ?? null"
       :rename="store.rename"
-      :agent-ids="agentIds"
-      :characters="characters"
-      :pose-for="poseFor"
       :status="status"
-      :call-blocked="callBlocked"
-      :call-starting="callStarting || calling"
       :dev-pending="devPending"
       :secretary-open="secretaryOpen"
       @fold="foldSidebar"
@@ -709,10 +699,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @office="openOffice"
       @projects="openProjects"
       @cardwall="openCardwall"
-      @call="callArianna"
       @settings="openSettings"
-      @theme="(value) => (theme = value)"
-      @agents="openPanel"
       @open="openConversation"
       @archive="store.archive"
       @pin="store.pin"
@@ -794,33 +781,35 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         >
           <Icon name="close" :size="14" />{{ ending ? 'Cancello…' : 'Termina' }}
         </button>
-        <!-- No call later from an incognito conversation (D-136): the core skips its outgoing calls. -->
-        <div v-if="current !== undefined && page === 'chat' && !incognitoOpen" class="relative">
-          <button
-            type="button"
-            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink disabled:opacity-60"
-            :disabled="voiceState === 'off' || current.archivedAt !== null"
-            aria-label="Fatti chiamare da Arianna più tardi"
-            title="Fatti chiamare da Arianna più tardi"
-            :aria-expanded="showSchedule"
-            @click="openSchedule"
-          >
-            <Icon name="clock" />
-          </button>
-          <form v-if="showSchedule" class="hud-card absolute top-11 right-0 z-40 flex w-64 flex-col gap-2 bg-surface p-3 text-sm" @submit.prevent="confirmSchedule">
-            <label class="flex flex-col gap-1">
-              Arianna ti chiama alle
-              <input v-model="scheduleAt" type="datetime-local" required class="rounded-md border border-line bg-surface-2 px-2 py-1" />
-            </label>
-            <p class="text-xs text-muted">Anche nelle fasce di silenzio; conta nel massimo di chiamate al giorno.</p>
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn px-2.5 py-1 text-xs" @click="showSchedule = false">Annulla</button>
-              <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs">Programma</button>
-            </div>
-          </form>
-        </div>
+        <!--
+          The phone (D-158): calls Arianna or the agent of the direct chat; on a new page it creates the conversation first.
+          Not `disabled`: it stays reachable with Tab and says why it cannot call. Never in incognito (D-136).
+        -->
+        <button
+          v-if="callee !== undefined"
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-lg text-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-60 [&:not([aria-disabled=true])]:hover:bg-surface-2 [&:not([aria-disabled=true])]:hover:text-ink"
+          :aria-disabled="callOff ? 'true' : undefined"
+          :aria-label="`Chiama ${callee.the}`"
+          :aria-describedby="callBlocked !== undefined ? 'call-why' : undefined"
+          :title="callBlocked === undefined ? `Chiama ${callee.the}` : `Chiama ${callee.the}: ${callBlocked}`"
+          @click="placeCall"
+        >
+          <Icon name="phone" />
+        </button>
+        <span v-if="callee !== undefined && callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
         <InstallationBadge v-if="installation !== undefined" :info="installation" />
         <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
+        <!-- The theme (D-158): one button, each click Chiaro → Scuro → Auto; the icon is the active theme. Also in Impostazioni → Aspetto. -->
+        <button
+          type="button"
+          class="grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface-2 text-muted hover:text-ink"
+          :aria-label="themeLabel(theme)"
+          :title="themeLabel(theme)"
+          @click="theme = nextTheme(theme)"
+        >
+          <Icon :name="THEME_ICON[theme]" />
+        </button>
         <button
           type="button"
           class="relative grid size-9 place-items-center rounded-lg border border-line-strong bg-surface-2 3xl:hidden"
@@ -866,7 +855,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <Icon name="incognito" :size="14" />
         <span class="flex-1">{{ incognitoSoon }}</span>
       </p>
-      <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo Arianna… la prima volta i modelli si caricano.</p>
+      <p v-if="callStarting" class="mx-4 mt-3 text-sm text-muted" aria-live="polite">Chiamo {{ (callee ?? calleeIn(incoming?.conversationId)).the }}… la prima volta i modelli si caricano.</p>
       <p v-if="strayCall !== null && callSession === null" role="status" class="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">
         <Icon name="phone" :size="14" />
         <span class="flex-1">Una chiamata risulta ancora aperta (forse da una pagina chiusa o ricaricata).</span>
@@ -874,7 +863,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" />
       <ChangelogPage v-else-if="page === 'changelog'" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
@@ -996,7 +985,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       v-if="incoming !== null && callSession === null"
       :reason="incoming.reason"
       :title="conversations.find((item) => item.id === incoming?.conversationId)?.title ?? 'Conversazione'"
-      :choice="characters?.agents.arianna"
+      :callee="calleeIn(incoming.conversationId)"
+      :choice="characterOf(calleeIn(incoming.conversationId))"
       @answer="store.answerIncoming"
       @decline="store.declineIncoming"
     />
@@ -1005,7 +995,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :session="callSession"
       :title="conversations.find((item) => item.id === callSession?.call.conversationId)?.title ?? 'Chiamata'"
       :messages="chat?.conversationId === callSession.call.conversationId ? chat.messages : []"
-      :choice="characters?.agents.arianna"
+      :callee="calleeIn(callSession.call.conversationId)"
+      :choice="characterOf(calleeIn(callSession.call.conversationId))"
       @hang-up="store.hangUp"
     />
 
