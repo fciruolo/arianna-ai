@@ -25,6 +25,7 @@ import VoiceClones from './VoiceClones.vue';
  * candidates write it; then one reply is spoken by each text-to-speech
  * candidate. Everything runs on this machine; nothing is saved.
  */
+const emit = defineEmits<{ back: [] }>();
 const trial = ref<VoiceTrial | null>(null);
 const problem = ref<string | null>(null);
 let poll: number | undefined;
@@ -194,6 +195,7 @@ onBeforeUnmount(() => {
   <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
     <div class="mx-auto flex max-w-[760px] flex-col gap-5">
       <header>
+        <button type="button" class="mb-2 text-xs text-muted hover:text-ink" @click="emit('back')"><span aria-hidden="true">‹ </span>Voce</button>
         <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">Provino della voce</h1>
         <p class="mt-1 text-sm text-muted">
           Scegli a orecchio chi ascolta e chi parla nelle chiamate. Tutto gira su questo computer e non viene salvato nulla.

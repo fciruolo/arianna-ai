@@ -583,7 +583,7 @@ function leave(to: 'voiceTrial' | 'devProgress' | 'changelog'): void {
 let fromIndex = false;
 function open(item: IndexItem): void {
   if (item.page !== undefined) {
-    leave(item.id === 'dev-progress' ? 'devProgress' : item.id === 'changelog' ? 'changelog' : 'voiceTrial');
+    leave(item.id === 'dev-progress' ? 'devProgress' : 'changelog');
     return;
   }
   // The texts of the user's agents live in the Agenti page only: another section drops them.
@@ -671,7 +671,7 @@ watch(active, () => {
     <div ref="pane" :inert="proposal !== null" class="min-h-0 min-w-0 flex-1 overflow-y-auto lg:block" :class="chosen.explicit ? 'block' : 'hidden'">
       <div :class="active === 'agents' || active === 'models' ? 'max-w-[1240px]' : 'max-w-[860px]'" class="@container mx-auto flex flex-col gap-5 px-4 pt-5 pb-24 md:px-6 short:gap-4 short:pt-4">
         <header>
-          <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex">‹ Impostazioni</button>
+          <button type="button" class="mb-2 text-sm text-muted hover:text-ink lg:hidden" @click="backToIndex"><span aria-hidden="true">‹ </span>Impostazioni</button>
           <h1 class="font-hud text-xl font-semibold tracking-[0.05em]">{{ chosen.item.title }}</h1>
           <p class="mt-1 flex items-center gap-1.5 text-xs text-muted">
             <span v-if="chosen.item.privacy" class="inline-flex text-warn"><Icon name="gateway" :size="13" /></span>{{ BEHAVIOUR_TEXT[chosen.item.behaviour] }}

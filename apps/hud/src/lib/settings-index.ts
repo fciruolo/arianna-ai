@@ -4,7 +4,7 @@
  * (`/impostazioni/<slug>`) so that a reload and the back button keep it.
  * Pure: the page and the address use it, it decides.
  */
-import { CHANGELOG_PATH, DEV_PATH, SETTINGS_PATH, VOICE_TRIAL_PATH } from './route.ts';
+import { CHANGELOG_PATH, DEV_PATH, SETTINGS_PATH } from './route.ts';
 
 /** How a section takes effect, as checked in the code of the core (settings-page.ts, D-071). */
 export type SectionBehaviour = 'now' | 'restart' | 'confirm' | 'read' | 'action' | 'browser';
@@ -49,7 +49,6 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
     items: [
       { id: 'agents', slug: 'agenti', title: 'Agenti', behaviour: 'now' },
       { id: 'voice', slug: 'voce', title: 'Voce', behaviour: 'now' },
-      { id: 'voice-trial', slug: 'provino-della-voce', title: 'Provino della voce', behaviour: 'now', page: VOICE_TRIAL_PATH },
       { id: 'notifications', slug: 'notifiche', title: 'Notifiche', behaviour: 'now' },
       // The secretary (I-12, D-144): reminders on or off, the three moments, the days.
       { id: 'secretary', slug: 'segretaria', title: 'Segretaria', behaviour: 'now' },
@@ -92,7 +91,8 @@ export interface ChosenSection {
 /**
  * Addresses of sections that became part of another: Personaggi and
  * Personalità are in Agenti (D-116); Modelli locali, Prove dei modelli and
- * Modelli cloud are in Modelli (D-137).
+ * Modelli cloud are in Modelli (D-137); the voice trial is a button of Voce
+ * (D-066), its page keeps its own address.
  */
 const MOVED: Record<string, string> = {
   personaggi: 'agenti',
@@ -100,6 +100,7 @@ const MOVED: Record<string, string> = {
   'modelli-locali': 'modelli',
   'prove-dei-modelli': 'modelli',
   'modelli-cloud': 'modelli',
+  'provino-della-voce': 'voce',
 };
 
 /** The section of a slug; none, unknown or a page of its own gives the first section. */
