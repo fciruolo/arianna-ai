@@ -64,45 +64,45 @@ Prima parte di codice, dopo le risposte:
 
 ### Domande per l'utente
 
-1. **Clone separato `~/arianna-dev` come progetto L1, con le modifiche portate nell'installazione solo con `git pull`?** Raccomandazione: sì; è l'unica forma che non apre `data/` e non richiede di allentare D-058.
-   - Contesto: Vuoi poter sviluppare Arianna chattando con Arianna. Il Coder (l'agente che scrive codice) però non può lavorare nella cartella dell'installazione vera, perché lì ci sono database, password e conversazioni. Si decide dove lavora: in una copia separata del codice (un "clone" di git) che contiene solo dati finti.
-   - Opzione consigliata: Sì, clone separato — ~/arianna-dev come progetto L1; il Coder vede solo il codice e i dati finti; le modifiche arrivano all'installazione solo quando tu fai git pull; nessuna regola di sicurezza va allentata.
-   - Opzione: Nella cartella dell'installazione — più comodo, ma il Coder avrebbe accesso a data/ (database, vault, conversazioni): contraddice D-058 e la regola "solo dati finti".
+1. **Il Coder sviluppa Arianna in una copia separata del codice, con solo dati finti?** Raccomandazione: sì, clone `~/arianna-dev` come progetto L1, con le modifiche portate nell'installazione solo con `git pull`; è l'unica forma che non apre `data/` e non richiede di allentare D-058.
+   - Contesto: Vuoi poter sviluppare Arianna chattando con Arianna. Chi scrive il codice è il Coder, un agente che lavora con Claude Code. Il Coder però non può lavorare nella cartella dell'installazione vera, perché lì ci sono database, password e le tue conversazioni (la regola dei progetti, D-058, lo vieta). Si decide dove lavora. La proposta è una copia separata del codice (un "clone" di git) sotto la tua cartella utente, che contiene solo dati finti ed è registrata come progetto di livello L1 (dati di lavoro che possono andare a Claude).
+   - Opzione consigliata: Sì, copia separata — il Coder vede solo il codice e i dati finti; le modifiche arrivano all'installazione vera solo quando tu lanci git pull; nessuna regola di sicurezza va allentata.
+   - Opzione: Nella cartella dell'installazione — più comodo, ma il Coder vedrebbe database, cassaforte delle password e conversazioni: contraddice D-058 e la regola "solo dati finti in sviluppo".
    - Opzione: Rimandare — si continua solo con Claude Code nel terminale; nessun lavoro ora, ma niente sviluppo da dentro Arianna.
-   - Esempio: Chiedi nella scheda "Sviluppo" di aggiungere un test; il Coder lo scrive in ~/arianna-dev. Tu guardi i file cambiati, fai il commit nel clone e poi, nella cartella vera, git pull porta il test nell'installazione. Il database con le tue conversazioni non è mai stato visibile al Coder.
-2. **Memoria di sviluppo: (c1) tutto lo sviluppo si sposta nel clone, anche Claude Code nel terminale, con una sola `docs/HANDOFF.md`; oppure (c2) un file distinto per la scheda (`docs/DEV-HANDOFF.md`) accanto a HANDOFF?** Raccomandazione: (c1); con (c2) due memorie vanno tenute allineate a mano. Se HANDOFF diventa troppo lungo, un `docs/DEV-LOG.md` solo in coda (una voce per run), sempre in git.
-   - Contesto: Fra una sessione e l'altra lo sviluppo si ricorda le cose grazie a docs/HANDOFF.md (dove siamo, cosa resta). Se si sviluppa sia nel clone (dalla chat) sia nella cartella vera (dal terminale) nascono due HANDOFF che divergono. Si decide come tenere una sola memoria.
-   - Opzione consigliata: (c1) Tutto nel clone — una sola HANDOFF; anche Claude Code nel terminale lavora nel clone; la cartella vera riceve solo git pull; una memoria sola, niente da allineare a mano.
-   - Opzione: (c2) File distinto per la scheda — docs/DEV-HANDOFF.md; il terminale continua come oggi, ma due memorie vanno lette entrambe e tenute allineate a mano.
-   - Esempio: Lunedì dal terminale chiudi il task "barre di scorrimento" e lo scrivi in HANDOFF; martedì dalla chat chiedi "cosa resta?". Con (c1) il Coder legge la stessa HANDOFF e lo sa; con (c2) legge DEV-HANDOFF, dove quel lavoro non c'è, e potrebbe rifarlo.
-3. **Scheda agente nuova `developer` (L1, niente `kb.*`) o riuso del `coder` con una regola in più?** Raccomandazione: scheda nuova; la differenza (niente KB, legge e aggiorna HANDOFF, non fa commit) è dichiarativa e testabile, e lascia il `coder` com'è per gli altri progetti.
-   - Contesto: Una "scheda agente" è il file che dice a un agente cosa può fare (strumenti, livello di riservatezza, regole). Per lo sviluppo di Arianna servono regole in più: niente accesso alla knowledge base (kb), rileggere e aggiornare HANDOFF, non fare commit. Si decide se scriverle in una scheda nuova o aggiungerle al Coder che già esiste.
-   - Opzione consigliata: Scheda nuova developer — le regole sono scritte nel file e controllate da test; il Coder resta com'è per gli altri progetti.
-   - Opzione: Riuso del coder con una regola in più — un file in meno, ma la regola speciale vale solo "a parole" e rischia di toccare anche gli altri progetti.
-   - Esempio: Nella chat di sviluppo chiedi "cerca nei miei appunti come avevamo chiamato la funzione". Con la scheda developer lo strumento kb.search non esiste proprio e un test lo garantisce; con il coder modificato dipende da una regola nel prompt.
-4. **Chi fa il commit nel clone?** Raccomandazione: l'utente, a mano, dopo aver visto i file cambiati e `pnpm check`; più avanti una scheda di approvazione "commit" (azione locale reversibile) se l'utente la vuole.
-   - Contesto: Un commit salva in git una modifica in modo definitivo nella storia del codice. Si decide chi lo fa nel clone dopo che il Coder ha lavorato: tu o l'agente.
-   - Opzione consigliata: Tu, a mano — dopo aver visto file cambiati e pnpm check; nulla entra nella storia senza che tu l'abbia guardato; più avanti, se vuoi, una scheda di approvazione "commit" con un clic.
-   - Opzione: Il Coder, da solo, a fine lavoro — più veloce, ma codice che poi gira con i dati veri entrerebbe senza la tua revisione.
-   - Opzione: Subito una scheda "commit" — una scheda di approvazione; un clic invece di un comando, ma è codice in più da costruire ora.
-   - Esempio: Il Coder modifica 3 file per una nuova pagina; Arianna ti mostra l'elenco e l'esito di pnpm check (verde). Tu apri le differenze, ti convincono, e lanci git commit nel clone.
-5. **Una sola delega attiva sul progetto di sviluppo, le altre richieste in coda come carte?** Raccomandazione: sì, è la regola "una cosa alla volta" messa nel codice.
-   - Contesto: Se mentre il Coder lavora chiedi un'altra modifica, due lavori sullo stesso codice possono pestarsi i piedi. Si decide se ammettere un solo lavoro (una "delega") alla volta sul progetto di sviluppo.
-   - Opzione consigliata: Sì, una delega alla volta — le altre in coda come carte; la regola "una cosa alla volta" è garantita dal codice; le richieste nuove aspettano in Inbox.
-   - Opzione: Più deleghe in parallelo — si fa prima, ma due run possono modificare gli stessi file e il risultato diventa difficile da controllare.
-   - Esempio: Il Coder sta rifacendo la pagina Impostazioni e tu scrivi "aggiungi anche un pulsante Esporta". Invece di partire un secondo lavoro, compare una carta "in coda dopo il lavoro in corso", che parte quando il primo finisce.
-6. **Quando cominciare?** Raccomandazione: dopo la prova dal vivo di D-058 su un progetto finto e dopo il server MCP di Arianna (1.10: il 1.6 l'ha rinviato, D-050; `docs/PRIVACY-POLICY-SPEC.md` diceva 1.6 in un punto ed è stata allineata a 1.10 il 2026-10-05), perché senza `user.ask` il Coder su `claude -p` non può fare domande a metà lavoro.
-   - Contesto: Si decide quando cominciare a costruire la scheda di sviluppo. Mancano due pezzi: la prova dal vivo di D-058 (il Coder su un progetto vero) e il server MCP di Arianna (task 1.10), che dà al Coder lo strumento user.ask per farti domande a metà lavoro.
-   - Opzione consigliata: Dopo D-058 e il server MCP — dopo la prova di D-058 e il server MCP del task 1.10; si parte su basi verificate e il Coder può chiederti chiarimenti mentre lavora.
-   - Opzione: Subito, senza user.ask — si comincia prima, ma il Coder non può fermarsi a chiedere e deve indovinare o abbandonare il lavoro.
-   - Opzione: Più avanti, dopo la Fase 1A — nessuna fretta, priorità ad altro.
+   - Esempio: Nella scheda "Sviluppo" chiedi di aggiungere un test; il Coder lo scrive in ~/arianna-dev. Guardi i file cambiati, fai il commit nella copia e poi, nella cartella vera, git pull porta il test nell'installazione. Il database con le tue conversazioni non è mai stato visibile al Coder.
+2. **Una sola memoria di sviluppo, tutta nella copia, o due file separati?** Raccomandazione: (c1), tutto lo sviluppo si sposta nel clone, anche Claude Code nel terminale, con una sola `docs/HANDOFF.md`; con (c2), un file distinto `docs/DEV-HANDOFF.md`, due memorie vanno tenute allineate a mano. Se HANDOFF diventa troppo lungo, un `docs/DEV-LOG.md` solo in coda (una voce per run), sempre in git.
+   - Contesto: Fra una sessione e l'altra lo sviluppo si ricorda le cose grazie al file docs/HANDOFF.md (dove siamo, cosa resta, cosa aspetta te). Se si sviluppa sia nella copia (dalla chat di Arianna) sia nella cartella vera (da Claude Code nel terminale), nascono due HANDOFF che dicono cose diverse. Si decide come tenere una memoria sola.
+   - Opzione consigliata: Tutto nella copia, una sola HANDOFF — anche Claude Code nel terminale lavora nella copia; la cartella vera riceve solo git pull; niente da allineare a mano.
+   - Opzione: Un file in più per la chat — docs/DEV-HANDOFF.md per la scheda Sviluppo; il terminale resta com'è, ma due memorie vanno lette tutte e due e tenute allineate a mano.
+   - Esempio: Lunedì dal terminale chiudi il lavoro "barre di scorrimento" e lo scrivi in HANDOFF; martedì dalla chat chiedi "cosa resta?". Con una sola HANDOFF il Coder lo sa; con due file legge DEV-HANDOFF, dove quel lavoro non c'è, e potrebbe rifarlo.
+3. **Per lo sviluppo di Arianna serve un agente nuovo o basta il Coder con una regola in più?** Raccomandazione: scheda nuova `developer` (L1, niente `kb.*`); la differenza (niente KB, legge e aggiorna HANDOFF, non fa commit) è dichiarativa e testabile, e lascia il `coder` com'è per gli altri progetti.
+   - Contesto: Una "scheda agente" è il file che dice a un agente cosa può fare: strumenti, livello di riservatezza, regole. Per sviluppare Arianna servono regole in più: niente accesso alle tue note (la knowledge base, strumenti kb), rileggere e aggiornare HANDOFF, non fare commit. Si decide se scriverle in una scheda nuova o aggiungerle al Coder che già esiste.
+   - Opzione consigliata: Scheda nuova "developer" — le regole stanno nel file e un test le controlla; il Coder resta com'è per gli altri progetti.
+   - Opzione: Coder con una regola in più — un file in meno, ma la regola speciale vale solo "a parole" nel prompt e rischia di toccare anche gli altri progetti.
+   - Esempio: Nella chat di sviluppo scrivi "cerca nei miei appunti come avevamo chiamato la funzione". Con la scheda developer lo strumento di ricerca nelle note non esiste proprio e un test lo garantisce; con il Coder modificato dipende da una frase nel prompt.
+4. **Chi fa il commit nella copia di sviluppo?** Raccomandazione: l'utente, a mano, dopo aver visto i file cambiati e `pnpm check`; più avanti una scheda di approvazione "commit" (azione locale reversibile) se l'utente la vuole.
+   - Contesto: Un commit salva una modifica nella storia del codice. Dopo che il Coder ha lavorato nella copia, qualcuno deve decidere se quella modifica entra nella storia. Si decide chi lo fa: tu o l'agente.
+   - Opzione consigliata: Tu, a mano — dopo aver visto i file cambiati e il controllo completo (pnpm check); nulla entra senza che tu l'abbia guardato; più avanti, se vuoi, un pulsante di approvazione.
+   - Opzione: Il Coder, da solo — più veloce, ma codice che poi gira con i tuoi dati veri entrerebbe senza la tua revisione.
+   - Opzione: Subito un pulsante "commit" — un clic invece di un comando, ma è codice in più da costruire adesso.
+   - Esempio: Il Coder modifica 3 file per una nuova pagina; Arianna ti mostra l'elenco e l'esito del controllo (verde). Apri le differenze, ti convincono e lanci git commit nella copia.
+5. **Sul progetto di sviluppo un solo lavoro alla volta, gli altri in coda?** Raccomandazione: sì, una sola delega attiva, le altre richieste in coda come carte; è la regola "una cosa alla volta" messa nel codice.
+   - Contesto: Una "delega" è un lavoro che Arianna passa al Coder. Se mentre il Coder lavora chiedi un'altra modifica, due lavori sullo stesso codice possono pestarsi i piedi. Si decide se ammettere un solo lavoro alla volta sul progetto di sviluppo, mettendo gli altri in coda come carte (i promemoria di lavoro della chat).
+   - Opzione consigliata: Uno alla volta, gli altri in coda — la regola "una cosa alla volta" la garantisce il codice; le richieste nuove aspettano in Inbox e partono dopo.
+   - Opzione: Più lavori in parallelo — si fa prima, ma due lavori possono modificare gli stessi file e il risultato diventa difficile da controllare.
+   - Esempio: Il Coder sta rifacendo la pagina Impostazioni e tu scrivi "aggiungi anche un pulsante Esporta". Invece di partire un secondo lavoro compare la carta "in coda dopo il lavoro in corso", che parte quando il primo finisce.
+6. **Quando cominciare a costruire lo sviluppo da dentro Arianna?** Raccomandazione: dopo la prova dal vivo di D-058 su un progetto finto e dopo il server MCP di Arianna (1.10: il 1.6 l'ha rinviato, D-050; `docs/PRIVACY-POLICY-SPEC.md` diceva 1.6 in un punto ed è stata allineata a 1.10 il 2026-10-05), perché senza `user.ask` il Coder su `claude -p` non può fare domande a metà lavoro.
+   - Contesto: Mancano due pezzi. Il primo è la prova dal vivo del Coder su un tuo progetto fuori dalla cartella di Arianna (D-058). Il secondo è il "server MCP" di Arianna, cioè il canale che dà al Coder lo strumento user.ask per farti domande a metà lavoro. Si decide se aspettarli o partire prima.
+   - Opzione consigliata: Dopo la prova e il server MCP — si parte su basi verificate e il Coder può chiederti chiarimenti mentre lavora.
+   - Opzione: Subito, senza domande a metà — si comincia prima, ma il Coder non può fermarsi a chiedere: deve indovinare o abbandonare il lavoro.
+   - Opzione: Dopo la Fase 1A — nessuna fretta, la priorità resta alla fase in corso.
    - Esempio: Chiedi "rifai i colori della chat". Con user.ask il Coder a metà ti chiede "tengo il verde attuale come accento?"; senza, sceglie da solo e magari devi rifare tutto.
-7. **Chi lancia `pnpm check` completo dopo un run, visto che nella sandbox i test con server su loopback non girano?** Raccomandazione: all'inizio tu, a mano nel clone; più avanti il core, fuori dalla sandbox, con ambiente minimo e solo dopo che hai visto i file cambiati.
-   - Contesto: pnpm check è il controllo completo (tipi, test, lint, eval). Il Coder lavora in una "sandbox", una gabbia senza rete, dove molti test che avviano piccoli server locali non possono girare. Si decide chi lancia il controllo completo dopo un lavoro.
-   - Opzione consigliata: Prima tu, poi il core — all'inizio tu, a mano nel clone; più avanti il core; nessun codice nuovo gira fuori dalla gabbia senza che tu l'abbia visto; poi il core lo farà con un ambiente senza segreti.
-   - Opzione: Subito il core — automaticamente a fine run; comodo, ma esegue fuori dalla gabbia codice appena scritto dal Coder prima che tu lo guardi.
-   - Opzione: Solo i controlli nella sandbox — niente passi manuali, ma i test con server locali restano scoperti.
-   - Esempio: Il Coder finisce con build, lint ed eval verdi nella sandbox. Tu apri il terminale in ~/arianna-dev, lanci pnpm check e vedi un test dei server locali fallire: lo segnali in chat prima del commit.
+7. **Chi lancia il controllo completo (`pnpm check`) dopo un lavoro del Coder?** Raccomandazione: all'inizio tu, a mano nel clone; più avanti il core, fuori dalla sandbox, con ambiente minimo e solo dopo che hai visto i file cambiati.
+   - Contesto: pnpm check è il controllo completo del codice: tipi, test, stile, eval. Il Coder lavora in una "sandbox", una gabbia senza rete, dove molti test che avviano piccoli server sul Mac non possono girare. Quindi il controllo completo va lanciato fuori dalla gabbia, eseguendo codice appena scritto dal Coder. Si decide chi lo fa.
+   - Opzione consigliata: Prima tu, poi il core — all'inizio lo lanci tu nella copia; più avanti lo fa il core, senza segreti e solo dopo che hai visto i file cambiati.
+   - Opzione: Subito il core, in automatico — comodo, ma esegue fuori dalla gabbia codice appena scritto prima che tu lo guardi.
+   - Opzione: Solo i controlli nella gabbia — niente passi a mano, ma i test che avviano server restano scoperti.
+   - Esempio: Il Coder finisce con controlli dei tipi, stile ed eval verdi nella gabbia. Apri il terminale in ~/arianna-dev, lanci pnpm check e vedi fallire un test dei server locali: lo segnali in chat prima del commit.
 
 ---
 
@@ -185,41 +185,26 @@ Importatore a sola lettura, che non attiva nulla e non tocca prompt, router né 
 
 ### Domande per l'utente
 
-1. **Catalogo come proposto: clone a commit fissato in `data/catalogs/`, importatore, schede proposte e attive solo con l'approvazione?** Raccomandazione: sì; "solo ispirazione" perde troppo, la copia in git porta troppo.
-   - Contesto: agency-agents è una raccolta pubblica (licenza MIT) di oltre 230 descrizioni di agenti specializzati (marketing, design, codice...). La parte a sola lettura è già fatta (importatore e indice, nulla attivato). Si conferma l'impostazione intera: copia del catalogo fissata a una versione precisa, importatore, schede proposte e attive solo con la tua approvazione.
-   - Opzione consigliata: Sì, come proposto — 230 ruoli pronti, ma nessuno si attiva senza di te e il testo di terzi non sceglie strumenti né livelli di riservatezza.
-   - Opzione: Solo ispirazione, nessun import — nessun rischio da testo di terzi, ma si perde il valore principale; l'importatore già scritto andrebbe tolto.
-   - Opzione: Copiare i file nel nostro git — semplice da usare, ma 230 prompt di terzi nel repository, con l'avviso di licenza per ciascuno e aggiornamenti senza revisione.
-   - Esempio: Cerchi "Code Reviewer" nel catalogo, premi "Proponi scheda"; Arianna prepara una scheda disattivata con i nostri strumenti (non quelli che chiede il file). La attivi tu dopo averla letta.
-2. **Chi fa il clone e quando?** Raccomandazione: l'utente lo fa la prima volta (rete, cartella in `data/`, fuori dalla portata di Claude per l'hook), con `git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents && git -C data/catalogs/agency-agents checkout 8329468`; poi Claude scrive l'importatore e lo prova su file finti.
-   - Contesto: Per usare il catalogo serve scaricarne una copia (un "clone" git) dentro data/catalogs/. Claude non può scrivere in data/ né usare la rete per questo. Si decide chi lo fa e quando. L'importatore è già pronto e, finché config/agency.lock ha la versione abbreviata, mostra quella completa da copiare.
-   - Opzione consigliata: Lo fai tu la prima volta — con il comando del documento; un comando (git clone ... e git checkout 8329468); poi Claude completa il lock e prova l'importatore.
-   - Opzione: Comando pnpm agency:fetch — lo fa da solo; più comodo, ma è codice in più che scarica dalla rete, da scrivere e controllare.
-   - Opzione: Più avanti, quando servirà il catalogo — nessun passo ora; l'importatore resta inutilizzato.
-   - Esempio: Nel terminale lanci git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents e poi il checkout; pnpm agency:import ti stampa lo sha completo, che Claude copia in config/agency.lock.
-3. **Tetto delle schede adottate:** chiusa dalla scelta di T3b (D-119): le schede di agency-agents restano L0, con prompt L0.
-4. **Autonomia delle schede adottate: A0 (solo proposte) o A1 (sandbox)?** Raccomandazione: A0 per le divisioni senza codice, A1 per `engineering`/`testing` con gli strumenti del Coder.
-   - Contesto: L'autonomia dice quanto un agente può fare da solo: A0 = solo proposte (scrive testo, non tocca file), A1 = lavora nella sandbox (una gabbia senza rete) con gli strumenti del Coder. Si decide l'autonomia delle schede prese dal catalogo.
-   - Opzione consigliata: A0, A1 solo per codice e test — A0 per le divisioni senza codice, A1 per engineering e testing; chi scrive codice può provarlo nella gabbia; gli altri si limitano a proporre testo.
-   - Opzione: A0 per tutte — nessun agente di terzi tocca file, ma quelli di codice diventano solo consiglieri.
-   - Opzione: A1 per tutte — più autonomia anche dove non serve, con più superficie per eventuali istruzioni malevole.
-   - Esempio: "Test Engineer" (A1) scrive e lancia nella sandbox un test per il progetto finto; "Sales Coach" (A0) ti propone una bozza di email ma non può salvarla né inviarla.
-5. **Dove vanno le schede approvate: `agents/` in git o una cartella di schede dell'utente fuori da git (`data/agents/`)?** Raccomandazione: `data/agents/` fuori da git, caricata dallo stesso loader con le stesse regole: sono scelte personali dell'utente e portano testo di terzi; `agents/` resta per le schede di Arianna.
-   - Contesto: Quando approvi una scheda del catalogo, va salvata da qualche parte. agents/ è nel repository git (le schede di Arianna, condivise con il codice); data/agents/ è fuori da git (scelte tue, personali). Si decide dove vanno.
-   - Opzione consigliata: data/agents/, fuori da git — stesse regole di controllo, ma le tue scelte e il testo di terzi non finiscono nel repository né sul remoto.
-   - Opzione: agents/ in git — tutto in un posto e versionato, ma il repository si riempie di prompt di terzi con obbligo di licenza e di scelte personali.
-   - Esempio: Approvi "UX Researcher". La scheda finisce in data/agents/ux-researcher.yaml: Arianna la carica come le altre, ma se pubblichi il repository quella scheda non c'è.
-6. **Quali divisioni ti servono davvero?** Raccomandazione di partenza: `engineering`, `testing`, `design`, `product`, `research`; le altre nell'indice ma nascoste finché non le chiedi.
-   - Contesto: Il catalogo ha 18 divisioni (engineering, design, marketing, vendite, finanza, sanità, giochi...). Mostrarle tutte rende la pagina lunga e piena di agenti che non userai. Si decide quali mostrare all'inizio; le altre restano nell'indice, nascoste.
-   - Opzione consigliata: Cinque divisioni — engineering, testing, design, product, research; le divisioni più vicine al tuo lavoro; le altre si accendono quando le chiedi.
-   - Opzione: Tutte e 18 visibili — niente da scegliere, ma un elenco di oltre 230 agenti da scorrere.
-   - Opzione: Scelgo io l'elenco — scrivi le divisioni che vuoi nella risposta.
-   - Esempio: Apri la pagina Agenzia e vedi 5 gruppi; cercando "marketing" la pagina ti dice che la divisione è nascosta e ti offre di mostrarla.
-7. **Pagina "Agenzia" nelle Impostazioni o in chat?** Raccomandazione: nelle Impostazioni (è un'impostazione: quali agenti esistono), con un suggerimento in chat che porta lì.
-   - Contesto: Serve un posto per sfogliare il catalogo, proporre schede e vedere quali sono attive. Si decide se è una pagina delle Impostazioni o qualcosa che si fa parlando in chat.
-   - Opzione consigliata: Pagina nelle Impostazioni — con un suggerimento in chat che porta lì; quali agenti esistono è un'impostazione; in chat Arianna può solo suggerire, mai attivare.
-   - Opzione: Solo in chat — niente pagina nuova, ma scegliere fra 230 agenti scrivendo è scomodo e non si vede lo stato.
-   - Esempio: Chiedi ad Arianna "mi serve aiuto per una landing page". Lei risponde "nel catalogo c'è Landing Page Designer: vuoi vederlo?" e il link apre Impostazioni → Agenzia su quell'agente.
+2. **Chi scarica la copia del catalogo agency-agents, e quando?** Raccomandazione: l'utente lo fa la prima volta (rete, cartella in `data/`, fuori dalla portata di Claude per l'hook), con `git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents && git -C data/catalogs/agency-agents checkout 8329468`; poi Claude completa `config/agency.lock` e prova l'importatore.
+   - Contesto: agency-agents è una raccolta pubblica e gratuita (licenza MIT) di oltre 230 descrizioni di agenti pronti (marketing, design, codice…). Arianna sa già leggerla: l'importatore propone schede spente, e D-119 ha deciso che compariranno fra le sorgenti di un agente nuovo (tappa T4, non ancora costruita). Manca però la copia del catalogo sul Mac, da scaricare con git in data/catalogs/. Claude non può scrivere in data/ né usare la rete per questo. Oggi config/agency.lock ha ancora la versione abbreviata del catalogo, che va completata dopo il primo download.
+   - Opzione consigliata: Lo scarichi tu, una volta — due comandi nel terminale (git clone e git checkout); poi Claude copia la versione completa nel file del catalogo e prova l'importatore.
+   - Opzione: Un comando pnpm agency:fetch — fa tutto da solo; più comodo, ma è codice in più che scarica dalla rete, da scrivere e controllare.
+   - Opzione: Più avanti, quando servirà — nessun passo ora; le schede di agency-agents restano non disponibili.
+   - Esempio: Nel terminale lanci git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents e poi il checkout; pnpm agency:import ti stampa la versione completa, che Claude scrive in config/agency.lock. Con la tappa T4 quei ruoli compariranno in Impostazioni → Agenti → "+ Nuovo agente".
+6. **Quali gruppi del catalogo ti servono davvero?** Raccomandazione di partenza: `engineering`, `testing`, `design`, `product`, `research`; le altre nell'indice ma nascoste finché non le chiedi.
+   - Contesto: Il catalogo è diviso in 18 gruppi ("divisioni"): codice, test, design, prodotto, ricerca, marketing, vendite, finanza, sanità, giochi e altri. Mostrarli tutti rende l'elenco lungo e pieno di agenti che non userai. Si decide quali mostrare all'inizio; gli altri restano nell'indice, nascosti, e si accendono quando li chiedi.
+   - Opzione consigliata: Cinque gruppi — codice, test, design, prodotto e ricerca, i più vicini al tuo lavoro; gli altri si mostrano quando li chiedi.
+   - Opzione: Tutti e 18 visibili — niente da scegliere, ma oltre 230 agenti da scorrere.
+   - Opzione: Scelgo io l'elenco — scrivi nella risposta i gruppi che vuoi vedere.
+   - Esempio: Quando il catalogo arriva nella pagina Agenti, apri "+ Nuovo agente" e fra le sorgenti vedi 5 gruppi; cercando "marketing" la pagina ti dice che il gruppo è nascosto e ti offre di mostrarlo.
+
+### Domande chiuse
+
+- 1. Chiusa: è la stessa domanda della conferma conf-D-079 ("Confermi D-079"), che resta aperta; inoltre l'utente ha già scelto di usare le schede di agency-agents fra le sorgenti di un agente nuovo (D-119).
+- 3. Chiusa: decisa in D-119 (tappa T3b): le schede di agency-agents restano L0, con prompt L0.
+- 4. Chiusa: decisa in D-119 (tappa T3b) e nella revisione di D-079 per la tappa T4 (0.9.1): permessi di partenza `code` per engineering e testing, `answer` per gli altri gruppi; autonomia A0 o A1 scelta agente per agente nella pagina Agenti, dentro il tetto A1.
+- 5. Chiusa: decisa in D-119: le schede create o adottate dall'utente stanno in `data/agents/`, fuori da git; in `agents/` solo con la promozione esplicita a "ufficiale".
+- 7. Chiusa: decisa in D-119 (risposte dell'utente del 2026-10-05): le proposte di agency-agents entrano nel modulo "+ Nuovo agente" di Impostazioni → Agenti, accanto ai modelli di scheda (tappa T4, da costruire).
 
 ---
 
@@ -305,45 +290,43 @@ Seconda parte, dopo le risposte: strumento `kb.capture` per Arianna (tocca `pack
 
 ### Domande per l'utente
 
-1. **Ogni cosa catturata nasce L2 in `kb/inbox/`, anche da una conversazione di lavoro, e si abbassa solo con la tua approvazione?** Raccomandazione: sì; è il default-deny applicato all'ingresso, e costa solo un clic quando vuoi davvero declassare.
-   - Contesto: Arianna salva in kb/inbox/ ciò che le passi (pensieri, link, note). Ogni nota ha un'etichetta di riservatezza: L2 = privato, il livello più protetto fra quelli usati. Applicato già così (prima parte di D-080, da confermare): tutto nasce L2, anche da una conversazione di lavoro, e si abbassa solo con la tua approvazione.
-   - Opzione consigliata: Confermo: tutto nasce L2 — si abbassa solo con la tua approvazione; un pensiero privato detto di passaggio non esce mai per sbaglio; declassare costa un clic.
-   - Opzione: Etichetta della conversazione — L1 se di lavoro; meno approvazioni, ma una cosa privata detta in una chat di lavoro finirebbe meno protetta.
-   - Esempio: In una conversazione di lavoro scrivi "/nota ricordami il controllo dal dentista giovedì". La nota nasce L2 anche se la chat è L1, e non potrà mai arrivare a un agente cloud.
-2. **L'Archivista propone (cartella, titolo, collegamenti, etichetta) e tu approvi, o sposta da solo?** Raccomandazione: propone (A1) per qualche settimana; poi, se le proposte sono buone, A2 per lo spostamento con una decisione registrata, mai per abbassare l'etichetta.
-   - Contesto: L'Archivista è l'agente che riordina le note dell'inbox: sceglie cartella, titolo, collegamenti ad altre note ed etichetta. Si decide se si limita a proporre (tu approvi) o se sposta le note da solo.
-   - Opzione consigliata: Propone, approvi tu (A1) — per qualche settimana, poi eventualmente sposta da solo; vedi subito se sbaglia; lo spostamento automatico arriva solo se le proposte sono buone, mai per abbassare l'etichetta.
-   - Opzione: Sposta da solo da subito (A2) — meno clic, ma un errore di cartella o di collegamento lo scopri tardi.
-   - Opzione: Solo a mano, nessun Archivista — controllo totale, ma l'inbox cresce senza ordine.
-   - Esempio: Hai 12 note nuove. L'Archivista propone "sposta in progetti/sito-demo, titolo 'Idee per la home', collega a [[Sito demo]]"; nella vista "Da archiviare" approvi 10 proposte in blocco e ne correggi 2.
-3. **Primo ingresso da costruire: "/nota" nella chat web, Telegram o la condivisione dal telefono?** Raccomandazione: "/nota" e "Salva in inbox" nella chat web (funziona anche dal telefono come PWA via Tailscale, senza terzi); Telegram per testo e link subito dopo, con l'avviso; la condivisione da iPhone dopo il 1.13.
-   - Contesto: Si sceglie da dove si cattura per primo. Nella notte Claude ha costruito "/nota" nella chat web (da confermare); tu hai poi detto di volere come ingresso principale la pagina "Pensieri". Restano Telegram e la condivisione dal telefono.
-   - Opzione consigliata: Pagina "Pensieri", più "/nota" — "Pensieri" come ingresso principale, con "/nota" in chat; ciò che hai chiesto; tutto resta sulla tua rete, anche dal telefono come app web via Tailscale (la VPN privata).
-   - Opzione: Telegram subito dopo, per testo e link — comodo dal telefono, ma il contenuto passa dai server di Telegram prima di arrivare ad Arianna.
-   - Opzione: Condivisione dal telefono — il gesto più naturale, ma su iPhone serve un Comando rapido e l'accesso con autenticazione (task 1.13), che oggi manca.
-   - Esempio: In treno ti viene un'idea, apri Arianna sul telefono via Tailscale, pagina Pensieri, scrivi due righe e premi Salva: la nota appare in kb/inbox/ come L2.
-4. **Link: scaricare la pagina per il riassunto è un'uscita di una URL L2. Va bene una declassificazione a L0 per singolo URL, approvata da te e registrata in `label_changes`, prima di ogni download?** Raccomandazione: sì; senza approvazione restano link e titolo che dai tu. Una regola generale richiederebbe prima una decisione che modifichi `docs/PRIVACY-POLICY-SPEC.md` (regole 3 e 4): non la propongo ora.
-   - Contesto: Per riassumere un link Arianna dovrebbe scaricare la pagina, ma l'indirizzo stesso dice cosa leggi ed è un dato privato (L2), che non può uscire. Per scaricarlo serve prima abbassare quel singolo indirizzo a pubblico (L0), con la tua approvazione registrata.
-   - Opzione consigliata: Sì, L0 per singolo URL — declassificazione approvata da te ogni volta; nulla esce senza il tuo sì; senza approvazione restano link e titolo che scrivi tu.
-   - Opzione: Mai scaricare, solo link e titolo — massima riservatezza, ma niente riassunti automatici.
-   - Opzione: Una regola per tutti i link — vale per tutti i link catturati; nessun clic, ma richiede prima di cambiare la specifica della privacy (regole 3 e 4): non proposta ora.
+1. **Tutto ciò che salvi nasce privato e si rende meno privato solo col tuo sì?** Raccomandazione: sì, ogni cosa catturata nasce L2 in `kb/inbox/`, anche da una conversazione di lavoro, e si abbassa solo con la tua approvazione; è il default-deny applicato all'ingresso, e costa solo un clic quando vuoi davvero declassare.
+   - Contesto: Arianna salva in kb/inbox/ ciò che le passi: pensieri, link, note. Ogni nota ha un'etichetta di riservatezza: L2 vuol dire privato, resta sul Mac e non arriva mai a Claude o Codex; L1 vuol dire di lavoro, può andare al cloud passando dal controllo. Oggi funziona già così (prima parte di D-080, da confermare): tutto nasce L2, anche se lo salvi da una conversazione di lavoro, e si abbassa solo con la tua approvazione.
+   - Opzione consigliata: Sì, tutto nasce privato (L2) — un pensiero privato detto di passaggio non esce mai per sbaglio; rendere pubblica una nota costa un clic.
+   - Opzione: Come la conversazione — L1 se la salvi da una chat di lavoro: meno approvazioni, ma una cosa privata detta in una chat di lavoro sarebbe meno protetta.
+   - Esempio: In una conversazione di lavoro scrivi "/nota ricordami il controllo dal dentista giovedì". La nota nasce privata anche se la chat è di lavoro, e non potrà mai arrivare a un agente cloud senza il tuo sì.
+2. **Chi riordina le note dell'inbox decide da solo o ti propone e decidi tu?** Raccomandazione: propone (A1) per qualche settimana; poi, se le proposte sono buone, A2 per lo spostamento con una decisione registrata, mai per abbassare l'etichetta.
+   - Contesto: L'Archivista è l'agente previsto per mettere in ordine le note nuove: sceglie cartella, titolo, collegamenti ad altre note ed etichetta. Oggi il modello locale riordina già titolo e riassunto (D-086), ma non sposta nulla. Si decide se l'Archivista si limita a proporre (A1, tu approvi) o sposta le note da solo (A2).
+   - Opzione consigliata: Propone, approvi tu — per qualche settimana; se le proposte sono buone passa a spostare da solo, ma mai per abbassare l'etichetta.
+   - Opzione: Sposta da solo da subito — meno clic, ma un errore di cartella o di collegamento lo scopri tardi.
+   - Opzione: Nessun Archivista, solo a mano — controllo totale, ma l'inbox cresce senza ordine.
+   - Esempio: Hai 12 note nuove. L'Archivista propone "sposta in progetti/sito-demo, titolo 'Idee per la home', collega alla nota Sito demo"; nella vista "Da archiviare" approvi 10 proposte in blocco e ne correggi 2.
+4. **Per riassumere un link Arianna può scaricare la pagina, chiedendoti il permesso ogni volta?** Raccomandazione: sì, una declassificazione a L0 per singolo URL, approvata da te e registrata in `label_changes`, prima di ogni download; senza approvazione restano link e titolo che dai tu. Una regola generale richiederebbe prima una decisione che modifichi `docs/PRIVACY-POLICY-SPEC.md` (regole 3 e 4): non la propongo ora.
+   - Contesto: Per riassumere un link Arianna dovrebbe scaricare la pagina da internet. Ma l'indirizzo stesso dice cosa leggi, quindi è un dato privato (L2) e non può uscire dal Mac. Per scaricarlo bisogna prima dichiarare pubblico (L0) quel solo indirizzo, con la tua approvazione, che resta registrata.
+   - Opzione consigliata: Sì, ti chiede ogni volta — nulla esce senza il tuo sì; senza approvazione nella nota restano solo link e titolo.
+   - Opzione: Mai scaricare, solo link e titolo — massima riservatezza, ma niente riassunti automatici delle pagine.
+   - Opzione: Una regola per tutti i link — nessun clic, ma prima va cambiata la specifica della privacy (regole 3 e 4): oggi non è proposta.
    - Esempio: Salvi il link di un articolo su un nuovo framework. Arianna ti chiede "posso trattare questo indirizzo come pubblico per scaricarlo e riassumerlo?"; se dici sì, il riassunto compare nella nota.
-5. **PDF: aggiungere `pdfjs-dist` (Apache-2.0, JavaScript puro) in un processo figlio confinato?** Raccomandazione: sì, quando arriviamo ai PDF, con una voce in DECISIONS e versione esatta; Poppler solo se pdf.js estrae male i tuoi documenti.
-   - Contesto: Per leggere il testo dei PDF serve una libreria (una dipendenza nuova). pdfjs-dist è quella di Mozilla usata nei browser, JavaScript puro, licenza Apache-2.0. Un PDF può essere malevolo, quindi andrebbe letto in un processo separato e limitato.
-   - Opzione consigliata: Sì, pdfjs-dist confinato — in un processo figlio confinato, quando arriviamo ai PDF; nessun programma esterno da installare; con limiti di tempo e memoria un PDF malevolo non tocca il resto.
-   - Opzione: pdftotext di Poppler — spesso estrae meglio, ma è un programma di sistema da installare con licenza GPL da valutare.
-   - Opzione: Niente PDF per ora — nessuna dipendenza, ma i PDF restano solo allegati senza testo.
-   - Esempio: Trascini in Arianna un paper di 20 pagine; un processo a parte estrae il testo in pochi secondi e la nota contiene titolo, autori, riassunto e qualche citazione breve.
-6. **Vocali e video: entrypoint nuovo dentro `apps/voice` (stesso ambiente e modelli, processo separato dalle chiamate) o una app Python a sé, cambiando la regola "Python solo in `apps/voice`"?** Raccomandazione: entrypoint in `apps/voice`; `ffmpeg` come prerequisito di sistema nel doctor.
-   - Contesto: Per trascrivere vocali e video si riusa Parakeet, il modello di riconoscimento vocale già scelto per le chiamate, che vive in apps/voice (Python). Una regola del progetto dice "Python solo in apps/voice". Si decide se aggiungere lì un comando separato o creare un'app nuova cambiando la regola.
-   - Opzione consigliata: Dentro apps/voice — entrypoint nuovo, con ffmpeg come prerequisito; stesso ambiente e stessi modelli, processo separato dalle chiamate, nessuna regola da cambiare.
-   - Opzione: App Python a sé, cambiando la regola — separazione più netta, ma un secondo ambiente Python da installare e mantenere.
+5. **Per leggere i PDF si aggiunge la libreria di Mozilla, chiusa in un processo a parte?** Raccomandazione: sì, `pdfjs-dist` (Apache-2.0, JavaScript puro) in un processo figlio confinato, quando arriviamo ai PDF, con una voce in DECISIONS e versione esatta; Poppler solo se pdf.js estrae male i tuoi documenti.
+   - Contesto: Per leggere il testo dei PDF serve una libreria esterna, cioè una dipendenza nuova. pdfjs-dist è quella di Mozilla usata dai browser: JavaScript puro, licenza libera Apache-2.0. Un PDF può essere costruito apposta per attaccare chi lo legge, quindi andrebbe letto in un processo separato, con limiti di tempo e memoria.
+   - Opzione consigliata: Sì, pdfjs-dist in un processo chiuso — nessun programma da installare; un PDF malevolo non tocca il resto di Arianna.
+   - Opzione: pdftotext di Poppler — spesso estrae meglio, ma è un programma di sistema da installare, con licenza GPL da valutare.
+   - Opzione: Niente PDF per ora — nessuna dipendenza, ma i PDF restano allegati senza testo.
+   - Esempio: Passi ad Arianna un paper di 20 pagine; un processo a parte estrae il testo in pochi secondi e la nota contiene titolo, autori, riassunto e qualche citazione breve.
+6. **Vocali e video si trascrivono con il programma della voce che c'è già?** Raccomandazione: entrypoint nuovo dentro `apps/voice` (stesso ambiente e modelli, processo separato dalle chiamate), non una app Python a sé che cambi la regola "Python solo in `apps/voice`"; `ffmpeg` come prerequisito di sistema nel doctor.
+   - Contesto: Per trascrivere vocali e video si riusa Parakeet, il modello di riconoscimento vocale già usato per le chiamate, che vive in apps/voice (la parte di Arianna scritta in Python). Una regola del progetto dice "Python solo in apps/voice". Si decide se aggiungere lì un comando separato o creare un programma nuovo, cambiando la regola. Serve anche ffmpeg, un programma di sistema che converte l'audio.
+   - Opzione consigliata: Un comando nuovo dentro apps/voice — stesso ambiente e stessi modelli, processo separato dalle chiamate, nessuna regola da cambiare.
+   - Opzione: Un programma Python a sé — separazione più netta, ma un secondo ambiente Python da installare e mantenere, e la regola va cambiata.
    - Esempio: Mandi un vocale di 3 minuti; ffmpeg lo converte, Parakeet lo trascrive e la nota in inbox contiene il testo. Se in quel momento sei in chiamata, la trascrizione aspetta che finisca.
-7. **Video di piattaforme (YouTube, ecc.): solo link, titolo e riassunto della descrizione, senza scaricare?** Raccomandazione: sì, come chiede la SPEC; se vuoi la trascrizione, scarichi tu il file (dove le condizioni lo permettono) e lo passi come video locale.
-   - Contesto: Scaricare video da YouTube e simili viola le condizioni d'uso delle piattaforme, e la specifica dice di non salvare copie integrali di contenuti altrui. Si conferma che per questi video si salvano solo link, titolo e riassunto della descrizione.
-   - Opzione consigliata: Sì, solo link e riassunto — link, titolo e riassunto della descrizione; rispetta SPEC e condizioni d'uso; se vuoi la trascrizione, scarichi tu il file dove è permesso e lo passi come video locale.
-   - Opzione: Scaricare comunque per trascrivere — più comodo, ma viola le condizioni d'uso e la SPEC.
+7. **Dei video di YouTube e simili si salvano solo link, titolo e riassunto, senza scaricarli?** Raccomandazione: sì, come chiede la SPEC; se vuoi la trascrizione, scarichi tu il file (dove le condizioni lo permettono) e lo passi come video locale.
+   - Contesto: Scaricare video da YouTube e piattaforme simili viola le loro condizioni d'uso, e la specifica di Arianna dice di non salvare copie integrali di contenuti altrui. Si conferma che per questi video si salvano solo link, titolo e riassunto della descrizione.
+   - Opzione consigliata: Sì, solo link e riassunto — rispetta la specifica e le condizioni d'uso; se vuoi la trascrizione, scarichi tu il file dove è permesso e lo passi come video locale.
+   - Opzione: Scaricare comunque per trascrivere — più comodo, ma viola le condizioni d'uso e la specifica.
    - Esempio: Salvi il link di una conferenza su YouTube; la nota contiene titolo, canale, data e tre righe di riassunto della descrizione, senza il video.
+
+### Domande chiuse
+
+- 3. Chiusa: decisa dall'utente il 2026-10-05 (richiesta scritta in D-086: una sezione "Pensieri" dove salvare scrivendo) e costruita in D-090: la pagina Pensieri è l'ingresso principale, con "/nota" e "Salva in inbox" nella chat.
 
 ---
 
@@ -423,25 +406,23 @@ Niente di specifico per OpenWork. Le idee utili confluiscono in D-094 (anteprima
 
 ### Domande per l'utente
 
-1. **OpenWork resta fuori da Arianna (niente integrazione, niente adattatore) e se ne prendono solo le idee (terminale del run, anteprima isolata, pochi strumenti MCP generici)?** Raccomandazione: sì; è un secondo orchestratore su API cloud, senza etichette né sandbox documentata.
-   - Contesto: OpenWork è un'app gratuita che fa lavorare un agente sui tuoi file, ma dentro ha un suo "cervello" (OpenCode) che chiama i modelli cloud via API, senza le etichette di riservatezza di Arianna e senza una gabbia (sandbox) documentata. Si decide se collegarlo ad Arianna o prenderne solo le idee riscrivendole noi.
-   - Opzione consigliata: Fuori da Arianna, solo le idee — niente codice né collegamenti: riscriviamo tre idee (terminale del run in diretta, anteprima isolata dei file HTML, pochi strumenti MCP generici); il gateway resta l'unica uscita verso il cloud.
-   - Opzione: Esecutore accanto a Claude e Codex — un terzo agente cloud che usa chiavi API: contraddice la regola "solo i binari ufficiali claude e codex, nessun token" e andrebbe sorvegliato come nuova uscita.
-   - Opzione: Interfaccia al posto della chat — un secondo orchestratore che non conosce etichette, gateway né approvazioni: andrebbero reimposti tutti da fuori.
-   - Esempio: Chiedi al Coder di sistemare il sito del progetto finto "Pasticceria Rossi". Con la scelta consigliata vedi i comandi che lancia in una scheda "Terminale" della chat, ma il lavoro lo fa sempre claude dentro la sandbox di Arianna; OpenWork non viene mai avviato.
-2. **Vuoi provarlo per conto tuo, fuori da Arianna, su un progetto L1?** Raccomandazione: se sì, solo su un clone di un progetto senza dati veri, con Sentry spento, e non su `ARIANNA_HOME`; nulla di ciò che fa entra nel registro di Arianna.
+1. **OpenWork resta fuori da Arianna e se ne prendono solo le idee?** Raccomandazione: sì, niente integrazione e niente adattatore; se ne prendono le idee (terminale del run, anteprima isolata, pochi strumenti MCP generici). È un secondo orchestratore su API cloud, senza etichette né sandbox documentata.
+   - Contesto: OpenWork è un'app gratuita che fa lavorare un agente sui tuoi file. Dentro ha però un suo "cervello" (OpenCode) che chiama i modelli cloud con chiavi API, senza le etichette di riservatezza di Arianna e senza una gabbia (sandbox) documentata. In Arianna tutto ciò che va al cloud passa dal gateway, il filtro unico delle uscite. Si decide se collegare OpenWork ad Arianna o prenderne solo le idee, riscritte da noi.
+   - Opzione consigliata: Fuori, prendiamo solo le idee — niente codice né collegamenti; riscriviamo il terminale del lavoro in diretta, l'anteprima isolata dei file HTML e pochi strumenti generici; il gateway resta l'unica uscita verso il cloud.
+   - Opzione: Come terzo esecutore cloud — un agente in più accanto a Claude e Codex, ma con chiavi API: contraddice la regola "solo i programmi ufficiali claude e codex" ed è una nuova uscita da sorvegliare.
+   - Opzione: Al posto della chat di Arianna — un secondo orchestratore che non conosce etichette, gateway né approvazioni: andrebbero imposti tutti da fuori.
+   - Esempio: Chiedi al Coder di sistemare il sito del progetto finto "Pasticceria Rossi". Con la scelta consigliata vedi i comandi che lancia in una scheda "Terminale" della chat, ma il lavoro lo fa sempre claude dentro la gabbia di Arianna; OpenWork non viene mai avviato.
+2. **Vuoi provare OpenWork per conto tuo, fuori da Arianna?** Raccomandazione: se sì, solo su un clone di un progetto senza dati veri, con Sentry spento, e non su `ARIANNA_HOME`; nulla di ciò che fa entra nel registro di Arianna.
    - Contesto: Indipendentemente da Arianna, potresti installare OpenWork sul Mac per curiosità. Arianna non lo controllerebbe: ciò che gli dai in mano andrebbe al fornitore del modello senza passare dal gateway. Si decide se vuoi provarlo e con quali cautele.
-   - Opzione consigliata: Sì, ma solo su un clone senza dati veri — lo provi su una copia di un progetto finto, con la segnalazione errori (Sentry) spenta e mai sulla cartella di Arianna; nulla di ciò che fa entra nel registro di Arianna.
-   - Opzione: No, non mi interessa provarlo — nessun rischio e nessun lavoro; le idee utili arrivano comunque dentro Arianna con D-094 e D-095.
-   - Opzione: Sì, anche su progetti di lavoro — sconsigliato: file di clienti potrebbero finire al fornitore del modello e nelle segnalazioni d'errore senza alcun filtro.
-   - Esempio: Cloni il progetto finto "todo-demo" in una cartella a parte, apri OpenWork solo su quella cartella e gli chiedi di aggiungere un pulsante. Non lo punti mai sulla cartella di Arianna né sulla cartella delle note.
-3. **Aggiungere a `docs/SECURITY.md` una riga sugli strumenti agentici installati a mano?** Raccomandazione: sì, una riga accanto a quella esistente sui file di configurazione che altri strumenti eseguono.
-   - Contesto: docs/SECURITY.md elenca le regole di sicurezza dell'installazione. Oggi avverte già di non lanciare Claude Code a mano sulla cartella di Arianna; si decide se aggiungere una riga simile per gli altri strumenti agentici (OpenWork, OpenCode, Open Design) che potresti installare da solo.
-   - Opzione consigliata: Sì, aggiungere la riga — una frase in più, nessun rischio: ricorda che quegli strumenti non vanno mai usati sulla cartella di Arianna né su cartelle con dati riservati (L2).
-   - Opzione: No, non serve — nessuna modifica; la regola resta implicita e affidata alla memoria.
-   - Esempio: Fra sei mesi installi un nuovo strumento tipo "AgenteX" e stai per aprirlo sulla cartella delle note; rileggendo SECURITY.md trovi la riga "mai su ARIANNA_HOME né su cartelle L2" e lo apri invece su un progetto di prova.
-
-
+   - Opzione consigliata: Sì, ma solo su una copia finta — su una copia di un progetto senza dati veri, con le segnalazioni d'errore (Sentry) spente, mai sulla cartella di Arianna.
+   - Opzione: No, non mi interessa — nessun rischio e nessun lavoro; le idee utili arrivano comunque in Arianna con D-094 e D-095.
+   - Opzione: Sì, anche su progetti di lavoro — sconsigliato: file di clienti finirebbero al fornitore del modello e nelle segnalazioni d'errore senza alcun filtro.
+   - Esempio: Copi il progetto finto "todo-demo" in una cartella a parte, apri OpenWork solo su quella e gli chiedi di aggiungere un pulsante. Non lo punti mai sulla cartella di Arianna né su quella delle note.
+3. **Si aggiunge a `docs/SECURITY.md` un avviso sugli strumenti con agenti che installi da solo?** Raccomandazione: sì, una riga accanto a quella esistente sui file di configurazione che altri strumenti eseguono.
+   - Contesto: docs/SECURITY.md elenca le regole di sicurezza dell'installazione. Oggi avverte già di non lanciare Claude Code a mano sulla cartella di Arianna. Si decide se aggiungere una riga simile per gli altri programmi con agenti (OpenWork, OpenCode, Open Design) che potresti installare da solo.
+   - Opzione consigliata: Sì, una riga in più — nessun rischio: ricorda che quei programmi non vanno mai usati sulla cartella di Arianna né su cartelle con dati privati (L2).
+   - Opzione: No, non serve — nessuna modifica; la regola resta affidata alla memoria.
+   - Esempio: Fra sei mesi installi un nuovo programma tipo "AgenteX" e stai per aprirlo sulla cartella delle note; rileggendo SECURITY.md trovi "mai sulla cartella di Arianna né su cartelle private" e lo apri invece su un progetto di prova.
 
 ---
 
@@ -503,35 +484,32 @@ Un "Claude Design" locale è **il Coder già esistente con un modo di lavorare e
 
 ### Domande per l'utente
 
-1. **Il "Claude Design" di Arianna è una scheda `designer` sul Coder esistente, con anteprima in chat, invece di installare Open Design?** Raccomandazione: sì; Open Design lancia `claude`/`codex` senza il nostro confinamento e ha telemetria sempre attiva.
-   - Contesto: Vorresti un "Claude Design" locale, cioè un agente che disegna mockup di pagine. Open Design fa questo ma lancia claude e codex senza la gabbia (sandbox) di Arianna e invia sempre dati di diagnostica. Si decide se costruirlo come una scheda nuova sul Coder che esiste già o installare Open Design.
-   - Opzione consigliata: Scheda designer sul Coder — anteprima in chat; Il Coder scrive file HTML autonomi nel progetto, con sandbox e senza rete, e la chat li mostra in un riquadro isolato; nessuna dipendenza nuova.
-   - Opzione: Installare Open Design — molte funzioni pronte (slide, video, 151 stili), ma i CLI girano senza il nostro confinamento e con telemetria sempre attiva: viola due regole non negoziabili.
-   - Opzione: Non farlo per ora — continui a chiedere mockup al Coder normale e ad aprirli a mano dal Finder.
-   - Esempio: Nella conversazione del progetto finto "Bottega Verdi" scrivi "fammi tre varianti della pagina dei prezzi". Il designer crea mockups/prezzi-1.html, -2.html, -3.html e sotto la risposta compare un pulsante "Anteprima" per ognuno.
-2. **Cartella predefinita dei mockup in un progetto: `mockups/` (e `docs/mockups/` per il repository di Arianna)?** Raccomandazione: sì, configurabile per progetto.
+1. **Il "Claude Design" di Arianna è un agente nuovo sul Coder, invece di installare Open Design?** Raccomandazione: sì, una scheda `designer` sul Coder esistente, con anteprima in chat; Open Design lancia `claude`/`codex` senza il nostro confinamento e ha telemetria sempre attiva.
+   - Contesto: Vorresti un "Claude Design" locale, cioè un agente che disegna mockup di pagine (prototipi HTML). Open Design, un progetto libero, fa questo, ma lancia claude e codex senza la gabbia (sandbox) di Arianna e invia sempre dati di diagnostica ai suoi autori. Si decide se costruirlo come una scheda nuova, "designer", sul Coder che esiste già, o installare Open Design. Oggi i file HTML scritti dal Coder si aprono già dalla chat con "Apri", in una pagina isolata (D-117, tappa 3), e per il cardwall hai scelto un agente "Designer" dedicato, da creare nella tappa C3 (D-152): questa domanda decide se quell'agente nasce sul Coder o si appoggia a Open Design.
+   - Opzione consigliata: Agente designer sul Coder — scrive file HTML autonomi nel progetto, con la gabbia e senza rete; li apri dalla chat in una pagina isolata; nessuna dipendenza nuova.
+   - Opzione: Installare Open Design — molte funzioni pronte (slide, video, 151 stili), ma i programmi girano senza il nostro confinamento e con la diagnostica sempre attiva: viola due regole non negoziabili.
+   - Opzione: Non farlo per ora — continui a chiedere mockup al Coder normale e ad aprirli con "Apri".
+   - Esempio: Nella conversazione del progetto finto "Bottega Verdi" scrivi "fammi tre varianti della pagina dei prezzi". Il designer crea mockups/prezzi-1.html, -2.html e -3.html e sotto la risposta li apri uno per uno.
+2. **In quale cartella del progetto finiscono i mockup?** Raccomandazione: `mockups/` (e `docs/mockups/` per il repository di Arianna), configurabile per progetto.
    - Contesto: I mockup del designer devono finire in una cartella del progetto, così li ritrovi anche fuori da Arianna. Si decide il nome predefinito della cartella.
-   - Opzione consigliata: mockups/ (docs/mockups/ per Arianna) — nome chiaro e uguale ovunque, cambiabile progetto per progetto; per il repository di Arianna resta docs/mockups/ come già oggi.
+   - Opzione consigliata: mockups/ (docs/mockups/ per Arianna) — nome chiaro e uguale ovunque, cambiabile progetto per progetto; per Arianna stessa resta docs/mockups/ come oggi.
    - Opzione: Un'altra cartella che scegli tu — scrivi il nome che preferisci (per esempio design/): stesso funzionamento, solo un nome diverso.
-   - Opzione: Sempre da chiedere a ogni lavoro — nessun valore predefinito: più flessibile, ma una domanda in più ogni volta.
+   - Opzione: Chiedere a ogni lavoro — nessun nome predefinito: più flessibile, ma una domanda in più ogni volta.
    - Esempio: Nel progetto finto "Studio Bianchi" il designer salva mockups/home-1.html; in Arianna stessa salverebbe docs/mockups/impostazioni-1.html.
-3. **Anteprima solo dentro la chat (iframe isolato, origine opaca, CSP), e fuori dalla chat il file si apre dal progetto con Finder, senza un pulsante "Apri nel browser" servito dal core?** Raccomandazione: sì; un pulsante sul core richiederebbe una rotta nuova che serva l'HTML con la direttiva CSP `sandbox allow-scripts` nell'intestazione (origine opaca) oltre a `connect-src 'none'`, e non aggiunge nulla rispetto ad aprire il file.
-   - Contesto: Un mockup è codice scritto da un agente che il tuo browser esegue. Se girasse "a casa" del core potrebbe leggere le tue conversazioni dalle API. Si decide se mostrarlo solo dentro la chat in un riquadro chiuso (iframe senza accesso al core e senza rete) o anche con un pulsante "Apri nel browser" servito dal core.
-   - Opzione consigliata: Solo in chat — fuori dalla chat apri il file dal Finder; Riquadro isolato senza rete né accesso alle API; per vederlo a schermo intero apri il file dal progetto, come oggi. Nessuna rotta nuova nel core.
-   - Opzione: Anche un pulsante "Apri nel browser" — più comodo, ma serve una rotta nuova del core con regole di isolamento extra da scrivere e testare, senza vantaggi reali rispetto al Finder.
-   - Esempio: Un mockup contiene per errore un fetch verso il core per "caricare dati". Nell'anteprima isolata quella chiamata viene bloccata e non legge nulla; con il file aperto dal Finder il browser non è collegato ad Arianna.
-4. **Scrivere `docs/DESIGN.md` di Arianna dai token di D-060/D-062, così i mockup futuri seguono l'identità approvata?** Raccomandazione: sì, è un file di testo senza rischi.
-   - Contesto: Un file DESIGN.md descrive colori, caratteri e stile di un'interfaccia. Scriverlo per Arianna, partendo dai colori già approvati (D-060, D-062), farebbe sì che i mockup futuri abbiano subito il suo aspetto.
-   - Opzione consigliata: Sì, scrivere docs/DESIGN.md — un file di testo senza rischi; i mockup di Arianna usano da subito l'identità approvata invece di inventare uno stile.
+4. **Si scrive una guida di stile di Arianna, così i mockup nascono già con i suoi colori?** Raccomandazione: sì, `docs/DESIGN.md` dai token di D-060/D-062; è un file di testo senza rischi.
+   - Contesto: Un file DESIGN.md descrive colori, caratteri e stile di un'interfaccia. Scriverlo per Arianna, partendo dai colori e dai caratteri già approvati (D-060, D-062), farebbe sì che i mockup futuri abbiano subito il suo aspetto invece di uno stile inventato.
+   - Opzione consigliata: Sì, scrivere docs/DESIGN.md — un file di testo senza rischi; i mockup di Arianna usano da subito l'identità approvata.
    - Opzione: No, per ora no — nessun lavoro; ogni mockup va corretto a mano per colori e caratteri.
-   - Esempio: Chiedi un mockup di una nuova pagina "Backup". Con DESIGN.md il designer usa gli stessi verdi, sfondi e font della chat; senza, potrebbe proporre un blu e un font diverso da sistemare dopo.
-5. **Importare i sistemi di design o le skill di Open Design come catalogo (forma D-079)?** Raccomandazione: non ora; solo se un progetto lo chiede, copiando un file alla volta con l'avviso Apache-2.0.
-   - Contesto: Open Design offre 151 stili pronti (molti imitano marchi noti) e più di 100 skill. Si decide se importarli in blocco come catalogo, come si è fatto per agency-agents in D-079, o prenderne uno solo quando serve.
-   - Opzione consigliata: Non ora; un file alla volta se serve — se un progetto lo chiede copi un solo stile, con l'avviso di licenza Apache-2.0; nessun catalogo da mantenere.
-   - Opzione: Sì, catalogo come D-079 — tanti stili subito disponibili, ma un catalogo di terzi da tenere aggiornato e controllare, e stili che imitano marchi da tenere fuori da git.
+   - Esempio: Chiedi il mockup di una nuova pagina "Backup". Con DESIGN.md il designer usa gli stessi verdi, sfondi e caratteri della chat; senza, potrebbe proporre un blu e un carattere diversi da sistemare dopo.
+5. **Si importano in blocco gli stili e le skill di Open Design?** Raccomandazione: non ora; solo se un progetto lo chiede, copiando un file alla volta con l'avviso Apache-2.0 (la forma a catalogo sarebbe quella di D-079).
+   - Contesto: Open Design offre 151 stili pronti (molti imitano marchi noti) e più di 100 skill, cioè istruzioni pronte per l'agente. Si decide se importarli tutti come catalogo, come si è fatto per agency-agents (D-079), o prenderne uno solo quando serve.
+   - Opzione consigliata: Non ora; un file alla volta se serve — se un progetto lo chiede copi un solo stile, con l'avviso di licenza in testa; nessun catalogo da mantenere.
+   - Opzione: Sì, un catalogo come per agency-agents — tanti stili subito disponibili, ma un catalogo di terzi da aggiornare e controllare, e stili che imitano marchi da tenere fuori da git.
    - Esempio: Per il progetto finto "Caffè Neri" vuoi uno stile minimal; copi nel progetto un solo DESIGN.md di Open Design con l'avviso di licenza in testa, senza importare gli altri 150.
 
+### Domande chiuse
 
+- 3. Chiusa: decisa in D-117, tappa 3 (scelta dell'utente del 2026-10-06, provata e unita in 0.16.0): "Apri" accanto ai file .html e alle immagini in "File modificati", serviti dal core con `Content-Security-Policy: sandbox allow-scripts` (origine opaca, niente rete verso l'esterno).
 
 ---
 
@@ -606,40 +584,38 @@ La tappa 1, solo dal vivo (senza salvare comandi e uscite) finché l'utente non 
 
 ### Domande per l'utente
 
-1. **Computer per run (nasce e muore con la delega) invece che per agente come in OpenDots?** Raccomandazione: per run; niente stato fuori dal registro e niente RAM occupata.
-   - Contesto: Il "computer dell'agente" è uno spazio isolato dove l'agente lavora mentre tu guardi dalla chat. Si decide se crearlo nuovo per ogni lavoro (run) e cancellarlo alla fine, o tenerne uno sempre acceso per ogni agente come fa OpenDots.
-   - Opzione consigliata: Uno per run, nasce e muore col lavoro — niente memoria nascosta fuori dal registro e niente RAM occupata quando nessuno lavora; si pulisce da solo.
-   - Opzione: Uno per agente, sempre acceso — l'agente ritrova i suoi file fra un lavoro e l'altro, ma occupa memoria sul Mac da 32 GB e accumula stato non tracciato.
-   - Esempio: Chiedi al Coder di aggiornare le dipendenze del progetto finto "Agenda Demo". Si crea uno spazio per quel lavoro, lo vedi lavorare e a lavoro finito lo spazio sparisce; il giorno dopo un nuovo lavoro parte da uno spazio pulito.
-2. **Tappa 1: comandi e uscite del terminale solo dal vivo, o anche salvati come le righe di D-083?** Raccomandazione: solo dal vivo all'inizio; salvarli allarga ciò che il database contiene (contenuti di file L1, possibili segreti di un `.env`).
-   - Contesto: Nella prima tappa la chat mostra in diretta i comandi che il Coder lancia e cosa rispondono. Quei testi possono contenere pezzi di file del progetto o perfino password lette da un file .env. Si decide se mostrarli solo dal vivo o anche salvarli nel database per rileggerli dopo.
-   - Opzione consigliata: Solo dal vivo all'inizio — li vedi mentre il run è in corso, poi spariscono; il database non si riempie di contenuti di file o segreti.
-   - Opzione: Anche salvati come le attività di D-083 — puoi rileggerli il giorno dopo, ma il database contiene contenuti di file L1 e forse segreti, da cancellare con la conversazione.
-   - Esempio: Il Coder lancia "cat .env" nel progetto finto e l'uscita mostra API_KEY=finta123. Con "solo dal vivo" la vedi a schermo e poi non resta da nessuna parte; salvandola, resterebbe nel database finché non cancelli la conversazione.
-3. **Tappa 2 su Docker (già installato) con un'immagine Chromium fissata, solo per pagine L0 e dopo P7?** Raccomandazione: sì; il CLI `container` di Apple si valuta alla tappa 3.
-   - Contesto: La seconda tappa dà all'agente un browser per leggere pagine web pubbliche. Il browser va chiuso in un contenitore (Docker, già installato per il database) e può vedere solo pagine L0, cioè pubbliche, dopo il lettore sicuro di pagine P7. Si decide se procedere così.
-   - Opzione consigliata: Sì: Docker, solo pagine L0, dopo P7 — un Chromium in un contenitore usa e getta, senza file del Mac e con la rete filtrata; il "container" di Apple, più isolato, si valuta alla tappa 3.
-   - Opzione: Usare subito il container di Apple — isolamento migliore (una piccola macchina virtuale per contenitore), ma è uno strumento nuovo e giovane da installare e studiare.
-   - Opzione: Niente browser per ora — nessun lavoro e nessuna superficie di rete nuova; l'agente non può consultare pagine web.
-   - Esempio: Chiedi "leggi la documentazione pubblica di questa libreria e riassumila". Il browser nel contenitore apre la pagina pubblica e tu vedi le schermate; se la conversazione contiene dati L2 il browser non è disponibile.
-4. **Schermo: screenshot periodici nella tappa 2, VNC/noVNC solo alla tappa 3 e solo con un caso?** Raccomandazione: sì.
-   - Contesto: Per vedere cosa fa il browser dell'agente ci sono due modi: fotografie dello schermo ogni pochi secondi, oppure una vista in diretta (VNC/noVNC), che però porta programmi e una porta di rete in più. Si decide quale usare e quando.
-   - Opzione consigliata: Screenshot ora, VNC alla tappa 3 — screenshot nella tappa 2; Le foto ogni 2-4 secondi bastano per seguire un browser; la vista in diretta arriva solo se un caso concreto la chiede.
-   - Opzione: VNC subito dalla tappa 2 — vista fluida, ma dipendenze e una porta in più da proteggere fin dall'inizio.
+1. **Il "computer dell'agente" nasce e muore con ogni lavoro, o ogni agente ne ha uno sempre acceso?** Raccomandazione: per run (nasce e muore con la delega), non per agente come in OpenDots; niente stato fuori dal registro e niente RAM occupata.
+   - Contesto: Il "computer dell'agente" (P10 nel piano preso da OpenDots) è uno spazio isolato dove l'agente lavora mentre tu guardi dalla chat: terminale, file, più avanti un browser. Si decide se crearlo nuovo per ogni lavoro (un "run") e cancellarlo alla fine, o tenerne uno sempre acceso per ogni agente come fa OpenDots.
+   - Opzione consigliata: Uno per lavoro, poi si cancella — niente memoria nascosta fuori dal registro di Arianna e niente RAM occupata quando nessuno lavora; si pulisce da solo.
+   - Opzione: Uno per agente, sempre acceso — l'agente ritrova i suoi file fra un lavoro e l'altro, ma occupa memoria sul Mac da 32 GB e accumula cose che nessuno controlla.
+   - Esempio: Chiedi al Coder di aggiornare le dipendenze del progetto finto "Agenda Demo". Si crea uno spazio per quel lavoro, lo vedi lavorare e alla fine lo spazio sparisce; il giorno dopo un lavoro nuovo parte da uno spazio pulito.
+2. **I comandi che il Coder lancia si vedono solo in diretta o si salvano anche?** Raccomandazione: tappa 1, solo dal vivo all'inizio; salvarli come le righe di D-083 allarga ciò che il database contiene (contenuti di file L1, possibili segreti di un `.env`).
+   - Contesto: Nella prima tappa la chat mostra in diretta i comandi che il Coder lancia nel terminale e cosa rispondono. Quei testi possono contenere pezzi di file del progetto o perfino password lette da un file .env. Si decide se mostrarli solo dal vivo o salvarli anche nel database, come oggi si salvano le righe di attività (D-083), per rileggerli dopo.
+   - Opzione consigliata: Solo in diretta, all'inizio — li vedi mentre il lavoro è in corso, poi spariscono; il database non si riempie di contenuti di file o segreti.
+   - Opzione: Anche salvati, come le attività — puoi rileggerli il giorno dopo, ma il database contiene pezzi di file e forse segreti, cancellati solo con la conversazione.
+   - Esempio: Il Coder lancia "cat .env" nel progetto finto e l'uscita mostra API_KEY=finta123. In diretta la vedi a schermo e poi non resta da nessuna parte; salvandola, resterebbe nel database finché non cancelli la conversazione.
+3. **Il browser dell'agente gira in Docker e legge solo pagine pubbliche?** Raccomandazione: sì, tappa 2 su Docker (già installato) con un'immagine Chromium fissata, solo per pagine L0 e dopo P7; il CLI `container` di Apple si valuta alla tappa 3.
+   - Contesto: La seconda tappa dà all'agente un browser per leggere pagine web. Il browser va chiuso in un contenitore Docker (già installato sul Mac per il database) e può aprire solo pagine pubbliche (L0). Arriva dopo P7, il lettore sicuro di pagine web previsto nel piano, che blocca gli indirizzi interni. Si decide se procedere così.
+   - Opzione consigliata: Sì: Docker, solo pagine pubbliche — un Chromium in un contenitore usa e getta, senza file del Mac e con la rete filtrata; il "container" di Apple, più isolato, si valuta alla tappa 3.
+   - Opzione: Subito il container di Apple — isolamento migliore (una piccola macchina virtuale per contenitore), ma è uno strumento nuovo e giovane da installare e studiare.
+   - Opzione: Niente browser per ora — nessun lavoro e nessuna nuova uscita in rete; l'agente non può consultare pagine web.
+   - Esempio: Chiedi "leggi la documentazione pubblica di questa libreria e riassumila". Il browser nel contenitore apre la pagina e tu vedi le schermate; se la conversazione contiene dati privati, il browser non è disponibile.
+4. **Lo schermo del browser dell'agente si vede a fotografie, la diretta solo più avanti?** Raccomandazione: sì, screenshot periodici nella tappa 2, VNC/noVNC solo alla tappa 3 e solo con un caso.
+   - Contesto: Per vedere cosa fa il browser dell'agente ci sono due modi: fotografie dello schermo ogni pochi secondi, oppure una vista in diretta con VNC (un programma per vedere uno schermo a distanza), che però porta programmi e una porta di rete in più. Si decide quale usare e quando.
+   - Opzione consigliata: Fotografie ora, diretta più avanti — una schermata ogni 2-4 secondi basta per seguire un browser; la diretta arriva solo se un caso concreto la chiede.
+   - Opzione: Diretta subito — vista fluida, ma programmi e una porta in più da proteggere fin dall'inizio.
    - Esempio: L'agente cerca un orario su un sito pubblico; nella scheda "Browser" vedi una nuova schermata ogni 3 secondi con la pagina che scorre, senza poter cliccare.
-5. **Presa di controllo manuale (tu che clicchi nel browser dell'agente)?** Raccomandazione: non prima della tappa 3; fino ad allora sola lettura.
-   - Contesto: "Presa di controllo" vuol dire che tu clicchi e scrivi nel browser dell'agente mentre lui è in pausa, per esempio per superare un passaggio difficile. Aggiunge un canale d'ingresso da proteggere. Si decide se offrirla e quando.
-   - Opzione consigliata: Non prima della tappa 3 — finora sola lettura; Guardi soltanto; se in futuro serve, l'agente si ferma, tu agisci e lui rilegge la pagina prima di ripartire.
-   - Opzione: Sì, già dalla tappa 2 — più flessibile, ma serve un canale di input e regole di pausa da costruire subito.
-   - Esempio: L'agente si blocca su un banner dei cookie di un sito pubblico. Con la sola lettura lo vedi e gli scrivi in chat cosa fare; con la presa di controllo cliccheresti tu "Accetta" nel suo browser.
-6. **Mettere P10 in `ROADMAP.md` con le tre tappe, subito dopo le proposte in attesa?** Raccomandazione: sì, la tappa 1 come prossimo lavoro di P10, le altre in coda.
-   - Contesto: Oggi l'idea del computer dell'agente (P10) vive solo in OPENDOTS.md. Metterla in ROADMAP.md, il piano dei lavori, con le tre tappe, la rende un lavoro in coda visibile anche nella barra di /sviluppo.
-   - Opzione consigliata: Sì, tappa 1 come prossimo lavoro di P10 — le tre tappe entrano nel piano; la tappa 1 è la prossima, le altre restano in coda dopo le proposte in attesa.
-   - Opzione: Sì, ma tutto in coda senza priorità — compare nel piano ma senza una data; nessuna tappa parte finché non lo dici.
+5. **Potrai cliccare tu nel browser dell'agente?** Raccomandazione: non prima della tappa 3; fino ad allora sola lettura.
+   - Contesto: "Presa di controllo" vuol dire che tu clicchi e scrivi nel browser dell'agente mentre lui è in pausa, per esempio per superare un passaggio difficile. È un canale d'ingresso in più da proteggere. Si decide se offrirla e quando.
+   - Opzione consigliata: Non prima della tappa 3 — fino ad allora guardi soltanto; se servirà, l'agente si ferma, tu agisci e lui rilegge la pagina prima di ripartire.
+   - Opzione: Sì, già dalla tappa 2 — più flessibile, ma un canale d'ingresso e regole di pausa da costruire subito.
+   - Esempio: L'agente si blocca sul banner dei cookie di un sito pubblico. In sola lettura lo vedi e gli scrivi in chat cosa fare; con la presa di controllo cliccheresti tu "Accetta" nel suo browser.
+6. **Il computer dell'agente entra nel piano dei lavori (ROADMAP)?** Raccomandazione: sì, P10 in `ROADMAP.md` con le tre tappe, subito dopo le proposte in attesa; la tappa 1 come prossimo lavoro di P10, le altre in coda.
+   - Contesto: Oggi l'idea del computer dell'agente (P10) vive solo in docs/OPENDOTS.md. Metterla in docs/ROADMAP.md, il piano dei lavori, con le sue tre tappe (terminale e file in diretta, browser, desktop), la rende un lavoro in coda visibile anche nella barra della pagina Sviluppo.
+   - Opzione consigliata: Sì, la tappa 1 come prossimo passo — le tre tappe entrano nel piano; la prima è la prossima di P10, le altre restano in coda dopo le proposte in attesa.
+   - Opzione: Sì, ma tutte in coda — compare nel piano senza priorità; nessuna tappa parte finché non lo dici.
    - Opzione: No, resta solo in OPENDOTS.md — nessun cambiamento; rischia di essere dimenticata.
-   - Esempio: Dopo la modifica, in ROADMAP.md compare "P10 tappa 1: terminale e file del run in diretta" fra i prossimi lavori, e in /sviluppo la vedi come "Da fare".
-
-
+   - Esempio: Dopo la modifica, in ROADMAP.md compare "P10 tappa 1: terminale e file del lavoro in diretta" fra i prossimi lavori, e nella pagina Sviluppo la vedi come "Da fare".
 
 ---
 
@@ -817,45 +793,45 @@ Totale: circa 20-29 ore.
 
 ### Domande per l'utente
 
-1. **Dove va la copia fuori dal Mac?** (a) Synology di casa, come cartella condivisa montata o cartella di Synology Drive (secondo dispositivo, ma stessa casa); (b) Synology più Hyper Backup verso un secondo sito o un cloud, con file già cifrati; (c) un secondo disco esterno tenuto fuori casa a rotazione. Raccomandazione: (a) subito e (b) appena possibile: la regola 3-2-1 chiede una copia fuori casa, e un incendio o un furto prende Mac, disco e NAS insieme.
-   - Contesto: La regola 3-2-1 dice: tre copie dei dati, su due supporti diversi, una fuori casa. Il Mac e il disco esterno sono in casa; si decide dove va la terza copia. Un incendio o un furto potrebbe prendere insieme Mac, disco e NAS (Synology).
-   - Opzione consigliata: Synology subito, poi copia fuori casa — copia sul Synology di casa da subito e, appena possibile, Hyper Backup dal Synology verso un secondo luogo o un cloud con file già cifrati.
-   - Opzione: Solo Synology di casa — semplice e subito pronto, ma la copia resta nella stessa casa: un incendio prende tutto.
-   - Opzione: Secondo disco fuori casa — a rotazione; Nessun cloud, ma devi ricordarti di scambiare i dischi (per esempio ogni settimana in ufficio).
-   - Esempio: Ogni notte l'archivio cifrato va sul Mac, sul disco esterno e sulla cartella del Synology; poi il Synology lo copia ogni notte in un cloud. Se un giorno sparisce il Mac, recuperi il backup dal cloud con la tua chiave su carta.
-2. **Chiave age dei backup separata da quella del vault, con la privata solo fuori dal Mac (carta o gestore di password, più una chiavetta)?** Raccomandazione: sì, separata; e due destinatari se c'è un secondo posto sicuro.
-   - Contesto: I backup vengono cifrati con una chiave "age". Si decide se usare una chiave diversa da quella del vault (dove stanno le password) e tenerne la parte privata, quella che apre i backup, solo fuori dal Mac, su carta o gestore di password più una chiavetta.
-   - Opzione consigliata: Chiave separata, privata fuori — la privata solo fuori dal Mac; Un ladro o un ransomware sul Mac non apre i backup; il prezzo è che Arianna non può aprirli da sola e la chiave va conservata con cura in due posti.
-   - Opzione: Usare la stessa chiave del vault — una sola chiave da gestire, ma chi ruba il Mac con quella chiave apre anche tutti i backup, e perderla porta via vault e backup insieme.
-   - Opzione: Chiave separata, privata sul Mac — prove di ripristino completamente automatiche, ma toglie proprio la protezione richiesta.
-   - Esempio: Generi la chiave su un altro computer, stampi il foglio e lo chiudi in un cassetto, ne metti una copia su una chiavetta. Sul Mac va solo la parte pubblica (age1...), che serve a cifrare ma non ad aprire.
-3. **Disco esterno dedicato o Time Machine? E se Time Machine, il suo disco è cifrato?** Raccomandazione: disco esterno cifrato (APFS cifrato); Time Machine solo se cifrato e con le esclusioni di `tmutil`, perché altrimenti copia la KB in chiaro.
-   - Contesto: Per la copia su un disco in casa puoi usare un disco esterno dedicato agli archivi cifrati di Arianna, oppure Time Machine. Time Machine però copia anche note e file in chiaro, quindi va bene solo se il suo disco è cifrato. Si decide quale usare e conferma se il disco è cifrato.
-   - Opzione consigliata: Disco esterno dedicato, cifrato (APFS) — contiene solo gli archivi già cifrati; anche cifrato il disco, chi lo trova non legge nulla.
-   - Opzione: Time Machine cifrato — con disco cifrato ed esclusioni; Usi ciò che hai già; vanno lanciati i comandi tmutil per escludere il database vivo e i file temporanei.
-   - Opzione: Time Machine su disco non cifrato — sconsigliato: note e file personali finirebbero in chiaro su un disco che chiunque può leggere.
+1. **Dove va la copia dei backup fuori dal Mac?** Scelte possibili: (a) Synology di casa, come cartella condivisa montata o cartella di Synology Drive (secondo dispositivo, ma stessa casa); (b) Synology più Hyper Backup verso un secondo sito o un cloud, con file già cifrati; (c) un secondo disco esterno tenuto fuori casa a rotazione. Raccomandazione: (a) subito e (b) appena possibile: la regola 3-2-1 chiede una copia fuori casa, e un incendio o un furto prende Mac, disco e NAS insieme.
+   - Contesto: Il backup notturno di Arianna (D-096) segue la regola 3-2-1: tre copie dei dati, su due supporti diversi, una fuori casa. Il Mac e il disco esterno stanno in casa; si decide dove va la terza copia. Un incendio o un furto potrebbe portare via insieme Mac, disco e NAS (il Synology). I file del backup sono già cifrati prima di uscire dal Mac.
+   - Opzione consigliata: Synology subito, poi fuori casa — copia sul Synology da subito e, appena possibile, Hyper Backup dal Synology verso un secondo luogo o un cloud, con i file già cifrati.
+   - Opzione: Solo il Synology di casa — semplice e pronto subito, ma la copia resta nella stessa casa: un incendio prende tutto.
+   - Opzione: Un secondo disco fuori casa — nessun cloud, ma devi ricordarti di scambiare i dischi, per esempio ogni settimana in ufficio.
+   - Esempio: Ogni notte l'archivio cifrato va sul Mac, sul disco esterno e sulla cartella del Synology; poi il Synology lo copia in un cloud. Se un giorno sparisce il Mac, recuperi il backup dal cloud con la tua chiave su carta.
+2. **La chiave che apre i backup è diversa da quella delle password e sta solo fuori dal Mac?** Raccomandazione: sì, chiave age dei backup separata da quella del vault, con la privata solo fuori dal Mac (carta o gestore di password, più una chiavetta); due destinatari se c'è un secondo posto sicuro.
+   - Contesto: I backup si cifrano con una chiave "age", un piccolo programma di cifratura. La chiave ha due parti: la pubblica serve a chiudere, la privata ad aprire. Si decide se usare una chiave diversa da quella del vault (la cassaforte delle password di Arianna) e tenere la parte privata solo fuori dal Mac.
+   - Opzione consigliata: Chiave separata, privata fuori dal Mac — un ladro o un virus sul Mac non apre i backup; in cambio Arianna non può aprirli da sola e la chiave va conservata in due posti.
+   - Opzione: La stessa chiave del vault — una sola chiave da gestire, ma chi ruba il Mac apre anche i backup, e perderla porta via vault e backup insieme.
+   - Opzione: Chiave separata, privata sul Mac — prove di ripristino tutte automatiche, ma toglie proprio la protezione richiesta.
+   - Esempio: Generi la chiave su un altro computer, stampi il foglio e lo chiudi in un cassetto, ne metti una copia su una chiavetta. Sul Mac va solo la parte pubblica (comincia con age1), che chiude i backup ma non li apre.
+3. **Per la copia in casa si usa un disco dedicato o Time Machine?** Raccomandazione: disco esterno cifrato (APFS cifrato); Time Machine solo se il suo disco è cifrato e con le esclusioni di `tmutil`, perché altrimenti copia la KB in chiaro.
+   - Contesto: Per la copia su un disco in casa puoi usare un disco esterno dedicato agli archivi cifrati di Arianna, oppure Time Machine, il backup di macOS. Time Machine però copia anche note e file così come sono, leggibili, quindi va bene solo se il suo disco è cifrato. Si decide quale usare; se Time Machine, va detto se il suo disco è cifrato.
+   - Opzione consigliata: Disco dedicato e cifrato — contiene solo gli archivi già cifrati, e anche il disco è cifrato: chi lo trova non legge nulla.
+   - Opzione: Time Machine su disco cifrato — usi ciò che hai già; vanno lanciati i comandi tmutil per escludere il database in uso e i file temporanei.
+   - Opzione: Time Machine su disco non cifrato — sconsigliato: note e file personali finirebbero leggibili su un disco che chiunque può aprire.
    - Esempio: Colleghi un disco "Backup-Arianna" formattato APFS cifrato; ogni notte riceve un file come arianna-2026-10-05T0310-82e7849.tar.gz.age e nient'altro.
-4. **`data/archive/` entra nel backup?** Non era nella richiesta, ma è L2 e `INSTALLER-PORTABILITY.md` lo mette nell'export. Raccomandazione: sì.
-   - Contesto: data/archive/ contiene le conversazioni archiviate, dati riservati (L2). Non era nella tua richiesta di backup, ma la guida all'installazione la mette fra le cose da esportare. Si decide se includerla.
-   - Opzione consigliata: Sì, includerla — le conversazioni archiviate si recuperano dopo un guasto; l'archivio diventa un po' più grande.
-   - Opzione: No, lasciarla fuori — archivi più piccoli, ma dopo un guasto le conversazioni archiviate andrebbero perse.
+4. **Le conversazioni archiviate entrano nel backup?** Raccomandazione: sì, `data/archive/` nel backup; non era nella richiesta, ma è L2 e `INSTALLER-PORTABILITY.md` lo mette nell'export.
+   - Contesto: La cartella data/archive/ contiene le conversazioni archiviate, dati privati (L2). Non era nella tua richiesta di backup, ma la guida all'installazione la mette fra le cose da esportare. Si decide se includerla.
+   - Opzione consigliata: Sì, includerle — dopo un guasto ritrovi anche le conversazioni archiviate; l'archivio è un po' più grande.
+   - Opzione: No, lasciarle fuori — archivi più piccoli, ma dopo un guasto le conversazioni archiviate sarebbero perse.
    - Esempio: Il disco del Mac si rompe e ripristini Arianna su un Mac nuovo; con data/archive/ nel backup ritrovi anche la conversazione archiviata a marzo sul preventivo finto "Rossi Srl".
-5. **Chi lancia il giro notturno: il core (lavoro in coda, sa quando nulla è in corso) o un servizio launchd separato (il core non arriva mai a Docker)?** Raccomandazione: il core, con un processo figlio; launchd servirà comunque per D-088 e il giro si può spostare lì.
-   - Contesto: Qualcuno deve far partire ogni notte il backup. Il core sa già quando non c'è nessun lavoro in corso; un servizio separato di macOS (launchd) terrebbe invece il core lontano da Docker, che ha i poteri pieni sul database. Si decide chi lo lancia.
-   - Opzione consigliata: Il core, con un processo figlio — usa la coda dei lavori che c'è già e aspetta che nulla sia in corso; più avanti si può spostare su launchd, che servirà comunque per il pulsante Aggiorna (D-088).
+5. **Chi fa partire il backup ogni notte?** Raccomandazione: il core, con un processo figlio (è un lavoro in coda e sa quando nulla è in corso), non un servizio launchd separato; launchd servirà comunque per D-088 e il giro si può spostare lì.
+   - Contesto: Qualcuno deve far partire il backup ogni notte. Il core (il programma sempre acceso di Arianna) sa già quando non c'è nessun lavoro in corso. Un servizio separato di macOS (launchd) terrebbe invece il core lontano da Docker, che ha pieni poteri sul database. Si decide chi lo lancia.
+   - Opzione consigliata: Il core — usa la coda dei lavori che c'è già e aspetta che nulla sia in corso; più avanti si può spostare su launchd, che servirà comunque per il pulsante "Aggiorna" (D-088).
    - Opzione: Un servizio launchd separato — il core non tocca mai Docker, ma il servizio deve chiedere al database se c'è qualcosa in corso e va installato a parte.
    - Esempio: Alle 03:00 il core vede una chiamata ancora attiva e rimanda di 10 minuti; alle 03:20 è tutto fermo e lancia il backup. Se alle 05:00 fosse ancora occupato, partirebbe lo stesso segnando "con lavori in corso".
-6. **Sul Mac solo i 7 giornalieri (disco di sviluppo al 95%) e i 7/4/12 completi su disco esterno e fuori casa?** Raccomandazione: sì.
-   - Contesto: La conservazione prevista è 7 backup giornalieri, 4 settimanali e 12 mensili. Il disco del Mac di sviluppo è al 95%, quindi si decide se sul Mac tenere solo i 7 giornalieri e la serie completa solo sui dischi esterni e fuori casa.
-   - Opzione consigliata: Mac solo 7 giornalieri, 7/4/12 fuori — il Mac non si riempie; la storia lunga (un anno) resta sul disco esterno e fuori casa.
-   - Opzione: 7/4/12 completi anche sul Mac — ripristini vecchi più rapidi, ma fino a 23 archivi su un disco quasi pieno.
-   - Esempio: Ti accorgi a dicembre che una nota è stata cancellata a giugno. Sul Mac ci sono solo gli ultimi 7 giorni, ma sul disco esterno trovi il backup mensile di giugno.
-7. **Soglie degli avvisi (copia esterna: giallo dopo 2 giorni, rosso dopo 7; fuori casa: dopo 30) e un testo fisso L0 anche su Telegram?** Raccomandazione: soglie così, Telegram solo per il rosso.
-   - Contesto: Se le copie fuori dal Mac non arrivano, Arianna avvisa con un colore: giallo e poi rosso. Si decidono dopo quanti giorni, e se mandare anche su Telegram un testo fisso senza dati personali (L0).
-   - Opzione consigliata: Giallo 2 g, rosso 7 g — fuori casa 30 g; Telegram solo per il rosso; Avvisi tempestivi senza troppo rumore; su Telegram arriva solo l'allarme serio, con un testo fisso.
-   - Opzione: Soglie più strette — Telegram anche per il giallo; Ti accorgi prima, ma più messaggi, anche quando hai solo lasciato il disco staccato un weekend.
-   - Opzione: Nessun avviso su Telegram — gli avvisi restano solo nella chat web; rischi di vederli tardi.
-   - Esempio: Parti per una settimana e il disco esterno resta staccato. Dopo 2 giorni la sezione Backup diventa gialla; al settimo giorno diventa rossa e su Telegram arriva "Backup: copia esterna in ritardo".
+6. **Sul Mac si tengono solo gli ultimi 7 backup, la serie lunga sui dischi esterni?** Raccomandazione: sì, sul Mac solo i 7 giornalieri (disco di sviluppo al 95%) e i 7/4/12 completi su disco esterno e fuori casa.
+   - Contesto: La conservazione prevista è 7 backup giornalieri, 4 settimanali e 12 mensili (circa un anno di storia). Il disco del Mac di sviluppo è quasi pieno, quindi si decide se sul Mac tenere solo i 7 giornalieri e la serie completa solo sul disco esterno e fuori casa.
+   - Opzione consigliata: Mac 7 giorni, serie completa fuori — il Mac non si riempie; la storia di un anno resta sul disco esterno e fuori casa.
+   - Opzione: Serie completa anche sul Mac — ripristini vecchi più rapidi, ma fino a 23 archivi su un disco quasi pieno.
+   - Esempio: A dicembre ti accorgi che una nota è stata cancellata a giugno. Sul Mac ci sono solo gli ultimi 7 giorni, ma sul disco esterno trovi il backup mensile di giugno.
+7. **Dopo quanti giorni senza copie Arianna ti avvisa, e dove?** Raccomandazione: soglie così (copia esterna: giallo dopo 2 giorni, rosso dopo 7; fuori casa: dopo 30), con un testo fisso L0 anche su Telegram solo per il rosso.
+   - Contesto: Se le copie fuori dal Mac smettono di arrivare, Arianna lo segnala con un colore, prima giallo poi rosso. Si decide dopo quanti giorni, e se mandare anche fuori dalla chat un testo fisso senza dati personali (L0). La proposta parlava di Telegram, che oggi però è spento (D-110): finché resta spento, gli avvisi stanno nella chat.
+   - Opzione consigliata: Giallo 2 g, rosso 7 g, fuori casa 30 g — avvisi in tempo senza troppo rumore; fuori dalla chat arriva solo l'allarme rosso, con un testo fisso.
+   - Opzione: Soglie più strette — ti accorgi prima, ma più messaggi, anche quando hai solo lasciato il disco staccato un fine settimana.
+   - Opzione: Avvisi solo nella chat — niente fuori dalla chat; rischi di vederli tardi.
+   - Esempio: Parti per una settimana e il disco esterno resta staccato. Dopo 2 giorni la sezione Backup diventa gialla; al settimo diventa rossa e arriva il messaggio fisso "Backup: copia esterna in ritardo".
 
 ### Cose non verificate (D-096)
 
@@ -1043,42 +1019,42 @@ La tappa 1 senza la parte nella chat: lo schema, il validatore e il test del con
 
 ### Domande per l'utente
 
-1. **Attivazione automatica per data?** Raccomandazione: sì, con un interruttore acceso di base, ma solo quando il tema scelto è Base. Finestre come nella tabella: Natale dall'Immacolata all'Epifania, Halloween l'ultima settimana di ottobre, San Patrizio il solo 17 marzo.
-   - Contesto: I temi stagionali (Natale, Halloween, San Patrizio…) possono accendersi da soli nei loro giorni, senza che tu vada nelle Impostazioni. Si decide se volerlo e con quale limite, perché un tema che cambia da solo può sorprendere.
-   - Opzione consigliata: Sì, se il tema scelto è Base — acceso di base; nei giorni della festa la chat si veste da sola; un tema che hai scelto a mano non viene mai sostituito; l'interruttore "Feste automatiche" lo spegne quando vuoi.
-   - Opzione: No, solo a mano — nulla cambia mai da solo; per vedere il tema di Natale devi sceglierlo tu e poi rimettere Base.
-   - Opzione: Sì, sempre, anche sopra un tema scelto — la festa vince su tutto, anche su un tema che hai scelto apposta.
-   - Esempio: Usi il tema Base; il 24 ottobre apri la chat e trovi pipistrelli sullo sfondo e Arianna col cappello da strega; il 1° novembre torna tutto come prima. Se invece avevi scelto il tema "Ufficio", resta "Ufficio".
-2. **Quali temi per primi?** Raccomandazione: Base con i contrasti corretti, poi **Halloween** (mancano tre settimane: si fa in tempo), poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
-   - Contesto: I temi sono parecchi e richiedono ore di lavoro (circa 26-37 in tutto), soprattutto per disegnare i costumi dei personaggi. Si decide l'ordine in cui costruirli.
-   - Opzione consigliata: Base, poi Halloween e Natale — Base corretto, poi Halloween, poi Natale e San Patrizio; prima si sistemano i colori poco leggibili di oggi; Halloween arriva in tempo per fine ottobre; Corsia e Ufficio subito dopo.
-   - Opzione: Prima i temi delle serie — Corsia, Ufficio…; vedi subito i temi che avevi chiesto per nome, ma Halloween rischia di non essere pronto per il 24 ottobre.
-   - Opzione: Solo il tema Base — con i colori corretti, il resto più avanti; poco lavoro ora, nessun tema nuovo per un po'.
-   - Esempio: Questa settimana il tema Base diventa più leggibile nel modo chiaro, entro il 24 ottobre c'è Halloween con zucca e pipistrelli, a dicembre Natale con la neve.
-3. **Quali altri temi stagionali ti interessano:** Carnevale, Estate, Pasqua, Capodanno, altro? Raccomandazione: Carnevale ed Estate; Pasqua solo se la vuoi.
-   - Contesto: Oltre a Natale, San Patrizio e Halloween si possono aggiungere altre feste. È una questione di gusto: il documento suggerisce le due più semplici da riconoscere.
-   - Opzione consigliata: Carnevale ed Estate — coriandoli a Carnevale (date mobili calcolate dal codice) e cappello di paglia ad agosto; circa 3-4 ore.
-   - Opzione: Carnevale, Estate e Pasqua — in più Arianna col fiocco pastello e il Coder con l'uovo dipinto dalla Domenica delle Palme a Pasquetta.
-   - Opzione: Nessun altro tema stagionale — si resta ai tre principali, risparmiando ore.
-   - Opzione: Altre feste (scrivi quali) — per esempio Capodanno: va disegnato un costume e scelta una finestra di date.
-   - Esempio: A febbraio, dal giovedì al martedì grasso, lo sfondo si riempie di coriandoli e Arianna porta una maschera dorata; dal 1° al 31 agosto ha il cappello di paglia e gli occhiali da sole.
-4. **Ti vanno bene i temi ispirati con nomi e personaggi generici nel repository, con i personaggi veri solo dai tuoi pacchetti in `data/characters/`?** È il limite di D-060; un tuo tema in `data/themes/` può chiamarsi come vuoi.
-   - Contesto: Hai chiesto temi come Scrubs, The Office, Simpsons, Griffin. I loro personaggi e nomi sono protetti da diritto d'autore e marchi, e ciò che sta nel repository si può copiare e condividere. La proposta: nel repository solo temi "ispirati" con nomi generici, i personaggi veri solo in una tua cartella privata.
-   - Opzione consigliata: Sì, temi generici nel repository — personaggi veri solo in data/characters/; nessun rischio legale nel codice condivisibile; a casa tua puoi comunque avere i personaggi veri e chiamare il tuo tema come vuoi.
-   - Opzione: Personaggi veri nel repository — va contro la regola già decisa (D-060): Claude non li disegnerebbe né scaricherebbe.
+1. **I temi delle feste si accendono da soli nei loro giorni?** Raccomandazione: sì, con un interruttore acceso di base, ma solo quando il tema scelto è Base. Finestre come nella tabella: Natale dall'Immacolata all'Epifania, Halloween l'ultima settimana di ottobre, San Patrizio il solo 17 marzo.
+   - Contesto: I temi (D-103) cambiano colori, sfondo e costumi dei personaggi della chat. Quelli delle feste (Natale, Halloween, San Patrizio…) potrebbero accendersi da soli nei loro giorni, senza che tu vada nelle Impostazioni. Si decide se volerlo e con quale limite, perché un tema che cambia da solo può sorprendere.
+   - Opzione consigliata: Sì, ma solo sopra il tema Base — nei giorni della festa la chat si veste da sola; un tema scelto a mano non viene mai sostituito; l'interruttore "Feste automatiche" lo spegne quando vuoi.
+   - Opzione: No, solo a mano — nulla cambia da solo; per vedere il tema di Natale lo scegli tu e poi rimetti Base.
+   - Opzione: Sì, sopra qualunque tema — la festa vince su tutto, anche su un tema scelto apposta.
+   - Esempio: Usi il tema Base; il 25 ottobre apri la chat e trovi pipistrelli sullo sfondo e Arianna col cappello da strega; il 1° novembre torna tutto come prima. Se invece avevi scelto il tema "Ufficio", resta "Ufficio".
+2. **In che ordine si costruiscono i temi?** Raccomandazione: Base con i contrasti corretti, poi Halloween, poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
+   - Contesto: I temi richiedono parecchie ore (circa 26-37 in tutto), soprattutto per disegnare i costumi dei personaggi. Prima c'è da sistemare il tema di base, che oggi ha alcuni colori poco leggibili. Si decide l'ordine in cui costruirli.
+   - Opzione consigliata: Base, poi Halloween e Natale — prima i colori più leggibili; Halloween se si fa in tempo per fine ottobre, poi Natale e San Patrizio; Corsia e Ufficio subito dopo.
+   - Opzione: Prima i temi ispirati alle serie — vedi subito Corsia, Ufficio e gli altri che avevi chiesto, ma Halloween rischia di arrivare tardi.
+   - Opzione: Solo il tema Base per ora — poco lavoro, nessun tema nuovo per un po'.
+   - Esempio: Questa settimana il tema Base diventa più leggibile nel modo chiaro, a fine ottobre c'è Halloween con zucca e pipistrelli, a dicembre Natale con la neve.
+3. **Quali altre feste vuoi fra i temi?** Scelte possibili: Carnevale, Estate, Pasqua, Capodanno, altro. Raccomandazione: Carnevale ed Estate; Pasqua solo se la vuoi.
+   - Contesto: Oltre a Natale, San Patrizio e Halloween si possono aggiungere altre feste, ognuna con un costume da disegnare e un periodo di date. È una questione di gusto: il documento suggerisce le due più facili da riconoscere.
+   - Opzione consigliata: Carnevale ed Estate — coriandoli a Carnevale (date calcolate dal codice) e cappello di paglia ad agosto; circa 3-4 ore.
+   - Opzione: Carnevale, Estate e Pasqua — in più Arianna col fiocco pastello e il Coder con l'uovo dipinto, dalla Domenica delle Palme a Pasquetta.
+   - Opzione: Nessun'altra festa — si resta alle tre principali e si risparmiano ore.
+   - Opzione: Altre feste (scrivi quali) — per esempio Capodanno: va disegnato un costume e scelto un periodo.
+   - Esempio: A febbraio, dal giovedì al martedì grasso, lo sfondo si riempie di coriandoli e Arianna porta una maschera dorata; ad agosto ha il cappello di paglia e gli occhiali da sole.
+4. **I temi ispirati alle serie TV restano generici nel codice, con i personaggi veri solo nella tua cartella privata?** Raccomandazione: sì; è il limite di D-060, e un tuo tema in `data/themes/` può chiamarsi come vuoi, con i personaggi veri dai tuoi pacchetti in `data/characters/`.
+   - Contesto: Hai chiesto temi come Scrubs, The Office, Simpsons, Griffin. Personaggi e nomi di quelle serie sono protetti da diritto d'autore e marchi, e ciò che sta nel repository di Arianna si può copiare e condividere. La regola già decisa (D-060) è: nel repository solo temi "ispirati" con nomi generici; i personaggi veri solo in una tua cartella privata, fuori da git.
+   - Opzione consigliata: Sì, generici nel codice — nessun rischio legale in ciò che si condivide; a casa tua puoi comunque avere i personaggi veri e chiamare il tuo tema come vuoi.
+   - Opzione: Personaggi veri nel repository — va contro la regola già decisa (D-060): Claude non li disegnerebbe né li scaricherebbe.
    - Esempio: Nel repository c'è il tema "Corsia" (verde acqua, corrimano, Arianna in casacca da sala); se vuoi i protagonisti di Scrubs li metti tu in data/characters/scrubs/ e crei un tuo tema "Scrubs" in data/themes/.
-5. **La scelta del tema vale per tutti i dispositivi (`arianna.toml`) o per browser?** Raccomandazione: per tutti i dispositivi; la modalità chiaro/scuro resta per browser.
-   - Contesto: Il tema scelto si può salvare nella configurazione di Arianna (vale su Mac, telefono, ogni browser) o solo nel browser che stai usando. La modalità chiaro/scuro resta comunque per browser, perché dipende dallo schermo.
-   - Opzione consigliata: Per tutti i dispositivi (arianna.toml) — scegli Natale sul Mac e lo ritrovi sul telefono; il chiaro/scuro resta separato per ogni schermo.
-   - Opzione: Per browser — ogni dispositivo ha il suo tema; più flessibile, ma devi sceglierlo su ognuno.
+5. **Il tema scelto vale su tutti i dispositivi o solo nel browser in cui lo scegli?** Raccomandazione: per tutti i dispositivi (salvato in `arianna.toml`); la modalità chiaro/scuro resta per browser.
+   - Contesto: Il tema scelto si può salvare nella configurazione di Arianna, e allora vale su Mac, telefono e ogni browser, oppure solo nel browser che stai usando. La modalità chiaro o scuro resta comunque per browser, perché dipende dallo schermo.
+   - Opzione consigliata: Su tutti i dispositivi — scegli Natale sul Mac e lo ritrovi sul telefono; il chiaro o scuro resta separato per ogni schermo.
+   - Opzione: Solo nel browser — ogni dispositivo ha il suo tema; più flessibile, ma lo scegli su ognuno.
    - Esempio: Imposti "Ufficio" dal Mac; la sera apri la chat dal telefono in modalità scura e trovi "Ufficio" con i colori scuri, senza fare nulla.
-6. **Costumi in tutte le 28 pose (servono anche all'ufficio pixel della fase 3) o solo in quelle frontali della chat?** Raccomandazione: tutte, anche se costa qualche ora in più.
-   - Contesto: Ogni personaggio ha 28 pose (camminare, scrivere, leggere, di fronte, di lato, di spalle). Nella chat si vedono quasi solo quelle frontali; l'ufficio pixel futuro le usa tutte. Si decide se disegnare i costumi su tutte.
-   - Opzione consigliata: Tutte le 28 pose — qualche ora in più ora, ma il costume vale anche nell'ufficio pixel senza ridisegnarlo.
-   - Opzione: Solo le pose frontali della chat — meno lavoro subito; nell'ufficio i personaggi resterebbero senza costume o andrebbero ridisegnati dopo.
-   - Esempio: A Natale nell'ufficio pixel il Coder cammina di spalle verso un'isola e si vede ancora il cappello sopra l'antenna; con le sole pose frontali il cappello sparirebbe appena si gira.
-7. **I temi cambiano anche suoni o voce?** Proposta: no, la voce non si tocca. Se vuoi parlare di suoni (oggi non ce ne sono), meglio in un'altra decisione.
-   - Contesto: Un tema cambia colori, sfondo e costumi. Si decide se debba cambiare anche voce o suoni. La voce è già stata scelta con prove apposite, e oggi la chat non ha suoni.
+6. **I costumi si disegnano su tutte le pose dei personaggi o solo su quelle frontali?** Raccomandazione: tutte e 28 (servono anche all'ufficio pixel), anche se costa qualche ora in più.
+   - Contesto: Ogni personaggio ha 28 pose: cammina, scrive, legge, visto di fronte, di lato, di spalle. Nella chat si vedono quasi solo quelle frontali; l'ufficio pixel (la pagina Ufficio, D-106) le usa tutte. Si decide se disegnare i costumi su tutte.
+   - Opzione consigliata: Tutte le 28 pose — qualche ora in più ora, ma il costume vale anche nell'ufficio senza ridisegnarlo.
+   - Opzione: Solo le pose frontali — meno lavoro subito; nell'ufficio i personaggi resterebbero senza costume o andrebbero ridisegnati dopo.
+   - Esempio: A Natale nell'ufficio il Coder cammina di spalle verso la sua isola e si vede ancora il cappello; con le sole pose frontali il cappello sparirebbe appena si gira.
+7. **Un tema cambia anche voce o suoni?** Proposta: no, la voce non si tocca. Se vuoi parlare di suoni (oggi non ce ne sono), meglio in un'altra decisione.
+   - Contesto: Un tema cambia colori, sfondo e costumi. Si decide se debba cambiare anche la voce di Arianna o aggiungere suoni. La voce è già stata scelta con prove apposite, e oggi la chat non ha suoni.
    - Opzione consigliata: No, la voce non si tocca — i temi restano solo grafica; se un giorno vuoi dei suoni se ne parla in una decisione a parte.
    - Opzione: Sì, anche suoni (decisione a parte) — si apre una proposta nuova sui suoni, oggi inesistenti.
    - Esempio: Con il tema Halloween Arianna ha il cappello da strega, ma in chiamata parla con la stessa voce di sempre.
@@ -1598,62 +1574,57 @@ Stime grezze (±50%): sono da rifare a fine tappa 1.
 
 ### Domande per l'utente
 
-1. ~~Anticiparla rispetto alla Fase 2?~~ **Decisa:** tappa 1 anticipata. Le tappe 2-4 restano dopo la Fase 2, salvo nuova scelta.
-   - Contesto: L'ufficio pixel era previsto dopo la Fase 2. Hai già scelto di anticiparne la prima tappa (motore e pagina /ufficio con la mappa base); resta da confermare che le tappe successive aspettino la fine della Fase 2.
-   - Opzione consigliata: Confermo: solo la tappa 1 anticipata — le tappe 2-4 (avatar, chat nel pannello, decisioni) restano dopo la Fase 2, che ha la precedenza.
-   - Opzione: Anticipa anche le tappe successive — l'ufficio arriva prima, ma rallenta il lavoro della fase in corso.
-   - Esempio: Oggi apri /ufficio e vedi Arianna e il Coder alle scrivanie con la posa giusta; camminare col tuo personaggio e parlare con loro arriverà dopo la Fase 2.
-2. **Quale avatar:** il "Tu" ridisegnato dall'anteprima, un personaggio dai tuoi pacchetti in `data/characters/`, o scelta in Impostazioni con "Tu" come predefinito?
-   - Contesto: Nell'ufficio pixel avrai un tuo personaggio (avatar) da muovere con le frecce. Si decide che aspetto ha: quello originale "Tu", uno dei tuoi pacchetti di personaggi, o una scelta in Impostazioni.
-   - Opzione consigliata: Scelta in Impostazioni — con "Tu" come predefinito; parti con l'avatar originale ridisegnato dall'anteprima e puoi cambiarlo con un personaggio dei tuoi pacchetti.
+2. **Che aspetto ha il tuo personaggio nell'ufficio pixel?** Scelte possibili: il "Tu" ridisegnato dall'anteprima, un personaggio dai tuoi pacchetti in `data/characters/`, o scelta in Impostazioni con "Tu" come predefinito.
+   - Contesto: L'ufficio pixel è la pagina "Ufficio" della chat, dove gli agenti sono personaggi in pixel art (D-106). Nelle prossime tappe avrai anche un tuo personaggio (avatar) da muovere con le frecce per andare a parlare con gli agenti. Si decide che aspetto ha: quello originale "Tu", uno dei tuoi pacchetti di personaggi, o una scelta nelle Impostazioni.
+   - Opzione consigliata: Scelta in Impostazioni, "Tu" di base — parti con l'avatar originale ridisegnato dall'anteprima e puoi cambiarlo con un personaggio dei tuoi pacchetti.
    - Opzione: Solo il "Tu" ridisegnato — un solo aspetto, meno lavoro.
-   - Opzione: Solo un personaggio dai tuoi pacchetti — devi prepararne uno in data/characters/ prima di usare l'ufficio.
+   - Opzione: Solo dai tuoi pacchetti — devi prepararne uno in data/characters/ prima di usare l'ufficio.
    - Esempio: Apri l'ufficio e cammini col "Tu" in maglietta; in Impostazioni scegli invece un personaggio del tuo pacchetto "amici" e da quel momento cammini con lui.
-3. **Isole in un open space** (come la mappa `base`) **o stanze per progetto** (muri e porte, come `corsia`)?
-   - Contesto: Ogni progetto ha un'"isola" di scrivanie nell'ufficio. Si decide se le isole stanno tutte in un unico grande open space o in stanze separate con muri e porte.
-   - Opzione consigliata: Isole in un open space (mappa base) — tutto visibile a colpo d'occhio, percorsi brevi; le stanze restano per le mappe dei temi che le chiedono (come "corsia").
+3. **I progetti nell'ufficio sono isole in un open space o stanze separate?** Scelte possibili: isole in un open space (come la mappa `base`) o stanze per progetto (muri e porte, come `corsia`).
+   - Contesto: Nell'ufficio ogni progetto ha un'"isola" di scrivanie. Oggi la mappa "base" della tappa 1 è un unico open space. Si decide se tenere questa forma come regola o passare a stanze separate con muri e porte.
+   - Opzione consigliata: Isole in un open space — tutto visibile a colpo d'occhio, percorsi brevi; le stanze restano per le mappe dei temi che le chiedono (come "corsia").
    - Opzione: Stanze per progetto — più ordine e atmosfera, ma si cammina di più e si vede meno insieme.
-   - Esempio: Nell'open space vedi in un colpo solo il Coder che scrive all'isola "repos/demo" e Arianna all'isola "Privata"; con le stanze dovresti entrare in quella di "repos/demo" per vederlo.
-4. **Motore nostro (B), con D-011 sostituita in parte?**
-   - Contesto: Per l'ufficio c'erano due strade: incorporare pixel-agents, un progetto esterno in React con un suo server (A, la decisione D-011), o scrivere un motore nostro sul canvas della chat (B). Il documento consiglia B.
-   - Opzione consigliata: Motore nostro (B) — D-011 sostituita in parte; nessuna dipendenza nuova, stesso codice Vue della chat, l'avatar che cammina e parla si scrive insieme al resto; resta vero che l'ufficio è una vista dentro la chat.
-   - Opzione: pixel-agents incorporato (A) — D-011 com'è; si riusano motore ed editor, ma servono React, un secondo server e un fork dell'interfaccia per avere l'avatar (8-12 ore in più).
-   - Esempio: Con B l'ufficio usa gli stessi colori del tema, gli stessi personaggi e mostra solo nome e stato ("Coder · legge"); con A sarebbe una pagina diversa in un riquadro, con un'altra grafica.
-5. **Arianna:** chiusa da D-124 (siede all'isola del progetto su cui lavora; da libera vaga fra Privata e la zona relax).
-6. **Agenti liberi:** restano seduti o passeggiano come in pixel-agents?
-   - Contesto: Quando un agente non ha lavoro, può restare seduto o passeggiare per l'ufficio come fanno i personaggi di pixel-agents. È una scelta di gusto: il documento non raccomanda, l'opzione più semplice è restare seduti.
+   - Esempio: Nell'open space vedi in un colpo solo il Coder che scrive all'isola "demo" e Arianna in "Privata"; con le stanze dovresti entrare in quella di "demo" per vederlo.
+6. **Gli agenti senza lavoro restano seduti o passeggiano per l'ufficio?** Il documento non raccomanda: l'opzione più semplice è restare seduti.
+   - Contesto: Quando un agente non ha lavoro può restare seduto alla sua scrivania o passeggiare per l'ufficio, come fanno i personaggi di pixel-agents (il progetto da cui viene l'idea). È una questione di gusto. Arianna, da libera, già vaga fra Privata e la zona relax (D-124).
    - Opzione consigliata: Restano seduti — l'ufficio è calmo, distrae meno e consuma meno.
    - Opzione: Passeggiano — più vivo e da "gioco", ma più movimento sullo schermo (fermo comunque con "riduci movimento").
-   - Opzione: Seduti, con interruttore — un interruttore per farli passeggiare; scegli tu quando vuoi più vita.
-   - Esempio: Il Coder ha finito il suo task; seduto, resta alla scrivania con lo schermo spento; se passeggia, va alla macchinetta del caffè e poi al divano.
-7. **Dove vive l'ufficio:** pagina a sé nella barra sinistra, pannello dell'HUD in Fase 3, o entrambi?
-   - Contesto: L'ufficio si può aprire come pagina a sé dalla barra di sinistra, come pannello dentro la schermata principale (HUD, Fase 3), o in entrambi i modi.
-   - Opzione consigliata: Pagina a sé nella barra sinistra — è quello che la proposta descrive (/ufficio); facoltativa, così non distrae dal lavoro.
-   - Opzione: Pannello dell'HUD in Fase 3 — sempre in vista accanto alla chat, ma più piccolo e più distraente.
+   - Opzione: Seduti, con un interruttore — scegli tu quando vuoi più vita.
+   - Esempio: Il Coder ha finito il suo lavoro; seduto, resta alla scrivania con lo schermo spento; se passeggia, va alla macchinetta del caffè e poi al divano.
+7. **Dove si apre l'ufficio?** Scelte possibili: pagina a sé nella barra sinistra, pannello dell'HUD in Fase 3, o entrambi.
+   - Contesto: Oggi l'ufficio è una pagina a sé, "Ufficio" nella barra di sinistra (tappa 1, D-106b). In Fase 3 la schermata principale (l'HUD) avrà dei pannelli, e l'ufficio potrebbe stare anche lì, sempre in vista. Si decide se restare alla pagina, passare al pannello o averli tutti e due.
+   - Opzione consigliata: Pagina a sé nella barra sinistra — com'è oggi; la apri quando vuoi, così non distrae dal lavoro.
+   - Opzione: Pannello della schermata principale — sempre in vista accanto alla chat, ma più piccolo e più distraente.
    - Opzione: Entrambi — massima libertà, più lavoro da mantenere.
-   - Esempio: Clicchi l'icona "Ufficio" nella barra a sinistra e si apre la pagina con la mappa; torni alla chat con un clic, e l'ufficio si ferma quando la pagina è nascosta.
-8. **Quali progetti diventano isole:** quelli attivi negli ultimi 7 giorni, oppure quelli che fissi tu?
-   - Contesto: Le isole dell'ufficio sono una per progetto, ma i posti sulla mappa sono pochi. Si decide quali progetti la ottengono; gli altri finiscono nell'angolo "Archivio".
-   - Opzione consigliata: Attivi negli ultimi 7 giorni — prima quelli che fissi tu; l'ufficio mostra da solo quello su cui lavori, e puoi fissare i progetti che vuoi sempre vedere; l'ordine resta stabile.
-   - Opzione: Solo quelli che fissi tu — controllo totale, ma devi aggiornarli a mano.
-   - Opzione: Solo gli attivi negli ultimi 7 giorni — nulla da fare, ma un progetto importante e fermo da una settimana sparisce.
-   - Esempio: Questa settimana hai lavorato su "repos/demo" e "sito-vetrina"; hanno un'isola ciascuno, mentre "vecchio-blog", fermo da un mese, è nell'Archivio.
-9. **Quali mappe per prime?** Proposta: `base`, poi `corsia` e `salotto` insieme ai temi di D-103 che le usano.
-   - Contesto: Le mappe dell'ufficio (pianta, arredi, posizione delle isole) vanno disegnate una a una. Si decide da quali partire.
-   - Opzione consigliata: Base, poi corsia e salotto — con i temi che le usano; prima l'open space che vale per tutti; "corsia" arriva col tema Corsia e "salotto" coi temi Cartoon giallo e Salotto animato.
+   - Esempio: Clicchi "Ufficio" nella barra a sinistra e si apre la mappa; torni alla chat con un clic, e l'ufficio si ferma quando la pagina è nascosta.
+8. **Quali progetti hanno un'isola nell'ufficio?** Scelte possibili: quelli attivi negli ultimi 7 giorni, oppure quelli che fissi tu.
+   - Contesto: Le isole sono una per progetto, ma i posti sulla mappa sono pochi (5 nella mappa base). Oggi li prendono i progetti approvati nell'ordine delle Impostazioni, gli altri finiscono nell'angolo "Archivio". Si decide la regola definitiva.
+   - Opzione consigliata: I fissati, poi gli attivi da 7 giorni — prima i progetti che fissi tu, poi quelli su cui hai lavorato di recente; l'ordine resta stabile.
+   - Opzione: Solo quelli che fissi tu — controllo totale, ma da aggiornare a mano.
+   - Opzione: Solo gli attivi da 7 giorni — nulla da fare, ma un progetto importante fermo da una settimana sparisce.
+   - Esempio: Questa settimana hai lavorato su "demo" e "sito-vetrina": hanno un'isola ciascuno, mentre "vecchio-blog", fermo da un mese, è nell'Archivio.
+9. **Quali mappe dell'ufficio si disegnano per prime?** Proposta: `base`, poi `corsia` e `salotto` insieme ai temi di D-103 che le usano.
+   - Contesto: Le mappe dell'ufficio (pianta, arredi, posto delle isole) si disegnano una a una. Oggi c'è "base", l'open space. Si decide quali aggiungere e quando; alcune hanno senso solo insieme a un tema (D-103).
+   - Opzione consigliata: Base, poi corsia e salotto coi loro temi — "corsia" arriva col tema Corsia, "salotto" coi temi Cartoon giallo e Salotto animato.
    - Opzione: Solo base per ora — meno lavoro; ogni tema usa la mappa base coi suoi colori.
    - Opzione: Tutte e tre subito — più varietà presto, ma senza i temi pronti le mappe nuove resterebbero poco usate.
    - Esempio: Oggi tutti vedono l'open space "base"; quando arriva il tema Corsia, l'ufficio diventa un reparto con corridoio e corrimano.
-10. **Mappa decisa dal tema o scelta a parte?** Proposta: la decide il tema ("l'ufficio segue il tema"), con un selettore separato solo se ti serve.
-   - Contesto: Hai detto "l'ufficio segue il tema". Si decide se la mappa la sceglie sempre il tema o se vuoi anche un selettore separato.
+10. **La mappa dell'ufficio la decide il tema o si sceglie a parte?** Proposta: la decide il tema ("l'ufficio segue il tema"), con un selettore separato solo se ti serve.
+   - Contesto: Avevi detto "l'ufficio segue il tema": scegliendo un tema cambiano anche colori e pianta dell'ufficio. Si decide se è sempre così o se vuoi anche poter scegliere la mappa a parte.
    - Opzione consigliata: La decide il tema — scegli il tema e cambia anche l'ufficio; un selettore separato solo se un giorno ti serve.
-   - Opzione: Selettore separato — puoi combinare per esempio i colori di Natale con la mappa "corsia", ma è una scelta in più da fare.
+   - Opzione: Selettore separato — puoi combinare per esempio i colori di Natale con la mappa "corsia", ma è una scelta in più.
    - Esempio: Scegli il tema "Corsia" e l'ufficio diventa il reparto d'ospedale; torni a "Base" e torna l'open space.
-11. **Le tue mappe di opere vere** le prepari o procuri tu in `data/themes/`. Vuoi un controllo da riga di comando (`pnpm arianna:themes check`) che ti dica cosa non va?
-   - Contesto: Le mappe ispirate a opere vere (l'ospedale di Scrubs, la casa dei Simpson) non possono stare nel repository: le prepari o procuri tu nella cartella privata data/themes/. Si decide se vuoi un comando che controlla se la tua mappa è valida.
-   - Opzione consigliata: Sì, un comando pnpm arianna:themes check — ti dice cosa non va (per esempio "manca l'ancoraggio «decisioni»") prima di aprire l'ufficio.
-   - Opzione: No, basta il messaggio in Impostazioni — una mappa non valida non blocca nulla: l'ufficio usa la mappa base e Impostazioni mostra il motivo.
+11. **Vuoi un comando che controlla le mappe che prepari tu?** Le mappe ispirate a opere vere le prepari o procuri tu in `data/themes/`; proposta di un controllo da riga di comando, `pnpm arianna:themes check`.
+   - Contesto: Le mappe ispirate a opere vere (l'ospedale di Scrubs, la casa dei Simpson) non possono stare nel repository: le prepari o procuri tu nella cartella privata data/themes/. Si decide se vuoi un comando che ti dica se la tua mappa è valida prima di usarla.
+   - Opzione consigliata: Sì, un comando di controllo — ti dice cosa non va (per esempio "manca il posto delle decisioni") prima di aprire l'ufficio.
+   - Opzione: No, basta l'avviso in Impostazioni — una mappa non valida non blocca nulla: l'ufficio usa la mappa base e le Impostazioni mostrano il motivo.
    - Esempio: Copi in data/themes/ospedale/ la tua mappa, lanci il comando e leggi "riga 4: tessera «x» non nella legenda"; la correggi e il tema funziona.
+
+### Domande chiuse
+
+- 1. Chiusa: decisa dall'utente il 2026-10-05: tappa 1 anticipata (D-106b); le tappe 2-4 restano dopo la Fase 2, salvo nuova scelta.
+- 4. Chiusa: decisa nei fatti con D-106b: la tappa 1, anticipata dall'utente dopo l'anteprima, è costruita con il motore nostro su canvas (strada B), che sostituisce in parte D-011; la conferma della tappa resta nella domanda conf-D-106b.
+- 5. Chiusa: decisa in D-124 (scelte dell'utente del 2026-10-05): Arianna siede all'isola del progetto su cui lavora; da libera vaga fra Privata e la zona relax.
 
 ### Cose non verificate (D-106)
 
@@ -2195,41 +2166,41 @@ Due parti indipendenti; la seconda non serve alla prima.
 
 ### Domande per l'utente
 
-1. **Rizzo-PII come secondo scanner, solo in salita, dopo la prova della tappa 1?** Raccomandazione: sì; il primo uso è sulle uscite verso il cloud, poi al salvataggio delle personalità.
-   - Contesto: Il filtro che controlla cosa esce verso il cloud (il gateway) oggi riconosce solo forme fisse come IBAN, codici fiscali, chiavi; non riconosce nomi o indirizzi scritti in una frase. Rizzo-PII è un piccolo modello locale italiano che li riconosce. Si decide se aggiungerlo come secondo controllo che può solo bloccare, mai lasciar passare.
+1. **Si aggiunge un piccolo modello locale che riconosce nomi e indirizzi prima che un testo vada al cloud?** Raccomandazione: sì, Rizzo-PII come secondo scanner, solo in salita, dopo la prova della tappa 1; il primo uso è sulle uscite verso il cloud, poi al salvataggio delle personalità.
+   - Contesto: Il gateway è il filtro che controlla ogni testo che esce verso Claude, Codex o internet. Oggi riconosce solo forme fisse come IBAN, codici fiscali, chiavi e password; non riconosce nomi, indirizzi o dati catastali scritti in una frase. Rizzo-PII è un piccolo modello italiano che gira sul Mac e li riconosce. Si decide se aggiungerlo come secondo controllo che può solo bloccare ("solo in salita"), mai lasciar passare qualcosa che il primo blocca.
    - Opzione consigliata: Sì, dopo una prova su testi finti — prima si misura quanto sbaglia (soprattutto blocchi inutili su testi di codice), poi entra nel gateway; primo uso sulle uscite verso il cloud.
-   - Opzione: No, basta lo scanner di oggi — nessun processo in più, ma nomi e indirizzi in prosa continuano a non essere riconosciuti.
+   - Opzione: No, basta il controllo di oggi — nessun processo in più, ma nomi e indirizzi scritti in prosa continuano a passare inosservati.
    - Opzione: Rinviare la decisione — se ne riparla dopo altre priorità.
-   - Esempio: Un brief per il Coder contiene "manda la bozza a Mario Rossi, via Garibaldi 12, Torino"; lo scanner di oggi non vede nulla, Rizzo-PII trova nome e indirizzo e la delega si ferma in "Attende te".
-2. **Se il riconoscitore non risponde, le uscite verso il cloud si fermano o passano con il solo scanner deterministico?** Raccomandazione: si fermano (default-deny), come una delega senza adattatore. L'unica eccezione possibile è l'installazione di sviluppo, riconosciuta con lo stesso criterio deterministico del doctor (password di sviluppo, nessun vault), mai con un'impostazione che si possa dimenticare accesa; ogni uscita passata senza il secondo controllo resta registrata in `gateway_log`.
-   - Contesto: Il secondo controllo (Rizzo-PII) è un processo che può essere spento o bloccato. Si decide cosa succede alle uscite verso il cloud quando non risponde: fermarsi per prudenza o passare col solo controllo di oggi.
-   - Opzione consigliata: Si fermano (prudenza) — senza il secondo controllo niente esce verso il cloud; unica eccezione l'installazione di sviluppo, riconosciuta in automatico, con ogni uscita registrata.
-   - Opzione: Passano col solo scanner di oggi — Claude e Codex funzionano sempre, ma la protezione cambia senza che te ne accorga a seconda che il processo sia acceso.
-   - Esempio: Il processo del riconoscitore si è chiuso; chiedi al Coder una modifica e la richiesta resta in attesa con il motivo "secondo controllo non disponibile" finché non si riavvia.
-3. **Dove gira: dentro `apps/voice` (stesso ambiente Python e stessa gabbia, nessuna eccezione nuova alla regola "Python solo in `apps/voice`"), in un processo Python suo, o in Node con un runtime ONNX?** Raccomandazione: dentro `apps/voice` come endpoint separato, sapendo che allora `[voice]` e il suo processo diventano necessari per ogni delega cloud (con la domanda 2: senza voce accesa, niente cloud). Un processo Python suo richiede che sia l'utente a cambiare la regola in CLAUDE.md; ONNX in Node evita Python ma è anch'esso una dipendenza nuova con la sua voce in DECISIONS.
-   - Contesto: Rizzo-PII è un modello che gira in Python. Oggi Python è ammesso solo in apps/voice (la parte vocale). Si decide dove farlo girare.
-   - Opzione consigliata: Dentro apps/voice, a parte — come servizio separato; nessuna eccezione nuova alle regole; però la parte vocale deve essere accesa per ogni delega al cloud.
-   - Opzione: In un processo Python suo — più indipendente, ma serve che tu cambi la regola "Python solo in apps/voice".
-   - Opzione: In Node con un runtime ONNX — niente Python, ma è comunque una dipendenza nuova da approvare.
-   - Esempio: Avvii Arianna con la voce accesa; prima che un testo esca verso Claude, il core lo manda al servizio dentro apps/voice e riceve "nessun dato personale"; se la voce è spenta, quel testo non esce.
-4. **Decisioni tipate: prima la via senza modelli nuovi (B1, probabilità del 27B già caricato), Laya solo se non basta?** Raccomandazione: sì.
-   - Contesto: Il modello grande locale (27B) impiega circa 20 secondi anche per scelte semplici fra poche opzioni. Si può accelerare leggendo quale opzione il modello già caricato ritiene più probabile, senza fargli scrivere una risposta (B1), oppure usare un modello nuovo apposito, Laya (B2), che però va prima addestrato.
-   - Opzione consigliata: Prima B1, Laya solo se non basta — nessun modello nuovo né memoria in più; Laya entra solo se B1 non funziona e accetti di addestrarlo.
+   - Esempio: Un incarico per il Coder contiene "manda la bozza a Mario Rossi, via Garibaldi 12, Torino"; il controllo di oggi non vede nulla, Rizzo-PII trova nome e indirizzo e la delega si ferma in "Attende te".
+2. **Se il secondo controllo non risponde, i testi verso il cloud si fermano o passano lo stesso?** Raccomandazione: si fermano (default-deny), come una delega senza adattatore. L'unica eccezione possibile è l'installazione di sviluppo, riconosciuta con lo stesso criterio deterministico del doctor (password di sviluppo, nessun vault), mai con un'impostazione che si possa dimenticare accesa; ogni uscita passata senza il secondo controllo resta registrata in `gateway_log`.
+   - Contesto: Il secondo controllo (Rizzo-PII) è un programma a parte, che può essere spento o bloccato. Si decide cosa succede ai testi diretti al cloud quando non risponde: fermarsi per prudenza o passare col solo controllo di oggi.
+   - Opzione consigliata: Si fermano, per prudenza — senza il secondo controllo niente esce verso il cloud; unica eccezione l'installazione di sviluppo con dati finti, riconosciuta in automatico, con ogni uscita registrata.
+   - Opzione: Passano col solo controllo di oggi — Claude e Codex funzionano sempre, ma la protezione cambia senza che te ne accorga a seconda che il programma sia acceso.
+   - Esempio: Il programma del secondo controllo si è chiuso; chiedi al Coder una modifica e la richiesta resta in attesa con il motivo "secondo controllo non disponibile" finché non riparte.
+3. **Dove gira Rizzo-PII?** Scelte possibili: dentro `apps/voice` (stesso ambiente Python e stessa gabbia, nessuna eccezione nuova alla regola "Python solo in `apps/voice`"), in un processo Python suo, o in Node con un runtime ONNX. Raccomandazione: dentro `apps/voice` come endpoint separato, sapendo che allora `[voice]` e il suo processo diventano necessari per ogni delega cloud (con la domanda 2: senza voce accesa, niente cloud). Un processo Python suo richiede che sia l'utente a cambiare la regola in CLAUDE.md; ONNX in Node evita Python ma è anch'esso una dipendenza nuova con la sua voce in DECISIONS.
+   - Contesto: Rizzo-PII è un modello che gira in Python. Una regola del progetto ammette Python solo in apps/voice, la parte di Arianna che gestisce voce e chiamate. Si decide dove farlo girare.
+   - Opzione consigliata: Dentro apps/voice, a parte — un servizio separato nella parte vocale; nessuna regola da cambiare, ma la parte vocale deve essere accesa per ogni lavoro mandato al cloud.
+   - Opzione: In un programma Python suo — più indipendente, ma devi cambiare tu la regola "Python solo in apps/voice".
+   - Opzione: In Node, senza Python — si usa un motore ONNX dentro il core: niente Python, ma è comunque una libreria nuova da approvare.
+   - Esempio: Avvii Arianna con la voce accesa; prima che un testo esca verso Claude il core lo manda al servizio dentro apps/voice e riceve "nessun dato personale"; con la voce spenta quel testo non esce.
+4. **Per le scelte semplici si prova prima a rendere più veloce il modello che c'è già?** Raccomandazione: sì, prima la via senza modelli nuovi (B1, probabilità del 27B già caricato), Laya solo se non basta.
+   - Contesto: Il modello locale grande (il 27B) impiega circa 20 secondi anche per scelte semplici fra poche opzioni, come il tipo di una nota. Si può accelerare leggendo direttamente quale opzione il modello già caricato ritiene più probabile, senza fargli scrivere una risposta (via B1). L'alternativa (B2) è Laya, un modello nuovo fatto apposta, che però va prima addestrato sui nostri casi.
+   - Opzione consigliata: Prima il modello di oggi, Laya dopo — nessun modello nuovo né memoria in più; Laya entra solo se la prima via non basta e accetti di addestrarlo.
    - Opzione: Subito Laya — più veloce in teoria, ma senza addestramento sbaglia più che tirare a indovinare.
    - Opzione: Nessuna delle due per ora — si resta coi 20 secondi.
-   - Esempio: Per decidere se una nota è un "pensiero" o un "link", invece di far scrivere una risposta al 27B si legge in una sola passata quale delle due opzioni preferisce, in meno tempo.
-5. **Quale decisione per prima?** Raccomandazione: `kind` e tag del riordino delle note (D-086), dove un errore si corregge a mano e non cambia etichette; poi chi risponde fra più agenti (D-111 B), solo fra quelli già ammessi.
+   - Esempio: Per decidere se una nota è un "pensiero" o un "link", invece di far scrivere una risposta al 27B si legge in una sola passata quale delle due opzioni preferisce, in molto meno tempo.
+5. **Su quale scelta si prova per prima la via veloce?** Raccomandazione: `kind` e tag del riordino delle note (D-086), dove un errore si corregge a mano e non cambia etichette; poi chi risponde fra più agenti (D-111 B), solo fra quelli già ammessi.
    - Contesto: Le scelte veloci vanno provate prima dove un errore costa poco e si corregge a mano. Mai per etichette di privacy, gateway o approvazioni: lì decide sempre il codice. Si decide da quale scelta partire.
-   - Opzione consigliata: Tipo e tag delle note riordinate — un errore si corregge a mano e non cambia nessuna etichetta; poi chi risponde fra più agenti.
+   - Opzione consigliata: Tipo e tag delle note — un errore si corregge con un clic e non cambia nessuna etichetta; poi chi risponde fra più agenti.
    - Opzione: Chi risponde fra più agenti — più visibile in chat, ma un errore si nota di più.
-   - Opzione: Se una routine chiama o scrive — utile per le routine, che però non esistono ancora.
-   - Esempio: Catturi "leggere l'articolo sui server MCP"; la scelta veloce gli dà tipo "link" e tag "lettura"; se sbaglia, cambi il tag con un clic.
-6. **Quando, rispetto agli altri passi?** Raccomandazione: dopo la tappa A1 rivista di D-107 e la prova di D-058. La tappa 1 non tocca il core ma chiede prima le risposte 1 e 3, la voce della dipendenza e la licenza dei pesi.
-   - Contesto: È un lavoro in più fra molti in corso. Si decide quando farlo rispetto agli altri passi.
-   - Opzione consigliata: Dopo D-107 A1 e D-058 — dopo la tappa A1 di D-107 e la prova di D-058; prima si chiudono i lavori già avviati; la prova di Rizzo-PII richiede comunque le risposte 1 e 3 e la verifica della licenza.
+   - Opzione: Se una routine chiama o scrive — utile per le routine (D-110), che però non esistono ancora.
+   - Esempio: Salvi "leggere l'articolo sui server MCP"; la scelta veloce le dà tipo "link" e tag "lettura"; se sbaglia, cambi il tag con un clic.
+6. **Quando si fa questo lavoro rispetto agli altri?** Raccomandazione: dopo la tappa A1 rivista di D-107 (fatta) e la prova di D-058. La tappa 1 non tocca il core ma chiede prima le risposte 1 e 3, la voce della dipendenza e la licenza dei pesi.
+   - Contesto: È un lavoro in più fra molti. La proposta era di farlo dopo due cose: la personalità degli agenti (D-107, tappa A1, nel frattempo fatta) e la prova dal vivo del Coder su un tuo progetto fuori da Arianna (D-058, ancora da fare). Si decide quando farlo.
+   - Opzione consigliata: Dopo la prova del Coder (D-058) — prima si chiudono i lavori già avviati; la prova di Rizzo-PII richiede comunque le risposte 1 e 3 e la verifica della licenza.
    - Opzione: Subito — la protezione in più arriva prima, ma rallenta i lavori aperti.
-   - Opzione: Dopo la Fase 1A — si aspetta la fine della fase corrente.
-   - Esempio: Finita la personalità degli agenti (D-107 A1) e provato il Coder sui progetti (D-058), si scaricano i pesi di Rizzo-PII e si prova su testi finti.
+   - Opzione: Dopo la Fase 1A — si aspetta la fine della fase in corso.
+   - Esempio: Provato il Coder su un progetto vero (D-058), si scaricano i pesi di Rizzo-PII e si misura su testi finti quanti nomi trova e quanti blocchi inutili fa.
 
 ### Cose non verificate (D-113)
 
@@ -2319,42 +2290,42 @@ Totale circa 24-36 h. Nessuna dipendenza nuova: è una tabella di Postgres, non 
 
 ### Domande per l'utente
 
-1. **Il profilo come elenco di fatti singoli (argomento e testo breve), ognuno con il suo livello, in una tabella del database?** Raccomandazione: sì; una pagina unica o file della KB non permettono di far uscire un fatto solo.
-   - Contesto: Arianna oggi non sa nulla di te tra una chat e l'altra. La proposta è un profilo fatto di fatti singoli (argomento + testo breve), ognuno con il suo livello di privacy, salvati in una tabella del database. Così si può condividere un fatto senza condividere tutto il resto.
-   - Opzione consigliata: Sì, fatti singoli in una tabella — ogni fatto ha il suo livello e può uscire da solo, con la tua approvazione.
+1. **Il profilo "Su di te" è un elenco di fatti singoli, ognuno col suo livello di privacy?** Raccomandazione: sì, fatti singoli (argomento e testo breve) in una tabella del database; una pagina unica o file della KB non permettono di far uscire un fatto solo.
+   - Contesto: Oggi Arianna non sa nulla di te fra una chat e l'altra. La proposta (D-114) è un profilo fatto di fatti singoli, ognuno con un argomento e un testo breve e con il suo livello di privacy, salvati nel database di Arianna. Così si può dare a un agente un fatto solo, senza dargli tutto il resto.
+   - Opzione consigliata: Sì, fatti singoli — ogni fatto ha il suo livello e può uscire da solo, con la tua approvazione.
    - Opzione: Una pagina unica di profilo — più semplice da scrivere, ma si condivide tutto o niente.
-   - Opzione: File della knowledge base — l'etichetta vale per tutto il file: servirebbe un file per ogni fatto.
+   - Opzione: Note della knowledge base — l'etichetta vale per tutto il file: servirebbe un file per ogni fatto.
    - Esempio: "città: Paperopoli" (solo in casa), "lavoro: sviluppatore web" (condivisibile), "orari: lavoro 9-18" (condivisibile).
-2. **Due livelli, "Solo in casa" (predefinito) e "Condivisibile", con le cose L3 (salute, documenti, credenziali) fuori dal profilo?** Raccomandazione: sì.
-   - Contesto: Ogni fatto del profilo avrebbe uno di due livelli: "Solo in casa" (lo leggono solo i modelli locali, predefinito) o "Condivisibile" (può arrivare anche a Claude e Codex). Le cose più delicate (salute, documenti, credenziali) restano fuori dal profilo, nel vault o nell'archivio.
-   - Opzione consigliata: Sì, due livelli, cose delicate fuori — scelta semplice per ogni fatto; ciò che è delicatissimo non lo legge nessun modello.
-   - Opzione: Più livelli — più sfumature, ma più complicato da scegliere ogni volta.
-   - Opzione: Anche le cose delicate nel profilo — comodo, ma un modello potrebbe leggerle.
+2. **Bastano due livelli, "Solo in casa" e "Condivisibile", con le cose più delicate fuori dal profilo?** Raccomandazione: sì, "Solo in casa" predefinito; le cose L3 (salute, documenti, credenziali) fuori dal profilo.
+   - Contesto: Ogni fatto avrebbe uno di due livelli. "Solo in casa" (L2, predefinito): lo leggono solo i modelli che girano sul Mac. "Condivisibile" (L1): può arrivare anche a Claude e Codex, passando dal controllo delle uscite. Le cose delicatissime (salute, documenti, credenziali, livello L3) restano fuori dal profilo, nella cassaforte o nell'archivio, dove nessun modello le legge.
+   - Opzione consigliata: Due livelli, il delicato fuori — una scelta semplice per ogni fatto; ciò che è delicatissimo non lo legge nessun modello.
+   - Opzione: Più livelli — più sfumature, ma più difficile scegliere ogni volta.
+   - Opzione: Anche il delicato nel profilo — comodo, ma un modello potrebbe leggerlo.
    - Esempio: "lingua preferita: italiano" è Condivisibile; "indirizzo di casa" è Solo in casa; il numero della carta d'identità non entra nel profilo.
-3. **Ogni richiesta di un fatto "Solo in casa" chiede il tuo sì ogni volta, senza "ricorda la scelta"?** Raccomandazione: sì, almeno all'inizio; se diventa pesante, un "sì per questa conversazione" più avanti.
-   - Contesto: Quando a un agente cloud servirebbe un fatto "Solo in casa", Arianna ti chiede il permesso mostrandoti il testo esatto. Si decide se chiederlo ogni volta o permettere "ricorda la scelta".
-   - Opzione consigliata: Sì, ogni volta — senza "ricorda la scelta"; vedi sempre cosa esce e a chi; se diventa pesante, più avanti un "sì per questa conversazione".
-   - Opzione: Con "ricorda la scelta" per agente — meno conferme, ma dopo la prima volta il dato esce senza che tu lo veda.
+3. **Ogni volta che un agente cloud chiede un fatto privato, ti chiede il permesso?** Raccomandazione: sì, ogni richiesta di un fatto "Solo in casa" chiede il tuo sì ogni volta, senza "ricorda la scelta", almeno all'inizio; se diventa pesante, un "sì per questa conversazione" più avanti.
+   - Contesto: Quando a un agente che gira nel cloud (Claude, Codex) servirebbe un fatto "Solo in casa", Arianna ti chiede il permesso mostrandoti il testo esatto che uscirebbe e a chi. Si decide se chiederlo ogni volta o permettere "ricorda la scelta" per un agente.
+   - Opzione consigliata: Sì, ogni volta — vedi sempre cosa esce e a chi; se diventa pesante, più avanti un "sì per questa conversazione".
+   - Opzione: "Ricorda la scelta" per agente — meno conferme, ma dopo la prima volta il dato esce senza che tu lo veda.
    - Esempio: Il Coder chiede la tua città per il fuso orario; compare "Il Coder (Claude) chiede: città · Testo che esce: «Paperopoli» · [Dagli solo questo] [No]"; la volta dopo te lo richiede.
-4. **Arianna può proporti fatti nuovi che sente in conversazione, sempre da confermare e sempre "Solo in casa" all'inizio?** Raccomandazione: sì, come tappa D.
-   - Contesto: Mentre parli, Arianna potrebbe accorgersi di cose stabili su di te e proporti di ricordarle. Non le scriverebbe mai da sola: serve sempre la tua conferma e partono come "Solo in casa".
-   - Opzione consigliata: Sì, come tappa D, sempre da confermare — il profilo si riempie senza fatica, ma nulla entra senza il tuo sì.
-   - Opzione: No, scrivo i fatti solo io — controllo totale, ma il profilo cresce solo se ti ricordi di aggiornarlo.
+4. **Arianna può proporti di ricordare cose che dici in chat?** Raccomandazione: sì, come tappa D, sempre da confermare e sempre "Solo in casa" all'inizio.
+   - Contesto: Mentre parli, Arianna potrebbe accorgersi di cose stabili su di te e proporti di ricordarle nel profilo. Non le scriverebbe mai da sola: serve sempre la tua conferma, e partono come "Solo in casa".
+   - Opzione consigliata: Sì, sempre da confermare — il profilo si riempie senza fatica, ma nulla entra senza il tuo sì.
+   - Opzione: No, i fatti li scrivo solo io — controllo totale, ma il profilo cresce solo se ti ricordi di aggiornarlo.
    - Esempio: In chat scrivi "da lunedì lavoro da Topolinia"; Arianna chiede "Vuoi che ricordi: città → Topolinia? (solo in casa)" e tu rispondi sì o no.
-5. **Dati veri: il profilo si riempie solo quando l'installazione è pronta (doctor verde, password vere dal vault), e in sviluppo con fatti finti?** Raccomandazione: sì; è la regola "solo dati finti in sviluppo", e il profilo è la prima tabella fatta apposta per i tuoi dati più personali.
-   - Contesto: Il profilo ha senso solo con dati veri, ma la regola del progetto è "solo dati finti in sviluppo", perché con le password di sviluppo il database non è protetto. Si decide quando inserire i dati veri.
-   - Opzione consigliata: Solo con l'installazione pronta — dati finti in sviluppo; i tuoi dati veri arrivano solo quando il controllo dell'installazione (doctor) è verde e le password vere sono nel vault.
+5. **I tuoi dati veri entrano nel profilo solo quando l'installazione è pronta per i dati veri?** Raccomandazione: sì, il profilo si riempie solo con l'installazione pronta (doctor verde, password vere dal vault), e in sviluppo con fatti finti; è la regola "solo dati finti in sviluppo", e il profilo è la prima tabella fatta apposta per i tuoi dati più personali.
+   - Contesto: Il profilo ha senso con dati veri, ma la regola del progetto è "solo dati finti in sviluppo": con le password di sviluppo il database non è protetto. Il controllo dell'installazione (pnpm arianna:doctor) dice quando è pronta: password vere prese dalla cassaforte (vault) e tutto verde. Si decide quando inserire i dati veri.
+   - Opzione consigliata: Solo con l'installazione pronta — in sviluppo fatti finti; i tuoi dati veri arrivano quando il controllo è verde e le password vere sono nella cassaforte.
    - Opzione: Subito anche in sviluppo — lo usi prima, ma i dati più personali starebbero in un database poco protetto.
    - Esempio: In sviluppo il profilo contiene "città: Paperopoli"; quando l'installazione vera è pronta scrivi la tua città vera.
-6. **Quando, rispetto agli altri passi?** La memoria è della Fase 2: va annotata come eccezione in `ROADMAP.md`, e la SPEC ("Memoria e knowledge base", che affida i fatti stabili a Mem0) va aggiornata: i fatti dichiarati da te in Postgres, Mem0 per la memoria episodica. Raccomandazione: dopo la tappa A3 di D-107 (stesso punto del prompt) e la prova di D-058; la tappa A si può fare prima, perché non tocca il prompt.
-   - Contesto: La memoria su di te era prevista nella Fase 2; farla prima è un'eccezione da annotare nella roadmap. Si decide quando costruirla rispetto agli altri lavori.
-   - Opzione consigliata: Dopo D-107 A3 e D-058 — dopo la tappa A3 di D-107 e la prova di D-058, la tappa A anche prima; la parte che entra nel prompt va fatta dopo la personalità (stesso punto); la tabella e la pagina "Su di te" si possono fare subito.
+6. **Quando si costruisce il profilo rispetto agli altri lavori?** La memoria è della Fase 2: va annotata come eccezione in `ROADMAP.md`, e la SPEC ("Memoria e knowledge base", che affida i fatti stabili a Mem0) va aggiornata: i fatti dichiarati da te in Postgres, Mem0 per la memoria episodica. Raccomandazione: dopo la tappa A3 di D-107 (stesso punto del prompt) e la prova di D-058; la tappa A si può fare prima, perché non tocca il prompt.
+   - Contesto: La memoria su di te era prevista nella Fase 2; farla prima è un'eccezione da scrivere nel piano dei lavori. Il profilo entra nel prompt di Arianna nello stesso punto della personalità degli agenti (D-107), quindi conviene farlo dopo quella parte. La tabella e la pagina "Su di te" (tappa A) invece non toccano il prompt.
+   - Opzione consigliata: Pagina subito, uso nel prompt dopo — la tabella e la pagina "Su di te" si fanno anche ora; la parte che entra nel prompt dopo la personalità (D-107 A3) e la prova del Coder (D-058).
    - Opzione: Tutto subito — il profilo arriva prima, ma si sovrappone ai lavori sul prompt ancora aperti.
-   - Opzione: Nella Fase 2, come previsto — nessuna eccezione alla roadmap, ma più attesa.
+   - Opzione: Nella Fase 2, come previsto — nessuna eccezione al piano, ma più attesa.
    - Esempio: Questa settimana nasce la pagina Impostazioni → "Su di te" dove scrivi i fatti; Arianna comincerà a usarli dopo che la personalità degli agenti è finita.
-7. **Per Claude Code che sviluppa Arianna: una casella "Su di te, per Claude Code" nella pagina `/sviluppo`, passata dal gateway come L1 e salvata in `data/dev/UTENTE.md` (fuori da git, letto a inizio sessione), come le risposte di D-102?** Raccomandazione: sì; solo ciò che diresti in chat (chi sei, che lavoro fai, come preferisci lavorare). Un file scritto a mano e letto da Claude Code non passerebbe dal gateway, ed è vietato.
-   - Contesto: Anche Claude Code, che sviluppa Arianna, lavorerebbe meglio sapendo qualcosa di te (che lavoro fai, come preferisci lavorare). È un servizio cloud, quindi può ricevere solo ciò che diresti in chat, passando dal gateway come le risposte di questa pagina.
-   - Opzione consigliata: Sì, casella in /sviluppo — una casella "Su di te, per Claude Code"; il testo passa dal gateway e va in data/dev/UTENTE.md, fuori da git, letto da Claude a inizio sessione.
+7. **Una casella in questa pagina per dire a Claude Code qualcosa di te?** Raccomandazione: sì, una casella "Su di te, per Claude Code" nella pagina `/sviluppo`, passata dal gateway come L1 e salvata in `data/dev/UTENTE.md` (fuori da git, letto a inizio sessione), come le risposte di D-102; solo ciò che diresti in chat (chi sei, che lavoro fai, come preferisci lavorare). Un file scritto a mano e letto da Claude Code non passerebbe dal gateway, ed è vietato.
+   - Contesto: Anche Claude Code, che sviluppa Arianna, lavorerebbe meglio sapendo qualcosa di te: che lavoro fai, come preferisci lavorare. È un servizio cloud, quindi può ricevere solo ciò che diresti in chat, passando dal controllo delle uscite come le risposte che scrivi in questa pagina.
+   - Opzione consigliata: Sì, una casella in questa pagina — il testo passa dal controllo e va in data/dev/UTENTE.md, fuori da git, letto da Claude a inizio sessione.
    - Opzione: No — Claude Code continua a sapere di te solo ciò che scrivi nelle conversazioni.
    - Esempio: Scrivi "Sono uno sviluppatore web freelance, preferisco risposte brevi e una domanda alla volta"; alla sessione dopo Claude Code lo legge e si regola.
 
