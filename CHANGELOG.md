@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.50.0] - 2026-10-10
+
 ### Aggiunto
 
 - Nelle conversazioni di lavoro le card di un piano le scrive Claude a partire dalla sola richiesta; il modello locale riconosce anche le richieste brevi come "mi serve una landing" (D-164).
