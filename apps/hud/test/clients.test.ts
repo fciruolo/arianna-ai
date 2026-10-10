@@ -5,6 +5,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { reactive } from 'vue';
+
 import { ApiError } from '../src/lib/api.ts';
 import {
   addressText,
@@ -212,4 +214,11 @@ test('the form of a client read from the core is a copy', () => {
   assert.deepEqual(client.tags, ['web']);
   assert.equal(client.registeredAddress?.street, 'Via Finta');
   assert.deepEqual(formOf(null), { ...EMPTY_FORM, tags: [] });
+});
+
+test('the form of a client is made also from Vue reactive data (structuredClone refuses proxies)', () => {
+  const client = reactive({ ...EMPTY_FORM, id: ID, status: 'active', area: 'IT', sdiEffective: '0000000', logo: null, label: 'L2', contacts: [], projects: [], createdAt: '', updatedAt: '', archivedAt: null, displayName: 'Rossi', tags: ['web'], registeredAddress: { street: 'Via Finta', number: null, postalCode: null, city: null, province: null, country: 'IT' } }) as unknown as Client;
+  const copy = formOf(client);
+  assert.deepEqual(copy.tags, ['web']);
+  assert.equal(copy.registeredAddress?.street, 'Via Finta');
 });

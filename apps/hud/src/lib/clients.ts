@@ -144,7 +144,7 @@ export function formOf(client: Client | null): ClientForm {
   const form = {} as Record<keyof ClientForm, unknown>;
   for (const key of Object.keys(EMPTY_FORM) as (keyof ClientForm)[]) {
     const value = (client as unknown as Record<string, unknown>)[key];
-    form[key] = value !== null && typeof value === 'object' ? structuredClone(value) : value;
+    form[key] = value !== null && typeof value === 'object' ? (JSON.parse(JSON.stringify(value)) as typeof value) : value;
   }
   form.status = client.status === 'prospect' ? 'prospect' : 'active';
   return form as ClientForm;

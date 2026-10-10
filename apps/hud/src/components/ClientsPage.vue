@@ -302,7 +302,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           <span>Per la fattura elettronica mancano: {{ gaps.join(', ') }}.</span>
         </p>
 
-        <nav class="flex items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
+        <nav class="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
           <button
             v-for="item in tabs"
             :key="item.id"
