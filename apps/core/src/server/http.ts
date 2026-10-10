@@ -50,6 +50,8 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
+import { addContact, archiveClient, ClientError, PROJECT_NAME as CLIENT_PROJECT_NAME, clientOfProject, createClient, linkProject, listClients, readClient, readLogo, removeContact, removeLogo, setLogo, unlinkProject, updateClient, updateContact, type ClientNames } from '../clients.ts';
+import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format.ts';
 import { completeItemCard, itemCard } from '../im-cards.ts';
 import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, setImItemState, type ImItemRef, type ImOutcome } from '../im.ts';
@@ -62,6 +64,7 @@ import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
+import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
@@ -188,6 +191,8 @@ export interface ApiServerOptions {
   devProgress?: DevProgressApi;
   /** The cardwall (D-152): the folder of the files attached to cards (data/cards); without it the file routes answer 404. */
   cards?: { dir: string };
+  /** The clients (D-168): the folder of their logos (data/clients); without it the logo routes answer 404. */
+  clients?: { dir: string };
   /** "Novità": the home whose CHANGELOG.md is read, read only; without it the route answers 404. */
   changelog?: { home: string };
   /** The agents the user creates from the Agents page (D-119); without it the routes answer 404. */
@@ -210,6 +215,8 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
+  /** "Scrivi il report" of an IM (D-167, P4c); without it the routes answer 404. */
+  imReports?: ImReporter;
   /**
    * Closes an incognito conversation (D-136) stopping its work in progress;
    * without it the route closes it without stopping a step of the worker.
@@ -280,6 +287,8 @@ export const MAX_BODY_BYTES = 128 * 1024;
 const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
 /** What the user writes on a card, new or changed (cardwall.ts). */
 const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills'];
+/** A logo comes as JSON with its bytes in base64: a third more than the image, and some room. */
+const MAX_LOGO_BODY = Math.ceil((MAX_LOGO_BYTES * 4) / 3) + 4 * 1024;
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 /** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
@@ -368,6 +377,7 @@ const APPROVAL_STATES: readonly ApprovalState[] = ['pending', 'approved', 'rejec
 
 interface RouteOptions {
   cards: ApiServerOptions['cards'];
+  clients?: ApiServerOptions['clients'];
   projects: () => readonly ProjectInfo[];
   models: () => readonly { executor: string; model: string }[];
   defaultModel: () => string | undefined;
@@ -1380,7 +1390,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -1390,6 +1400,7 @@ function routes(sql: Sql, { cards, projects, models, defaultModel, agents, chara
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
+    ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: agents().filter((agent) => agent !== 'arianna') }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
@@ -1738,6 +1749,136 @@ function secretaryRoutes(sql: Sql): Route[] {
         if (error instanceof CommitmentError) throw new HttpError(error.code === 'not-found' ? 404 : 409, error.code === 'not-found' ? 'not found' : 'the commitment is not open');
         throw error;
       }
+    }),
+  ];
+}
+
+/**
+ * The clients (I-16, D-168, tappa C1): the registry, the contacts, the
+ * projects and the logo. Private (L2): only the web chat reads and writes
+ * them, nothing goes out. A field that does not pass answers 400 with
+ * `issues` (field and why), which the chat shows next to the field.
+ */
+function clientRoutes(sql: Sql, names: () => ClientNames, clients: ApiServerOptions['clients']): Route[] {
+  const logosDir = (): string => {
+    if (clients === undefined) throw new HttpError(404, 'not found');
+    return clients.dir;
+  };
+  const guard = async (work: () => Promise<Result>): Promise<Result> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof ClientError) {
+        const status = error.code === 'not-found' ? 404 : error.code === 'invalid' ? 400 : 409;
+        return { status, body: { error: error.message, ...(error.issues.length > 0 ? { issues: error.issues } : {}) } };
+      }
+      throw error;
+    }
+  };
+  return [
+    route('GET', '/api/clients', async () => ({ body: { clients: await listClients(sql), projects: names().projects } })),
+    route('POST', '/api/clients', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, CLIENT_FIELDS);
+      return guard(async () => ({ status: 201, body: { client: await createClient(sql, body) } }));
+    }),
+    // The client of a project, for the header of the page Progetti.
+    route('GET', '/api/clients/of-project/:project', async (_request, _url, params) => {
+      const project = params.project ?? '';
+      if (!CLIENT_PROJECT_NAME.test(project)) throw new HttpError(404, 'not found');
+      return { body: { client: await clientOfProject(sql, project) } };
+    }),
+    route('GET', '/api/clients/:id', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      return guard(async () => ({ body: { client: await readClient(sql, id, names()) } }));
+    }),
+    route('POST', '/api/clients/:id', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CLIENT_FIELDS);
+      return guard(async () => ({ body: { client: await updateClient(sql, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/archive', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['archived']);
+      if (typeof body.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      const archived = body.archived;
+      return guard(async () => ({ body: { client: await archiveClient(sql, id, archived) } }));
+    }),
+    route('POST', '/api/clients/:id/contacts', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, CONTACT_FIELDS);
+      return guard(async () => ({ status: 201, body: { contact: await addContact(sql, id, body) } }));
+    }),
+    route('POST', '/api/clients/:id/contacts/:contact', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const contact = idParam(params, 'contact');
+      const body = await readJson(request);
+      onlyFields(body, CONTACT_FIELDS);
+      return guard(async () => ({ body: { contact: await updateContact(sql, id, contact, body) } }));
+    }),
+    route('DELETE', '/api/clients/:id/contacts/:contact', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const contact = idParam(params, 'contact');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeContact(sql, id, contact);
+        return { body: { ok: true } };
+      });
+    }),
+    route('POST', '/api/clients/:id/projects', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const body = await readJson(request);
+      onlyFields(body, ['project']);
+      return guard(async () => ({ status: 201, body: { project: await linkProject(sql, id, body.project, names()) } }));
+    }),
+    route('DELETE', '/api/clients/:id/projects/:link', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const link = idParam(params, 'link');
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await unlinkProject(sql, id, link);
+        return { body: { ok: true } };
+      });
+    }),
+    // The logo comes as JSON with its bytes in base64: the API takes only JSON (security.ts).
+    route('POST', '/api/clients/:id/logo', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(request, MAX_LOGO_BODY);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) return { status: 413, body: { error: 'the logo is 1 MB at most', issues: [{ field: 'logo', code: 'too-long' }] } };
+        throw error;
+      }
+      onlyFields(body, ['type', 'data']);
+      return guard(async () => ({ body: { logo: await setLogo(sql, dir, id, body) } }));
+    }),
+    route('DELETE', '/api/clients/:id/logo', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      onlyFields(await readJson(request), []);
+      return guard(async () => {
+        await removeLogo(sql, dir, id);
+        return { body: { ok: true } };
+      });
+    }),
+    route('GET', '/api/clients/:id/logo', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      const dir = logosDir();
+      return guard(async () => {
+        const { type, bytes } = await readLogo(sql, dir, id);
+        return {
+          raw: bytes,
+          type,
+          // An image of the user's is shown, never run; X-Content-Type-Options: nosniff goes with every answer (security.ts).
+          headers: { 'content-security-policy': "default-src 'none'; sandbox", 'x-content-type-options': 'nosniff' },
+          noStore: true,
+        };
+      });
     }),
   ];
 }
@@ -2116,6 +2257,62 @@ function spriteRoutes(sprites: SpriteGenerator | undefined): Route[] {
   ];
 }
 
+const IM_REPORT_STATUS: Record<ImReportError['code'], number> = {
+  invalid: 400,
+  'not-found': 404,
+  'has-report': 409,
+  busy: 409,
+  'above-label': 403,
+  unavailable: 409,
+  blocked: 403,
+  quota: 429,
+  failed: 502,
+  empty: 502,
+  changed: 409,
+};
+
+/**
+ * "Scrivi il report" of an IM (D-167, P4c): POST starts it with the agent the
+ * user picked and in the language chosen (202 and the job; 409 `has-report` when the section has text,
+ * unless `replace`), GET says how the last job of the IM went.
+ */
+function imReportRoutes(reporter: ImReporter | undefined, containers: () => readonly Project[]): Route[] {
+  const need = (): ImReporter => {
+    if (reporter === undefined) throw new HttpError(404, 'not found');
+    return reporter;
+  };
+  const projectOf = (params: Params): string => {
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((item) => item.name === name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  return [
+    route('GET', '/api/browse/:project/im/:number/report', (_request, _url, params) => {
+      const service = need();
+      return Promise.resolve({ body: { job: service.status(projectOf(params), imNumberParam(params)) } });
+    }),
+    route('POST', '/api/browse/:project/im/:number/report', async (request, _url, params) => {
+      const service = need();
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['agent', 'replace', 'language']);
+      const agent = REPORT_AGENTS.find((value) => value === body.agent);
+      if (agent === undefined) throw new HttpError(400, 'agent must be arianna or claude');
+      if (body.replace !== undefined && typeof body.replace !== 'boolean') throw new HttpError(400, 'replace must be true or false');
+      // Italian or English, chosen each time like the agent (D-167); Italian when not said.
+      const language = body.language === undefined ? 'it' : REPORT_LANGUAGES.find((value) => value === body.language);
+      if (language === undefined) throw new HttpError(400, 'language must be it or en');
+      try {
+        return { status: 202, body: { job: service.start(project, number, agent, body.replace === true, language) } };
+      } catch (error) {
+        if (!(error instanceof ImReportError)) throw error;
+        return { status: IM_REPORT_STATUS[error.code], body: { error: error.message, code: error.code, detail: error.detail ?? null } };
+      }
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -2323,6 +2520,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     approvedProjects: options.approvedProjects ?? (() => []),
     projectContainers: options.projectContainers ?? (() => []),
     cards: options.cards,
+    clients: options.clients,
     knowledge: options.knowledge,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
@@ -2372,6 +2570,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
+  table.push(...imReportRoutes(options.imReports, options.projectContainers ?? (() => [])));
   // The "Modelli" page (I-3): one list, read only. /api/models stays the selector of a conversation.
   table.push(
     route('GET', '/api/models/overview', async () => {

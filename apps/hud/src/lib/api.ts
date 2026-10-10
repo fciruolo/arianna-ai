@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
@@ -7,7 +8,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
-import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImSummary } from './im.ts';
+import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
@@ -881,6 +882,16 @@ export async function openImItemCard(project: string, number: number, item: ImIt
   return call('POST', `${browse(project)}/im/${String(number)}/card`, item);
 }
 
+/** "Scrivi il report" (D-167, P4c): 202 with the job; 409 `has-report` when the section has text and `replace` is not set. */
+export async function startImReport(project: string, number: number, agent: ReportAgent, language: ReportLanguage, replace = false): Promise<ImReportJob> {
+  return (await call<{ job: ImReportJob }>('POST', `${browse(project)}/im/${String(number)}/report`, replace ? { agent, language, replace } : { agent, language })).job;
+}
+
+/** The last report job of the IM since the core started; null when none. */
+export async function loadImReport(project: string, number: number): Promise<ImReportJob | null> {
+  return (await call<{ job: ImReportJob | null }>('GET', `${browse(project)}/im/${String(number)}/report`)).job;
+}
+
 /** The closings of the IM asked in the secretary conversation, most recent first. */
 export async function listImClosings(): Promise<ImClosing[]> {
   return (await call<{ closings: ImClosing[] }>('GET', '/api/im/closings')).closings;
@@ -932,4 +943,63 @@ export async function startService(project: string, service: string, fingerprint
 
 export async function stopService(project: string, service: string): Promise<ServiceLog | null> {
   return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/stop`, { service })).run;
+}
+
+// ---------------------------------------------------------------------------
+// The clients (I-16, D-168): private (L2), only between this page and the core.
+// ---------------------------------------------------------------------------
+
+/** Every client, archived included, and the approved projects a client may take. */
+export async function listClients(): Promise<{ clients: ClientSummary[]; projects: string[] }> {
+  return call<{ clients: ClientSummary[]; projects: string[] }>('GET', '/api/clients');
+}
+
+export async function readClient(id: string): Promise<Client> {
+  return (await call<{ client: Client }>('GET', `/api/clients/${encodeURIComponent(id)}`)).client;
+}
+
+export async function createClient(form: ClientForm): Promise<string> {
+  return (await call<{ client: { id: string } }>('POST', '/api/clients', form)).client.id;
+}
+
+export async function updateClient(id: string, form: Partial<ClientForm>): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}`, form);
+}
+
+export async function archiveClient(id: string, archived: boolean): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}/archive`, { archived });
+}
+
+export async function addClientContact(id: string, contact: ContactForm): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts`, contact)).contact;
+}
+
+export async function updateClientContact(id: string, contactId: string, contact: Partial<ContactForm>): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, contact)).contact;
+}
+
+export async function removeClientContact(id: string, contactId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, {});
+}
+
+export async function linkClientProject(id: string, project: string): Promise<ClientProject> {
+  return (await call<{ project: ClientProject }>('POST', `/api/clients/${encodeURIComponent(id)}/projects`, { project })).project;
+}
+
+export async function unlinkClientProject(id: string, linkId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/projects/${encodeURIComponent(linkId)}`, {});
+}
+
+/** The logo as base64 in JSON (the core takes only JSON); the core finds its type from the bytes. */
+export async function uploadClientLogo(id: string, data: string): Promise<ClientLogo> {
+  return (await call<{ logo: ClientLogo }>('POST', `/api/clients/${encodeURIComponent(id)}/logo`, { data })).logo;
+}
+
+export async function removeClientLogo(id: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/logo`, {});
+}
+
+/** The client of a project, for the header of "Progetti"; null when none has it. */
+export async function clientOfProject(project: string): Promise<{ id: string; displayName: string; logo: ClientLogo | null } | null> {
+  return (await call<{ client: { id: string; displayName: string; logo: ClientLogo | null } | null }>('GET', `/api/clients/of-project/${encodeURIComponent(project)}`)).client;
 }

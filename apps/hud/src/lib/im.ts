@@ -1,5 +1,6 @@
 import { ApiError } from './api.ts';
 import { errorText } from './italian.ts';
+import { LABEL_TEXT } from './labels.ts';
 import type { Label } from './types.ts';
 
 /**
@@ -55,6 +56,8 @@ export interface ImItem {
 export interface ImDetail extends Omit<ImSummary, 'counts'> {
   version: string;
   items: ImItem[];
+  /** The text of the section `## Report` (D-167, P4c); empty when there is none. */
+  report: string;
 }
 
 /** The items by column, in the order of the file. */
@@ -282,3 +285,161 @@ export function closingsByMessage(closings: readonly ImClosing[]): Map<string, I
 }
 
 export const CLOSING_CHANGED_TEXT = 'La voce è cambiata nel file o la chiusura è già finita: ho ricaricato l’IM.';
+
+// I-11 tappa P4c (D-167): "Scrivi il report" for the client, by the agent the
+// user picks each time; the core writes it into `## Report`.
+
+export type ReportAgent = 'arianna' | 'claude';
+export const REPORT_AGENTS: readonly ReportAgent[] = ['arianna', 'claude'];
+
+export const REPORT_AGENT_TEXT: Record<ReportAgent, string> = { arianna: 'Arianna (sul Mac)', claude: 'Claude (nel cloud, consuma quota)' };
+
+export const REPORT_AGENT_HINT: Record<ReportAgent, string> = {
+  arianna: 'Il modello locale: niente esce dal Mac.',
+  claude: 'Passa dal gateway: solo dati Interni, mai prezzi né dati privati.',
+};
+
+export type ReportErrorCode = 'invalid' | 'not-found' | 'has-report' | 'busy' | 'above-label' | 'unavailable' | 'blocked' | 'quota' | 'failed' | 'empty' | 'changed';
+
+/** The job of a report, as `GET/POST /api/browse/:project/im/:number/report` gives it. */
+export interface ImReportJob {
+  id: string;
+  project: string;
+  number: number;
+  agent: ReportAgent;
+  language: ReportLanguage;
+  state: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt: string | null;
+  error: { code: ReportErrorCode; message: string; detail: string | null } | null;
+  left: number;
+  resetsAt: string | null;
+}
+
+export const REPORT_REPLACE_TEXT = 'C’è già un report: lo sostituisco?';
+export const REPORT_RUNNING_TEXT = 'Scrivo il report…';
+
+/** The language of the report, chosen every time like the agent (D-167). */
+export type ReportLanguage = 'it' | 'en';
+export const REPORT_LANGUAGES: readonly ReportLanguage[] = ['it', 'en'];
+export const REPORT_LANGUAGE_TEXT: Record<ReportLanguage, string> = { it: 'Italiano', en: 'English' };
+
+/** "Scrivo il report in inglese…": the line while the report is written. */
+export function reportRunningText(language: ReportLanguage): string {
+  return language === 'en' ? 'Scrivo il report in inglese…' : REPORT_RUNNING_TEXT;
+}
+
+// The last language chosen in each project, a convenience of this browser.
+const LANGUAGE_KEY = 'arianna.cardwall.im.report-language';
+
+export function loadReportLanguage(storage: StorageLike | undefined, project: string | null): ReportLanguage {
+  if (project === null) return 'it';
+  try {
+    const raw = storage?.getItem(LANGUAGE_KEY);
+    if (raw === null || raw === undefined) return 'it';
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== 'object' || value === null) return 'it';
+    const saved = (value as Record<string, unknown>)[project];
+    return saved === 'en' ? 'en' : 'it';
+  } catch {
+    return 'it';
+  }
+}
+
+export function saveReportLanguage(storage: StorageLike | undefined, project: string, language: ReportLanguage): void {
+  if (!PROJECT.test(project)) return;
+  try {
+    let saved: Record<string, unknown> = {};
+    try {
+      const raw = storage?.getItem(LANGUAGE_KEY);
+      const value: unknown = raw === null || raw === undefined ? {} : JSON.parse(raw);
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) saved = value as Record<string, unknown>;
+    } catch {
+      // A broken value is written again from scratch.
+    }
+    const kept = Object.fromEntries(Object.entries(saved).filter(([name, choice]) => PROJECT.test(name) && (choice === 'it' || choice === 'en')));
+    storage?.setItem(LANGUAGE_KEY, JSON.stringify({ ...kept, [project]: language }));
+  } catch {
+    // Private window or blocked storage: the choice lasts until the page closes.
+  }
+}
+/** How often the page asks how the report is going. */
+export const REPORT_POLL_MS = 2000;
+
+/** The answer to "Scrivi il report" when the section already has text: ask before replacing it. */
+export function isReportConflict(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 409 && cause.body.code === 'has-report';
+}
+
+const MONTHS_LONG = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
+function longDay(day: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (match === null) return day;
+  return `${String(Number(match[3]))} ${MONTHS_LONG[Number(match[2]) - 1] ?? ''}`;
+}
+
+function labelWord(code: string | undefined): string {
+  return code === 'L0' || code === 'L1' || code === 'L2' || code === 'L3' ? `${LABEL_TEXT[code]} (${code})` : 'sopra Interno';
+}
+
+function resetText(resetsAt: string | null): string {
+  if (resetsAt === null) return '';
+  const at = new Date(resetsAt);
+  if (Number.isNaN(at.getTime())) return '';
+  return ` fino alle ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Why a report was not written, in Italian, from the core's code and detail (never its text). */
+export function reportErrorText(error: { code: string; detail: string | null }, agent: ReportAgent, resetsAt: string | null = null): string {
+  const detail = error.detail ?? '';
+  switch (error.code) {
+    case 'has-report':
+      return REPORT_REPLACE_TEXT;
+    case 'busy':
+      return 'Sto già scrivendo il report di questo IM: aspetta che finisca.';
+    case 'above-label': {
+      const [what, a, b] = detail.split(':');
+      if (what === 'diary') {
+        return `Il diario dei lavori del ${longDay(a ?? '')} è ${labelWord(b)}: Claude non può leggerlo e non ho mandato niente nel cloud. Scegli Arianna (sul Mac).`;
+      }
+      if (agent === 'claude') return `L’IM è ${labelWord(a)}: Claude non può leggerlo e non ho mandato niente nel cloud. Scegli Arianna (sul Mac).`;
+      return `L’IM è ${labelWord(a)}: nemmeno il modello locale può leggerlo.`;
+    }
+    case 'unavailable':
+      if (detail === 'claude') return 'Claude non è disponibile ora: va acceso in Impostazioni (esecutori e modelli del cloud).';
+      if (detail === 'arianna' || detail === 'no-endpoint') return 'Arianna non può scrivere ora: nessun server locale ha il modello dell’orchestratore (local-large).';
+      return agent === 'claude' ? 'Claude non è disponibile ora: riprova più tardi.' : 'Il modello locale non risponde: controlla che il server locale sia avviato.';
+    case 'blocked':
+      return 'Il gateway ha fermato i dati del report (contengono qualcosa che non può uscire, per esempio dati personali o un segreto): non è partito niente.';
+    case 'quota':
+      return `Claude ha finito la quota${resetText(resetsAt)}: riprova dopo o scegli Arianna (sul Mac).`;
+    case 'empty':
+      return 'Il modello non ha scritto niente: riprova.';
+    case 'changed':
+      return 'Il report o l’intestazione dell’IM sono cambiati nel file mentre scrivevo: non ho sovrascritto niente. Riprova.';
+    case 'invalid':
+      return 'L’IM non ha una data valida nell’intestazione: aggiungila e riprova.';
+    case 'not-found':
+      return 'Questo IM non c’è più: ricarica la pagina.';
+    default:
+      return 'Il modello non è riuscito a scrivere il report: riprova.';
+  }
+}
+
+/** The error of a refused POST (the code is in the body) or of a failed job. */
+export function reportStartErrorText(cause: unknown, agent: ReportAgent): string {
+  if (cause instanceof ApiError && typeof cause.body.code === 'string') {
+    return reportErrorText({ code: cause.body.code, detail: typeof cause.body.detail === 'string' ? cause.body.detail : null }, agent, typeof cause.body.resetsAt === 'string' ? cause.body.resetsAt : null);
+  }
+  return imErrorText(cause);
+}
+
+/** What a finished job says under the header; undefined while it runs. */
+export function reportDoneText(job: Pick<ImReportJob, 'state' | 'agent' | 'left' | 'language'>): string | undefined {
+  if (job.state !== 'done') return undefined;
+  const who = job.agent === 'claude' ? 'Claude' : 'Arianna';
+  const language = job.language === 'en' ? ' in inglese' : '';
+  const left = job.left === 0 ? '' : ` ${job.left === 1 ? 'Un giorno del diario non è entrato' : `${String(job.left)} giorni del diario non sono entrati`} (sopra l’etichetta dell’IM o illeggibili).`;
+  return `${who} ha scritto il report${language}: rileggilo prima di mandarlo al cliente.${left}`;
+}

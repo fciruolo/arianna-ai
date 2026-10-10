@@ -8,6 +8,21 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Il provino della voce non è più una voce a sé dell'indice delle Impostazioni: si apre dal pulsante "Provino della voce" nella sezione Voce, e la sua pagina (sempre su `/voce/provino`) ha "‹ Voce" per tornare indietro (D-066).
 
+## [0.57.0] - 2026-10-10
+
+### Aggiunto
+
+- La pagina "Clienti" (`/clienti`): anagrafica completa per fatturare in Italia e all'estero (partita IVA e codice fiscale con il controllo, partita IVA UE, codice SDI, PEC, IPA per la pubblica amministrazione, indirizzi, pagamenti, IBAN), contatti con un principale, progetti collegati e logo; tutto Privato (L2), solo su questo computer (D-168, I-16 C1).
+- Nell'intestazione di "Progetti" il nome e il logo del cliente del progetto, con il collegamento alla sua scheda (D-168).
+
+## [0.56.0] - 2026-10-10
+
+### Aggiunto
+
+- "Scrivi il report" nella vista IM del cardwall: scegli ogni volta se lo scrive Arianna sul Mac o Claude nel cloud, in italiano o in inglese; il report per il cliente (fatto, in corso e prossimi passi) nasce dalle voci dell'IM e dal diario dei lavori della settimana, senza percorsi, commit, nomi degli agenti né importi, e va nella sezione `## Report` dell'IM, dove si rilegge e si copia (D-167, I-11 P4c).
+- Verso Claude il report parte solo con dati Interni: un IM o un giorno del diario Privato lo ferma, e la pagina dice quale (D-167, I-11 P4c).
+- Il mattino del giorno prima di un IM la segretaria lo ricorda: "Domani c'è l'IM-33 di progetto-test (giovedì 15 ottobre, 10:00): 3 voci ancora aperte." (D-167, I-11 P4c).
+
 ## [0.55.0] - 2026-10-10
 
 ### Aggiunto

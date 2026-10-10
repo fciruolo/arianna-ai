@@ -14,6 +14,17 @@ export function isProjectsPath(pathname: string): boolean {
   return pathname === PROJECTS_PATH || pathname === `${PROJECTS_PATH}/`;
 }
 
+/** The page with a project chosen (from the page of its client, D-168): `/progetti?progetto=<name>`. */
+export function projectsPathFor(name?: string): string {
+  return name === undefined || name === '' ? PROJECTS_PATH : `${PROJECTS_PATH}?${new URLSearchParams({ progetto: name }).toString()}`;
+}
+
+/** The project the address chooses, or undefined. */
+export function projectFromSearch(search: string): string | undefined {
+  const name = new URLSearchParams(search).get('progetto')?.trim();
+  return name === undefined || name === '' ? undefined : name;
+}
+
 /** A part of a project (D-145): `name` is `<project>` or `<project>:<part>`; File, Git and Servizi read it. */
 export interface BrowsableProject {
   name: string;

@@ -10,13 +10,13 @@ import Icon from './Icon.vue';
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
  * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Segretaria, Pensieri, Conoscenza, Progetti, Cardwall, Ufficio, Impostazioni); the
+ * Segretaria, Pensieri, Conoscenza, Progetti, Clienti, Cardwall, Ufficio, Impostazioni); the
  * conversations, pinned first. The theme and the agents are in the top bar
  * (D-158).
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office' | 'projects' | 'cardwall';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office' | 'projects' | 'clients' | 'cardwall';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -37,6 +37,7 @@ const emit = defineEmits<{
   thoughts: [];
   knowledge: [];
   projects: [];
+  clients: [];
   cardwall: [];
   office: [];
   settings: [];
@@ -115,6 +116,9 @@ function itemClass(on: boolean): string {
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'projects')" :aria-current="page === 'projects' ? 'page' : undefined" @click="emit('projects')">
         <Icon name="project" :size="16" />Progetti
+      </button>
+      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'clients')" :aria-current="page === 'clients' ? 'page' : undefined" @click="emit('clients')">
+        <Icon name="clients" :size="16" />Clienti
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'cardwall')" :aria-current="page === 'cardwall' ? 'page' : undefined" @click="emit('cardwall')">
         <Icon name="cardwall" :size="16" />Cardwall

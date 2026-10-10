@@ -49,6 +49,8 @@ export interface ImView extends Omit<ImSummary, 'counts'> {
   /** A digest of the file: a change is refused when the file is no longer this one. */
   version: string;
   items: ImItem[];
+  /** The text of the section `## Report` (D-167, P4c); empty when there is none. */
+  report: string;
 }
 
 interface ImFile {
@@ -136,6 +138,7 @@ function viewOf(folder: ImFolder, file: ImFile): ImView {
     path: `${folder.path}/${file.fileName}`,
     version: versionOf(file.text),
     items: parsed.items,
+    report: parsed.report,
   };
 }
 
@@ -166,6 +169,13 @@ export function readIm(projects: readonly Project[], project: string, env: Knowl
   const folder = imFolder(projects, project, env, false);
   if (folder === null) throw new ImError('not-found', `IM-${String(number)} not found`);
   return viewOf(folder, loadIm(folder, number));
+}
+
+/** The text of the IM `number` as it is on the disk now. */
+export function imText(projects: readonly Project[], project: string, env: KnowledgeEnv, number: number): string {
+  const folder = imFolder(projects, project, env, false);
+  if (folder === null) throw new ImError('not-found', `IM-${String(number)} not found`);
+  return loadIm(folder, number).text;
 }
 
 /**

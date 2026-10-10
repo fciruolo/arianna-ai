@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { addDays, addItem, imFileName, imNumberOf, isImDate, longDate, newImText, parseIm, setItemState } from '../src/im-format.ts';
+import { addDays, addItem, dayAndTime, ImFormatError, imFileName, imNumberOf, isImDate, longDate, newImText, parseIm, reportOf, setItemState, setReport } from '../src/im-format.ts';
 
 const IM32 = [
   '---',
@@ -152,5 +152,61 @@ describe('IM format (D-167)', () => {
     assert.equal(imFileName(7), 'IM-7.md');
     assert.ok(isImDate('2026-10-15 23:59'));
     assert.ok(!isImDate('2026-10-15 24:00'));
+  });
+});
+
+describe('the section Report (D-167, P4c)', () => {
+  const BASE = ['---', 'im: 33', 'data: 2026-10-15 10:00', 'stato: previsto', '---', '', '# IM-33', '', '## Lavori', '', '- [x] Fatture', '', '## Report', '', '## Note', '', '- Libere.', ''].join('\n');
+
+  it('writes the report in the empty section, touching no other line, and reads it back', () => {
+    const text = setReport(BASE, '### Fatto in questo IM\n\n- Le fatture finte.');
+    assert.equal(reportOf(text), '### Fatto in questo IM\n\n- Le fatture finte.');
+    assert.equal(parseIm(text).report, '### Fatto in questo IM\n\n- Le fatture finte.');
+    const before = BASE.split('\n');
+    const after = text.split('\n');
+    assert.deepEqual(after.slice(0, 13), before.slice(0, 13));
+    assert.deepEqual(after.slice(-4), ['## Note', '', '- Libere.', '']);
+    assert.equal(reportOf(BASE), '');
+  });
+
+  it('replaces only the body of an existing report', () => {
+    const once = setReport(BASE, 'Primo testo.');
+    const twice = setReport(once, 'Secondo testo.');
+    assert.equal(reportOf(twice), 'Secondo testo.');
+    assert.equal(twice, setReport(BASE, 'Secondo testo.'));
+    assert.equal(reportOf(setReport(twice, '')), '');
+  });
+
+  it('adds the section before ## Note when it is missing, or at the end', () => {
+    const without = BASE.replace('## Report\n\n', '');
+    const text = setReport(without, 'Il report.');
+    assert.ok(text.includes('- [x] Fatture\n\n## Report\n\nIl report.\n\n## Note'));
+    const bare = '---\nim: 1\n---\n\n## Lavori\n\n- [ ] Voce\n';
+    assert.equal(setReport(bare, 'Fine.'), '---\nim: 1\n---\n\n## Lavori\n\n- [ ] Voce\n\n## Report\n\nFine.\n');
+  });
+
+  it('keeps CRLF line ends and a report section at the end of the file', () => {
+    const crlf = BASE.replace('## Note\n\n- Libere.\n', '').replace(/\n/g, '\r\n');
+    const text = setReport(crlf, 'Riga uno\nRiga due');
+    assert.ok(!/[^\r]\n/.test(text), 'every line end is CRLF');
+    assert.ok(text.endsWith('## Report\r\n\r\nRiga uno\r\nRiga due\r\n'));
+    assert.equal(reportOf(text), 'Riga uno\nRiga due');
+  });
+
+  it('a heading inside a fence of the old report does not end the section', () => {
+    const fenced = BASE.replace('## Report\n', '## Report\n\n```\n## non è una sezione\n```\n');
+    assert.equal(reportOf(setReport(fenced, 'Nuovo.')), 'Nuovo.');
+    assert.ok(setReport(fenced, 'Nuovo.').includes('## Note\n\n- Libere.'));
+  });
+
+  it('refuses a report with a heading of level 1 or 2 or a fence, which would break the file', () => {
+    assert.throws(() => setReport(BASE, '## Note finte'), ImFormatError);
+    assert.throws(() => setReport(BASE, '# Titolo'), ImFormatError);
+    assert.throws(() => setReport(BASE, '```\ncodice\n```'), ImFormatError);
+    assert.equal(reportOf(setReport(BASE, '### Va bene')), '### Va bene');
+  });
+
+  it('dayAndTime is the long date without the year', () => {
+    assert.equal(dayAndTime('2026-10-15 10:00'), 'giovedì 15 ottobre, 10:00');
   });
 });

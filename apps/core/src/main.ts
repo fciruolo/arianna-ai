@@ -50,6 +50,7 @@ import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
 import { createImWatcher } from './im-watch.ts';
+import { createImReporter, reportClaudeModel, reportUnavailable } from './im-report.ts';
 import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
@@ -600,6 +601,19 @@ const services = createServiceManager({
     });
   },
 });
+// "Scrivi il report" of an IM (D-167, P4c): Arianna on the local model or Claude
+// through the gateway, as the user picks each time; the input is built by code.
+const imReports = createImReporter({
+  projects: projectContainers,
+  env: { home: config.home, rules },
+  gateway: (payload, context, target, meta) => passGateway(sql, payload, context, target, meta),
+  claude,
+  localModel,
+  unavailable: (agent) => reportUnavailable(settings.current(), agent, claude !== undefined),
+  claudeModel: () => reportClaudeModel(settings.current()),
+  dataDir: config.paths.data,
+  onError: report,
+});
 const server = await startApiServer({
   sql,
   live,
@@ -613,6 +627,8 @@ const server = await startApiServer({
   knowledge: { home: config.home, rules },
   // The files attached to cards (D-152): private copies, outside git.
   cards: { dir: join(config.home, 'data', 'cards') },
+  // The logos of the clients (D-168): private copies, outside git, shown only in the web chat.
+  clients: { dir: join(config.home, 'data', 'clients') },
   services,
   designCatalog,
   skillsCatalog,
@@ -646,6 +662,7 @@ const server = await startApiServer({
   settings: settingsPage,
   userAgents,
   sprites,
+  imReports,
   local: {
     status: () => localServers.status(),
     restart: (id) => localServers.restart(id),
@@ -748,7 +765,8 @@ const stopNotices = await live.subscribe(notifier.subscriber);
 // [secretary], read at each tick (a change from the settings applies without
 // a restart), once per day and moment; started after the notifier, so that
 // a moment recovered at start-up notifies too.
-const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, onError: report });
+// The morning of the day before an IM also names it (D-167, P4c).
+const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, ims: { projects: projectContainers, env: { home: config.home, rules } }, onError: report });
 secretaryTicker.start();
 
 // The IM between meetings (D-167, P4b): the closing asked in the secretary
