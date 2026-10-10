@@ -62,6 +62,8 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       // SettingsPage, unreachable until this entry comes back.
       { id: 'projects', slug: 'progetti', title: 'Progetti', behaviour: 'confirm', privacy: true },
       { id: 'servers', slug: 'server-locali', title: 'Server locali', behaviour: 'confirm', privacy: true },
+      // Links downloaded and summarized (D-154): the sites whose links the core downloads by itself.
+      { id: 'links', slug: 'link-scaricati', title: 'Link scaricati', behaviour: 'confirm', privacy: true },
     ],
   },
   {
@@ -121,6 +123,7 @@ export const EDITED_BY: Record<string, readonly string[]> = {
   executors: ['executors'],
   projects: ['projects'],
   servers: ['endpoints'],
+  links: ['fetchSites'],
 };
 
 /** A section holds edits not saved in any of its parts. */

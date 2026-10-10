@@ -138,7 +138,14 @@ export interface ApiServerOptions {
    * `organize` queues the organizing of a note by the local model; without it
    * notes are saved and read, not organized.
    */
-  capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean>; arianna?: AriannaDocs };
+  capture?: {
+    home: string;
+    rules: LabelRules;
+    organize?: (path: string) => Promise<boolean>;
+    /** "Scarica e riassumi" (D-154): organizes the note again with its link downloaded. */
+    fetch?: (path: string) => Promise<boolean>;
+    arianna?: AriannaDocs;
+  };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
@@ -782,6 +789,18 @@ function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
       if (note.status !== 'new') throw new HttpError(409, 'the note is already organized');
       if (organize === undefined) throw new HttpError(503, 'notes cannot be organized now');
       await organize(note.path);
+      return { status: 202, body: { path: note.path, organizing: true } };
+    }),
+    // "Scarica e riassumi" (D-154): the link of the note downloaded once, whatever its site; only from the chat, on this machine.
+    route('POST', '/api/notes/:name/fetch', async (request, _url, params) => {
+      const { home, rules, fetch } = need();
+      onlyFields(await readJson(request), []);
+      const note = readNote(home, rules, params.name ?? '');
+      if (note.url === null) throw new HttpError(409, 'the note has no link');
+      if (note.fetchedAt !== null) throw new HttpError(409, 'the link is already downloaded');
+      if (note.status !== 'new' && note.status !== 'organized') throw new HttpError(409, 'the note cannot be organized again');
+      if (fetch === undefined) throw new HttpError(503, 'notes cannot be organized now');
+      await fetch(note.path);
       return { status: 202, body: { path: note.path, organizing: true } };
     }),
   ];

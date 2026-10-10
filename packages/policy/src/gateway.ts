@@ -10,10 +10,26 @@ import type { KnownSecrets } from './secrets.ts';
 // `push`: the notification of a call, through Apple, Google or Mozilla.
 export type ChannelId = 'web' | 'telegram' | 'phone' | 'voice' | 'push';
 
+/**
+ * Why the user allowed a link to be downloaded (D-154): its site is in
+ * `[capture] fetch_sites` (`list`), or the user pressed "Scarica e riassumi"
+ * on that note (`click`).
+ */
+export type LinkConsent = 'list' | 'click';
+
 export type Target =
   | { kind: 'executor'; id: string; locality: Locality }
   | { kind: 'channel'; id: ChannelId }
-  | { kind: 'web' };
+  | { kind: 'web' }
+  /**
+   * The address of a link saved by the user, to its own site (D-154). With
+   * `list`, `sites` are the sites of the list the caller read: the address
+   * must be on one of them (or a subdomain). The consent is declared by the
+   * caller (only organize.ts, for the url the capture code wrote): what the
+   * gateway guarantees is one address, checked and scanned, never other text.
+   */
+  | { kind: 'link'; consent: 'list'; sites: readonly string[] }
+  | { kind: 'link'; consent: 'click' };
 
 /** Which rule decided; stored in `gateway_log.rule`. */
 export type GatewayRule =
@@ -23,8 +39,10 @@ export type GatewayRule =
   | 'cloud-label'
   | 'unscannable'
   | 'scanner'
+  | 'link-invalid'
   | 'local'
-  | 'cloud';
+  | 'cloud'
+  | 'link';
 
 /**
  * What the caller does after a block. `notify-reference`: a channel gets a
@@ -37,7 +55,7 @@ export type NextStep = 'notify-reference' | 'wait-user' | 'stay-local';
 export type Decision =
   | {
       decision: 'allow';
-      rule: 'local' | 'cloud';
+      rule: 'local' | 'cloud' | 'link';
       label: Label;
       reason: string;
       /** The exact text checked for each fragment, frozen: this is what is sent. */
@@ -45,7 +63,7 @@ export type Decision =
     }
   | {
       decision: 'block';
-      rule: Exclude<GatewayRule, 'local' | 'cloud'>;
+      rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link'>;
       label: Label;
       reason: string;
       next: NextStep;
@@ -54,6 +72,62 @@ export type Decision =
     };
 
 const CHANNELS: readonly string[] = ['web', 'telegram', 'phone', 'voice', 'push'];
+/** Sites a `list` consent may name (the list of arianna.toml holds 100 at most, plus publish.twitter.com). */
+const MAX_LINK_SITES = 200;
+const MAX_LINK = 2_000;
+const X_HOSTS = ['x.com', 'twitter.com', 'publish.twitter.com'];
+
+/**
+ * The address of a link as the scanner reads it: the numeric id of a post of
+ * X, alone or inside the oEmbed address, is masked, since a post id passes the
+ * card check (Luhn) about once in ten. Everything else of the address is read.
+ */
+export function linkScanText(address: string): string {
+  let host: string;
+  try {
+    host = new URL(address).hostname.toLowerCase().replace(/^(www|mobile|m)\./, '');
+  } catch {
+    return address;
+  }
+  if (!X_HOSTS.includes(host)) return address;
+  return address.replace(/(status(?:\/|%2F))\d{1,25}/gi, (_match, prefix: string) => `${prefix}0`);
+}
+
+/** A host name of the list: lowercase, at least two labels, no scheme, port or path (`com` would cover every .com site). */
+function isSiteName(site: string): boolean {
+  if (site.length > 253) return false;
+  const labels = site.split('.');
+  return labels.length >= 2 && labels.every((part) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(part)) && !/^\d+$/.test(labels.at(-1) ?? '');
+}
+
+/** A link target allows one address only: http(s), normalized, no credentials, no space; with `list`, on a site of the list. */
+function checkLink(payload: readonly Labeled<unknown>[], texts: readonly string[], label: Label, target: Extract<Target, { kind: 'link' }>): Decision {
+  const [text] = texts;
+  if (payload.length !== 1 || typeof payload[0]?.value !== 'string' || text === undefined) {
+    return block('link-invalid', label, 'a link target takes exactly one address', 'stay-local');
+  }
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return block('link-invalid', label, 'not an address', 'stay-local');
+  }
+  if (text.length > MAX_LINK || /[\s\p{Cc}]/u.test(text) || url.href !== text) return block('link-invalid', label, 'not a single normalized address', 'stay-local');
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return block('link-invalid', label, 'only http and https addresses', 'stay-local');
+  if (url.username !== '' || url.password !== '') return block('link-invalid', label, 'no credentials in an address', 'stay-local');
+  if (target.consent === 'list') {
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    if (!target.sites.some((site) => host === site || host.endsWith(`.${site}`))) return block('link-invalid', label, 'the site is not in the list of the user', 'stay-local');
+  }
+  // Values in an address are often %-encoded: the scanner reads it as written and decoded (decodable: checked before).
+  const masked = linkScanText(text);
+  const findings = [...scanText(masked), ...scanText(decodeURIComponent(masked))];
+  if (findings.length > 0) {
+    const kinds = [...new Set(findings.map((finding) => finding.kind))].join(', ');
+    return block('scanner', label, `scanner matched: ${kinds}`, 'stay-local', findings);
+  }
+  return allow({ decision: 'allow', rule: 'link', label, reason: `${label} address to its site, ${target.consent} consent, scan clean`, texts }, target);
+}
 
 /**
  * Executors whose inference is always in the cloud: declaring them local is a
@@ -77,6 +151,15 @@ export function isTarget(value: unknown): value is Target {
       return CHANNELS.includes(target.id as string);
     case 'web':
       return true;
+    case 'link':
+      if (target.consent === 'click') return true;
+      return (
+        target.consent === 'list' &&
+        Array.isArray(target.sites) &&
+        target.sites.length > 0 &&
+        target.sites.length <= MAX_LINK_SITES &&
+        (target.sites as unknown[]).every((site) => typeof site === 'string' && isSiteName(site))
+      );
     default:
       return false;
   }
@@ -93,9 +176,11 @@ export function localityOf(target: Target): Locality {
   return 'cloud';
 }
 
-/** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`. */
+/** `gateway_log.target`: e.g. `claude`, `telegram`, `web-search`, `link-list`; never the address nor the site of a link. */
 export function targetName(target: Target): string {
-  return target.kind === 'web' ? 'web-search' : target.id;
+  if (target.kind === 'web') return 'web-search';
+  if (target.kind === 'link') return `link-${target.consent}`;
+  return target.id;
 }
 
 /** What a decision allowed, as recorded when it was made; see `allowedBy`. */
@@ -155,7 +240,7 @@ export function spendAllowed(decision: unknown): Allowed | undefined {
 }
 
 function block(
-  rule: Exclude<GatewayRule, 'local' | 'cloud'>,
+  rule: Exclude<GatewayRule, 'local' | 'cloud' | 'link'>,
   label: Label,
   reason: string,
   next: NextStep,
@@ -227,6 +312,16 @@ export function gatewayCheck(
     parts.push(...scanParts(text, typeof fragment.value !== 'string'));
   }
   Object.freeze(texts);
+  // An address carries its values %-encoded: the vault and the scanner read it decoded too (D-154).
+  if (target.kind === 'link') {
+    for (const text of texts) {
+      try {
+        parts.push(decodeURIComponent(text));
+      } catch {
+        return block('link-invalid', label, 'an address with a broken escape', 'stay-local');
+      }
+    }
+  }
 
   let refs: string[];
   try {
@@ -238,6 +333,9 @@ export function gatewayCheck(
     // References name secrets, they are not secrets: the reason can be logged.
     return block('secret', label, `payload contains the value of ${[...new Set(refs)].join(', ')}`, onBlock === 'notify-reference' ? onBlock : 'wait-user');
   }
+
+  // The address of a link (D-154): chosen by the user, checked by its own rules whatever the label of its note.
+  if (target.kind === 'link') return checkLink(payload, texts, label, target);
 
   if (locality === 'local') {
     // L3 is out already: local targets take everything else.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { captureNote, fetchNoteLink, listNotes, loadNote, organizeNote } from '../lib/api.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
   errorText,
@@ -14,7 +14,9 @@ import {
 } from '../lib/italian.ts';
 import {
   byteLength,
+  canFetch,
   displayTitle,
+  fetchSettled,
   filterThoughts,
   graphId,
   groupThoughts,
@@ -68,6 +70,8 @@ const noteLoading = ref(false);
 const noteError = ref<string | null>(null);
 const requeueing = ref(false);
 const panelNotice = ref<string | null>(null);
+/** The note whose link is being downloaded and summarized (D-154). */
+const fetching = ref<string | null>(null);
 
 const counter = computed(() => sizeCounter(draft.value));
 const tooLarge = computed(() => byteLength(draft.value) > MAX_NOTE_BYTES);
@@ -244,6 +248,56 @@ async function organizeAgain(): Promise<void> {
   }
 }
 
+const FETCH_POLL_MS = 3_000;
+/** The model may wait for a call or a task to end: the panel stops looking after this long. */
+const FETCH_WAIT_MS = 5 * 60_000;
+let fetchTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** "Scarica e riassumi" (D-154): the core downloads the link and the local model organizes the note again. */
+async function fetchAndSummarize(): Promise<void> {
+  const current = note.value;
+  if (current === null || fetching.value !== null || !canFetch(current)) return;
+  const name = current.name;
+  fetching.value = name;
+  panelNotice.value = null;
+  try {
+    await fetchNoteLink(name);
+  } catch (cause) {
+    fetching.value = null;
+    panelNotice.value = errorText(cause);
+    return;
+  }
+  const started = Date.now();
+  const look = (): void => {
+    fetchTimer = setTimeout(() => {
+      void (async () => {
+        if (!alive || fetching.value !== name) return;
+        try {
+          const loaded = await loadNote(name);
+          if (fetchSettled(current, loaded)) {
+            fetching.value = null;
+            if (selectedName.value === name) {
+              note.value = loaded;
+              panelNotice.value = loaded.fetchFailed ? 'Non sono riuscita a scaricare il link: il motivo è nella sezione «Contenuto».' : null;
+            }
+            void refresh();
+            return;
+          }
+        } catch {
+          // Read again at the next look.
+        }
+        if (Date.now() - started > FETCH_WAIT_MS) {
+          fetching.value = null;
+          if (selectedName.value === name) panelNotice.value = 'Il riassunto del link non è ancora pronto: il modello locale potrebbe essere occupato. Riapri il pensiero più tardi.';
+          return;
+        }
+        look();
+      })();
+    }, FETCH_POLL_MS);
+  };
+  look();
+}
+
 function onWindowKey(event: KeyboardEvent): void {
   if (event.key === 'Escape' && selectedName.value !== null) closePanel();
 }
@@ -259,6 +313,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false;
   clearTimeout(timer);
+  clearTimeout(fetchTimer);
   window.removeEventListener('keydown', onWindowKey);
 });
 </script>
@@ -423,11 +478,25 @@ onBeforeUnmount(() => {
         <button v-if="selectedState === 'stuck'" type="button" class="btn px-2.5 py-1 text-xs" :disabled="requeueing" @click="organizeAgain">
           <Icon name="retry" :size="14" />Riordina di nuovo
         </button>
+        <button
+          v-if="note !== null && note.name === selectedName && canFetch(note) && selectedState !== 'organizing'"
+          type="button"
+          class="btn px-2.5 py-1 text-xs"
+          :disabled="fetching !== null"
+          title="Il nucleo scarica il link e il modello locale lo riassume nel pensiero; il sito riceve solo l’indirizzo"
+          @click="fetchAndSummarize"
+        >
+          <Icon name="link" :size="14" />{{ fetching === note.name ? 'Scarico e riassumo…' : 'Scarica e riassumi' }}
+        </button>
         <button v-if="selected !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('openGraph', graphId(selected.path))">
           <Icon name="knowledge" :size="14" />Apri nel grafo
         </button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div v-if="fetching !== null && fetching === selectedName" class="mb-3">
+          <p class="mb-1.5 font-mono text-[11px] text-accent">Scarico il link e lo riassumo col modello locale…</p>
+          <span class="hud-scan block w-full" aria-hidden="true" />
+        </div>
         <div v-if="selectedState === 'organizing'" class="mb-3">
           <p class="mb-1.5 font-mono text-[11px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
           <span class="hud-scan block w-full" aria-hidden="true" />

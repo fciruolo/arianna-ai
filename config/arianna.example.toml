@@ -243,6 +243,18 @@ port = 7420
 # evening = "18:30"
 # days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
+# Links fetched and summarized (D-154): the links of these sites saved in
+# kb/inbox are downloaded by the core and summarized by the local model
+# when the note is organized. A site covers its subdomains (x.com also
+# mobile.x.com). Downloading sends the address of the link to its site
+# (for x.com and twitter.com to publish.twitter.com, the official oEmbed of
+# X); nothing else leaves. A link of any other site stays a link, with a
+# "Scarica e riassumi" button in Pensieri. Absent: no site. Changed from the
+# settings page with a confirmation. Applies without a restart.
+#
+# [capture]
+# fetch_sites = ["x.com"]
+
 # What the web chat says this installation is (D-089): development while the
 # database uses the development passwords or while mode = "development";
 # production only with real passwords and no such line. Applies without a

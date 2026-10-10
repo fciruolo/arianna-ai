@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { parsePersona, PersonaError, type Persona } from '@arianna/agents';
 import {
+  checkFetchSites,
   checkSecretary,
   CLOUD_EXECUTORS,
   CLOUD_MODELS,
@@ -70,7 +71,7 @@ import { knownSecrets } from '@arianna/vault';
  * not touch: an ordinary save can never open an exit.
  */
 export const ORDINARY_SECTIONS = ['roles', 'cloudModels', 'characters', 'voice', 'personas', 'agents', 'sprites', 'participants', 'notifications', 'secretary'] as const;
-export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints'] as const;
+export const PRIVACY_SECTIONS = ['executors', 'telegram', 'projects', 'endpoints', 'fetchSites'] as const;
 type OrdinarySection = (typeof ORDINARY_SECTIONS)[number];
 type PrivacySection = (typeof PRIVACY_SECTIONS)[number];
 type Section = OrdinarySection | PrivacySection | 'database' | 'server';
@@ -127,6 +128,8 @@ export interface SettingsValues {
   telegram: { chats: number[] } | null;
   projects: ProjectSettings[];
   endpoints: EndpointSettings[];
+  /** `[capture] fetch_sites` (D-154): the sites whose links are downloaded by themselves; empty when absent. */
+  fetchSites: string[];
 }
 
 export interface CatalogModel {
@@ -167,6 +170,7 @@ export interface PrivacyChanges {
   telegram?: { before: { chats: number[] } | null; after: { chats: number[] } | null };
   projects?: { added: ProjectSettings[]; removed: ProjectSettings[]; changed: { name: string; before: ProjectSettings; after: ProjectSettings }[] };
   endpoints?: { added: EndpointSettings[]; removed: EndpointSettings[]; changed: { id: string; before: EndpointSettings; after: EndpointSettings }[] };
+  fetchSites?: { before: string[]; after: string[] };
 }
 
 /** After the change: who may receive what. */
@@ -178,6 +182,8 @@ export interface PrivacyExits {
   telegram: { chats: number } | null;
   /** Local servers: they see L2 in clear, and with `command` the core runs that program. */
   endpoints: { id: string; url: string; command: string[] | null }[];
+  /** Sites whose links the core downloads by itself (D-154): each receives the address of its links. */
+  fetchSites: string[];
 }
 
 export interface PrivacyProposal {
@@ -461,6 +467,17 @@ function executorsFromBody(value: unknown): Settings['cloud']['executors'] {
   return executors as Settings['cloud']['executors'];
 }
 
+/** `[capture] fetch_sites` from the page (D-154): host names, lowercase, each once. */
+function fetchSitesFromBody(value: unknown): string[] {
+  const sites = strings(value, 'fetchSites');
+  try {
+    return checkFetchSites(sites, 'fetchSites');
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConfigError') invalid(error.message);
+    throw error;
+  }
+}
+
 function telegramFromBody(value: unknown, current: Settings['telegram']): Settings['telegram'] {
   if (value === null) return undefined;
   const telegram = record(value, 'telegram');
@@ -551,6 +568,7 @@ export function valuesOf(settings: Settings): SettingsValues {
     telegram: settings.telegram === undefined ? null : { chats: [...settings.telegram.chats] },
     projects: settings.projects.map((project) => ({ ...project })),
     endpoints: structuredClone(settings.endpoints),
+    fetchSites: [...(settings.fetchSites ?? [])],
   };
 }
 
@@ -571,6 +589,8 @@ function sectionOf(settings: Settings, section: Section): unknown {
       return settings.secretary;
     case 'executors':
       return settings.cloud.executors;
+    case 'fetchSites':
+      return settings.fetchSites ?? [];
     case 'database':
     case 'server':
     case 'roles':
@@ -609,6 +629,7 @@ function privacyChanges(before: SettingsValues, after: SettingsValues, sections:
     const { added, removed, changed } = listDiff(before.projects, after.projects, (project) => project.name);
     changes.projects = { added, removed, changed: changed.map(({ key, ...rest }) => ({ name: key, ...rest })) };
   }
+  if (sections.includes('fetchSites')) changes.fetchSites = { before: before.fetchSites, after: after.fetchSites };
   if (sections.includes('endpoints')) {
     const { added, removed, changed } = listDiff(before.endpoints, after.endpoints, (endpoint) => endpoint.id);
     changes.endpoints = { added, removed, changed: changed.map(({ key, ...rest }) => ({ id: key, ...rest })) };
@@ -622,6 +643,7 @@ function exitsOf(values: SettingsValues): PrivacyExits {
     projects: values.projects.map(({ name, label }) => ({ name, label })),
     telegram: values.telegram === null ? null : { chats: values.telegram.chats.length },
     endpoints: values.endpoints.map(({ id, url, command }) => ({ id, url, command: command ?? null })),
+    fetchSites: values.fetchSites,
   };
 }
 
@@ -820,6 +842,7 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
       }
       if (given.projects !== undefined) next.projects = projectsFromBody(given.projects);
       if (given.endpoints !== undefined) next.endpoints = endpointsFromBody(given.endpoints);
+      if (given.fetchSites !== undefined) next.fetchSites = fetchSitesFromBody(given.fetchSites);
       const sections = check(settings, next, catalog, PRIVACY_SECTIONS);
       if (sections.length === 0) invalid('values: nothing changes');
       const privacy = sections as PrivacySection[];

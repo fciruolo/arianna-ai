@@ -229,3 +229,17 @@ test('local exits are logged as local, and a contaminated run is refused the clo
   const l1: Labeled<string>[] = [{ value: 'fake', label: 'L1', source: 'test' }];
   assert.equal((await passGateway(db().sql, l1, contaminated, CLAUDE)).rule, 'contaminated');
 });
+
+test('rows of the link target (D-154): L2 only with the rule of links, never a summary, a local locality or another target', async () => {
+  const { sql } = db();
+  const row = (target: string, locality: string, rule: string, summary: string | null, label = 'L2', decision = 'allow') => sql`
+    INSERT INTO gateway_log (target_kind, target, locality, label, decision, rule, reason, summary)
+    VALUES ('link', ${target}, ${locality}, ${label}::privacy_label, ${decision}, ${rule}, 'test', ${summary})`;
+  await row('link-list', 'cloud', 'link', null);
+  await row('link-click', 'cloud', 'scanner', null, 'L2', 'block');
+  await assert.rejects(row('link-click', 'cloud', 'link', 'https://example.org/', 'L1'), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'local', 'link', null), /gateway_log_link_fields/);
+  await assert.rejects(row('https://example.org/', 'cloud', 'link', null), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'cloud', 'cloud', null), /gateway_log_link_fields/);
+  await assert.rejects(row('link-click', 'cloud', 'link', null, 'L3'), /gateway_log_no_secret_out/);
+});

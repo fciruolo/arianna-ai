@@ -20,7 +20,7 @@ test('groups by subject, no group named after how a section takes effect', () =>
   for (const item of items.filter((entry) => entry.privacy === true)) assert.equal(item.behaviour, 'confirm');
   assert.deepEqual(
     items.filter((entry) => entry.privacy === true).map((entry) => entry.title),
-    ['Esecutori cloud', 'Progetti', 'Server locali'],
+    ['Esecutori cloud', 'Progetti', 'Server locali', 'Link scaricati'],
   );
   assert.equal(BEHAVIOUR_TEXT.confirm, 'Chiede conferma prima di salvare');
   // Ids and slugs are unique.

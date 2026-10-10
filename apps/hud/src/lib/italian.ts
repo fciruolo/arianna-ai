@@ -119,6 +119,9 @@ const ERRORS: Record<string, string> = {
   'note not found': 'Nota non trovata: forse è stata spostata o è sopra Privato.',
   'the note is too large to read': 'La nota è troppo grande per essere letta qui.',
   'the note is already organized': 'La nota è già stata riordinata.',
+  'the note has no link': 'La nota non contiene un link da scaricare.',
+  'the link is already downloaded': 'Il contenuto del link è già nella nota.',
+  'the note cannot be organized again': 'Questa nota non si può riordinare di nuovo.',
   'notes cannot be organized now': 'Il riordino delle note non è disponibile adesso: manca il modello locale.',
   'status must be new or organized': 'Filtro di stato non valido.',
   // Trials of a model (D-081).

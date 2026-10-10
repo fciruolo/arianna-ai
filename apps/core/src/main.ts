@@ -501,6 +501,8 @@ const organizer = createNoteOrganizer({
       (id) => localServers.isAvailable(id),
       (id) => localServers.isSettling(id),
     ),
+  // Links of these sites downloaded and summarized (D-154), read at each note.
+  fetchSites: () => settings.current().capture.fetchSites,
   onError: report,
 });
 // "Genera personaggio" (D-123): the model of [sprites], read at each request; the brief passes the gateway.
@@ -581,7 +583,7 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), arianna: ariannaDocs },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), fetch: (path) => organizer.enqueueFetch(path), arianna: ariannaDocs },
   modelEvals,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>
