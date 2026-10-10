@@ -2441,6 +2441,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-13 | Cardwall dei task e degli impegni, con filtri (progetto o generali, stato, tipo, chi lo fa, scadenza), anche nell'ufficio come oggetto a cui il personaggio si avvicina per aprirlo; usato anche per lo sviluppo: Arianna scompone una richiesta in task con dipendenze ("il codice aspetta la grafica") | funzione | 25-35 h (tappe C1-C4) | cardwall della Fase 2 (SPEC), I-11 (progetti), I-12 (impegni), D-125/D-133 (agenti e ufficio) | detta dall'utente il 2026-10-08; domande chiuse il 2026-10-10 (D-152); C1-C2 costruite, restano C3 e C4 |
 | I-14 | Regole del progetto proposte in bozza quando si aggiunge un progetto (parallelismo degli agenti secondo la quota, codice che non sembri scritto da un'IA, regole per gli IM, niente commit o niente co-autore, mai leggere segreti…), uguali per Claude e per Codex | funzione | 12-18 h (tappe R1-R3) | D-058/D-134 (progetti), I-11, D-050/D-138 (profili), D-135 (segreti) | detta dall'utente il 2026-10-08; proposta qui sotto, domande aperte |
 | I-16 | I clienti: anagrafica completa per fatturare legata a uno o più progetti, dashboard dei guadagni dagli IM chiusi (prezzo per progetto con eccezioni), documenti e contatti; tutto Privato (L2) | funzione | da stimare | D-167 (IM e prezzi), D-145 (progetti), I-12 | detta dall'utente il 2026-10-10; scelte in D-168, proposta qui sotto; tappa C1 costruita (ramo `task/clienti`), in prova |
+| I-17 | Comandi da Spotlight: un'azione "Di' ad Arianna" dell'aiutante nativo, con la risposta in notifica, e la variante "Annota" | funzione | 4-8 h (tappe S1-S3) | D-128 (aiutante), D-167 (conferma da chat privata), I-16 | detta dall'utente il 2026-10-10; idea accettata, da fare dopo I-16 |
 
 ### I-1, notifiche delle risposte
 
@@ -2664,3 +2665,16 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 - **C1 (costruita, ramo `task/clienti`):** anagrafica, contatti, progetti, logo e pagina "Clienti"; "Documenti" e "Dashboard" segnate "in arrivo".
 - **C2 (da fare): i documenti del cliente.** Contratti, preventivi firmati e altri file in una cartella Privata del cliente su questo computer, con il nome, la data e il tipo; mai al Coder.
 - **C3 (da fare, dopo P4d): la dashboard dei guadagni.** La somma degli IM chiusi dei progetti del cliente, al prezzo del progetto o all'eccezione dell'IM (P4d di D-167), per mese e per anno, calcolata dal codice; poi Arianna (modello locale) potrà rispondere a "quanto ho guadagnato con Rossi quest'anno?".
+
+### I-17, comandi da Spotlight (richiesta dell'utente del 2026-10-10)
+
+**Cosa ha chiesto l'utente.** "Comandi per Mac da usare nello Spotlight per fare operazioni rapide", per esempio "Segna che per il prossimo IM del cliente Rossi dobbiamo implementare la pagina del dettaglio clienti".
+
+**Proposta di Claude (accettata come idea, da fare dopo I-16).**
+1. **Un'azione di sistema dell'aiutante nativo** (`apps/notifier`, D-128): un App Intent "Di' ad Arianna" con un campo di testo. Le azioni di un'app firmata compaiono da sole in Spotlight, in Comandi Rapidi e in Siri, con una scorciatoia da tastiera a scelta. Niente app di terzi (Raycast, Alfred) e nessuna finestra nuova da mantenere.
+2. **Il testo va solo al core sul Mac** (loopback, come lo stream delle notifiche), come messaggio nella conversazione della segretaria: Privato (L2), quindi passa dalle stesse regole della chat; la risposta di Arianna torna come notifica dell'aiutante, con "Apri" verso la chat.
+3. **Le conferme restano:** scrivere in un IM Interno da qui chiede il sì dell'utente come da una chat privata (D-167, punto 6); la notifica porta alla scheda nella chat. Confermare direttamente dalla notifica è da decidere.
+4. **"Del cliente Rossi"** si risolve con l'anagrafica di I-16 (D-168): `im.add` accetta un cliente al posto del progetto e, se il cliente ha più progetti, Arianna chiede quale.
+5. **Variante "Annota"**: scrive in `kb/inbox` come `pnpm kb:capture` (D-080), senza passare dal modello.
+
+**Tappe proposte.** S1 l'azione "Di' ad Arianna" con la risposta in notifica; S2 "Annota"; S3 il cliente al posto del progetto in `im.add` (dopo I-16).

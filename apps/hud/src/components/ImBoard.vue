@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { addImItem, createIm, listIms, openImItemCard, readIm, setImItemState } from '../lib/api.ts';
+import { addImItem, createIm, listIms, loadImReport, openImItemCard, readIm, setImItemState, startImReport } from '../lib/api.ts';
+import { copyText, COPY_FEEDBACK_MS, type CopyResult } from '../lib/clipboard.ts';
 import {
   callText,
   fromDateTimeInput,
@@ -17,11 +18,28 @@ import {
   imOptionText,
   type ImSummary,
   imTitleText,
+  type ImReportJob,
+  isReportConflict,
   isStale,
   itemRef,
   loadImPrefs,
   needsFirstDate,
   pickIm,
+  REPORT_AGENT_HINT,
+  REPORT_AGENT_TEXT,
+  REPORT_AGENTS,
+  REPORT_POLL_MS,
+  REPORT_REPLACE_TEXT,
+  REPORT_LANGUAGE_TEXT,
+  REPORT_LANGUAGES,
+  type ReportLanguage,
+  loadReportLanguage,
+  reportRunningText,
+  saveReportLanguage,
+  type ReportAgent,
+  reportDoneText,
+  reportErrorText,
+  reportStartErrorText,
   saveImPrefs,
   withSummary,
 } from '../lib/im.ts';
@@ -38,7 +56,10 @@ import LabelBadge from './LabelBadge.vue';
  * when the file changed meanwhile (edited in Obsidian) the core says 409 and
  * the IM is read again. A click on an item opens its card (D-167, P4b): the
  * core makes it the first time and writes `#card-<sigla>` on the item's line;
- * the cardwall shows its detail (`openCard`).
+ * the cardwall shows its detail (`openCard`). "Scrivi il report" (P4c) asks
+ * who writes it each time, Arianna on the Mac or Claude in the cloud; the core
+ * writes it into `## Report` while the page asks how it is going, and the
+ * report shows under the header with "Copia".
  */
 const props = defineProps<{
   /** The projects of the cardwall (containers). */
@@ -283,6 +304,122 @@ function closeMenu(item: ImItem): void {
   void nextTick(() => document.getElementById(`im-item-menu-${String(item.line)}`)?.focus());
 }
 
+// "Scrivi il report" (D-167, P4c): the agent chosen each time; the core writes
+// in the background and the page asks every two seconds how it is going.
+const reportMenu = ref(false);
+const replaceAsk = ref<ReportAgent | null>(null);
+const reportJob = ref<ImReportJob | null>(null);
+const reportOpen = ref(false);
+const reportRunning = computed(() => reportJob.value?.state === 'running' && reportJob.value.project === project.value && reportJob.value.number === im.value?.number);
+let reportTimer: number | undefined;
+/** Moves at every request about the report: an answer to an older one is ignored. */
+let reportSeq = 0;
+
+function stopPolling(): void {
+  window.clearTimeout(reportTimer);
+  reportTimer = undefined;
+  reportSeq += 1;
+}
+
+// The language, chosen every time like the agent (D-167), the last one remembered per project in this browser.
+const reportLanguage = ref<ReportLanguage>('it');
+watch(
+  project,
+  (name) => {
+    reportLanguage.value = loadReportLanguage(storage, name);
+  },
+  { immediate: true },
+);
+function chooseLanguage(language: ReportLanguage): void {
+  reportLanguage.value = language;
+  if (project.value !== null) saveReportLanguage(storage, project.value, language);
+}
+
+/** One look at the job of the IM shown; again in a while while it runs. */
+async function pollReport(name: string, number: number, quiet: boolean): Promise<void> {
+  stopPolling();
+  const seq = reportSeq;
+  let job: ImReportJob | null;
+  try {
+    job = await loadImReport(name, number);
+  } catch {
+    if (seq === reportSeq && !quiet && project.value === name && selected.value === number) reportTimer = window.setTimeout(() => void pollReport(name, number, false), REPORT_POLL_MS * 2);
+    return;
+  }
+  if (seq !== reportSeq || project.value !== name || selected.value !== number) return;
+  // Never an older job over the one this page started.
+  if (job !== null && reportJob.value !== null && job.id !== reportJob.value.id && job.startedAt < reportJob.value.startedAt) return;
+  const was = reportJob.value;
+  reportJob.value = job;
+  if (job === null) return;
+  if (job.state === 'running') {
+    reportTimer = window.setTimeout(() => void pollReport(name, number, false), REPORT_POLL_MS);
+    return;
+  }
+  // A job this page saw running that ended now: the IM again, and what happened.
+  if (!quiet && was?.id === job.id && was.state === 'running') {
+    if (job.state === 'done') {
+      notice.value = reportDoneText(job) ?? null;
+      reportOpen.value = true;
+      await loadIm();
+    } else if (job.error !== null) {
+      problem.value = reportErrorText(job.error, job.agent, job.resetsAt);
+    }
+  }
+}
+
+watch(
+  [project, selected],
+  ([name, number]) => {
+    stopPolling();
+    reportJob.value = null;
+    reportMenu.value = false;
+    replaceAsk.value = null;
+    reportOpen.value = false;
+    if (name !== null && number !== undefined) void pollReport(name, number, true);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(stopPolling);
+
+function toggleReportMenu(): void {
+  reportMenu.value = !reportMenu.value;
+  replaceAsk.value = null;
+}
+
+async function writeReport(agent: ReportAgent, replace = false): Promise<void> {
+  const name = project.value;
+  const current = im.value;
+  reportMenu.value = false;
+  replaceAsk.value = null;
+  if (name === null || current === null || reportRunning.value) return;
+  problem.value = null;
+  notice.value = null;
+  stopPolling();
+  const seq = reportSeq;
+  try {
+    const job = await startImReport(name, current.number, agent, reportLanguage.value, replace);
+    if (seq !== reportSeq) return;
+    reportJob.value = job;
+    reportTimer = window.setTimeout(() => void pollReport(name, current.number, false), REPORT_POLL_MS);
+  } catch (cause) {
+    if (seq !== reportSeq) return;
+    if (isReportConflict(cause)) replaceAsk.value = agent;
+    else problem.value = reportStartErrorText(cause, agent);
+  }
+}
+
+const copyState = ref<CopyResult | null>(null);
+let copyTimer: number | undefined;
+async function copyReport(): Promise<void> {
+  const text = im.value?.report ?? '';
+  if (text === '') return;
+  copyState.value = await copyText(text, typeof navigator === 'undefined' ? undefined : navigator.clipboard);
+  window.clearTimeout(copyTimer);
+  copyTimer = window.setTimeout(() => (copyState.value = null), COPY_FEEDBACK_MS);
+}
+onBeforeUnmount(() => window.clearTimeout(copyTimer));
+
 // Drag and drop between the columns (HTML5, as the cards).
 const dragging = ref<ImItem | null>(null);
 const over = ref<ImItemState | null>(null);
@@ -355,7 +492,59 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
         <span class="chip" :class="im.status === 'chiuso' ? 'text-muted' : 'text-accent'">{{ IM_STATUS_TEXT[im.status] }}</span>
         <LabelBadge :label="im.label" />
         <span v-if="callText(im.call) !== undefined" class="inline-flex items-center gap-1 text-warn"><Icon name="phone" :size="13" />{{ callText(im.call) }}</span>
+        <span class="flex-1" />
+        <span v-if="reportRunning" role="status" class="inline-flex items-center gap-1.5 text-muted"><Icon name="clock" :size="13" />{{ reportRunningText(reportJob?.language ?? 'it') }}</span>
+        <button v-else type="button" class="btn px-3 py-1 text-[12.5px]" :aria-expanded="reportMenu" aria-controls="im-report-menu" @click="toggleReportMenu">
+          <Icon name="rename" :size="13" />Scrivi il report
+        </button>
       </div>
+
+      <!-- Who writes the report: chosen every time (D-167). -->
+      <div v-if="reportMenu && !reportRunning" id="im-report-menu" class="flex flex-col gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13px]" role="group" aria-label="Chi scrive il report">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-muted">Lingua del report</span>
+          <div class="flex overflow-hidden rounded-md border border-line" role="radiogroup" aria-label="Lingua del report">
+            <button
+              v-for="language in REPORT_LANGUAGES"
+              :key="language"
+              type="button"
+              role="radio"
+              :aria-checked="reportLanguage === language"
+              class="px-2.5 py-0.5 text-[12px]"
+              :class="reportLanguage === language ? 'bg-accent/15 text-ink' : 'text-muted hover:text-ink'"
+              @click="chooseLanguage(language)"
+            >
+              {{ REPORT_LANGUAGE_TEXT[language] }}
+            </button>
+          </div>
+        </div>
+        <span class="text-muted">Chi scrive il report per il cliente?</span>
+        <div class="flex flex-wrap items-center gap-2">
+          <button v-for="agent in REPORT_AGENTS" :key="agent" type="button" class="btn flex-col items-start px-3 py-1.5 text-left" @click="writeReport(agent)">
+            <span class="text-[13px] text-ink">{{ REPORT_AGENT_TEXT[agent] }}</span>
+            <span class="text-[11.5px] text-muted">{{ REPORT_AGENT_HINT[agent] }}</span>
+          </button>
+          <button type="button" class="px-2 py-1 text-[12px] text-muted hover:text-ink" @click="reportMenu = false">Annulla</button>
+        </div>
+      </div>
+      <div v-if="replaceAsk !== null" role="alertdialog" aria-label="Sostituire il report" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[13px]">
+        <span class="flex-1">{{ REPORT_REPLACE_TEXT }}</span>
+        <button type="button" class="btn px-3 py-1 text-[12.5px]" @click="writeReport(replaceAsk, true)">Sostituisci</button>
+        <button type="button" class="px-2 py-1 text-[12px] text-muted hover:text-ink" @click="replaceAsk = null">Annulla</button>
+      </div>
+
+      <!-- The report for the client, to review and copy (the user sends it). -->
+      <section v-if="im.report !== ''" class="rounded-lg border border-line bg-surface">
+        <div class="flex items-center gap-2 px-3 py-1.5">
+          <button type="button" class="flex flex-1 items-center gap-1.5 text-left text-[13px] text-ink" :aria-expanded="reportOpen" aria-controls="im-report-text" @click="reportOpen = !reportOpen">
+            <Icon name="expand" :size="13" class="transition-transform" :class="reportOpen ? 'rotate-90' : ''" />Report per il cliente
+          </button>
+          <button type="button" class="btn px-2 py-0.5 text-[12px]" @click="copyReport">
+            <Icon name="copy" :size="12" />{{ copyState === 'copied' ? 'Copiato' : copyState === 'unavailable' ? 'Copia non disponibile' : 'Copia' }}
+          </button>
+        </div>
+        <pre v-if="reportOpen" id="im-report-text" class="max-h-72 overflow-y-auto border-t border-line px-3 py-2 font-sans text-[13px] leading-relaxed break-words whitespace-pre-wrap text-ink">{{ im.report }}</pre>
+      </section>
 
       <!-- Five columns: side by side from md, one under the other on a phone. -->
       <div class="flex flex-col gap-3 md:min-h-0 md:flex-1 md:flex-row md:overflow-x-auto md:pb-1">

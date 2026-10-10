@@ -64,6 +64,7 @@ import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
 import { SpriteError, type SpriteGenerator } from '../sprites/generate.ts';
+import { ImReportError, REPORT_AGENTS, REPORT_LANGUAGES, type ImReporter } from '../im-report.ts';
 import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../user-agents.ts';
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
@@ -214,6 +215,8 @@ export interface ApiServerOptions {
   leaveRule?: () => LeaveRule | undefined;
   /** "Genera personaggio" (D-123); without it the routes answer 404. */
   sprites?: SpriteGenerator;
+  /** "Scrivi il report" of an IM (D-167, P4c); without it the routes answer 404. */
+  imReports?: ImReporter;
   /**
    * Closes an incognito conversation (D-136) stopping its work in progress;
    * without it the route closes it without stopping a step of the worker.
@@ -2254,6 +2257,62 @@ function spriteRoutes(sprites: SpriteGenerator | undefined): Route[] {
   ];
 }
 
+const IM_REPORT_STATUS: Record<ImReportError['code'], number> = {
+  invalid: 400,
+  'not-found': 404,
+  'has-report': 409,
+  busy: 409,
+  'above-label': 403,
+  unavailable: 409,
+  blocked: 403,
+  quota: 429,
+  failed: 502,
+  empty: 502,
+  changed: 409,
+};
+
+/**
+ * "Scrivi il report" of an IM (D-167, P4c): POST starts it with the agent the
+ * user picked and in the language chosen (202 and the job; 409 `has-report` when the section has text,
+ * unless `replace`), GET says how the last job of the IM went.
+ */
+function imReportRoutes(reporter: ImReporter | undefined, containers: () => readonly Project[]): Route[] {
+  const need = (): ImReporter => {
+    if (reporter === undefined) throw new HttpError(404, 'not found');
+    return reporter;
+  };
+  const projectOf = (params: Params): string => {
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((item) => item.name === name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  return [
+    route('GET', '/api/browse/:project/im/:number/report', (_request, _url, params) => {
+      const service = need();
+      return Promise.resolve({ body: { job: service.status(projectOf(params), imNumberParam(params)) } });
+    }),
+    route('POST', '/api/browse/:project/im/:number/report', async (request, _url, params) => {
+      const service = need();
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['agent', 'replace', 'language']);
+      const agent = REPORT_AGENTS.find((value) => value === body.agent);
+      if (agent === undefined) throw new HttpError(400, 'agent must be arianna or claude');
+      if (body.replace !== undefined && typeof body.replace !== 'boolean') throw new HttpError(400, 'replace must be true or false');
+      // Italian or English, chosen each time like the agent (D-167); Italian when not said.
+      const language = body.language === undefined ? 'it' : REPORT_LANGUAGES.find((value) => value === body.language);
+      if (language === undefined) throw new HttpError(400, 'language must be it or en');
+      try {
+        return { status: 202, body: { job: service.start(project, number, agent, body.replace === true, language) } };
+      } catch (error) {
+        if (!(error instanceof ImReportError)) throw error;
+        return { status: IM_REPORT_STATUS[error.code], body: { error: error.message, code: error.code, detail: error.detail ?? null } };
+      }
+    }),
+  ];
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -2511,6 +2570,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...userAgentRoutes(options.userAgents));
   table.push(...participantRoutes(sql, options.participantAgent ?? (() => undefined)));
   table.push(...spriteRoutes(options.sprites));
+  table.push(...imReportRoutes(options.imReports, options.projectContainers ?? (() => [])));
   // The "Modelli" page (I-3): one list, read only. /api/models stays the selector of a conversation.
   table.push(
     route('GET', '/api/models/overview', async () => {

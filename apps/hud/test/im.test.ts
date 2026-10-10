@@ -31,6 +31,16 @@ import {
   loadImPrefs,
   needsFirstDate,
   pickIm,
+  isReportConflict,
+  REPORT_AGENT_TEXT,
+  REPORT_REPLACE_TEXT,
+  reportDoneText,
+  reportErrorText,
+  REPORT_LANGUAGE_TEXT,
+  loadReportLanguage,
+  reportRunningText,
+  saveReportLanguage,
+  reportStartErrorText,
   saveImPrefs,
   summaryOf,
   withSummary,
@@ -133,6 +143,7 @@ test('summaryOf counts the items, withSummary keeps the list in order', () => {
     label: 'L1',
     path: 'IM/IM-34.md',
     version: 'v1',
+    report: '',
     items: [item(8, 'todo', 'A'), item(9, 'todo', 'B'), item(10, 'done', 'C')],
   };
   assert.deepEqual(countItems(im.items), { todo: 2, doing: 0, done: 1, postponed: 0, cancelled: 0 });
@@ -261,4 +272,62 @@ test('closingsByMessage: by message, without those that have none, the most rece
   assert.equal(byMessage.get('x')?.id, '3');
   assert.equal(byMessage.get('m4')?.id, '4');
   assert.equal(byMessage.get('m2'), undefined);
+});
+
+// "Scrivi il report" (D-167, P4c).
+test('the two agents of the report, as the user reads them', () => {
+  assert.deepEqual(REPORT_AGENT_TEXT, { arianna: 'Arianna (sul Mac)', claude: 'Claude (nel cloud, consuma quota)' });
+});
+
+test('isReportConflict: only a 409 with has-report asks to replace', () => {
+  assert.equal(isReportConflict(new ApiError(409, 'the IM has a report already', { code: 'has-report' })), true);
+  assert.equal(isReportConflict(new ApiError(409, 'busy', { code: 'busy' })), false);
+  assert.equal(isReportConflict(new ApiError(403, 'x', { code: 'has-report' })), false);
+  assert.equal(isReportConflict(new Error('x')), false);
+});
+
+test('reportErrorText names why in Italian, from code and detail only', () => {
+  assert.equal(reportErrorText({ code: 'has-report', detail: null }, 'claude'), REPORT_REPLACE_TEXT);
+  const diary = reportErrorText({ code: 'above-label', detail: 'diary:2026-10-13:L2' }, 'claude');
+  assert.match(diary, /^Il diario dei lavori del 13 ottobre è Privato \(L2\): Claude non può leggerlo/);
+  assert.match(diary, /Arianna \(sul Mac\)/);
+  assert.match(reportErrorText({ code: 'above-label', detail: 'im:L2' }, 'claude'), /^L’IM è Privato \(L2\): Claude/);
+  assert.match(reportErrorText({ code: 'above-label', detail: 'im:L3' }, 'arianna'), /^L’IM è Segreto \(L3\): nemmeno il modello locale/);
+  assert.match(reportErrorText({ code: 'quota', detail: null }, 'claude', '2026-10-15T08:30:00.000Z'), /^Claude ha finito la quota fino alle \d{2}:\d{2}/);
+  assert.match(reportErrorText({ code: 'unavailable', detail: 'claude' }, 'claude'), /^Claude non è disponibile/);
+  assert.match(reportErrorText({ code: 'unavailable', detail: 'unavailable' }, 'arianna'), /^Il modello locale non risponde/);
+  assert.match(reportErrorText({ code: 'changed', detail: null }, 'arianna'), /non ho sovrascritto niente/);
+  assert.match(reportErrorText({ code: 'something-new', detail: null }, 'arianna'), /^Il modello non è riuscito/);
+});
+
+test('reportStartErrorText reads the code in the body; without one, the usual words', () => {
+  assert.match(reportStartErrorText(new ApiError(403, 'x', { code: 'above-label', detail: 'diary:2026-10-13:L2' }), 'claude'), /13 ottobre/);
+  assert.equal(reportStartErrorText(new ApiError(404, 'not found'), 'claude'), 'Questo IM non c’è più: ricarica la pagina.');
+});
+
+test('reportDoneText: only for a finished job, with the language and the diary days left out', () => {
+  assert.equal(reportDoneText({ state: 'running', agent: 'claude', left: 0, language: 'it' }), undefined);
+  assert.equal(reportDoneText({ state: 'done', agent: 'claude', left: 0, language: 'it' }), 'Claude ha scritto il report: rileggilo prima di mandarlo al cliente.');
+  assert.equal(reportDoneText({ state: 'done', agent: 'claude', left: 0, language: 'en' }), 'Claude ha scritto il report in inglese: rileggilo prima di mandarlo al cliente.');
+  assert.match(reportDoneText({ state: 'done', agent: 'arianna', left: 2, language: 'it' }) ?? '', /^Arianna ha scritto il report.* 2 giorni del diario non sono entrati \(sopra l’etichetta dell’IM o illeggibili\)\.$/);
+});
+
+test('the language of the report: words, the running line, the last choice per project in this browser', () => {
+  assert.deepEqual(REPORT_LANGUAGE_TEXT, { it: 'Italiano', en: 'English' });
+  assert.equal(reportRunningText('it'), 'Scrivo il report…');
+  assert.equal(reportRunningText('en'), 'Scrivo il report in inglese…');
+  const storage = memory();
+  assert.equal(loadReportLanguage(storage, 'progetto-test'), 'it');
+  saveReportLanguage(storage, 'progetto-test', 'en');
+  saveReportLanguage(storage, 'altro', 'it');
+  assert.equal(loadReportLanguage(storage, 'progetto-test'), 'en');
+  assert.equal(loadReportLanguage(storage, 'altro'), 'it');
+  assert.equal(loadReportLanguage(storage, null), 'it');
+  storage.setItem('arianna.cardwall.im.report-language', '{rotto');
+  assert.equal(loadReportLanguage(storage, 'progetto-test'), 'it');
+  saveReportLanguage(storage, 'progetto-test', 'en');
+  assert.equal(loadReportLanguage(storage, 'progetto-test'), 'en', 'a broken value is written again');
+  const throwing = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+  assert.equal(loadReportLanguage(throwing, 'progetto-test'), 'it');
+  saveReportLanguage(throwing, 'progetto-test', 'en');
 });

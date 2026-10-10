@@ -1,4 +1,4 @@
-import type { SecretaryConfig } from '@arianna/config';
+import type { Project, SecretaryConfig } from '@arianna/config';
 import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
 import { dayText } from './commitment-dates.ts';
@@ -6,6 +6,9 @@ import { COMMITMENT_LABEL, lateCommitments, listCommitments, secretaryConversati
 import { createDailyTicker, fireOnce, type DailySchedule, type DailyTicker } from './daily-ticker.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { addDays, dayAndTime, meetingTime } from './im-format.ts';
+import { listIms } from './im.ts';
+import type { KnowledgeEnv } from './project-knowledge.ts';
 
 /**
  * The reminders of the secretary (I-12 tappa S2, D-149): at the three
@@ -47,9 +50,10 @@ function line(item: Commitment, withDay: boolean): string {
  * `today`: the open commitments of the day; `late`: the open ones of the
  * days before (not in the evening, which reports on the day only).
  */
-export function reminderText(moment: Moment, day: string, today: readonly Commitment[], late: readonly Commitment[]): string | undefined {
+export function reminderText(moment: Moment, day: string, today: readonly Commitment[], late: readonly Commitment[], ims: readonly string[] = []): string | undefined {
   const shownLate = moment === 'evening' ? [] : late;
-  if (today.length === 0 && shownLate.length === 0) return undefined;
+  const shownIms = moment === 'morning' ? ims : [];
+  if (today.length === 0 && shownLate.length === 0 && shownIms.length === 0) return undefined;
   const lines: string[] = [];
   if (moment === 'morning') lines.push(`Buongiorno. Il promemoria di oggi, ${dayText(day)}.`);
   else if (moment === 'afternoon') lines.push('Promemoria del pomeriggio.');
@@ -69,8 +73,50 @@ export function reminderText(moment: Moment, day: string, today: readonly Commit
     lines.push('', 'Ancora da fare dai giorni scorsi:');
     for (const item of shownLate) lines.push(line(item, true));
   }
+  // The IM of tomorrow (D-167, P4c): one line each, written by code.
+  if (shownIms.length > 0) lines.push('', ...shownIms);
   if (moment === 'evening') lines.push('', 'Per ciascuno dimmi com’è andata: fatto, non fatto o da rinviare (a quale giorno), e perché. Annoto tutto con una sola conferma.');
   return lines.join('\n');
+}
+
+/** Where the IM of the projects are: the containers as configured and the knowledge of Arianna (D-167). */
+export interface ImReminderSource {
+  projects: () => readonly Project[];
+  env: KnowledgeEnv;
+}
+
+export interface ImReminderLine {
+  text: string;
+  label: Label;
+}
+
+/**
+ * The IM whose meeting (the moved call, else the date) falls on the day after
+ * `day`, not closed, one line each (D-167, P4c): "Domani c'è l'IM-33 di
+ * progetto-test (giovedì 15 ottobre, 10:00): 3 voci ancora aperte." Written
+ * here, never by a model: project, number, day and hour, count, nothing of
+ * the items. A project whose IM cannot be read is skipped.
+ */
+export function imReminderLines(source: ImReminderSource, day: string, onError?: (error: unknown) => void): ImReminderLine[] {
+  const tomorrow = addDays(`${day} 00:00`, 1).slice(0, 10);
+  const lines: ImReminderLine[] = [];
+  for (const project of source.projects()) {
+    let ims;
+    try {
+      ims = listIms(source.projects(), project.name, source.env);
+    } catch (error) {
+      onError?.(error);
+      continue;
+    }
+    for (const im of ims) {
+      const when = meetingTime(im);
+      if (im.status === 'chiuso' || when === null || when.slice(0, 10) !== tomorrow) continue;
+      const open = im.counts.todo + im.counts.doing;
+      const count = open === 0 ? 'nessuna voce aperta' : open === 1 ? '1 voce ancora aperta' : `${String(open)} voci ancora aperte`;
+      lines.push({ text: `Domani c’è l’IM-${String(im.number)} di ${project.name} (${dayAndTime(when)}): ${count}.`, label: im.label });
+    }
+  }
+  return lines;
 }
 
 /** The secretary's conversation and its clearance, created when missing, without opening a session (D-146: only a click does). */
@@ -89,20 +135,24 @@ export type ReminderOutcome = 'written' | 'empty' | 'already';
  * Arianna (L2 at least, never above the conversation's clearance) and its
  * event with `reminder`, which the notifier turns into a notice.
  */
-export async function fireReminder(sql: Sql, day: string, moment: Moment): Promise<ReminderOutcome> {
+export async function fireReminder(sql: Sql, day: string, moment: Moment, ims?: ImReminderSource, onError?: (error: unknown) => void): Promise<ReminderOutcome> {
   let outcome: ReminderOutcome = 'already';
   await fireOnce(sql, { schedule: SECRETARY_SCHEDULE, day, slot: moment }, async (tx) => {
     const today = (await listCommitments(tx, { from: day, to: day })).filter((item) => item.status === 'open');
     const late = moment === 'evening' ? [] : await lateCommitments(tx, day);
-    const conversation = (today.length > 0 || late.length > 0) ? await secretaryConversation(tx) : undefined;
+    // The morning of the day before an IM names it (D-167, P4c), also when nothing else is due.
+    // Only what the secretary conversation can hold (L2): an IM above it does not even open the conversation.
+    const imLines = moment === 'morning' && ims !== undefined ? imReminderLines(ims, day, onError).filter((line) => isAtMost(line.label, COMMITMENT_LABEL)) : [];
+    const conversation = (today.length > 0 || late.length > 0 || imLines.length > 0) ? await secretaryConversation(tx) : undefined;
     // A commitment above what the conversation may hold is left out (none is, today: both are L2).
-    const fits = (item: Commitment): boolean => conversation !== undefined && isAtMost(item.label, conversation.clearance);
-    const text = reminderText(moment, day, today.filter(fits), late.filter(fits));
+    const fits = (item: { label: Label }): boolean => conversation !== undefined && isAtMost(item.label, conversation.clearance);
+    const shownIms = imLines.filter(fits);
+    const text = reminderText(moment, day, today.filter(fits), late.filter(fits), shownIms.map((line) => line.text));
     if (conversation === undefined || text === undefined) {
       outcome = 'empty';
       return { written: false };
     }
-    const label = maxLabel(COMMITMENT_LABEL, ...today.filter(fits).map((item) => item.label), ...late.filter(fits).map((item) => item.label));
+    const label = maxLabel(COMMITMENT_LABEL, ...today.filter(fits).map((item) => item.label), ...late.filter(fits).map((item) => item.label), ...shownIms.map((line) => line.label));
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO messages (conversation_id, role, channel, label, body)
       VALUES (${conversation.id}, 'assistant', 'web', ${label}::privacy_label, ${text})
@@ -119,6 +169,8 @@ export async function fireReminder(sql: Sql, day: string, moment: Moment): Promi
 export function createSecretaryTicker(options: {
   sql: Sql;
   settings: () => SecretaryConfig;
+  /** The IM of the projects, for the line of the day before (D-167, P4c); absent, none. */
+  ims?: ImReminderSource;
   now?: () => Date;
   intervalMs?: number;
   onError?: (error: unknown) => void;
@@ -126,7 +178,7 @@ export function createSecretaryTicker(options: {
   return createDailyTicker({
     schedule: () => secretarySchedule(options.settings()),
     fire: async (day, key) => {
-      if (isMoment(key)) await fireReminder(options.sql, day, key);
+      if (isMoment(key)) await fireReminder(options.sql, day, key, options.ims, options.onError);
     },
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),

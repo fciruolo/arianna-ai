@@ -8,7 +8,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
-import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImSummary } from './im.ts';
+import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
@@ -880,6 +880,16 @@ export async function createIm(project: string, date?: string): Promise<ImDetail
 /** The card of an item (D-167, P4b): made the first time, and the item's line gets `#card-<sigla>`; 409 when the item changed in the file. */
 export async function openImItemCard(project: string, number: number, item: ImItemRef): Promise<{ cardId: string; im: ImDetail }> {
   return call('POST', `${browse(project)}/im/${String(number)}/card`, item);
+}
+
+/** "Scrivi il report" (D-167, P4c): 202 with the job; 409 `has-report` when the section has text and `replace` is not set. */
+export async function startImReport(project: string, number: number, agent: ReportAgent, language: ReportLanguage, replace = false): Promise<ImReportJob> {
+  return (await call<{ job: ImReportJob }>('POST', `${browse(project)}/im/${String(number)}/report`, replace ? { agent, language, replace } : { agent, language })).job;
+}
+
+/** The last report job of the IM since the core started; null when none. */
+export async function loadImReport(project: string, number: number): Promise<ImReportJob | null> {
+  return (await call<{ job: ImReportJob | null }>('GET', `${browse(project)}/im/${String(number)}/report`)).job;
 }
 
 /** The closings of the IM asked in the secretary conversation, most recent first. */
