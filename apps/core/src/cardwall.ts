@@ -1,3 +1,4 @@
+import { SKILL_ID } from '@arianna/config';
 import { isAtMost, type Label } from '@arianna/policy';
 
 import { addDays, isDay, localDay } from './commitment-dates.ts';
@@ -6,6 +7,7 @@ import { CHAT_AGENT } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
+import { SLUG } from './git-catalog.ts';
 import { createTask, isHeld, loadTask, moveTask, releaseIfFree, TaskError, type Task } from './tasks.ts';
 import type { TaskStatus } from './task-status.ts';
 
@@ -33,6 +35,11 @@ export const MAX_CARD_BODY = 10_000;
 export const MAX_CARD_CRITERIA = 2_000;
 /** Priority: 0 none, 1 Bassa, 2 Media, 3 Alta, 4 Altissima (migration 0041). */
 export const MAX_PRIORITY = 4;
+
+/** The agent whose cards carry a style of Open Design and skills of the catalog (D-163). */
+export const DESIGNER_AGENT = 'designer';
+/** Most skills chosen on one card (migration 0046). */
+export const MAX_CARD_SKILLS = 10;
 
 /** The name of a project as `tasks.project` holds it (the same check as migration 0040). */
 export const PROJECT_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
@@ -263,6 +270,17 @@ export async function listCards(sql: Queryable, today: string = localDay()): Pro
 export interface CardNames {
   projects: readonly string[];
   agents: readonly string[];
+  /**
+   * The adopted catalogs (D-163): whether a style of Open Design and a skill
+   * are there. Absent, only their form is checked (the run says what is gone).
+   */
+  catalog?: CardCatalog;
+}
+
+/** What the adopted catalogs hold, asked only for a style or a skill newly chosen. */
+export interface CardCatalog {
+  style(slug: string): boolean;
+  skill(id: string): boolean;
 }
 
 /** As it comes from the chat: every field is checked. `due` is "YYYY-MM-DD". */
@@ -275,6 +293,10 @@ export interface NewCard {
   criteria?: unknown;
   priority?: unknown;
   planned?: unknown;
+  /** The slug of a style of Open Design (D-163); only on a Designer card. */
+  style?: unknown;
+  /** Skills of the catalog, `owner/repo/slug` (D-163); only on a Designer card. */
+  skills?: unknown;
 }
 
 function checkTitle(value: unknown): string {
@@ -317,6 +339,44 @@ function checkDay(value: unknown, field: string): string | null {
   return value;
 }
 
+/** A style of Open Design by its slug, or null for none (D-163). */
+function checkStyle(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || !SLUG.test(value)) throw new CardError('invalid', 'style must be the slug of a style of the catalog');
+  return value;
+}
+
+/** Skills of the catalog, each once, in the order chosen (D-163). */
+function checkSkills(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw new CardError('invalid', 'skills must be a list');
+  const skills: string[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== 'string' || !SKILL_ID.test(item) || item.split('/')[1] === '.' || item.split('/')[1] === '..') throw new CardError('invalid', 'a skill is <owner>/<repo>/<slug>');
+    if (!skills.includes(item)) skills.push(item);
+  }
+  if (skills.length > MAX_CARD_SKILLS) throw new CardError('invalid', `at most ${String(MAX_CARD_SKILLS)} skills on a card`);
+  return skills;
+}
+
+/**
+ * The style and skills a card will hold (D-163): only on a Designer card,
+ * and what is newly chosen must be in the adopted catalogs. What the card
+ * already holds stays even when gone from the catalog: the run says so.
+ */
+function checkDesign(assignee: string, style: string | null, skills: readonly string[], names: CardNames, kept: { style: string | null; skills: readonly string[] }): void {
+  if (assignee !== DESIGNER_AGENT && (style !== null || skills.length > 0)) throw new CardError('invalid', 'the style and the skills are only for a card of the Designer');
+  if (names.catalog === undefined) return;
+  if (style !== null && style !== kept.style && !names.catalog.style(style)) throw new CardError('invalid', 'no such style in the catalog');
+  for (const id of skills) if (!kept.skills.includes(id) && !names.catalog.skill(id)) throw new CardError('invalid', 'no such skill in the catalog');
+}
+
+/** The style and skills a card holds now (D-163). */
+export async function cardDesign(sql: Queryable, id: string): Promise<{ style: string | null; skills: string[] }> {
+  const [row] = await sql<{ style: string | null; skills: string[] }[]>`SELECT design_style AS style, design_skills AS skills FROM tasks WHERE id = ${id}`;
+  return { style: row?.style ?? null, skills: row?.skills ?? [] };
+}
+
 /** The engine has had the task (engineHad), as an SQL expression on `t`. */
 function startedSql(sql: Queryable) {
   return sql`(EXISTS (SELECT FROM runs r WHERE r.task_id = t.id)
@@ -345,6 +405,9 @@ export async function createCard(sql: Sql, input: NewCard, names: CardNames): Pr
   const criteria = checkText(input.criteria, MAX_CARD_CRITERIA, 'criteria');
   const priority = checkPriority(input.priority);
   const planned = checkDay(input.planned, 'planned');
+  const style = checkStyle(input.style);
+  const skills = checkSkills(input.skills);
+  checkDesign(assignee, style, skills, names, { style: null, skills: [] });
   return sql.begin(async (tx) => {
     const created = await createTask(tx, {
       title,
@@ -358,6 +421,8 @@ export async function createCard(sql: Sql, input: NewCard, names: CardNames): Pr
       ...(dueAt === null ? {} : { dueAt }),
     });
     if (priority !== 0 || planned !== null) await tx`UPDATE tasks SET priority = ${priority}, planned_on = ${planned}::date WHERE id = ${created.id}`;
+    // Names of public text (D-163): the card's label stays what it is.
+    if (style !== null || skills.length > 0) await tx`UPDATE tasks SET design_style = ${style}, design_skills = ${skills}::text[] WHERE id = ${created.id}`;
     await appendEvent(tx, { kind: 'card.changed', taskId: created.id, label: 'L0', payload: { created: true } });
     return created;
   });
@@ -496,6 +561,8 @@ export interface CardFields {
   criteria?: unknown;
   priority?: unknown;
   planned?: unknown;
+  style?: unknown;
+  skills?: unknown;
 }
 
 /**
@@ -512,6 +579,8 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
   const criteria = 'criteria' in fields ? checkText(fields.criteria, MAX_CARD_CRITERIA, 'criteria') : undefined;
   const priority = 'priority' in fields ? checkPriority(fields.priority) : undefined;
   const planned = 'planned' in fields ? checkDay(fields.planned, 'planned') : undefined;
+  const style = 'style' in fields ? checkStyle(fields.style) : undefined;
+  const skills = 'skills' in fields ? checkSkills(fields.skills) : undefined;
   const written = title !== undefined || (goal !== undefined && goal !== null) || (criteria !== undefined && criteria !== null);
   return sql.begin(async (tx) => {
     const card = await loadCard(tx, id, true);
@@ -520,6 +589,12 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
     if (assignee !== undefined && assignee !== card.assignee && (card.status === 'done' || card.waitingApprovalId !== null || (await engineHad(tx, id)))) {
       throw new CardError('conflict', 'a card already started or done keeps who does it');
     }
+    // The style and skills (D-163): kept while the card is the Designer's, taken away when it is no longer.
+    const kept = await cardDesign(tx, id);
+    const owner = assignee ?? card.assignee;
+    const nextStyle = style !== undefined ? style : owner === DESIGNER_AGENT ? kept.style : null;
+    const nextSkills = skills ?? (owner === DESIGNER_AGENT ? kept.skills : []);
+    checkDesign(owner, style ?? null, skills ?? [], names, kept);
     await tx`
       UPDATE tasks SET
         project = ${project === undefined ? card.project : project},
@@ -530,6 +605,8 @@ export async function updateCard(sql: Sql, id: string, fields: CardFields, names
         done_criteria = ${criteria === undefined ? card.doneCriteria : criteria},
         priority = ${priority ?? card.priority},
         planned_on = ${planned === undefined ? card.plannedOn : planned}::date,
+        design_style = ${nextStyle},
+        design_skills = ${nextSkills}::text[],
         label = CASE WHEN ${written} THEN GREATEST(label, 'L2'::privacy_label) ELSE label END,
         updated_at = now()
       WHERE id = ${id}`;

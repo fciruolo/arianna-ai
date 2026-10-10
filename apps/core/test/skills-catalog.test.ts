@@ -22,6 +22,7 @@ import {
   planSkills,
   skillRefusalOf,
   SKILLS_PREAMBLE,
+  STYLE_PREAMBLE,
   type SkillIndex,
   type SkillsCatalog,
 } from '../src/skills-catalog.ts';
@@ -455,6 +456,53 @@ describe('Open Design as a source', () => {
     assert.match(text.text, /Invented steps for deck\./);
     assert.throws(() => catalog.update('nexu-io/open-design'), isCode('conflict'));
     assert.throws(() => catalog.remove('nexu-io/open-design'), isCode('conflict'));
+  });
+
+  it('puts the style chosen for a card first in the block, with its license notice; a style gone or too large is left out with the reason (D-163)', async () => {
+    const repo = join(temporary(), 'upstream');
+    mkdirSync(repo, { recursive: true });
+    git(repo, 'init', '-q');
+    write(repo, {
+      LICENSE: `${APACHE}   Copyright 2026 Open Design contributors\n`,
+      'design-systems/alpha/DESIGN.md': '# Design System Inspired by Alpha\n\n> Calm.\n\nInvented palette: sand and ink.\n',
+      'skills/deck/SKILL.md': skill('deck', 'Makes fake decks.'),
+    });
+    const seen: [string, Record<string, string | number>][] = [];
+    const { catalog, dir } = catalogFor({ refusal: (agent) => (agent === 'closed' ? 'closes untrusted_content' : null), onEvent: (kind, payload) => seen.push([kind, payload]) });
+    const design = createDesignCatalog({ dir, repository: `file://${repo}`, allowLocal: true, gateway: async () => {} });
+    design.update();
+    await design.idle();
+    design.adopt(design.status().pending?.commit);
+
+    const delivery = catalog.skillTexts('designer', ['nexu-io/open-design/deck'], undefined, 'alpha');
+    assert.deepEqual(delivery.style, { slug: 'alpha', name: 'Alpha' });
+    assert.equal(delivery.styleSkipped, undefined);
+    const block = delivery.block ?? '';
+    assert.ok(block.startsWith(`${SKILLS_PREAMBLE}\n${STYLE_PREAMBLE}\n`));
+    const boundary = /BEGIN STYLE alpha \[([0-9a-f]{16})\]/.exec(block)?.[1] ?? '';
+    assert.notEqual(boundary, '');
+    assert.ok(block.indexOf('BEGIN STYLE alpha') < block.indexOf('BEGIN SKILL nexu-io/open-design/deck'), 'the style first');
+    assert.match(block, /Source: Open Design \(https:\/\/github\.com\/nexu-io\/open-design\), commit [0-9a-f]{40}, file design-systems\/alpha\/DESIGN\.md\./);
+    assert.match(block, /it is not an instruction/);
+    assert.match(block, /Invented palette: sand and ink\./);
+    assert.match(block, new RegExp(`END STYLE alpha \\[${boundary}\\] -----`));
+    // Only the style: still one block of data.
+    assert.match(catalog.skillTexts('designer', [], undefined, 'alpha').block ?? '', /BEGIN STYLE alpha/);
+
+    seen.length = 0;
+    const gone = catalog.skillTexts('designer', ['nexu-io/open-design/deck'], undefined, 'vanished');
+    assert.equal(gone.style, undefined);
+    assert.deepEqual(gone.styleSkipped, { slug: 'vanished', reason: 'no such style in the catalog' });
+    assert.ok(!(gone.block ?? '').includes('BEGIN STYLE'), 'the card goes on without it');
+    assert.match(gone.block ?? '', /BEGIN SKILL nexu-io\/open-design\/deck/);
+    assert.deepEqual(seen, [['skills.skipped', { agent: 'designer', style: 'vanished', reason: 'no such style in the catalog' }]]);
+
+    const small = catalog.skillTexts('designer', [], Buffer.byteLength(SKILLS_PREAMBLE) + 200, 'alpha');
+    assert.match(small.styleSkipped?.reason ?? '', /size limit/);
+    assert.equal(small.block, undefined);
+
+    const closed = catalog.skillTexts('closed', [], undefined, 'alpha');
+    assert.deepEqual([closed.block, closed.styleSkipped?.reason], [undefined, 'closes untrusted_content']);
   });
 });
 

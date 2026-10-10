@@ -18,7 +18,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -275,7 +275,7 @@ export const MAX_BODY_BYTES = 128 * 1024;
 /** A file attached to a card, in base64 with its name: a third more than the file, and some room. */
 const MAX_CARD_FILE_BODY = Math.ceil((MAX_FILE_BYTES * 4) / 3) + 64 * 1024;
 /** What the user writes on a card, new or changed (cardwall.ts). */
-const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned'];
+const CARD_FIELDS = ['title', 'project', 'assignee', 'due', 'goal', 'criteria', 'priority', 'planned', 'style', 'skills'];
 /** A client that reads this far behind is dropped; it catches up on reconnection. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 /** Helpers of the Mac at once (D-128): one is enough, a few for a restart that overlaps. */
@@ -386,6 +386,8 @@ interface RouteOptions {
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   incognito?: ApiServerOptions['incognito'];
   erase?: ApiServerOptions['erase'];
+  designCatalog?: DesignCatalog | undefined;
+  skillsCatalog?: SkillsCatalog | undefined;
   onError: (error: unknown) => void;
 }
 
@@ -1263,7 +1265,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
@@ -1272,7 +1274,7 @@ function routes(sql: Sql, { cards, projects, models, defaultModel, agents, chara
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
-    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents() }), cards),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1625,6 +1627,18 @@ function secretaryRoutes(sql: Sql): Route[] {
 }
 
 /**
+ * What the adopted catalogs hold, for the style and the skills of a Designer
+ * card (D-163): read at each check, as the menus of the chat list them. A
+ * catalog the core does not have holds nothing.
+ */
+function cardCatalog(design: DesignCatalog | undefined, skills: SkillsCatalog | undefined): CardCatalog {
+  return {
+    style: (slug) => (design?.list().styles ?? []).some((item) => item.slug === slug),
+    skill: (id) => (skills?.list().skills ?? []).some((item) => item.id === id),
+  };
+}
+
+/**
  * The cardwall (I-13 tappe C1-C2, D-152): the cards and the commitments with
  * their column, and what the user changes on a card by hand. Cards only
  * (tasks without a conversation): a task of a chat is the engine's.
@@ -1645,7 +1659,7 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
   // Arianna does not take cards from the wall: she is the one who hands them out.
   const known = (): CardNames => {
     const current = names();
-    return { projects: current.projects, agents: current.agents.filter((agent) => agent !== 'arianna') };
+    return { projects: current.projects, agents: current.agents.filter((agent) => agent !== 'arianna'), ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
   };
   return [
     route('GET', '/api/cards', async () => {
@@ -2196,6 +2210,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     leaveRule: options.leaveRule,
     incognito: options.incognito,
     erase: options.erase,
+    designCatalog: options.designCatalog,
+    skillsCatalog: options.skillsCatalog,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.

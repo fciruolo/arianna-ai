@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { Label } from '@arianna/policy';
 
-import { CardError, loadCard } from './cardwall.ts';
+import { CardError, cardDesign, loadCard } from './cardwall.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 
@@ -81,10 +81,14 @@ export interface CardDetail {
   report: CardReport | null;
   /** Where the user chose the card runs, the last time it was asked (D-159); null when never. */
   executor: string | null;
+  /** The style of Open Design chosen for a Designer card (D-163); null when none. */
+  style: string | null;
+  /** The skills of the catalog chosen for it, `owner/repo/slug` (D-163). */
+  skills: string[];
 }
 
 /** The event kinds the history shows. */
-const HISTORY_KINDS = ['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'task.retried'];
+const HISTORY_KINDS = ['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'task.retried', 'card.design-skipped'];
 
 /** The report of the card's agent, from its last delegation that ended well or its last answer on the local model. */
 async function reportOf(sql: Queryable, id: string): Promise<CardReport | null> {
@@ -109,7 +113,7 @@ async function reportOf(sql: Queryable, id: string): Promise<CardReport | null> 
 
 export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail> {
   const card = await loadCard(sql, id);
-  const [links, checklist, files, history, report, executor] = await Promise.all([
+  const [links, checklist, files, history, report, executor, design] = await Promise.all([
     sql<CardLink[]>`
       SELECT id::text, url, title, created_at AS "createdAt" FROM card_links WHERE task_id = ${id} AND removed_at IS NULL ORDER BY created_at, id`,
     sql<ChecklistItem[]>`
@@ -123,6 +127,7 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     reportOf(sql, id),
     sql<{ choice: string }[]>`
       SELECT choice FROM approvals WHERE task_id = ${id} AND kind = 'executor' AND state = 'approved' ORDER BY decided_at DESC, id DESC LIMIT 1`,
+    cardDesign(sql, id),
   ]);
   const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value));
   return {
@@ -136,6 +141,8 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     history: history.map((entry) => ({ at: entry.at.toISOString(), kind: entry.kind, payload: entry.payload })),
     report,
     executor: executor[0]?.choice ?? null,
+    style: design.style,
+    skills: [...design.skills],
   };
 }
 
