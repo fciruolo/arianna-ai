@@ -146,6 +146,6 @@ export function callErrorText(message: string): string {
 /** What the incoming call screen says about why Arianna calls. */
 export const RING_TEXT: Record<'waiting' | 'task-done' | 'scheduled', string> = {
   waiting: 'Un lavoro aspetta una tua risposta',
-  'task-done': 'Ti chiama per il lavoro che le avevi chiesto',
+  'task-done': 'Ti chiama per il lavoro che avevi chiesto',
   scheduled: 'È l’ora della chiamata che avevi programmato',
 };

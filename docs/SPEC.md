@@ -293,7 +293,7 @@ Cosa mostra già la chat web, oltre alle risposte (tutto "applicato, da conferma
 - a task fermo, il pulsante "Mostra i passi" con le righe di attività salvate: cosa Arianna ha cercato, letto, scritto o delegato, con la stessa etichetta del task (D-083);
 - "Copia" sui blocchi di codice e "Salva in inbox" sotto i messaggi (D-084).
 
-In corso, su richiesta dell'utente del 2026-10-05: barra sinistra rifatta come quella di Claude Code (collassabile; Cerca su tutto il sistema; Nuovo, Pensieri, Conoscenza, Chiama, Impostazioni, tema; poi agenti e conversazioni con "Fissa"); barra destra "Agenti" collassabile con la stessa logica; menu dei comandi che si apre scrivendo "/"; azioni del messaggio al passaggio del mouse; una finestra con tutte le decisioni in attesa.
+In corso, su richiesta dell'utente del 2026-10-05: barra sinistra rifatta come quella di Claude Code (collassabile; Cerca su tutto il sistema; Nuovo, Segretaria, Pensieri, Conoscenza, Progetti, Cardwall, Ufficio, Impostazioni; poi le conversazioni con "Fissa"; dal 2026-10-10, D-158, il telefono "Chiama" sta nell'intestazione della chat, il tema in alto accanto al pulsante degli agenti e in Impostazioni → Aspetto, e la colonna Agenti si apre solo dal pulsante in alto); barra destra "Agenti" collassabile con la stessa logica; menu dei comandi che si apre scrivendo "/"; azioni del messaggio al passaggio del mouse; una finestra con tutte le decisioni in attesa.
 
 **HUD Arianna (Fase 3).** Un pannello scuro in stile Jarvis, pensato per essere letto, non solo bello:
 

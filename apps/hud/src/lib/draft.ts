@@ -153,12 +153,15 @@ export function cloudNotice(agent: string, project: string | undefined, targets:
  */
 export function arrowChoice<T>(options: readonly T[], current: T, key: string): T | undefined {
   if (options.length === 0) return undefined;
-  const at = Math.max(0, options.indexOf(current));
+  const at = options.indexOf(current);
   const step: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
   if (key === 'Home') return options[0];
   if (key === 'End') return options.at(-1);
   const delta = step[key];
-  return delta === undefined ? undefined : options[(at + delta + options.length) % options.length];
+  if (delta === undefined) return undefined;
+  // No choice yet: the first arrow lands on the first option (or the last, going back).
+  if (at < 0) return delta > 0 ? options[0] : options.at(-1);
+  return options[(at + delta + options.length) % options.length];
 }
 
 /** The note of a direct chat with a local agent: nothing leaves the Mac. */

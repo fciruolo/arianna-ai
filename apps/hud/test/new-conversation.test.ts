@@ -18,8 +18,9 @@ test('the arrows move the choice of a radio group, round the corner; other keys 
   assert.equal(arrowChoice(kinds, 'work', 'Enter'), undefined);
   assert.equal(arrowChoice(kinds, 'work', 'a'), undefined);
   assert.equal(arrowChoice([], 'x', 'ArrowRight'), undefined);
-  // A choice no longer in the list starts from the first.
-  assert.equal(arrowChoice(['a', 'b'], 'gone', 'ArrowRight'), 'b');
+  // A choice not in the list: the first arrow lands on the first option, or the last going back.
+  assert.equal(arrowChoice(['a', 'b'], 'gone', 'ArrowRight'), 'a');
+  assert.equal(arrowChoice(['a', 'b'], 'gone', 'ArrowLeft'), 'b');
 });
 
 test('the cloud warning in three parts: a short title, one sentence, the rest in the details', () => {
