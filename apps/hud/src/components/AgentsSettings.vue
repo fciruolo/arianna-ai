@@ -732,12 +732,12 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
           </div>
         </section>
 
-        <!-- Skill (D-161): third-party text the agent reads in each delivery, as data -->
+        <!-- Skill (D-161): third-party text the agent reads in its delegations and local cards, as data -->
         <section v-if="tab === 'skills'" class="hud-card flex flex-col gap-3 px-4 py-4" role="tabpanel">
           <p v-if="skillRefusal(current.id)" class="text-[13px] text-muted">{{ skillRefusal(current.id) }}</p>
           <template v-else>
             <p class="text-xs text-muted">
-              Le skill assegnate entrano in ogni consegna a questo agente, dopo il suo prompt, come testo di terzi da consultare: mai come istruzione per Arianna. Si salvano con la barra delle
+              Le skill assegnate entrano, dopo il suo prompt, nelle deleghe a questo agente (Claude, Codex o modello locale) e nelle card che lavora sul modello locale, come testo di terzi da consultare: mai come istruzione per Arianna, mai nelle chiamate vocali. Si salvano con la barra delle
               modifiche, in <code class="font-mono">[agents.{{ current.id }}] skills</code> di <code class="font-mono">arianna.toml</code>. Sorgenti e aggiornamenti nella sezione Skill qui sotto.
             </p>
             <p v-if="skillsOf(current.id).length === 0" class="text-[13px]">Nessuna skill assegnata.</p>

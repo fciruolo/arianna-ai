@@ -15,9 +15,9 @@ import type { ChatRequest, LocalModel } from '@arianna/executors';
 
 import { createConversation, postUserMessage } from '../src/conversations.ts';
 import { createDelegation, updateDelegation } from '../src/orchestrator/delegations.ts';
-import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
+import { processStepJob, recordDecision, STEP_QUEUE, submitTask, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { LOCAL_FRAME, LOCAL_REPORT_SCHEMA_NAME } from '../src/orchestrator/delegate.ts';
+import { LOCAL_FRAME, LOCAL_REPORT_SCHEMA_NAME, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
@@ -75,7 +75,7 @@ function scripted(answers: Answer[], reports: unknown[]): LocalModel & { request
   };
 }
 
-function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => string | undefined): StepExecutor {
+function orchestrator(model: LocalModel, extra: LoadedAgent[], skills?: (agent: string, maxBytes: number) => AgentSkills): StepExecutor {
   const agents = new Map<string, LoadedAgent>(loaded);
   for (const agent of extra) agents.set(agent.card.name, agent);
   const settings = () => ({
@@ -260,9 +260,9 @@ test('the skills of an agent on the local model join its instructions, within th
   const { task } = await ask('Traduci: buongiorno a tutti.');
   const model = scripted([DELEGATE, REPLY], [{ report: 'Good morning everyone.' }]);
   const asked: [string, number][] = [];
-  const skills = (agent: string, maxBytes: number): string => {
+  const skills = (agent: string, maxBytes: number): AgentSkills => {
     asked.push([agent, maxBytes]);
-    return '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----';
+    return { block: '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----', skipped: 0 };
   };
   assert.deepEqual(await drain(task.id, orchestrator(model, [translator()], skills)), ['continued', 'continued', 'answered']);
   assert.deepEqual(asked, [['traduttore', 16 * 1024]]);
@@ -272,4 +272,39 @@ test('the skills of an agent on the local model join its instructions, within th
     `${LOCAL_FRAME}\nTraduci in inglese il testo che ricevi.\n\n\n----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----\n\n${ENTRY_TEXT}`,
   );
   assert.deepEqual(call.messages.slice(1), [{ role: 'user', content: 'Traduci: buongiorno a tutti.' }], 'the brief stays the last turn');
+  // Arianna's own step of the same task read none: she is never asked for skills.
+  assert.ok(model.requests.filter((request) => request.schema?.name !== LOCAL_REPORT_SCHEMA_NAME).every((request) => !(request.messages[0]?.content ?? '').includes('BEGIN SKILL')));
+});
+
+test('a task assigned to an agent on the local model reads its skills after its prompt; never Arianna, never a card closing untrusted_content (D-161)', async () => {
+  const BLOCK = '----- BEGIN SKILL acme/skills/tone [0123456789abcdef] -----\nInvented tone.\n----- END SKILL acme/skills/tone [0123456789abcdef] -----';
+  const asked: [string, number][] = [];
+  const skills = (agent: string, maxBytes: number): AgentSkills => {
+    asked.push([agent, maxBytes]);
+    return { block: BLOCK, skipped: 0 };
+  };
+  // A card of the translator, worked on the local model as its assignee (the strada "locale" of the cards).
+  const card = await submitTask(db().sql, { title: 'Traduci: buongiorno a tutti.', assignee: 'traduttore', label: 'L1', clearance: 'L1' });
+  const model = scripted([REPLY], []);
+  await drain(card.id, orchestrator(model, [translator()], skills));
+  assert.deepEqual(asked, [['traduttore', 16 * 1024]]);
+  const system = model.requests[0]?.messages[0]?.content ?? '';
+  assert.ok(system.startsWith(`Traduci in inglese il testo che ricevi.\n\n\n${BLOCK}\n\n`), 'the block right after the prompt of the agent');
+
+  // Arianna's chat task: never asked, whatever the settings say.
+  asked.length = 0;
+  const { task } = await ask('Ciao.');
+  const plain = scripted([REPLY], []);
+  assert.deepEqual(await drain(task.id, orchestrator(plain, [translator()], skills)), ['answered']);
+  assert.deepEqual(asked, []);
+  assert.doesNotMatch(plain.requests[0]?.messages[0]?.content ?? '', /BEGIN SKILL/);
+
+  // A card that closes untrusted_content reads no third-party text.
+  const open = translator();
+  const closedAgent: LoadedAgent = { ...open, card: { ...open.card, trifecta: { ...open.card.trifecta, untrusted_content: false } } };
+  const closed = await submitTask(db().sql, { title: 'Traduci: ciao.', assignee: 'traduttore', label: 'L1', clearance: 'L1' });
+  const third = scripted([REPLY], []);
+  await drain(closed.id, orchestrator(third, [closedAgent], skills));
+  assert.deepEqual(asked, []);
+  assert.doesNotMatch(third.requests[0]?.messages[0]?.content ?? '', /BEGIN SKILL/);
 });

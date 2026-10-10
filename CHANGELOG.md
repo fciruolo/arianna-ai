@@ -16,6 +16,9 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Impostazioni → Agenti, sezione "Skill": sorgenti, ricerca nelle skill e lettura del testo con sorgente, commit e licenza; nel dettaglio di ogni agente la scheda "Skill" per assegnarle, salvate con la barra delle modifiche in `[agents.<id>] skills` (D-161).
 - Le skill assegnate entrano nella consegna delle deleghe a Claude, Codex e agli agenti locali, dopo il prompt dell'agente, come blocco di dati delimitato entro un limite di dimensione (D-161).
 - Rotte `/api/skills-catalog` e comando `pnpm skills:catalog [list|add|remove|update|adopt|discard]` (D-161).
+- Le skill assegnate entrano anche nelle card che un agente diverso da Arianna lavora sul modello locale, dopo il suo prompt, entro i 16 KiB locali (D-161).
+- Le skill saltate (oltre il limite o non più nel catalogo) lasciano un evento `skills.skipped` con agente, skill e motivo, e una riga nell'attività della delega (D-161).
+- La sezione Skill mostra le voci di `sources.json` scritte a mano con un indirizzo non valido, ignorate (D-161).
 
 ### Cambiato
 
@@ -23,6 +26,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
+- Il percorso di una skill letto dall'indice si ricontrolla (niente `..`, cartelle nascoste, file diversi da `SKILL.md`, slug di un'altra cartella) e deve stare dentro la cartella della sorgente; "Togli" tiene il blocco della sorgente fino alla fine e non cambia nulla se lo tiene un altro processo (D-161).
 - Delle skill si scaricano solo i `SKILL.md` e i file di licenza, nominati uno per uno dai nomi dell'albero: script e risorse non si scaricano né si eseguono mai; l'indirizzo passa dal gateway (L0, web); il testo è L0 non fidato, mai un'istruzione per Arianna, che non riceve skill, né per un agente con `untrusted_content` chiuso (D-161).
 - Del catalogo di Open Design non si esegue nulla: git con argomenti fissi, senza hook, configurazione globale, credenziali né LFS, link simbolici scritti come file, cartella `.git` cancellata dopo la lettura del commit; limiti di dimensione e numero dei file, link e nomi non validi scartati, licenza non Apache-2.0 rifiutata; l'indirizzo del repository passa dal gateway (L0, web) (D-160).
 - Catalogo di Open Design: il numero dei file si controlla dai nomi degli alberi prima di scaricarne i contenuti; git ha come HOME una cartella vuota (niente `.netrc` né attributi dell'utente); il testo di uno stile e il NOTICE perdono i caratteri di controllo, bidirezionali e di larghezza zero, tenendo a capo e tabulazioni (D-160).

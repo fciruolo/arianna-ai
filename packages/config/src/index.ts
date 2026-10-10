@@ -42,7 +42,7 @@ export {
   type CloudStrength,
   type QuotaRatio,
 } from './cloud-catalog.ts';
-export { LEGACY_DEFAULT_AGENT, MAX_AGENT_SKILLS, ORCHESTRATOR_AGENT, parseAgents, parseSkillIds, SKILL_ID, type AgentSettings, type AgentsSettings } from './agents.ts';
+export { LEGACY_DEFAULT_AGENT, MAX_AGENT_SKILLS, ORCHESTRATOR_AGENT, parseAgents, parseSkillIds, SKILL_ID, SKILLS_DELIVERY_BYTES, type AgentSettings, type AgentsSettings } from './agents.ts';
 export { CHARACTER_ID, ORIGINAL_PACK, parseCharacters, type CharacterChoices } from './characters.ts';
 export { parsePersonas, type Personas } from './personas.ts';
 export { DEFAULT_SPRITE_MODEL, parseSprites, SPRITE_MODELS, type SpriteModel, type SpritesConfig } from './sprites.ts';

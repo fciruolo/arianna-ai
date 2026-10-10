@@ -377,7 +377,11 @@ const skillsCatalog = createSkillsCatalog({
 const orchestrator = createOrchestrator({
   sql,
   agents,
-  skills: (agent, maxBytes) => skillsCatalog.skillTexts(agent, [], maxBytes).block,
+  // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
+  skills: (agent, maxBytes) => {
+    const delivery = skillsCatalog.skillTexts(agent, [], maxBytes);
+    return { block: delivery.block, skipped: delivery.skipped.length };
+  },
   kb,
   model: localModel,
   settings: () => settings.current(),

@@ -1,5 +1,5 @@
 import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
-import { projectNamed, workParts, type AriannaConfig, type Project } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, projectNamed, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
   fileFingerprints,
@@ -73,14 +73,17 @@ export interface DelegateEnv {
   model?: () => LocalModel;
   /**
    * The skills assigned to an agent (D-161), as one delimited block of
-   * third-party data within `maxBytes`; undefined for none. Absent, no agent
-   * reads skills.
+   * third-party data within `maxBytes` (undefined for none), and how many
+   * were asked and left out. Absent, no agent reads skills.
    */
-  skills?: (agent: string, maxBytes: number) => string | undefined;
+  skills?: (agent: string, maxBytes: number) => AgentSkills;
 }
 
-/** The size of the skills block in a delivery to a cloud agent, and to an agent on the local model (D-161). */
-export const SKILLS_BYTES = { cloud: 128 * 1024, local: 16 * 1024 } as const;
+/** The skills of one delivery (D-161): the block, and how many were left out (the catalog wrote why, as events). */
+export interface AgentSkills {
+  block: string | undefined;
+  skipped: number;
+}
 
 /** What the step with an open delegation will do. */
 export type DelegationPlan =
@@ -730,11 +733,22 @@ function promptPart(agent: LoadedAgent, name: string): { text: string; label: La
  * not trusted, a block of data delimited, never an instruction to Arianna.
  * None for a card that closes untrusted_content, whatever the settings say.
  */
-export function skillsPart(env: Pick<DelegateEnv, 'skills'>, agent: LoadedAgent, name: string, maxBytes: number): BriefFragment | undefined {
-  if (env.skills === undefined || !agent.card.trifecta.untrusted_content) return undefined;
-  const block = env.skills(name, maxBytes);
+export async function skillsPart(
+  env: Pick<DelegateEnv, 'skills' | 'sql'>,
+  at: { task: Task; step: number },
+  agent: LoadedAgent,
+  name: string,
+  maxBytes: number,
+): Promise<BriefFragment | undefined> {
+  if (env.skills === undefined || name === ORCHESTRATOR_AGENT || !agent.card.trifecta.untrusted_content) return undefined;
+  const { block, skipped } = env.skills(name, maxBytes);
+  // What did not fit, or is no longer in the catalog: one line of the delegation's activity (the catalog wrote the events).
+  if (skipped > 0) await show(env.sql, at.task, at.step, 'delegate', `${name} · ${SKILLS_SKIPPED} · ${String(skipped)}`);
   return block === undefined || block === '' ? undefined : { text: block, label: 'L0', source: `skills:${name}` };
 }
+
+/** The middle word of the activity line of skills left out of a delivery: `<agent> · skills-skipped · <n>`. */
+export const SKILLS_SKIPPED = 'skills-skipped';
 
 /**
  * The limits of a Claude run for an agent written from the Agents page (a
@@ -827,7 +841,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
-  const skills = skillsPart(env, agent, delegation.agent, SKILLS_BYTES.cloud);
+  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
@@ -1067,7 +1081,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
   // Each earlier exchange is a turn: the role comes from the fragment, before the gateway, never from the text it lets out.
   const roles = history.map((part) => (part.text.startsWith(EARLIER_ANSWER) ? ('assistant' as const) : ('user' as const)));
   // The skills of the agent join its instructions (D-161), as data within a smaller limit.
-  const skills = skillsPart(env, agent, delegation.agent, SKILLS_BYTES.local);
+  const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.local);
   const parts = [
     prompt,
     ...(skills === undefined ? [] : [skills]),

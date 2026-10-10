@@ -31,6 +31,8 @@ export interface SkillSource {
 export interface SkillsStatus {
   sources: SkillSource[];
   suggestions: { id: string; page: string }[];
+  /** Entries of sources.json written by hand and left out, with the reason (absent from an older core). */
+  ignored?: { entry: string; reason: string }[];
 }
 
 export interface SkillSummary {

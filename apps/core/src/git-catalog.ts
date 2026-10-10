@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { lstat, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -443,8 +443,13 @@ export interface GitSource<I extends CatalogIndex> {
   adopt(commit: unknown): I;
   /** Deletes the version waiting; the index it had, if any. */
   discard(): I | undefined;
-  /** Deletes every file of the source, under its busy file. */
-  erase(): void;
+  /**
+   * Deletes every file of the source, under its busy file. `first` runs
+   * under it before anything is deleted (a throw deletes nothing); with
+   * `folder` every other file of `dir` goes too, the busy file last, and
+   * the folder once empty.
+   */
+  erase(options?: { first?: () => void; folder?: boolean }): void;
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T[\d:]+(?:[+-]\d{2}:\d{2}|Z)$/;
@@ -686,19 +691,33 @@ export function createGitSource<I extends CatalogIndex, P>(spec: GitSourceSpec<I
     return next;
   }
 
-  function erase(): void {
+  function erase(options: { first?: () => void; folder?: boolean } = {}): void {
     if (job?.status === 'running') throw new CatalogError('conflict', 'a download of the catalog is running');
     const token = hold();
     try {
+      options.first?.();
       for (const path of [NEXT, OLD, CLONE, GIT_HOME]) rmSync(path, { recursive: true, force: true });
       for (const path of [NEXT_INDEX, INDEX, LOCK]) {
         rmSync(path, { force: true });
         rmSync(`${path}.tmp`, { force: true });
       }
+      if (options.folder === true) {
+        for (const name of readdirSync(spec.dir)) {
+          if (join(spec.dir, name) !== BUSY) rmSync(join(spec.dir, name), { recursive: true, force: true });
+        }
+      }
     } finally {
       releaseBusy(BUSY, token);
     }
     job = null;
+    if (options.folder === true) {
+      try {
+        // Only once empty: a process that took the busy file meanwhile keeps the folder.
+        rmdirSync(spec.dir);
+      } catch {
+        // Not empty or already gone.
+      }
+    }
   }
 
   return {

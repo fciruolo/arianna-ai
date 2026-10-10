@@ -13,7 +13,7 @@ import {
   type ToolId,
   type TurnMessage,
 } from '@arianna/agents';
-import { enabledCloudModels, workParts, type AriannaConfig } from '@arianna/config';
+import { enabledCloudModels, ORCHESTRATOR_AGENT, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
@@ -37,6 +37,8 @@ import {
   repoFor,
   runDelegation,
   runLocalDelegation,
+  skillsPart,
+  type AgentSkills,
   type DelegateEnv,
   type DelegationPlan,
 } from './delegate.ts';
@@ -106,7 +108,7 @@ export interface OrchestratorOptions {
   /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
   trialModel?: (modelId: string) => LocalModel;
   /** The skills block of an agent's delivery (D-161); absent, no agent reads skills. */
-  skills?: (agent: string, maxBytes: number) => string | undefined;
+  skills?: (agent: string, maxBytes: number) => AgentSkills;
 }
 
 /**
@@ -566,15 +568,24 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
       const context: Context = createContext(task.clearance, label);
+      // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
+      // prompt, a block of L0 data within the local limit; never for Arianna, never for a card
+      // closing untrusted_content (skillsPart). They pass the gateway with the rest.
+      const skills = task.assignee === ORCHESTRATOR_AGENT ? undefined : await skillsPart(env, { task, step }, agent, task.assignee, SKILLS_DELIVERY_BYTES.local);
       const decision = await passGateway(
         sql,
-        history.map((part) => ({ value: part.value.content, label: part.label, source: part.source })),
+        [
+          ...history.map((part) => ({ value: part.value.content, label: part.label, source: part.source })),
+          ...(skills === undefined ? [] : [{ value: skills.text, label: skills.label, source: skills.source }]),
+        ],
         context,
         { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
         { taskId: task.id, runId },
       );
       if (decision.decision === 'block') return { kind: 'wait-user', reason: `the local model cannot read this task: ${decision.reason}` };
-      if (decision.texts.length !== history.length) throw new Error('the gateway allowed a different number of texts');
+      if (decision.texts.length !== history.length + (skills === undefined ? 0 : 1)) throw new Error('the gateway allowed a different number of texts');
+      const allowedSkills = skills === undefined ? undefined : decision.texts[history.length];
+      const prompt = allowedSkills === undefined || allowedSkills === '' ? agent.prompt : `${agent.prompt}\n\n${allowedSkills}`;
       // Joined after the gateway (D-092): gateway_log keeps each part with its own source and label.
       const allowed = joinSameRole(history.map((part, index) => ({ ...part, value: { role: part.value.role, content: decision.texts[index] ?? '' } }))).map(
         (part) => part.value,
@@ -590,7 +601,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, agent.prompt, allowed, ctx.signal, delegates);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };

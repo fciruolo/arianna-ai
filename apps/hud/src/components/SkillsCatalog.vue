@@ -169,6 +169,10 @@ async function choose(id: string): Promise<void> {
         <button v-for="item in status.suggestions" :key="item.id" type="button" class="chip font-mono hover:border-accent" :disabled="acting !== null" :title="`Segui ${item.page}`" @click="add(item.page)">+ {{ item.id }}</button>
       </div>
       <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
+      <!-- Entries of sources.json written by hand that are not a valid address: left out, never cloned -->
+      <p v-for="item in status?.ignored ?? []" :key="item.entry" class="text-xs text-warn" :title="item.reason">
+        Ignorata in <code class="font-mono">sources.json</code>: <span class="font-mono">{{ item.entry }}</span> non è un indirizzo valido (https://github.com/proprietario/repository).
+      </p>
 
       <!-- The sources -->
       <p v-if="status === null && !error" class="text-xs text-muted">Leggo le sorgenti…</p>

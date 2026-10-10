@@ -22,6 +22,8 @@ export interface AgentSettings {
 export const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}\/[a-z0-9][a-z0-9-]{0,63}$/;
 /** Skills assigned to one agent. */
 export const MAX_AGENT_SKILLS = 20;
+/** The skills block of one delivery (D-161): to Claude or Codex, and to an agent on the local model, whose context is smaller. */
+export const SKILLS_DELIVERY_BYTES = { cloud: 128 * 1024, local: 16 * 1024 } as const;
 
 /** A list of skill ids, checked and without repetitions. */
 export function parseSkillIds(value: unknown, where: string): string[] {

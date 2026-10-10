@@ -44,6 +44,7 @@ function print(status: SkillsStatus): void {
     }
     if (source.job?.status === 'failed') console.log(`  Ultimo download non riuscito: ${safe(source.job.error ?? '')}`);
   }
+  for (const item of status.ignored) console.log(`Ignorata in sources.json: ${safe(item.entry)} (${safe(item.reason)})`);
   if (status.suggestions.length > 0) console.log(`Suggerite: ${status.suggestions.map((item) => item.page).join(', ')}`);
 }
 

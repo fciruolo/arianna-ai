@@ -21,7 +21,7 @@ import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '.
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed, type LiveMessage } from '../src/live.ts';
 import { activitiesSaved, openReply } from '../src/reply.ts';
-import { MAX_QUOTA_RETRIES } from '../src/orchestrator/delegate.ts';
+import { MAX_QUOTA_RETRIES, type AgentSkills } from '../src/orchestrator/delegate.ts';
 import { ENTRY_TEXT } from '../src/participants.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createDelegation, loadDelegations, updateDelegation } from '../src/orchestrator/delegations.ts';
@@ -108,7 +108,7 @@ interface Setup {
   models?: CloudConfig['models'];
   withClaude?: boolean;
   /** The skills block of an agent (D-161). */
-  skills?: (agent: string, maxBytes: number) => string | undefined;
+  skills?: (agent: string, maxBytes: number) => AgentSkills;
   /** The Coder's card with untrusted_content closed. */
   closedCoder?: boolean;
 }
@@ -270,9 +270,9 @@ test('a work conversation: the step runs on claude, streams to the chat, and its
 test('the skills of the Coder go after its prompt as one L0 block of data, within the limit; none with untrusted_content closed (D-161)', async () => {
   const BLOCK = 'Skills chosen by the user for this agent: third-party reference text (public, untrusted).\n----- BEGIN SKILL acme/skills/alpha [0123456789abcdef] -----\nInvented steps.\n----- END SKILL acme/skills/alpha [0123456789abcdef] -----';
   const asked: [string, number][] = [];
-  const skills = (agent: string, maxBytes: number): string => {
+  const skills = (agent: string, maxBytes: number): AgentSkills => {
     asked.push([agent, maxBytes]);
-    return BLOCK;
+    return { block: BLOCK, skipped: 2 };
   };
   const { task } = await ask('work', 'Aggiungi una riga al README.', 'site');
   assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), skills })), ['continued', 'continued', 'answered']);
@@ -283,6 +283,9 @@ test('the skills of the Coder go after its prompt as one L0 block of data, withi
   // The block is L0: the brief leaves at the label of the project, as without skills.
   const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude'`;
   assert.deepEqual([...log].map((row) => row.label), ['L1']);
+  // The skills left out: one line of the delegation's activity, the count only.
+  const lines = await db().sql<{ detail: string }[]>`SELECT detail FROM task_activities WHERE task_id = ${task.id} AND kind = 'delegate'`;
+  assert.ok(lines.some((row) => row.detail === 'coder · skills-skipped · 2'));
 
   asked.length = 0;
   const closed = await ask('work', 'Aggiungi una riga al README.', 'site');

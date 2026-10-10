@@ -1,6 +1,7 @@
 // The catalog of skills (D-161): fake repositories made in temporary folders, never the network.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -15,6 +16,7 @@ import { CatalogError, gitEnv } from '../src/git-catalog.ts';
 import {
   createSkillsCatalog,
   detectLicense,
+  indexedPath,
   MAX_SKILL_BYTES,
   parseSourceUrl,
   planSkills,
@@ -152,6 +154,47 @@ describe('sources', () => {
     assert.equal(existsSync(join(dir, 'skills', 'acme__skills')), false, 'its files are gone');
     assert.throws(() => catalog.update('acme/skills'), isCode('not-found'));
     assert.ok(existsSync(repo));
+  });
+
+  it('removes nothing while another process holds the source; then the list first, every file after', async () => {
+    const { url } = upstream(STARTING);
+    const { catalog, dir } = catalogFor();
+    catalog.add(url);
+    await downloaded(catalog, 'acme/skills');
+    const folder = join(dir, 'skills', 'acme__skills');
+    // The busy file of a process that lives (this one, with another token): the command holding the source.
+    writeFileSync(join(folder, 'source.busy'), `${String(process.pid)}\nother-process\n`);
+    assert.throws(() => catalog.remove('acme/skills'), isCode('conflict'));
+    assert.deepEqual(catalog.status().sources.map((item) => item.id), ['acme/skills'], 'still followed');
+    assert.ok(existsSync(join(folder, 'source.next')), 'its files untouched');
+    rmSync(join(folder, 'source.busy'));
+    assert.deepEqual(catalog.remove('acme/skills').sources, []);
+    assert.equal(existsSync(folder), false, 'the folder is gone, busy file included');
+  });
+
+  it('ignores an entry of sources.json written by hand with an address that is not valid, saying why', () => {
+    const { catalog, dir, gateway } = catalogFor();
+    mkdirSync(join(dir, 'skills'), { recursive: true });
+    const added = '2026-10-10T10:00:00.000Z';
+    writeFileSync(
+      join(dir, 'skills', 'sources.json'),
+      JSON.stringify({
+        version: 1,
+        sources: [
+          { id: 'acme/skills', repository: 'https://github.com/acme/skills.git', page: 'https://github.com/acme/skills', addedAt: added },
+          { id: 'evil/repo', repository: 'https://evil.example/evil/repo.git', page: 'https://evil.example/evil/repo', addedAt: added },
+          { id: 'other/name', repository: 'https://github.com/acme/tools.git', page: 'https://github.com/acme/tools', addedAt: added },
+        ],
+      }),
+    );
+    const status = catalog.status();
+    assert.deepEqual(status.sources.map((item) => item.id), ['acme/skills']);
+    assert.deepEqual(status.ignored, [
+      { entry: 'https://evil.example/evil/repo', reason: 'the address must be https://github.com/<owner>/<repo>' },
+      { entry: 'https://github.com/acme/tools', reason: 'the id other/name does not match the address' },
+    ]);
+    assert.throws(() => catalog.update('evil/repo'), isCode('not-found'));
+    assert.deepEqual(gateway, [], 'nothing asked for an ignored entry');
   });
 });
 
@@ -328,6 +371,56 @@ describe('texts and deliveries', () => {
     assert.deepEqual(catalog.skillTexts('closed', ['acme/skills/alpha']), { texts: [], block: undefined, skipped: [], refused: 'closes untrusted_content' });
     assert.match(catalog.skillTexts('arianna', ['acme/skills/alpha']).refused ?? '', /Arianna reads no skills/);
     assert.equal(catalog.skillTexts('writer').block, undefined, 'nothing assigned, nothing delivered');
+  });
+
+  it('refuses a path of a tampered index: outside the folder, hidden, not a SKILL.md, too deep, or in another slug', async () => {
+    const { catalog, dir } = await adoptedCatalog();
+    const indexPath = join(dir, 'skills', 'acme__skills', 'source.index.json');
+    const original = readFileSync(indexPath, 'utf8');
+    // A file outside the source, with the sha256 the tampered index declares.
+    const outside = join(dir, 'skills', 'outside');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'SKILL.md'), 'Outside text.\n');
+    const outsideHash = createHash('sha256').update('Outside text.\n').digest('hex');
+    for (const path of ['../../outside/SKILL.md', '../outside/SKILL.md', 'skills/../../outside/SKILL.md', '.hidden/beta/SKILL.md', 'skills/beta/LICENSE.txt', 'skills/alpha/SKILL.md', '1/2/3/4/5/6/beta/SKILL.md', '/etc/beta/SKILL.md']) {
+      const index = JSON.parse(original) as SkillIndex;
+      const beta = index.entries.find((entry) => entry.slug === 'beta');
+      assert.ok(beta !== undefined);
+      beta.path = path;
+      beta.sha256 = outsideHash;
+      writeFileSync(indexPath, JSON.stringify(index));
+      assert.throws(() => catalog.text('acme/skills/beta'), isCode('conflict'), path);
+    }
+    writeFileSync(indexPath, original);
+    assert.match(catalog.text('acme/skills/beta').text, /Invented steps for beta\./);
+    assert.deepEqual(indexedPath('skills/group/Gamma_Two/SKILL.md', 'gamma-two', 'skills'), ['skills', 'group', 'Gamma_Two', 'SKILL.md']);
+    assert.deepEqual(indexedPath('SKILL.md', 'skills', 'skills'), ['SKILL.md']);
+    assert.throws(() => indexedPath('SKILL.md', 'other', 'skills'), isCode('conflict'));
+  });
+
+  it('writes an L0 event for each skill asked and left out: agent, id and reason, never a text', async () => {
+    const seen: [string, Record<string, string | number>][] = [];
+    const assigned: Record<string, string[]> = { coder: ['acme/skills/alpha', 'acme/skills/gone'], closed: ['acme/skills/beta'] };
+    const { catalog } = await adoptedCatalog({
+      assigned: (agent) => assigned[agent] ?? [],
+      refusal: (agent) => (agent === 'closed' ? 'closes untrusted_content' : null),
+      onEvent: (kind, payload) => seen.push([kind, payload]),
+    });
+    seen.length = 0;
+    catalog.skillTexts('coder', ['acme/skills/beta'], Buffer.byteLength(SKILLS_PREAMBLE) + 700);
+    catalog.skillTexts('closed');
+    assert.deepEqual(
+      seen.map(([kind, payload]) => [kind, payload.agent, payload.skill]),
+      [
+        ['skills.skipped', 'coder', 'acme/skills/gone'],
+        ['skills.skipped', 'coder', 'acme/skills/beta'],
+        ['skills.skipped', 'closed', 'acme/skills/beta'],
+      ],
+    );
+    assert.equal(seen[0]?.[1].reason, 'no such skill in the catalog');
+    assert.match(String(seen[1]?.[1].reason), /size limit/);
+    assert.equal(seen[2]?.[1].reason, 'closes untrusted_content');
+    assert.ok(seen.every(([, payload]) => !/Invented steps/.test(JSON.stringify(payload))), 'no text of a skill in the events');
   });
 
   it('refuses skills to Arianna and to a card that closes untrusted_content', () => {

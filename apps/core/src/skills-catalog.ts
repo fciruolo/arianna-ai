@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
-import { ORCHESTRATOR_AGENT, SKILL_ID } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, SKILL_ID, SKILLS_DELIVERY_BYTES } from '@arianna/config';
 
 import { adoptedDesignIndex, DESIGN_LICENSE, DESIGN_REPOSITORY_PAGE, readDesignEntry } from './design-catalog.ts';
 import {
@@ -70,10 +70,6 @@ const MAX_DEPTH = 6;
 const MAX_NAME = 120;
 const MAX_DESCRIPTION = 400;
 const MAX_LICENSE_FIELD = 160;
-/** The skills block of one delivery to a cloud agent. */
-export const MAX_DELIVERY_BYTES = 128 * 1024;
-/** The same for an agent on the local model, whose context is smaller. */
-export const MAX_LOCAL_DELIVERY_BYTES = 16 * 1024;
 
 /** `https://github.com/<owner>/<repo>`, nothing else: owner as GitHub allows it, repo without `/`. */
 const GITHUB = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})\/([A-Za-z0-9._-]{1,100})$/;
@@ -135,6 +131,8 @@ export interface SkillsStatus {
   sources: SkillSourceStatus[];
   /** The suggestions not added yet. */
   suggestions: { id: string; page: string }[];
+  /** Entries of sources.json left out (an address written by hand that is not valid), with the reason. */
+  ignored: { entry: string; reason: string }[];
 }
 
 export interface SkillListItem {
@@ -483,15 +481,22 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
   }
 
   /** The list as written, each address checked again: a hand-edited entry never reaches git unchecked. */
-  const followed = (): SourcesFile['sources'] =>
-    readSources(sourcesPath).flatMap((item) => {
+  function sourcesList(): { followed: SourcesFile['sources']; ignored: SkillsStatus['ignored'] } {
+    const ignored: SkillsStatus['ignored'] = [];
+    const followed = readSources(sourcesPath).flatMap((item) => {
+      const entry = cleanLine(item.page, 200) || cleanLine(item.id, 200);
       try {
         const ref = parseSourceUrl(item.page, allowLocal);
-        return ref.id === item.id ? [{ ...ref, addedAt: item.addedAt }] : [];
-      } catch {
-        return [];
+        if (ref.id === item.id) return [{ ...ref, addedAt: item.addedAt }];
+        ignored.push({ entry, reason: `the id ${cleanLine(item.id, 120)} does not match the address` });
+      } catch (error) {
+        ignored.push({ entry, reason: error instanceof CatalogError ? error.message : 'not a valid address' });
       }
+      return [];
     });
+    return { followed, ignored };
+  }
+  const followed = (): SourcesFile['sources'] => sourcesList().followed;
 
   /** A followed source, by id or address. */
   function find(value: unknown): { ref: SkillSourceRef; source: GitSource<SkillIndex> } {
@@ -530,7 +535,8 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
   }
 
   function status(): SkillsStatus {
-    const sources: SkillSourceStatus[] = followed().map((item) => {
+    const list = sourcesList();
+    const sources: SkillSourceStatus[] = list.followed.map((item) => {
       const source = sourceFor(item);
       const current = source.adopted();
       const next = source.pending();
@@ -548,7 +554,7 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     if (design !== undefined) sources.push(design);
     const ids = new Set(sources.map((source) => source.id));
     const suggestions = SKILL_SUGGESTIONS.map((url) => parseSourceUrl(url)).filter((ref) => !ids.has(ref.id)).map(({ id, page }) => ({ id, page }));
-    return { sources, suggestions };
+    return { sources, suggestions, ignored: list.ignored };
   }
 
   function add(url: unknown): SkillsStatus {
@@ -563,12 +569,20 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     return status();
   }
 
+  /**
+   * Under the busy file of the source, held to the end: first out of the
+   * list, then every file of its folder. Held by the other process, nothing
+   * changes.
+   */
   function remove(value: unknown): SkillsStatus {
     const { ref, source } = find(value);
-    source.erase();
-    changeSources((sources) => sources.filter((item) => item.id !== ref.id));
+    source.erase({
+      first: () => {
+        changeSources((sources) => sources.filter((item) => item.id !== ref.id));
+      },
+      folder: true,
+    });
     opened.delete(ref.id);
-    rmSync(join(base, folderOf(ref.id)), { recursive: true, force: true });
     options.onEvent?.('skills-catalog.removed', { source: ref.id });
     return status();
   }
@@ -591,12 +605,15 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     if (current === undefined) throw new CatalogError('not-found', 'this source has not been downloaded');
     const entry = current.index.entries.find((candidate) => candidate.slug === slug);
     if (entry === undefined) throw new CatalogError('not-found', 'no such skill in the catalog');
-    const segments = entry.path.split('/');
+    // The index is a file on the disk: its path is checked as the plan checked the names of the tree.
+    const segments = indexedPath(entry.path, slug, item.id.split('/')[1] ?? '');
     // Every folder on the way is real, and the file is the one indexed.
     for (let depth = 1; depth < segments.length; depth += 1) {
       if (!isRealDir(join(source.root, ...segments.slice(0, depth)))) throw new CatalogError('not-found', 'the skill is no longer on the disk');
     }
-    const file = readRegular(join(source.root, ...segments), MAX_SKILL_BYTES);
+    const path = join(source.root, ...segments);
+    if (!inside(source.root, path)) throw new CatalogError('conflict', 'the index names a file outside the folder of the source');
+    const file = readRegular(path, MAX_SKILL_BYTES);
     if (file === undefined || 'refused' in file) throw new CatalogError('not-found', 'the skill is no longer on the disk');
     if (sha256(file.buffer) !== entry.sha256) throw new CatalogError('conflict', 'the skill changed on the disk since it was indexed');
     const notice = skillNotice(item.page, current.index.commit, entry);
@@ -604,7 +621,7 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     return { id, name: entry.name, source: sourceId, commit: current.index.commit, license: entry.license, notice, text: `${notice}\n\n---\n\n${body.trim()}\n` };
   }
 
-  function texts(ids: readonly string[], maxBytes: number = MAX_DELIVERY_BYTES): SkillDelivery {
+  function texts(ids: readonly string[], maxBytes: number = SKILLS_DELIVERY_BYTES.cloud): SkillDelivery {
     const chosen: SkillText[] = [];
     const skipped: SkillDelivery['skipped'] = [];
     let used = Buffer.byteLength(SKILLS_PREAMBLE, 'utf8');
@@ -628,10 +645,27 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     return { texts: chosen, block: chosen.length === 0 ? undefined : skillsBlock(chosen), skipped };
   }
 
+  /** What was asked and not delivered: an event each (L0: agent, skill, reason; never a text). */
+  function reportSkipped(agent: string, skipped: readonly { id: string; reason: string }[]): void {
+    for (const item of skipped) {
+      try {
+        options.onEvent?.('skills.skipped', { agent: cleanLine(agent, 64), skill: cleanLine(item.id, 200), reason: cleanLine(item.reason, 200) });
+      } catch {
+        // An event that cannot be written never stops a delivery.
+      }
+    }
+  }
+
   function skillTexts(agentId: string, extraSlugs: readonly string[] = [], maxBytes?: number): SkillDelivery {
     const refused = agentId === ORCHESTRATOR_AGENT ? 'Arianna reads no skills: third-party text is never an instruction to her' : (options.refusal?.(agentId) ?? null);
-    if (refused !== null) return { texts: [], block: undefined, skipped: [], refused };
-    return texts([...(options.assigned?.(agentId) ?? []), ...extraSlugs], maxBytes);
+    const asked = [...new Set([...(options.assigned?.(agentId) ?? []), ...extraSlugs])];
+    if (refused !== null) {
+      reportSkipped(agentId, asked.map((id) => ({ id, reason: refused })));
+      return { texts: [], block: undefined, skipped: [], refused };
+    }
+    const delivery = texts(asked, maxBytes);
+    reportSkipped(agentId, delivery.skipped);
+    return delivery;
   }
 
   function list(): { skills: SkillListItem[] } {
@@ -677,6 +711,31 @@ export function createSkillsCatalog(options: SkillsCatalogOptions): SkillsCatalo
     texts,
     skillTexts,
   };
+}
+
+/**
+ * The segments of a path read from an index, checked as planSkills checked
+ * the names of the tree: safe segments (no `..`, nothing hidden), within the
+ * depth, ending in SKILL.md, in the folder its slug comes from.
+ */
+export function indexedPath(path: string, slug: string, repoName: string): string[] {
+  const segments = path.split('/');
+  const fine =
+    segments.length <= MAX_DEPTH + 1 &&
+    segments.at(-1) === 'SKILL.md' &&
+    segments.every((segment) => segment !== '..' && !segment.startsWith('.') && SAFE_SEGMENT.test(segment)) &&
+    slugOf(segments.at(-2) ?? repoName) === slug;
+  if (!fine) throw new CatalogError('conflict', 'the index of this source names an unexpected path');
+  return segments;
+}
+
+/** Whether `path`, links resolved, lies inside `root`, links resolved too. */
+function inside(root: string, path: string): boolean {
+  try {
+    return realpathSync(path).startsWith(`${realpathSync(root)}${sep}`);
+  } catch {
+    return false;
+  }
 }
 
 /** Why an agent may receive no skills, from its card (D-161); null when it may. */
