@@ -12,6 +12,7 @@ import {
   calendarText,
   chosenTotal,
   dayText,
+  dueText,
   invoiceable,
   MAX_EVERY,
   moneyText,
@@ -25,10 +26,12 @@ import {
   type ImBillingState,
   type ImInvoice,
   type ImOverview,
+  type NewInvoice,
 } from '../lib/im-billing.ts';
 import { imDateText, IM_STATUS_TEXT } from '../lib/im.ts';
 import type { BrowsableContainer } from '../lib/projects.ts';
 import Icon from './Icon.vue';
+import InvoiceForm from './InvoiceForm.vue';
 import LabelBadge from './LabelBadge.vue';
 
 /**
@@ -156,7 +159,7 @@ const STATE_CLASS: Record<ImBillingState, string> = {
 const chosen = ref<Set<number>>(new Set());
 const toInvoice = computed(() => invoiceable(overview.value?.ims ?? []));
 const total = computed(() => chosenTotal(overview.value?.ims ?? [], chosen.value));
-const invoicing = ref<{ number: string; issuedOn: string; note: string } | null>(null);
+const invoicing = ref(false);
 
 function toggle(number: number): void {
   const next = new Set(chosen.value);
@@ -169,13 +172,14 @@ function chooseAll(): void {
   chosen.value = chosen.value.size === toInvoice.value.length ? new Set() : new Set(toInvoice.value.map((row) => row.number));
 }
 
-async function saveInvoice(): Promise<void> {
-  const form = invoicing.value;
-  if (form === null || form.number.trim() === '' || chosen.value.size === 0) return;
-  const ims = [...chosen.value].sort((a, b) => a - b);
-  const ok = await run(async () => (await createImInvoice(props.container.name, { number: form.number.trim(), issuedOn: form.issuedOn, note: form.note.trim() === '' ? null : form.note.trim(), ims })).overview, `Fattura ${form.number.trim()} registrata.`);
+const chosenList = computed(() => [...chosen.value].sort((a, b) => a - b));
+
+async function saveInvoice(invoice: NewInvoice): Promise<void> {
+  if (chosen.value.size === 0) return;
+  const ims = chosenList.value;
+  const ok = await run(async () => (await createImInvoice(props.container.name, { ...invoice, ims })).overview, `Fattura ${invoice.number} registrata.`);
   if (ok) {
-    invoicing.value = null;
+    invoicing.value = false;
     chosen.value = new Set();
   }
 }
@@ -184,8 +188,22 @@ async function saveInvoice(): Promise<void> {
 const paying = ref<{ id: string; day: string } | null>(null);
 const cancelling = ref<string | null>(null);
 
-function invoiceTotal(invoice: ImInvoice): string {
-  return moneyText(invoice.totalCents, invoice.currency);
+// The total of the document and the due date of an invoice already registered (D-170).
+const amending = ref<{ id: string; document: string; dueOn: string } | null>(null);
+// An invoice registered before D-170 may get only its due date: its total of the document stays empty.
+const amendingCents = computed(() => (amending.value === null ? undefined : parseAmount(amending.value.document)));
+const amendingValid = computed(() => typeof amendingCents.value === 'number' || (amendingCents.value === null && overview.value?.invoices.find((invoice) => invoice.id === amending.value?.id)?.documentCents === null));
+
+function startAmending(invoice: ImInvoice): void {
+  amending.value = { id: invoice.id, document: amountInput(invoice.documentCents), dueOn: invoice.dueOn ?? '' };
+}
+
+async function saveAmending(invoice: ImInvoice): Promise<void> {
+  const edit = amending.value;
+  const cents = amendingCents.value;
+  if (edit === null || !amendingValid.value) return;
+  const change = { dueOn: edit.dueOn === '' ? null : edit.dueOn, ...(typeof cents === 'number' ? { documentCents: cents } : {}) };
+  if (await run(() => updateImInvoice(props.container.name, invoice.id, change), `Fattura ${invoice.number} aggiornata.`)) amending.value = null;
 }
 
 async function markPaid(invoice: ImInvoice): Promise<void> {
@@ -211,7 +229,8 @@ watch(
   () => {
     overview.value = null;
     chosen.value = new Set();
-    invoicing.value = null;
+    invoicing.value = false;
+    amending.value = null;
     editing.value = null;
     notice.value = null;
     void load();
@@ -311,7 +330,7 @@ watch(
             <div class="flex items-baseline justify-between gap-2"><dt class="text-muted">In attesa di pagamento</dt><dd class="font-semibold">{{ totalsText(overview.totals.invoiced) }}</dd></div>
             <div class="flex items-baseline justify-between gap-2"><dt class="text-muted">Incassato</dt><dd class="font-semibold text-ok">{{ totalsText(overview.totals.paid) }}</dd></div>
           </dl>
-          <p class="border-t border-line px-4 py-2.5 text-xs text-muted">Importi senza IVA. Una fattura comprende gli IM del solo progetto, con il lavoro di tutte le sue parti.</p>
+          <p class="border-t border-line px-4 py-2.5 text-xs text-muted">Da fatturare senza IVA; fatture al totale documento. Una fattura comprende gli IM del solo progetto, con il lavoro di tutte le sue parti.</p>
         </section>
       </div>
 
@@ -323,30 +342,13 @@ watch(
           <template v-if="toInvoice.length > 0">
             <span class="text-xs text-muted">{{ chosen.size === 0 ? `${String(toInvoice.length)} da fatturare` : `${String(chosen.size)} scelti${total ? ` · ${moneyText(total.cents, total.currency)}` : ' · valute diverse'}` }}</span>
             <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="chooseAll">{{ chosen.size === toInvoice.length ? 'Nessuno' : 'Tutti i da fatturare' }}</button>
-            <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" :disabled="busy || chosen.size === 0 || total === undefined" @click="invoicing = { number: '', issuedOn: todayInput(), note: '' }">
+            <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" :disabled="busy || chosen.size === 0 || total === undefined" @click="invoicing = true">
               <Icon name="new" :size="13" />Fattura
             </button>
           </template>
         </header>
 
-        <form v-if="invoicing" class="flex flex-col gap-3 border-b border-line bg-surface-2 px-4 py-3.5" @submit.prevent="saveInvoice">
-          <p class="text-[13px]">Registri la fattura che hai fatto col tuo programma, con {{ [...chosen].sort((a, b) => a - b).map((n) => `IM-${String(n)}`).join(', ') }}<template v-if="total">, totale {{ moneyText(total.cents, total.currency) }}</template>.</p>
-          <div class="grid gap-3 sm:grid-cols-[160px_160px_minmax(0,1fr)]">
-            <label class="flex flex-col gap-1 text-xs text-muted">Numero
-              <input v-model="invoicing.number" maxlength="40" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="12/2026" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-muted">Data
-              <input v-model="invoicing.issuedOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-muted">Nota (facoltativa)
-              <input v-model="invoicing.note" maxlength="2000" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="IM di ottobre" />
-            </label>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="invoicing = null">Annulla</button>
-            <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || invoicing.number.trim() === '' || invoicing.issuedOn === ''">Registra la fattura</button>
-          </div>
-        </form>
+        <InvoiceForm v-if="invoicing" :ims="chosenList" :taxable="total" :busy="busy" @submit="saveInvoice" @cancel="invoicing = false" />
 
         <p v-if="rows.length === 0" class="p-4 text-sm text-muted">Nessun IM ancora: il primo nasce dal cardwall con “Nuovo IM”, o dal calendario.</p>
         <div v-else class="overflow-x-auto">
@@ -420,8 +422,9 @@ watch(
             <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span class="font-semibold">Fattura {{ invoice.number }}</span>
               <span class="text-muted">del {{ dayText(invoice.issuedOn) }}</span>
-              <span class="font-semibold">{{ invoiceTotal(invoice) }}</span>
-              <span :class="invoice.paidOn ? 'text-ok' : 'text-warn'">{{ invoice.paidOn ? `Pagata il ${dayText(invoice.paidOn)}` : 'In attesa di pagamento' }}</span>
+              <span class="font-semibold">{{ moneyText(invoice.documentCents ?? invoice.totalCents, invoice.currency) }}</span>
+              <span class="text-muted">{{ invoice.documentCents === null ? 'imponibile: manca il totale documento' : `imponibile ${moneyText(invoice.totalCents, invoice.currency)}` }}</span>
+              <span :class="invoice.paidOn ? 'text-ok' : invoice.due !== null && invoice.due < todayInput() ? 'text-danger' : 'text-warn'">{{ invoice.paidOn ? `Pagata il ${dayText(invoice.paidOn)}` : `In attesa di pagamento${dueText(invoice, todayInput()) ? ` · ${dueText(invoice, todayInput()) ?? ''}` : ''}` }}</span>
               <span v-if="invoice.note" class="text-muted">· {{ invoice.note }}</span>
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
@@ -430,7 +433,17 @@ watch(
                 <button v-if="invoice.ims.length > 1" type="button" class="text-muted hover:text-danger" :aria-label="`Togli IM-${String(im)} dalla fattura ${invoice.number}`" :disabled="busy" @click="removeIm(invoice, im)"><Icon name="close" :size="11" /></button>
               </span>
               <span class="flex-1" />
-              <template v-if="cancelling === invoice.id">
+              <template v-if="amending?.id === invoice.id">
+                <label class="flex items-center gap-1 text-xs text-muted">Totale documento
+                  <input v-model="amending.document" inputmode="decimal" class="field w-28 px-2 py-1 text-xs text-ink" :aria-invalid="!amendingValid" />
+                </label>
+                <label class="flex items-center gap-1 text-xs text-muted">Scadenza
+                  <input v-model="amending.dueOn" type="date" class="field px-2 py-1 text-xs text-ink" />
+                </label>
+                <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="amending = null">Annulla</button>
+                <button type="button" class="btn btn-primary px-2.5 py-1 text-xs font-semibold" :disabled="busy || !amendingValid" @click="saveAmending(invoice)">Salva</button>
+              </template>
+              <template v-else-if="cancelling === invoice.id">
                 <span class="text-xs text-danger">Annullo la fattura? I suoi IM tornano da fatturare.</span>
                 <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="cancelling = null">No</button>
                 <button type="button" class="btn px-2.5 py-1 text-xs text-danger" :disabled="busy" @click="cancel(invoice)">Sì, annulla</button>
@@ -443,6 +456,7 @@ watch(
               <template v-else>
                 <button v-if="invoice.paidOn" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="markUnpaid(invoice)">Non ancora pagata</button>
                 <button v-else type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="paying = { id: invoice.id, day: todayInput() }">Pagata…</button>
+                <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="startAmending(invoice)">Totale e scadenza…</button>
                 <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="cancelling = invoice.id">Annulla fattura</button>
               </template>
             </div>

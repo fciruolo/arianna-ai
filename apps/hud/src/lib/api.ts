@@ -8,7 +8,8 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
-import type { ImCalendar, ImInvoice, ImOverview } from './im-billing.ts';
+import type { ClientDashboard } from './client-dashboard.ts';
+import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
@@ -918,11 +919,11 @@ export async function saveImBilling(project: string, number: number, overrideCen
   return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/im/${String(number)}/billing`, { overrideCents, notBilled })).overview;
 }
 
-export async function createImInvoice(project: string, invoice: { number: string; issuedOn: string; note: string | null; ims: number[] }): Promise<{ invoice: ImInvoice; overview: ImOverview }> {
+export async function createImInvoice(project: string, invoice: NewInvoice & { ims: number[] }): Promise<{ invoice: ImInvoice; overview: ImOverview }> {
   return call('POST', `${browse(project)}/invoices`, invoice);
 }
 
-export async function updateImInvoice(project: string, id: string, change: { number?: string; issuedOn?: string; paidOn?: string | null; note?: string | null }): Promise<ImOverview> {
+export async function updateImInvoice(project: string, id: string, change: { number?: string; issuedOn?: string; paidOn?: string | null; note?: string | null; documentCents?: number; dueOn?: string | null }): Promise<ImOverview> {
   return (await call<{ overview: ImOverview }>('POST', `${browse(project)}/invoices/${encodeURIComponent(id)}`, change)).overview;
 }
 
@@ -994,6 +995,11 @@ export async function stopService(project: string, service: string): Promise<Ser
 /** Every client, archived included, and the approved projects a client may take. */
 export async function listClients(): Promise<{ clients: ClientSummary[]; projects: string[] }> {
   return call<{ clients: ClientSummary[]; projects: string[] }>('GET', '/api/clients');
+}
+
+/** The dashboard of a client (I-16 C3, D-170): the money of the IM of its projects. */
+export async function readClientDashboard(id: string): Promise<ClientDashboard> {
+  return (await call<{ dashboard: ClientDashboard }>('GET', `/api/clients/${encodeURIComponent(id)}/dashboard`)).dashboard;
 }
 
 export async function readClient(id: string): Promise<Client> {

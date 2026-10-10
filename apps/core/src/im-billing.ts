@@ -69,7 +69,14 @@ export interface ImInvoice {
   currency: string;
   note: string | null;
   ims: number[];
+  /** The taxable amount: the sum of the money of its IM. */
   totalCents: number;
+  /** The total of the document as on the invoice (D-170); null for the invoices registered before. */
+  documentCents: number | null;
+  /** The due date written by hand (D-170); null: from the payment terms of the client. */
+  dueOn: string | null;
+  /** The due date that counts: by hand, else computed from the client; null without either. */
+  due: string | null;
   createdAt: string;
 }
 
@@ -107,6 +114,20 @@ function checkNote(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string' || value.length > MAX_NOTE) throw new ImBillingError('invalid', `the note must be at most ${String(MAX_NOTE)} characters`);
   return value.trim() === '' ? null : value.trim();
+}
+
+/**
+ * The due date of an invoice from the payment terms of the client (D-170):
+ * the date of the invoice plus the days, then the end of that month when the
+ * terms say "fine mese" ("30 gg fine mese": invoice of 30 September, due 31
+ * October). Null without days.
+ */
+export function dueDate(issuedOn: string, days: number | null, endOfMonth: boolean): string | null {
+  if (days === null || !isDay(issuedOn)) return null;
+  const [year, month, day] = issuedOn.split('-').map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  if (endOfMonth) date.setUTCDate(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate());
+  return date.toISOString().slice(0, 10);
 }
 
 function checkDay(value: unknown, field: string): string {
@@ -197,30 +218,58 @@ async function billingRows(sql: Queryable, project: string): Promise<BillingDbRo
   ];
 }
 
+type InvoiceDbRow = Omit<ImInvoice, 'totalCents' | 'documentCents' | 'ims' | 'due'> & {
+  totalCents: string;
+  documentCents: string | null;
+  ims: number[];
+  paymentDays: number | null;
+  endOfMonth: boolean | null;
+};
+
 export async function listInvoices(sql: Queryable, project: string): Promise<ImInvoice[]> {
-  const rows = await sql<(Omit<ImInvoice, 'totalCents' | 'ims'> & { totalCents: string; ims: number[] })[]>`
+  // The payment terms of the client the project belongs to now (D-168), for the due date.
+  const rows = await sql<InvoiceDbRow[]>`
     SELECT i.id::text, i.number, i.issued_on::text AS "issuedOn", i.paid_on::text AS "paidOn", i.currency, i.note, i.created_at::text AS "createdAt",
+      i.document_cents::text AS "documentCents", i.due_on::text AS "dueOn",
       coalesce(sum(coalesce(b.override_cents, b.closed_cents)), 0)::text AS "totalCents",
-      coalesce(array_agg(b.im ORDER BY b.im) FILTER (WHERE b.im IS NOT NULL), '{}') AS ims
+      coalesce(array_agg(b.im ORDER BY b.im) FILTER (WHERE b.im IS NOT NULL), '{}') AS ims,
+      (SELECT c.payment_days FROM client_projects p JOIN clients c ON c.id = p.client_id WHERE p.project = i.project AND p.removed_at IS NULL) AS "paymentDays",
+      (SELECT c.payment_end_of_month FROM client_projects p JOIN clients c ON c.id = p.client_id WHERE p.project = i.project AND p.removed_at IS NULL) AS "endOfMonth"
     FROM im_invoices i LEFT JOIN im_billing b ON b.invoice_id = i.id
     WHERE i.project = ${project} AND i.cancelled_at IS NULL
     GROUP BY i.id ORDER BY i.issued_on DESC, i.created_at DESC`;
-  return rows.map((row) => ({ ...row, totalCents: Number(row.totalCents) }));
+  return rows.map(({ paymentDays, endOfMonth, ...row }) => ({
+    ...row,
+    totalCents: Number(row.totalCents),
+    documentCents: num(row.documentCents),
+    due: row.dueOn ?? dueDate(row.issuedOn, paymentDays, endOfMonth ?? false),
+  }));
+}
+
+export interface ImMoney {
+  price: ImPrice | null;
+  ims: ImBillingRow[];
+  invoices: ImInvoice[];
+}
+
+/** Price, every IM with its money and the invoices of one project, the closed IM priced first. */
+export async function readImMoney(sql: Queryable, projects: readonly Project[], env: KnowledgeEnv, project: string): Promise<ImMoney> {
+  const ims = listIms(projects, project, env);
+  await fixClosedPrices(sql, project, ims);
+  const price = await readImPrice(sql, project);
+  const byIm = new Map((await billingRows(sql, project)).map((row) => [row.im, row]));
+  return { price, ims: ims.map((im) => rowOf(im, price, byIm.get(im.number))), invoices: await listInvoices(sql, project) };
 }
 
 /** The tab "IM" of "Progetti": calendar, price, every IM with its money, the invoices and the totals. */
 export async function readImOverview(sql: Sql, projects: readonly Project[], env: KnowledgeEnv, project: string): Promise<ImOverview> {
   const calendar = readImCalendar(projects, project, env);
-  const ims = listIms(projects, project, env);
-  await fixClosedPrices(sql, project, ims);
-  const price = await readImPrice(sql, project);
-  const byIm = new Map((await billingRows(sql, project)).map((row) => [row.im, row]));
-  const rows = ims.map((im) => rowOf(im, price, byIm.get(im.number)));
-  const invoices = await listInvoices(sql, project);
+  const { price, ims: rows, invoices } = await readImMoney(sql, projects, env, project);
   const totals: ImOverview['totals'] = { toInvoice: [], invoiced: [], paid: [] };
   for (const row of rows) if (row.state === 'to-invoice' && row.amountCents !== null) add(totals.toInvoice, row.currency, row.amountCents);
   // Invoiced and paid from the invoices: an IM file renamed or gone still counts in its invoice.
-  for (const invoice of invoices) add(invoice.paidOn === null ? totals.invoiced : totals.paid, invoice.currency, invoice.totalCents);
+  // The total of the document when written (D-170), else the taxable amount of an invoice registered before.
+  for (const invoice of invoices) add(invoice.paidOn === null ? totals.invoiced : totals.paid, invoice.currency, invoice.documentCents ?? invoice.totalCents);
   return { calendar, price, ims: rows, invoices, totals };
 }
 
@@ -258,6 +307,9 @@ function conflictOf(error: unknown): ImBillingError | undefined {
 export interface NewInvoice {
   number: string;
   issuedOn: string;
+  /** The total of the document as on the invoice (D-170): required for a new one. */
+  documentCents: number;
+  dueOn?: string | null;
   note?: string | null;
   ims: readonly number[];
 }
@@ -269,6 +321,8 @@ export interface NewInvoice {
 export async function createInvoice(sql: Sql, projects: readonly Project[], env: KnowledgeEnv, project: string, input: NewInvoice): Promise<ImInvoice> {
   const number = checkInvoiceNumber(input.number);
   const issuedOn = checkDay(input.issuedOn, 'issuedOn');
+  const documentCents = checkCents(input.documentCents, 'documentCents');
+  const dueOn = input.dueOn === null || input.dueOn === undefined ? null : checkDay(input.dueOn, 'dueOn');
   const note = checkNote(input.note);
   const wanted = [...new Set(input.ims)];
   if (wanted.length === 0 || wanted.length > MAX_INVOICE_IMS || wanted.some((im) => !Number.isInteger(im) || im < 1 || im > 999_999)) {
@@ -301,7 +355,8 @@ export async function createInvoice(sql: Sql, projects: readonly Project[], env:
       if (currencies.size !== 1) throw new ImBillingError('conflict', 'the IM of an invoice must have one currency');
       const [currency] = [...currencies] as [string];
       const [created] = await tx<{ id: string }[]>`
-        INSERT INTO im_invoices (project, number, issued_on, currency, note) VALUES (${project}, ${number}, ${issuedOn}, ${currency}, ${note})
+        INSERT INTO im_invoices (project, number, issued_on, currency, note, document_cents, due_on)
+        VALUES (${project}, ${number}, ${issuedOn}, ${currency}, ${note}, ${documentCents}, ${dueOn})
         RETURNING id::text`;
       if (created === undefined) throw new Error('INSERT INTO im_invoices returned no row');
       id = created.id;
@@ -321,6 +376,9 @@ export interface InvoiceChange {
   issuedOn?: string;
   paidOn?: string | null;
   note?: string | null;
+  documentCents?: number;
+  /** Null: back to the due date computed from the client. */
+  dueOn?: string | null;
 }
 
 async function lockInvoice(tx: Queryable, project: string, id: string): Promise<void> {
@@ -328,13 +386,15 @@ async function lockInvoice(tx: Queryable, project: string, id: string): Promise<
   if (row === undefined) throw new ImBillingError('not-found', 'no such invoice');
 }
 
-/** Number, date, payment and note of an invoice not cancelled. */
+/** Number, date, payment, note, total of the document and due date of an invoice not cancelled. */
 export async function updateInvoice(sql: Sql, project: string, id: string, change: InvoiceChange): Promise<void> {
   const fields: Record<string, unknown> = {};
   if (change.number !== undefined) fields.number = checkInvoiceNumber(change.number);
   if (change.issuedOn !== undefined) fields.issued_on = checkDay(change.issuedOn, 'issuedOn');
   if (change.paidOn !== undefined) fields.paid_on = change.paidOn === null ? null : checkDay(change.paidOn, 'paidOn');
   if (change.note !== undefined) fields.note = checkNote(change.note);
+  if (change.documentCents !== undefined) fields.document_cents = checkCents(change.documentCents, 'documentCents');
+  if (change.dueOn !== undefined) fields.due_on = change.dueOn === null ? null : checkDay(change.dueOn, 'dueOn');
   if (Object.keys(fields).length === 0) throw new ImBillingError('invalid', 'nothing to change');
   try {
     await sql.begin(async (tx) => {

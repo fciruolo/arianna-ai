@@ -55,6 +55,7 @@ import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format
 import { completeItemCard, itemCard } from '../im-cards.ts';
 import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
+import { readClientDashboard } from '../client-dashboard.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
@@ -1202,20 +1203,28 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
     route('POST', '/api/browse/:project/invoices', async (request, _url, params) => {
       const project = projectOf(params);
       const body = await readJson(request);
-      onlyFields(body, ['number', 'issuedOn', 'note', 'ims']);
+      onlyFields(body, ['number', 'issuedOn', 'documentCents', 'dueOn', 'note', 'ims']);
       const ims: unknown = body.ims;
-      if (typeof body.number !== 'string' || typeof body.issuedOn !== 'string' || !Array.isArray(ims) || !ims.every((im): im is number => typeof im === 'number')) {
-        throw new HttpError(400, 'number, issuedOn and ims are required');
+      if (typeof body.number !== 'string' || typeof body.issuedOn !== 'string' || typeof body.documentCents !== 'number' || !Array.isArray(ims) || !ims.every((im): im is number => typeof im === 'number')) {
+        throw new HttpError(400, 'number, issuedOn, documentCents and ims are required');
       }
       if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string');
-      const invoice = await createInvoice(sql, containers(), need(), project.name, { number: body.number, issuedOn: body.issuedOn, note: typeof body.note === 'string' ? body.note : null, ims });
+      if (body.dueOn !== undefined && body.dueOn !== null && typeof body.dueOn !== 'string') throw new HttpError(400, 'dueOn must be a string or null');
+      const invoice = await createInvoice(sql, containers(), need(), project.name, {
+        number: body.number,
+        issuedOn: body.issuedOn,
+        documentCents: body.documentCents,
+        dueOn: typeof body.dueOn === 'string' ? body.dueOn : null,
+        note: typeof body.note === 'string' ? body.note : null,
+        ims,
+      });
       return { status: 201, body: { invoice, overview: await readImOverview(sql, containers(), need(), project.name) } };
     }),
     route('POST', '/api/browse/:project/invoices/:id', async (request, _url, params) => {
       const project = projectOf(params);
       const id = invoiceParam(params);
       const body = await readJson(request);
-      onlyFields(body, ['number', 'issuedOn', 'paidOn', 'note']);
+      onlyFields(body, ['number', 'issuedOn', 'paidOn', 'note', 'documentCents', 'dueOn']);
       const change: InvoiceChange = {};
       if (body.number !== undefined) {
         if (typeof body.number !== 'string') throw new HttpError(400, 'number must be a string');
@@ -1233,6 +1242,14 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
         if (body.note !== null && typeof body.note !== 'string') throw new HttpError(400, 'note must be a string or null');
         change.note = body.note;
       }
+      if (body.documentCents !== undefined) {
+        if (typeof body.documentCents !== 'number') throw new HttpError(400, 'documentCents must be a number');
+        change.documentCents = body.documentCents;
+      }
+      if (body.dueOn !== undefined) {
+        if (body.dueOn !== null && typeof body.dueOn !== 'string') throw new HttpError(400, 'dueOn must be a string or null');
+        change.dueOn = body.dueOn;
+      }
       await updateInvoice(sql, project.name, id, change);
       return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
     }),
@@ -1249,6 +1266,16 @@ function imRoutes(sql: Sql, containers: () => readonly Project[], env: Knowledge
       if (typeof body.im !== 'number' || !Number.isInteger(body.im)) throw new HttpError(400, 'im is required');
       await removeFromInvoice(sql, project.name, id, body.im);
       return { body: { overview: await readImOverview(sql, containers(), need(), project.name) } };
+    }),
+    // The dashboard of a client (I-16 C3, D-170): the money of the IM of its projects, private (L2), computed by the code.
+    route('GET', '/api/clients/:id/dashboard', async (_request, _url, params) => {
+      const id = idParam(params, 'id');
+      try {
+        return { body: { dashboard: await readClientDashboard(sql, containers(), need(), id) } };
+      } catch (error) {
+        if (error instanceof ClientError && error.code === 'not-found') throw new HttpError(404, 'not found');
+        throw error;
+      }
     }),
     route('GET', '/api/im/closings', async () => {
       const known = new Set(containers().map((project) => project.name));
