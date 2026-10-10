@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.58.0] - 2026-10-10
+
 ### Aggiunto
 
 - La scheda "IM" della pagina Progetti: il calendario delle riunioni (giorno, ora, ogni quante settimane) scritto nel file `IM/calendario.md`, che si cambia anche in Obsidian e dà la data a ogni IM nuovo (D-169, I-11 P4d).
