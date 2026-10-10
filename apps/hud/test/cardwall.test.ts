@@ -13,7 +13,6 @@ import {
   COMMITMENT_MOVE_TEXT,
   dataUrlBase64,
   defaultState,
-  ENGINE_STOPPED_TEXT,
   fileKindText,
   fileRefusal,
   fileSizeText,
@@ -38,6 +37,9 @@ import {
   loadState,
   matches,
   moveButtons,
+  cardActions,
+  executorChoices,
+  planRows,
   saveState,
   wallColumns,
   weekOf,
@@ -151,7 +153,8 @@ test('a drop: where a task goes, what does nothing, what is refused', () => {
   assert.deepEqual(dropAction(card({ status: 'to_verify', column: 'to_verify' }), todo), { kind: 'refuse', message: NOT_BY_HAND_TEXT });
   assert.deepEqual(dropAction(card({ status: 'running', column: 'running' }), done), { kind: 'refuse', message: RUNNING_TEXT });
   assert.deepEqual(dropAction(card({ status: 'ready', assignee: 'coder' }), done), { kind: 'refuse', message: AGENT_DONE_TEXT });
-  assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed', started: true }), todo), { kind: 'refuse', message: ENGINE_STOPPED_TEXT });
+  // A card the engine stopped, dragged to Da fare: the core resumes or retries it (D-159).
+  assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed', started: true }), todo), { kind: 'move', to: 'ready' });
   assert.deepEqual(dropAction(card({ status: 'failed', column: 'failed' }), todo), { kind: 'move', to: 'ready' });
   // A commitment: only Fatto, and only while open.
   const open = card({ kind: 'commitment', status: 'open' });
@@ -175,9 +178,24 @@ test('the moves by hand are those of the core (userMovesInto)', () => {
   assert.equal(moveRefusal(card({ status: 'failed' }), 'done'), NOT_BY_HAND_TEXT);
   assert.equal(moveRefusal(card({ status: 'to_verify' }), 'failed'), undefined);
   assert.equal(moveRefusal(card({ status: 'running' }), 'failed'), RUNNING_TEXT);
-  assert.equal(moveRefusal(card({ status: 'waiting_user', started: true }), 'ready'), ENGINE_STOPPED_TEXT);
+  assert.equal(moveRefusal(card({ status: 'waiting_user', started: true }), 'ready'), undefined);
   assert.equal(moveRefusal(card({ status: 'waiting_user', started: true }), 'done'), undefined);
   assert.equal(moveRefusal(card({ kind: 'commitment', status: 'open' }), 'done'), NOT_BY_HAND_TEXT);
+});
+
+test('"Avvia", "Riprendi" and "Riprova": only where the core allows them (D-159)', () => {
+  // An agent's card never started, still to do: Avvia; the user's own never.
+  assert.deepEqual(cardActions(card({ status: 'inbox', assignee: 'designer' }), false), ['start']);
+  assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'designer' }), false), ['start']);
+  assert.deepEqual(cardActions(card({ status: 'inbox' }), false), []);
+  assert.deepEqual(cardActions(card({ status: 'waiting_user', assignee: 'designer' }), false), []);
+  // Started: Riprendi in Aspetta, not while it waits for a decision; Riprova when failed.
+  assert.deepEqual(cardActions(card({ status: 'waiting_user', assignee: 'designer', started: true }), false), ['resume']);
+  assert.deepEqual(cardActions(card({ status: 'waiting_user', assignee: 'designer', started: true }), true), []);
+  assert.deepEqual(cardActions(card({ status: 'failed', assignee: 'coder', started: true }), false), ['retry']);
+  assert.deepEqual(cardActions(card({ status: 'running', assignee: 'coder', started: true }), false), []);
+  assert.deepEqual(cardActions(card({ status: 'ready', assignee: 'coder', started: true }), false), []);
+  assert.deepEqual(cardActions(card({ kind: 'commitment', status: 'open' }), false), []);
 });
 
 test('the buttons of the detail are only the moves the core allows', () => {
@@ -193,10 +211,12 @@ test('the buttons of the detail are only the moves the core allows', () => {
     moveButtons(card({ status: 'waiting_user' })).map((item) => item.to),
     ['ready', 'done', 'failed'],
   );
+  // Back to do with Riprendi or Riprova, not with a second button.
   assert.deepEqual(
     moveButtons(card({ status: 'waiting_user', started: true, assignee: 'coder' })).map((item) => item.to),
     ['failed'],
   );
+  assert.deepEqual(moveButtons(card({ status: 'failed', started: true })), []);
   assert.deepEqual(
     moveButtons(card({ status: 'to_verify', assignee: 'coder' })).map((item) => item.to),
     ['done', 'failed'],
@@ -317,7 +337,8 @@ test('the refusals of the core in Italian', () => {
   assert.equal(cardErrorText(new ApiError(409, 'the card is at work')), 'La card è al lavoro: aspetta che finisca.');
   assert.equal(cardErrorText(new ApiError(409, 'a card cannot move from to_verify to waiting_user by hand')), 'Questo spostamento non si fa a mano.');
   assert.equal(cardErrorText(new ApiError(409, 'a card waits for 12 cards at most')), 'Una card aspetta al massimo 12 card.');
-  assert.equal(cardErrorText(new ApiError(409, 'the engine stopped this card: it cannot go back to do by hand yet')), ENGINE_STOPPED_TEXT);
+  assert.equal(cardErrorText(new ApiError(409, 'the card has already started: resume it or retry it')), 'La card è già partita: riprendila o riprovala.');
+  assert.equal(cardErrorText(new ApiError(409, 'the card waits for a decision: decide it first')), 'La card aspetta una tua decisione: decidila nella chat.');
   assert.equal(cardErrorText(new ApiError(409, 'a card already started or done keeps who does it')), 'Una card già partita o fatta non cambia chi la fa.');
   assert.equal(cardErrorText(new ApiError(409, 'only a card still to do waits for another one')), 'Solo una card ancora da fare può aspettarne un’altra.');
   assert.equal(cardErrorText(new ApiError(409, 'a card holds 30 links at most')), 'Una card tiene al massimo 30 link.');
@@ -422,4 +443,49 @@ test('the history in Italian, written by the code', () => {
     new Date('2026-10-10T10:00:00.000Z'),
   );
   assert.deepEqual(lines, [{ at: '2026-10-10T09:55:00.000Z', text: 'Creata', when: '5 min fa' }]);
+});
+
+test('a plan of Arianna as the approval card shows it: who does each card and what it waits for, by title (D-159)', () => {
+  const plan = planRows({
+    title: 'Landing',
+    cards: [
+      { title: 'Grafica', goal: 'Due varianti.', assignee: 'designer', blockedBy: [] },
+      { title: 'Codice', goal: 'La pagina.', assignee: 'coder', blockedBy: [1] },
+      { title: 'Testi', goal: '', assignee: 'user', blockedBy: [1, 2, 5] },
+    ],
+    step: 1,
+  });
+  assert.deepEqual(plan, {
+    title: 'Landing',
+    rows: [
+      { number: 1, title: 'Grafica', goal: 'Due varianti.', who: 'Designer', blockedBy: undefined },
+      { number: 2, title: 'Codice', goal: 'La pagina.', who: 'Coder', blockedBy: 'bloccata da: 1. Grafica' },
+      // A number that is not an earlier card is left out.
+      { number: 3, title: 'Testi', goal: '', who: 'Tu', blockedBy: 'bloccata da: 1. Grafica, 2. Codice' },
+    ],
+  });
+  assert.equal(planRows({}), undefined);
+  assert.equal(planRows({ title: 'X', cards: [{ title: 1 }] }), undefined);
+});
+
+test('the choice of where a card runs: the ways offered, the ones left out with why, in Italian (D-159)', () => {
+  assert.deepEqual(
+    executorChoices({ title: 'Grafica', agent: 'designer', options: ['local'], excluded: [{ executor: 'claude', reason: 'label' }, { executor: 'codex', reason: 'off' }], step: 1 }),
+    {
+      title: 'Grafica',
+      agent: 'Designer',
+      options: ['local'],
+      excluded: [
+        { executor: 'Claude', why: 'la card è privata: nel cloud l’agente legge al massimo dati Interni' },
+        { executor: 'ChatGPT', why: 'è spento in questo momento' },
+      ],
+    },
+  );
+  // Nothing to choose: not a choice the card can show.
+  assert.equal(executorChoices({ title: 'Grafica', agent: 'designer', options: ['gemini'] }), undefined);
+  // A delegation of the chat (it names its delegation) speaks of the conversation, not of a card.
+  assert.deepEqual(
+    executorChoices({ title: 'Landing', agent: 'designer', options: ['local'], excluded: [{ executor: 'claude', reason: 'project' }], step: 2, delegation: 'd1' })?.excluded,
+    [{ executor: 'Claude', why: 'la conversazione non ha un progetto approvato con la sua cartella' }],
+  );
 });

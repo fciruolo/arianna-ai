@@ -53,6 +53,22 @@ export interface HistoryEntry {
   payload: Record<string, unknown>;
 }
 
+/**
+ * What an agent reported on its card (D-159): the report of the card's last
+ * delegation that ended well, with the files it changed in the project; or
+ * the last answer of the local model when the card ran there.
+ */
+export interface CardReport {
+  text: string;
+  label: Label;
+  /** `claude`, `codex` or `local`; null when not recorded. */
+  executor: string | null;
+  model: string | null;
+  /** Paths in the project, relative to its folder. */
+  files: string[];
+  at: string;
+}
+
 export interface CardDetail {
   id: string;
   title: string;
@@ -62,14 +78,38 @@ export interface CardDetail {
   checklist: ChecklistItem[];
   files: CardFile[];
   history: HistoryEntry[];
+  report: CardReport | null;
+  /** Where the user chose the card runs, the last time it was asked (D-159); null when never. */
+  executor: string | null;
 }
 
 /** The event kinds the history shows. */
-const HISTORY_KINDS = ['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed'];
+const HISTORY_KINDS = ['task.created', 'task.status', 'task.blocked', 'task.unblocked', 'card.changed', 'task.retried'];
+
+/** The report of the card's agent, from its last delegation that ended well or its last answer on the local model. */
+async function reportOf(sql: Queryable, id: string): Promise<CardReport | null> {
+  const [delegation] = await sql<{ text: string; label: Label; executor: string | null; model: string | null; files: { path?: unknown }[] | null; at: Date }[]>`
+    SELECT result AS text, coalesce(result_label, label) AS label, executor, model, files, coalesce(ended_at, created_at) AS at
+    FROM task_delegations WHERE task_id = ${id} AND status = 'ok' AND result IS NOT NULL ORDER BY step DESC, id DESC LIMIT 1`;
+  const [turn] = await sql<{ text: string | null; label: Label; at: Date }[]>`
+    SELECT coalesce(answer ->> 'text', answer ->> 'reason') AS text, label, created_at AS at
+    FROM task_turns WHERE task_id = ${id} AND answer ->> 'action' IN ('reply', 'refuse') ORDER BY step DESC LIMIT 1`;
+  const local = turn !== undefined && turn.text !== null ? { text: turn.text, label: turn.label, executor: 'local', model: null, files: [], at: turn.at } : undefined;
+  const cloud =
+    delegation === undefined
+      ? undefined
+      : {
+          ...delegation,
+          files: (delegation.files ?? []).map((file) => file.path).filter((path): path is string => typeof path === 'string'),
+        };
+  // The latest of the two: a card retried on another way shows its last work.
+  const latest = cloud === undefined ? local : local === undefined || cloud.at >= local.at ? cloud : local;
+  return latest === undefined ? null : { ...latest, at: latest.at.toISOString() };
+}
 
 export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail> {
   const card = await loadCard(sql, id);
-  const [links, checklist, files, history] = await Promise.all([
+  const [links, checklist, files, history, report, executor] = await Promise.all([
     sql<CardLink[]>`
       SELECT id::text, url, title, created_at AS "createdAt" FROM card_links WHERE task_id = ${id} AND removed_at IS NULL ORDER BY created_at, id`,
     sql<ChecklistItem[]>`
@@ -80,6 +120,9 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     sql<{ at: Date; kind: string; payload: Record<string, unknown> }[]>`
       SELECT ts AS at, kind, payload FROM events WHERE task_id = ${id} AND kind = ANY (${HISTORY_KINDS})
       ORDER BY id DESC LIMIT ${MAX_HISTORY}`,
+    reportOf(sql, id),
+    sql<{ choice: string }[]>`
+      SELECT choice FROM approvals WHERE task_id = ${id} AND kind = 'executor' AND state = 'approved' ORDER BY decided_at DESC, id DESC LIMIT 1`,
   ]);
   const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value));
   return {
@@ -91,6 +134,8 @@ export async function cardDetail(sql: Queryable, id: string): Promise<CardDetail
     checklist: [...checklist],
     files: files.map((file) => ({ ...file, createdAt: iso(file.createdAt) })),
     history: history.map((entry) => ({ at: entry.at.toISOString(), kind: entry.kind, payload: entry.payload })),
+    report,
+    executor: executor[0]?.choice ?? null,
   };
 }
 

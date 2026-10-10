@@ -2,7 +2,9 @@ import { isAtMost, type Label } from '@arianna/policy';
 
 import { addDays, isDay, localDay } from './commitment-dates.ts';
 import type { CommitmentStatus } from './commitments.ts';
+import { CHAT_AGENT } from './conversations.ts';
 import type { Queryable, Sql } from './db/client.ts';
+import { resumeTaskIn, retryTaskIn, scheduleTask } from './engine.ts';
 import { appendEvent } from './events.ts';
 import { createTask, isHeld, loadTask, moveTask, releaseIfFree, TaskError, type Task } from './tasks.ts';
 import type { TaskStatus } from './task-status.ts';
@@ -72,7 +74,7 @@ export interface Card {
   priority: number;
   /** "YYYY-MM-DD": the day the user means to do it ("Data esecuzione"). */
   planned: string | null;
-  /** The engine has had it (a run, a step job, a step held back): it keeps who does it and goes back to do only from the chat. */
+  /** The engine has had it (a run, a step job, a step held back): it keeps who does it, and goes back to do with "Riprendi" or "Riprova" (D-159). */
   started: boolean;
   /** A body or criteria are written. */
   hasBody: boolean;
@@ -389,6 +391,7 @@ export const HAND_WAIT = 'Messa in attesa a mano.';
 export async function moveCard(sql: Sql, id: string, to: unknown, reason?: unknown): Promise<Task> {
   if (to !== 'ready' && to !== 'waiting_user' && to !== 'done' && to !== 'failed') throw new CardError('invalid', 'unknown column');
   return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
     const card = await loadCard(tx, id, true);
     if (card.status === to) return card;
     if (!userMovesInto(to).includes(card.status)) throw new CardError('conflict', `a card cannot move from ${card.status} to ${to} by hand`);
@@ -398,12 +401,11 @@ export async function moveCard(sql: Sql, id: string, to: unknown, reason?: unkno
     if (to === 'done' && card.assignee !== 'user' && card.status !== 'to_verify') {
       throw new CardError('conflict', "an agent's card is done only from Da verificare, with its evidence");
     }
-    // Back to do: a card the engine stopped is not restarted by a drag, which
-    // would neither close its approvals nor queue its step (engine.ts,
-    // resumeTask and retryTask); the wall gets that with tappa C3. A step held
-    // back for a dependency is the exception: it goes on below.
+    // Back to do: a card the engine stopped goes on as "Riprendi" or
+    // "Riprova" do (D-159), its pending approvals closed and its step queued
+    // (engine.ts). A step held back for a dependency goes on below instead.
     if (to === 'ready' && (card.status === 'waiting_user' || card.status === 'failed') && (await engineHad(tx, id)) && !(await isHeld(tx, id))) {
-      throw new CardError('conflict', 'the engine stopped this card: it cannot go back to do by hand yet');
+      return goOn(tx, card);
     }
     // The user's own words are private (L2, default-deny): kept only on a card that is already L2.
     const own = typeof reason === 'string' && reason.trim() !== '' && !isAtMost(card.label, 'L1') ? reason.trim().slice(0, 300) : undefined;
@@ -416,6 +418,72 @@ export async function moveCard(sql: Sql, id: string, to: unknown, reason?: unkno
       if (error instanceof TaskError) throw new CardError('conflict', error.message);
       throw error;
     }
+  });
+}
+
+/**
+ * Locks the card's pending approvals before the card: the order of
+ * recordDecisionIn and dismissWaitingTask (waiting.ts), so that a decision
+ * arriving while "Riprendi" expires those approvals waits instead of
+ * deadlocking.
+ */
+async function lockPendingApprovals(tx: Queryable, id: string): Promise<void> {
+  await tx`SELECT id FROM approvals WHERE task_id = ${id} AND state = 'pending' ORDER BY id FOR UPDATE`;
+}
+
+/** "Riprendi" or "Riprova" of a card the engine had and stopped (D-159): the same task goes on. */
+async function goOn(tx: Queryable, card: Task): Promise<Task> {
+  try {
+    return card.status === 'failed' ? await retryTaskIn(tx, card.id) : await resumeTaskIn(tx, card.id);
+  } catch (error) {
+    if (error instanceof TaskError) throw new CardError('conflict', error.message);
+    throw error;
+  }
+}
+
+/**
+ * "Avvia" (D-159): a card of an agent that the engine never had goes to do and
+ * its first step is queued. One that waits for another card is held back by
+ * the engine until that one is done (D-152).
+ */
+export async function startCard(sql: Sql, id: string, agents?: readonly string[]): Promise<Task> {
+  return sql.begin(async (tx) => {
+    const card = await loadCard(tx, id, true);
+    if (card.assignee === 'user') throw new CardError('conflict', 'only the card of an agent starts: your own you do yourself');
+    if (card.assignee === CHAT_AGENT) throw new CardError('conflict', 'Arianna does not work on cards from the wall: assign the card to an agent');
+    if (agents !== undefined && !agents.includes(card.assignee)) throw new CardError('conflict', `the agent ${card.assignee} no longer exists: assign the card to another one`);
+    if (card.status !== 'inbox' && card.status !== 'ready') throw new CardError('conflict', 'only a card still to do starts');
+    if (await engineHad(tx, id)) throw new CardError('conflict', 'the card has already started: resume it or retry it');
+    const started = card.status === 'ready' ? card : await moveTask(tx, id, 'ready', { cause: 'user' });
+    if (!(await scheduleTask(tx, id))) throw new CardError('conflict', 'the card is already at work');
+    await appendEvent(tx, { kind: 'card.changed', taskId: id, label: 'L0', payload: { started: true } });
+    return started;
+  });
+}
+
+/** "Riprendi" (D-159): a card the engine had, waiting in "Aspetta", goes on; not one that waits for a decision. */
+export async function resumeCard(sql: Sql, id: string): Promise<Task> {
+  return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
+    const card = await loadCard(tx, id, true);
+    if (card.status !== 'waiting_user') throw new CardError('conflict', 'only a card in Aspetta resumes');
+    if (card.waitingApprovalId !== null) throw new CardError('conflict', 'the card waits for a decision: decide it first');
+    if (!(await engineHad(tx, id))) throw new CardError('conflict', 'the card never started: move it to Da fare, or start it');
+    if (await isHeld(tx, id)) throw new CardError('conflict', 'the card waits for another card: it goes on when that one is done');
+    const busy = await tx`SELECT 1 FROM jobs WHERE key = ${`task:${id}`} AND status IN ('queued', 'running')`;
+    if (busy.length > 0) throw new CardError('conflict', 'the card is at work');
+    return goOn(tx, card);
+  });
+}
+
+/** "Riprova" (D-159): a failed card the engine had runs again from the step that failed. */
+export async function retryCard(sql: Sql, id: string): Promise<Task> {
+  return sql.begin(async (tx) => {
+    await lockPendingApprovals(tx, id);
+    const card = await loadCard(tx, id, true);
+    if (card.status !== 'failed') throw new CardError('conflict', 'only a failed card is retried');
+    if (!(await engineHad(tx, id))) throw new CardError('conflict', 'the card never started: move it to Da fare, or start it');
+    return goOn(tx, card);
   });
 }
 

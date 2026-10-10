@@ -31,7 +31,7 @@ import {
 import { MODE_HINT, MODE_TEXT, MODEL_TEXT, STATUS_TEXT, EXECUTOR_TEXT } from '../lib/labels.ts';
 import { executorText, isAddingLine, isEventLine, participantPose, removeText } from '../lib/participants.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
-import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
+import type { Activity, Approval, CharacterChoice, CloudModel, Conversation, DirectAgent, ExecutorChoice, Message, MessageCredit, Participant, StatusSnapshot, Task } from '../lib/types.ts';
 import LabelBadge from './LabelBadge.vue';
 import ActivityLog from './ActivityLog.vue';
 import ApprovalCard from './ApprovalCard.vue';
@@ -56,7 +56,7 @@ const props = defineProps<{
   models: CloudModel[];
   /** Pending approvals of this conversation's tasks, shown under the message that started the task. */
   approvals: Approval[];
-  decide: (approval: Approval, state: 'approved' | 'rejected') => Promise<void>;
+  decide: (approval: Approval, state: 'approved' | 'rejected', choice?: ExecutorChoice) => Promise<void>;
   arianna: { choice: CharacterChoice | undefined; pose: Pose };
   status: StatusSnapshot | null;
   /** The calls of this conversation (D-066), shown as receipts among the messages. */
@@ -284,15 +284,20 @@ function editsOf(message: Message): LiveEdit[] {
   return liveEdits(props.chat, message.taskId, props.tasks[message.taskId]?.status);
 }
 
+/** The task an approval shows under: its own, or the plan's for the choice of a card that came from one (D-159). */
+function placeOf(approval: Approval): string | null {
+  return approval.chatTaskId ?? approval.taskId;
+}
+
 /** The approvals a user message's task waits for. */
 function approvalsOf(message: Message): Approval[] {
-  return message.role === 'user' && message.taskId !== null ? props.approvals.filter((approval) => approval.taskId === message.taskId) : [];
+  return message.role === 'user' && message.taskId !== null ? props.approvals.filter((approval) => placeOf(approval) === message.taskId) : [];
 }
 
 /** Approvals whose message is not on this page (older history): shown at the end. */
 const unplaced = computed(() => {
   const shown = new Set(props.chat.messages.filter((message) => message.role === 'user').map((message) => message.taskId));
-  return props.approvals.filter((approval) => !shown.has(approval.taskId));
+  return props.approvals.filter((approval) => !shown.has(placeOf(approval)));
 });
 
 /** The Coder's run while it works for this conversation: shown in the persona header. */

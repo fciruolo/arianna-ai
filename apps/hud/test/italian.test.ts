@@ -23,6 +23,11 @@ test('the reasons the core writes become Italian', () => {
   assert.equal(reasonText('limit reached: 30 of 30 steps'), 'limite raggiunto: 30 su 30 passi');
   assert.equal(reasonText('limit reached: 0.75 of 0.5 euro'), 'limite raggiunto: 0,75 su 0,5 euro');
   assert.equal(reasonText('limit reached: 20 minutes'), 'limite raggiunto: 20 minuti');
+  // The cardwall (D-159).
+  assert.equal(reasonText('approval needed: card.executor'), 'aspetta che tu scelga con chi lavora');
+  assert.equal(reasonText('the user did not choose where designer works: resume the card to choose again'), 'non hai scelto con chi lavora: «Riprendi» per scegliere di nuovo');
+  assert.equal(reasonText('designer could not finish the card: the gateway refused the brief (secret)'), 'Designer non ha finito la card: «Riprendi» per riprovare');
+  assert.equal(reasonText('no way for coder to work on this card now'), 'Coder non ha una strada per lavorarci ora (esecutori spenti o nessun modello locale)');
 });
 
 test('a reason the page does not know is not shown in English', () => {

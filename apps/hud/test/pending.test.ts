@@ -357,3 +357,12 @@ test('pendingDismissLabel names the row and differs from the window close button
   assert.equal(pendingDismissLabel('Saluti di prova', true), 'Sicuro? Conferma la chiusura dell’attesa: Saluti di prova');
   assert.notEqual(pendingDismissLabel('x', false), 'Chiudi');
 });
+
+test('the cardwall in the window: a plan and the choice of where a card runs; the choice of a plan card opens the plan conversation (D-159)', () => {
+  assert.equal(pendingAskText({ kind: 'plan', action: 'task.plan', detail: { title: 'Landing', cards: [{}, {}] } }), 'Creare 2 card per «Landing»');
+  assert.equal(pendingAskText({ kind: 'executor', action: 'card.executor', detail: { title: 'Grafica' } }), 'Scegliere con chi lavora la card «Grafica»');
+  assert.equal(pendingAskText({ kind: 'executor', action: 'card.executor', detail: { title: 'Landing', agent: 'designer', delegation: 'd1' } }), 'Scegliere con chi lavora Designer per «Landing»');
+  assert.equal(pendingKindText({ kind: 'executor', action: 'card.executor' }), 'Con chi lavora?');
+  const [row] = pendingItems([approval('e1', { kind: 'executor', action: 'card.executor', taskId: 'card', conversationId: 'c1', chatTaskId: 'chat' })], { card: { conversationId: null } }, { c1: 'Sito' });
+  assert.deepEqual([row?.conversationId, row?.conversationTitle], ['c1', 'Sito']);
+});
