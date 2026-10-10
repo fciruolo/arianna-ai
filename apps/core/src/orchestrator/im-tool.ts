@@ -2,8 +2,8 @@ import type { Project } from '@arianna/config';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import type { StoredApproval } from '../approvals.ts';
-import { addImItem, addItemTo, createIm, currentIm, ImError, listIms, readIm, type ImSummary, type ImView, type ImWhich } from '../im.ts';
-import { addDays, checkItemTitle, ImFormatError, longDate, MAX_ITEM_TITLE } from '../im-format.ts';
+import { addImItem, addItemTo, createIm, currentIm, ImError, listIms, nextImPlan, readIm, type ImSummary, type ImView, type ImWhich } from '../im.ts';
+import { checkItemTitle, ImFormatError, longDate, MAX_ITEM_TITLE } from '../im-format.ts';
 import { imFolder, KnowledgeError, type KnowledgeEnv } from '../project-knowledge.ts';
 
 /**
@@ -90,6 +90,7 @@ export function addImTool(env: ImToolEnv | undefined, call: ImToolCall): ImToolO
     const now = clock(env);
     const target = resolveTarget(projects, project.name, env.knowledge, which, now);
     if (target === null) return { kind: 'error', error: NO_IM };
+    if (target.ended) return { kind: 'error', error: ended(project.name) };
     // The title comes from a step that read data up to `effective`: below it, the user decides.
     if (!isAtMost(call.effective, target.label)) {
       return {
@@ -108,7 +109,13 @@ function written(im: ImView, project: string, title: string, verb: string): ImTo
   return { kind: 'done', text: `${verb} IM-${String(im.number)}${when} di ${project}: ${title}`, label: im.label };
 }
 
+/** The IM of the project have ended (D-169): what the model reads. */
+function ended(project: string): string {
+  return `gli IM di ${project} sono terminati (data di fine nel calendario degli IM): non nasce un IM nuovo; dillo all'utente`;
+}
+
 function failure(error: unknown, project: string): ImToolOutcome {
+  if (error instanceof ImError && error.code === 'ended') return { kind: 'error', error: ended(project) };
   if (error instanceof ImError) return { kind: 'error', error: imErrorText(error) };
   if (error instanceof KnowledgeError) return { kind: 'error', error: `non riesco ad aprire gli IM di ${project}` };
   throw error;
@@ -119,17 +126,18 @@ function failure(error: unknown, project: string): ImToolOutcome {
  * date and label (a new IM is labeled as a new file of the folder). Null when
  * the project has no IM with a date.
  */
-function resolveTarget(projects: readonly Project[], project: string, knowledge: KnowledgeEnv, which: ImWhich, now: Date): { number: number; date: string; label: Label } | null {
+function resolveTarget(projects: readonly Project[], project: string, knowledge: KnowledgeEnv, which: ImWhich, now: Date): { number: number; date: string; label: Label; ended: boolean } | null {
   const folder = imFolder(projects, project, knowledge, false);
   if (folder === null) return null;
   const list = listIms(projects, project, knowledge);
-  const fresh = (): { number: number; date: string; label: Label } | null => {
+  // The IM to make: number and date as createIm gives them (the calendar of the project and its last day, P4d).
+  const fresh = (): { number: number; date: string; label: Label; ended: boolean } | null => {
     const last = list.at(-1);
     if (last === undefined || last.date === null) return null;
-    const number = last.number + 1;
-    return { number, date: addDays(last.date, 7), label: folder.labelOf(`IM-${String(number)}.md`, []) };
+    const plan = nextImPlan(projects, project, knowledge, now);
+    return plan === null ? null : { ...plan, label: folder.labelOf(`IM-${String(plan.number)}.md`, []) };
   };
-  const of = (im: ImSummary): { number: number; date: string; label: Label } | null => (im.date === null ? null : { number: im.number, date: im.date, label: im.label });
+  const of = (im: ImSummary): { number: number; date: string; label: Label; ended: boolean } | null => (im.date === null ? null : { number: im.number, date: im.date, label: im.label, ended: false });
   const current = currentIm(projects, project, knowledge, now);
   if (current === undefined) return fresh();
   if (which === 'current') return of(current);
@@ -192,5 +200,7 @@ function imErrorText(error: ImError): string {
       return 'la cartella IM del progetto non si può scrivere (un collegamento o un file troppo grande)';
     case 'unavailable':
       return "non riesco a scrivere il file dell'IM: riprova più tardi";
+    case 'ended':
+      return 'gli IM del progetto sono terminati: non nasce un IM nuovo';
   }
 }

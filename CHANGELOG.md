@@ -4,6 +4,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- La scheda "IM" della pagina Progetti: il calendario delle riunioni (giorno, ora, ogni quante settimane) scritto nel file `IM/calendario.md`, che si cambia anche in Obsidian e dà la data a ogni IM nuovo (D-169, I-11 P4d).
+- La data di fine degli IM nello stesso calendario (`fine`): dopo quel giorno non nasce nessun IM, e all'ultimo le voci non finite restano come card nel cardwall (D-169, I-11 P4d).
+- Il prezzo per IM del progetto, fissato su ogni IM quando si chiude, con l'eccezione di un singolo IM e "non fatturato"; l'elenco degli IM con stato, voci, importo e fatturazione; i totali da fatturare, in attesa di pagamento e incassati. Tutto Privato (L2), mai nei file IM (D-169, I-11 P4d).
+- Le fatture: scegli gli IM chiusi da fatturare e registri la fattura fatta col tuo programma (numero, data, totale calcolato), la segni pagata, togli un IM o la annulli (D-169, I-11 P4d).
+- La bozza `docs/mockups/clienti.html` delle schede Dashboard e Documenti del cliente (I-16 C2-C3).
+
 ## [0.57.1] - 2026-10-10
 
 ### Cambiato
