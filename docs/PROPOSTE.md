@@ -2590,6 +2590,8 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 
 **Risposte dell'utente (2026-10-10, D-152).** Colonne: le cinque proposte, con interruttori per separare Inbox e Falliti e per nascondere una colonna. Scomposizione: proposta da approvare. Grafica: un agente dedicato, "Designer", da creare con la tappa C3. Ordine: impegni, cardwall, progetti (già seguito). Tappe C1-C2 costruite sul ramo `task/i13-c1c2-cardwall` (D-152); restano C3 (scomposizione approvata, agente Designer) e C4 (il cardwall nell'ufficio).
 
+**Tappa C4 fatta (2026-10-10, D-165, ramo `task/cardwall-ufficio`).** Il cardwall è appeso al muro in alto dell'ufficio, accanto alla libreria (tessera `board`, facoltativa nelle mappe); un clic, o `E` vicino, apre sopra l'ufficio la stessa pagina Cardwall con gli stessi filtri; Esc o "Torna all'ufficio" tornano all'ufficio. Nell'elenco accanto al canvas ci sono "Vai al cardwall" e "Apri subito".
+
 ### I-14, le regole del progetto (richiesta dell'utente del 2026-10-08)
 
 **Cosa ha chiesto l'utente.** Quando si aggiunge un progetto, Arianna propone una bozza di tutte le sue regole. Esempi dell'utente:
