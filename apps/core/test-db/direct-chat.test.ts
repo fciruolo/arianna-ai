@@ -16,7 +16,7 @@ import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKi
 import { ChatError, createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, localAgentModel, sessionLost } from '../src/orchestrator/delegate.ts';
+import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, directChatHistory, localAgentModel, sessionLost } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -563,6 +563,50 @@ test('the routes (D-111d): the list of who answers, and a conversation only with
     await server.close();
     await live.close();
   }
+});
+
+test('a local agent remembers what was said in a call (D-158): the spoken turns join the written ones in time order, within its card', async () => {
+  const direct = await createConversation(db().sql, { mode: 'work', agent: { name: 'traduttore', modes: ['work'], project: false } });
+  const model = reporting(['Written answer.']);
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${direct.id}, 'user', 'voice', 'L1', 'Detto in chiamata.')`;
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${direct.id}, 'assistant', 'voice', 'L1', 'Risposta a voce.')`;
+  const { task } = await postUserMessage(db().sql, direct.id, 'E per iscritto?');
+  assert.deepEqual(await drain(task.id, orchestrator(model)), ['answered']);
+  const [request] = model.requests;
+  assert.ok(request !== undefined);
+  assert.deepEqual(request.messages.slice(1).map((message) => [message.role, message.content]), [
+    ['user', 'Detto in chiamata.'],
+    ['assistant', 'Risposta a voce.'],
+    ['user', 'E per iscritto?'],
+  ]);
+  // In a private chat with a card that may read Privato, the L2 lines of the call are read too;
+  // with the card lowered to Interno nothing of that chat reaches the model.
+  const privateChat = await createConversation(db().sql, { mode: 'private', agent: { name: 'traduttore', modes: ['private', 'work'], project: false } });
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${privateChat.id}, 'user', 'voice', 'L2', 'Riga privata detta a voce.')`;
+  const reads = reporting(['Ok.']);
+  const next = await postUserMessage(db().sql, privateChat.id, 'Ricordi?');
+  assert.deepEqual(await drain(next.task.id, orchestrator(reads, undefined, 'L2')), ['answered']);
+  assert.deepEqual(reads.requests[0]?.messages.slice(1).map((message) => message.content), ['Riga privata detta a voce.', 'Ricordi?']);
+  const lowered = reporting(['mai']);
+  const again = await postUserMessage(db().sql, privateChat.id, 'Ancora?');
+  await drain(again.task.id, orchestrator(lowered, undefined, 'L1'));
+  assert.equal(lowered.requests.length, 0);
+});
+
+test('a cloud brief never reads what was said in a call outside its messages: a spoken L2 line stays out of the Coder history (D-158)', async () => {
+  const conversation = await directChat();
+  // The work chat of the Coder cannot hold an L2 line at all: the database refuses it, said or written.
+  await assert.rejects(db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${conversation.id}, 'user', 'voice', 'L2', 'Riga privata detta a voce.')`, /above the clearance/);
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${conversation.id}, 'assistant', 'voice', 'L1', 'Lo passo al Coder, ti dico quando ha finito.')`;
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Sistema il menu');
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.ok(delegation !== undefined);
+  // The cloud brief reads delegations only: the bridge's spoken lines stay out.
+  assert.deepEqual(await directChatHistory(db().sql, conversation.id, delegation), []);
+  // Only a local run asks for the spoken turns.
+  const spoken = await directChatHistory(db().sql, conversation.id, delegation, { voice: true });
+  assert.deepEqual(spoken.map((part) => part.text), ['[your earlier answer]\nLo passo al Coder, ti dico quando ha finito.']);
+  await db().sql`UPDATE tasks SET status = 'failed' WHERE id = ${task.id}`;
 });
 
 test('a call of a direct chat (D-158): a local agent answers on the local model the router gives it; a cloud one, or no local model, has none', async () => {

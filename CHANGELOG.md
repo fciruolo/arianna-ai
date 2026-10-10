@@ -10,8 +10,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Chiamate nella chat diretta del Coder: una voce locale fa da ponte, passa la frase come un messaggio, dice "Lo passo al Coder, ti dico quando ha finito" e legge la risposta quando arriva; un lavoro alla volta (D-158).
 - Le chiamate dicono chi risponde: campi `agent` e `answerer` nelle risposte dell'API delle chiamate e nell'evento `call.ringing` (D-158).
 
+- La chat scritta con un agente locale ricorda quanto detto in chiamata: le frasi a voce entrano nella sua cronologia, entro il tetto della scheda (D-158).
+
 ### Cambiato
 
+- Una chiamata programmata o "quando finisci" in una chat diretta non squilla se l'agente non può rispondere: diventa saltata (`agent-off`, migrazione `0044`) con una nota in chat (D-158).
 - Saluti e testi fissi di una chiamata in una chat diretta dicono il nome dell'agente; le chiamate programmate e "chiamami quando finisci" in una chat diretta seguono le regole della scheda dell'agente (rifiuto `agent-off`, 409) (D-158).
 
 ## [0.44.0] - 2026-10-10

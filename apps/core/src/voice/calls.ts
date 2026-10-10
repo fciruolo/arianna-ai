@@ -48,7 +48,7 @@ import {
  * the words on as a message and reads its answer when it comes.
  */
 export type CallStatus = 'scheduled' | 'ringing' | 'connecting' | 'active' | 'ended' | 'missed' | 'skipped' | 'failed';
-export type CallEndReason = 'hangup' | 'time-limit' | 'disconnected' | 'voice-error' | 'core-restart' | 'no-answer' | 'quiet-hours' | 'daily-limit' | 'cancelled';
+export type CallEndReason = 'hangup' | 'time-limit' | 'disconnected' | 'voice-error' | 'core-restart' | 'no-answer' | 'quiet-hours' | 'daily-limit' | 'cancelled' | 'agent-off';
 
 export interface Call {
   id: string;
@@ -156,8 +156,9 @@ export interface Calls {
   /**
    * Whether a call of the conversation may be scheduled (D-158): in a direct
    * chat its agent must answer calls now. Throws the CallError of a refusal.
+   * With `answer`, the same check as answering (a local model too): the ringer's, before it rings.
    */
-  check(conversationId: string): Promise<void>;
+  check(conversationId: string, options?: { answer?: boolean }): Promise<void>;
 }
 
 interface Session {
@@ -752,10 +753,11 @@ export function createCalls(options: CallsOptions): Calls {
       return connect(call, offer, await greetingOf(call, conversation, CALL_TEXT.greeting, speaker), speaker);
     },
 
-    async check(conversationId) {
+    async check(conversationId, checkOptions = {}) {
       const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
       if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
-      directOf(conversation);
+      if (checkOptions.answer === true) await speakerOf(conversation);
+      else directOf(conversation);
     },
 
     async turn(callId, token, text) {

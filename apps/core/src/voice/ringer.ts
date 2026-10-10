@@ -4,8 +4,8 @@ import type { Queryable, Sql } from '../db/client.ts';
 import { ChatError } from '../conversations.ts';
 import { appendEvent } from '../events.ts';
 import { loadTask } from '../tasks.ts';
-import { CALL_COLUMNS, loadCall, writeNote, type Call } from './calls.ts';
-import { FAILED_TEXT, mayCall, OUTGOING_TEXT, startOfDay, type CallReason } from './outgoing.ts';
+import { CALL_COLUMNS, CallError, loadCall, writeNote, type Call } from './calls.ts';
+import { AGENT_OFF_TEXT, FAILED_TEXT, mayCall, OUTGOING_TEXT, startOfDay, type CallReason } from './outgoing.ts';
 
 /**
  * The calls Arianna makes (D-066, choice 8): a task waiting for the user for
@@ -24,6 +24,11 @@ export interface RingerOptions {
   hold?: <T>(work: () => Promise<T>) => Promise<T>;
   /** Web Push "Arianna ti chiama", read at each ring; undefined without [voice.push]. */
   notify?: () => (() => Promise<void>) | undefined;
+  /**
+   * Whether the conversation's call can be answered now (D-158: in a direct
+   * chat, by its agent; `Calls.check` with `answer`). Absent, every call may ring.
+   */
+  check?: (conversationId: string) => Promise<void>;
   /** How many pages hold the live feed now: with none, the push is the only way to ring. */
   clientsOnline: () => number;
   onError?: (error: unknown) => void;
@@ -99,6 +104,17 @@ export function createRinger(options: RingerOptions): Ringer {
     for (const row of rows) await writeNote(sql, row.conversationId, row.reason === 'task-done' && row.failed ? FAILED_TEXT.missed : OUTGOING_TEXT[row.reason].missed, callId);
   }
 
+  async function refusedByAgent(conversationId: string): Promise<boolean> {
+    if (options.check === undefined) return false;
+    try {
+      await options.check(conversationId);
+      return false;
+    } catch (error) {
+      if (error instanceof CallError && error.code === 'agent-off') return true;
+      throw error;
+    }
+  }
+
   async function tick(): Promise<Call | undefined> {
     if (running) return undefined;
     return options.hold === undefined ? ring() : options.hold(ring);
@@ -118,6 +134,8 @@ export function createRinger(options: RingerOptions): Ringer {
       const candidate = await nextCandidate(sql, real, rules.waitingMinutes, at);
       if (candidate === undefined) return undefined;
       const reason: CallReason = candidate.kind === 'waiting' ? 'waiting' : (candidate.call.reason ?? 'scheduled');
+      // The agent of a direct chat that cannot answer now (D-158): skipped, as answering would refuse it.
+      const agentOff = await refusedByAgent(candidate.kind === 'waiting' ? candidate.conversationId : candidate.call.conversationId);
       // Counted by when they rang (answered, missed or failed alike), not by when they were scheduled.
       const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM calls WHERE rang_at >= ${startOfDay(real)}`;
@@ -125,7 +143,11 @@ export function createRinger(options: RingerOptions): Ringer {
       // With no page open and no push, nobody can hear it ring: Arianna writes at once.
       const notify = options.notify?.();
       const deaf = allowed.ok && options.clientsOnline() === 0 && notify === undefined;
-      const verdict: { ok: true } | { ok: false; reason: 'quiet-hours' | 'daily-limit' | 'no-answer' } = deaf ? { ok: false, reason: 'no-answer' } : allowed;
+      const verdict: { ok: true } | { ok: false; reason: 'quiet-hours' | 'daily-limit' | 'no-answer' | 'agent-off' } = agentOff
+        ? { ok: false, reason: 'agent-off' }
+        : deaf
+          ? { ok: false, reason: 'no-answer' }
+          : allowed;
       const task = candidate.kind === 'waiting' ? undefined : candidate.call.taskId === null ? undefined : await loadTask(sql, candidate.call.taskId);
       const failed = reason === 'task-done' && task?.status === 'failed';
 
@@ -165,7 +187,7 @@ export function createRinger(options: RingerOptions): Ringer {
       if (call === undefined) return undefined;
 
       if (!verdict.ok) {
-        await writeNote(sql, call.conversationId, failed ? FAILED_TEXT.skipped : OUTGOING_TEXT[reason].skipped, call.id);
+        await writeNote(sql, call.conversationId, agentOff ? AGENT_OFF_TEXT : failed ? FAILED_TEXT.skipped : OUTGOING_TEXT[reason].skipped, call.id);
         return call;
       }
       // No chat open: the push is the only way to ring.

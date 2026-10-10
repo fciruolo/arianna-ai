@@ -643,6 +643,8 @@ const ringer = createRinger({
   rules: () => voiceSettings().outgoing,
   voiceUp: () => voice.service.state === 'up',
   hold: (work) => voice.service.hold(work),
+  // D-158: a call of a direct chat whose agent cannot answer now is skipped, not rung.
+  check: (conversationId) => calls.check(conversationId, { answer: true }),
   // Read at each ring: [voice.push] changes without a restart.
   notify: () => {
     const pusher = voice.pusher();
