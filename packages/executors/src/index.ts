@@ -62,9 +62,21 @@ export {
   type WatchdogState,
 } from './local/watchdog.ts';
 export {
+  MAX_CODER_NOTES,
+  MAX_CODER_NOTES_BYTES,
+  prepareProjectNotes,
+  preparedNotes,
+  removeProjectNotes,
+  type NotesExecutor,
+  type PreparedNotes,
+  type PrepareNotesOptions,
+  type ProjectNoteInput,
+} from './notes.ts';
+export {
   prepareEmptyWorkspace,
   prepareWorkspace,
   preparedPath,
+  workspaceContainer,
   changedToolConfig,
   commitChanges,
   committedFiles,
