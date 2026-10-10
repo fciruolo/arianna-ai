@@ -594,15 +594,19 @@ export interface WorkerOptions extends EngineOptions {
  * timeout, it takes back the jobs of dead workers: this is what makes a task
  * resume after `kill -9` of the core.
  */
+/** Why a step is stopped for good: an incognito closing (D-136) or an erased conversation (D-157). */
+export type StopCause = 'incognito' | 'erase';
+
 export interface Worker {
   start(): Promise<void>;
   stop(): Promise<void>;
   /**
    * Stops the step of `taskId` this worker is running now, for good (D-136,
-   * cause `incognito`): the run ends `interrupted` and the job fails with the
-   * code `incognito`, never back in the queue. False when no step of it runs here.
+   * cause `incognito`; D-157, cause `erase`): the run ends `interrupted` and the
+   * job fails with the cause as its code, never back in the queue. False when
+   * no step of it runs here.
    */
-  stopTask(taskId: string, cause: 'incognito'): boolean;
+  stopTask(taskId: string, cause: StopCause): boolean;
 }
 
 export function createWorker(options: WorkerOptions): Worker {
@@ -642,12 +646,12 @@ export function createWorker(options: WorkerOptions): Worker {
     try {
       const result = await processStepJob(sql, options.executor, job, worker, options, AbortSignal.any([controller.signal, lost.signal, halt.signal]));
       // Stopped for good (D-136): the job fails without another attempt, so the step never runs again.
-      if (halt.signal.aborted && !lost.signal.aborted) await failJob(sql, job.id, worker, 'incognito', null);
+      if (halt.signal.aborted && !lost.signal.aborted) await failJob(sql, job.id, worker, stopCause(halt.signal), null);
       // Stopped on purpose: give the job back now instead of after the lock timeout.
       else if (result === 'interrupted' && controller.signal.aborted && !lost.signal.aborted) await queue.release(job.id, worker);
     } catch (error) {
       if (halt.signal.aborted && !lost.signal.aborted) {
-        await failJob(sql, job.id, worker, 'incognito', null);
+        await failJob(sql, job.id, worker, stopCause(halt.signal), null);
         return;
       }
       options.onError?.(error);
@@ -715,6 +719,11 @@ export function createWorker(options: WorkerOptions): Worker {
       return true;
     },
   };
+}
+
+/** The cause a step was stopped with for good: `incognito` unless it was `erase`. */
+function stopCause(signal: AbortSignal): StopCause {
+  return signal.reason === 'erase' ? 'erase' : 'incognito';
 }
 
 /** A step that kept failing: the task fails with the reason the user reads, its open runs are closed. */

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { addProjectNote, confirmPrivacy, loadSettings, preparePrivacy, readProjectKnowledge } from '../lib/api.ts';
+import { addProjectNote, confirmPrivacy, deleteProjectNote, loadSettings, preparePrivacy, readProjectKnowledge } from '../lib/api.ts';
 import { ApiError } from '../lib/api.ts';
+import { DELETE_PROJECT_NOTE_TEXT } from '../lib/erase.ts';
 import { errorText } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import { browseErrorText, folderLabelByName, isFolderName, lowers, noteLabels, withFolderLabel, type BrowsableContainer, type KnowledgeFolder, type ProjectKnowledge } from '../lib/projects.ts';
 import { changeLines, writeError, type ChangeLine, type PrivacyProposal } from '../lib/settings.ts';
 import type { Label } from '../lib/types.ts';
+import DeleteConfirm from './DeleteConfirm.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 
@@ -49,6 +51,26 @@ const notesByFolder = computed(() => {
 /** An existing folder by name, ignoring case as the core does: `workplan` is the existing `Workplan`. */
 const existingFolder = (path: string): KnowledgeFolder | undefined => knowledge.value?.folders.find((folder) => folder.path.toLowerCase() === path.trim().toLowerCase());
 const folderLabel = (path: string): Label | undefined => existingFolder(path)?.label;
+
+// --- "Elimina" of a note (D-157): its file goes for good, after the confirmation in place.
+const deleting = ref<string | null>(null);
+const removing = ref(false);
+const deleteError = ref<string | null>(null);
+
+async function removeNote(path: string): Promise<void> {
+  if (removing.value) return;
+  removing.value = true;
+  deleteError.value = null;
+  try {
+    await deleteProjectNote(props.container.name, path);
+    deleting.value = null;
+    await load();
+  } catch (cause) {
+    deleteError.value = `Non ho eliminato la nota. ${errorText(cause)}`;
+  } finally {
+    removing.value = false;
+  }
+}
 
 // --- A folder relabeled: prepared on the settings, confirmed here.
 const relabel = ref<{ folder: KnowledgeFolder; to: Label; proposal: PrivacyProposal | null; error: string | null; busy: boolean; spent: boolean } | null>(null);
@@ -247,9 +269,35 @@ watch(
             <h3 class="mb-1.5 font-mono text-xs text-muted">{{ folder }}</h3>
             <p v-if="notes.length === 0" class="text-xs text-muted">Nessuna nota.</p>
             <ul v-else class="flex flex-col gap-1">
-              <li v-for="note in notes" :key="note.path" class="flex items-center gap-2 text-[13px]">
-                <span class="min-w-0 flex-1 truncate" :title="note.path">{{ note.title }}</span>
-                <LabelBadge :label="note.label" class="text-xs" />
+              <li v-for="note in notes" :key="note.path" class="group text-[13px]">
+                <DeleteConfirm
+                  v-if="deleting === note.path"
+                  :subject="note.title"
+                  :text="DELETE_PROJECT_NOTE_TEXT"
+                  :extra="deleteError"
+                  :busy="removing"
+                  @confirm="removeNote(note.path)"
+                  @cancel="
+                    deleting = null;
+                    deleteError = null;
+                  "
+                />
+                <div v-else class="flex items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate" :title="note.path">{{ note.title }}</span>
+                  <LabelBadge :label="note.label" class="text-xs" />
+                  <button
+                    type="button"
+                    class="rounded-md p-0.5 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                    :aria-label="`Elimina per sempre ${note.title}`"
+                    title="Elimina per sempre"
+                    @click="
+                      deleteError = null;
+                      deleting = note.path;
+                    "
+                  >
+                    <Icon name="delete" :size="14" />
+                  </button>
+                </div>
               </li>
             </ul>
           </div>

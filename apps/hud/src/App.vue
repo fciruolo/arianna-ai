@@ -716,7 +716,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @open="openConversation"
       @archive="store.archive"
       @pin="store.pin"
-      @purge="store.purge"
+      @erase="store.erase"
     />
     <div v-if="showSidebar" class="fixed inset-0 z-20 bg-black/50 md:hidden" aria-hidden="true" @click="showSidebar = false" />
 

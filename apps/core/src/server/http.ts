@@ -50,7 +50,7 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
+import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
@@ -68,13 +68,15 @@ import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
 import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, type GraphCache } from '../knowledge.ts';
-import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
+import { deleteKbPage, recordNoteDeleted } from '../note-delete.ts';
+import { checkNoteName, isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
 import type { DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
+import { eraseConversation, type EraseResult } from '../erase.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -207,6 +209,11 @@ export interface ApiServerOptions {
     /** A local server keeps a cache of the prompts on the SSD (`--paged-ssd-cache-dir`, D-136): the opening card names it. Read at each request. */
     localCache?: () => boolean;
   };
+  /**
+   * "Elimina" of a conversation (D-157), stopping the steps of the worker
+   * first; without it the route erases with no stop (a step at work: 409).
+   */
+  erase?: (conversationId: string) => Promise<EraseResult>;
   /** Built web chat (`apps/hud/dist`); without it only the API is served. */
   staticDir?: string;
   /** Errors are reported here, never sent to the client: they may hold data. */
@@ -372,6 +379,7 @@ interface RouteOptions {
   services?: ServiceManager | undefined;
   leaveRule?: (() => LeaveRule | undefined) | undefined;
   incognito?: ApiServerOptions['incognito'];
+  erase?: ApiServerOptions['erase'];
   onError: (error: unknown) => void;
 }
 
@@ -699,8 +707,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       }
       return { status: 201, body: { path: note.path, label: note.label, replaced: note.replaced, organizing } };
     }),
-    ...noteRoutes(capture),
-    ...knowledgeRoutes(capture),
+    ...noteRoutes(sql, capture, onError),
+    ...knowledgeRoutes(sql, capture, onError),
   ];
 }
 
@@ -726,7 +734,7 @@ function searchRoutes(sql: Sql, capture: ApiServerOptions['capture']): Route[] {
  * L2, header fields only; the text of one page at a time, 404 for anything
  * outside kb/, hidden or above L2.
  */
-function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
+function knowledgeRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   const cache: GraphCache = new Map();
   let arianna: AriannaDocs | undefined;
   const need = (): NonNullable<ApiServerOptions['capture']> => {
@@ -758,6 +766,16 @@ function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
       const { home, rules } = need();
       return Promise.resolve({ body: { page: readKnowledgePage(home, rules, path) } });
     }),
+    // "Elimina" of a page (D-157): the file goes for good; the user confirmed it in the page. Only up to L2, as the reading.
+    route('POST', '/api/knowledge/page/delete', async (request) => {
+      const { home, rules } = need();
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      const deleted = deleteKbPage(home, rules, body.path);
+      await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
+      return { body: { deleted: true } };
+    }),
   ];
 }
 
@@ -765,7 +783,7 @@ function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
  * The notes of kb/inbox (D-086): listed by their header (never the body),
  * read one at a time up to L2, organized again on request.
  */
-function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
+function noteRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: (error: unknown) => void): Route[] {
   const need = (): NonNullable<ApiServerOptions['capture']> => {
     if (capture === undefined) throw new HttpError(404, 'not found');
     return capture;
@@ -802,6 +820,15 @@ function noteRoutes(capture: ApiServerOptions['capture']): Route[] {
       if (fetch === undefined) throw new HttpError(503, 'notes cannot be organized now');
       await fetch(note.path);
       return { status: 202, body: { path: note.path, organizing: true } };
+    }),
+
+    // "Elimina" of a thought (D-157): the note of kb/inbox goes for good, with its organizing; the user confirmed it in the page.
+    route('POST', '/api/notes/:name/delete', async (request, _url, params) => {
+      const { home, rules } = need();
+      onlyFields(await readJson(request), []);
+      const deleted = deleteKbPage(home, rules, `inbox/${checkNoteName(params.name ?? '')}`);
+      await recordNoteDeleted(sql, deleted.where, deleted.path).catch(onError);
+      return { body: { deleted: true } };
     }),
   ];
 }
@@ -995,7 +1022,7 @@ const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
  * a privacy setting, changed only with the two steps of the Settings
  * (`/api/settings/privacy`), never by an agent or a tool of Arianna.
  */
-function projectKnowledgeRoutes(containers: () => readonly Project[], env: KnowledgeEnv | undefined): Route[] {
+function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], env: KnowledgeEnv | undefined, onError: (error: unknown) => void): Route[] {
   const need = (): KnowledgeEnv => {
     if (env === undefined) throw new HttpError(404, 'not found');
     return env;
@@ -1020,6 +1047,16 @@ function projectKnowledgeRoutes(containers: () => readonly Project[], env: Knowl
       }
       const note = writeProjectNote(containers(), project.name, need(), { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
       return { status: 201, body: { note } };
+    }),
+    // "Elimina" of a note of the project (D-157): the file goes for good; the user confirmed it in the tab.
+    route('POST', '/api/browse/:project/knowledge/delete', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      deleteProjectNote(containers(), project.name, need(), body.path);
+      await recordNoteDeleted(sql, 'project', body.path).catch(onError);
+      return { body: { deleted: true } };
     }),
   ];
 }
@@ -1142,13 +1179,13 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
-    ...projectKnowledgeRoutes(projectContainers, knowledge),
+    ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents() }), cards),
@@ -1307,6 +1344,14 @@ function routes(sql: Sql, { cards, projects, models, defaultModel, agents, chara
       onlyFields(await readJson(request), []);
       await purgeConversation(sql, id);
       return { body: { purged: id } };
+    }),
+
+    // "Elimina" (D-157): the conversation and everything it left go for good, the log is sewn again; the user confirmed it in the page.
+    route('POST', '/api/conversations/:id/erase', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      const erased = erase === undefined ? await eraseConversation(sql, id) : await erase(id);
+      return { body: { erased: true, cards: erased.cards } };
     }),
 
     // "Termina" of an incognito conversation (D-136): its work stops, its texts are deleted; the answer is the closing card.
@@ -2045,6 +2090,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     services: options.services,
     leaveRule: options.leaveRule,
     incognito: options.incognito,
+    erase: options.erase,
   });
   table.push(...devRoutes(sql, options.devProgress, options.onError ?? (() => undefined)));
   // The service worker asks what an empty push was about (I-1); null when nothing recent.

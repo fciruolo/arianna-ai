@@ -80,8 +80,9 @@ export async function attachQuestion(conversationId: string): Promise<Message> {
 }
 
 /** Deletes the texts of an archived conversation for good (D-057). */
-export async function purgeConversation(conversationId: string): Promise<void> {
-  await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/purge`, {});
+/** "Elimina" (D-157): the conversation and everything it left go for good; the user confirmed it. */
+export async function eraseConversation(conversationId: string): Promise<void> {
+  await call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/erase`, {});
 }
 
 export async function loadConversation(conversationId: string): Promise<Conversation> {
@@ -691,6 +692,16 @@ export async function loadNote(name: string): Promise<Note> {
   return (await call<{ note: Note }>('GET', `/api/notes/${encodeURIComponent(name)}`)).note;
 }
 
+/** "Elimina" of a thought (D-157): its file goes for good; the user confirmed it. */
+export async function deleteNote(name: string): Promise<void> {
+  await call('POST', `/api/notes/${encodeURIComponent(name)}/delete`, {});
+}
+
+/** "Elimina" of a page of the Conoscenza (D-157), by its id relative to kb/. */
+export async function deleteKnowledgePage(id: string): Promise<void> {
+  await call('POST', '/api/knowledge/page/delete', { path: id });
+}
+
 /** Queues a new note to be organized again by the local model. */
 export async function organizeNote(name: string): Promise<void> {
   await call('POST', `/api/notes/${encodeURIComponent(name)}/organize`, {});
@@ -748,6 +759,11 @@ export async function readProjectKnowledge(project: string): Promise<ProjectKnow
 /** "+ Conoscenza" (D-145): a new note; the header is written by the core, the label never below the folder's. */
 export async function addProjectNote(project: string, note: { folder: string; title: string; label: Label; text: string }): Promise<{ path: string; label: Label }> {
   return (await call<{ note: { path: string; label: Label } }>('POST', `${browse(project)}/knowledge`, note)).note;
+}
+
+/** "Elimina" of a note of a project (D-157), by its path in the tab "Conoscenza". */
+export async function deleteProjectNote(project: string, path: string): Promise<void> {
+  await call('POST', `${browse(project)}/knowledge/delete`, { path });
 }
 
 export async function listProjectDir(project: string, dir: string): Promise<{ entries: TreeEntry[]; more: number }> {

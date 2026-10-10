@@ -236,6 +236,19 @@ test('only an archived conversation with no task at work is deleted for good thr
   assert.equal((await call('POST', '/api/conversations/not-a-uuid/purge', { body: {} })).status, 404);
 });
 
+test('a conversation is erased for good from the list, without the archive (D-157)', async () => {
+  const id = await newConversation('private');
+  await call('POST', `/api/conversations/${id}/messages`, { body: { body: 'Messaggio finto da eliminare' } });
+  assert.equal((await call('POST', `/api/conversations/${id}/erase`, { body: { force: true } })).status, 400);
+  // Its task waits in the queue, no step claimed it: it goes with the conversation.
+  const erased = await call('POST', `/api/conversations/${id}/erase`, { body: {} });
+  assert.equal(erased.status, 200);
+  assert.equal((await call('GET', `/api/conversations/${id}`)).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${id}/erase`, { body: {} })).status, 404);
+  assert.equal((await call('POST', `/api/conversations/${randomUUID()}/erase`, { body: {} })).status, 404);
+  assert.equal((await call('POST', '/api/conversations/not-a-uuid/erase', { body: {} })).status, 404);
+});
+
 test('bad input gets a clear status and no internal detail', async () => {
   const id = await newConversation('work');
   const cases: [string, string, Parameters<typeof call>[2], number][] = [

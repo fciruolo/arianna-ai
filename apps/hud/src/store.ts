@@ -8,6 +8,7 @@ import { commandError, parseNoteCommand, savedText } from './lib/capture.ts';
 import { goesToArianna, resolveDraft } from './lib/commands.ts';
 import { choiceAgent, draftStep, firstMessageProblem, type Draft, type DraftChoice } from './lib/draft.ts';
 import { creditsByMessage, hasCredit } from './lib/delegations.ts';
+import { eraseFailedText } from './lib/erase.ts';
 import { claudeAnswersSystemChat } from './lib/failures.ts';
 import { closedCause, closedText, closingLines, closingSoonText, endRetryDelay, incognitoAction, officeMayNote, noteRefusal, withoutIncognito, type CloseCause, type IncognitoSignal } from './lib/incognito.ts';
 import { errorText } from './lib/italian.ts';
@@ -294,21 +295,36 @@ export function createChatStore() {
     }
   }
 
-  /** Deletes an archived conversation for good; closes it if it is open. */
-  async function purge(id: string): Promise<void> {
+  /** "Elimina" (D-157): the conversation goes for good, from the list or the archive; closes it if it is open. */
+  async function erase(id: string): Promise<void> {
     error.value = null;
     try {
-      await api.purgeConversation(id);
+      await api.eraseConversation(id);
       forget(id);
       await Promise.all([refreshAllConversations(), refreshApprovals()]);
     } catch (cause) {
-      fail(cause);
+      error.value = eraseFailedText(cause instanceof api.ApiError ? cause.status : undefined);
       // Another tab may have deleted it already.
       await refreshAllConversations().catch(() => undefined);
     }
   }
 
+  /** After an erase elsewhere (the `events.rewoven` line, D-157): the lists again, and the open conversation closed if it is gone. */
+  async function afterErase(): Promise<void> {
+    const id = chat.value?.conversationId;
+    if (id !== undefined && !knownIncognito.has(id)) {
+      try {
+        await api.loadConversation(id);
+      } catch (cause) {
+        if (gone(cause)) forget(id);
+      }
+    }
+    await Promise.all([refreshAllConversations(), refreshApprovals()]);
+  }
+
   function forget(id: string): void {
+    conversations.value = conversations.value.filter((item) => item.id !== id);
+    systemChats.value = systemChats.value.filter((item) => item.id !== id);
     archived.value = archived.value.filter((item) => item.id !== id);
     if (chat.value?.conversationId === id) {
       chat.value = null;
@@ -933,6 +949,10 @@ export function createChatStore() {
         if (conversationId !== undefined) forget(conversationId);
         work.push(refreshAllConversations(), refreshApprovals());
         break;
+      // A conversation erased (D-157): the line says nothing of which one.
+      case 'events.rewoven':
+        work.push(afterErase());
+        break;
       case 'message.created': {
         work.push(refreshConversations());
         if (conversationId !== undefined && conversationId === chat.value?.conversationId) {
@@ -1093,7 +1113,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;
