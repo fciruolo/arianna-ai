@@ -2679,4 +2679,6 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 4. **"Del cliente Rossi"** si risolve con l'anagrafica di I-16 (D-168): `im.add` accetta un cliente al posto del progetto e, se il cliente ha più progetti, Arianna chiede quale.
 5. **Variante "Annota"**: scrive in `kb/inbox` come `pnpm kb:capture` (D-080), senza passare dal modello.
 
+**S3 costruita** (D-173, ramo `task/spotlight-s3`): il cliente al posto del progetto in `im.add`.
+
 **Tappe proposte.** S1 l'azione "Di' ad Arianna" con la risposta in notifica; S2 "Annota"; S3 il cliente al posto del progetto in `im.add` (dopo I-16).

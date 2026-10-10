@@ -598,3 +598,20 @@ export async function readLogo(sql: Queryable, dir: string, id: string): Promise
   return { type: row.logoType, bytes };
 }
 
+
+/** A client as `im.add` reads it (I-17 S3, D-173): its names, its label and its projects; never the rest of the record. */
+export interface ImClient {
+  name: string;
+  legalName: string | null;
+  label: Label;
+  projects: string[];
+}
+
+/** The clients not archived, for "per il prossimo IM del cliente Rossi…" (I-17 S3, D-173). */
+export async function clientsForIm(sql: Queryable): Promise<ImClient[]> {
+  return sql<ImClient[]>`
+    SELECT c.display_name AS name, c.legal_name AS "legalName", c.label,
+      coalesce((SELECT array_agg(p.project ORDER BY p.project) FROM client_projects p WHERE p.client_id = c.id AND p.removed_at IS NULL), '{}') AS projects
+    FROM clients c WHERE c.status <> 'archived'
+    ORDER BY lower(c.display_name), c.id`;
+}

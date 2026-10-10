@@ -885,8 +885,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         });
         // An IM item above what the IM holds (D-167): the turn and the confirmation together, nothing written yet.
         if (ran.confirm !== undefined) {
-          await recordTurn(tx, { ...turn, label, result: WAITING_IM });
-          return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label, proposal: ran.confirm }) };
+          await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
+          return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label: maxLabel(label, ran.label), proposal: ran.confirm }) };
         }
         await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
         return { ...ran, approvalId: undefined };

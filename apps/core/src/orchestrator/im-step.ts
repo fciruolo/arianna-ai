@@ -57,7 +57,7 @@ export async function imDecisionAnswer(sql: Sql, ctx: StepContext, env: ImToolEn
   const proposal = decided === undefined ? undefined : imProposalOf(decided);
   if (decided === undefined || proposal === undefined) return { kind: 'wait-user', reason: 'the confirmation of the IM item is no longer readable', usage: { steps: 0 } };
   const applied = decided.state === 'approved' ? applyImProposal(env, proposal) : undefined;
-  const label = maxLabel(task.effectiveLabel, proposal.imLabel, applied?.kind === 'done' ? applied.label : 'L0');
+  const label = maxLabel(task.effectiveLabel, proposal.imLabel, proposal.readLabel ?? 'L0', applied?.kind === 'done' ? applied.label : 'L0');
   return answer(sql, task, runId, imAnswerText(proposal, decided.state, applied), label);
 }
 

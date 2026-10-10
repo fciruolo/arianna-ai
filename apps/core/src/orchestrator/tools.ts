@@ -1,11 +1,12 @@
 import type { Autonomy, ToolId } from '@arianna/agents';
-import { maxLabel, type Context, type Label } from '@arianna/policy';
+import { isAtMost, maxLabel, type Context, type Label } from '@arianna/policy';
 
 import { PROJECT_NAME } from '../cardwall.ts';
+import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { updateCard } from './cards.ts';
-import { addImTool, type ImProposal, type ImToolEnv } from './im-tool.ts';
+import { addImTool, clientProject, type ImProposal, type ImToolEnv } from './im-tool.ts';
 import { KbError, type Kb } from './kb.ts';
 
 /**
@@ -107,14 +108,33 @@ async function workspaceProject(env: ToolEnv): Promise<string | undefined> {
 
 /** An item in the current or next IM of a project (D-167, P4b): the file is written by code, the model reads one line. */
 async function imItem(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
-  const outcome = addImTool(env.ims, { args, workspace: await workspaceProject(env), effective: env.context.effective });
+  // "del cliente Rossi" (I-17 S3, D-173): the client's project, read at the client's label.
+  let read: Label = 'L0';
+  let named = '';
+  let call = args;
+  const client = typeof args.client === 'string' && args.client.trim() !== '' ? args.client.trim() : undefined;
+  const asked = typeof args.project === 'string' && args.project.trim() !== '' ? args.project.trim() : undefined;
+  // Below Private the clients are not read: a project said is enough, the client is left aside.
+  if (client !== undefined && env.ims !== undefined && (asked === undefined || isAtMost('L2', env.task.clearance))) {
+    // Only the projects approved as containers: one that is no longer cannot take the item.
+    const approved = new Set(env.ims.projects().map((project) => project.name));
+    const clients = (await clientsForIm(env.sql)).map((entry) => ({ ...entry, projects: entry.projects.filter((name) => approved.has(name)) }));
+    const found = clientProject(clients, client, asked, env.task.clearance);
+    if (found.kind === 'error') return { text: `error: im.add: ${found.error}`, label: found.label };
+    read = found.label;
+    // The client chosen is named in the result: a different "Rossi" than meant shows at once.
+    named = ` (cliente ${found.client})`;
+    call = { ...args, project: found.project };
+  }
+  const outcome = addImTool(env.ims, { args: call, workspace: await workspaceProject(env), effective: maxLabel(env.context.effective, read) });
   switch (outcome.kind) {
     case 'done':
-      return { text: outcome.text, label: outcome.label };
+      return { text: `${outcome.text}${named}`, label: maxLabel(outcome.label, read) };
     case 'error':
-      return { text: `error: im.add: ${outcome.error}`, label: 'L0' };
+      return { text: `error: im.add: ${outcome.error}`, label: read };
     case 'confirm':
-      return { text: '', label: 'L0', confirm: outcome.proposal };
+      // The approval and the answer once decided keep the label of the client that named the project.
+      return { text: '', label: read, confirm: read === 'L0' ? outcome.proposal : { ...outcome.proposal, readLabel: read } };
   }
 }
 

@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- "Per il prossimo IM del cliente Rossi…": Arianna trova il progetto del cliente dall'anagrafica e, se ne ha più d'uno, chiede quale (D-173, I-17 S3).
+
 ## [0.60.0] - 2026-10-10
 
 ### Aggiunto

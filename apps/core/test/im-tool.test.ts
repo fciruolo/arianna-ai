@@ -9,7 +9,7 @@ import { after, describe, it } from 'node:test';
 import { resolveHome, type Project } from '@arianna/config';
 import { createContext, createLabelRules } from '@arianna/policy';
 
-import { addImTool, applyImProposal, imProposalOf, type ImProposal, type ImToolEnv, type ImToolOutcome } from '../src/orchestrator/im-tool.ts';
+import { addImTool, applyImProposal, clientProject, imProposalOf, matchClients, type ImProposal, type ImToolEnv, type ImToolOutcome } from '../src/orchestrator/im-tool.ts';
 import { runTool, type ToolEnv } from '../src/orchestrator/tools.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `im-tool-${randomUUID()}`);
@@ -161,5 +161,58 @@ describe('im.add (D-167, P4b)', () => {
     // Above the IM: nothing written, the proposal for the orchestrator to ask.
     const above = await runTool('im.add', { project: 'progetto-test', title: 'Ferie', which: 'current' }, { ...env(ENV), context: createContext('L2', 'L2') });
     assert.equal(above.confirm?.number, 33);
+  });
+});
+
+// "del cliente Rossi" (I-17 S3, D-173): which client, which project, read at what label.
+describe('im.add with a client', () => {
+  const clients = [
+    { name: 'Pasticceria Finta Rossi Srl', legalName: null, label: 'L2' as const, projects: ['progetto-test'] },
+    { name: 'Studio Bianchi', legalName: 'Studio Associato Bianchi e Verdi', label: 'L2' as const, projects: ['bianchi-sito', 'bianchi-app'] },
+    { name: 'Rossi Costruzioni', legalName: null, label: 'L3' as const, projects: ['cantiere'] },
+    { name: 'Senza Progetti', legalName: null, label: 'L2' as const, projects: [] },
+  ];
+
+  it('matches every word said, without case or accents, and an exact name first', () => {
+    assert.deepEqual(matchClients(clients, 'rossi').map((client) => client.name), ['Pasticceria Finta Rossi Srl', 'Rossi Costruzioni']);
+    assert.deepEqual(matchClients(clients, 'Verdi').map((client) => client.name), ['Studio Bianchi']);
+    assert.deepEqual(matchClients(clients, 'studio bianchi').map((client) => client.name), ['Studio Bianchi']);
+    assert.deepEqual(matchClients(clients, 'Neri'), []);
+    assert.deepEqual(matchClients(clients, '  '), []);
+    // The words a model adds around a name, and an apostrophe, do not stop the match.
+    assert.deepEqual(matchClients(clients, 'il cliente Verdi').map((client) => client.name), ['Studio Bianchi']);
+    assert.deepEqual(matchClients([{ name: "Ottica D'Amico", legalName: null, label: 'L2' as const, projects: [] }], 'Damico').length, 1);
+  });
+
+  it('gives the only project of the one client, at its label', () => {
+    assert.deepEqual(clientProject(clients, 'Rossi', undefined, 'L2'), { kind: 'project', project: 'progetto-test', client: 'Pasticceria Finta Rossi Srl', label: 'L2' });
+  });
+
+  it('never sees nor names a client above the clearance', () => {
+    const outcome = clientProject(clients, 'Rossi Costruzioni', undefined, 'L2');
+    // As if it did not exist: only the user's own words come back, never its project.
+    assert.ok(outcome.kind === 'error' && /nessun cliente/.test(outcome.error));
+    assert.doesNotMatch(JSON.stringify(outcome), /cantiere/);
+  });
+
+  it('a clearance below Private reads no client at all', () => {
+    assert.deepEqual(clientProject(clients, 'Rossi', undefined, 'L1'), { kind: 'error', error: 'in questa conversazione non posso leggere i clienti, che sono Privati: chiedi all’utente il progetto', label: 'L0' });
+  });
+
+  it('asks which with more clients or more projects, and checks a project said', () => {
+    const many = clientProject(clients, 'Rossi', undefined, 'L3');
+    assert.ok(many.kind === 'error' && /più clienti/.test(many.error) && many.label === 'L3');
+    const projects = clientProject(clients, 'Bianchi', undefined, 'L2');
+    assert.ok(projects.kind === 'error' && /bianchi-sito, bianchi-app/.test(projects.error));
+    assert.deepEqual(clientProject(clients, 'Bianchi', 'Bianchi-App', 'L2'), { kind: 'project', project: 'bianchi-app', client: 'Studio Bianchi', label: 'L2' });
+    const foreign = clientProject(clients, 'Bianchi', 'progetto-test', 'L2');
+    assert.ok(foreign.kind === 'error' && /non è del cliente/.test(foreign.error));
+    const none = clientProject(clients, 'Senza Progetti', undefined, 'L2');
+    assert.ok(none.kind === 'error' && /non ha progetti/.test(none.error));
+    // No client at all, with a clearance that could read them: nothing matches, never "cannot read".
+    const empty = clientProject([], 'Rossi', undefined, 'L2');
+    assert.ok(empty.kind === 'error' && /nessun cliente/.test(empty.error));
+    const unknown = clientProject(clients, 'Neri', undefined, 'L2');
+    assert.ok(unknown.kind === 'error' && /nessun cliente/.test(unknown.error));
   });
 });

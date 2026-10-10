@@ -179,3 +179,54 @@ test('the database: L2 at least, a task, the action im.add, one pending per step
   await assert.rejects(db().sql`INSERT INTO approvals (kind, action, detail, label) VALUES ('im', 'im.add', '{}', 'L2')`, /approvals_im_fields/);
   await assert.rejects(db().sql`INSERT INTO approvals (task_id, kind, action, detail, label) VALUES (${task.id}, 'im', 'kb.write', '{}', 'L2')`, /approvals_im_fields/);
 });
+
+// "Per il prossimo IM del cliente Rossi…" (I-17 S3, D-173): the client's project, read at the client's label.
+async function rossi(): Promise<void> {
+  const [found] = await db().sql<{ id: string }[]>`SELECT id::text FROM clients WHERE display_name = 'Pasticceria Finta Rossi Srl'`;
+  if (found !== undefined) return;
+  const [client] = await db().sql<{ id: string }[]>`INSERT INTO clients (display_name) VALUES ('Pasticceria Finta Rossi Srl') RETURNING id::text`;
+  if (client === undefined) throw new Error('no client');
+  await db().sql`INSERT INTO client_projects (client_id, project) VALUES (${client.id}::uuid, 'progetto-test')`;
+}
+
+test('a client in place of the project: in a private conversation its project, confirmed first', async () => {
+  await rossi();
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Per il prossimo IM del cliente Rossi la pagina del dettaglio clienti');
+  const model = scripted([{ action: 'call', tool: 'im.add', arguments: { client: 'Rossi', title: 'Pagina del dettaglio clienti' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.equal(approval.kind, 'im');
+  assert.equal(approval.detail.project, 'progetto-test');
+  assert.equal(approval.detail.title, 'Pagina del dettaglio clienti');
+});
+
+test('a client in place of the project: a work conversation cannot read the clients and writes nothing', async () => {
+  await rossi();
+  const before = im(33);
+  const conversation = await createConversation(db().sql, { mode: 'work' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Per questo IM del cliente Rossi: il logo');
+  const model = scripted([
+    { action: 'call', tool: 'im.add', arguments: { client: 'Rossi', title: 'Logo', which: 'current' } },
+    { action: 'reply', text: 'Di quale progetto?' },
+  ]);
+  assert.deepEqual(await drain(task.id, model), ['continued', 'answered']);
+  assert.match(JSON.stringify(model.requests[1]?.messages), /non posso leggere i clienti/);
+  assert.doesNotMatch(JSON.stringify(model.requests[1]?.messages), /Pasticceria/);
+  assert.equal(im(33), before);
+});
+
+test('a client named the project: the approval and the answer once decided keep the label of the client', async () => {
+  await rossi();
+  const conversation = await createConversation(db().sql, { mode: 'private' });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Per il prossimo IM del cliente Rossi: le vetrine');
+  const model = scripted([{ action: 'call', tool: 'im.add', arguments: { client: 'cliente Rossi', title: 'Vetrine' } }]);
+  assert.deepEqual(await drain(task.id, model), ['waiting-approval']);
+  const approval = await pendingOf(task.id);
+  assert.deepEqual([approval.label, approval.detail.readLabel, approval.detail.project], ['L2', 'L2', 'progetto-test']);
+  await recordDecision(db().sql, approval.id, 'approved', 'web');
+  assert.deepEqual(await drain(task.id, model), ['answered']);
+  const [reply] = await answers(task.id);
+  assert.equal(reply?.label, 'L2');
+  assert.match(im(34), /- \[ \] Vetrine\n/);
+});

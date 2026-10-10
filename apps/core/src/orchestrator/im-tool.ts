@@ -1,5 +1,5 @@
 import type { Project } from '@arianna/config';
-import { isAtMost, isLabel, type Label } from '@arianna/policy';
+import { isAtMost, isLabel, maxLabel, type Label } from '@arianna/policy';
 
 import type { StoredApproval } from '../approvals.ts';
 import { addImItem, addItemTo, createIm, currentIm, ImError, listIms, nextImPlan, readIm, type ImSummary, type ImView, type ImWhich } from '../im.ts';
@@ -44,6 +44,8 @@ export interface ImProposal {
   /** The label of the IM: the title goes down to it. */
   imLabel: Label;
   title: string;
+  /** What named the project, when it was not said (a client, D-173): the answer once decided carries it. */
+  readLabel?: Label;
 }
 
 /** What the model reads: a line in Italian, never the text of the IM beyond the item it added. */
@@ -148,10 +150,11 @@ function resolveTarget(projects: readonly Project[], project: string, knowledge:
 /** The proposal of an approval of kind `im`, or undefined when its detail is not one. */
 export function imProposalOf(approval: Pick<StoredApproval, 'kind' | 'detail'>): ImProposal | undefined {
   if (approval.kind !== 'im') return undefined;
-  const { project, which, number, date, dateText, imLabel, title } = approval.detail;
+  const { project, which, number, date, dateText, imLabel, title, readLabel } = approval.detail;
   const kind = WHICH.find((value) => value === which);
   if (typeof project !== 'string' || kind === undefined || typeof number !== 'number' || typeof date !== 'string' || typeof title !== 'string' || !isLabel(imLabel)) return undefined;
-  return { project, which: kind, number, date, dateText: typeof dateText === 'string' ? dateText : longDate(date), imLabel, title };
+  if (readLabel !== undefined && !isLabel(readLabel)) return undefined;
+  return { project, which: kind, number, date, dateText: typeof dateText === 'string' ? dateText : longDate(date), imLabel, title, ...(readLabel === undefined ? {} : { readLabel }) };
 }
 
 const fold = (value: string): string => value.normalize('NFC').toLowerCase();
@@ -203,4 +206,79 @@ function imErrorText(error: ImError): string {
     case 'ended':
       return 'gli IM del progetto sono terminati: non nasce un IM nuovo';
   }
+}
+
+/** A client as the tool reads it (I-17 S3, D-173): the same shape as `clientsForIm` of clients.ts. */
+export interface ImClientInfo {
+  name: string;
+  legalName: string | null;
+  label: Label;
+  projects: readonly string[];
+}
+
+/** What "del cliente Rossi" became: the project to write in, or an error for the model; both carry the label they were read at. */
+export type ImClientOutcome = { kind: 'project'; project: string; client: string; label: Label } | { kind: 'error'; error: string; label: Label };
+
+/** Words a model may add around a name ("cliente Rossi", "il Rossi"): left out of the match, unless nothing else is said. */
+const FILLERS = new Set(['cliente', 'client', 'il', 'lo', 'la', 'i', 'gli', 'le', 'di', 'del', 'dello', 'della', 'dei', 'degli', 'delle', 'da', 'per', 'the']);
+
+const words = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    // "D'Amico" is one word, as "Damico" is.
+    .replace(/['’]/g, '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word !== '');
+
+/**
+ * The clients a name points to: one named exactly so (display or legal
+ * name, without case or accents), otherwise those whose names hold every
+ * word said ("Rossi" → "Pasticceria Finta Rossi Srl").
+ */
+export function matchClients<T extends ImClientInfo>(clients: readonly T[], asked: string): T[] {
+  const all = words(asked);
+  const kept = all.filter((word) => !FILLERS.has(word));
+  const said = kept.length === 0 ? all : kept;
+  if (said.length === 0) return [];
+  const same = (name: string | null): boolean => name !== null && words(name).join(' ') === said.join(' ');
+  const exact = clients.filter((client) => same(client.name) || same(client.legalName));
+  if (exact.length > 0) return exact;
+  return clients.filter((client) => {
+    const held = new Set([...words(client.name), ...words(client.legalName ?? '')]);
+    return said.every((word) => held.has(word));
+  });
+}
+
+/**
+ * `client` of `im.add` (I-17 S3, D-173): the project of the client the user
+ * named. Clients are Private (L2 at least): those above the clearance of the
+ * task are never seen nor named, and whatever names a client is read at its
+ * label, so a title written after it asks the user first when the IM is lower.
+ * With more projects (and no `project` among them) the model asks which.
+ */
+export function clientProject(clients: readonly ImClientInfo[], asked: string, project: string | undefined, clearance: Label): ImClientOutcome {
+  if (!isAtMost('L2', clearance)) {
+    return { kind: 'error', error: 'in questa conversazione non posso leggere i clienti, che sono Privati: chiedi all’utente il progetto', label: 'L0' };
+  }
+  const visible = clients.filter((client) => isAtMost(client.label, clearance));
+  const found = matchClients(visible, asked);
+  if (found.length === 0) return { kind: 'error', error: `nessun cliente corrisponde a '${asked}': chiedi all’utente il progetto o il nome del cliente`, label: 'L2' };
+  const label = maxLabel('L2', ...found.map((client) => client.label));
+  const [only] = found;
+  if (only === undefined || found.length > 1) {
+    return { kind: 'error', error: `più clienti corrispondono a '${asked}' (${found.map((client) => client.name).join(', ')}): chiedi all’utente quale`, label };
+  }
+  if (only.projects.length === 0) return { kind: 'error', error: `il cliente ${only.name} non ha progetti approvati collegati: chiedi all’utente il progetto`, label };
+  if (project !== undefined) {
+    const chosen = only.projects.find((name) => name.toLowerCase() === project.toLowerCase());
+    if (chosen === undefined) return { kind: 'error', error: `il progetto '${project}' non è del cliente ${only.name} (progetti: ${only.projects.join(', ')}): chiedi all’utente quale`, label };
+    return { kind: 'project', project: chosen, client: only.name, label };
+  }
+  const [single] = only.projects;
+  if (single === undefined || only.projects.length > 1) {
+    return { kind: 'error', error: `il cliente ${only.name} ha più progetti (${only.projects.join(', ')}): chiedi all’utente per quale progetto`, label };
+  }
+  return { kind: 'project', project: single, client: only.name, label };
 }
