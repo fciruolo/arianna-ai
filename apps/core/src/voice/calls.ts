@@ -1,19 +1,41 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
+import { promptLabelOf, type AgentCard, type LoadedAgent } from '@arianna/agents';
 import { VOICE_ALIAS, type VoiceConfig } from '@arianna/config';
 import type { LocalModel } from '@arianna/executors';
-import { createContext, isAtMost, labelForUserMessage, maxLabel, scanText, type Label } from '@arianna/policy';
+import { createContext, isAtMost, labelForUserMessage, maxLabel, scanText, type Label, type Target } from '@arianna/policy';
 
 import { ChatError, checkMessageBody, isUuid, listMessages, loadConversation, loadMessage, postUserMessage, taskTitle, type Conversation, type Message } from '../conversations.ts';
 import type { Queryable, Sql } from '../db/client.ts';
+import { directPolicyOf } from '../direct-chat.ts';
 import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
+import { briefCeiling } from '../orchestrator/delegate.ts';
 import { ORCHESTRATOR_EXECUTOR } from '../orchestrator/orchestrator.ts';
+import { nameLabelOf, participantName } from '../participants.ts';
 import { loadTask } from '../tasks.ts';
 import { FAILED_TEXT, OUTGOING_TEXT } from './outgoing.ts';
 import type { VoiceService } from './service.ts';
 import type { TrialModel } from './trial.ts';
-import { CALL_TEXT, callReadiness, cleanTranscript, delegationRequest, HISTORY_FETCH, MAX_REPLY_TOKENS, opensDelegation, sentenceSplitter, speakable, summaryToSay, voicePrompt } from './turns.ts';
+import {
+  agentCallText,
+  agentVoiceSystem,
+  CALL_TEXT,
+  callReadiness,
+  cleanTranscript,
+  delegationRequest,
+  greetingFor,
+  HISTORY_FETCH,
+  MAX_REPLY_TOKENS,
+  opensDelegation,
+  sentenceSplitter,
+  speakable,
+  summaryToSay,
+  voicePrompt,
+  type CallReadiness,
+  type Speaker,
+  type VoicePrompt,
+} from './turns.ts';
 
 /**
  * Calls from the web chat (D-066): the page sends its WebRTC offer here, the
@@ -21,7 +43,9 @@ import { CALL_TEXT, callReadiness, cleanTranscript, delegationRequest, HISTORY_F
  * the call comes back to the core, which stores what was said in the
  * conversation (channel 'voice'), asks the model of the `voice` role through
  * the gateway and decides on delegations. The voice holds a token valid for
- * this call only.
+ * this call only. In a direct chat the agent answers instead (D-158): a local
+ * one on its own model, a cloud one (the Coder) through a bridge that passes
+ * the words on as a message and reads its answer when it comes.
  */
 export type CallStatus = 'scheduled' | 'ringing' | 'connecting' | 'active' | 'ended' | 'missed' | 'skipped' | 'failed';
 export type CallEndReason = 'hangup' | 'time-limit' | 'disconnected' | 'voice-error' | 'core-restart' | 'no-answer' | 'quiet-hours' | 'daily-limit' | 'cancelled';
@@ -39,9 +63,13 @@ export interface Call {
   endedAt: Date | null;
   endReason: CallEndReason | null;
   delegations: number;
+  /** The agent of the direct chat that answers (D-158), or null when Arianna does. */
+  agent: string | null;
+  /** The name of who answers, for the chat: "Arianna", "Coder", or the id of the agent. */
+  answerer: string;
 }
 
-export type CallErrorCode = 'not-found' | 'invalid' | 'archived' | 'busy' | 'voice-off' | 'not-ready' | 'unauthorized' | 'ended';
+export type CallErrorCode = 'not-found' | 'invalid' | 'archived' | 'busy' | 'voice-off' | 'not-ready' | 'unauthorized' | 'ended' | 'agent-off';
 
 export class CallError extends Error {
   override name = 'CallError';
@@ -55,7 +83,9 @@ export class CallError extends Error {
 
 export const CALL_COLUMNS = `id::text, conversation_id::text AS "conversationId", direction, reason, task_id::text AS "taskId", status,
   scheduled_at AS "scheduledAt", created_at AS "createdAt", answered_at AS "answeredAt", ended_at AS "endedAt",
-  end_reason AS "endReason", delegations`;
+  end_reason AS "endReason", delegations,
+  (SELECT c.agent FROM conversations c WHERE c.id = calls.conversation_id) AS agent,
+  coalesce((SELECT CASE c.agent WHEN 'coder' THEN 'Coder' ELSE c.agent END FROM conversations c WHERE c.id = calls.conversation_id), 'Arianna') AS answerer`;
 
 const LIVE: readonly CallStatus[] = ['ringing', 'connecting', 'active'];
 /** How long the voice may take to open a call: the first one loads the models (GBs). */
@@ -93,6 +123,12 @@ export interface CallsOptions {
   onError?: (error: unknown) => void;
   /** Tests shorten the waits. */
   pollMs?: number;
+  /** The active agents, read at each call: who answers in a direct chat (D-158). Absent, a direct chat has no calls. */
+  agents?: () => ReadonlyMap<string, LoadedAgent>;
+  /** The cloud executors on now, as the direct chats read them (D-111d). */
+  cloud?: () => { claude: boolean; codex: boolean };
+  /** The local model a local agent answers on now (the router's choice, as for its delegations), or undefined. */
+  agentModel?: (card: AgentCard, clearance: Label, label: Label) => Promise<string | undefined>;
 }
 
 export interface Calls {
@@ -117,6 +153,11 @@ export interface Calls {
   close(): Promise<void>;
   /** A read only: true while a call is in progress (D-107 E: its model stays in memory between turns). */
   active(): boolean;
+  /**
+   * Whether a call of the conversation may be scheduled (D-158): in a direct
+   * chat its agent must answer calls now. Throws the CallError of a refusal.
+   */
+  check(conversationId: string): Promise<void>;
 }
 
 interface Session {
@@ -134,6 +175,8 @@ interface Session {
   anchor: string | undefined;
   /** Stops the warm-up of the prompt when the first turn comes. */
   warming: AbortController | undefined;
+  /** Who answers (D-158): fixed for the whole call. */
+  speaker: Speaker;
 }
 
 function tokenMatches(session: Session, token: string | undefined): boolean {
@@ -188,7 +231,8 @@ export function createCalls(options: CallsOptions): Calls {
     options.voice.request('DELETE', `/calls/${callId}`, { timeoutMs: 5000 }).catch(() => undefined);
     // D-074: outside a call the model of the calls only takes memory the orchestrator needs;
     // the next call loads it again while Arianna greets (D-072).
-    if (session !== undefined && sessions.size === 0) void unloadVoiceModel();
+    // An agent's model (D-158) is the one of its delegations: it stays.
+    if (session?.speaker.kind === 'arianna' && sessions.size === 0) void unloadVoiceModel();
     return call;
   }
 
@@ -226,6 +270,11 @@ export function createCalls(options: CallsOptions): Calls {
   /** Waits for the delegated task; within the time, its answer is said in the call. */
   async function follow(callId: string, taskId: string, seconds: number): Promise<void> {
     const deadline = Date.now() + seconds * 1000;
+    const speaker = sessions.get(callId)?.speaker;
+    // A cloud agent's work is told in its name (D-158): never "I".
+    const agent = speaker === undefined || speaker.kind === 'arianna' ? undefined : speaker;
+    const texts = agent === undefined ? undefined : agentCallText(agent.name);
+    const nameLabel: Label = agent?.nameLabel ?? 'L0';
     while (Date.now() < deadline && sessions.has(callId)) {
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       const task = await loadTask(sql, taskId);
@@ -238,11 +287,12 @@ export function createCalls(options: CallsOptions): Calls {
         return;
       }
       if (task.status === 'failed' || task.status === 'waiting_user') {
-        await say(callId, task.status === 'failed' ? CALL_TEXT.taskFailed : CALL_TEXT.taskWaiting);
+        if (task.status === 'failed') await say(callId, CALL_TEXT.taskFailed);
+        else await say(callId, texts?.taskWaiting ?? CALL_TEXT.taskWaiting, nameLabel);
         return;
       }
     }
-    if (sessions.has(callId)) await say(callId, CALL_TEXT.stillWorking);
+    if (sessions.has(callId)) await say(callId, texts?.stillWorking ?? CALL_TEXT.stillWorking, nameLabel);
   }
 
   async function storeUserTurn(call: Call, text: string, clearance: Label): Promise<Message> {
@@ -295,13 +345,33 @@ export function createCalls(options: CallsOptions): Calls {
    * gateway like the orchestrator does; undefined when the gateway blocks it.
    */
   async function readPrompt(call: Call, conversation: Conversation, session: Session) {
-    const prompt = voicePrompt(await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH }), conversation.effectiveLabel, session.anchor);
+    const history = await listMessages(sql, call.conversationId, { limit: HISTORY_FETCH });
+    const { speaker } = session;
+    let prompt: VoicePrompt;
+    let target: Target;
+    if (speaker.kind === 'local') {
+      // The agent reads its instructions and the direct chat up to what its card may read, as its delegations (D-111d).
+      const agent = options.agents?.().get(speaker.agent);
+      if (agent === undefined) return undefined;
+      const ceiling = briefCeiling(agent.card);
+      prompt = voicePrompt(
+        history.filter((message) => isAtMost(message.label, ceiling)),
+        'L0',
+        session.anchor,
+        { content: agentVoiceSystem(agent.prompt), label: promptLabelOf(agent) },
+      );
+      if (!isAtMost(prompt.label, ceiling)) return undefined;
+      target = { kind: 'executor', id: 'local', locality: 'local' };
+    } else {
+      prompt = voicePrompt(history, conversation.effectiveLabel, session.anchor);
+      target = { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' };
+    }
     const effective = maxLabel(conversation.effectiveLabel, prompt.label);
     const decision = await passGateway(
       sql,
       prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
       createContext(conversation.clearance, effective),
-      { kind: 'executor', id: ORCHESTRATOR_EXECUTOR, locality: 'local' },
+      target,
     );
     if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) return undefined;
     const allowed = prompt.messages.map((part, index) => ({ role: part.role, content: decision.texts[index] ?? '' }));
@@ -314,6 +384,8 @@ export function createCalls(options: CallsOptions): Calls {
    * new words (D-072). Best effort: the first turn stops it if still at work.
    */
   async function warm(callId: string, session: Session): Promise<void> {
+    // The bridge of a cloud agent asks no model (D-158).
+    if (session.speaker.kind === 'cloud') return;
     const call = await loadCall(sql, callId);
     if (call?.status !== 'active' || sessions.get(callId) !== session || session.latest > 0) return;
     const conversation = await loadConversation(sql, call.conversationId);
@@ -327,7 +399,7 @@ export function createCalls(options: CallsOptions): Calls {
     session.warming = stop;
     try {
       await unloading;
-      await options.model().chat({ model: VOICE_ALIAS, messages: read.allowed, maxTokens: 1, temperature: 0, timeoutMs: 30_000, signal: stop.signal });
+      await options.model().chat({ model: modelOf(session.speaker), messages: read.allowed, maxTokens: 1, temperature: 0, timeoutMs: 30_000, signal: stop.signal });
     } catch (error) {
       // Stopped by the first turn or the end of the call: expected, not an error.
       if (!stop.signal.aborted) throw error;
@@ -346,11 +418,29 @@ export function createCalls(options: CallsOptions): Calls {
     if (call?.status !== 'active') throw new CallError('ended', 'the call is over');
     const conversation = await loadConversation(sql, call.conversationId);
     if (conversation === undefined || conversation.archivedAt !== null) throw new CallError('ended', 'the conversation is gone');
+    const { speaker } = session;
+    if (speaker.kind === 'cloud') {
+      await bridgeTurn(call, conversation, session, speaker, words, emit);
+      return;
+    }
 
     // A work conversation may go to the cloud later: no private data in it (as writeUserMessage).
     if (conversation.mode === 'work' && scanText(words).length > 0) {
       emit(CALL_TEXT.privateInWork);
       return;
+    }
+    if (speaker.kind === 'local') {
+      // Deactivated during the call, or its card lowered under what the user says here: the words stay unsaid.
+      const agent = options.agents?.().get(speaker.agent);
+      const texts = agentCallText(speaker.name);
+      if (agent === undefined) {
+        emit(await fixedText(call, conversation, texts.gone, speaker.nameLabel));
+        return;
+      }
+      if (!isAtMost(labelForUserMessage(createContext(conversation.clearance)), briefCeiling(agent.card))) {
+        emit(await fixedText(call, conversation, texts.cannotRead, speaker.nameLabel));
+        return;
+      }
     }
     await storeUserTurn(call, words, conversation.clearance);
 
@@ -394,7 +484,8 @@ export function createCalls(options: CallsOptions): Calls {
     };
     const take = (pieces: string[]): void => {
       for (const piece of pieces) {
-        if (flow.state === 'speaking' && opensDelegation(piece)) flow.state = 'delegating';
+        // Only Arianna delegates: an agent's line that starts like one is just said.
+        if (flow.state === 'speaking' && speaker.kind === 'arianna' && opensDelegation(piece)) flow.state = 'delegating';
         if (flow.state === 'delegating') delegation.push(piece);
         // Over the clearance nothing is said piece by piece: the end of the turn tells.
         if (flow.state === 'speaking' && canSay) saying = saying.then(() => sayPiece(piece));
@@ -407,7 +498,7 @@ export function createCalls(options: CallsOptions): Calls {
     try {
       await unloading;
       const result = await options.model().chat({
-        model: VOICE_ALIAS,
+        model: modelOf(speaker),
         messages: allowed,
         maxTokens: MAX_REPLY_TOKENS,
         temperature: 0.4,
@@ -480,16 +571,108 @@ export function createCalls(options: CallsOptions): Calls {
     await keep();
   }
 
-  /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
-  async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
+  /**
+   * A cloud agent in a call (D-158): no model answers for it. The words go the
+   * way of a written message (scanner, then the gateway when its step runs)
+   * and become its direct delegation; the call says it passed them on, and
+   * reads the start of the answer when it comes. One job at a time, as in chat.
+   */
+  async function bridgeTurn(call: Call, conversation: Conversation, session: Session, speaker: Extract<Speaker, { kind: 'cloud' }>, words: string, emit: (say: string) => void): Promise<void> {
+    if (conversation.mode === 'work' && scanText(words).length > 0) {
+      emit(CALL_TEXT.privateInWork);
+      return;
+    }
+    const texts = agentCallText(speaker.name);
+    const { voice } = options.config();
+    if (session.delegations >= voice.limits.delegations) {
+      emit(CALL_TEXT.tooMany);
+      return;
+    }
+    let taskId: string;
+    try {
+      taskId = (await postUserMessage(sql, call.conversationId, words, { channel: 'voice' })).task.id;
+    } catch (error) {
+      if (error instanceof ChatError) {
+        if (error.code === 'busy') emit(await fixedText(call, conversation, texts.busy, speaker.nameLabel));
+        else emit(error.code === 'scanner' ? CALL_TEXT.privateInWork : CALL_TEXT.cannotDelegate);
+        return;
+      }
+      throw error;
+    }
+    session.delegations += 1;
+    await sql`UPDATE calls SET delegations = delegations + 1 WHERE id = ${call.id}`;
+    follow(call.id, taskId, voice.limits.delegationSeconds).catch((error: unknown) => options.onError?.(error));
+    const allowed = await allowSpoken(call, texts.bridged, speaker.nameLabel, conversation.clearance, conversation.effectiveLabel);
+    if (allowed === undefined) {
+      emit(CALL_TEXT.notHere);
+      return;
+    }
+    await insertReply(call, allowed, maxLabel(speaker.nameLabel, conversation.effectiveLabel));
+    emit(allowed);
+  }
+
+  /** A fixed text with the name of an agent in it: through the gateway towards the call (a user agent's name is L1). */
+  async function fixedText(call: Call, conversation: Conversation, text: string, label: Label): Promise<string> {
+    return (await allowSpoken(call, text, label, conversation.clearance, conversation.effectiveLabel)) ?? CALL_TEXT.notHere;
+  }
+
+  /**
+   * Who answers a call of the conversation (D-158), without the model: Arianna
+   * outside a direct chat; in one, its agent while its card is active, its
+   * executor available and the conversation of a mode it answers.
+   */
+  function directOf(conversation: Conversation): { kind: 'arianna' } | { kind: 'agent'; id: string; agent: LoadedAgent; cloud: boolean } {
+    if (conversation.agent === null) return { kind: 'arianna' };
+    const id = conversation.agent;
+    const name = participantName(id);
+    const agent = options.agents?.().get(id);
+    const policy = agent === undefined ? undefined : directPolicyOf(id, agent, options.cloud?.() ?? { claude: false, codex: false });
+    if (agent === undefined || policy === undefined) throw new CallError('agent-off', `${name} cannot answer a call now: its card is off or its executor is not available`);
+    if (!policy.modes.includes(conversation.mode)) throw new CallError('agent-off', `${name} does not answer a ${conversation.mode} conversation`);
+    return { kind: 'agent', id, agent, cloud: policy.cloud };
+  }
+
+  /** Who answers, with the local model a local agent answers on now. */
+  async function speakerOf(conversation: Conversation): Promise<Speaker> {
+    const direct = directOf(conversation);
+    if (direct.kind === 'arianna') return direct;
+    const name = participantName(direct.id);
+    const nameLabel = nameLabelOf(direct.agent);
+    if (direct.cloud) return { kind: 'cloud', agent: direct.id, name, nameLabel };
+    const model = await options.agentModel?.(direct.agent.card, conversation.clearance, labelForUserMessage(createContext(conversation.clearance)));
+    if (model === undefined) throw new CallError('agent-off', `no local model can answer for ${name} now`);
+    return { kind: 'local', agent: direct.id, name, nameLabel, model };
+  }
+
+  /** The model of a call: the voice role for Arianna, its own for a local agent. */
+  function modelOf(speaker: Speaker): string {
+    return speaker.kind === 'local' ? speaker.model : VOICE_ALIAS;
+  }
+
+  /** Transcription and voice are always needed; the model of the voice role only when Arianna answers. */
+  function readiness(speaker: Speaker): CallReadiness {
     const { voice, roles, local } = options.config();
-    const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
+    if (speaker.kind !== 'arianna') return callReadiness({ voice: 'agent' }, options.candidates(), true, voice.voice);
+    return callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
+  }
+
+  /** The first words of the call: an agent's, with its name, through the gateway towards the call. */
+  async function greetingOf(call: Call, conversation: Conversation, text: string, speaker: Speaker): Promise<string> {
+    const greeting = greetingFor(text, speaker);
+    if (speaker.kind === 'arianna') return greeting;
+    return (await allowSpoken(call, greeting, speaker.nameLabel, conversation.clearance, conversation.effectiveLabel)) ?? 'Ciao. Dimmi pure.';
+  }
+
+  /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
+  async function connect(call: Call, offer: { sdp: string; type: string }, greeting: string, speaker: Speaker): Promise<{ call: Call; answer: { sdp: string; type: string } }> {
+    const { voice } = options.config();
+    const ready = readiness(speaker);
     if (!ready.ready) {
       await finish(call.id, 'failed', 'voice-error').catch(() => undefined);
       throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
     }
     const token = randomBytes(32).toString('base64url');
-    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined, anchor: undefined, warming: undefined };
+    const session: Session = { token: Buffer.from(token), conversationId: call.conversationId, timer: undefined, delegations: 0, chain: Promise.resolve(), latest: 0, stop: undefined, anchor: undefined, warming: undefined, speaker };
     sessions.set(call.id, session);
     try {
       const answer = await options.voice.request('POST', '/calls', {
@@ -543,13 +726,12 @@ export function createCalls(options: CallsOptions): Calls {
       if (conversation.archivedAt !== null) throw new CallError('archived', 'the conversation is archived: restore it to call');
       // An incognito conversation has no calls (D-136): a ChatError, the same 409 `incognito` as every refusal of an incognito.
       if (conversation.incognito) throw new ChatError('incognito', 'incognito');
-      // The voice answers on the local model: never in a direct chat, where only the Coder answers (D-111).
-      if (conversation.agent !== null) throw new CallError('invalid', 'a direct chat with the Coder has no calls');
+      // In a direct chat its agent answers (D-158), under the rules of its card.
+      const speaker = await speakerOf(conversation);
       // The check and the row together: the service is not replaced in between (D-071).
       const call = await hold(async () => {
         if (options.voice.state !== 'up') throw new CallError('voice-off', 'the voice service is not running');
-        const { roles, local, voice } = options.config();
-        const ready = callReadiness(roles, options.candidates(), local.endpoints.some((endpoint) => VOICE_ALIAS in endpoint.models), voice.voice);
+        const ready = readiness(speaker);
         if (!ready.ready) throw new CallError('not-ready', `assign and download: ${ready.missing.join(', ')}`);
         try {
           return await sql.begin(async (tx) => {
@@ -567,7 +749,13 @@ export function createCalls(options: CallsOptions): Calls {
         }
       });
 
-      return connect(call, offer, CALL_TEXT.greeting);
+      return connect(call, offer, await greetingOf(call, conversation, CALL_TEXT.greeting, speaker), speaker);
+    },
+
+    async check(conversationId) {
+      const conversation = isUuid(conversationId) ? await loadConversation(sql, conversationId) : undefined;
+      if (conversation === undefined) throw new CallError('not-found', 'no such conversation');
+      directOf(conversation);
     },
 
     async turn(callId, token, text) {
@@ -621,6 +809,14 @@ export function createCalls(options: CallsOptions): Calls {
         await finish(callId, 'missed', 'cancelled').catch(() => undefined);
         throw new CallError('archived', 'the conversation is archived');
       }
+      // The agent of a direct chat that cannot answer now (D-158): the call ends unanswered.
+      let speaker: Speaker;
+      try {
+        speaker = await speakerOf(conversation);
+      } catch (error) {
+        await finish(callId, 'missed', 'cancelled').catch(() => undefined);
+        throw error;
+      }
       const call = await sql.begin(async (tx) => {
         const [row] = await tx.unsafe<Call[]>(`UPDATE calls SET status = 'connecting' WHERE id = $1 AND status = 'ringing' RETURNING ${CALL_COLUMNS}`, [callId]);
         // The other pages stop ringing: someone answered.
@@ -643,7 +839,7 @@ export function createCalls(options: CallsOptions): Calls {
           if (allowed !== undefined) greeting = `${greeting} ${allowed}`;
         }
       }
-      return connect(call, offer, greeting.slice(0, 2000));
+      return connect(call, offer, (await greetingOf(call, conversation, greeting, speaker)).slice(0, 2000), speaker);
     },
 
     async decline(callId) {

@@ -4,6 +4,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Chiamate nella chat diretta con un agente locale: risponde lui sul suo modello locale, con le istruzioni della sua scheda adattate al parlato e la cronologia della chat fino a ciò che la scheda può leggere (D-158).
+- Chiamate nella chat diretta del Coder: una voce locale fa da ponte, passa la frase come un messaggio, dice "Lo passo al Coder, ti dico quando ha finito" e legge la risposta quando arriva; un lavoro alla volta (D-158).
+- Le chiamate dicono chi risponde: campi `agent` e `answerer` nelle risposte dell'API delle chiamate e nell'evento `call.ringing` (D-158).
+
+### Cambiato
+
+- Saluti e testi fissi di una chiamata in una chat diretta dicono il nome dell'agente; le chiamate programmate e "chiamami quando finisci" in una chat diretta seguono le regole della scheda dell'agente (rifiuto `agent-off`, 409) (D-158).
+
 ## [0.44.0] - 2026-10-10
 
 ### Aggiunto

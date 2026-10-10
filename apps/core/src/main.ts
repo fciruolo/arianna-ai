@@ -51,7 +51,7 @@ import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
 import { loadModelsOverview } from './models-overview.ts';
-import { delegationRoute } from './orchestrator/delegate.ts';
+import { delegationRoute, localAgentModel } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
@@ -399,6 +399,14 @@ const calls = createCalls({
   model: localModel,
   coreUrl: `http://${host}:${String(config.server.port)}`,
   onError: report,
+  // D-158: in a direct chat its agent answers the call, by the rules of its card.
+  agents: () => agents,
+  cloud: () => ({
+    claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+    codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+  }),
+  agentModel: (card, clearance, label) =>
+    localAgentModel({ sql, settings: () => settings.current(), model: localModel, ...(claude === undefined ? {} : { claude }), ...(codex === undefined ? {} : { codex }) }, card, clearance, label),
 });
 callActive = () => calls.active();
 const closed = await calls.closeLeftovers();

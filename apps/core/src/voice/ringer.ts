@@ -152,7 +152,8 @@ export function createRinger(options: RingerOptions): Ringer {
           await appendEvent(tx, {
             kind: verdict.ok ? 'call.ringing' : 'call.ended',
             label: 'L0',
-            payload: { callId: row.id, conversationId: row.conversationId, reason, ...(verdict.ok ? {} : { status: 'skipped', endReason: verdict.reason }) },
+            // Who answers (D-158): the chat says the name when it rings.
+            payload: { callId: row.id, conversationId: row.conversationId, reason, agent: row.agent, answerer: row.answerer, ...(verdict.ok ? {} : { status: 'skipped', endReason: verdict.reason }) },
           });
           return row;
         });
@@ -196,11 +197,18 @@ export function createRinger(options: RingerOptions): Ringer {
   };
 }
 
+/**
+ * Whether the conversation may have calls (D-158): in a direct chat, its agent
+ * must answer them (`Calls.check`). Throws the refusal.
+ */
+export type CallCheck = (conversationId: string) => Promise<void>;
+
 /** The user schedules a call: within a week, in the future. */
-export async function scheduleCall(sql: Sql, conversationId: string, at: Date, now: Date = new Date()): Promise<Call> {
+export async function scheduleCall(sql: Sql, conversationId: string, at: Date, now: Date = new Date(), check?: CallCheck): Promise<Call> {
   if (Number.isNaN(at.getTime()) || at.getTime() < now.getTime() - 60_000 || at.getTime() > now.getTime() + 7 * 86_400_000) {
     throw new ScheduleError('the time must be within the next seven days');
   }
+  await check?.(conversationId);
   return sql.begin(async (tx) => {
     const [conversation] = await tx<{ archived: boolean; incognito: boolean }[]>`
       SELECT archived_at IS NOT NULL AS archived, incognito FROM conversations WHERE id = ${conversationId} AND purged_at IS NULL AND origin = 'user'`;
@@ -219,7 +227,7 @@ export async function scheduleCall(sql: Sql, conversationId: string, at: Date, n
 }
 
 /** "Chiamami quando finisci": a call waiting for the task to end (once per task). */
-export async function callWhenDone(sql: Sql, taskId: string): Promise<Call> {
+export async function callWhenDone(sql: Sql, taskId: string, check?: CallCheck): Promise<Call> {
   const task = await loadTask(sql, taskId);
   if (task?.conversationId === null || task === undefined) throw new ScheduleError('no such task in a conversation');
   if (task.status === 'done' || task.status === 'failed') throw new ScheduleError('the task is already over');
@@ -227,6 +235,7 @@ export async function callWhenDone(sql: Sql, taskId: string): Promise<Call> {
     SELECT incognito FROM conversations WHERE id = ${task.conversationId} AND archived_at IS NULL AND purged_at IS NULL AND origin = 'user'`;
   if (open === undefined) throw new ScheduleError('the conversation is archived, deleted or a system chat');
   if (open.incognito) throw new ChatError('incognito', 'incognito');
+  await check?.(task.conversationId);
   return sql.begin(async (tx) => {
     const [existing] = await tx.unsafe<Call[]>(`SELECT ${CALL_COLUMNS} FROM calls WHERE task_id = $1 AND reason = 'task-done' AND status = 'scheduled'`, [taskId]);
     if (existing !== undefined) return existing;

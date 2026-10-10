@@ -332,6 +332,8 @@ CREATE TABLE conversation_summaries (
 -- effettiva della conversazione (mai sopra la clearance).
 -- 'in' la fa l'utente dalla chat; 'out' la fa Arianna, con il motivo ammesso
 -- dalle regole di [voice.outgoing]. Una sola chiamata viva alla volta.
+-- In una chat diretta (D-158) risponde l'agente di conversations.agent: la riga
+-- non lo copia, l'API lo legge dalla conversazione (campi agent e answerer).
 CREATE TABLE calls (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id uuid NOT NULL REFERENCES conversations(id),

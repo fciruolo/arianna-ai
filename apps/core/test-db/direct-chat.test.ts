@@ -16,7 +16,7 @@ import { ClaudeError, createClaudeExecutor, type ChatRequest, type ClaudeErrorKi
 import { ChatError, createConversation, loadConversation, postUserMessage } from '../src/conversations.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
-import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, sessionLost } from '../src/orchestrator/delegate.ts';
+import { DIRECT_CHAT_TEXT, DIRECT_LOCAL_TEXT, LOCAL_REPORT_SCHEMA_NAME, DIRECT_HISTORY_CHARS, DIRECT_HISTORY_EXCHANGES, DIRECT_HISTORY_TEXT, localAgentModel, sessionLost } from '../src/orchestrator/delegate.ts';
 import { loadDelegations } from '../src/orchestrator/delegations.ts';
 import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
@@ -563,4 +563,18 @@ test('the routes (D-111d): the list of who answers, and a conversation only with
     await server.close();
     await live.close();
   }
+});
+
+test('a call of a direct chat (D-158): a local agent answers on the local model the router gives it; a cloud one, or no local model, has none', async () => {
+  const settings = () => ({ ...BASE, home: HOME, paths: { data: join(HOME, 'data') }, cloud: { executors: ['claude' as const], models: defaultCloudModels() } });
+  const local = translator();
+  const env = { sql: db().sql, settings, claude, model: () => untouched() };
+  const model = await localAgentModel(env, { ...local.card, maxLabel: 'L2' }, 'L2', 'L2');
+  assert.ok(typeof model === 'string' && model.startsWith('local-'), `a local model, not ${String(model)}`);
+  // Above what its card reads, the router keeps it from answering.
+  assert.equal(await localAgentModel(env, { ...local.card, maxLabel: 'L1' }, 'L2', 'L2'), undefined);
+  const coder = loaded.get('coder');
+  assert.ok(coder !== undefined);
+  assert.equal(await localAgentModel(env, coder.card, 'L1', 'L1'), undefined);
+  assert.equal(await localAgentModel({ sql: db().sql, settings, claude }, local.card, 'L1', 'L1'), undefined);
 });

@@ -452,7 +452,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 
   if (where === 'local') {
     // One call to the local model: no folder, no quota; the router checks the label against the agent.
-    const decision = route({ kind: 'judge', agent: agent.card, text: delegation.brief }, createContext(task.clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
+    const decision = await routeLocalAgent(env, agent.card, task.clearance, label, delegation.brief);
     if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
@@ -516,6 +516,27 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
     return { kind: 'cloud', ...rest, executor: 'codex', model };
   }
   return closed('failed', `${delegation.agent} runs delegated steps on Claude Code or Codex only, and neither is available for this step`, decision);
+}
+
+/**
+ * The router's choice for one answer of an agent on the local model: the
+ * step of a delegation (D-119), or a turn of a call in its direct chat (D-158).
+ */
+export async function routeLocalAgent(
+  env: Pick<DelegateEnv, 'sql' | 'settings' | 'claude' | 'codex'>,
+  card: AgentCard,
+  clearance: Label,
+  label: Label,
+  text?: string,
+): Promise<RouteDecision> {
+  return route({ kind: 'judge', agent: card, ...(text === undefined ? {} : { text }) }, createContext(clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
+}
+
+/** The local model an agent answers on now, or undefined when none can (D-158: the calls of its direct chat). */
+export async function localAgentModel(env: Pick<DelegateEnv, 'sql' | 'settings' | 'claude' | 'codex' | 'model'>, card: AgentCard, clearance: Label, label: Label): Promise<string | undefined> {
+  if (env.model === undefined || delegationRoute(card) !== 'local') return undefined;
+  const decision = await routeLocalAgent(env, card, clearance, label);
+  return decision.decision !== 'wait' && decision.locality === 'local' ? decision.model : undefined;
 }
 
 /** Which cloud adapters run on this machine, for the router's candidates. */

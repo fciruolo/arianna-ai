@@ -4,15 +4,17 @@ import { after, before, test } from 'node:test';
 
 import { request as httpRequest } from 'node:http';
 
+import type { LoadedAgent } from '@arianna/agents';
 import { DEFAULT_VOICE } from '@arianna/config';
 import type { ChatRequest, LocalModel } from '@arianna/executors';
 
-import { archiveConversation, createConversation, listMessages } from '../src/conversations.ts';
+import { archiveConversation, ChatError, createConversation, listMessages } from '../src/conversations.ts';
 import { startLiveFeed } from '../src/live.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { createCalls, liveCall, listCalls, loadCall, type Calls } from '../src/voice/calls.ts';
 import type { TrialModel } from '../src/voice/trial.ts';
-import { CALL_TEXT, HISTORY_MESSAGES } from '../src/voice/turns.ts';
+import { callWhenDone, scheduleCall } from '../src/voice/ringer.ts';
+import { AGENT_VOICE_FRAME, agentCallText, CALL_TEXT, HISTORY_MESSAGES, VOICE_SYSTEM_PROMPT } from '../src/voice/turns.ts';
 import { createTestDatabase, type TestDatabase } from './support/database.ts';
 
 let database: TestDatabase | undefined;
@@ -524,4 +526,188 @@ test('an unload that fails does not stop the end of the call; a call that starts
   unloadGate = undefined;
   assert.deepEqual(await turn, { say: nextReply });
   await calls.end(third.call.id, 'hangup');
+});
+
+// D-158: calls in a direct chat. A local agent answers on its own model; the Coder through a bridge.
+
+/** A user agent that only answers on the local model, reading up to `maxLabel`. */
+function localAgent(maxLabel: 'L1' | 'L2'): LoadedAgent {
+  return {
+    card: { name: 'traduttore', description: 'Agente traduttore di prova', maxLabel, executors: ['local'], tools: [], limits: { maxSteps: 5, maxMinutes: 5, maxCost: 0 } },
+    prompt: 'Traduci in inglese il testo che ricevi.',
+    origin: 'user',
+  } as unknown as LoadedAgent;
+}
+const CODER_AGENT = {
+  card: { name: 'coder', description: 'Il Coder di prova', maxLabel: 'L1', cloudMaxLabel: 'L1', executors: ['claude'], tools: ['repo.read', 'repo.write'], limits: { maxSteps: 5, maxMinutes: 5, maxCost: 0 } },
+  prompt: 'Scrivi codice.',
+} as unknown as LoadedAgent;
+
+const directAgents = new Map<string, LoadedAgent>([
+  ['traduttore', localAgent('L2')],
+  ['coder', CODER_AGENT],
+]);
+let claudeOn = true;
+let agentModelOf: string | undefined = 'local-large';
+let direct: Calls | undefined;
+function directCalls(): Calls {
+  direct ??= createCalls({
+    sql: db().sql,
+    voice,
+    config: () => ({ roles, voice: { ...DEFAULT_VOICE, limits: { ...DEFAULT_VOICE.limits, delegations: 3, delegationSeconds: 2 } }, local }),
+    candidates: () => READY,
+    model: () => model,
+    coreUrl: 'http://127.0.0.1:7420',
+    pollMs: 20,
+    onError: (error) => errors.push(error),
+    agents: () => directAgents,
+    cloud: () => ({ claude: claudeOn, codex: false }),
+    agentModel: () => Promise.resolve(agentModelOf),
+  });
+  return direct;
+}
+after(async () => {
+  await direct?.close();
+});
+
+const TRANSLATOR = { name: 'traduttore', modes: ['private', 'work'] as const, project: false };
+const CODER = { name: 'coder', modes: ['work'] as const, project: true };
+const greetingSent = (callId: string) => (voiceCalls.findLast((item) => item.path === '/calls' && (item.json as { callId: string }).callId === callId)?.json as { texts: { greeting: string } }).texts.greeting;
+
+test('a call in a direct chat with a local agent: it answers on its own model, with its card and the direct chat (D-158)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'private', agent: TRANSLATOR });
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body) VALUES (${conversation.id}, 'user', 'web', 'L2', 'Scritto prima in chat')`;
+  const before = asked.length;
+  const unloadedBefore = unloaded.length;
+  const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+  assert.equal(call.agent, 'traduttore');
+  assert.equal(call.answerer, 'traduttore');
+  assert.equal((await liveCall(db().sql))?.answerer, 'traduttore');
+  assert.equal(greetingSent(call.id), 'Ciao, sono traduttore. Dimmi pure.');
+  // The warm-up reads the agent's prompt on its model, never the voice role.
+  await until(() => asked.length > before);
+  assert.equal(lastAsked().model, 'local-large');
+  assert.equal(lastAsked().maxTokens, 1);
+
+  nextReply = 'Cat si dice gatto.';
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'Come si dice gatto?'), { say: 'Cat si dice gatto.' });
+  const turn = lastAsked();
+  assert.equal(turn.model, 'local-large');
+  const system = turn.messages[0]?.content ?? '';
+  assert.ok(system.startsWith(AGENT_VOICE_FRAME) && system.endsWith('Traduci in inglese il testo che ricevi.'));
+  assert.ok(!system.includes(VOICE_SYSTEM_PROMPT));
+  assert.deepEqual(turn.messages.slice(1).map(({ content }) => content), ['Scritto prima in chat', 'Come si dice gatto?']);
+  // A line of the agent that looks like Arianna's delegation is only words: a local agent starts no task from a call.
+  nextReply = 'DELEGA: cerca qualcosa';
+  await directCalls().turn(call.id, tokenOf(call.id), 'Cerca qualcosa');
+  const [{ count } = { count: -1 }] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM tasks WHERE conversation_id = ${conversation.id}`;
+  assert.equal(count, 0);
+  const messages = await listMessages(db().sql, conversation.id, { limit: 10 });
+  assert.deepEqual(messages.slice(1, 3).map(({ role, channel, label }) => [role, channel, label]), [
+    ['user', 'voice', 'L2'],
+    ['assistant', 'voice', 'L2'],
+  ]);
+  await directCalls().end(call.id, 'hangup');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Its model is the one of its delegations: the end of the call does not unload it.
+  assert.equal(unloaded.length, unloadedBefore);
+  nextReply = 'Ciao! Tutto bene.';
+});
+
+test('a direct chat refuses the call when its agent cannot answer: card off, mode it does not read, no local model, or a core without agents', async () => {
+  // A card that reads only L1 does not answer a private conversation.
+  const conversation = await createConversation(db().sql, { mode: 'private', agent: TRANSLATOR });
+  directAgents.set('traduttore', localAgent('L1'));
+  await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  directAgents.set('traduttore', localAgent('L2'));
+  agentModelOf = undefined;
+  await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  agentModelOf = 'local-large';
+  directAgents.delete('traduttore');
+  await assert.rejects(directCalls().start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  directAgents.set('traduttore', localAgent('L2'));
+  // A core that does not pass its agents: no calls in a direct chat.
+  await assert.rejects(calls.start(conversation.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  // The Coder with Claude off.
+  const coder = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], agent: CODER });
+  claudeOn = false;
+  await assert.rejects(directCalls().start(coder.id, { sdp: SDP, type: 'offer' }), { name: 'CallError', code: 'agent-off' });
+  claudeOn = true;
+  // Never incognito: a direct chat has no incognito form.
+  await assert.rejects(createConversation(db().sql, { mode: 'private', agent: TRANSLATOR, incognito: true }), (error: unknown) => error instanceof ChatError);
+  assert.equal(await liveCall(db().sql), undefined);
+  // The same rules for a call scheduled or "when done".
+  await assert.rejects(scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => calls.check(id)), { name: 'CallError', code: 'agent-off' });
+  const scheduled = await scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => directCalls().check(id));
+  assert.equal(scheduled.agent, 'coder');
+  assert.equal(scheduled.answerer, 'Coder');
+  claudeOn = false;
+  await assert.rejects(scheduleCall(db().sql, coder.id, new Date(Date.now() + 3_600_000), new Date(), (id) => directCalls().check(id)), { code: 'agent-off' });
+  claudeOn = true;
+  await db().sql`UPDATE calls SET status = 'skipped', end_reason = 'cancelled', ended_at = now() WHERE id = ${scheduled.id}`;
+});
+
+test('the Coder in a call: a bridge passes the words on as its message, says so at once and reads the answer when it comes (D-158)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], agent: CODER });
+  const before = asked.length;
+  const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+  assert.equal(call.answerer, 'Coder');
+  assert.equal(greetingSent(call.id), 'Ciao, sono la linea del Coder: quello che mi dici lo passo al Coder. Dimmi pure.');
+  const texts = agentCallText('Coder');
+
+  // Private data said aloud in its work chat: refused, nothing stored, nothing passed.
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'Il mio IBAN è IT60X0542811101000000123456'), { say: CALL_TEXT.privateInWork });
+  assert.equal((await listMessages(db().sql, conversation.id, { limit: 10 })).length, 0);
+
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'Aggiungi un test al login'), { say: texts.bridged });
+  const [task] = await db().sql<{ id: string; assignee: string }[]>`SELECT id::text, assignee FROM tasks WHERE conversation_id = ${conversation.id}`;
+  assert.ok(task !== undefined);
+  assert.equal(task.assignee, 'coder');
+  const [delegation] = await db().sql<{ agent: string; brief: string }[]>`SELECT d.agent, d.brief FROM task_delegations d WHERE d.task_id = ${task.id}`;
+  assert.deepEqual({ ...delegation }, { agent: 'coder', brief: 'Aggiungi un test al login' });
+  const spoken = await listMessages(db().sql, conversation.id, { limit: 10 });
+  assert.deepEqual(spoken.map(({ role, channel, body }) => [role, channel, body]), [
+    ['user', 'voice', 'Aggiungi un test al login'],
+    ['assistant', 'voice', texts.bridged],
+  ]);
+  // One job at a time: while the Coder works the call says so.
+  assert.deepEqual(await directCalls().turn(call.id, tokenOf(call.id), 'E poi anche il logout'), { say: texts.busy });
+
+  // Its answer comes: the start of it is said in the call.
+  await db().sql`INSERT INTO messages (conversation_id, role, channel, label, body, task_id, agent) VALUES (${conversation.id}, 'assistant', 'web', 'L1', ${'Fatto: ho aggiunto **un** test.'}, ${task.id}, 'coder')`;
+  await db().sql`UPDATE tasks SET status = 'done', evidence = ${db().sql.json([{ kind: 'message' }])} WHERE id = ${task.id}`;
+  await until(() => said(call.id).length > 0);
+  assert.deepEqual(said(call.id), ['Fatto: ho aggiunto un test.']);
+  // No model ever answered for the Coder.
+  assert.equal(asked.length, before);
+  assert.equal((await loadCall(db().sql, call.id))?.delegations, 1);
+  await directCalls().end(call.id, 'hangup');
+});
+
+test('the Coder still at work when the time is over: the call says it, and "chiamami quando finisci" calls back in its name (D-158)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: ['site'], agent: CODER });
+  const { call } = await directCalls().start(conversation.id, { sdp: SDP, type: 'offer' });
+  await directCalls().turn(call.id, tokenOf(call.id), 'Rifai il menu');
+  await until(() => said(call.id).length > 0, 5000);
+  assert.deepEqual(said(call.id), [agentCallText('Coder').stillWorking]);
+  await directCalls().end(call.id, 'hangup');
+
+  const [task] = await db().sql<{ id: string }[]>`SELECT id::text FROM tasks WHERE conversation_id = ${conversation.id}`;
+  const later = await callWhenDone(db().sql, task?.id ?? '', (id) => directCalls().check(id));
+  assert.equal(later.answerer, 'Coder');
+  // It rings (as the ringer makes it), and the greeting is the Coder's line.
+  await db().sql`UPDATE tasks SET status = 'done', evidence = ${db().sql.json([{ kind: 'message' }])} WHERE id = ${task?.id ?? ''}`;
+  await db().sql`UPDATE calls SET status = 'ringing', rang_at = now() WHERE id = ${later.id}`;
+  const answered = await directCalls().answer(later.id, { sdp: SDP, type: 'offer' });
+  assert.equal(answered.call.agent, 'coder');
+  assert.ok(greetingSent(later.id).startsWith('Ciao, sono la linea del Coder'));
+  assert.ok(!greetingSent(later.id).includes('Arianna'));
+  await directCalls().end(later.id, 'hangup');
+
+  // An agent that cannot answer any more: the ringing call ends unanswered with the refusal.
+  const [again] = await db().sql<{ id: string }[]>`INSERT INTO calls (conversation_id, direction, reason, status, rang_at) VALUES (${conversation.id}, 'out', 'scheduled', 'ringing', now()) RETURNING id::text`;
+  claudeOn = false;
+  await assert.rejects(directCalls().answer(again?.id ?? '', { sdp: SDP, type: 'offer' }), { code: 'agent-off' });
+  claudeOn = true;
+  assert.equal((await loadCall(db().sql, again?.id ?? ''))?.status, 'missed');
 });
