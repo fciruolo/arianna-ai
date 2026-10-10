@@ -66,6 +66,10 @@ Un'incognita è una conversazione privata o di lavoro con un segno fissato alla 
 
 L'utente vede questo elenco prima del primo messaggio e di nuovo alla chiusura, con i numeri veri di quella conversazione. Una memoria a lungo termine (Fase 2) dovrà escludere le incognite.
 
+### Eliminazione per sempre (D-157)
+
+Scelta dell'utente del 2026-10-10, che supera D-046 e D-057 in questo punto. **"Elimina"** di una conversazione (dalla lista, dalle chat di sistema o dalle Archiviate, con la conferma "Eliminare per sempre?") toglie dal database tutto ciò che la conversazione ha lasciato, **registro compreso**: messaggi, task, passi, deleghe e loro file, chiamate, attività, riassunti, partecipanti, errori, approvazioni, decisioni del router, righe del gateway (anche il riassunto L1 di ciò che è uscito), cambi di etichetta ed eventi della conversazione e dei suoi task, e le chat di sistema sui suoi task. La catena degli eventi si ricuce (impronte ricalcolate dalla prima riga tolta) e resta una sola riga `events.rewoven` senza contenuto. Restano: le card create da lì (senza il legame), le note salvate nella Conoscenza, i file cambiati dal Coder nei progetti, ciò che un fornitore cloud ha già ricevuto, le sessioni di Claude Code e Codex nella home dell'utente, i byte nel database fino alla sovrascrittura (come sopra). Mai la conversazione della segretaria, quella di Telegram né un'incognita aperta (ha "Termina"). **Note:** "Elimina" nella pagina di una nota della Conoscenza, nei Pensieri e nella scheda "Conoscenza" di un progetto cancella il file dal disco, solo per un clic dell'utente nella chat (nessuno strumento di Arianna elimina note); l'evento `note.deleted` dice solo dove (`inbox`, `kb`, `project`), mai percorso né titolo. Nessuna regola nuova in `packages/policy`: l'eliminazione non fa uscire nulla.
+
 ## Confinamento degli esecutori cloud
 
 Profilo applicato da `packages/executors` a ogni lancio; i nomi esatti dei flag si verificano su `claude --help` e `codex --help` nei task 1.5 e 1.16 e si fissano nel test di contratto (per `codex` 0.160.0, D-138).

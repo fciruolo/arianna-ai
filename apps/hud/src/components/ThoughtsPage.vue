@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { captureNote, fetchNoteLink, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { captureNote, deleteNote, fetchNoteLink, listNotes, loadNote, organizeNote } from '../lib/api.ts';
+import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import { MAX_NOTE_BYTES } from '../lib/capture.ts';
 import {
   errorText,
@@ -34,6 +35,7 @@ import {
   type NoteSummary,
   type StatusFilter,
 } from '../lib/thoughts.ts';
+import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -72,6 +74,12 @@ const requeueing = ref(false);
 const panelNotice = ref<string | null>(null);
 /** The note whose link is being downloaded and summarized (D-154). */
 const fetching = ref<string | null>(null);
+/** The thought waiting for the user to confirm its deletion for good (D-157), and the one being deleted. */
+const deleting = ref<string | null>(null);
+/** The same from the panel of the open thought. */
+const deletingOpen = ref(false);
+const removing = ref(false);
+const deleteError = ref<string | null>(null);
 
 const counter = computed(() => sizeCounter(draft.value));
 const tooLarge = computed(() => byteLength(draft.value) > MAX_NOTE_BYTES);
@@ -200,6 +208,7 @@ async function read(name: string): Promise<void> {
 
 function open(name: string): void {
   panelNotice.value = null;
+  deletingOpen.value = false;
   if (selectedName.value === name) return;
   selectedName.value = name;
   note.value = null;
@@ -211,6 +220,7 @@ function closePanel(): void {
   note.value = null;
   noteError.value = null;
   panelNotice.value = null;
+  deletingOpen.value = false;
   readRequest += 1;
 }
 
@@ -296,6 +306,25 @@ async function fetchAndSummarize(): Promise<void> {
     }, FETCH_POLL_MS);
   };
   look();
+}
+
+/** "Elimina" confirmed: the file of the thought goes for good; the list and the panel let it go. */
+async function removeThought(name: string): Promise<void> {
+  if (removing.value) return;
+  removing.value = true;
+  deleteError.value = null;
+  try {
+    await deleteNote(name);
+    deleting.value = null;
+    deletingOpen.value = false;
+    if (selectedName.value === name) closePanel();
+    notes.value = notes.value.filter((item) => item.name !== name);
+    await refresh();
+  } catch (cause) {
+    deleteError.value = `Non ho eliminato il pensiero. ${errorText(cause)}`;
+  } finally {
+    removing.value = false;
+  }
 }
 
 function onWindowKey(event: KeyboardEvent): void {
@@ -411,10 +440,23 @@ onBeforeUnmount(() => {
           <div v-for="group in groups" :key="group.title">
             <h2 class="hud-title mx-1 mb-1.5">{{ group.title }}</h2>
             <ul class="flex flex-col gap-1.5">
-              <li v-for="item in group.items" :key="item.name">
+              <li v-for="item in group.items" :key="item.name" class="group relative">
+                <DeleteConfirm
+                  v-if="deleting === item.name"
+                  :subject="displayTitle(item)"
+                  :text="DELETE_NOTE_TEXT"
+                  :extra="deleteError"
+                  :busy="removing"
+                  @confirm="removeThought(item.name)"
+                  @cancel="
+                    deleting = null;
+                    deleteError = null;
+                  "
+                />
                 <button
+                  v-else
                   type="button"
-                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors"
+                  class="flex w-full flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 pr-10 text-left transition-colors"
                   :class="selectedName === item.name ? 'border-accent bg-surface-2' : 'border-line bg-surface hover:border-line-strong'"
                   :aria-current="selectedName === item.name ? 'true' : undefined"
                   @click="open(item.name)"
@@ -443,6 +485,19 @@ onBeforeUnmount(() => {
                     <span v-for="tag in item.tags" :key="tag" class="text-ink/70">#{{ tag }}</span>
                   </span>
                   <span v-if="stateOf(item) === 'organizing'" class="hud-scan w-full" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="deleting !== item.name"
+                  type="button"
+                  class="absolute right-2 bottom-2 rounded-md p-1 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                  :aria-label="`Elimina per sempre ${displayTitle(item)}`"
+                  title="Elimina per sempre"
+                  @click="
+                    deleteError = null;
+                    deleting = item.name;
+                  "
+                >
+                  <Icon name="delete" :size="15" />
                 </button>
               </li>
             </ul>
@@ -491,6 +546,30 @@ onBeforeUnmount(() => {
         <button v-if="selected !== undefined" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('openGraph', graphId(selected.path))">
           <Icon name="knowledge" :size="14" />Apri nel grafo
         </button>
+        <button
+          v-if="selected !== undefined"
+          type="button"
+          class="btn px-2.5 py-1 text-xs hover:text-danger"
+          @click="
+            deleteError = null;
+            deletingOpen = true;
+          "
+        >
+          <Icon name="delete" :size="14" />Elimina
+        </button>
+      </div>
+      <div v-if="selected !== undefined && deletingOpen" class="border-b border-line px-4 py-2.5">
+        <DeleteConfirm
+          :subject="displayTitle(selected)"
+          :text="DELETE_NOTE_TEXT"
+          :extra="deleteError"
+          :busy="removing"
+          @confirm="removeThought(selected.name)"
+          @cancel="
+            deletingOpen = false;
+            deleteError = null;
+          "
+        />
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div v-if="fetching !== null && fetching === selectedName" class="mb-3">

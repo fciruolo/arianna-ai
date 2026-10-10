@@ -6,6 +6,7 @@ import { createLabelRules, isAtMost, isLabel, labelForKbPage, labelForPath, LABE
 
 import { localTimestamp, slugOf } from './capture.ts';
 import { KB_PROJECT_NOTES, parsePage, type KbPage } from './orchestrator/kb.ts';
+import { unlinkPlainFile } from './plain-file.ts';
 
 /**
  * The knowledge of a project (I-11, D-145, tappa P2): the management folders
@@ -491,6 +492,23 @@ export function writeProjectNote(projects: readonly Project[], name: string, env
     return { path: `${folder.path}/${fileName}`, label };
   }
   throw new KnowledgeError('unavailable', 'too many notes with the same name in this second');
+}
+
+/**
+ * "Elimina" of a note of a project (D-157): the file `path` (relative to
+ * where the knowledge is, as the tab "Conoscenza" lists it) goes for good.
+ * Only a markdown file inside a management folder of the project, never a
+ * hidden entry, a link, a part or a file of the code; anything else answers
+ * not found. The user sees every note of the tab, so any label is deleted.
+ */
+export function deleteProjectNote(projects: readonly Project[], name: string, env: KnowledgeEnv, path: string): void {
+  const refuse = (): KnowledgeError => new KnowledgeError('not-found', 'note not found');
+  if (typeof path !== 'string' || path.length > 1024 || !path.toLowerCase().endsWith('.md')) throw refuse();
+  const segments = path.split('/');
+  if (segments.length < 2 || segments.some((segment) => segment === '' || segment === '.' || segment === '..' || segment.startsWith('.') || segment.includes('\\') || segment.includes('\0'))) throw refuse();
+  const base = knowledgeBase(projects, name, env);
+  if (!base.exists || !base.folders.some((folder) => folder.path === segments[0])) throw refuse();
+  if (!unlinkPlainFile(base.root, segments)) throw refuse();
 }
 
 /** A page of a project for `kb.search`: its path for the tools, and its folder label (known without opening it). */

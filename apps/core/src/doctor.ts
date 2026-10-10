@@ -225,7 +225,7 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
   if (rewritable !== '') problems.push(`may update append-only ${rewritable}`);
   if (names((table) => table.name === 'schema_migrations' && table.writes) !== '') problems.push('may write schema_migrations');
 
-  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, and the locks of the second.
+  // A function that runs as its owner gives the core the owner's hands: only the purges of D-057 and D-136 may, the locks of the second and the erase of D-157.
   const definers = await owner<{ name: string }[]>`
     SELECT p.proname AS name FROM pg_proc p
     WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
@@ -233,9 +233,10 @@ async function checkAppRole(owner: Sql, checks: DoctorCheck[]): Promise<void> {
       AND p.oid IS DISTINCT FROM to_regprocedure('purge_conversation(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('purge_incognito(uuid)')
       AND p.oid IS DISTINCT FROM to_regprocedure('lock_incognito(uuid)')
+      AND p.oid IS DISTINCT FROM to_regprocedure('erase_conversation(uuid)')
     ORDER BY p.proname`;
   if (definers.length > 0) problems.push(`may run as the owner through ${definers.map((row) => row.name).join(', ')}`);
-  for (const purgeName of ['purge_conversation', 'purge_incognito', 'lock_incognito']) {
+  for (const purgeName of ['purge_conversation', 'purge_incognito', 'lock_incognito', 'erase_conversation']) {
     const [purge] = await owner<{ public: boolean; pinned: boolean }[]>`
       SELECT has_function_privilege('public', p.oid, 'EXECUTE') AS public,
              EXISTS (SELECT FROM unnest(coalesce(p.proconfig, '{}')) setting WHERE setting LIKE 'search\\_path=%pg\\_temp') AS pinned

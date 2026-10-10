@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
-import { ApiError, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
+import { ApiError, deleteKnowledgePage, loadKnowledgeGraph, loadKnowledgePage } from '../lib/api.ts';
+import { DELETE_NOTE_TEXT } from '../lib/erase.ts';
 import {
   advanceOrbit,
   blendView,
@@ -76,6 +77,7 @@ import {
   type Simulation3,
 } from '../lib/graph3d.ts';
 import type { KnowledgeSource } from '../lib/route.ts';
+import DeleteConfirm from './DeleteConfirm.vue';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -119,6 +121,10 @@ const filter = ref('');
 const selected = ref(-1);
 const hovered = ref(-1);
 const page = ref<KnowledgePage | null>(null);
+/** The page of the selected node waiting for the user to confirm its deletion for good (D-157). */
+const deletingPage = ref<string | null>(null);
+const removingPage = ref(false);
+const deletePageError = ref<string | null>(null);
 const pageLoading = ref(false);
 const pageError = ref<string | null>(null);
 const jumpNotice = ref<string | null>(null);
@@ -1358,9 +1364,28 @@ function focusOn(index: number): void {
   glideTo(centerOn(width - panel, height, at.x, at.y, Math.max(view.k, 1.4)));
 }
 
+/** "Elimina" confirmed: the file of the page goes for good, the graph is read again. */
+async function removePage(id: string): Promise<void> {
+  if (removingPage.value) return;
+  removingPage.value = true;
+  deletePageError.value = null;
+  try {
+    await deleteKnowledgePage(id);
+    deletingPage.value = null;
+    await select(-1);
+    await load();
+  } catch (failure) {
+    deletePageError.value = failure instanceof ApiError && failure.status === 404 ? 'La nota non c’è più o non si può eliminare da qui.' : 'Non ho eliminato la nota: riprova.';
+  } finally {
+    removingPage.value = false;
+  }
+}
+
 let pageRequest = 0;
 async function select(index: number): Promise<void> {
   selected.value = index;
+  deletingPage.value = null;
+  deletePageError.value = null;
   jumpNotice.value = null;
   requestFrame();
   const node = nodes.value[index];
@@ -1772,6 +1797,24 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p v-if="jumpNotice !== null" class="mt-2 text-xs text-warn" role="status">{{ jumpNotice }}</p>
+        <template v-if="selectedNode.kind !== 'tag' && source === 'kb'">
+          <DeleteConfirm
+            v-if="deletingPage === selectedNode.id"
+            class="mt-3"
+            :subject="selectedNode.title"
+            :text="DELETE_NOTE_TEXT"
+            :extra="deletePageError"
+            :busy="removingPage"
+            @confirm="removePage(selectedNode.id)"
+            @cancel="
+              deletingPage = null;
+              deletePageError = null;
+            "
+          />
+          <button v-else type="button" class="btn mt-3 px-2.5 py-1 text-xs hover:text-danger" @click="deletingPage = selectedNode.id">
+            <Icon name="delete" :size="14" />Elimina
+          </button>
+        </template>
         <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la pagina…</p>
         <p v-else-if="pageError !== null" class="mt-3 text-sm text-danger">{{ pageError }}</p>
         <MarkdownText v-else-if="page !== null && page.id === selectedNode.id" class="mt-3" :source="page.body" :wikilink="followWikilink" />

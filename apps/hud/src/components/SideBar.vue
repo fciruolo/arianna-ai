@@ -57,7 +57,7 @@ const emit = defineEmits<{
   open: [id: string];
   archive: [id: string, archived: boolean];
   pin: [id: string, pinned: boolean];
-  purge: [id: string];
+  erase: [id: string];
 }>();
 
 const devDot = computed(() => pendingBadge(props.devPending));
@@ -218,7 +218,7 @@ function itemClass(on: boolean): string {
       @open="(id) => emit('open', id)"
       @archive="(id, value) => emit('archive', id, value)"
       @pin="(id, value) => emit('pin', id, value)"
-      @purge="(id) => emit('purge', id)"
+      @erase="(id) => emit('erase', id)"
     />
 
     <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
