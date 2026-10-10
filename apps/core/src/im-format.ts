@@ -43,6 +43,8 @@ export interface ParsedIm {
   call: string | null;
   status: ImStatus;
   items: ImItem[];
+  /** The text of the section `## Report` without the blank lines around it; empty when there is none (D-167, P4c). */
+  report: string;
 }
 
 export class ImFormatError extends Error {
@@ -97,13 +99,13 @@ function headerRange(lines: readonly string[]): { start: number; end: number } |
   return end === -1 ? null : { start: 1, end };
 }
 
-/** The lines `[start, end)` of the section `## Lavori`, or null when there is none. */
-function itemsRange(lines: readonly string[]): { heading: number; start: number; end: number } | null {
+/** The lines `[start, end)` of the section `## <name>` (any letter case), or null when there is none. */
+function sectionRange(lines: readonly string[], name: string): { heading: number; start: number; end: number } | null {
   const header = headerRange(lines);
   const from = header === null ? 0 : header.end + 1;
   for (let index = from; index < lines.length; index += 1) {
     const match = /^##\s+(.+?)\s*#*\s*$/.exec(lines[index] ?? '');
-    if (match?.[1]?.toLowerCase() !== ITEMS_HEADING.toLowerCase()) continue;
+    if (match?.[1]?.toLowerCase() !== name.toLowerCase()) continue;
     // A heading inside a fenced code block does not close the section.
     let end = index + 1;
     let fenced = false;
@@ -114,6 +116,11 @@ function itemsRange(lines: readonly string[]): { heading: number; start: number;
     return { heading: index, start: index + 1, end };
   }
   return null;
+}
+
+/** The lines `[start, end)` of the section `## Lavori`, or null when there is none. */
+function itemsRange(lines: readonly string[]): { heading: number; start: number; end: number } | null {
+  return sectionRange(lines, ITEMS_HEADING);
 }
 
 function stateOf(mark: string): ImState | undefined {
@@ -171,7 +178,7 @@ export function parseIm(text: string): ParsedIm {
       items.push({ line: index + 1, state, ...item });
     }
   }
-  return { number, date: isImDate(date) ? date : null, call: isImDate(call) ? call : null, status, items };
+  return { number, date: isImDate(date) ? date : null, call: isImDate(call) ? call : null, status, items, report: reportOf(text) };
 }
 
 /** The text with the item on `line` set to `state`; anything that is not an item there is refused. */
@@ -323,4 +330,48 @@ export function raiseLabel(text: string, label: string, current: string): string
   const kept = lines.filter((line, index) => !(index >= header.start && index < header.end && /^\s*label\s*:/i.test(line)));
   kept.splice(header.start, 0, `label: ${label}`);
   return kept.join(eol);
+}
+
+const REPORT_HEADING = 'Report';
+const NOTES_HEADING = 'Note';
+
+/** The text of the section `## Report`, without the blank lines around it, with `\n` line ends; empty when there is none. */
+export function reportOf(text: string): string {
+  const { lines } = splitLines(text);
+  const range = sectionRange(lines, REPORT_HEADING);
+  if (range === null) return '';
+  return lines.slice(range.start, range.end).join('\n').replace(/^\s*\n/, '').trimEnd();
+}
+
+/**
+ * The text with `report` as the body of `## Report` (D-167, P4c): only the
+ * lines of that section change; when the file has none, the section is
+ * added before `## Note` (or at the end). The report must not hold a heading
+ * of level 1 or 2 nor a fence, which would end the section or swallow the
+ * next one: the caller cleans the text of a model first (cleanReport).
+ */
+export function setReport(text: string, report: string): string {
+  const body = report.replace(/\r\n?/g, '\n').trim();
+  const bodyLines = body === '' ? [] : body.split('\n');
+  if (bodyLines.some((line) => /^#{1,2}(\s|$)/.test(line) || isFence(line))) throw new ImFormatError('the report must not hold headings of level 1 or 2 nor code fences');
+  const { lines, eol } = splitLines(text);
+  const range = sectionRange(lines, REPORT_HEADING);
+  const block = bodyLines.length === 0 ? [''] : ['', ...bodyLines, ''];
+  if (range !== null) {
+    // The blank line before the next section stays (at the end of the file, the last line end).
+    lines.splice(range.start, range.end - range.start, ...block);
+    return lines.join(eol);
+  }
+  const notes = sectionRange(lines, NOTES_HEADING);
+  if (notes !== null) {
+    lines.splice(notes.heading, 0, `## ${REPORT_HEADING}`, ...block);
+    return lines.join(eol);
+  }
+  while (lines.length > 0 && lines[lines.length - 1]?.trim() === '') lines.pop();
+  return [...lines, '', `## ${REPORT_HEADING}`, ...block].join(eol);
+}
+
+/** "giovedì 15 ottobre, 10:00": the day and hour of an IM without the year, for a reminder. */
+export function dayAndTime(date: string): string {
+  return longDate(date).replace(/ \d{4}, /, ', ');
 }

@@ -2648,3 +2648,16 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 **Tappe.**
 - **D1 (questa):** il diario scritto dal codice, trovato dalla ricerca di Arianna e mostrato nella scheda Conoscenza come nota di Workplan.
 - **D2 (da decidere):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario.
+
+### I-17, comandi da Spotlight (richiesta dell'utente del 2026-10-10)
+
+**Cosa ha chiesto l'utente.** "Comandi per Mac da usare nello Spotlight per fare operazioni rapide", per esempio "Segna che per il prossimo IM del cliente Rossi dobbiamo implementare la pagina del dettaglio clienti".
+
+**Proposta di Claude (accettata come idea, da fare dopo I-16).**
+1. **Un'azione di sistema dell'aiutante nativo** (`apps/notifier`, D-128): un App Intent "Di' ad Arianna" con un campo di testo. Le azioni di un'app firmata compaiono da sole in Spotlight, in Comandi Rapidi e in Siri, con una scorciatoia da tastiera a scelta. Niente app di terzi (Raycast, Alfred) e nessuna finestra nuova da mantenere.
+2. **Il testo va solo al core sul Mac** (loopback, come lo stream delle notifiche), come messaggio nella conversazione della segretaria: Privato (L2), quindi passa dalle stesse regole della chat; la risposta di Arianna torna come notifica dell'aiutante, con "Apri" verso la chat.
+3. **Le conferme restano:** scrivere in un IM Interno da qui chiede il sì dell'utente come da una chat privata (D-167, punto 6); la notifica porta alla scheda nella chat. Confermare direttamente dalla notifica è da decidere.
+4. **"Del cliente Rossi"** si risolve con l'anagrafica di I-16 (D-168): `im.add` accetta un cliente al posto del progetto e, se il cliente ha più progetti, Arianna chiede quale.
+5. **Variante "Annota"**: scrive in `kb/inbox` come `pnpm kb:capture` (D-080), senza passare dal modello.
+
+**Tappe proposte.** S1 l'azione "Di' ad Arianna" con la risposta in notifica; S2 "Annota"; S3 il cliente al posto del progetto in `im.add` (dopo I-16).

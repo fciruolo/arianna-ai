@@ -3,9 +3,13 @@
 // nothing when the list is empty, in the secretary's conversation without
 // opening a session, and its event becomes a notice of kind `reminder`.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
-import { DEFAULT_SECRETARY } from '@arianna/config';
+import { DEFAULT_SECRETARY, resolveHome, type Project } from '@arianna/config';
+import { createLabelRules } from '@arianna/policy';
 
 import { noticeOf } from '../src/notifications.ts';
 import { createSecretaryTicker, fireReminder } from '../src/reminders.ts';
@@ -25,6 +29,29 @@ async function fired(day: string): Promise<{ slot: string; written: boolean }[]>
     SELECT payload FROM events WHERE kind = 'schedule.fired' AND payload ->> 'day' = ${day} ORDER BY id`;
   return rows.map((row) => ({ slot: row.payload.slot, written: row.payload.written }));
 }
+
+/** A container with one IM file, under data/test-tmp (fake data only). */
+function imSource(im: string): { projects: () => readonly Project[]; env: { home: string; rules: ReturnType<typeof createLabelRules> } } {
+  const home = join(resolveHome({}), 'data', 'test-tmp', `reminders-im-${randomUUID()}`);
+  after(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+  const box = join(home, 'repos', 'progetto-test');
+  mkdirSync(join(box, 'IM'), { recursive: true });
+  mkdirSync(join(box, 'parte', '.git'), { recursive: true });
+  mkdirSync(join(home, 'arianna', 'kb'), { recursive: true });
+  writeFileSync(join(box, 'parte', '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(box, 'IM', 'IM-33.md'), im);
+  const projects: Project[] = [{ name: 'progetto-test', path: 'repos/progetto-test', absolute: box, label: 'L1' }];
+  return { projects: () => projects, env: { home: join(home, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } };
+}
+
+test('an IM of tomorrow above the secretary conversation does not even create it (D-167, P4c)', async () => {
+  const ims = imSource('---\nim: 33\ndata: 2026-09-03 10:00\nlabel: L3\nstato: previsto\n---\n\n## Lavori\n\n- [ ] Segreto finto\n');
+  assert.equal(await fireReminder(db().sql, '2026-09-02', 'morning', ims), 'empty');
+  const [conversations] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM conversations WHERE secretary`;
+  assert.equal(conversations?.count, 0);
+});
 
 test('an empty list writes nothing, creates no conversation, and still counts as done for the day', async () => {
   assert.equal(await fireReminder(db().sql, '2026-10-01', 'morning'), 'empty');
@@ -99,4 +126,22 @@ test('two at once write once; a restarted ticker does not write again', async ()
     { slot: 'morning', written: true },
     { slot: 'afternoon', written: true },
   ]);
+});
+
+test('the morning of the day before an IM names it, also with nothing else to say (D-167, P4c)', async () => {
+  const ims = imSource('---\nim: 33\ndata: 2026-11-05 10:00\nstato: previsto\n---\n\n## Lavori\n\n- [ ] Fatture finte\n- [/] Esportazione\n');
+  // No commitment left from the tests before: the IM line is all there is to say.
+  await db().sql`UPDATE commitments SET status = 'cancelled', updated_at = now() WHERE status = 'open'`;
+  assert.equal(await fireReminder(db().sql, '2026-11-04', 'afternoon', ims), 'empty', 'the afternoon never names it');
+  let before = (await secretaryMessages()).length;
+  assert.equal(await fireReminder(db().sql, '2026-11-04', 'morning', ims), 'written');
+  const [message] = (await secretaryMessages()).slice(before);
+  assert.ok(message !== undefined);
+  assert.match(message.body, /^Buongiorno\. Il promemoria di oggi, [^\n]+\.\n\nDomani c’è l’IM-33 di progetto-test \(giovedì 5 novembre, 10:00\): 2 voci ancora aperte\.$/);
+  assert.doesNotMatch(message.body, /Fatture/);
+  assert.equal(message.label, 'L2');
+  // The day of the IM itself: no line (it is not tomorrow).
+  before = (await secretaryMessages()).length;
+  assert.equal(await fireReminder(db().sql, '2026-11-05', 'morning', ims), 'empty');
+  assert.equal((await secretaryMessages()).length, before);
 });
