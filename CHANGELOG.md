@@ -22,6 +22,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Su Telegram un piano e la scelta del modello arrivano come avviso senza pulsanti: si decidono solo dalla chat web (D-159).
 - "Avvia" rifiuta con un motivo chiaro una card di Arianna o di un agente che non esiste più; il Designer in locale sa che non scrive file e descrive la proposta (D-159).
 
+### Corretto
+
+- Anche la delega di Arianna al Designer dalla chat chiede prima con chi lavorare (Claude, ChatGPT o modello locale, solo le strade ammesse con il perché delle escluse), nella scheda sotto il messaggio: prima la delega partiva su Claude Code senza chiedere. "Non ora" fa rispondere ad Arianna che il lavoro non è partito; la scelta si ricontrolla quando il lavoro parte (D-159).
+
 ## [0.46.0] - 2026-10-10
 
 ### Aggiunto

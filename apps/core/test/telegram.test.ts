@@ -95,7 +95,7 @@ test('an approval notice names the action and the title, never anything else', (
   assert.equal(approvalNotice('commitment', 'commitment.add'), 'La segretaria aspetta una conferma: si dà solo dalla chat web.');
   // A plan and the choice of an executor (D-159): no detail, no button, the web chat only.
   assert.equal(approvalNotice('plan', 'task.plan', 'Landing'), 'Arianna propone un piano di card: si approva solo dalla chat web.\nTask: Landing');
-  assert.equal(approvalNotice('executor', 'card.executor'), 'Una card aspetta che tu scelga chi la fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.');
+  assert.equal(approvalNotice('executor', 'card.executor'), 'Un lavoro di un agente aspetta che tu scelga chi lo fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.');
   assert.deepEqual(['declassify', 'commitment', 'plan', 'executor'].map(isWebOnly), [true, true, true, true]);
   assert.deepEqual(['action', 'workspace', 'budget', 'setting'].map(isWebOnly), [false, false, false, false]);
   // A name outside the closed list is not quoted.

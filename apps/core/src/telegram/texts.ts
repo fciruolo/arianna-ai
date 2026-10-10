@@ -71,7 +71,7 @@ export function approvalNotice(kind: string, action: string, title?: string): st
             : kind === 'plan'
               ? 'Arianna propone un piano di card: si approva solo dalla chat web.'
               : kind === 'executor'
-                ? 'Una card aspetta che tu scelga chi la fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'
+                ? 'Un lavoro di un agente aspetta che tu scelga chi lo fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'
                 : `Approvazione richiesta: ${actionName(action)}.`;
   const task = title === undefined || oneLine(title) === '' ? '' : `\nTask: ${oneLine(title)}`;
   const tail = isWebOnly(kind) ? '' : '\nIl dettaglio è nella chat web.';

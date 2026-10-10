@@ -1,7 +1,7 @@
 import { ApiError } from './api.ts';
 import { dayLabel } from './commitments.ts';
 import { agentTitle, errorText, relativeTimeText } from './italian.ts';
-import { CHOICE_TEXT, EXCLUDED_TEXT } from './labels.ts';
+import { CHOICE_TEXT, EXCLUDED_TEXT, EXCLUDED_WORK_TEXT } from './labels.ts';
 import type { ExecutorChoice, Label, TaskStatus } from './types.ts';
 
 /**
@@ -812,13 +812,15 @@ export function executorChoices(
 ): { title: string; agent: string; options: ExecutorChoice[]; excluded: { executor: string; why: string }[] } | undefined {
   const { title, agent, options, excluded } = detail;
   if (typeof title !== 'string' || typeof agent !== 'string' || !Array.isArray(options)) return undefined;
+  // A delegation of the chat names its delegation; a card does not.
+  const whyText = typeof detail.delegation === 'string' ? EXCLUDED_WORK_TEXT : EXCLUDED_TEXT;
   const known: readonly string[] = ['claude', 'codex', 'local'];
   const offered = (options as unknown[]).filter((option): option is ExecutorChoice => typeof option === 'string' && known.includes(option));
   const left = Array.isArray(excluded)
     ? (excluded as unknown[]).flatMap((item) => {
         if (typeof item !== 'object' || item === null) return [];
         const { executor, reason } = item as Record<string, unknown>;
-        return typeof executor === 'string' && typeof reason === 'string' ? [{ executor: CHOICE_TEXT[executor] ?? executor, why: EXCLUDED_TEXT[reason] ?? reason }] : [];
+        return typeof executor === 'string' && typeof reason === 'string' ? [{ executor: CHOICE_TEXT[executor] ?? executor, why: whyText[reason] ?? reason }] : [];
       })
     : [];
   return offered.length === 0 ? undefined : { title, agent: agentTitle(agent), options: offered, excluded: left };

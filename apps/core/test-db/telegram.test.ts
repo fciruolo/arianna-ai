@@ -295,7 +295,7 @@ test('a declassification arrives without buttons and cannot be decided from Tele
 test('a plan and the choice of an executor (D-159) arrive without buttons and cannot be decided from Telegram', async () => {
   for (const [kind, head] of [
     ['plan', 'Arianna propone un piano di card: si approva solo dalla chat web.'],
-    ['executor', 'Una card aspetta che tu scelga chi la fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'],
+    ['executor', 'Un lavoro di un agente aspetta che tu scelga chi lo fa (Claude, ChatGPT o modello locale): si sceglie solo dalla chat web.'],
   ] as const) {
     const { approvalId } = await waitingApproval(db().sql, {
       conversationId: channel.conversationId,

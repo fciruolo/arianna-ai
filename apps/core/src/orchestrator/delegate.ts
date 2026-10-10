@@ -439,10 +439,12 @@ const TOOL = 'task.delegate';
 export const MAX_QUOTA_RETRIES = 5;
 
 /**
- * `only`: the cloud executor the user chose for a card (D-159): the router
- * reads the agent's card with that executor alone, so it never picks another.
+ * `only`: the way the user chose for a card or a delegation (D-159): the
+ * router reads the agent's card with that executor alone, so it never picks
+ * another; `local` runs the step on the local model, within the agent's
+ * `max_label`, as for an agent that only answers.
  */
-export async function planDelegation(env: DelegateEnv, task: Task, delegation: Delegation, only?: CloudExecutor): Promise<DelegationPlan> {
+export async function planDelegation(env: DelegateEnv, task: Task, delegation: Delegation, only?: CloudExecutor | 'local'): Promise<DelegationPlan> {
   const closed = (status: 'failed' | 'refused', result: string, decision?: RouteDecision): DelegationPlan => ({
     kind: 'closed',
     delegation,
@@ -452,13 +454,15 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   });
   const agent = env.agents.get(delegation.agent);
   if (agent === undefined) return closed('failed', `no agent card for ${delegation.agent}`);
-  const where = delegationRoute(agent.card);
+  const where = only === 'local' ? 'local' : delegationRoute(agent.card);
   if (where === undefined) return closed('failed', `${delegation.agent} does not take delegated steps`);
+  // The card as the router reads it: with the chosen executor alone.
+  const card = only === undefined ? agent.card : { ...agent.card, executors: agent.card.executors.filter((executor) => executor === only) };
 
   // A brief above what the agent may read leaves only as the exact text the user approved.
   let label = delegation.label;
   let declassify: { approvalId: string; to: Label } | undefined;
-  const ceiling = briefCeiling(agent.card);
+  const ceiling = only === 'local' ? agent.card.maxLabel : briefCeiling(agent.card);
   if (!isAtMost(label, ceiling)) {
     const approval = await declassificationOf(env.sql, delegation);
     if (approval?.state !== 'approved') {
@@ -473,7 +477,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 
   if (where === 'local') {
     // One call to the local model: no folder, no quota; the router checks the label against the agent.
-    const decision = await routeLocalAgent(env, agent.card, task.clearance, label, delegation.brief);
+    const decision = await routeLocalAgent(env, card, task.clearance, label, delegation.brief);
     if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
@@ -516,7 +520,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   const decision = route(
     {
       kind: cloudStepKind(agent.card),
-      agent: only === undefined ? agent.card : { ...agent.card, executors: agent.card.executors.filter((executor) => executor === only) },
+      agent: card,
       text: delegation.brief,
       budgetApproved: budget?.state === 'approved',
       ...preferredModel,
@@ -1004,6 +1008,14 @@ const LOCAL_REPORT_SCHEMA: Readonly<Record<string, unknown>> = {
   additionalProperties: false,
 };
 
+/**
+ * The line an agent that writes files elsewhere (the Designer, D-159) reads
+ * on the local model: there it has no file tools, so it describes its
+ * proposal and names no file it did not write.
+ */
+export const LOCAL_NO_FILES =
+  'In this mode you cannot write or read files: describe your proposal in your answer (structure, sections, colors, text), and never name or link a file as if you had written it.';
+
 /** What an agent that only answers reads before its own prompt: the frame is ours, the rest is the user's. */
 export const LOCAL_FRAME = [
   'You are an agent of Arianna, a personal assistant. Arianna hands you one step of a task with a brief: the next message.',
@@ -1088,7 +1100,7 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     const result = await model().chat({
       model: plan.model,
       messages: [
-        { role: 'system', content: localSystem(system, entry) },
+        { role: 'system', content: `${localSystem(system, entry)}${agent.card.tools.includes('repo.write') ? `\n\n${LOCAL_NO_FILES}` : ''}` },
         ...turns,
         { role: 'user', content: brief },
       ],

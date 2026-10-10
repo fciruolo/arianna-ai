@@ -1,4 +1,4 @@
-import { reasonText } from './italian.ts';
+import { agentTitle, reasonText } from './italian.ts';
 import { ACTION_TEXT, declassifyLabels, EXECUTOR_TEXT, MODEL_TEXT } from './labels.ts';
 import type { Approval } from './types.ts';
 
@@ -70,6 +70,10 @@ export function pendingAskText(approval: Pick<Approval, 'kind' | 'action' | 'det
       return typeof detail.title === 'string' && count > 0 ? `Creare ${String(count)} card per «${detail.title}»` : 'Creare le card di un piano';
     }
     case 'executor':
+      // A delegation of the chat (D-159): the agent and the request it works on.
+      if (typeof detail.delegation === 'string' && typeof detail.agent === 'string') {
+        return typeof detail.title === 'string' ? `Scegliere con chi lavora ${agentTitle(detail.agent)} per «${detail.title}»` : `Scegliere con chi lavora ${agentTitle(detail.agent)}`;
+      }
       return typeof detail.title === 'string' ? `Scegliere con chi lavora la card «${detail.title}»` : 'Scegliere con chi lavora una card';
     default: {
       const action = ACTION_TEXT[approval.action];

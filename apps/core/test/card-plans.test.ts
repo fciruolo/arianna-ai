@@ -8,7 +8,7 @@ import { readAnswer, responseSchema, systemPrompt, type ToolId } from '@arianna/
 import { resolveHome } from '@arianna/config';
 
 import { assigneeText, checkPlan, planAnswerText, planOf } from '../src/card-plans.ts';
-import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason } from '../src/orchestrator/card-run.ts';
+import { cardBrief, cardEnd, cardLabel, choiceOf, defaultWay, executorOptions, isAgentCard, LOCAL_CARD_NO_FILES, localCardRequest, noWayReason, waysFor } from '../src/orchestrator/card-run.ts';
 import { claudeToolsOf, codexAccessOf, delegationRoute, type DelegateEnv } from '../src/orchestrator/delegate.ts';
 import { orchestratorTools } from '../src/orchestrator/orchestrator.ts';
 import { committedAgents } from './support/committed-agents.ts';
@@ -164,6 +164,10 @@ test('the ways a card may run: the cloud only within the cloud ceiling, with an 
     noWayReason('designer', d, executorOptions(env([]), d, task('L3')).excluded),
     'no way for designer to work on this card now (claude: the card is above what designer may read there (cloud_max_label); codex: the card is above what designer may read there (cloud_max_label); local: the card is above what designer may read there (L2))',
   );
+  // A delegation of the chat (D-159): the same rules, from its label and project; its reason speaks of the work.
+  assert.deepEqual(waysFor(env(['claude']), d, 'L1', 'sito'), executorOptions(env(['claude']), d, task('L1')));
+  assert.deepEqual(waysFor(env(['claude']), d, 'L1', undefined).options, ['local']);
+  assert.equal(noWayReason('designer', d, [{ executor: 'local', reason: 'off' }], 'work'), 'no way for designer to work on this work now (local: off)');
 });
 
 test('an agent that does not ask: the cloud way when it can run, else the local model, else none', () => {

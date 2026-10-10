@@ -483,4 +483,9 @@ test('the choice of where a card runs: the ways offered, the ones left out with 
   );
   // Nothing to choose: not a choice the card can show.
   assert.equal(executorChoices({ title: 'Grafica', agent: 'designer', options: ['gemini'] }), undefined);
+  // A delegation of the chat (it names its delegation) speaks of the conversation, not of a card.
+  assert.deepEqual(
+    executorChoices({ title: 'Landing', agent: 'designer', options: ['local'], excluded: [{ executor: 'claude', reason: 'project' }], step: 2, delegation: 'd1' })?.excluded,
+    [{ executor: 'Claude', why: 'la conversazione non ha un progetto approvato con la sua cartella' }],
+  );
 });

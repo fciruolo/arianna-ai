@@ -7,7 +7,7 @@ import { CHAT_AGENT } from '../conversations.ts';
 import type { Queryable } from '../db/client.ts';
 import type { StepOutcome } from '../engine.ts';
 import type { Task } from '../tasks.ts';
-import { availableCloud, CLOUD_DELEGATES, delegationRoute, isCloudRoute, repoFor, type CloudExecutor, type DelegateEnv } from './delegate.ts';
+import { availableCloud, CLOUD_DELEGATES, delegationRoute, isCloudRoute, LOCAL_NO_FILES, repoFor, type CloudExecutor, type DelegateEnv } from './delegate.ts';
 import type { Delegation } from './delegations.ts';
 
 /**
@@ -47,8 +47,13 @@ export function cardLabel(task: Pick<Task, 'label' | 'effectiveLabel'>): Label {
 
 /** The project of a card as a delegation names it, or undefined when the user approved no folder for it. */
 export function cardRepo(env: Pick<DelegateEnv, 'settings'>, task: Pick<Task, 'project'>): string | undefined {
+  return approvedRepo(env, task.project);
+}
+
+/** The project a work names (a card's, a conversation's, a delegation's) as a delegation takes it, or undefined when the user approved no folder for it. */
+export function approvedRepo(env: Pick<DelegateEnv, 'settings'>, name: string | null | undefined): string | undefined {
   const parts = workParts(env.settings().projects);
-  const repo = repoFor(task.project, parts);
+  const repo = repoFor(name, parts);
   return repo !== undefined && projectNamed(parts, repo) !== undefined ? repo : undefined;
 }
 
@@ -61,12 +66,20 @@ export function cardRepo(env: Pick<DelegateEnv, 'settings'>, task: Pick<Task, 'p
  * the agents.
  */
 export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, task: Pick<Task, 'project' | 'label' | 'effectiveLabel'>): ExecutorOptions {
+  return waysFor(env, card, cardLabel(task), cardRepo(env, task));
+}
+
+/**
+ * The ways a work of `card` at `label`, in the approved project `repo`
+ * (undefined: none), may run now: the rules of `executorOptions`, shared by
+ * the cards and the delegations of the chat (D-159).
+ */
+export function waysFor(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings' | 'model'>, card: AgentCard, label: Label, repo: string | undefined): ExecutorOptions {
   const options: ExecutorChoice[] = [];
   const excluded: ExecutorOptions['excluded'] = [];
   const available: readonly string[] = availableCloud(env);
   // What the agent's cloud executors may read (its cloud_max_label, never above L1), as for a delegated brief.
-  const withinCloud = isAtMost(cardLabel(task), card.cloudMaxLabel ?? card.maxLabel) && isAtMost(cardLabel(task), 'L1');
-  const repo = cardRepo(env, task);
+  const withinCloud = isAtMost(label, card.cloudMaxLabel ?? card.maxLabel) && isAtMost(label, 'L1');
   for (const executor of CLOUD_DELEGATES) {
     if (!card.executors.includes(executor)) continue;
     if (!withinCloud) excluded.push({ executor, reason: 'label' });
@@ -75,7 +88,7 @@ export function executorOptions(env: Pick<DelegateEnv, 'claude' | 'codex' | 'set
     else options.push(executor);
   }
   if (card.executors.includes('local')) {
-    if (!isAtMost(cardLabel(task), card.maxLabel)) excluded.push({ executor: 'local', reason: 'label' });
+    if (!isAtMost(label, card.maxLabel)) excluded.push({ executor: 'local', reason: 'label' });
     else if (env.model === undefined) excluded.push({ executor: 'local', reason: 'off' });
     else options.push('local');
   }
@@ -98,15 +111,15 @@ export function defaultWay(env: Pick<DelegateEnv, 'claude' | 'codex' | 'settings
   return undefined;
 }
 
-/** Why no way is left for a card, for the user: what each executor of the card lacks (D-159). */
-export function noWayReason(agent: string, card: AgentCard, excluded: ExecutorOptions['excluded']): string {
+/** Why no way is left for a card (or a delegated work, `what`), for the user: what each executor of the card lacks (D-159). */
+export function noWayReason(agent: string, card: AgentCard, excluded: ExecutorOptions['excluded'], what: 'card' | 'work' = 'card'): string {
   const why = (item: ExecutorOptions['excluded'][number]): string =>
     item.reason === 'label'
-      ? `${item.executor}: the card is above what ${agent} may read there (${item.executor === 'local' ? card.maxLabel : 'cloud_max_label'})`
+      ? `${item.executor}: the ${what} is above what ${agent} may read there (${item.executor === 'local' ? card.maxLabel : 'cloud_max_label'})`
       : item.reason === 'project'
         ? `${item.executor}: no approved project with a folder`
         : `${item.executor}: off`;
-  return excluded.length === 0 ? `no way for ${agent} to work on this card now` : `no way for ${agent} to work on this card now (${excluded.map(why).join('; ')})`;
+  return excluded.length === 0 ? `no way for ${agent} to work on this ${what} now` : `no way for ${agent} to work on this ${what} now (${excluded.map(why).join('; ')})`;
 }
 
 /**
@@ -114,8 +127,7 @@ export function noWayReason(agent: string, card: AgentCard, excluded: ExecutorOp
  * elsewhere (the Designer, D-159): here it has no file tools, so it describes
  * its proposal and names no file it did not write.
  */
-export const LOCAL_CARD_NO_FILES =
-  'In this mode you cannot write or read files: describe your proposal in your answer (structure, sections, colors, text), and never name or link a file as if you had written it.';
+export const LOCAL_CARD_NO_FILES = LOCAL_NO_FILES;
 
 /** The request of a card on the local model: its title and goal, and the line above for an agent that writes files. */
 export function localCardRequest(task: Pick<Task, 'title' | 'goal'>, card: Pick<AgentCard, 'tools'> | undefined): string {
@@ -168,6 +180,44 @@ export async function requestExecutor(sql: Queryable, task: Task, step: number, 
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO approvals returned no row');
   return row.id;
+}
+
+/**
+ * Asks the user where a delegation of the chat runs (D-159): the same
+ * approval as a card's, under the message that started the task, with the
+ * delegation it is for. In the caller's transaction, with the delegation.
+ */
+export async function requestDelegationExecutor(sql: Queryable, task: Pick<Task, 'id' | 'title'>, delegation: Pick<Delegation, 'id' | 'step' | 'agent' | 'label'>, choices: ExecutorOptions): Promise<string> {
+  const detail = {
+    title: task.title,
+    agent: delegation.agent,
+    options: choices.options,
+    excluded: choices.excluded.map((item) => ({ ...item })),
+    step: delegation.step,
+    delegation: delegation.id,
+  };
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO approvals (task_id, kind, action, detail, label)
+    VALUES (${task.id}, 'executor', ${EXECUTOR_ACTION}, ${sql.json(detail)}, ${delegation.label}::privacy_label)
+    RETURNING id::text`;
+  if (row === undefined) throw new Error('INSERT INTO approvals returned no row');
+  return row.id;
+}
+
+/** The latest choice of executor asked for a delegation of the chat, decided or not; undefined when none was asked. */
+export async function delegationExecutorApproval(sql: Queryable, delegation: Pick<Delegation, 'id' | 'taskId'>): Promise<{ id: string; state: string; choice: ExecutorChoice | undefined; label: Label } | undefined> {
+  const [row] = await sql<{ id: string; state: string; choice: string | null; label: Label }[]>`
+    SELECT id::text, state, choice, label FROM approvals
+    WHERE task_id = ${delegation.taskId} AND kind = 'executor' AND detail ->> 'delegation' = ${delegation.id}
+    ORDER BY requested_at DESC, id DESC LIMIT 1`;
+  if (row === undefined) return undefined;
+  return { id: row.id, state: row.state, choice: isExecutorChoice(row.choice) ? row.choice : undefined, label: row.label };
+}
+
+/** What Arianna writes, without the model, when the user answered "Non ora" to the choice for a delegation (D-159). */
+export function notStartedText(agent: string): string {
+  const name = agent.charAt(0).toUpperCase() + agent.slice(1);
+  return `Va bene, non ho avviato il lavoro di ${name}. Quando vuoi, chiedimelo di nuovo e scegli con chi farlo.`;
 }
 
 /** The cloud executor of a choice, for the router; undefined for the local model. */

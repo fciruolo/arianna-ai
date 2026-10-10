@@ -490,3 +490,113 @@ test('the routes: a choice outside the options or of a stranger is a 400; "Avvia
     await live.close();
   }
 });
+
+// The bug found trying the branch: a delegation of the chat to the Designer left on Claude without asking (D-159).
+const LANDING = 'Mi serve una landing page nuova per il sito della pasticceria';
+const TO_DESIGNER: Answer = {
+  action: 'call',
+  tool: 'task.delegate',
+  arguments: { agent: 'designer', brief: 'Una landing page nuova per il sito della pasticceria, in due varianti.', reason: 'Serve la grafica della landing.' },
+};
+
+/** A chat task that delegated to the Designer and waits for the user's choice. */
+async function askedDelegation(executor: StepExecutor, mode: 'work' | 'private' = 'work') {
+  const conversation = await createConversation(db().sql, mode === 'work' ? { mode, project: 'site', projects: PROJECTS } : { mode });
+  const { task } = await postUserMessage(db().sql, conversation.id, LANDING);
+  assert.deepEqual(await drain([task.id], executor), ['waiting-approval']);
+  const approval = await waitingApproval(task.id);
+  const [delegation] = await loadDelegations(db().sql, task.id);
+  assert.ok(delegation !== undefined);
+  assert.equal(delegation.status, 'pending');
+  await nothingLeft(task.id);
+  return { conversation, task, approval, delegation };
+}
+
+async function nothingLeft(taskId: string): Promise<void> {
+  const log = await db().sql`SELECT 1 FROM gateway_log WHERE task_id = ${taskId} AND locality = 'cloud'`;
+  assert.equal(log.length, 0, 'nothing went to the cloud');
+}
+
+test('a delegation of the chat to the Designer asks where it works first, under the message; Claude chosen, only Claude works (D-159)', async () => {
+  const model = scripted([TO_DESIGNER, { action: 'reply', text: 'Il Designer ha preparato la landing.' }]);
+  const executor = orchestrator(model, ['claude']);
+  const { conversation, task, approval, delegation } = await askedDelegation(executor);
+  assert.deepEqual([approval.kind, approval.action, approval.label, approval.conversationId, approval.chatTaskId, approval.taskId], ['executor', 'card.executor', 'L1', conversation.id, null, task.id]);
+  assert.deepEqual(approval.detail.options, ['claude', 'local']);
+  assert.deepEqual(approval.detail.excluded, [{ executor: 'codex', reason: 'off' }]);
+  assert.deepEqual([approval.detail.agent, approval.detail.delegation], ['designer', delegation.id]);
+  assert.ok((await listApprovals(db().sql, 'pending', 100, { conversationId: conversation.id })).some((item) => item.id === approval.id));
+  await assert.rejects(recordDecision(db().sql, approval.id, 'approved', 'telegram', 'claude'), /approvals_plan_executor_via_web/);
+  try {
+    await recordDecision(db().sql, approval.id, 'approved', 'web', 'claude');
+    assert.deepEqual(await drain([task.id], executor), ['continued', 'answered']);
+    const [done] = await loadDelegations(db().sql, task.id);
+    assert.deepEqual([done?.executor, done?.repo, done?.status], ['claude', 'site', 'ok']);
+    // The router read the Designer with Claude alone.
+    const [decision] = await db().sql<{ executor: string }[]>`SELECT executor FROM router_decisions WHERE task_id = ${task.id} ORDER BY id DESC LIMIT 1`;
+    assert.equal(decision?.executor, 'claude');
+    const log = await db().sql<{ target: string; decision: string; label: string }[]>`
+      SELECT target, decision, label FROM gateway_log WHERE task_id = ${task.id} AND locality = 'cloud'`;
+    assert.deepEqual([...log], [{ target: 'claude', decision: 'allow', label: 'L1' }]);
+    assert.equal(model.requests.length, 2);
+  } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+});
+
+test('a delegation to the Designer on the local model when the user chooses it: no file tools, nothing leaves (D-159)', async () => {
+  const report = { report: 'Proposta: intestazione con le torte, listino, contatti.' } as unknown as Answer;
+  const model = scripted([TO_DESIGNER, report, { action: 'reply', text: 'Ecco la proposta del Designer.' }]);
+  const executor = orchestrator(model, ['claude']);
+  const { task, approval } = await askedDelegation(executor);
+  await recordDecision(db().sql, approval.id, 'approved', 'web', 'local');
+  assert.deepEqual(await drain([task.id], executor), ['continued', 'answered']);
+  const [done] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([done?.executor, done?.status, done?.result], ['local', 'ok', 'Proposta: intestazione con le torte, listino, contatti.']);
+  assert.match(String(model.requests[1]?.messages[0]?.content), /cannot write or read files/);
+  await nothingLeft(task.id);
+});
+
+test('"Non ora" on the choice: Arianna says she did not start the work, without the model; nothing leaves (D-159)', async () => {
+  const model = scripted([TO_DESIGNER]);
+  const executor = orchestrator(model, ['claude']);
+  const { task, approval } = await askedDelegation(executor);
+  await recordDecision(db().sql, approval.id, 'rejected', 'web');
+  assert.deepEqual(await drain([task.id], executor), ['answered']);
+  assert.equal(model.requests.length, 1);
+  const [reply] = await db().sql<{ body: string }[]>`SELECT body FROM messages WHERE task_id = ${task.id} AND role = 'assistant' AND agent IS NULL`;
+  assert.equal(reply?.body, 'Va bene, non ho avviato il lavoro di Designer. Quando vuoi, chiedimelo di nuovo e scegli con chi farlo.');
+  const [done] = await loadDelegations(db().sql, task.id);
+  assert.deepEqual([done?.status, done?.executor], ['refused', null]);
+  await nothingLeft(task.id);
+});
+
+test('the delegation step replayed after a crash waits for the same choice; the choice is checked again when the step runs (D-159)', async () => {
+  const model = scripted([TO_DESIGNER, { action: 'reply', text: 'Claude ora è spento: il lavoro non è partito.' }]);
+  const executor = orchestrator(model, ['claude']);
+  const { task, approval } = await askedDelegation(executor);
+  const [turn] = await db().sql<{ step: number }[]>`SELECT step FROM task_turns WHERE task_id = ${task.id} ORDER BY step DESC LIMIT 1`;
+  const [run] = await db().sql<{ id: string }[]>`SELECT id::text FROM runs WHERE task_id = ${task.id} ORDER BY id DESC LIMIT 1`;
+  assert.ok(turn !== undefined && run !== undefined);
+  const replayed = await executor.run({ task: (await loadTask(db().sql, task.id)) as Task, step: turn.step, runId: run.id, signal: new AbortController().signal, setSessionRef: () => Promise.resolve() });
+  assert.deepEqual([replayed.kind, replayed.kind === 'confirm' ? replayed.approvalId : undefined], ['confirm', approval.id]);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 1);
+  // Claude chosen, then turned off before the step: the delegation closes, Arianna tells the user, nothing leaves.
+  await recordDecision(db().sql, approval.id, 'approved', 'web', 'claude');
+  assert.deepEqual(await drain([task.id], orchestrator(model, [])), ['answered']);
+  const [done] = await loadDelegations(db().sql, task.id);
+  assert.equal(done?.status, 'refused');
+  assert.match(done.result ?? '', /^error: task\.delegate: claude can no longer take this work/);
+  await nothingLeft(task.id);
+});
+
+test('a private conversation offers the Designer only the local model (D-159)', async () => {
+  const model = scripted([TO_DESIGNER]);
+  const { approval } = await askedDelegation(orchestrator(model, ['claude']), 'private');
+  assert.deepEqual(approval.detail.options, ['local']);
+  assert.deepEqual(approval.detail.excluded, [
+    { executor: 'claude', reason: 'label' },
+    { executor: 'codex', reason: 'label' },
+  ]);
+  assert.equal(approval.label, 'L2');
+});
