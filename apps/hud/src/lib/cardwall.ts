@@ -477,7 +477,8 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export type WallView = 'board' | 'list';
+/** "Bacheca", "Lista" and the IM of a project (D-167). */
+export type WallView = 'board' | 'list' | 'im';
 
 export interface WallState {
   prefs: WallPrefs;
@@ -524,7 +525,7 @@ export function loadState(storage: StorageLike | undefined): WallState {
     state.filters.due = DUES.find((due) => due === filters.due) ?? 'all';
     state.filters.label = LABELS.find((label) => label === filters.label) ?? 'all';
     state.filters.priority = PRIORITIES.find((priority) => priority === filters.priority) ?? 'all';
-    state.view = saved.view === 'list' ? 'list' : 'board';
+    state.view = saved.view === 'list' || saved.view === 'im' ? saved.view : 'board';
     const key = SORT_KEYS.find((item) => item === sort.key);
     state.sort = key === undefined ? { ...DEFAULT_SORT } : { key, desc: sort.desc === true };
     return state;

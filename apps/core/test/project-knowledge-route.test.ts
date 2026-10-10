@@ -86,3 +86,37 @@ test('parts and containers, the tab Conoscenza, a note written; the labels of th
   const again = (await send(server.port, 'GET', '/api/browse/progetto-test/knowledge')).body.knowledge as { folders: { path: string; label: string }[] };
   assert.equal(again.folders.find(({ path }) => path === 'documenti')?.label, 'L2');
 });
+
+test('the IM of a project (D-167): created, read, an item added and moved, a stale version refused', async (t) => {
+  const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
+  t.after(async () => {
+    await server.close();
+  });
+
+  assert.deepEqual((await send(server.port, 'GET', '/api/browse/progetto-test/im')).body.ims, []);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/im', {})).status, 400);
+  const created = await send(server.port, 'POST', '/api/browse/progetto-test/im', { date: '2026-10-15 10:00' });
+  assert.equal(created.status, 201);
+  const first = created.body.im as { number: number; version: string };
+  assert.equal(first.number, 1);
+
+  const added = await send(server.port, 'POST', '/api/browse/progetto-test/im/1/items', { title: 'Fatture', version: first.version });
+  assert.equal(added.status, 201);
+  const withItem = added.body.im as { version: string; items: { line: number; state: string; title: string }[] };
+  const line = withItem.items[0]?.line ?? 0;
+  const moved = await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'done', version: withItem.version });
+  assert.equal(moved.status, 200);
+  assert.equal((moved.body.im as { items: { state: string }[] }).items[0]?.state, 'done');
+  // The version the user saw is no longer the file: refused, nothing written.
+  assert.equal((await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'todo', version: withItem.version })).status, 409);
+  assert.match(readFileSync(join(BOX, 'IM', 'IM-1.md'), 'utf8'), /- \[x\] Fatture/);
+
+  const list = await send(server.port, 'GET', '/api/browse/progetto-test/im');
+  assert.deepEqual((list.body.ims as { number: number; counts: { done: number } }[]).map(({ number, counts }) => [number, counts.done]), [[1, 1]]);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/im/2')).status, 404);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/im/01')).status, 404);
+  assert.equal((await send(server.port, 'POST', `/api/browse/progetto-test/im/1/items/${String(line)}`, { state: 'boh', version: 'x' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/im/1/items', { title: '  ', version: (moved.body.im as { version: string }).version })).status, 400);
+  assert.equal((await send(server.port, 'GET', '/api/browse/altro/im')).status, 404);
+});

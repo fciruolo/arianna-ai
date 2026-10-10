@@ -490,6 +490,34 @@ export function openWorkplan(projects: readonly Project[], name: string, env: Kn
   return openFolder(projects, name, env, found?.path ?? WORKPLAN);
 }
 
+/** The name of the management folder of the IM (D-167). */
+export const IM_FOLDER = 'IM';
+
+export interface ImFolder {
+  /** The folder as it is on the disk (`IM`, `im`...). */
+  path: string;
+  dir: string;
+  sameFolder: () => boolean;
+  /** The label of a file of the folder from its header lines (the folder's at least, D-145). */
+  labelOf: (fileName: string, headerLabels: readonly string[]) => Label;
+}
+
+/**
+ * The folder IM of a project with any letter case it already has (D-167);
+ * when it is missing, null, or created as `IM` with `create`. Same rules as a
+ * folder of "+ Conoscenza".
+ */
+export function imFolder(projects: readonly Project[], name: string, env: KnowledgeEnv, create: boolean): ImFolder | null {
+  const fold = (value: string): string => value.normalize('NFC').toLowerCase();
+  const look = knowledgeBase(projects, name, env);
+  const found = look.folders.find((item) => fold(item.path) === fold(IM_FOLDER));
+  if (found === undefined && !create) return null;
+  const { folder, dir, sameFolder } = openFolder(projects, name, env, found?.path ?? IM_FOLDER);
+  // Read again after openFolder: a folder created there is in the base only now.
+  const base = found === undefined ? knowledgeBase(projects, name, env) : look;
+  return { path: folder.path, dir, sameFolder, labelOf: (fileName, headerLabels) => baseLabel(base, `${folder.path}/${fileName}`, headerLabels) };
+}
+
 export interface NoteInput {
   /** The management folder, by its name. */
   folder: string;

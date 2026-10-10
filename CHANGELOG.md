@@ -4,6 +4,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Gli IM del progetto (Iteration Meeting, la riunione settimanale con il cliente): un file `IM-<n>.md` per riunione nella cartella IM, con le voci a caselle (da fare, in corso, fatto, rimandato, annullato), `— Parte N` e la call spostata che non cambia la data (D-167, I-11 P4a).
+- Nel cardwall la vista "IM": per progetto e per IM le colonne delle voci, cambio di stato trascinando o dal menu, "+ Voce" e "Nuovo IM" sette giorni dopo l'ultimo; una modifica fatta a mano nel file non viene mai sovrascritta (D-167).
+- `pnpm demo:container` aggiunge al contenitore finto IM-32 e IM-33, anche quando c'è già (D-167).
+
 ## [0.53.0] - 2026-10-10
 
 ### Aggiunto

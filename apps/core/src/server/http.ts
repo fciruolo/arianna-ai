@@ -50,6 +50,8 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
+import { addImItem, createIm, ImError, listIms, readIm, setImItemState } from '../im.ts';
+import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
@@ -1098,6 +1100,13 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
   ];
 }
 
+/** The number of an IM in the URL (D-167). */
+function imNumberParam(params: Params): number {
+  const value = params.number ?? '';
+  if (!/^[1-9]\d{0,5}$/.test(value)) throw new HttpError(404, 'not found');
+  return Number(value);
+}
+
 /** A project or a part of a container (`<project>:<part>`, D-145): one URL segment, never a path. */
 const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
 
@@ -1133,6 +1142,41 @@ function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], 
       }
       const note = writeProjectNote(containers(), project.name, need(), { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
       return { status: 201, body: { note } };
+    }),
+    // The IM of the project (D-167): the files of the folder IM, the items changed only while the file is the one the user saw.
+    route('GET', '/api/browse/:project/im', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { ims: listIms(containers(), project.name, need()) } });
+    }),
+    route('POST', '/api/browse/:project/im', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['date']);
+      if (body.date !== undefined && typeof body.date !== 'string') throw new HttpError(400, 'date must be a string');
+      return { status: 201, body: { im: createIm(containers(), project.name, need(), body.date) } };
+    }),
+    route('GET', '/api/browse/:project/im/:number', (_request, _url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { im: readIm(containers(), project.name, need(), imNumberParam(params)) } });
+    }),
+    route('POST', '/api/browse/:project/im/:number/items', async (request, _url, params) => {
+      const project = containerParam(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['title', 'version']);
+      if (typeof body.title !== 'string' || typeof body.version !== 'string') throw new HttpError(400, 'title and version are required');
+      return { status: 201, body: { im: addImItem(containers(), project.name, need(), number, body.title, body.version) } };
+    }),
+    route('POST', '/api/browse/:project/im/:number/items/:line', async (request, _url, params) => {
+      const project = containerParam(params);
+      const number = imNumberParam(params);
+      const lineText = params.line ?? '';
+      if (!/^[1-9]\d{0,6}$/.test(lineText)) throw new HttpError(404, 'not found');
+      const body = await readJson(request);
+      onlyFields(body, ['state', 'version']);
+      const state = IM_STATES.find((value) => value === body.state);
+      if (state === undefined || typeof body.version !== 'string') throw new HttpError(400, 'state and version are required');
+      return { body: { im: setImItemState(containers(), project.name, need(), number, Number(lineText), state, body.version) } };
     }),
     // "Elimina" of a note of the project (D-157): the file goes for good; the user confirmed it in the tab.
     route('POST', '/api/browse/:project/knowledge/delete', async (request, _url, params) => {
@@ -2107,6 +2151,10 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
+    return { status, message: error.message };
+  }
+  if (error instanceof ImError) {
+    const status = { invalid: 400, 'not-found': 404, changed: 409, refused: 403, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
   if (error instanceof KnowledgeError) {

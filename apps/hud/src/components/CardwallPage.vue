@@ -35,6 +35,7 @@ import { LABEL_TEXT } from '../lib/labels.ts';
 import type { Approval, ExecutorChoice } from '../lib/types.ts';
 import CardDetail from './CardDetail.vue';
 import FilterMenu from './FilterMenu.vue';
+import ImBoard from './ImBoard.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 
@@ -44,7 +45,8 @@ import LabelBadge from './LabelBadge.vue';
  * default (Da fare, In corso, Aspetta, Da verificare, Fatto); "Inbox a parte"
  * and "Falliti a parte" split two of them, any column can be hidden; the
  * filters and the order on top. A drag moves a card, the detail offers the
- * same moves as buttons. Read again (debounced) whenever the live feed says a
+ * same moves as buttons; the third view, "IM", is the Iteration Meetings of a
+ * project (ImBoard, D-167). Read again (debounced) whenever the live feed says a
  * card or a commitment changed (`version`). The detail of an agent's card
  * shows the decisions it waits for (`approvals`, decided with `decide`, D-159).
  */
@@ -293,8 +295,11 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
         <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[12.5px]" :class="state.view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'list'" @click="state.view = 'list'">
           <Icon name="view-list" :size="14" />Lista
         </button>
+        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[12.5px]" :class="state.view === 'im' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'im'" @click="state.view = 'im'">
+          <Icon name="calendar" :size="14" />IM
+        </button>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
+      <div v-if="state.view !== 'im'" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
         <FilterMenu v-model="state.filters.project" label="Progetto" icon="project" :options="projectOptions" />
         <FilterMenu v-model="state.filters.kind" label="Tipo" icon="card-body" :options="KIND_OPTIONS" />
         <FilterMenu v-model="state.filters.assignee" label="Chi la fa" icon="coder" :options="assigneeOptions" />
@@ -312,7 +317,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           <Icon name="close" :size="14" />
         </button>
       </div>
-      <div class="ml-auto flex items-center gap-2">
+      <div v-if="state.view !== 'im'" class="ml-auto flex items-center gap-2">
         <FilterMenu v-model="sortChoice" label="Ordina per" icon="sort" :options="sortOptions" plain align-right />
         <FilterMenu v-if="state.view === 'board'" label="Colonne" icon="cardwall" icon-only align-right>
           <div class="flex w-[220px] flex-col gap-1.5 text-[13px]">
@@ -462,6 +467,9 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
         </tbody>
       </table>
     </div>
+
+    <!-- IM (D-167): the Iteration Meetings of a project, from their files. -->
+    <ImBoard v-if="wall !== null && state.view === 'im'" :projects="wall.projects" :version="version" />
 
     <CardDetail
       v-if="selected !== undefined && wall !== null"
