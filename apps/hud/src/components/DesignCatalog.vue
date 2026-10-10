@@ -28,6 +28,14 @@ const status = ref<CatalogStatus | null>(null);
 const error = ref('');
 const acting = ref(false);
 let timer: number | undefined;
+let mounted = true;
+
+/** One chain of polling: the timeout before is cleared, none after the component is gone. */
+function schedule(): void {
+  window.clearTimeout(timer);
+  timer = undefined;
+  if (mounted && shouldPoll(status.value)) timer = window.setTimeout(() => void refresh(), 1500);
+}
 
 async function refresh(): Promise<void> {
   window.clearTimeout(timer);
@@ -38,10 +46,13 @@ async function refresh(): Promise<void> {
   } catch (cause) {
     error.value = catalogErrorText(cause);
   }
-  if (shouldPoll(status.value)) timer = window.setTimeout(() => void refresh(), 1500);
+  schedule();
 }
 onMounted(refresh);
-onBeforeUnmount(() => window.clearTimeout(timer));
+onBeforeUnmount(() => {
+  mounted = false;
+  window.clearTimeout(timer);
+});
 
 async function act(action: () => Promise<CatalogStatus>): Promise<void> {
   if (acting.value) return;
@@ -54,7 +65,7 @@ async function act(action: () => Promise<CatalogStatus>): Promise<void> {
   } finally {
     acting.value = false;
   }
-  if (shouldPoll(status.value)) timer = window.setTimeout(() => void refresh(), 1500);
+  schedule();
 }
 const update = (): Promise<void> => act(updateDesignCatalog);
 const discard = (): Promise<void> => act(discardDesignCatalog);

@@ -118,6 +118,9 @@ export function filterStyles(styles: readonly StyleSummary[], query: string): St
 const REFUSALS: [RegExp, string][] = [
   [/^a download of the catalog is already running/, 'Un download del catalogo è già in corso.'],
   [/^a download of the catalog is running/, 'Aspetta la fine del download in corso.'],
+  [/^Il catalogo è occupato da un altro processo/, 'Il catalogo è occupato da un altro processo (per esempio pnpm design:catalog): riprova quando ha finito.'],
+  [/^Prima usa o scarta la versione scaricata/, 'Prima usa o scarta la versione scaricata.'],
+  [/^the swap of the catalog did not complete/, 'Il cambio di versione non si è concluso: ricarica la pagina e controlla quale versione è in uso.'],
   [/^no new version is waiting/, 'Nessuna versione nuova in attesa: ricarica la pagina.'],
   [/^the version waiting is not the one shown/, 'La versione in attesa è cambiata: ricarica la pagina e rivedi il riepilogo.'],
   [/^the catalog of Open Design has not been downloaded/, 'Il catalogo non è ancora stato scaricato.'],

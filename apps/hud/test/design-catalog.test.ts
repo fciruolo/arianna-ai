@@ -67,6 +67,9 @@ describe('errors', () => {
   it('turns the refusals of the core into Italian', () => {
     assert.match(catalogErrorText(new ApiError(409, 'the version waiting is not the one shown: read the status again')), /ricarica la pagina/);
     assert.match(catalogErrorText(new ApiError(404, 'not found')), /riavvialo/);
+    assert.match(catalogErrorText(new ApiError(409, 'Il catalogo è occupato da un altro processo: riprova quando ha finito.')), /occupato da un altro processo/);
+    assert.equal(catalogErrorText(new ApiError(409, 'Prima usa o scarta la versione scaricata.')), 'Prima usa o scarta la versione scaricata.');
+    assert.match(catalogErrorText(new ApiError(502, 'the swap of the catalog did not complete: EISDIR')), /cambio di versione/);
     assert.match(jobErrorText('the gateway did not let the request out: blocked'), /gateway/);
     assert.match(jobErrorText('the license of the repository is no longer Apache-2.0: nothing adopted'), /licenza/);
     assert.match(jobErrorText('git clone: could not resolve host'), /could not resolve host/);

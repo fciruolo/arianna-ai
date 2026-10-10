@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { lstat, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -34,6 +34,15 @@ const OLD = 'open-design.old';
 const INDEX = 'open-design.index.json';
 const NEXT_INDEX = 'open-design.next.index.json';
 const LOCK = 'open-design.lock.json';
+/** Held by the one process that downloads, adopts or discards: the core or the command. */
+const BUSY = 'open-design.busy';
+/** The HOME of git: an empty folder, so no .netrc, .gitconfig or .config/git of the user. */
+const GIT_HOME = 'open-design.git-home';
+
+/** The refusal while the other process (core or command) holds the catalog. */
+export const BUSY_MESSAGE = 'Il catalogo è occupato da un altro processo: riprova quando ha finito.';
+/** The refusal of a download while a version downloaded waits for the user. */
+export const PENDING_MESSAGE = 'Prima usa o scarta la versione scaricata.';
 
 /** What the sparse checkout writes: nothing else of the repository reaches the disk. */
 export const SPARSE_PATTERNS = ['/LICENSE', '/NOTICE', '/NOTICE.md', '/NOTICE.txt', '/design-systems/*/DESIGN.md', '/design-systems/*/manifest.json', '/skills/*/SKILL.md'];
@@ -175,6 +184,14 @@ export interface DesignCatalogOptions {
   repository?: string;
   /** Tests only: a `file://` repository. */
   allowLocal?: boolean;
+  /**
+   * Repairs a swap or a download cut short when created (default true), only
+   * if no other process holds the catalog. The command passes false: its
+   * `status` only reads; update, adopt and discard repair under the lock.
+   */
+  recover?: boolean;
+  /** Tests only: a lower limit of files than MAX_TREE_FILES. */
+  maxTreeFiles?: number;
   /** One L0 event: kind and a few numbers or ids. */
   onEvent?: (kind: string, payload: Record<string, string | number>) => void;
   /** The environment git is given its few variables from. */
@@ -207,16 +224,19 @@ function checkRepository(repository: string, allowLocal: boolean): string {
 /**
  * The environment of git, built from nothing: no global or system
  * configuration (no credential helpers, no aliases, no filters of the user),
- * no prompt, no LFS, only the protocol of the repository.
+ * HOME and XDG_CONFIG_HOME on an empty folder (no .netrc, no attributes of
+ * the user), no prompt, no LFS, only the protocol of the repository.
  */
-export function gitEnv(from: NodeJS.ProcessEnv, protocol: 'https' | 'file'): Record<string, string> {
+export function gitEnv(from: NodeJS.ProcessEnv, protocol: 'https' | 'file', home: string): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const key of ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
+  for (const key of ['PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) {
     const value = from[key];
     if (value !== undefined && value !== '') env[key] = value;
   }
   return {
     ...env,
+    HOME: home,
+    XDG_CONFIG_HOME: home,
     GIT_TERMINAL_PROMPT: '0',
     GIT_ASKPASS: 'true',
     SSH_ASKPASS: 'true',
@@ -239,9 +259,9 @@ export const GIT_SAFE_CONFIG = [
   '-c', 'submodule.recurse=false',
 ];
 
-function runGit(git: string, args: readonly string[], env: Record<string, string>, cwd: string): Promise<string> {
+function runGit(git: string, args: readonly string[], env: Record<string, string>, cwd: string, maxBuffer = 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(git, [...GIT_SAFE_CONFIG, ...args], { cwd, env, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024, encoding: 'utf8', shell: false }, (error, stdout, stderr) => {
+    execFile(git, [...GIT_SAFE_CONFIG, ...args], { cwd, env, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer, encoding: 'utf8', shell: false }, (error, stdout, stderr) => {
       if (error === null) {
         resolve(stdout);
         return;
@@ -343,7 +363,7 @@ export function skillFields(slug: string, text: string, path: string): Pick<Desi
  * Every file of the checkout, outside `.git`, without following links: the
  * shape the repository may have. Throws past the limits of files or bytes.
  */
-async function measureTree(root: string): Promise<{ files: number; bytes: number; links: string[] }> {
+async function measureTree(root: string, maxFiles: number): Promise<{ files: number; bytes: number; links: string[] }> {
   const result = { files: 0, bytes: 0, links: [] as string[] };
   const walk = async (relative: string, depth: number): Promise<void> => {
     if (depth > 8) throw new DesignCatalogError('invalid', 'the checkout is deeper than expected');
@@ -356,7 +376,7 @@ async function measureTree(root: string): Promise<{ files: number; bytes: number
       else {
         result.files += 1;
         result.bytes += stat.size;
-        if (result.files > MAX_TREE_FILES) throw new DesignCatalogError('invalid', `more than ${String(MAX_TREE_FILES)} files in the catalog`);
+        if (result.files > maxFiles) throw new DesignCatalogError('invalid', `more than ${String(maxFiles)} files in the catalog`);
         if (result.bytes > MAX_TREE_BYTES) throw new DesignCatalogError('invalid', `the catalog is larger than ${String(MAX_TREE_BYTES / 1024 / 1024)} MB`);
       }
     }
@@ -385,7 +405,8 @@ export function readLicense(root: string): DesignIndex['license'] {
     const file = readRegular(join(root, name), MAX_NOTICE_BYTES);
     if (file !== undefined && 'buffer' in file) {
       const read = utf8(file.buffer);
-      if (read !== undefined && read.trim() !== '') notice = sanitizeForTerminal(read.trim()).replace(/\?(?=\n)/g, '');
+      // Line by line: the line breaks of the notice stay, every other control goes.
+      if (read !== undefined && read.trim() !== '') notice = read.trim().split('\n').map((line) => sanitizeForTerminal(line.replace(/\t/g, ' ')).trimEnd()).join('\n');
       break;
     }
   }
@@ -534,6 +555,15 @@ export function licenseNotice(index: Pick<DesignIndex, 'commit' | 'license'>, pa
   return lines.join('\n');
 }
 
+/** Controls (but line feed and tab), bidirectional and zero-width characters: they can hide text from the reader. */
+// eslint-disable-next-line no-control-regex
+const HIDDEN_IN_BODY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/gu;
+
+/** The body of a third-party file, made safe to show: the hidden characters go, lines and tabs stay. */
+export function cleanBody(text: string): string {
+  return text.replace(HIDDEN_IN_BODY, '');
+}
+
 /** Reads a style of the adopted catalog in `dir` (data/catalogs): its DESIGN.md with the license notice at the head. */
 export function designStyleText(dir: string, slug: unknown): DesignStyleText {
   if (typeof slug !== 'string' || !SLUG.test(slug)) throw new DesignCatalogError('invalid', 'invalid style slug');
@@ -549,8 +579,98 @@ export function designStyleText(dir: string, slug: unknown): DesignStyleText {
   if (read === undefined || 'refused' in read) throw new DesignCatalogError('not-found', 'the style is no longer on the disk');
   if (sha256(read.buffer) !== entry.sha256) throw new DesignCatalogError('conflict', 'the style changed on the disk since it was indexed');
   const notice = licenseNotice(index, entry.path);
-  const body = utf8(read.buffer) ?? '';
+  const body = cleanBody(utf8(read.buffer) ?? '');
   return { slug, name: entry.name, commit: index.commit, notice, text: `${notice}\n\n---\n\n${body.trim()}\n` };
+}
+
+/** The root files of the sparse patterns. */
+const ROOT_FILES = new Set(['LICENSE', 'NOTICE', 'NOTICE.md', 'NOTICE.txt']);
+
+/**
+ * The files of HEAD the sparse checkout would write, from the names of the
+ * trees alone: counted before any content is fetched.
+ */
+export function countSparse(names: readonly string[]): { files: number; styles: number; skills: number } {
+  const counts = { files: 0, styles: 0, skills: 0 };
+  for (const name of names) {
+    if (ROOT_FILES.has(name) || /^design-systems\/[^/]+\/manifest\.json$/.test(name)) counts.files += 1;
+    else if (/^design-systems\/[^/]+\/DESIGN\.md$/.test(name)) {
+      counts.files += 1;
+      counts.styles += 1;
+    } else if (/^skills\/[^/]+\/SKILL\.md$/.test(name)) {
+      counts.files += 1;
+      counts.skills += 1;
+    }
+  }
+  return counts;
+}
+
+/** Whether a process lives: the signal 0 asks without sending anything. */
+function processAlive(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** A busy file left by a process that no longer lives (or unreadable and older than a minute). */
+function abandoned(path: string): boolean {
+  let text: string;
+  let age: number;
+  try {
+    text = readFileSync(path, 'utf8');
+    age = Date.now() - statSync(path).mtimeMs;
+  } catch {
+    // Gone in the meantime: free.
+    return true;
+  }
+  const pid = Number(/^(\d+)\n/.exec(text)?.[1] ?? Number.NaN);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return age > 60_000;
+  return !processAlive(pid);
+}
+
+/**
+ * Takes the busy file of the catalog, created exclusively with the pid and
+ * a token; false while another process that lives holds it. One left by a
+ * process that died is taken over.
+ */
+function takeBusy(path: string, token: string): boolean {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const fd = openSync(path, 'wx', 0o600);
+      try {
+        writeSync(fd, `${String(process.pid)}\n${token}\n`);
+      } finally {
+        closeSync(fd);
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    if (!abandoned(path)) return false;
+    rmSync(path, { force: true });
+  }
+  return false;
+}
+
+/** Gives the busy file back, only if it is still the one taken with `token`. */
+function releaseBusy(path: string, token: string): void {
+  try {
+    if (readFileSync(path, 'utf8').split('\n')[1] === token) rmSync(path, { force: true });
+  } catch {
+    // Already gone.
+  }
+}
+
+function isEmptyDir(path: string): boolean {
+  try {
+    return readdirSync(path).length === 0;
+  } catch {
+    return false;
+  }
 }
 
 export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalog {
@@ -558,8 +678,9 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
   const allowLocal = options.allowLocal === true;
   const repository = checkRepository(options.repository ?? DESIGN_REPOSITORY, allowLocal);
   const git = options.git ?? 'git';
-  const env = gitEnv(options.env ?? process.env, repository.startsWith('file:') ? 'file' : 'https');
   const at = (name: string): string => join(options.dir, name);
+  const env = gitEnv(options.env ?? process.env, repository.startsWith('file:') ? 'file' : 'https', at(GIT_HOME));
+  const maxTreeFiles = options.maxTreeFiles ?? MAX_TREE_FILES;
   let job: JobView | null = null;
   let running: Promise<void> = Promise.resolve();
   const event = (kind: string, payload: Record<string, string | number>): void => {
@@ -570,16 +691,57 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
     }
   };
 
-  /** A swap cut short by a stop of the core: the adopted folder comes back; a download cut short goes. */
-  function recover(): void {
-    if (isRealDir(at(OLD))) {
-      if (isRealDir(at(CLONE))) rmSync(at(OLD), { recursive: true, force: true });
-      else renameSync(at(OLD), at(CLONE));
-    }
-    if (job?.status !== 'running' && existsSync(at(NEXT)) && readIndex(at(NEXT_INDEX)) === undefined) rmSync(at(NEXT), { recursive: true, force: true });
-    if (job?.status !== 'running' && !existsSync(at(NEXT))) rmSync(at(NEXT_INDEX), { force: true });
+  /** The busy file for this process, or the refusal: one process at a time changes the folders. */
+  function hold(): string {
+    mkdirSync(options.dir, { recursive: true, mode: 0o700 });
+    const token = randomUUID();
+    if (!takeBusy(at(BUSY), token)) throw new DesignCatalogError('conflict', BUSY_MESSAGE);
+    return token;
   }
-  recover();
+
+  /** Back to the adopted folder: OLD takes its name again (an empty OLD marked a first adoption). */
+  function undoSwap(): void {
+    if (isRealDir(at(CLONE)) || isEmptyDir(at(OLD))) rmSync(at(OLD), { recursive: true, force: true });
+    else renameSync(at(OLD), at(CLONE));
+  }
+
+  /** On to the new folder, already in place: its index, the lock written from the index, OLD away. */
+  function finishSwap(): void {
+    if (existsSync(at(NEXT_INDEX))) renameSync(at(NEXT_INDEX), at(INDEX));
+    const index = readIndex(at(INDEX));
+    if (index !== undefined && readLock(at(LOCK))?.commit !== index.commit) {
+      writeAtomic(at(LOCK), { repository: index.repository, commit: index.commit, committedAt: index.committedAt, adoptedAt: now().toISOString() } satisfies DesignLock);
+    }
+    rmSync(at(OLD), { recursive: true, force: true });
+  }
+
+  /**
+   * Under the busy file: a swap or a download cut short by a stop. OLD there
+   * means a swap under way: with the new folder still waiting it goes back,
+   * with the new folder in place it goes forward. A download without its
+   * index goes, and an index without its download.
+   */
+  function recover(): void {
+    for (const name of [LOCK, INDEX, NEXT_INDEX]) rmSync(at(`${name}.tmp`), { force: true });
+    if (existsSync(at(OLD))) {
+      if (isRealDir(at(NEXT)) || !isRealDir(at(CLONE))) undoSwap();
+      else finishSwap();
+    }
+    if (existsSync(at(NEXT)) && readIndex(at(NEXT_INDEX)) === undefined) rmSync(at(NEXT), { recursive: true, force: true });
+    if (!existsSync(at(NEXT))) rmSync(at(NEXT_INDEX), { force: true });
+  }
+
+  // At the start, only while no other process holds the catalog: never under its feet.
+  if (options.recover !== false && isRealDir(options.dir)) {
+    const token = randomUUID();
+    if (takeBusy(at(BUSY), token)) {
+      try {
+        recover();
+      } finally {
+        releaseBusy(at(BUSY), token);
+      }
+    }
+  }
 
   function adopted(): { index: DesignIndex; lock: DesignLock } | undefined {
     const lock = readLock(at(LOCK));
@@ -612,6 +774,9 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
     await rm(at(NEXT), { recursive: true, force: true });
     await rm(at(NEXT_INDEX), { force: true });
     await mkdir(options.dir, { recursive: true, mode: 0o700 });
+    // git finds nothing of the user in its HOME: an empty folder, made again each time.
+    await rm(at(GIT_HOME), { recursive: true, force: true });
+    await mkdir(at(GIT_HOME), { mode: 0o700 });
     try {
       await options.gateway(repository);
     } catch (error) {
@@ -619,6 +784,13 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
     }
     await runGit(git, ['clone', '--quiet', '--depth', '1', '--filter=blob:none', '--no-checkout', '--sparse', '--single-branch', '--no-tags', '--', repository, at(NEXT)], env, options.dir);
     await runGit(git, ['sparse-checkout', 'set', '--no-cone', ...SPARSE_PATTERNS], env, at(NEXT));
+    // The trees are here, the contents not yet: the files are counted from
+    // their names before any is fetched (the sizes would fetch each blob:
+    // they are measured after, on the disk).
+    const listed = await runGit(git, ['ls-tree', '-r', '--name-only', '-z', 'HEAD', '--', ...ROOT_FILES, 'design-systems', 'skills'], { ...env, GIT_NO_LAZY_FETCH: '1' }, at(NEXT), 32 * 1024 * 1024);
+    const counts = countSparse(listed.split('\0').filter((name) => name !== ''));
+    if (counts.files > maxTreeFiles) throw new DesignCatalogError('invalid', `more than ${String(maxTreeFiles)} files in the catalog, nothing downloaded`);
+    if (counts.styles > MAX_ENTRIES || counts.skills > MAX_ENTRIES) throw new DesignCatalogError('invalid', `more than ${String(MAX_ENTRIES)} entries of a kind, nothing downloaded`);
     // The index and the files of HEAD, within the sparse patterns: the blobs come now, only these.
     await runGit(git, ['read-tree', '-mu', 'HEAD'], env, at(NEXT));
     const commit = (await runGit(git, ['rev-parse', 'HEAD'], env, at(NEXT))).trim();
@@ -627,7 +799,7 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
     // Nothing reads git again in this folder.
     await rm(join(at(NEXT), '.git'), { recursive: true, force: true });
     if (job !== null) job.phase = 'index';
-    const tree = await measureTree(at(NEXT));
+    const tree = await measureTree(at(NEXT), maxTreeFiles);
     const scan = scanCheckout(at(NEXT));
     const index: DesignIndex = {
       version: 1,
@@ -655,41 +827,83 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
 
   function update(): CatalogStatus {
     if (job?.status === 'running') throw new DesignCatalogError('conflict', 'a download of the catalog is already running');
+    // Held for the whole download: the other process neither cleans nor swaps meanwhile.
+    const token = hold();
+    try {
+      recover();
+      if (pending() !== undefined) throw new DesignCatalogError('conflict', PENDING_MESSAGE);
+    } catch (error) {
+      releaseBusy(at(BUSY), token);
+      throw error;
+    }
     const started: JobView = { status: 'running', phase: 'download', startedAt: now().toISOString(), finishedAt: null, outcome: null, error: null };
     job = started;
-    running = download().then(
-      () => {
-        started.status = 'done';
-        started.phase = null;
-        started.finishedAt = now().toISOString();
-      },
-      async (error: unknown) => {
-        started.status = 'failed';
-        started.phase = null;
-        started.finishedAt = now().toISOString();
-        started.error = error instanceof DesignCatalogError ? error.message : 'the download failed';
-        await rm(at(NEXT), { recursive: true, force: true }).catch(() => undefined);
-        await rm(at(NEXT_INDEX), { force: true }).catch(() => undefined);
-        event('design-catalog.failed', { reason: cleanLine(started.error, 200) });
-      },
-    );
+    running = download()
+      .then(
+        () => {
+          started.status = 'done';
+          started.phase = null;
+          started.finishedAt = now().toISOString();
+        },
+        async (error: unknown) => {
+          started.status = 'failed';
+          started.phase = null;
+          started.finishedAt = now().toISOString();
+          started.error = error instanceof DesignCatalogError ? error.message : 'the download failed';
+          await rm(at(NEXT), { recursive: true, force: true }).catch(() => undefined);
+          await rm(at(NEXT_INDEX), { force: true }).catch(() => undefined);
+          event('design-catalog.failed', { reason: cleanLine(started.error, 200) });
+        },
+      )
+      .finally(() => {
+        releaseBusy(at(BUSY), token);
+      });
     return status();
+  }
+
+  /**
+   * The swap: OLD steps aside (an empty OLD the first time, as the mark of a
+   * swap under way), NEXT takes the name, then the index and the lock. An
+   * error goes back while the old index is still there, forward after;
+   * what cannot be done now is left to recover().
+   */
+  function swap(next: DesignIndex): void {
+    if (existsSync(at(CLONE))) renameSync(at(CLONE), at(OLD));
+    else mkdirSync(at(OLD), { mode: 0o700 });
+    let step: 'old' | 'placed' | 'indexed' = 'old';
+    try {
+      renameSync(at(NEXT), at(CLONE));
+      step = 'placed';
+      renameSync(at(NEXT_INDEX), at(INDEX));
+      step = 'indexed';
+      writeAtomic(at(LOCK), { repository: next.repository, commit: next.commit, committedAt: next.committedAt, adoptedAt: now().toISOString() } satisfies DesignLock);
+    } catch (error) {
+      try {
+        if (step === 'placed') renameSync(at(CLONE), at(NEXT));
+        if (step === 'indexed') finishSwap();
+        else undoSwap();
+      } catch {
+        // recover() finishes the work at the next start or action.
+      }
+      throw new DesignCatalogError('failed', `the swap of the catalog did not complete: ${cleanLine(error instanceof Error ? error.message : String(error), 200)}`);
+    }
+    rmSync(at(OLD), { recursive: true, force: true });
   }
 
   function adopt(commit: unknown): CatalogStatus {
     if (job?.status === 'running') throw new DesignCatalogError('conflict', 'a download of the catalog is running');
     if (typeof commit !== 'string' || !COMMIT.test(commit)) throw new DesignCatalogError('invalid', 'commit must be the full sha of the version shown');
-    const next = pending();
-    if (next === undefined) throw new DesignCatalogError('not-found', 'no new version is waiting');
-    if (next.commit !== commit) throw new DesignCatalogError('conflict', 'the version waiting is not the one shown: read the status again');
-    // The old folder steps aside, the new one takes its name, then the index and the lock.
-    rmSync(at(OLD), { recursive: true, force: true });
-    if (existsSync(at(CLONE))) renameSync(at(CLONE), at(OLD));
-    renameSync(at(NEXT), at(CLONE));
-    renameSync(at(NEXT_INDEX), at(INDEX));
-    const lock: DesignLock = { repository: next.repository, commit: next.commit, committedAt: next.committedAt, adoptedAt: now().toISOString() };
-    writeAtomic(at(LOCK), lock);
-    rmSync(at(OLD), { recursive: true, force: true });
+    const token = hold();
+    let next: DesignIndex | undefined;
+    try {
+      recover();
+      next = pending();
+      if (next === undefined) throw new DesignCatalogError('not-found', 'no new version is waiting');
+      if (next.commit !== commit) throw new DesignCatalogError('conflict', 'the version waiting is not the one shown: read the status again');
+      swap(next);
+    } finally {
+      releaseBusy(at(BUSY), token);
+    }
     job = null;
     event('design-catalog.adopted', { commit: next.commit, styles: versionView(next).styles, skills: versionView(next).skills });
     return status();
@@ -697,10 +911,17 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
 
   function discard(): CatalogStatus {
     if (job?.status === 'running') throw new DesignCatalogError('conflict', 'a download of the catalog is running');
-    const next = pending();
-    if (next === undefined && !existsSync(at(NEXT))) throw new DesignCatalogError('not-found', 'no new version is waiting');
-    rmSync(at(NEXT), { recursive: true, force: true });
-    rmSync(at(NEXT_INDEX), { force: true });
+    const token = hold();
+    let next: DesignIndex | undefined;
+    try {
+      recover();
+      next = pending();
+      if (next === undefined && !existsSync(at(NEXT))) throw new DesignCatalogError('not-found', 'no new version is waiting');
+      rmSync(at(NEXT), { recursive: true, force: true });
+      rmSync(at(NEXT_INDEX), { force: true });
+    } finally {
+      releaseBusy(at(BUSY), token);
+    }
     job = null;
     event('design-catalog.discarded', { commit: next?.commit ?? '' });
     return status();

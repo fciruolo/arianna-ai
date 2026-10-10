@@ -1,6 +1,6 @@
 // The catalog of Open Design (D-160): a fake repository made in a temporary folder, never the network.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -9,12 +9,17 @@ import { after, describe, it } from 'node:test';
 
 import type { Sql } from '../src/db/client.ts';
 import {
+  BUSY_MESSAGE,
+  cleanBody,
+  countSparse,
   createDesignCatalog,
   DesignCatalogError,
   designStyleText,
   diffIndexes,
   gitEnv,
   MAX_ENTRY_BYTES,
+  PENDING_MESSAGE,
+  readLicense,
   scanCheckout,
   skillFields,
   styleFields,
@@ -69,7 +74,7 @@ const STARTING: Record<string, string> = {
   'skills/nofront/SKILL.md': '# No frontmatter\n',
 };
 
-const GIT_ENV = { ...gitEnv(process.env, 'file'), GIT_AUTHOR_DATE: '2026-10-01T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-01T10:00:00Z' };
+const GIT_ENV = { ...gitEnv(process.env, 'file', temporary()), GIT_AUTHOR_DATE: '2026-10-01T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-01T10:00:00Z' };
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'init.defaultBranch=main', ...args], { cwd, env: GIT_ENV, encoding: 'utf8' });
@@ -129,7 +134,7 @@ describe('download and index', () => {
     assert.deepEqual(status.pending.diff.styles.addedSlugs, ['alpha', 'beta']);
     assert.equal(status.license.name, 'Apache-2.0');
     assert.equal(status.license.copyright, 'Copyright 2026 Open Design contributors');
-    assert.match(status.license.notice ?? '', /Open Design contributors/);
+    assert.equal(status.license.notice, 'Open Design\nCopyright 2026 Open Design contributors', 'the lines of the notice stay');
 
     const next = join(dir, 'open-design.next');
     assert.equal(existsSync(join(next, '.git')), false, 'the .git folder is deleted');
@@ -379,6 +384,203 @@ describe('text of a style', () => {
   });
 });
 
+describe('one process at a time', () => {
+  const busyOf = (dir: string): string => join(dir, 'open-design.busy');
+  const isBusy = (error: unknown): boolean => error instanceof DesignCatalogError && error.code === 'conflict' && error.message === BUSY_MESSAGE;
+
+  it('refuses update, adopt and discard while another living process holds the busy file, and repairs nothing under it', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    await downloaded(catalog);
+    const commit = catalog.status().pending?.commit;
+    // The parent of the test runner lives: its busy file is not abandoned.
+    writeFileSync(busyOf(dir), `${String(process.ppid)}\nother\n`);
+    assert.throws(() => catalog.update(), isBusy);
+    assert.throws(() => catalog.adopt(commit), isBusy);
+    assert.throws(() => catalog.discard(), isBusy);
+    // A download of the other process, still without its index: a new instance leaves it alone.
+    rmSync(join(dir, 'open-design.next.index.json'));
+    const again = createDesignCatalog({ dir, repository: `file://${repo}`, allowLocal: true, gateway: async () => {} });
+    assert.equal(existsSync(join(dir, 'open-design.next')), true);
+    assert.equal(readFileSync(busyOf(dir), 'utf8'), `${String(process.ppid)}\nother\n`);
+    assert.throws(() => again.update(), isBusy);
+  });
+
+  it('takes over the busy file of a process that died, and gives it back after the download', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    mkdirSync(dir, { recursive: true });
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    writeFileSync(busyOf(dir), `${String(dead)}\ngone\n`);
+    catalog.update();
+    assert.equal(readFileSync(busyOf(dir), 'utf8').split('\n')[0], String(process.pid), 'held for the whole download');
+    await catalog.idle();
+    assert.equal(catalog.status().job?.status, 'done', catalog.status().job?.error ?? '');
+    assert.equal(existsSync(busyOf(dir)), false);
+    catalog.adopt(catalog.status().pending?.commit);
+    assert.equal(existsSync(busyOf(dir)), false);
+  });
+
+  it('a second instance in the same process (the command beside the core) is refused while the first downloads', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    const command = createDesignCatalog({ dir, repository: `file://${repo}`, allowLocal: true, gateway: async () => {}, recover: false });
+    catalog.update();
+    assert.throws(() => command.update(), isBusy);
+    assert.throws(() => command.discard(), isBusy);
+    await catalog.idle();
+    assert.equal(catalog.status().job?.status, 'done');
+    assert.equal(command.status().pending?.commit, catalog.status().pending?.commit, 'status only reads');
+  });
+
+  it('with recover: false touches nothing at the start', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    await downloaded(catalog);
+    catalog.adopt(catalog.status().pending?.commit);
+    renameSync(join(dir, 'open-design'), join(dir, 'open-design.old'));
+    createDesignCatalog({ dir, repository: `file://${repo}`, allowLocal: true, gateway: async () => {}, recover: false });
+    assert.equal(existsSync(join(dir, 'open-design.old')), true);
+    assert.equal(existsSync(join(dir, 'open-design')), false);
+  });
+
+  it('refuses a download while a version downloaded waits', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    await downloaded(catalog);
+    assert.throws(() => catalog.update(), (error: unknown) => error instanceof DesignCatalogError && error.code === 'conflict' && error.message === PENDING_MESSAGE);
+    assert.equal(existsSync(busyOf(dir)), false, 'the refusal gives the busy file back');
+    catalog.discard();
+    await downloaded(catalog);
+    assert.equal(catalog.status().job?.status, 'done');
+  });
+});
+
+describe('a swap cut short', () => {
+  /** An adopted first version and a second one waiting, with epsilon added. */
+  async function twoVersions(): Promise<{ dir: string; repo: string; first: string; second: string }> {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo);
+    await downloaded(catalog);
+    const first = catalog.status().pending?.commit ?? '';
+    catalog.adopt(first);
+    write(repo, { 'design-systems/epsilon/DESIGN.md': style('Epsilon', 'New.') });
+    await downloaded(catalog);
+    const second = catalog.status().pending?.commit ?? '';
+    assert.notEqual(second, first);
+    return { dir, repo, first, second };
+  }
+  const reopen = (dir: string, repo: string): DesignCatalog => createDesignCatalog({ dir, repository: `file://${repo}`, allowLocal: true, gateway: async () => {} });
+  const lockCommit = (dir: string): string => (JSON.parse(readFileSync(join(dir, 'open-design.lock.json'), 'utf8')) as { commit: string }).commit;
+
+  it('goes forward when the stop came after the new folder took its place', async () => {
+    const { dir, repo, second } = await twoVersions();
+    renameSync(join(dir, 'open-design'), join(dir, 'open-design.old'));
+    renameSync(join(dir, 'open-design.next'), join(dir, 'open-design'));
+    const again = reopen(dir, repo);
+    assert.equal(existsSync(join(dir, 'open-design.old')), false);
+    assert.equal(existsSync(join(dir, 'open-design.next.index.json')), false);
+    assert.equal(again.status().adopted?.commit, second);
+    assert.equal(lockCommit(dir), second);
+    assert.equal(again.status().pending, null);
+    assert.deepEqual(again.list().styles.map((item) => item.slug), ['alpha', 'beta', 'epsilon']);
+  });
+
+  it('goes forward when the stop came after the index, before the lock', async () => {
+    const { dir, repo, first, second } = await twoVersions();
+    renameSync(join(dir, 'open-design'), join(dir, 'open-design.old'));
+    renameSync(join(dir, 'open-design.next'), join(dir, 'open-design'));
+    renameSync(join(dir, 'open-design.next.index.json'), join(dir, 'open-design.index.json'));
+    assert.equal(lockCommit(dir), first);
+    const again = reopen(dir, repo);
+    assert.equal(again.status().adopted?.commit, second, 'not "Non ancora scaricato"');
+    assert.equal(lockCommit(dir), second);
+    assert.equal(existsSync(join(dir, 'open-design.old')), false);
+  });
+
+  it('goes back when the stop came before the new folder took its place, and the new one still waits', async () => {
+    const { dir, repo, first, second } = await twoVersions();
+    renameSync(join(dir, 'open-design'), join(dir, 'open-design.old'));
+    const again = reopen(dir, repo);
+    assert.equal(existsSync(join(dir, 'open-design.old')), false);
+    assert.equal(again.status().adopted?.commit, first);
+    assert.equal(again.status().pending?.commit, second);
+    assert.deepEqual(again.list().styles.map((item) => item.slug), ['alpha', 'beta']);
+  });
+
+  it('goes back on an error during the swap, with the version still waiting', async () => {
+    const { dir, repo, first, second } = await twoVersions();
+    // The index cannot be renamed over a folder that is not empty.
+    const index = join(dir, 'open-design.index.json');
+    const saved = readFileSync(index);
+    rmSync(index);
+    mkdirSync(join(index, 'block'), { recursive: true });
+    const catalog = reopen(dir, repo);
+    assert.throws(() => catalog.adopt(second), (error: unknown) => error instanceof DesignCatalogError && error.code === 'failed');
+    assert.equal(existsSync(join(dir, 'open-design.old')), false);
+    assert.equal(existsSync(join(dir, 'open-design.busy')), false);
+    assert.equal(existsSync(join(dir, 'open-design', 'design-systems', 'epsilon')), false, 'the adopted folder is back');
+    assert.equal(existsSync(join(dir, 'open-design.next', 'design-systems', 'epsilon', 'DESIGN.md')), true, 'the new one still waits');
+    rmSync(index, { recursive: true });
+    writeFileSync(index, saved);
+    assert.equal(catalog.status().adopted?.commit, first);
+    assert.equal(catalog.status().pending?.commit, second);
+    catalog.adopt(second);
+    assert.equal(catalog.status().adopted?.commit, second);
+  });
+});
+
+describe('limits before the download', () => {
+  it('counts the files of the sparse patterns from the names of the trees', () => {
+    assert.deepEqual(
+      countSparse(['LICENSE', 'README.md', 'NOTICE.md', 'design-systems/a/DESIGN.md', 'design-systems/a/manifest.json', 'design-systems/a/tokens.css', 'design-systems/a/b/DESIGN.md', 'skills/s/SKILL.md', 'skills/s/scripts/run.py']),
+      { files: 5, styles: 1, skills: 1 },
+    );
+    assert.deepEqual(countSparse([]), { files: 0, styles: 0, skills: 0 });
+  });
+
+  it('refuses a repository with too many files before fetching their contents', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo, { maxTreeFiles: 3 });
+    await downloaded(catalog);
+    const status = catalog.status();
+    assert.equal(status.job?.status, 'failed');
+    assert.match(status.job.error ?? '', /more than 3 files in the catalog, nothing downloaded/);
+    assert.equal(existsSync(join(dir, 'open-design.next')), false);
+  });
+
+  it('gives git an empty HOME of its own', () => {
+    const env = gitEnv({ HOME: 'user-home', XDG_CONFIG_HOME: 'user-home/.config', PATH: '/bin' }, 'https', '/data/catalogs/open-design.git-home');
+    assert.equal(env.HOME, '/data/catalogs/open-design.git-home');
+    assert.equal(env.XDG_CONFIG_HOME, '/data/catalogs/open-design.git-home');
+    assert.equal(env.PATH, '/bin');
+    assert.equal(env.GIT_CONFIG_GLOBAL, '/dev/null');
+  });
+});
+
+describe('third-party text', () => {
+  const bell = String.fromCodePoint(7);
+  const hidden = [0x202e, 0x200b, 0x2066, 0xfeff, 0x1b].map((code) => String.fromCodePoint(code)).join('');
+
+  it('keeps the lines of a NOTICE and drops its controls', () => {
+    const root = temporary();
+    writeFileSync(join(root, 'LICENSE'), APACHE);
+    writeFileSync(join(root, 'NOTICE'), `Line one\n\tLine${bell} two\r\nLine three\n`);
+    assert.equal(readLicense(root).notice, 'Line one\n Line? two\nLine three');
+  });
+
+  it('takes hidden characters out of the body of a style, lines and tabs stay', async () => {
+    assert.equal(cleanBody(`a${hidden}b\n\tc${bell}`), 'ab\n\tc');
+    const repo = upstream({ ...STARTING, 'design-systems/alpha/DESIGN.md': `${style('Alpha', 'Calm.')}Hidden${hidden}text.\n\tTabbed.\n` });
+    const { catalog, dir } = catalogFor(repo);
+    await downloaded(catalog);
+    catalog.adopt(catalog.status().pending?.commit);
+    const text = designStyleText(dir, 'alpha').text;
+    assert.match(text, /Hiddentext\.\n\tTabbed\./);
+    assert.equal(cleanBody(text), text);
+  });
+});
+
 describe('routes', () => {
   async function call(origin: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
     return new Promise((resolve, reject) => {
@@ -410,6 +612,9 @@ describe('routes', () => {
       assert.equal((await call(origin, 'POST', '/api/design-catalog/update', {})).status, 202);
       await catalog.idle();
       const pending = (await call(origin, 'GET', '/api/design-catalog')).body.pending as { commit: string };
+      const again = await call(origin, 'POST', '/api/design-catalog/update', {});
+      assert.equal(again.status, 409, 'a version downloaded waits');
+      assert.equal(again.body.error, 'Prima usa o scarta la versione scaricata.');
       assert.equal((await call(origin, 'POST', '/api/design-catalog/adopt', { commit: 'nope' })).status, 400);
       assert.equal((await call(origin, 'POST', '/api/design-catalog/adopt', { commit: 'f'.repeat(40) })).status, 409);
       assert.equal((await call(origin, 'POST', '/api/design-catalog/adopt', { commit: pending.commit })).status, 200);

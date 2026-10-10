@@ -4,7 +4,9 @@
 //   pnpm design:catalog adopt       adopts the version waiting (swap of the folders, lock)
 //   pnpm design:catalog discard     deletes the version waiting
 // Only the fixed address of the repository leaves, checked by the policy of the
-// gateway; nothing of the clone runs. Run it while the core is not downloading too.
+// gateway; nothing of the clone runs. The core and the command share the busy file
+// data/catalogs/open-design.busy: while one downloads, adopts or discards, the other
+// refuses; `status` only reads and repairs nothing.
 import { join } from 'node:path';
 
 import { sanitizeForTerminal as safe } from '@arianna/agents';
@@ -18,6 +20,7 @@ const USAGE = 'Uso: pnpm design:catalog [status|update|adopt|discard]';
 
 const catalog = createDesignCatalog({
   dir: join(resolveHome(), 'data', 'catalogs'),
+  recover: false,
   gateway: (repository) => {
     const decision = gatewayCheck([{ value: repository, label: 'L0', source: 'cli:design-catalog' }], createContext('L0'), { kind: 'web' }, knownSecrets);
     return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`${decision.rule}: ${decision.reason}`));
