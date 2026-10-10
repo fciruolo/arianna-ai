@@ -2528,7 +2528,7 @@ Vale per progetti nuovi e vecchi. La conoscenza la deve trovare Arianna con le s
 - **P1:** il contenitore e le parti in `arianna.toml` e nella pagina Progetti, con i progetti di oggi letti come contenitori con una parte.
 - **P2:** etichette di cartelle e note del contenitore, scheda "Conoscenza" e pulsante "+ Conoscenza" (solo locale: Arianna la trova con le sue ricerche).
 - **P3:** il Coder legge le note L1 nel sandbox (profili D-050 e D-138 con le cartelle L2 e L3 negate) e, se serve, nel testo della delega. Canarino: una nota L2 con una stringa unica non deve comparire in nessuna uscita. **Fatta (D-166, unita in 0.53.0 con il sì dell'utente):** il contenitore della parte è negato intero dalla sandbox; le note Interne passano una per una dal gateway e arrivano al Coder come copia di sola lettura per il run (`--add-dir` per Claude, voce `read` per Codex), con l'elenco nel brief; canarino deterministico in `pnpm eval`, casi dal vivo `knowledge` scritti e non ancora corsi.
-- **P4:** cartella degli IM, dopo la spiegazione dell'utente.
+- **P4:** cartella degli IM (Iteration Meeting, la riunione settimanale di rilascio con il cliente). Formato e scelte in D-167; tappe P4a (formato e sezione IM del cardwall), P4b (voci dette ad Arianna, chiusura dopo l'ora dell'IM, card collegate), P4c (promemoria e bozza del report).
 - **P5 (facoltativa):** uscita eccezionale con anonimizzazione locale e master password.
 
 **Decisioni dell'utente (2026-10-09).** Domande chiuse: scelte scritte in D-145 (`docs/DECISIONS.md`).

@@ -7,6 +7,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
+import type { ImDetail, ImItemState, ImSummary } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
@@ -849,6 +850,30 @@ export async function listProjectDir(project: string, dir: string): Promise<{ en
 
 export async function readProjectFile(project: string, path: string): Promise<ProjectFile> {
   return (await call<{ file: ProjectFile }>('GET', `${browse(project)}/file?${new URLSearchParams({ path }).toString()}`)).file;
+}
+
+// The section "IM" of the cardwall (D-167): the Iteration Meetings of a project, read and written in their files by the core.
+export async function listIms(project: string): Promise<ImSummary[]> {
+  return (await call<{ ims: ImSummary[] }>('GET', `${browse(project)}/im`)).ims;
+}
+
+export async function readIm(project: string, number: number): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('GET', `${browse(project)}/im/${String(number)}`)).im;
+}
+
+/** "+ Voce": a new item in Da fare; 409 when the file changed since `version`. */
+export async function addImItem(project: string, number: number, title: string, version: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im/${String(number)}/items`, { title, version })).im;
+}
+
+/** An item moved to another column; 409 when the file changed since `version`. */
+export async function setImItemState(project: string, number: number, line: number, state: ImItemState, version: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im/${String(number)}/items/${String(line)}`, { state, version })).im;
+}
+
+/** "Nuovo IM": the next one; `date` ("YYYY-MM-DD HH:MM") only for the first IM of the project. */
+export async function createIm(project: string, date?: string): Promise<ImDetail> {
+  return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im`, date === undefined ? {} : { date })).im;
 }
 
 /** "Mostra" (D-135): a covered secret with its text, once; an event in the chain. */
