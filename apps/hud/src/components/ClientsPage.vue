@@ -24,13 +24,14 @@ import {
   type StatusFilter,
 } from '../lib/clients.ts';
 import ClientContacts from './ClientContacts.vue';
+import ClientDashboard from './ClientDashboard.vue';
 import ClientRegistry from './ClientRegistry.vue';
 import Icon from './Icon.vue';
 
 /**
  * "Clienti" (I-16, D-168, tappa C1): the list with logo, name, area and
  * projects; a client in full with "Anagrafica", "Contatti", "Progetti", and
- * "Documenti" and "Dashboard" still to come (tappe C2 and C3). Everything is
+ * "Dashboard" (tappa C3, D-170) and "Documenti" still to come (tappa C2). Everything is
  * private (L2): it stays between this page and the core of this Mac.
  * `client` comes from the address (`/clienti/<id>`); "new" writes a new one.
  */
@@ -199,7 +200,7 @@ const tabs = computed(() => [
   { id: 'contacts', text: `Contatti${detail.value !== null && detail.value.contacts.length > 0 ? ` · ${String(detail.value.contacts.length)}` : ''}`, soon: false },
   { id: 'projects', text: `Progetti${detail.value !== null && detail.value.projects.length > 0 ? ` · ${String(detail.value.projects.length)}` : ''}`, soon: false },
   { id: 'documents', text: 'Documenti', soon: true },
-  { id: 'dashboard', text: 'Dashboard', soon: true },
+  { id: 'dashboard', text: 'Dashboard', soon: false },
 ] as const);
 
 const areaClass: Record<ClientArea, string> = { IT: 'text-ok', EU: 'text-info', 'extra-EU': 'text-warn' };
@@ -346,10 +347,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           <p class="mb-1.5 flex items-center gap-2 font-medium"><Icon name="file" :size="15" />Documenti · in arrivo</p>
           <p class="text-muted">Contratti, preventivi firmati e altri file del cliente, in una sua cartella privata su questo computer (tappa C2).</p>
         </div>
-        <div v-else class="max-w-xl rounded-xl border border-dashed border-line-strong bg-surface p-5 text-sm">
-          <p class="mb-1.5 flex items-center gap-2 font-medium"><Icon name="dashboard" :size="15" />Dashboard · in arrivo</p>
-          <p class="text-muted">Quanto ti ha fatto guadagnare il cliente, per mese e per anno, dagli IM chiusi dei suoi progetti con i loro prezzi (tappa C3, dopo i prezzi degli IM).</p>
-        </div>
+        <ClientDashboard v-else :client-id="detail.id" @project="emit('project', $event)" />
       </template>
     </template>
   </section>

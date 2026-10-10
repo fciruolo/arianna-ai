@@ -55,8 +55,36 @@ export interface ImInvoice {
   currency: string;
   note: string | null;
   ims: number[];
+  /** The taxable amount: the sum of the money of its IM. */
   totalCents: number;
+  /** The total of the document as on the invoice (D-170); null for the invoices registered before. */
+  documentCents: number | null;
+  /** The due date written by hand; null: from the payment terms of the client. */
+  dueOn: string | null;
+  /** The due date that counts; null without terms and without one written. */
+  due: string | null;
   createdAt: string;
+}
+
+/** What a new invoice carries (D-170): the total of the document is required, the due date is not. */
+export interface NewInvoice {
+  number: string;
+  issuedOn: string;
+  documentCents: number;
+  dueOn: string | null;
+  note: string | null;
+}
+
+/** The amount an invoice counts for: the total of the document, else (registered before D-170) the taxable amount. */
+export function invoiceAmount(invoice: Pick<ImInvoice, 'documentCents' | 'totalCents'>): number {
+  return invoice.documentCents ?? invoice.totalCents;
+}
+
+/** "scade il 31/10/2026", "scaduta il 31/10/2026", "pagata il 20/08/2026"; null without a due date. */
+export function dueText(invoice: Pick<ImInvoice, 'due' | 'paidOn'>, today: string): string | null {
+  if (invoice.paidOn !== null) return `pagata il ${dayText(invoice.paidOn)}`;
+  if (invoice.due === null) return null;
+  return invoice.due < today ? `scaduta il ${dayText(invoice.due)}` : `scade il ${dayText(invoice.due)}`;
 }
 
 export interface ImOverview {
@@ -203,6 +231,7 @@ const BILLING_ERRORS: [RegExp, string][] = [
   [/the number must be/, 'Il numero della fattura è una riga di al massimo 40 caratteri.'],
   [/must be YYYY-MM-DD/, 'La data non è valida.'],
   [/an invoice holds/, 'Scegli almeno un IM da mettere in fattura.'],
+  [/documentCents/, 'Il totale documento non è un importo valido.'],
 ];
 
 export function billingErrorText(cause: unknown): string {

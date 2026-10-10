@@ -12,6 +12,8 @@ import { after, test } from 'node:test';
 import { resolveHome, type Project } from '@arianna/config';
 import { createLabelRules } from '@arianna/policy';
 
+import { readClientDashboard } from '../src/client-dashboard.ts';
+import { ClientError, createClient, linkProject } from '../src/clients.ts';
 import { cancelInvoice, createInvoice, fixAllClosedPrices, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice } from '../src/im-billing.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -90,19 +92,21 @@ test('an invoice holds closed IM of one project, one currency, each once', async
   await setImPrice(sql, 'beta', 50_000, 'EUR');
   await setImBilling(sql, 'beta', 3, null, true);
 
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-10-31', ims: [1, 4] }), 'conflict');
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-10-31', ims: [3] }), 'conflict');
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-10-31', ims: [9] }), 'conflict');
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-02-30', ims: [1] }), 'invalid');
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: ' ', issuedOn: '2026-10-31', ims: [1] }), 'invalid');
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-10-31', ims: [] }), 'invalid');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-10-31', ims: [1, 4] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-10-31', ims: [3] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-10-31', ims: [9] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-02-30', ims: [1] }), 'invalid');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: ' ', issuedOn: '2026-10-31', ims: [1] }), 'invalid');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-10-31', ims: [] }), 'invalid');
 
-  const invoice = await createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-10-31', ims: [1, 2], note: 'Settembre' });
-  assert.deepEqual([invoice.ims, invoice.totalCents, invoice.currency, invoice.paidOn], [[1, 2], 100_000, 'EUR', null]);
+  const invoice = await createInvoice(sql, projects, ENV, 'beta', { documentCents: 122_000, number: '1/2026', issuedOn: '2026-10-31', ims: [1, 2], note: 'Settembre' });
+  assert.deepEqual([invoice.ims, invoice.totalCents, invoice.documentCents, invoice.currency, invoice.paidOn], [[1, 2], 100_000, 122_000, 'EUR', null]);
+  // No client for the project: no due date until one is written by hand.
+  assert.deepEqual([invoice.dueOn, invoice.due], [null, null]);
   // Each IM once; the number once among the invoices not cancelled.
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: '2/2026', issuedOn: '2026-10-31', ims: [2] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '2/2026', issuedOn: '2026-10-31', ims: [2] }), 'conflict');
   await setImBilling(sql, 'beta', 3, null, false);
-  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { number: ' 1/2026 ', issuedOn: '2026-10-31', ims: [3] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: ' 1/2026 ', issuedOn: '2026-10-31', ims: [3] }), 'conflict');
   // An IM in an invoice keeps its money until it leaves it.
   await rejectsWith(setImBilling(sql, 'beta', 1, 10, false), 'conflict');
   // Not even by hand: the money of an IM in an invoice, a lower label, an invoice cancelled taken again.
@@ -115,13 +119,19 @@ test('an invoice holds closed IM of one project, one currency, each once', async
   let overview = await readImOverview(sql, projects, ENV, 'beta');
   assert.deepEqual(overview.ims.map((row) => row.state), ['invoiced', 'invoiced', 'to-invoice', 'open']);
   assert.equal(overview.ims[0]?.invoice?.number, '1/2026');
-  assert.deepEqual([overview.totals.toInvoice, overview.totals.invoiced, overview.totals.paid], [[{ currency: 'EUR', cents: 50_000 }], [{ currency: 'EUR', cents: 100_000 }], []]);
+  assert.deepEqual([overview.totals.toInvoice, overview.totals.invoiced, overview.totals.paid], [[{ currency: 'EUR', cents: 50_000 }], [{ currency: 'EUR', cents: 122_000 }], []]);
 
   await updateInvoice(sql, 'beta', invoice.id, { paidOn: '2026-11-15' });
   overview = await readImOverview(sql, projects, ENV, 'beta');
   assert.deepEqual(overview.ims.map((row) => row.state).slice(0, 2), ['paid', 'paid']);
-  assert.deepEqual(overview.totals.paid, [{ currency: 'EUR', cents: 100_000 }]);
+  // Invoiced and paid count the total of the document (D-170).
+  assert.deepEqual(overview.totals.paid, [{ currency: 'EUR', cents: 122_000 }]);
   await rejectsWith(updateInvoice(sql, 'beta', invoice.id, {}), 'invalid');
+  await rejectsWith(updateInvoice(sql, 'beta', invoice.id, { documentCents: -1 }), 'invalid');
+  await rejectsWith(updateInvoice(sql, 'beta', invoice.id, { dueOn: '2026-11-31' }), 'invalid');
+  await updateInvoice(sql, 'beta', invoice.id, { documentCents: 121_000, dueOn: '2026-11-30' });
+  overview = await readImOverview(sql, projects, ENV, 'beta');
+  assert.deepEqual([overview.invoices[0]?.documentCents, overview.invoices[0]?.dueOn, overview.invoices[0]?.due], [121_000, '2026-11-30', '2026-11-30']);
   await rejectsWith(updateInvoice(sql, 'gamma', invoice.id, { paidOn: null }), 'not-found');
 
   // Out of the invoice one by one, the last one never: the invoice is cancelled instead.
@@ -136,14 +146,14 @@ test('an invoice holds closed IM of one project, one currency, each once', async
   assert.deepEqual(overview.ims.map((row) => row.state), ['to-invoice', 'to-invoice', 'to-invoice', 'open']);
   assert.deepEqual(overview.invoices, []);
   // A cancelled invoice frees its number.
-  const again = await createInvoice(sql, projects, ENV, 'beta', { number: '1/2026', issuedOn: '2026-11-02', ims: [1, 2, 3] });
+  const again = await createInvoice(sql, projects, ENV, 'beta', { documentCents: 54_900, number: '1/2026', issuedOn: '2026-11-02', ims: [1, 2, 3] });
   assert.equal(again.totalCents, 150_000);
   await assert.rejects(sql`UPDATE im_invoices SET currency = 'USD' WHERE id = ${again.id}`, /never change/);
 
   // The events carry ids, numbers and names of fields, never amounts or invoice numbers.
   const events = await sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind LIKE 'im.%' AND payload->>'project' = 'beta'`;
   assert.ok(events.length > 0);
-  for (const { payload } of events) assert.doesNotMatch(JSON.stringify(payload), /50000|1\/2026|Settembre/);
+  for (const { payload } of events) assert.doesNotMatch(JSON.stringify(payload), /50000|122000|121000|1\/2026|Settembre/);
 });
 
 test('mixed currencies do not go in one invoice', async () => {
@@ -156,5 +166,47 @@ test('mixed currencies do not go in one invoice', async () => {
   const overview = await readImOverview(sql, projects, ENV, 'delta');
   assert.deepEqual(overview.ims.map((row) => row.currency), ['EUR', 'USD']);
   assert.deepEqual(overview.totals.toInvoice, [{ currency: 'EUR', cents: 10_000 }, { currency: 'USD', cents: 12_000 }]);
-  await rejectsWith(createInvoice(sql, projects, ENV, 'delta', { number: 'D-1', issuedOn: '2026-10-31', ims: [1, 2] }), 'conflict');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'delta', { documentCents: 54_900, number: 'D-1', issuedOn: '2026-10-31', ims: [1, 2] }), 'conflict');
+});
+
+test('the client dashboard: due dates from the payment terms of the client, a written one over them, the money of its projects', async () => {
+  const sql = db().sql;
+  const projects = [container('epsilon', { 1: 'chiuso', 2: 'chiuso', 3: 'previsto' }), container('zeta', { 1: 'chiuso' })];
+  const client = await createClient(sql, { displayName: 'Pasticceria Finta Epsilon', paymentDays: 30, paymentEndOfMonth: true });
+  const names = { projects: projects.map((project) => project.name) };
+  await linkProject(sql, client.id, 'epsilon', names);
+  await linkProject(sql, client.id, 'zeta', names);
+  await setImPrice(sql, 'epsilon', 45_000, 'EUR');
+  await setImPrice(sql, 'zeta', 30_000, 'EUR');
+  await rejectsWith(createInvoice(sql, projects, ENV, 'epsilon', { documentCents: 1.5, number: 'E-1', issuedOn: '2026-09-30', ims: [1] }), 'invalid');
+  const first = await createInvoice(sql, projects, ENV, 'epsilon', { documentCents: 109_800, number: 'E-1', issuedOn: '2026-09-30', ims: [1, 2] });
+  assert.deepEqual([first.dueOn, first.due], [null, '2026-10-31']);
+  const second = await createInvoice(sql, projects, ENV, 'zeta', { documentCents: 36_600, number: 'Z-1', issuedOn: '2026-09-30', dueOn: '2026-10-15', ims: [1] });
+  assert.deepEqual([second.dueOn, second.due], ['2026-10-15', '2026-10-15']);
+  await updateInvoice(sql, 'zeta', second.id, { paidOn: '2026-10-12' });
+
+  const dashboard = await readClientDashboard(sql, projects, ENV, client.id);
+  assert.equal(dashboard.currency, 'EUR');
+  assert.deepEqual(
+    dashboard.projects.map((project) => [project.name, project.closed, project.next?.number ?? null]),
+    [
+      ['epsilon', 2, 3],
+      ['zeta', 1, null],
+    ],
+  );
+  assert.deepEqual(
+    dashboard.months.map((item) => [item.month, item.project, item.invoiced, item.paid]),
+    [
+      ['2026-09', 'epsilon', 109_800, 0],
+      ['2026-09', 'zeta', 0, 36_600],
+    ],
+  );
+  assert.deepEqual(
+    dashboard.cash.map((item) => [item.month, item.cents]),
+    [['2026-10', 36_600]],
+  );
+  // A project of the client no longer among the containers is named, not read.
+  const fewer = await readClientDashboard(sql, [projects[0] as Project], ENV, client.id);
+  assert.deepEqual([fewer.projects.map((project) => project.name), fewer.missing], [['epsilon'], ['zeta']]);
+  await assert.rejects(readClientDashboard(sql, projects, ENV, randomUUID()), (error) => error instanceof ClientError && error.code === 'not-found');
 });
