@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { addImItem, createIm, listIms, readIm, setImItemState } from '../lib/api.ts';
+import { addImItem, createIm, listIms, openImItemCard, readIm, setImItemState } from '../lib/api.ts';
 import {
   callText,
   fromDateTimeInput,
@@ -18,6 +18,7 @@ import {
   type ImSummary,
   imTitleText,
   isStale,
+  itemRef,
   loadImPrefs,
   needsFirstDate,
   pickIm,
@@ -35,7 +36,9 @@ import LabelBadge from './LabelBadge.vue';
  * item moves with a drag or with its small menu, "+ Voce" adds one to Da fare,
  * "Nuovo IM" makes the next one. Every write carries the version of the file:
  * when the file changed meanwhile (edited in Obsidian) the core says 409 and
- * the IM is read again.
+ * the IM is read again. A click on an item opens its card (D-167, P4b): the
+ * core makes it the first time and writes `#card-<sigla>` on the item's line;
+ * the cardwall shows its detail (`openCard`).
  */
 const props = defineProps<{
   /** The projects of the cardwall (containers). */
@@ -43,6 +46,7 @@ const props = defineProps<{
   /** The live feed's counter: read again, quietly, when it moves. */
   version: number;
 }>();
+const emit = defineEmits<{ openCard: [cardId: string] }>();
 
 const storage = (() => {
   try {
@@ -176,6 +180,17 @@ async function write(change: (name: string, current: ImDetail) => Promise<ImDeta
   } finally {
     busy.value = false;
   }
+}
+
+/** The card of an item: made the first time (the IM comes back with `#card-<sigla>` on its line), then its detail. */
+async function openCard(item: ImItem): Promise<void> {
+  let cardId: string | undefined;
+  const done = await write(async (name, current) => {
+    const answer = await openImItemCard(name, current.number, itemRef(item));
+    cardId = answer.cardId;
+    return answer.im;
+  });
+  if (done && cardId !== undefined) emit('openCard', cardId);
 }
 
 async function moveItem(item: ImItem, state: ImItemState): Promise<void> {
@@ -382,13 +397,20 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
               @dragend="onDragEnd"
             >
               <div class="flex items-start gap-2 px-2.5 py-2">
-                <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md text-left"
+                  :aria-label="`Apri la card: ${item.title}`"
+                  :title="item.card === null ? 'Apri la card (la crea la prima volta)' : 'Apri la card'"
+                  :disabled="busy"
+                  @click="openCard(item)"
+                >
                   <span class="text-[13.5px] leading-snug break-words" :class="{ 'text-muted line-through': state === 'cancelled' }">{{ item.title }}</span>
                   <span v-if="item.part !== null || item.card !== null" class="flex flex-wrap items-center gap-1 text-[11px]">
                     <span v-if="item.part !== null" class="chip text-info">Parte {{ item.part }}</span>
                     <span v-if="item.card !== null" class="chip inline-flex items-center gap-1 font-mono text-muted" title="Card collegata"><Icon name="cardwall" :size="11" />#card-{{ item.card }}</span>
                   </span>
-                </div>
+                </button>
                 <button
                   :id="`im-item-menu-${item.line}`"
                   type="button"

@@ -276,3 +276,51 @@ export function newImText(number: number, date: string, items: readonly NewItem[
   lines.push('## Report', '', '## Note', '');
   return lines.join('\n');
 }
+
+/** The text with the item on `line` written again as `item` (state, title, part, card), keeping its indentation. */
+export function rewriteItem(text: string, line: number, item: NewItem): string {
+  const { lines, eol } = splitLines(text);
+  if (!parseIm(text).items.some((candidate) => candidate.line === line)) throw new ImFormatError('there is no item on this line');
+  const index = line - 1;
+  const indent = /^\s*/.exec(lines[index] ?? '')?.[0] ?? '';
+  lines[index] = `${indent}${itemLine(item)}`;
+  return lines.join(eol);
+}
+
+/** The text with the header field `stato` set (added when missing). */
+export function setStatus(text: string, status: ImStatus): string {
+  if (!IM_STATUSES.includes(status)) throw new ImFormatError('unknown status');
+  const { lines, eol } = splitLines(text);
+  const header = headerRange(lines);
+  if (header === null) throw new ImFormatError('the IM has no header');
+  const at = lines.findIndex((line, index) => index >= header.start && index < header.end && /^stato\s*:/i.test(line));
+  if (at === -1) lines.splice(header.end, 0, `stato: ${status}`);
+  else lines[at] = `stato: ${status}`;
+  return lines.join(eol);
+}
+
+/** When the meeting is held: the moved call when there is one, else the date (D-167). */
+export function meetingTime(im: Pick<ParsedIm, 'date' | 'call'>): string | null {
+  return im.call ?? im.date;
+}
+
+/** `at` as a local `YYYY-MM-DD HH:MM`, to compare with the dates of the IM. */
+export function localImDate(at: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/**
+ * The text with `label: <label>` in the header, when it raises the label the
+ * header has (none counts as the folder's): an IM that receives a private
+ * item becomes private, never the other way round.
+ */
+export function raiseLabel(text: string, label: string, current: string): string {
+  if (!/^L[0-3]$/.test(label) || label <= current) return text;
+  const { lines, eol } = splitLines(text);
+  const header = headerRange(lines);
+  if (header === null) throw new ImFormatError('the IM has no header');
+  const kept = lines.filter((line, index) => !(index >= header.start && index < header.end && /^\s*label\s*:/i.test(line)));
+  kept.splice(header.start, 0, `label: ${label}`);
+  return kept.join(eol);
+}

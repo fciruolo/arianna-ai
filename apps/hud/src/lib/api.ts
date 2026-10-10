@@ -7,7 +7,7 @@ import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
-import type { ImDetail, ImItemState, ImSummary } from './im.ts';
+import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImSummary } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
@@ -874,6 +874,25 @@ export async function setImItemState(project: string, number: number, line: numb
 /** "Nuovo IM": the next one; `date` ("YYYY-MM-DD HH:MM") only for the first IM of the project. */
 export async function createIm(project: string, date?: string): Promise<ImDetail> {
   return (await call<{ im: ImDetail }>('POST', `${browse(project)}/im`, date === undefined ? {} : { date })).im;
+}
+
+/** The card of an item (D-167, P4b): made the first time, and the item's line gets `#card-<sigla>`; 409 when the item changed in the file. */
+export async function openImItemCard(project: string, number: number, item: ImItemRef): Promise<{ cardId: string; im: ImDetail }> {
+  return call('POST', `${browse(project)}/im/${String(number)}/card`, item);
+}
+
+/** The closings of the IM asked in the secretary conversation, most recent first. */
+export async function listImClosings(): Promise<ImClosing[]> {
+  return (await call<{ closings: ImClosing[] }>('GET', '/api/im/closings')).closings;
+}
+
+export async function readImClosing(id: string): Promise<{ closing: ImClosing; im: ImDetail }> {
+  return call('GET', `/api/im/closings/${encodeURIComponent(id)}`);
+}
+
+/** One answer of a closing; `closed` when it was the last one (the IM is closed and the next one made); 409 when the item changed or the closing is over. */
+export async function answerImClosing(id: string, item: ImItemRef, outcome: ImOutcome): Promise<{ closing: ImClosing; im: ImDetail; closed: boolean }> {
+  return call('POST', `/api/im/closings/${encodeURIComponent(id)}/answer`, { ...item, outcome });
 }
 
 /** "Mostra" (D-135): a covered secret with its text, once; an event in the chain. */

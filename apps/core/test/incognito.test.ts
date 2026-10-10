@@ -18,7 +18,7 @@ test('in an incognito conversation the tools that keep something are never offer
   assert.ok(arianna !== undefined);
   const normal = orchestratorTools(arianna, true, true);
   // The card offers them in a normal conversation: the filter has something to remove.
-  for (const tool of ['kb.write', 'task.create', 'task.update'] as const) assert.ok(normal.includes(tool), tool);
+  for (const tool of ['kb.write', 'task.create', 'task.update', 'im.add'] as const) assert.ok(normal.includes(tool), tool);
   const incognito = orchestratorTools(arianna, true, true, true);
   for (const tool of INCOGNITO_OFF_TOOLS) assert.ok(!incognito.includes(tool), tool);
   // Reading the KB, asking and delegating stay: "a chat like the others".

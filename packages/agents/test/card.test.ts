@@ -86,6 +86,18 @@ describe('parseAgentCard', () => {
       assert.equal(parseAgentCard(raw, 'archivista').maxLabel, 'L1');
     });
 
+    it('im.add (D-167): local only, no approval to list', () => {
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = ['im.add'])), 'archivista').tools, ['im.add']);
+      rejects(
+        card((c) => {
+          c.tools = ['im.add'];
+          c.executors = ['local', 'claude'];
+          c.cloud_max_label = 'L1';
+        }),
+        /im\.add reads private data/,
+      );
+    });
+
     it('the commitments of the secretary (D-144): only on a card that reads L2 and runs on the local model alone', () => {
       const tools = ['commitment.add', 'commitment.list', 'commitment.done', 'commitment.move', 'commitment.report'];
       assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);

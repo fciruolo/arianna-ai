@@ -49,6 +49,7 @@ import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
 import { trialEndpoints } from '@arianna/evals/library';
 import { conversationOfTask, createNoticeBoard, createNotifier } from './notifications.ts';
+import { createImWatcher } from './im-watch.ts';
 import { createSecretaryTicker } from './reminders.ts';
 import { createModelMemory, unloadModel } from './model-memory.ts';
 import { createFetcher } from './model-http.ts';
@@ -390,6 +391,8 @@ const orchestrator = createOrchestrator({
     };
   },
   kb,
+  // "Per il prossimo IM…" (D-167, P4b): the IM files of the approved projects, written by code on this computer.
+  ims: { projects: () => settings.current().projects, knowledge: { home: config.home, rules } },
   model: localModel,
   settings: () => settings.current(),
   rules,
@@ -748,6 +751,11 @@ const stopNotices = await live.subscribe(notifier.subscriber);
 const secretaryTicker = createSecretaryTicker({ sql, settings: () => settings.current().secretary, onError: report });
 secretaryTicker.start();
 
+// The IM between meetings (D-167, P4b): the closing asked in the secretary
+// conversation once the meeting is over, and the items of a card in "Fatto".
+const imWatcher = createImWatcher({ sql, projects: projectContainers, env: { home: config.home, rules }, onError: report });
+imWatcher.start();
+
 // Telegram (task 1.15, D-044): on only with [telegram] in arianna.toml, opened
 // or closed when the section changes (D-071). Without a token the core runs
 // anyway: the web chat does not depend on it. Off by the user's choice (D-110,
@@ -763,6 +771,7 @@ async function shutdown(): Promise<void> {
   await services.stopAll();
   settings.close();
   secretaryTicker.stop();
+  imWatcher.stop();
   incognitoWatch.stop();
   stopNotices();
   await telegram.close();

@@ -43,6 +43,8 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'web.search': object({ query: text(200) }, ['query']),
   'commitment.add': object({ text: text(300), day: text(80), time: text(20) }, ['text', 'day']),
   'commitment.list': object({ day: text(80) }, []),
+  // MAX_ITEM_TITLE of apps/core/src/im-format.ts.
+  'im.add': object({ project: text(100), title: text(300), which: { type: 'string', enum: ['next', 'current'] } }, ['title']),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -77,8 +79,10 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'file.delete': 'Delete a file (the user approves before it happens).',
   'channel.send': 'Send a message on Telegram (the user approves before it happens).',
   'web.search': 'Search the web.',
+  'im.add':
+    'Add an item of project work to an IM, the weekly meeting with the client of a project ("per il prossimo IM dobbiamo fare le fatture", "per questo IM: il pagamento"). "title" is the work, one short line in the user\'s words; "which" is "next" (il prossimo IM, the default) or "current" (questo IM, the meeting not over yet); "project" is the project as the user named it, left out in a conversation of a project. The core finds the IM and writes the file, then answers with the IM number, its date and the project: tell the user in one line. In a private conversation the core first asks the user to confirm the exact text in the chat, and writes the answer itself once the user decides: call it all the same, and never ask the user to confirm it yourself. Without a known project it answers with the known ones: ask the user which. Use it only for work to show or do for a client meeting; something the user personally has to do on a day is a commitment for the secretary, not an IM item.',
   'commitment.add':
-    'Note something the user has to do on a day. "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
+    'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':
     'Show the user the commitments of a day or a span ("day" as the user said it: oggi, domani, giovedì, questa settimana, la settimana prossima, i prossimi 7 giorni, questo mese, il mese prossimo); without "day", every open one. The core knows today\'s date and writes the list in the chat, ending your turn: call it for any question about the user\'s commitments, and never ask the user what day it is.',
   'commitment.done':

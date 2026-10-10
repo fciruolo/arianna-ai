@@ -1,4 +1,5 @@
-import { ApiError, listPendingApprovals, loadConversation, loadTask } from './api.ts';
+import { ApiError, findSecretary, listImClosings, listPendingApprovals, loadConversation, loadTask } from './api.ts';
+import { type ImClosing, openClosings } from './im.ts';
 import { withoutIncognito } from './incognito.ts';
 import type { WaitingTask } from './pending.ts';
 import type { Approval, Task } from './types.ts';
@@ -15,6 +16,9 @@ export interface PendingData {
   hidden: number;
   tasks: Record<string, Task>;
   titles: Record<string, string | null>;
+  /** The closings of the IM still waiting for answers (D-167, P4b), and the secretary's conversation they open. */
+  closings: ImClosing[];
+  secretary: { id: string; title: string | null } | null;
 }
 
 /** GET /api/tasks/waiting, same origin, as api.ts reads the other routes. */
@@ -26,7 +30,9 @@ async function listWaitingTasks(): Promise<{ tasks: WaitingTask[]; hidden: numbe
 }
 
 export async function loadPending(): Promise<PendingData> {
-  const [listed, read] = await Promise.all([listPendingApprovals(), listWaitingTasks()]);
+  const [listed, read, closings] = await Promise.all([listPendingApprovals(), listWaitingTasks(), listImClosings().then(openClosings, () => [])]);
+  // The closings are answered in the secretary's conversation: read it only when one waits.
+  const secretary = closings.length === 0 ? null : await findSecretary().catch(() => null);
   // Every reader of this is outside the conversations: an incognito one's approvals and waiting tasks are never here (D-136).
   const approvals = withoutIncognito(listed);
   const waiting = { tasks: withoutIncognito(read.tasks), hidden: read.hidden };
@@ -53,7 +59,7 @@ export async function loadPending(): Promise<PendingData> {
       }
     }),
   );
-  return { approvals, waiting: waiting.tasks, hidden: waiting.hidden, tasks, titles };
+  return { approvals, waiting: waiting.tasks, hidden: waiting.hidden, tasks, titles, closings, secretary: secretary === null ? null : { id: secretary.id, title: secretary.title } };
 }
 
 /** POST /api/tasks/:id/dismiss (D-109): the waiting task closes as done, its pending approvals expire. */

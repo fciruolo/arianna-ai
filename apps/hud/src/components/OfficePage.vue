@@ -7,7 +7,7 @@ import { boardPoint, parseMapText } from '../lib/office/map.ts';
 import type { OfficeSignals } from '../lib/office/signals.ts';
 import { officeSnapshot, type OfficeAgent, type OfficeSnapshot } from '../lib/office/snapshot.ts';
 import { runningWork, talkTarget, type RunningWork, type TalkTarget } from '../lib/office/talk.ts';
-import { pendingItems, pendingTotal } from '../lib/pending.ts';
+import { pendingRows, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { POSE_TEXT, type Pose } from '../lib/sprites.ts';
 import type { Approval, CharacterListing, Conversation, ExecutorChoice, ProjectInfo, StatusSnapshot } from '../lib/types.ts';
@@ -54,7 +54,7 @@ async function readPending(): Promise<void> {
     const data = await loadPending();
     if (request !== pendingLatest) return;
     const coder = data.approvals.filter((approval) => approval.state === 'pending' && approval.kind === 'workspace').length;
-    pending.value = { total: pendingTotal(pendingItems(data.approvals, data.tasks, data.titles, data.waiting), data.hidden), hidden: data.hidden, coder };
+    pending.value = { total: pendingTotal(pendingRows(data), data.hidden), hidden: data.hidden, coder };
   } catch {
     // Keeps the last count.
   }
