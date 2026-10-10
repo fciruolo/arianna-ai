@@ -4,6 +4,7 @@ import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
+import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
@@ -461,6 +462,36 @@ export async function promoteModel(modelId: string, roles: ModelRole[]): Promise
 /** Takes a model added from Hugging Face out of the catalog; `confirm` is the id typed by the user. */
 export async function forgetModel(modelId: string, confirm: string): Promise<void> {
   await call<{ modelId: string }>('POST', `/api/models/${encodeURIComponent(modelId)}/forget`, { confirm });
+}
+
+/** The catalog of Open Design (D-160): adopted version, version waiting with the comparison, download running. */
+export async function loadDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('GET', '/api/design-catalog');
+}
+
+/** "Scarica/Aggiorna catalogo": starts the download in the background. */
+export async function updateDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/update', {});
+}
+
+/** "Usa questa versione": the commit the user saw in the summary. */
+export async function adoptDesignCatalog(commit: string): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/adopt', { commit });
+}
+
+/** "Scarta": the version waiting is deleted. */
+export async function discardDesignCatalog(): Promise<DesignCatalogStatus> {
+  return call<DesignCatalogStatus>('POST', '/api/design-catalog/discard', {});
+}
+
+/** Styles and skills of the adopted version: slug, name, description. */
+export async function listDesignStyles(): Promise<DesignStyleListing> {
+  return call<DesignStyleListing>('GET', '/api/design-catalog/styles');
+}
+
+/** The text of one style, with the license notice at the head. */
+export async function loadDesignStyle(slug: string): Promise<DesignStyleText> {
+  return (await call<{ style: DesignStyleText }>('GET', `/api/design-catalog/styles/${encodeURIComponent(slug)}`)).style;
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

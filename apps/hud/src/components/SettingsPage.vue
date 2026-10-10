@@ -80,6 +80,7 @@ import {
 } from '../lib/settings.ts';
 import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
+import DesignCatalog from './DesignCatalog.vue';
 import Icon from './Icon.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
@@ -851,6 +852,8 @@ watch(active, () => {
               @chat="openChat"
               @dirty="agentTextsDirty = $event"
             />
+            <!-- The catalog of Open Design (D-160): styles for the Designer, adopted only after the summary -->
+            <DesignCatalog v-if="active === 'agents'" />
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />

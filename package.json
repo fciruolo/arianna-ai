@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.45.0",
+  "version": "0.46.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -33,6 +33,7 @@
     "kb:capture": "node scripts/kb-capture.ts",
     "demo:container": "node scripts/demo-container.ts",
     "agency:import": "node scripts/agency-import.ts",
+    "design:catalog": "node scripts/design-catalog.ts",
     "start": "node apps/core/src/main.ts",
     "hud:dev": "pnpm --filter @arianna/hud dev",
     "hud:build": "pnpm --filter @arianna/hud build",
