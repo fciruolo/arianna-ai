@@ -5,7 +5,18 @@ import { test } from 'node:test';
 import { ApiError } from '../src/lib/api.ts';
 import { defaultState, loadState } from '../src/lib/cardwall.ts';
 import {
+  answeredText,
   callText,
+  closingAskText,
+  closingHint,
+  closingsByMessage,
+  closingTitle,
+  type ImClosing,
+  IM_OUTCOME_TEXT,
+  IM_OUTCOMES,
+  itemRef,
+  openClosings,
+  openItems,
   countItems,
   defaultIm,
   fromDateTimeInput,
@@ -191,4 +202,63 @@ test('needsFirstDate asks a date with no IM or when the last IM has none', () =>
 test('needsFirstDate does not ask when the last IM has a date', () => {
   assert.equal(needsFirstDate([{ number: 3, date: '2026-10-15 10:00' }]), false);
   assert.equal(needsFirstDate([{ number: 5, date: '2026-10-15 10:00' }, { number: 2, date: null }]), false);
+});
+
+// I-11 tappa P4b: the card of an item and the closing in the secretary conversation.
+
+const closing = (id: string, over: Partial<ImClosing> = {}): ImClosing => ({
+  id,
+  project: 'progetto-test',
+  im: 33,
+  messageId: `m${id}`,
+  openedAt: '2026-10-15T08:00:00.000Z',
+  closedAt: null,
+  ...over,
+});
+
+test('the three answers of a closing, in order, with their Italian words', () => {
+  assert.deepEqual(IM_OUTCOMES, ['done', 'part', 'not-done']);
+  assert.deepEqual(IM_OUTCOMES.map((outcome) => IM_OUTCOME_TEXT[outcome]), ['Fatta', 'In parte', 'Non fatta']);
+});
+
+test('itemRef keeps only the address of an item', () => {
+  const linked: ImItem = { ...item(4, 'todo', 'Login'), part: 2, card: 'abcd1234' };
+  assert.deepEqual(itemRef(linked), { line: 4, title: 'Login', part: 2 });
+});
+
+test('openItems: only Da fare and In corso, in the order of the file', () => {
+  const items = [item(1, 'done', 'a'), item(2, 'doing', 'b'), item(3, 'postponed', 'c'), item(4, 'todo', 'd'), item(5, 'cancelled', 'e')];
+  assert.deepEqual(openItems(items).map((entry) => entry.title), ['b', 'd']);
+  assert.deepEqual(openItems([item(1, 'done', 'a')]), []);
+});
+
+test('answeredText: how an item ended, nothing for an open one', () => {
+  assert.equal(answeredText({ state: 'done' }), 'Fatta');
+  assert.equal(answeredText({ state: 'postponed' }), 'Passa all’IM successivo');
+  assert.equal(answeredText({ state: 'cancelled' }), 'Annullata');
+  assert.equal(answeredText({ state: 'todo' }), undefined);
+  assert.equal(answeredText({ state: 'doing' }), undefined);
+});
+
+test('closingHint names the next part', () => {
+  assert.match(closingHint({ part: null }), /«Parte 2»/);
+  assert.match(closingHint({ part: 3 }), /«Parte 4»/);
+  assert.match(closingHint({ part: null }), /Non fatta: passa all’IM successivo/);
+});
+
+test('closingTitle and closingAskText', () => {
+  assert.equal(closingTitle(closing('1')), 'IM-33 · progetto-test');
+  assert.equal(closingAskText(closing('1')), 'Chiudere l’IM-33 di progetto-test');
+});
+
+test('openClosings keeps those not closed yet', () => {
+  assert.deepEqual(openClosings([closing('1'), closing('2', { closedAt: '2026-10-15T09:00:00.000Z' })]).map((entry) => entry.id), ['1']);
+});
+
+test('closingsByMessage: by message, without those that have none, the most recent first', () => {
+  const byMessage = closingsByMessage([closing('3', { messageId: 'x' }), closing('2', { messageId: null }), closing('1', { messageId: 'x' }), closing('4')]);
+  assert.equal(byMessage.size, 2);
+  assert.equal(byMessage.get('x')?.id, '3');
+  assert.equal(byMessage.get('m4')?.id, '4');
+  assert.equal(byMessage.get('m2'), undefined);
 });

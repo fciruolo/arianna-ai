@@ -49,6 +49,8 @@ import { updateOffered, UPDATED } from './cards.ts';
 import { createDelegation, loadDelegations, openDelegation, updateDelegation, type Delegation } from './delegations.ts';
 import type { Kb } from './kb.ts';
 import { conversationView, summaryMessage, writeMissingSummaries, type ConversationView, type SummarizeOutcome } from './summaries.ts';
+import { imDecisionAnswer, imReplay, requestIm, WAITING_IM } from './im-step.ts';
+import type { ImToolEnv } from './im-tool.ts';
 import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
@@ -138,6 +140,8 @@ export interface OrchestratorOptions {
   trialModel?: (modelId: string) => LocalModel;
   /** The skills block of an agent's delivery (D-161), with the style and skills of a Designer card (D-163); absent, no agent reads skills. */
   skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+  /** The IM files of the approved projects for `im.add` (D-167, P4b); absent, the tool answers with an error. */
+  ims?: ImToolEnv;
 }
 
 /**
@@ -709,6 +713,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (ctx.approval?.kind === 'commitment') return decisionAnswer(sql, ctx);
       // The user decided a plan (D-159): the cards are already created, the answer is written here too.
       if (ctx.approval?.kind === 'plan') return planDecisionAnswer(sql, ctx);
+      // The user decided an IM item above what the IM holds (D-167, P4b): written now, the answer here too.
+      if (ctx.approval?.kind === 'im') return imDecisionAnswer(sql, ctx, options.ims);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
@@ -725,7 +731,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const done = turns.find((turn) => turn.step === step);
       if (done !== undefined) {
         // A confirmation asked at that step and still pending: wait for it again.
-        const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await executorReplay(done, delegations));
+        const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done)) ?? (await imReplay(sql, ctx, done, options.ims)) ?? (await executorReplay(done, delegations));
         if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
           const card = options.agents.get(name)?.card;
@@ -869,10 +875,27 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // The tool and its turn commit together: after a crash the step either
       // finds its turn or runs again with nothing done (a card is not created twice).
       const result = await sql.begin(async (tx) => {
-        const ran = await runTool(tool, answer.arguments, { sql: tx, kb: options.kb, task, context, autonomy: agent.card.autonomy });
+        const ran = await runTool(tool, answer.arguments, {
+          sql: tx,
+          kb: options.kb,
+          task,
+          context,
+          autonomy: agent.card.autonomy,
+          ...(options.ims === undefined ? {} : { ims: options.ims }),
+        });
+        // An IM item above what the IM holds (D-167): the turn and the confirmation together, nothing written yet.
+        if (ran.confirm !== undefined) {
+          await recordTurn(tx, { ...turn, label, result: WAITING_IM });
+          return { ...ran, approvalId: await requestIm(tx, { taskId: task.id, step, label, proposal: ran.confirm }) };
+        }
         await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: ran.text });
-        return ran;
+        return { ...ran, approvalId: undefined };
       });
+      if (result.approvalId !== undefined) {
+        // The IM number only: the title stays in the approval.
+        await show(task, step, 'write', `${tool} · IM-${String(result.confirm?.number ?? '')}`);
+        return { kind: 'confirm', approvalId: result.approvalId, usage };
+      }
       if (result.text.startsWith('error: ')) await show(task, step, 'error', result.text.replace(/^error: [^:]+: /, ''));
       else await show(task, step, TOOL_ACTIVITY[tool], toolDetail(tool, answer.arguments));
       return { kind: 'continue', usage };
@@ -886,12 +909,13 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'kb.write': 'write',
   'task.create': 'card',
   'task.update': 'card',
+  'im.add': 'write',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
-  const field = tool === 'kb.search' ? 'query' : tool === 'task.create' ? 'title' : 'path';
+  const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);
 }
 

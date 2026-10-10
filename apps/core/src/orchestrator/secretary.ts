@@ -59,7 +59,7 @@ export interface SecretaryCall {
 }
 
 /** Writes `text` in the chat as the task's answer, written by the code. */
-async function answer(sql: Sql, task: Task, runId: string, text: string, label: Label, record?: Omit<NewTurn, 'label' | 'result' | 'messageId'>, usage?: SecretaryCall['usage']): Promise<StepOutcome> {
+export async function answer(sql: Sql, task: Task, runId: string, text: string, label: Label, record?: Omit<NewTurn, 'label' | 'result' | 'messageId'>, usage?: SecretaryCall['usage']): Promise<StepOutcome> {
   const extra = usage === undefined ? { usage: { steps: 0 } } : { usage };
   if (task.conversationId === null) return { kind: 'wait-user', reason: 'the secretary answers only in its conversation', ...extra };
   const reply = await openReply(sql, task.id, { runId });

@@ -211,6 +211,16 @@ async function saveNew(): Promise<void> {
   }
 }
 
+/** The card of an IM item (D-167, P4b), maybe just made: read the wall again, so that the detail finds it. */
+async function openCard(id: string): Promise<void> {
+  if (wall.value?.cards.some((card) => card.id === id) !== true) await refresh();
+  if (wall.value?.cards.some((card) => card.id === id) !== true) {
+    problem.value = 'Non trovo la card di questa voce: riprova fra poco.';
+    return;
+  }
+  selectedId.value = id;
+}
+
 // Drag and drop (HTML5, no library). The detail offers the same moves as buttons.
 const dragging = ref<Card | null>(null);
 const over = ref<WallColumnId | null>(null);
@@ -469,7 +479,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
     </div>
 
     <!-- IM (D-167): the Iteration Meetings of a project, from their files. -->
-    <ImBoard v-if="wall !== null && state.view === 'im'" :projects="wall.projects" :version="version" />
+    <ImBoard v-if="wall !== null && state.view === 'im'" :projects="wall.projects" :version="version" @open-card="openCard" />
 
     <CardDetail
       v-if="selected !== undefined && wall !== null"

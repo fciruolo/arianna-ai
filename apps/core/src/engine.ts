@@ -448,7 +448,7 @@ export async function processStepJob(
         // Only a pending confirmation of this very task: anything else is the executor's mistake.
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
-          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind IN ('commitment', 'plan', 'executor')`;
+          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind IN ('commitment', 'plan', 'executor', 'im')`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });

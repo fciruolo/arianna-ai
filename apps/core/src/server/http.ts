@@ -50,9 +50,11 @@ import {
   readOpenFile,
   type OpenLinks,
 } from '../delegation-view.ts';
-import { addImItem, createIm, ImError, listIms, readIm, setImItemState } from '../im.ts';
 import { addContact, archiveClient, ClientError, PROJECT_NAME as CLIENT_PROJECT_NAME, clientOfProject, createClient, linkProject, listClients, readClient, readLogo, removeContact, removeLogo, setLogo, unlinkProject, updateClient, updateContact, type ClientNames } from '../clients.ts';
 import { CLIENT_FIELDS, CONTACT_FIELDS, MAX_LOGO_BYTES } from '../clients-format.ts';
+import { completeItemCard, itemCard } from '../im-cards.ts';
+import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '../im-watch.ts';
+import { addImItem, closeImItem, createIm, ImError, listIms, readIm, setImItemState, type ImItemRef, type ImOutcome } from '../im.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
@@ -1107,6 +1109,72 @@ function delegationRoutes(sql: Sql, approvedProjects: () => readonly Project[], 
   ];
 }
 
+const IM_OUTCOMES: readonly ImOutcome[] = ['done', 'part', 'not-done'];
+
+/** An item named in a body as the user saw it: its line, title and part (D-167). */
+function itemRefOf(body: Record<string, unknown>): ImItemRef {
+  const { line, title, part } = body;
+  if (typeof line !== 'number' || !Number.isInteger(line) || line < 1 || typeof title !== 'string' || (part !== null && (typeof part !== 'number' || !Number.isInteger(part)))) {
+    throw new HttpError(400, 'line, title and part are required');
+  }
+  return { line, title, part };
+}
+
+/**
+ * The IM with the rest of Arianna (D-167, P4b): the card of an item, made the
+ * first time it is opened; the closings asked in the secretary conversation,
+ * answered item by item from the buttons under the message.
+ */
+function imRoutes(sql: Sql, containers: () => readonly Project[], env: KnowledgeEnv | undefined, names: () => CardNames, onError: (error: unknown) => void): Route[] {
+  const need = (): KnowledgeEnv => {
+    if (env === undefined) throw new HttpError(404, 'not found');
+    return env;
+  };
+  const projectOf = (params: Params): Project => {
+    const name = params.project ?? '';
+    const project = PROJECT_PARAM.test(name) ? containers().find((item) => item.name === name) : undefined;
+    if (project === undefined) throw new HttpError(404, 'not found');
+    return project;
+  };
+  const closingOf = async (params: Params): Promise<ImClosing> => {
+    const id = params.id ?? '';
+    const closing = /^[1-9]\d{0,17}$/.test(id) ? await loadImClosing(sql, id) : undefined;
+    if (closing === undefined || !containers().some((project) => project.name === closing.project)) throw new HttpError(404, 'not found');
+    return closing;
+  };
+  return [
+    route('POST', '/api/browse/:project/im/:number/card', async (request, _url, params) => {
+      const project = projectOf(params);
+      const number = imNumberParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['line', 'title', 'part']);
+      return { body: await itemCard(sql, containers(), need(), names(), project.name, number, itemRefOf(body)) };
+    }),
+    route('GET', '/api/im/closings', async () => {
+      const known = new Set(containers().map((project) => project.name));
+      return { body: { closings: (await listImClosings(sql)).filter((closing) => known.has(closing.project)) } };
+    }),
+    route('GET', '/api/im/closings/:id', async (_request, _url, params) => {
+      const closing = await closingOf(params);
+      return { body: { closing, im: readIm(containers(), closing.project, need(), closing.im) } };
+    }),
+    route('POST', '/api/im/closings/:id/answer', async (request, _url, params) => {
+      const closing = await closingOf(params);
+      if (closing.closedAt !== null) throw new HttpError(409, 'the closing is over');
+      const body = await readJson(request);
+      onlyFields(body, ['line', 'title', 'part', 'outcome']);
+      const outcome = IM_OUTCOMES.find((value) => value === body.outcome);
+      if (outcome === undefined) throw new HttpError(400, 'outcome must be done, part or not-done');
+      const ref = itemRefOf(body);
+      const { item } = closeImItem(containers(), closing.project, need(), closing.im, ref, outcome);
+      // In part, the card goes on with the next part: only a finished item moves it.
+      if (outcome === 'done') await completeItemCard(sql, containers(), need(), closing.project, item.card).catch(onError);
+      const closed = await finishClosing(sql, containers(), need(), closing);
+      return { body: { closing: await loadImClosing(sql, closing.id), im: readIm(containers(), closing.project, need(), closing.im), closed } };
+    }),
+  ];
+}
+
 /** The number of an IM in the URL (D-167). */
 function imNumberParam(params: Params): number {
   const value = params.number ?? '';
@@ -1183,7 +1251,10 @@ function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], 
       onlyFields(body, ['state', 'version']);
       const state = IM_STATES.find((value) => value === body.state);
       if (state === undefined || typeof body.version !== 'string') throw new HttpError(400, 'state and version are required');
-      return { body: { im: setImItemState(containers(), project.name, need(), number, Number(lineText), state, body.version) } };
+      const im = setImItemState(containers(), project.name, need(), number, Number(lineText), state, body.version);
+      // An item checked moves its card to "Fatto" (D-167, P4b).
+      if (state === 'done') await completeItemCard(sql, containers(), need(), project.name, im.items.find((item) => item.line === Number(lineText))?.card ?? null).catch(onError);
+      return { body: { im } };
     }),
     // "Elimina" of a note of the project (D-157): the file goes for good; the user confirmed it in the tab.
     route('POST', '/api/browse/:project/knowledge/delete', async (request, _url, params) => {
@@ -1327,6 +1398,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...secretaryRoutes(sql),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
+    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: agents().filter((agent) => agent !== 'arianna') }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),

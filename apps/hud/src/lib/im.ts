@@ -211,3 +211,74 @@ export function saveImPrefs(storage: StorageLike | undefined, prefs: ImPrefs): v
     // Private window or blocked storage: the choice lasts until the page closes.
   }
 }
+
+// I-11 tappa P4b (D-167): every item has its card, and the closing of an IM
+// asked by the secretary in its conversation, item by item.
+
+/** The answer to an item of a closing: done, done in part (the next IM gets the next part), not done (it moves to the next IM). */
+export type ImOutcome = 'done' | 'part' | 'not-done';
+export const IM_OUTCOMES: readonly ImOutcome[] = ['done', 'part', 'not-done'];
+
+export const IM_OUTCOME_TEXT: Record<ImOutcome, string> = { done: 'Fatta', part: 'In parte', 'not-done': 'Non fatta' };
+
+/** The address of an item for a write: its line, its title and its part, checked by the core against the file (409 when changed). */
+export interface ImItemRef {
+  line: number;
+  title: string;
+  part: number | null;
+}
+
+export function itemRef(item: Pick<ImItem, 'line' | 'title' | 'part'>): ImItemRef {
+  return { line: item.line, title: item.title, part: item.part };
+}
+
+/** A closing of an IM, as `GET /api/im/closings` lists it: `messageId` is the message of the secretary it shows under. */
+export interface ImClosing {
+  id: string;
+  project: string;
+  im: number;
+  messageId: string | null;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+/** The items a closing still asks about: those not checked yet (Da fare, In corso), in the order of the file. */
+export function openItems(items: readonly ImItem[]): ImItem[] {
+  return items.filter((item) => item.state === 'todo' || item.state === 'doing');
+}
+
+const ANSWERED_TEXT: Partial<Record<ImItemState, string>> = { done: 'Fatta', postponed: 'Passa all’IM successivo', cancelled: 'Annullata' };
+
+/** What an item already answered shows in the closing; undefined for an item still open. */
+export function answeredText(item: Pick<ImItem, 'state'>): string | undefined {
+  return ANSWERED_TEXT[item.state];
+}
+
+/** The small line under the buttons of an item: what "In parte" and "Non fatta" do to the next IM. */
+export function closingHint(item: Pick<ImItem, 'part'>): string {
+  return `In parte: nell’IM successivo nasce «Parte ${String((item.part ?? 1) + 1)}». Non fatta: passa all’IM successivo.`;
+}
+
+/** "IM-33 · progetto-test", the header of the closing. */
+export function closingTitle(closing: Pick<ImClosing, 'project' | 'im'>): string {
+  return `IM-${String(closing.im)} · ${closing.project}`;
+}
+
+/** "Chiudere l’IM-33 di progetto-test", the line of "Decisioni in attesa". */
+export function closingAskText(closing: Pick<ImClosing, 'project' | 'im'>): string {
+  return `Chiudere l’IM-${String(closing.im)} di ${closing.project}`;
+}
+
+/** The closings still waiting for the user's answers. */
+export function openClosings<T extends Pick<ImClosing, 'closedAt'>>(closings: readonly T[]): T[] {
+  return closings.filter((closing) => closing.closedAt === null);
+}
+
+/** The closings by the message they show under; one without a message shows nowhere in the chat. The first (most recent) wins. */
+export function closingsByMessage(closings: readonly ImClosing[]): Map<string, ImClosing> {
+  const byMessage = new Map<string, ImClosing>();
+  for (const closing of closings) if (closing.messageId !== null && !byMessage.has(closing.messageId)) byMessage.set(closing.messageId, closing);
+  return byMessage;
+}
+
+export const CLOSING_CHANGED_TEXT = 'La voce è cambiata nel file o la chiusura è già finita: ho ricaricato l’IM.';

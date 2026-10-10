@@ -50,6 +50,10 @@ export const TOOLS = {
   'commitment.done': { description: 'Mark a commitment done, after the user confirms it', opens: [], localOnly: true },
   'commitment.move': { description: 'Move a commitment to another day or time, after the user confirms it', opens: [], localOnly: true },
   'commitment.report': { description: 'Note how commitments went (done, not done, postponed) and why, after the user confirms it', opens: [], localOnly: true },
+  // The IM of a project (D-167, P4b): an item in an Interno file, reversible, written at once from a work
+  // conversation; from a step that read more than the IM holds, after the user confirms the exact text in
+  // the web chat. Written by code on this machine, never by a cloud executor.
+  'im.add': { description: 'Add an item to the current or next IM of a project; above the IM label, after the user confirms the text', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only

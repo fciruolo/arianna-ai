@@ -9,6 +9,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - La pagina "Clienti" (`/clienti`): anagrafica completa per fatturare in Italia e all'estero (partita IVA e codice fiscale con il controllo, partita IVA UE, codice SDI, PEC, IPA per la pubblica amministrazione, indirizzi, pagamenti, IBAN), contatti con un principale, progetti collegati e logo; tutto Privato (L2), solo su questo computer (D-168, I-16 C1).
 - Nell'intestazione di "Progetti" il nome e il logo del cliente del progetto, con il collegamento alla sua scheda (D-168).
 
+## [0.55.0] - 2026-10-10
+
+### Aggiunto
+
+- "Per il prossimo IM dobbiamo fare le fatture": Arianna scrive la voce nell'IM successivo (o in quello corrente, se lo dici), creandolo sette giorni dopo quando manca (strumento `im.add`, D-167, I-11 P4b); da una chat privata o dalla segretaria chiede prima conferma mostrando il testo esatto, perché l'IM è Interno e lo legge il Coder.
+- Passata l'ora dell'IM (o della call spostata), la segretaria chiede nella sua chat, voce per voce, se le voci aperte sono finite: fatta, in parte (nell'IM successivo nasce la Parte N+1), non fatta (passa all'IM successivo); poi l'IM si chiude. Le chiusure aperte compaiono in "Attende te" (D-167).
+- Ogni voce di un IM ha la sua card con tutti i dettagli: si crea al primo clic sulla voce, e lo stato va nei due versi (voce spuntata → card in Fatto, card in Fatto → voce spuntata) (D-167).
+
 ## [0.54.0] - 2026-10-10
 
 ### Aggiunto

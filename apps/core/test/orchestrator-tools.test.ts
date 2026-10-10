@@ -32,6 +32,13 @@ test('task.update is offered only when the conversation has an open card (task 1
   );
 });
 
+test('im.add is offered in every conversation of Arianna but an incognito one (D-167, P4b)', () => {
+  assert.ok(arianna !== undefined);
+  assert.ok(orchestratorTools(arianna).includes('im.add'));
+  assert.ok(orchestratorTools(arianna, true, true, false, true).includes('im.add'));
+  assert.ok(!orchestratorTools(arianna, true, true, true).includes('im.add'));
+});
+
 test('task.delegate is offered only when an agent can take the step', () => {
   assert.ok(arianna !== undefined);
   assert.ok(!orchestratorTools(arianna, false, true).includes('task.delegate'));

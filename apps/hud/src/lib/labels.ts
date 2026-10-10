@@ -84,6 +84,8 @@ export const ACTION_TEXT: Record<string, string> = {
   // The cardwall (D-159).
   'task.plan': 'Creo queste card?',
   'card.executor': 'Con chi lavora?',
+  // The IM of a project (D-167).
+  'im.add': 'Scrivo nell’IM?',
 };
 
 /** The ways a card of an agent may run, as the user chooses them (D-159). */

@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { errorText } from '../lib/italian.ts';
 import { FOCUS_EVENT, requestFocus } from '../lib/chat-focus.ts';
-import { dismissStep, pendingItems, pendingTotal, type PendingItem } from '../lib/pending.ts';
+import { dismissStep, pendingRows, pendingTotal, type PendingItem } from '../lib/pending.ts';
 import { dismissWaitingTask, loadPending, type PendingData } from '../lib/pending-api.ts';
 import {
   hiddenText,
@@ -28,6 +28,7 @@ import Icon from './Icon.vue';
  * the message into view, where it is decided or answered. "Chiudi" closes a
  * row's task (D-109); with an approval waiting it asks "Sicuro?" first. Read
  * again when the status or the approvals change, and every 10 s while open.
+ * The closings of the IM (D-167, P4b) are rows too: they open the secretary.
  */
 const props = defineProps<{ signal: unknown }>();
 const emit = defineEmits<{ close: []; open: [conversationId: string] }>();
@@ -53,7 +54,7 @@ const announcement = ref('');
 let disarm: number | undefined;
 
 const items = computed<PendingItem[]>(() =>
-  data.value === null ? [] : pendingItems(data.value.approvals, data.value.tasks, data.value.titles, data.value.waiting),
+  data.value === null ? [] : pendingRows(data.value),
 );
 const hidden = computed(() => data.value?.hidden ?? 0);
 const total = computed(() => pendingTotal(items.value, hidden.value));

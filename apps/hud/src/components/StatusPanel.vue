@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import { agentName } from '../lib/italian.ts';
 import { ACTION_TEXT, DECISION_TEXT, EXECUTOR_TEXT, MODEL_TEXT, REMOTE_CHANNEL_TEXT } from '../lib/labels.ts';
-import { pendingItems, pendingTotal } from '../lib/pending.ts';
+import { pendingRows, pendingTotal } from '../lib/pending.ts';
 import { loadPending } from '../lib/pending-api.ts';
 import { PENDING_OPEN } from '../lib/pending-text.ts';
 import type { RemoteDecision } from '../lib/remote-decisions.ts';
@@ -58,7 +58,7 @@ async function readPending(): Promise<void> {
   const request = ++pendingLatest;
   try {
     const data = await loadPending();
-    if (request === pendingLatest) pendingRead.value = pendingTotal(pendingItems(data.approvals, data.tasks, data.titles, data.waiting), data.hidden);
+    if (request === pendingLatest) pendingRead.value = pendingTotal(pendingRows(data), data.hidden);
   } catch {
     // Keeps the last total; until the first read, the counts of the status stand in.
   }

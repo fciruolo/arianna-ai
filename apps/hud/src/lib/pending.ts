@@ -10,6 +10,7 @@ import {
   stoppedText,
   type PendingKind,
 } from './pending-text.ts';
+import { closingAskText, type ImClosing, openClosings } from './im.ts';
 import type { Approval, Label, Task } from './types.ts';
 
 /** A task waiting for the user, as GET /api/tasks/waiting lists it (D-091): up to L2 only. */
@@ -146,6 +147,44 @@ export function pendingItems(
     });
   }
   return sortOldestFirst(rows);
+}
+
+/**
+ * The closings of the IM still waiting for answers (D-167, P4b), as rows that
+ * open the secretary's conversation at the message that asks them; without
+ * that conversation (`secretary` null) they cannot be opened. "Chiudi" does
+ * not apply: a closing ends with its answers.
+ */
+export function closingItems(closings: readonly ImClosing[], secretary: { id: string; title: string | null } | null): PendingItem[] {
+  return openClosings(closings).map((closing) => {
+    const conversationId = secretary?.id ?? null;
+    return {
+      key: `im-closing-${closing.id}`,
+      kind: 'im',
+      kindText: PENDING_KIND_TEXT.im,
+      conversationId,
+      conversationTitle: conversationId === null ? PENDING_NO_CONVERSATION : (secretary?.title?.trim() || 'Segretaria'),
+      archived: false,
+      ask: closingAskText(closing),
+      since: closing.openedAt,
+      approvalId: null,
+      anchor: conversationId === null || closing.messageId === null ? null : messageAnchor(closing.messageId),
+      taskId: null,
+      dismiss: 'none',
+    };
+  });
+}
+
+/** Every row of "Decisioni in attesa": approvals, waiting tasks and the closings of the IM, oldest first. */
+export function pendingRows(data: {
+  approvals: readonly Approval[];
+  tasks: Readonly<Record<string, Pick<Task, 'conversationId'>>>;
+  titles: Readonly<Record<string, string | null>>;
+  waiting: readonly WaitingTask[];
+  closings?: readonly ImClosing[];
+  secretary?: { id: string; title: string | null } | null;
+}): PendingItem[] {
+  return sortOldestFirst([...pendingItems(data.approvals, data.tasks, data.titles, data.waiting), ...closingItems(data.closings ?? [], data.secretary ?? null)]);
 }
 
 /** Oldest first; a bad date goes last; ties keep their order. */

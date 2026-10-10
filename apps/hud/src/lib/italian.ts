@@ -48,6 +48,9 @@ const REASONS: Record<string, string> = {
   'the confirmation of the secretary is no longer readable': 'la conferma della segretaria non è più leggibile',
   // The cardwall (D-159).
   'approval needed: task.plan': 'aspetta che tu approvi le card del piano',
+  // The IM of a project (D-167).
+  'approval needed: im.add': 'aspetta la tua conferma per scrivere la voce nell’IM',
+  'the confirmation of the IM item is no longer readable': 'la conferma della voce dell’IM non è più leggibile',
   'approval needed: card.executor': 'aspetta che tu scelga con chi lavora',
   'the plan is no longer readable': 'il piano non è più leggibile',
   'a plan is answered only in its conversation': 'un piano si approva solo nella sua conversazione',
