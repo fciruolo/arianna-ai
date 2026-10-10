@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.53.0] - 2026-10-10
+
+### Aggiunto
+
+- Quando Claude Code o Codex lavorano su un progetto, possono leggere le note Interne delle sue cartelle di gestione (Workplan, IM…) da una copia di sola lettura fatta per quel lavoro, con l'elenco nel brief; la chat dice quante note riceve il Coder e quante restano sul Mac (D-166).
+
+### Sicurezza
+
+- Le note di un progetto escono verso Claude Code o Codex solo se sono al massimo Interne, una per una dal gateway (etichetta, scanner, valori del vault, una riga di registro ciascuna); i file di istruzioni (`CLAUDE.md`, `AGENTS.md`…), i link e le note Private o Riservate restano sul Mac (D-166).
+- La sandbox di Claude Code e quella di Codex negano per intero il contenitore della parte su cui lavorano: le cartelle accanto (documenti, Workplan, IM…) non si leggono nemmeno con la shell; canarino nuovo negli eval deterministici e casi dal vivo `knowledge` (D-166).
+
 ## [0.52.0] - 2026-10-10
 
 ### Aggiunto

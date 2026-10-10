@@ -6,6 +6,7 @@ import {
   type ClaudeResult,
   type ClaudeTool,
   type ClaudeUsage,
+  type PreparedNotes,
   type PreparedWorkspace,
 } from '@arianna/executors';
 import type { Context, Decision, Label } from '@arianna/policy';
@@ -28,6 +29,8 @@ export interface ClaudeStepInput {
   context: Context;
   brief: readonly BriefFragment[];
   workspace: PreparedWorkspace;
+  /** The read-only copy of the project's notes for this run (`prepareProjectNotes`, D-166); absent, none. */
+  notes?: PreparedNotes;
   model: ClaudeModel;
   tools: readonly ClaudeTool[];
   /** Turns per run. */
@@ -122,6 +125,7 @@ export async function runClaudeStep(sql: Sql, executor: ClaudeExecutor, step: St
   const sessionRef = sessionToResume(step, input);
   const launch = {
     workspace: input.workspace,
+    ...(input.notes === undefined ? {} : { notes: input.notes }),
     model: input.model,
     tools: input.tools,
     ...(input.persistSession === undefined ? {} : { persistSession: input.persistSession }),

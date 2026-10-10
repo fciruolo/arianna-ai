@@ -715,6 +715,58 @@ test('a part of a container (D-145): the Coder works in the part, never in the c
   assert.ok(!existsSync(join(dir, '.fake-claude.json')));
 });
 
+test('the notes of a part (I-11 P3, D-166): the internal ones as a read-only copy through the gateway, the private ones nowhere', async () => {
+  const dir = containerFixture('cantiere-note', false);
+  // Fake, and unique: in a private note beside an internal one, and in a private folder.
+  const canary = `CANARY-${randomUUID()}-FAKE`;
+  writeFileSync(join(dir, 'Workplan', 'privata.md'), `---\nlabel: L2\n---\n\n${canary}\n`);
+  writeFileSync(join(dir, 'documenti', 'contratto.md'), `${canary}\n`);
+  writeFileSync(join(dir, 'Workplan', 'iban.md'), 'Conto finto: IT60 X054 2811 1010 0000 0123 456\n');
+  const live = await startLiveFeed(db().sql);
+  const seen: LiveMessage[] = [];
+  const stop = await live.subscribe({ send: (message) => seen.push(message) });
+  try {
+    const { task } = await ask('work', 'Aggiungi una riga al README.', 'cantiere-note:cantiere-note-sito', ['cantiere-note:cantiere-note-sito']);
+    assert.deepEqual(await drain(task.id, orchestrator({ model: scripted([DELEGATE, REPLY]), projects: ['cantiere-note'] })), ['continued', 'continued', 'answered']);
+    const [delegation] = await loadDelegations(db().sql, task.id);
+    assert.equal(delegation?.status, 'ok');
+    const trace = join(dir, 'cantiere-note-sito', '.fake-claude.json');
+    const { argv, prompt } = JSON.parse(readFileSync(trace, 'utf8')) as { argv: string[]; prompt: string };
+    const added = argv.find((arg) => arg.startsWith('--add-dir='))?.slice('--add-dir='.length) ?? '';
+    assert.match(added, /\/data\/worktrees\/[a-z0-9-]+\.notes$/);
+    // The brief names the copy and the internal note only, before the brief of Arianna.
+    assert.ok(prompt.includes(`copied read only for this work in ${added}`));
+    assert.ok(prompt.includes('- Workplan/piano.md'));
+    assert.ok(prompt.indexOf('- Workplan/piano.md') < prompt.indexOf('Add a line to README.md'));
+    for (const hidden of ['privata.md', 'contratto.md', 'iban.md', canary]) assert.ok(!prompt.includes(hidden) && !argv.join(' ').includes(hidden), hidden);
+    const settings = JSON.parse(argv[argv.indexOf('--settings') + 1] ?? '') as { sandbox: { filesystem: { denyRead: string[]; allowRead: string[] } } };
+    assert.ok(settings.sandbox.filesystem.denyRead.includes(dir), 'the container is denied whole');
+    assert.ok(settings.sandbox.filesystem.allowRead.includes(added), 'the copy is readable');
+    // The copy lived only for the run.
+    assert.ok(!existsSync(added));
+    // One row of the gateway per note offered: the internal one let out, the one with an IBAN stopped by the scanner; then the brief.
+    const log = await db().sql<{ decision: string; rule: string; summary: string | null }[]>`
+      SELECT decision, rule, summary FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude' ORDER BY id`;
+    assert.deepEqual(
+      [...log].map((row) => [row.decision, row.rule]),
+      [
+        ['block', 'scanner'],
+        ['allow', 'cloud'],
+        ['allow', 'cloud'],
+      ],
+    );
+    const [event] = await db().sql<{ payload: Record<string, unknown>; label: string }[]>`
+      SELECT payload, label FROM events WHERE task_id = ${task.id} AND kind = 'project.notes'`;
+    assert.deepEqual([event?.label, event?.payload], ['L0', { agent: 'coder', executor: 'claude', given: 1, held: 4 }]);
+    const activity = seen.filter((m) => m.type === 'activity' && m.taskId === task.id).map((m) => (m.type === 'activity' ? m.detail : ''));
+    assert.ok(activity.includes('coder · project-notes · 1 · 4'));
+    assert.ok(!JSON.stringify(seen).includes(canary));
+  } finally {
+    stop();
+    await live.close();
+  }
+});
+
 test('the container that is not a git repository is never the folder of a step (D-145)', async () => {
   containerFixture('cantiere-solo', false);
   const { task } = await ask('work', 'Lavora sul contenitore.', 'cantiere-solo', ['cantiere-solo']);

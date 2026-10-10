@@ -255,6 +255,13 @@ function delegateText(detail: string): string {
       ? `1 skill del ${agentName(agent)} non entra nella consegna (oltre il limite o non più nel catalogo)`
       : `${count} skill del ${agentName(agent)} non entrano nella consegna (oltre il limite o non più nel catalogo)`;
   }
+  // `coder · project-notes · 3 · 1` (D-166): notes of the project given to the run as a read-only copy, and those left local.
+  const notes = /^(\S+) · project-notes · (\d+) · (\d+)$/.exec(detail);
+  if (notes !== null) {
+    const [, agent = '', given = '0', held = '0'] = notes;
+    const read = given === '0' ? `Il ${agentName(agent)} non riceve note del progetto` : given === '1' ? `Il ${agentName(agent)} può leggere 1 nota interna del progetto` : `Il ${agentName(agent)} può leggere ${given} note interne del progetto`;
+    return held === '0' ? read : `${read}; ${held === '1' ? '1 nota resta' : `${held} note restano`} sul Mac`;
+  }
   // `designer · style-skipped · <slug>` (D-163): the style chosen on the card did not reach the delivery.
   const style = /^(\S+) · style-skipped · (\S+)$/.exec(detail);
   if (style !== null) {

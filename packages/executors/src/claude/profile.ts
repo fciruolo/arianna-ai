@@ -55,6 +55,12 @@ export interface ProfileOptions {
    */
   persistSession?: boolean;
   sandbox: SandboxPaths;
+  /**
+   * Folders the file tools may read besides the working directory
+   * (`--add-dir`, which `--restricted` keeps them confined to): the read-only
+   * copy of a project's notes (D-166). Each must be readable in `sandbox` too.
+   */
+  addDirs?: readonly string[];
 }
 
 function checkFolders(name: string, folders: unknown): readonly string[] {
@@ -121,6 +127,9 @@ export function claudeSettings(paths: SandboxPaths): string {
  * - `--settings` carries the sandbox and the read block (`claudeSettings`).
  * - `--no-session-persistence` when the session must not be saved (D-136):
  *   never together with `--resume`.
+ * - `--add-dir` only for the read-only copy of a project's notes (D-166), a
+ *   folder the sandbox reads too. `--add-dir` may load a CLAUDE.md of its
+ *   folder even under `--safe-mode`: the copy never holds one (`checkCoderNote`).
  * - Never `--bare`: it needs an API key, and Arianna uses the subscription (D-002).
  */
 export function claudeArgs(options: ProfileOptions): string[] {
@@ -134,6 +143,10 @@ export function claudeArgs(options: ProfileOptions): string[] {
   // The router and its budget approval see the alias: the name stays in its family (D-071).
   if (options.modelName !== undefined && !new RegExp(`^(claude-)?${options.model}(?![A-Za-z0-9])`).test(options.modelName)) {
     throw new TypeError(`claude: the model name is not of the ${options.model} family`);
+  }
+  const addDirs = checkFolders('addDirs', options.addDirs ?? []);
+  for (const folder of addDirs) {
+    if (!options.sandbox.readable.includes(folder)) throw new TypeError('claude: a folder given to the file tools must be readable in the sandbox');
   }
   const args = [
     '-p',
@@ -161,6 +174,8 @@ export function claudeArgs(options: ProfileOptions): string[] {
     '--disable-slash-commands',
     '--no-chrome',
   );
+  // `--add-dir=<folder>`: one value per flag, never read as the start of a list.
+  for (const folder of addDirs) args.push(`--add-dir=${folder}`);
   const persist: unknown = options.persistSession === undefined ? true : options.persistSession;
   // Types do not hold at runtime: a value that is not a boolean must not read as "saved".
   if (typeof persist !== 'boolean') throw new TypeError('claude: persistSession must be a boolean');
