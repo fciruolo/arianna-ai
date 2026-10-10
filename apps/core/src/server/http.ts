@@ -52,7 +52,7 @@ import {
 import { KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
-import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
@@ -1605,7 +1605,7 @@ export interface DevProgressApi {
   home: string;
   /** Tests only: the gateway and the event, which otherwise use the database of the core. */
   gate?: AnswerGate;
-  recorded?: (saved: { key: string; question: OpenQuestion }) => Promise<void>;
+  recorded?: (saved: { key: string; question: OpenQuestion; rewrite?: boolean }) => Promise<void>;
 }
 
 /**
@@ -1614,7 +1614,9 @@ export interface DevProgressApi {
  * Code. The client names a question by its key only: the path is fixed and the
  * question's text comes from the documents. Claude Code is a cloud reader:
  * every answer passes the gateway as L1 towards it, logged in gateway_log, and
- * only the text it allows is written.
+ * only the text it allows is written. `{ key, rewrite: true }` in place of the
+ * text asks Claude to rewrite the question more clearly (D-153): a fixed entry
+ * written by the code, no text of the user, so nothing to pass the gateway.
  */
 function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: unknown) => void): Route[] {
   const need = (): DevProgressApi => {
@@ -1634,26 +1636,29 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
     route('POST', '/api/dev/answers', async (request) => {
       const { home, gate = viaGateway, recorded = (saved) => recordAnswer(sql, saved) } = need();
       const body = await readJson(request, 64 * 1024);
-      onlyFields(body, ['key', 'text']);
-      const { key, text } = body;
+      onlyFields(body, ['key', 'text', 'rewrite']);
+      const { key, text, rewrite } = body;
       if (typeof key !== 'string' || !/^[A-Za-z0-9#-]{1,80}$/.test(key)) throw new HttpError(400, 'key must be the key of a question');
-      if (typeof text !== 'string') throw new HttpError(400, 'text is required');
+      if (rewrite !== undefined && (rewrite !== true || text !== undefined)) throw new HttpError(400, 'rewrite must be true, without text');
+      if (rewrite === undefined && typeof text !== 'string') throw new HttpError(400, 'text is required');
       let saved;
       try {
-        saved = await saveAnswer(home, key, text, gate);
+        saved = typeof text === 'string' ? { ...(await saveAnswer(home, key, text, gate)), already: false } : saveRewrite(home, key);
       } catch (error) {
         if (!(error instanceof DevAnswerError)) throw error;
         throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
       }
-      // The answer is in the file: an event that fails is reported, and the answer is not sent twice.
+      // A rewrite already asked and not yet applied: the same request again, no second entry nor event.
+      if (saved.already) return { status: 200, body: { key: saved.key, at: saved.at, rewrite: true, already: true } };
+      // The entry is in the file: an event that fails is reported, and the entry is not sent twice.
       let logged = true;
       try {
-        await recorded(saved);
+        await recorded({ key: saved.key, question: saved.question, ...(rewrite === true ? { rewrite: true } : {}) });
       } catch (error) {
         logged = false;
         onError(error);
       }
-      return { status: 201, body: { key: saved.key, at: saved.at, logged } };
+      return { status: 201, body: { key: saved.key, at: saved.at, ...(rewrite === true ? { rewrite: true, already: false } : {}), logged } };
     }),
   ];
 }

@@ -39,6 +39,8 @@ export interface OpenQuestion {
   explain: Explanation | null;
   source: string;
   answer: { state: 'new' | 'done'; at: string } | null;
+  /** A rewrite asked to Claude and not yet applied (D-153): not an answer, the question stays open. */
+  rewrite: { at: string } | null;
 }
 
 export interface Progress {
@@ -199,6 +201,25 @@ export function answerStatus(question: OpenQuestion): string | null {
   // A section of answers in PROPOSTE.md without a date in its heading has none.
   const at = question.answer.at === '' ? '' : ` (${question.answer.at})`;
   return question.answer.state === 'new' ? `Risposta inviata${at}, in attesa di Claude` : `Risposta applicata da Claude${at}`;
+}
+
+/** The label and tooltip of the button that asks Claude to rewrite a question (D-153). */
+export const REWRITE_TEXT = 'Riscrivi più chiara';
+
+/** The button shows on a question still without an answer and without a rewrite already asked. */
+export function canAskRewrite(question: OpenQuestion): boolean {
+  return question.answer === null && question.rewrite === null;
+}
+
+/** "Riscrittura chiesta (date)" while Claude has not rewritten the question; null otherwise. */
+export function rewriteStatus(question: OpenQuestion): string | null {
+  if (question.rewrite === null) return null;
+  return question.rewrite.at === '' ? 'Riscrittura chiesta' : `Riscrittura chiesta (${question.rewrite.at})`;
+}
+
+/** The question marked as sent to rewrite now, before the page reloads the list; its answer is untouched. */
+export function markRewrite(questions: readonly OpenQuestion[], key: string, at: string): OpenQuestion[] {
+  return questions.map((question) => (question.key === key ? { ...question, rewrite: { at } } : question));
 }
 
 export const ANSWER_EMPTY_TEXT = 'Scrivi una risposta prima di inviarla.';

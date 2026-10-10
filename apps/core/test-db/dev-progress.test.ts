@@ -90,11 +90,21 @@ test('an answer goes through the gateway towards Claude Code: allowed is written
 
 test('the event of a key made from a row holds a hash, never the slug', async () => {
   const { sql } = db();
-  const question: OpenQuestion = { key: 'ho-chiave-age-vera', kind: 'waiting', ref: 'In attesa', topic: '', text: 'Chiave age vera', detail: null, explain: null, source: 'HANDOFF.md', answer: null };
+  const question: OpenQuestion = { key: 'ho-chiave-age-vera', kind: 'waiting', ref: 'In attesa', topic: '', text: 'Chiave age vera', detail: null, explain: null, source: 'HANDOFF.md', answer: null, rewrite: null };
   await recordAnswer(sql, { key: question.key, question });
   const events = (await readEvents(sql, { limit: 1000 })).filter((event) => event.kind === 'dev.answer_saved');
   const payload = events.at(-1)?.payload as { key: string; kind: string; source: string };
   assert.match(payload.key, /^sha256:[0-9a-f]{16}$/);
   assert.equal(payload.source, 'HANDOFF.md');
   assert.ok(!JSON.stringify(payload).includes('chiave'));
+});
+
+test('a rewrite asked leaves an L0 event of its own, without the text (D-153)', async () => {
+  const { sql } = db();
+  const question: OpenQuestion = { key: 'D-078#2', kind: 'proposal', ref: 'D-078', topic: '', text: 'Una sola delega attiva?', detail: null, explain: null, source: 'PROPOSTE.md', answer: null, rewrite: null };
+  await recordAnswer(sql, { key: question.key, question, rewrite: true });
+  const events = (await readEvents(sql, { limit: 1000 })).filter((event) => event.kind === 'dev.rewrite_requested');
+  assert.equal(events.at(-1)?.label, 'L0');
+  assert.deepEqual(events.at(-1)?.payload, { key: 'D-078#2', kind: 'proposal', source: 'PROPOSTE.md' });
+  assert.deepEqual(await verifyEventChain(sql), { ok: true });
 });

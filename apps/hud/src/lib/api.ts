@@ -710,6 +710,15 @@ export async function sendDevAnswer(key: string, text: string): Promise<{ key: s
   return call<{ key: string; at: string; logged: boolean }>('POST', '/api/dev/answers', { key, text });
 }
 
+/**
+ * Asks Claude Code to rewrite a question more clearly (D-153): a fixed entry in
+ * data/dev/RISPOSTE.md, no text of the user; `already` when one was still waiting.
+ */
+/** `logged` is missing for a request already there: its event was the first one's. */
+export async function askDevRewrite(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
+  return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/answers', { key, rewrite: true });
+}
+
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */
 export async function loadChangelog(): Promise<Changelog> {
   return (await call<{ changelog: Changelog }>('GET', '/api/changelog')).changelog;
