@@ -5,6 +5,7 @@ import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
+import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
@@ -492,6 +493,46 @@ export async function listDesignStyles(): Promise<DesignStyleListing> {
 /** The text of one style, with the license notice at the head. */
 export async function loadDesignStyle(slug: string): Promise<DesignStyleText> {
   return (await call<{ style: DesignStyleText }>('GET', `/api/design-catalog/styles/${encodeURIComponent(slug)}`)).style;
+}
+
+/** The catalog of skills (D-161): the sources followed with their versions, and the suggestions. */
+export async function loadSkillsCatalog(): Promise<SkillsStatus> {
+  return call<SkillsStatus>('GET', '/api/skills-catalog');
+}
+
+/** Follows https://github.com/<owner>/<repo>: nothing is downloaded yet. */
+export async function addSkillSource(url: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/sources', { url });
+}
+
+/** Stops following a source (`owner/repo`) and deletes its files. */
+export async function removeSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/remove', { source });
+}
+
+/** "Scarica/Aggiorna": the download of a source in the background. */
+export async function updateSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/update', { source });
+}
+
+/** "Usa questa versione": the commit the user saw in the summary of that source. */
+export async function adoptSkillSource(source: string, commit: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/adopt', { source, commit });
+}
+
+/** "Scarta": the version waiting of that source is deleted. */
+export async function discardSkillSource(source: string): Promise<SkillsStatus> {
+  return call<SkillsStatus>('POST', '/api/skills-catalog/discard', { source });
+}
+
+/** Every skill of the adopted versions: id, name, description, license. */
+export async function listSkills(): Promise<SkillListing> {
+  return call<SkillListing>('GET', '/api/skills-catalog/skills');
+}
+
+/** The text of one skill (`owner/repo/slug`), with source, commit and license at the head. */
+export async function loadSkill(id: string): Promise<SkillText> {
+  return (await call<{ skill: SkillText }>('GET', `/api/skills-catalog/skill?id=${encodeURIComponent(id)}`)).skill;
 }
 
 /** Queues a trial of a catalog model for the orchestrator role; the id of the trial. */

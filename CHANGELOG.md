@@ -12,8 +12,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Comando `pnpm design:catalog [status|update|adopt|discard]`, gli stessi passi dal terminale (D-160).
 - Il core e il comando non si pestano i piedi sul catalogo: file di blocco `data/catalogs/open-design.busy` con il pid (uno lasciato da un processo morto si riprende), "Il catalogo è occupato da un altro processo" mentre l'altro scarica, adotta o scarta; `status` legge soltanto; uno scambio di versione interrotto torna indietro o va avanti al riavvio, mai a metà; niente download nuovo mentre una versione scaricata aspetta (D-160).
 
+- Catalogo generale di skill nel formato `SKILL.md` di agentskills.io dai repository GitHub che scegli, in `data/catalogs/skills/`: per ogni sorgente "Scarica"/"Aggiorna" con il riepilogo (nuove, cambiate, tolte), "Usa questa versione" o "Scarta", commit fissato; `anthropics/skills`, `mattpocock/skills` e `vercel-labs/skills` suggerite con un clic; le skill di Open Design come sorgente fra le altre (D-161).
+- Impostazioni → Agenti, sezione "Skill": sorgenti, ricerca nelle skill e lettura del testo con sorgente, commit e licenza; nel dettaglio di ogni agente la scheda "Skill" per assegnarle, salvate con la barra delle modifiche in `[agents.<id>] skills` (D-161).
+- Le skill assegnate entrano nella consegna delle deleghe a Claude, Codex e agli agenti locali, dopo il prompt dell'agente, come blocco di dati delimitato entro un limite di dimensione (D-161).
+- Rotte `/api/skills-catalog` e comando `pnpm skills:catalog [list|add|remove|update|adopt|discard]` (D-161).
+
+### Cambiato
+
+- Il catalogo di Open Design usa il meccanismo comune dei cataloghi git (`git-catalog.ts`), lo stesso delle sorgenti di skill; file e comportamento invariati (D-161).
+
 ### Sicurezza
 
+- Delle skill si scaricano solo i `SKILL.md` e i file di licenza, nominati uno per uno dai nomi dell'albero: script e risorse non si scaricano né si eseguono mai; l'indirizzo passa dal gateway (L0, web); il testo è L0 non fidato, mai un'istruzione per Arianna, che non riceve skill, né per un agente con `untrusted_content` chiuso (D-161).
 - Del catalogo di Open Design non si esegue nulla: git con argomenti fissi, senza hook, configurazione globale, credenziali né LFS, link simbolici scritti come file, cartella `.git` cancellata dopo la lettura del commit; limiti di dimensione e numero dei file, link e nomi non validi scartati, licenza non Apache-2.0 rifiutata; l'indirizzo del repository passa dal gateway (L0, web) (D-160).
 - Catalogo di Open Design: il numero dei file si controlla dai nomi degli alberi prima di scaricarne i contenuti; git ha come HOME una cartella vuota (niente `.netrc` né attributi dell'utente); il testo di uno stile e il NOTICE perdono i caratteri di controllo, bidirezionali e di larghezza zero, tenendo a capo e tabulazioni (D-160).
 
