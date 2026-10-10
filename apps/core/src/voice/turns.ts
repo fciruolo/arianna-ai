@@ -133,14 +133,15 @@ export type CallReadiness =
  * table written by hand must list it). It speaks with the voice of `[voice]`
  * when the tts model has it, else with the first of its own (D-067).
  */
-export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string): CallReadiness {
+export function callReadiness(roles: { voice?: string }, models: readonly TrialModel[], voiceServed = true, wanted?: string, voiceModel = true): CallReadiness {
   const stt = models.find((model) => model.kind === 'stt' && model.assigned && model.present);
   const tts = models.find((model) => model.kind === 'tts' && model.assigned && model.present);
   // A copied voice is a person's (D-069): never someone else's in its place.
   const fallback = tts?.family === 'qwen3-tts-base' ? undefined : tts?.voices[0];
   const voice = tts === undefined ? undefined : wanted !== undefined && tts.voices.includes(wanted) ? wanted : fallback;
   const missing = [
-    ...(roles.voice === undefined || !voiceServed ? ['voice' as const] : []),
+    // An agent of a direct chat answers on its own model (D-158): the voice role is not needed then.
+    ...(voiceModel && (roles.voice === undefined || !voiceServed) ? ['voice' as const] : []),
     ...(stt === undefined ? ['stt' as const] : []),
     ...(tts === undefined || voice === undefined ? ['tts' as const] : []),
   ];
@@ -174,9 +175,13 @@ export type Speaker =
   | { kind: 'local'; agent: string; name: string; nameLabel: Label; model: string }
   | { kind: 'cloud'; agent: string; name: string; nameLabel: Label };
 
-/** The Coder is "il Coder"; any other agent goes by its id. */
+/** The Coder is "il Coder"; any other agent goes by its id, without an article. */
 function toAgent(name: string): string {
   return name === 'Coder' ? 'al Coder' : `a ${name}`;
+}
+
+function lineOf(name: string): string {
+  return name === 'Coder' ? 'del Coder' : `di ${name}`;
 }
 
 /**
@@ -186,7 +191,7 @@ function toAgent(name: string): string {
 export function greetingFor(text: string, speaker: Speaker): string {
   if (speaker.kind === 'arianna') return text;
   const rest = text.replace(/^Ciao, sono Arianna\.\s*/, '');
-  const intro = speaker.kind === 'cloud' ? `Ciao, sono la linea del ${speaker.name}: quello che mi dici lo passo ${toAgent(speaker.name)}.` : `Ciao, sono ${speaker.name}.`;
+  const intro = speaker.kind === 'cloud' ? `Ciao, sono la linea ${lineOf(speaker.name)}: quello che mi dici lo passo ${toAgent(speaker.name)}.` : `Ciao, sono ${speaker.name}.`;
   return rest === '' ? intro : `${intro} ${rest}`;
 }
 

@@ -104,13 +104,14 @@ export function createRinger(options: RingerOptions): Ringer {
     for (const row of rows) await writeNote(sql, row.conversationId, row.reason === 'task-done' && row.failed ? FAILED_TEXT.missed : OUTGOING_TEXT[row.reason].missed, callId);
   }
 
-  async function refusedByAgent(conversationId: string): Promise<boolean> {
+  async function refusedByAgent(conversationId: string): Promise<boolean | 'later'> {
     if (options.check === undefined) return false;
     try {
       await options.check(conversationId);
       return false;
     } catch (error) {
       if (error instanceof CallError && error.code === 'agent-off') return true;
+      if (error instanceof CallError && error.code === 'not-ready') return 'later';
       throw error;
     }
   }
@@ -134,8 +135,10 @@ export function createRinger(options: RingerOptions): Ringer {
       const candidate = await nextCandidate(sql, real, rules.waitingMinutes, at);
       if (candidate === undefined) return undefined;
       const reason: CallReason = candidate.kind === 'waiting' ? 'waiting' : (candidate.call.reason ?? 'scheduled');
-      // The agent of a direct chat that cannot answer now (D-158): skipped, as answering would refuse it.
+      // The agent of a direct chat that cannot answer (D-158): skipped, as answering would refuse it.
+      // No local model for it just now (the router waits) is not a refusal: the call waits for the next check.
       const agentOff = await refusedByAgent(candidate.kind === 'waiting' ? candidate.conversationId : candidate.call.conversationId);
+      if (agentOff === 'later') return undefined;
       // Counted by when they rang (answered, missed or failed alike), not by when they were scheduled.
       const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM calls WHERE rang_at >= ${startOfDay(real)}`;
@@ -174,8 +177,8 @@ export function createRinger(options: RingerOptions): Ringer {
           await appendEvent(tx, {
             kind: verdict.ok ? 'call.ringing' : 'call.ended',
             label: 'L0',
-            // Who answers (D-158): the chat says the name when it rings.
-            payload: { callId: row.id, conversationId: row.conversationId, reason, agent: row.agent, answerer: row.answerer, ...(verdict.ok ? {} : { status: 'skipped', endReason: verdict.reason }) },
+            // L0: never the agent of a direct chat (a user's agent is named at L1, D-125); the chat reads it from the conversation.
+            payload: { callId: row.id, conversationId: row.conversationId, reason, ...(verdict.ok ? {} : { status: 'skipped', endReason: verdict.reason }) },
           });
           return row;
         });

@@ -34,6 +34,7 @@ let calls: Calls;
 /** D-158: the calls of a direct chat with a local agent, answered while a local model is there for it. */
 let agentCalls: Calls;
 let agentModelOf: string | undefined = 'local-large';
+let ringerAgents = new Map<string, LoadedAgent>();
 const TRANSLATOR = {
   card: { name: 'traduttore', description: 'Agente di prova', maxLabel: 'L1', executors: ['local'], tools: [], limits: { maxSteps: 5, maxMinutes: 5, maxCost: 0 } },
   prompt: 'Traduci.',
@@ -79,7 +80,7 @@ before(async () => {
     candidates: () => READY,
     model: () => model,
     coreUrl: 'http://127.0.0.1:7420',
-    agents: () => new Map([['traduttore', TRANSLATOR]]),
+    agents: () => ringerAgents,
     cloud: () => ({ claude: false, codex: false }),
     agentModel: () => Promise.resolve(agentModelOf),
   });
@@ -122,6 +123,7 @@ beforeEach(async () => {
   voiceUp = true;
   push = true;
   agentModelOf = 'local-large';
+  ringerAgents = new Map([['traduttore', TRANSLATOR]]);
 });
 
 /** A task of Arianna waiting for the user since `minutes` ago. */
@@ -376,21 +378,29 @@ test('a call of a direct chat rings only while its agent can answer; otherwise i
   const rang = await ringer.tick();
   assert.equal(rang?.id, first.id);
   assert.equal(rang.status, 'ringing');
-  assert.equal(rang.answerer, 'traduttore');
+  assert.equal(rang.agent, 'traduttore');
+  // The event is L0: never the agent (a user's agent is named at L1, D-125).
   const [ringing] = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'call.ringing' AND payload ->> 'callId' = ${first.id}`;
-  assert.equal(ringing?.payload.agent, 'traduttore');
+  assert.ok(ringing !== undefined);
+  assert.deepEqual(Object.keys(ringing.payload).sort(), ['callId', 'conversationId', 'reason']);
+  assert.ok(!JSON.stringify(ringing.payload).includes('traduttore'));
   await calls.decline(first.id);
 
-  // No local model for it now: the next one does not ring.
+  // No local model for it just now: passing, the call waits for the next check instead of being skipped.
   agentModelOf = undefined;
   const second = await scheduleCall(db().sql, direct.id, new Date(clock.getTime() + 60_000), clock);
   clock = new Date(clock.getTime() + 120_000);
+  assert.equal(await ringer.tick(), undefined);
+  assert.equal((await loadCall(db().sql, second.id))?.status, 'scheduled');
+  // The agent deactivated: a refusal, the call is skipped.
+  agentModelOf = 'local-large';
+  ringerAgents.delete('traduttore');
   const skipped = await ringer.tick();
   assert.equal(skipped?.id, second.id);
   assert.equal(skipped.status, 'skipped');
   assert.equal(skipped.endReason, 'agent-off');
   const [ended] = await db().sql<{ payload: Record<string, unknown> }[]>`SELECT payload FROM events WHERE kind = 'call.ended' AND payload ->> 'callId' = ${second.id}`;
-  assert.deepEqual({ status: ended?.payload.status, endReason: ended?.payload.endReason }, { status: 'skipped', endReason: 'agent-off' });
+  assert.deepEqual({ ...ended?.payload }, { callId: second.id, conversationId: direct.id, reason: 'scheduled', status: 'skipped', endReason: 'agent-off' });
   const notes = (await listMessages(db().sql, direct.id, { limit: 20 })).filter((message) => message.body === AGENT_OFF_TEXT);
   assert.deepEqual(notes.map(({ label }) => label), ['L0']);
 

@@ -166,6 +166,15 @@ test('a delegation is seen once the piece is cleaned as it would be said', () =>
 });
 
 
+test('an agent of a direct chat in a call does not need the voice role; Arianna does (D-158)', () => {
+  const models: TrialModel[] = [
+    { id: 's', family: 'parakeet', kind: 'stt', present: true, assigned: true, sizeBytes: 1, voices: [] },
+    { id: 't', family: 'kokoro', kind: 'tts', present: true, assigned: true, sizeBytes: 1, voices: ['if_sara'] },
+  ];
+  assert.equal(callReadiness({}, models, true, undefined, false).ready, true);
+  assert.deepEqual(callReadiness({}, models), { ready: false, missing: ['voice'] });
+});
+
 test('an agent of a direct chat in a call (D-158): its greeting says its name, the cloud one says it passes the words on; Arianna keeps hers', () => {
   assert.equal(greetingFor(CALL_TEXT.greeting, { kind: 'arianna' }), CALL_TEXT.greeting);
   assert.equal(greetingFor(CALL_TEXT.greeting, { kind: 'local', agent: 'traduttore', name: 'traduttore', nameLabel: 'L1', model: 'local-large' }), 'Ciao, sono traduttore. Dimmi pure.');
@@ -174,6 +183,11 @@ test('an agent of a direct chat in a call (D-158): its greeting says its name, t
   assert.ok(!coder.includes('Arianna'));
   // A greeting that does not start with Arianna's name keeps all its words after the agent's.
   assert.equal(greetingFor('Ti chiamo.', { kind: 'local', agent: 'x', name: 'x', nameLabel: 'L1', model: 'm' }), 'Ciao, sono x. Ti chiamo.');
+  // Another cloud agent goes by its id, without the article of the Coder.
+  assert.equal(
+    greetingFor(CALL_TEXT.greeting, { kind: 'cloud', agent: 'pippo', name: 'pippo', nameLabel: 'L1' }),
+    'Ciao, sono la linea di pippo: quello che mi dici lo passo a pippo. Dimmi pure.',
+  );
   assert.equal(agentCallText('Coder').bridged, 'Lo passo al Coder, ti dico quando ha finito.');
   assert.equal(agentCallText('scrittore').bridged, 'Lo passo a scrittore, ti dico quando ha finito.');
   assert.ok(agentCallText('Coder').busy.startsWith('Coder sta ancora lavorando'));
