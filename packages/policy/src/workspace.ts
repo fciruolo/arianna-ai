@@ -79,7 +79,8 @@ function isSecretSegment(segment: string): boolean {
   );
 }
 
-function isSecretPath(path: string): boolean {
+/** True when a segment of the path, file or folder, has the name of a secrets file (exported for the notes of the Coder, D-166). */
+export function isSecretPath(path: string): boolean {
   return path.split('/').some(isSecretSegment);
 }
 

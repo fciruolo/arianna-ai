@@ -1,5 +1,6 @@
 // Subject of the `gateway` eval group: the real gatewayCheck and declassify.
 import {
+  checkCoderNote,
   checkProject,
   checkWorkspace,
   contentHash,
@@ -14,6 +15,9 @@ import {
   type Target,
   type WorkspaceDecision,
   type WorkspaceEntry,
+  createContext,
+  isAtMost,
+  isLabel,
 } from '@arianna/policy';
 
 import { contextOf, type ContextInput } from './context-input.ts';
@@ -64,6 +68,54 @@ interface ProjectInput {
   };
 }
 
+/**
+ * The notes of a project offered to the Coder (I-11 P3, D-166): each one
+ * through `checkCoderNote`, then, when it passes, alone through the gateway
+ * towards `target`, as the core does. `canary` is a fake unique string: it
+ * leaks when it is in a path or a text that would reach the run.
+ */
+interface CoderNotesInput {
+  coderNotes: {
+    target: 'claude' | 'codex';
+    notes: { path: unknown; label: unknown; link?: unknown; text: string }[];
+    canary?: string;
+  };
+}
+
+/** Paths given, in order; the notes held, by reason (a refusal of the gateway is its rule); whether the canary would leave. */
+export interface CoderNotesOutcome {
+  given: string[];
+  held: Record<string, number>;
+  leaked: boolean;
+}
+
+function evaluateCoderNotes(input: CoderNotesInput['coderNotes']): CoderNotesOutcome {
+  const given: string[] = [];
+  const texts: string[] = [];
+  const held: Record<string, number> = {};
+  const hold = (reason: string): void => {
+    held[reason] = (held[reason] ?? 0) + 1;
+  };
+  for (const note of input.notes) {
+    const check = checkCoderNote({ path: note.path, label: note.label, link: note.link });
+    if (check.decision === 'skip') {
+      hold(check.reason);
+      continue;
+    }
+    const label = isLabel(note.label) ? note.label : 'L2';
+    const decision = gatewayCheck([{ value: note.text, label, source: 'eval:note' }], createContext('L1', isAtMost(label, 'L1') ? label : 'L1'), { kind: 'executor', id: input.target, locality: 'cloud' }, secretMatcher([]));
+    if (decision.decision === 'block') {
+      hold(decision.rule);
+      continue;
+    }
+    given.push(String(note.path));
+    texts.push(...decision.texts);
+  }
+  const canary = input.canary;
+  const leaked = canary !== undefined && canary !== '' && [...given, ...texts].some((text) => text.includes(canary));
+  return { given, held, leaked };
+}
+
 const WORKSPACE_RULES = [
   { path: 'repos', label: 'L1' as const },
   { path: 'repos/site/private', label: 'L2' as const },
@@ -99,8 +151,9 @@ function evaluateWorkspace(input: WorkspaceInput['workspace']): WorkspaceOutcome
   return outcomeOf(checkWorkspace({ repo: input.repo, allowlist: input.allowlist, entries: input.entries, rules }));
 }
 
-export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome {
+export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome | CoderNotesOutcome {
   if (typeof raw === 'object' && raw !== null && 'workspace' in raw) return evaluateWorkspace((raw as WorkspaceInput).workspace);
+  if (typeof raw === 'object' && raw !== null && 'coderNotes' in raw) return evaluateCoderNotes((raw as CoderNotesInput).coderNotes);
   if (typeof raw === 'object' && raw !== null && 'project' in raw) {
     const { label, entries } = (raw as ProjectInput).project;
     return outcomeOf(checkProject({ label, entries }));
