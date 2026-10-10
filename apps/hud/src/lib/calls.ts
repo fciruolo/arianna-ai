@@ -1,4 +1,4 @@
-import { agentName } from './italian.ts';
+import { agentTitle } from './italian.ts';
 import type { Conversation, ConversationAgent, ConversationMode } from './types.ts';
 
 /**
@@ -49,7 +49,7 @@ const ARIANNA: Callee = { agent: null, name: 'Arianna', the: 'Arianna', subject:
 /** Arianna for null, otherwise the agent; the Coder takes the article, as elsewhere in the chat. */
 export function calleeOf(agent: ConversationAgent | null | undefined): Callee {
   if (agent === null || agent === undefined || agent === 'arianna') return ARIANNA;
-  const name = agentName(agent);
+  const name = agentTitle(agent);
   return agent === 'coder' ? { agent, name, the: `il ${name}`, subject: `Il ${name}`, from: `dal ${name}` } : { agent, name, the: name, subject: name, from: `da ${name}` };
 }
 

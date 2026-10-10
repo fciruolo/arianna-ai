@@ -77,7 +77,7 @@ test('the phone (D-158): private chats with Arianna and direct chats with an age
   assert.equal(conversationCallee(chat({}))?.name, 'Arianna');
   assert.equal(conversationCallee(chat({}))?.agent, null);
   // A direct chat answers with its agent, private or work.
-  assert.equal(conversationCallee(chat({ agent: 'traduttore' }))?.name, 'traduttore');
+  assert.equal(conversationCallee(chat({ agent: 'traduttore' }))?.name, 'Traduttore');
   assert.equal(conversationCallee(chat({ mode: 'work', agent: 'coder' }))?.the, 'il Coder');
   assert.equal(conversationCallee(chat({ mode: 'work', agent: 'coder' }))?.agent, 'coder');
   // An older core without the incognito field: still a private chat.
@@ -95,7 +95,7 @@ test('no phone (D-158): incognito, system chats, work chats with Arianna, no con
 test('the phone on the empty page of a new conversation (D-158)', () => {
   assert.equal(draftCallee({ mode: 'private' })?.name, 'Arianna');
   assert.equal(draftCallee({ mode: 'work', agent: 'coder' })?.from, 'dal Coder');
-  assert.equal(draftCallee({ mode: 'private', agent: 'traduttore' })?.from, 'da traduttore');
+  assert.equal(draftCallee({ mode: 'private', agent: 'traduttore' })?.from, 'da Traduttore');
   assert.equal(draftCallee({ mode: 'work' }), undefined);
   assert.equal(draftCallee({ mode: 'private', incognito: true }), undefined);
   assert.equal(draftCallee({ mode: 'work', agent: 'coder', incognito: true }), undefined);
@@ -107,7 +107,7 @@ test('who answers is said by name (D-158)', () => {
   assert.equal(calleeOf('arianna').agent, null);
   assert.equal(calleeOf('coder').subject, 'Il Coder');
   assert.equal(receiptText(call({}), calleeOf('coder')), 'Hai chiamato il Coder · 3:07');
-  assert.equal(receiptText(call({ direction: 'out', status: 'missed', answeredAt: null }), calleeOf('traduttore')), 'traduttore ti ha cercato: chiamata persa');
+  assert.equal(receiptText(call({ direction: 'out', status: 'missed', answeredAt: null }), calleeOf('traduttore')), 'Traduttore ti ha cercato: chiamata persa');
   assert.match(callErrorText('invalid: not a private or direct conversation'), /Qui non si può chiamare/);
   assert.match(callErrorText('agent-off: no local model can answer for oroscopo now'), /L’agente non può rispondere adesso/);
   assert.doesNotMatch(callErrorText('busy'), /Qui non si può chiamare/);
