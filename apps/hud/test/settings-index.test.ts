@@ -103,3 +103,12 @@ test('sections left with unsaved edits are named, the open one and read-only one
     [],
   );
 });
+
+test('Aspetto holds the theme of this browser (D-158): its own address, no Salva, no data out', () => {
+  assert.deepEqual(resolveSection('aspetto'), { item: byId('appearance'), explicit: true });
+  assert.equal(byId('appearance').behaviour, 'browser');
+  assert.equal(byId('appearance').privacy, undefined);
+  assert.equal(BEHAVIOUR_TEXT.browser, 'Vale subito, solo in questo browser');
+  assert.equal(sectionDirty('appearance', () => true), false);
+  assert.notEqual(resolveSection('tema').item.id, 'appearance');
+});

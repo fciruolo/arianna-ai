@@ -578,11 +578,6 @@ export async function declineCall(callId: string): Promise<void> {
   await call('POST', `/api/calls/${encodeURIComponent(callId)}/decline`, {});
 }
 
-/** "Chiamami alle…": a call of Arianna at that time, within a week. */
-export async function scheduleCall(conversationId: string, at: Date): Promise<CallInfo> {
-  return (await call<{ call: CallInfo }>('POST', '/api/calls/schedule', { conversationId, at: at.toISOString() })).call;
-}
-
 /** "Chiamami quando finisci": a call when the task is over. */
 export async function callWhenDone(taskId: string): Promise<CallInfo> {
   return (await call<{ call: CallInfo }>('POST', `/api/tasks/${encodeURIComponent(taskId)}/call-when-done`, {})).call;

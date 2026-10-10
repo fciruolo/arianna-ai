@@ -256,6 +256,29 @@ export function agentName(agent: string): string {
   return AGENT_TEXT[agent] ?? agent;
 }
 
+/** The agent as a title (D-158): its name with a capital initial, the id unchanged ("oroscopo" → "Oroscopo"). */
+export function agentTitle(agent: string): string {
+  const name = agentName(agent);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The descriptions of the official cards of `agents/` in Italian, for the
+ * chat (D-158): the cards keep their English text, which the router reads.
+ * Only the exact text of the card is translated: a description the user
+ * changed is shown as it is.
+ */
+const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
+  coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
+  reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
+};
+
+/** The description of an agent's card as the chat shows it: the Italian text of an official card, the card's own otherwise. */
+export function agentDescription(agent: string, description: string): string {
+  const official = Object.hasOwn(OFFICIAL_DESCRIPTION, agent) ? OFFICIAL_DESCRIPTION[agent] : undefined;
+  return official !== undefined && official.en === description.trim() ? official.it : description;
+}
+
 /** The fixed name of a known agent; undefined for any other id (never the id itself). */
 export function knownAgentName(agent: string): string | undefined {
   return Object.hasOwn(AGENT_TEXT, agent) ? AGENT_TEXT[agent] : undefined;

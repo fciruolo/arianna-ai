@@ -23,6 +23,7 @@ import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
 import { agentName } from '../lib/italian.ts';
 import { EXECUTOR_TEXT } from '../lib/labels.ts';
 import { CHANGELOG_PATH, SETTINGS_PATH, settingsPathFor } from '../lib/route.ts';
+import { THEME_ICON, THEME_TEXT, THEMES, type Theme } from '../lib/theme.ts';
 import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, sectionDirty, SETTINGS_INDEX, type IndexItem } from '../lib/settings-index.ts';
 import {
   agentsBody,
@@ -98,7 +99,8 @@ import SettingsCard from './SettingsCard.vue';
  */
 /** `devPending`: open questions of "Sviluppo di Arianna" without an answer, a dot on its entry (D-120). */
 /** `directAgents`: the agents one can talk with directly (D-111d), for "Apri una chat" in Agenti (D-133). */
-const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[] }>();
+/** `theme`: the theme of this browser (D-158), the same choice as the button of the top bar. */
+const props = defineProps<{ installation?: InstallationInfo | undefined; section?: string | undefined; devPending?: number; directAgents?: DirectAgent[]; theme?: Theme }>();
 const devDot = computed(() => pendingBadge(props.devPending ?? 0));
 const devLabel = computed(() => pendingText(props.devPending ?? 0));
 /** `section`: the user chose another section (undefined: back to the index on a narrow screen). */
@@ -114,6 +116,7 @@ const emit = defineEmits<{
   chatTrial: [modelId: string];
   section: [slug: string | undefined];
   dirty: [dirty: boolean];
+  theme: [theme: Theme];
 }>();
 
 interface Forms {
@@ -1009,6 +1012,24 @@ watch(active, () => {
             <p v-else class="text-sm text-danger">Il file delle etichette non si legge: senza regole tutto è Privato.</p>
           </SettingsCard>
         </template>
+
+        <!-- The theme (D-158): only in this browser, the same choice as the button of the top bar; even when the settings do not load. -->
+        <SettingsCard v-if="active === 'appearance'" id="appearance" title="Tema" kind="browser">
+          <div class="grid max-w-sm grid-cols-3 gap-0.5 rounded-[9px] border border-line bg-surface-2 p-0.5" role="group" aria-label="Tema">
+            <button
+              v-for="option in THEMES"
+              :key="option"
+              type="button"
+              :aria-pressed="(theme ?? 'system') === option"
+              class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium"
+              :class="(theme ?? 'system') === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
+              @click="emit('theme', option)"
+            >
+              <Icon :name="THEME_ICON[option]" :size="14" />{{ THEME_TEXT[option] }}
+            </button>
+          </div>
+          <p class="text-xs text-muted">Auto segue il tema del sistema. La scelta vale in questo browser; il pulsante in alto a destra la cambia con un clic.</p>
+        </SettingsCard>
 
         <!-- What this installation is (D-098): read from the core, even when the settings do not load. -->
         <SettingsCard v-if="active === 'installation'" id="installation" title="Installazione" kind="read">

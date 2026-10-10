@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { callBlocker, callErrorText, clock, inAnHour, localDateTime, receiptAnchors, receiptText, RING_TEXT, type CallInfo } from '../src/lib/calls.ts';
+import { callBlocker, calleeOf, callErrorText, clock, conversationCallee, draftCallee, receiptAnchors, receiptText, RING_TEXT, type CallInfo } from '../src/lib/calls.ts';
 import { keyBytes, onThisMac } from '../src/lib/push.ts';
 
 const call = (fields: Partial<CallInfo>): CallInfo => ({
@@ -52,11 +52,7 @@ test('callBlocker and callErrorText: the reasons in Italian', () => {
   assert.equal(callErrorText('boom'), 'La chiamata non è partita.');
 });
 
-test('scheduling field: local date and time in, a Date out; the default is in an hour, on five minutes', () => {
-  assert.deepEqual(localDateTime('2026-10-05T18:30'), new Date(2026, 9, 5, 18, 30));
-  for (const bad of ['', '2026-10-05', '18:30', '2026-13-05T18:30x']) assert.equal(localDateTime(bad), undefined, bad);
-  assert.equal(inAnHour(new Date(2026, 9, 5, 10, 2)), '2026-10-05T11:05');
-  assert.equal(inAnHour(new Date(2026, 9, 5, 23, 58)), '2026-10-06T01:00');
+test('the incoming call says why it rings', () => {
   assert.match(RING_TEXT.waiting, /aspetta/);
 });
 
@@ -71,4 +67,46 @@ test('the page is on the Mac of the core only through the loopback address (D-12
   assert.equal(onThisMac('localhost'), true);
   assert.equal(onThisMac('arianna.tail1234.ts.net'), false);
   assert.equal(onThisMac('192.168.1.20'), false);
+});
+
+type Callable = Parameters<typeof conversationCallee>[0] & object;
+const chat = (fields: Partial<Callable>): Callable => ({ mode: 'private', agent: null, origin: 'user', incognito: false, ...fields });
+
+test('the phone (D-158): private chats with Arianna and direct chats with an agent, whatever the mode', () => {
+  assert.equal(conversationCallee(chat({}))?.name, 'Arianna');
+  assert.equal(conversationCallee(chat({}))?.agent, null);
+  // A direct chat answers with its agent, private or work.
+  assert.equal(conversationCallee(chat({ agent: 'traduttore' }))?.name, 'traduttore');
+  assert.equal(conversationCallee(chat({ mode: 'work', agent: 'coder' }))?.the, 'il Coder');
+  assert.equal(conversationCallee(chat({ mode: 'work', agent: 'coder' }))?.agent, 'coder');
+  // An older core without the incognito field: still a private chat.
+  assert.equal(conversationCallee({ mode: 'private', agent: null, origin: 'user' })?.name, 'Arianna');
+});
+
+test('no phone (D-158): incognito, system chats, work chats with Arianna, no conversation', () => {
+  assert.equal(conversationCallee(chat({ incognito: true })), undefined);
+  assert.equal(conversationCallee(chat({ incognito: true, agent: 'traduttore' })), undefined);
+  assert.equal(conversationCallee(chat({ origin: 'system' })), undefined);
+  assert.equal(conversationCallee(chat({ mode: 'work' })), undefined);
+  assert.equal(conversationCallee(undefined), undefined);
+});
+
+test('the phone on the empty page of a new conversation (D-158)', () => {
+  assert.equal(draftCallee({ mode: 'private' })?.name, 'Arianna');
+  assert.equal(draftCallee({ mode: 'work', agent: 'coder' })?.from, 'dal Coder');
+  assert.equal(draftCallee({ mode: 'private', agent: 'traduttore' })?.from, 'da traduttore');
+  assert.equal(draftCallee({ mode: 'work' }), undefined);
+  assert.equal(draftCallee({ mode: 'private', incognito: true }), undefined);
+  assert.equal(draftCallee({ mode: 'work', agent: 'coder', incognito: true }), undefined);
+  assert.equal(draftCallee(null), undefined);
+});
+
+test('who answers is said by name (D-158)', () => {
+  assert.deepEqual(calleeOf(null), { agent: null, name: 'Arianna', the: 'Arianna', subject: 'Arianna', from: 'da Arianna' });
+  assert.equal(calleeOf('arianna').agent, null);
+  assert.equal(calleeOf('coder').subject, 'Il Coder');
+  assert.equal(receiptText(call({}), calleeOf('coder')), 'Hai chiamato il Coder · 3:07');
+  assert.equal(receiptText(call({ direction: 'out', status: 'missed', answeredAt: null }), calleeOf('traduttore')), 'traduttore ti ha cercato: chiamata persa');
+  assert.match(callErrorText('invalid: not a private or direct conversation'), /Qui non si può chiamare/);
+  assert.doesNotMatch(callErrorText('busy'), /Qui non si può chiamare/);
 });
