@@ -439,6 +439,25 @@ test('[agents.<id>] model: a cloud model per agent, never for arianna (D-116)', 
   rejects('[agents]\ncoder = "opus"', /agents\.coder/);
 });
 
+test('[agents.<id>] skills: ids of the catalog, never for arianna (D-161)', () => {
+  const agents = (text: string) => parseConfig(`${VALID}\n${text}\n`, HOME).agents;
+  assert.deepEqual(agents('[agents.coder]\nskills = ["anthropics/skills/pdf", "nexu-io/open-design/deck", "anthropics/skills/pdf"]'), { coder: { skills: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'] } });
+  assert.deepEqual(agents('[agents.coder]\nmodel = "opus"\nskills = []'), { coder: { model: 'opus' } }, 'an empty list is no list');
+  assert.deepEqual(agents('[cloud.models]\ndefault = "opus"\n\n[agents.coder]\nskills = ["a/b/c"]'), { coder: { skills: ['a/b/c'], model: 'opus' } }, 'the legacy model keeps the skills');
+  const rejects = (text: string, pattern: RegExp): void => {
+    assert.throws(
+      () => parseConfig(`${VALID}\n${text}\n`, HOME),
+      (error: unknown) => error instanceof ConfigError && pattern.test(error.message),
+    );
+  };
+  rejects('[agents.arianna]\nskills = ["a/b/c"]', /Arianna reads no skills/);
+  rejects('[agents.coder]\nskills = "a/b/c"', /agents\.coder\.skills/);
+  for (const bad of ['"Anthropics/skills/pdf"', '"a/b"', '"a/b/c/d"', '"a/../c"', '"a/b/../c"', '"a/b/-c"', '1']) {
+    rejects(`[agents.coder]\nskills = [${bad}]`, /agents\.coder\.skills\[0\]/);
+  }
+  rejects(`[agents.coder]\nskills = [${Array.from({ length: 21 }, (_, index) => `"a/b/s${String(index)}"`).join(', ')}]`, /at most 20 skills/);
+});
+
 test('default of [cloud.models] from before D-116 is read as the Coder model', () => {
   const agents = (text: string) => parseConfig(`${VALID}\n[cloud.models]\n${text}\n`, HOME).agents;
   assert.deepEqual(agents('default = "opus"'), { coder: { model: 'opus' } });
