@@ -9,6 +9,7 @@ import {
   derive,
   gatewayCheck as check,
   isTarget,
+  linkScanText,
   localityOf,
   recordRead,
   secretMatcher,
@@ -269,4 +270,77 @@ test('spendAllowed: a logged allow is spent once; an unlogged, spent or forged o
   const blocked = gatewayCheck([fragment('L2')], clean(), CLAUDE);
   assert.equal(markLogged(blocked), false);
   assert.equal(spendAllowed(blocked), undefined);
+});
+
+// D-154: the address of a link saved by the user, to its own site.
+const LINK_CLICK: Target = { kind: 'link', consent: 'click' };
+const LINK_LIST: Target = { kind: 'link', consent: 'list', sites: ['x.com', 'publish.twitter.com'] };
+// A post id that passes the card check (Luhn): masked for the scanner, so the post still leaves.
+const POST = 'https://x.com/taylorotwell/status/2108305338566861246';
+const OEMBED = `https://publish.twitter.com/oembed?url=${encodeURIComponent(POST)}&omit_script=true&dnt=true`;
+
+test('link: the address of an L2 note goes to its site with the consent of the user; never L3', () => {
+  for (const target of [LINK_CLICK, LINK_LIST]) {
+    const decision = gatewayCheck([fragment('L2', POST)], createContext('L2', 'L2'), target);
+    assert.equal(decision.decision, 'allow');
+    assert.equal(decision.rule, 'link');
+    assert.equal(decision.texts[0], POST);
+  }
+  assert.equal(gatewayCheck([fragment('L2', OEMBED)], createContext('L2', 'L2'), LINK_LIST).decision, 'allow');
+  assert.equal(brief([fragment('L3', POST)], createContext('L2', 'L2'), LINK_CLICK).rule, 'secret');
+  assert.equal(localityOf(LINK_CLICK), 'cloud');
+  assert.equal(targetName(LINK_LIST), 'link-list');
+  assert.equal(targetName(LINK_CLICK), 'link-click');
+});
+
+test('link: only one normalized http(s) address, without credentials; never other text', () => {
+  const blocked = (value: unknown, payload?: Labeled<unknown>[]) => brief(payload ?? [fragment('L2', value)], createContext('L2', 'L2'), LINK_CLICK);
+  for (const value of ['Leggi questo: https://example.org/', 'file:///etc/passwd', 'ftp://example.org/a', 'https://user:pw@example.org/', 'https://example.org/a b', 'HTTPS://EXAMPLE.org/', 'https://example.org', { url: 'https://example.org/' }]) {
+    assert.deepEqual(blocked(value), { decision: 'block', rule: 'link-invalid', next: 'stay-local' }, JSON.stringify(value));
+  }
+  assert.equal(blocked(undefined, [fragment('L2', 'https://example.org/'), fragment('L2', 'https://example.org/b')]).rule, 'link-invalid');
+  assert.equal(blocked('https://example.org/').decision, 'allow');
+});
+
+test('link: with the list, only an address on a site of the list or a subdomain', () => {
+  const check = (address: string) => gatewayCheck([fragment('L2', address)], createContext('L2', 'L2'), LINK_LIST).decision;
+  assert.equal(check('https://mobile.x.com/a/status/1'), 'allow');
+  assert.equal(check('https://notx.com/a'), 'block');
+  assert.equal(check('https://x.com.evil.com/a'), 'block');
+  assert.equal(isTarget({ kind: 'link', consent: 'list', sites: [] }), false);
+  assert.equal(isTarget({ kind: 'link', consent: 'list' }), false);
+  assert.equal(isTarget({ kind: 'link', consent: 'always' }), false);
+  assert.equal(isTarget(LINK_CLICK), true);
+});
+
+test('link: the scanner reads the whole address but the id of a post of X', () => {
+  assert.equal(linkScanText(POST), 'https://x.com/taylorotwell/status/0');
+  assert.match(linkScanText(OEMBED), /status%2F0&/);
+  // The same digits outside a post of X are a card number: blocked.
+  assert.deepEqual(brief([fragment('L2', 'https://example.org/pay?card=2108305338566861246')], createContext('L2', 'L2'), LINK_CLICK), { decision: 'block', rule: 'scanner', next: 'stay-local' });
+  assert.deepEqual(brief([fragment('L2', 'https://example.org/pay?iban=IT60X0542811101000000123456')], createContext('L2', 'L2'), LINK_CLICK), { decision: 'block', rule: 'scanner', next: 'stay-local' });
+  assert.equal(brief([fragment('L2', POST)], createContext('L2', 'L2'), LINK_CLICK).decision, 'allow');
+});
+
+test('link: a value of the vault in the address never leaves', () => {
+  const secrets = secretMatcher([{ ref: 'vault://demo', value: 'fake-link-secret-0123456789abcdef' }]);
+  const decision = check([fragment('L2', 'https://example.org/?k=fake-link-secret-0123456789abcdef')], createContext('L2', 'L2'), LINK_CLICK, secrets);
+  assert.equal(decision.rule, 'secret');
+  assert.equal(check([fragment('L2', 'https://example.org/?k=1')], createContext('L2', 'L2'), LINK_CLICK, secrets).decision, 'allow');
+});
+
+test('link: values %-encoded in the address are read decoded; a broken escape is refused', () => {
+  const secrets = secretMatcher([{ ref: 'vault://demo', value: 'fake-link-secret-0123456789abcdef' }]);
+  const encoded = 'https://example.org/?k=fake%2Dlink%2Dsecret%2D0123456789abcdef';
+  assert.equal(check([fragment('L2', encoded)], createContext('L2', 'L2'), LINK_CLICK, secrets).rule, 'secret');
+  assert.equal(brief([fragment('L2', 'https://example.org/paga?iban=%49%5460X0542811101000000123456')], createContext('L2', 'L2'), LINK_CLICK).rule, 'scanner');
+  assert.deepEqual(brief([fragment('L2', 'https://example.org/a%E0%A4%A')], createContext('L2', 'L2'), LINK_CLICK), { decision: 'block', rule: 'link-invalid', next: 'stay-local' });
+  assert.equal(brief([fragment('L2', 'https://example.org/caff%C3%A8')], createContext('L2', 'L2'), LINK_CLICK).decision, 'allow');
+});
+
+test('link: the sites of a list are host names, never a bare suffix', () => {
+  for (const sites of [['com'], ['.'], ['X.COM'], ['x.com/a'], ['x.com:443'], ['']]) {
+    assert.equal(isTarget({ kind: 'link', consent: 'list', sites }), false, JSON.stringify(sites));
+  }
+  assert.equal(isTarget({ kind: 'link', consent: 'list', sites: ['x.com', 'publish.twitter.com'] }), true);
 });

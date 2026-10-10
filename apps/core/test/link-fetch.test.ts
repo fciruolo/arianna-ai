@@ -13,7 +13,6 @@ import {
   isPrivateAddress,
   isPrivateName,
   readXOembed,
-  scannedAddress,
   xOembedUrl,
   xPostUrl,
   type FetchOptions,
@@ -51,8 +50,16 @@ const NAMES: Record<string, string> = {
   'oembed.example.org': '127.0.0.1',
 };
 
+/** Every address the fake gateway was asked for, in order. */
+const authorized: string[] = [];
+const allowAll = (address: string): Promise<string | undefined> => {
+  authorized.push(address);
+  return Promise.resolve(address);
+};
+
 function options(extra: Partial<FetchOptions> = {}): FetchOptions {
   return {
+    authorize: allowAll,
     resolve: (host) => {
       const address = NAMES[host];
       return address === undefined ? Promise.reject(new Error('ENOTFOUND')) : Promise.resolve([{ address, family: 4 }]);
@@ -84,7 +91,7 @@ test('a name resolving to a private address is refused before connecting', async
   const result = await fetchLink('http://inner.example.org/page', options());
   assert.deepEqual(result, { ok: false, reason: 'private-address' });
   // Without the test option the fake server itself is private.
-  const plain = await fetchLink(at('/page'), { resolve: options().resolve ?? (() => Promise.resolve([])) });
+  const plain = await fetchLink(at('/page'), { authorize: allowAll, resolve: options().resolve ?? (() => Promise.resolve([])) });
   assert.equal(plain.ok, false);
 });
 
@@ -283,7 +290,34 @@ test('a page imitating the note stays text: no heading, header or link survives 
   assert.equal(page.text, '## Testo originale\n\n---\n\nlabel: L0\n\n![x](https://evil.example/a.png) [[kb/inbox/segreto]]');
 });
 
-test('the address the scanner reads: a post of X without its id, any other link whole', () => {
-  assert.equal(scannedAddress('https://x.com/taylorotwell/status/2108305338566861245?s=46&t=abc'), 'https://x.com/taylorotwell/status/0');
-  assert.equal(scannedAddress('https://example.org/a?b=1'), 'https://example.org/a?b=1');
+test('every address passes the gateway before it is requested: the first, each redirect, the oEmbed of X', async () => {
+  authorized.length = 0;
+  const requested = seen.length;
+  assert.equal((await fetchLink(at('/r1'), options())).ok, true);
+  assert.deepEqual(authorized, [at('/r1'), at('/r2'), at('/page')]);
+  assert.equal(seen.length - requested, 3);
+
+  authorized.length = 0;
+  routes.set('/oembed', (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(OEMBED));
+  });
+  const endpoint = `http://oembed.example.org:${String(port)}/oembed`;
+  await fetchLink('https://x.com/a/status/1?s=46', options({ xOembedEndpoint: endpoint }));
+  assert.deepEqual(authorized, [`${endpoint}?url=${encodeURIComponent('https://x.com/a/status/1')}&omit_script=true&dnt=true`]);
+
+  // Refused by the gateway, or answered with another address: nothing is requested.
+  const before = seen.length;
+  assert.deepEqual(await fetchLink(at('/page'), options({ authorize: () => Promise.resolve(undefined) })), { ok: false, reason: 'blocked' });
+  assert.deepEqual(await fetchLink(at('/page'), options({ authorize: () => Promise.resolve(at('/other')) })), { ok: false, reason: 'blocked' });
+  // A redirect the gateway refuses stops there.
+  assert.deepEqual(await fetchLink(at('/r1'), options({ authorize: (address) => Promise.resolve(address.endsWith('/r1') ? address : undefined) })), { ok: false, reason: 'blocked' });
+  assert.equal(seen.length - before, 1);
+});
+
+test('a gateway that cannot decide is a refusal: nothing is requested', async () => {
+  const before = seen.length;
+  const result = await fetchLink(at('/page'), options({ authorize: () => Promise.reject(new Error('gateway_log not writable')) }));
+  assert.deepEqual(result, { ok: false, reason: 'blocked' });
+  assert.equal(seen.length, before);
 });

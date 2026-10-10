@@ -3,15 +3,14 @@ import { randomUUID } from 'node:crypto';
 import type { LocalEndpointConfig } from '@arianna/config';
 import { siteListed } from '@arianna/config';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
-import { createContext, isAtMost, labelForKbPage, maxLabel, scanText, type Label, type LabelRules } from '@arianna/policy';
-import { knownSecrets } from '@arianna/vault';
+import { createContext, isAtMost, labelForKbPage, maxLabel, spendAllowed, type Label, type LabelRules, type Target } from '@arianna/policy';
 
 import { isCaptureKind, localTimestamp } from './capture.ts';
 import type { Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
 import { passGateway } from './gateway.ts';
 import { completeJob, createJobQueue, enqueueJob, failJob, type Job } from './jobs.ts';
-import { FETCH_FAILURE_TEXT, fetchLink, oneLine, scannedAddress, siteOf, type FetchedLink, type FetchFailure, type FetchOptions, type FetchResult } from './link-fetch.ts';
+import { FETCH_FAILURE_TEXT, fetchLink, oneLine, siteOf, xPostUrl, type FetchedLink, type FetchFailure, type FetchOptions, type FetchResult } from './link-fetch.ts';
 import { machineBusy } from './model-evals.ts';
 import { checkNotePath, headerFields, keptCaptureFields, listNotes, noteLabel, NoteError, rawBody, readNoteFile, replaceNote, sha256 } from './notes.ts';
 import { KB_DIR, parsePage, type Kb, type KbHit } from './orchestrator/kb.ts';
@@ -435,7 +434,7 @@ export interface OrganizeEnv {
   /** `[capture] fetch_sites` (D-154), read at each note: their links are downloaded by themselves. Default: none. */
   fetchSites?: () => readonly string[];
   /** Downloads a link (D-154). Default: fetchLink of link-fetch.ts; tests give a fake one. */
-  fetchLink?: (url: string, signal: AbortSignal, options: Pick<FetchOptions, 'allowRedirect'>) => Promise<FetchResult>;
+  fetchLink?: (url: string, signal: AbortSignal, options: Pick<FetchOptions, 'allowRedirect' | 'authorize'>) => Promise<FetchResult>;
 }
 
 /** What the organizing of a note is asked: `fetch` downloads its link whatever the site (the button "Scarica e riassumi"). */
@@ -489,13 +488,22 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
   if (wanted && request.content !== undefined) {
     linkContent = request.content;
   } else if (wanted) {
-    // Only the address leaves, to its site: never one holding a value of the vault or a finding of the scanner.
-    const refused = knownSecrets.find(url).length > 0 || scanText(scannedAddress(url)).length > 0;
+    // Every address passes the gateway towards the target of links, with the consent of the user (D-154):
+    // the list (a post of X also goes to publish.twitter.com, its oEmbed) or the click on "Scarica e riassumi".
+    const listed = [...(env.fetchSites?.() ?? [])];
+    if (xPostUrl(url) !== undefined) listed.push('publish.twitter.com');
+    const target: Target = request.fetch === true ? { kind: 'link', consent: 'click' } : { kind: 'link', consent: 'list', sites: listed };
+    const authorize = async (address: string): Promise<string | undefined> => {
+      const decision = await passGateway(env.sql, [{ value: address, label: ownLabel, source: `link:${path}` }], createContext('L2', ownLabel), target);
+      if (decision.decision !== 'allow') return undefined;
+      const spent = spendAllowed(decision);
+      return spent?.target.kind === 'link' ? spent.texts[0] : undefined;
+    };
     // Downloaded by itself, a redirect stays on the site of the link or on the sites of the list; asked with the button, it follows the link.
-    const sites = [host, ...(env.fetchSites?.() ?? [])];
-    const options: Pick<FetchOptions, 'allowRedirect'> = request.fetch === true ? {} : { allowRedirect: (next) => siteListed(sites, next) };
-    const download = env.fetchLink ?? ((address: string, abort: AbortSignal, more: Pick<FetchOptions, 'allowRedirect'>) => fetchLink(address, more, abort));
-    const fetched: FetchResult = refused ? { ok: false, reason: 'blocked' } : await download(url, signal, options);
+    const sites = [host, ...listed];
+    const options: Pick<FetchOptions, 'allowRedirect' | 'authorize'> = request.fetch === true ? { authorize } : { authorize, allowRedirect: (next) => siteListed(sites, next) };
+    const download = env.fetchLink ?? ((address: string, abort: AbortSignal, more: Pick<FetchOptions, 'allowRedirect' | 'authorize'>) => fetchLink(address, more, abort));
+    const fetched: FetchResult = await download(url, signal, options);
     if (signal.aborted) return { ok: false, reason: 'interrupted' };
     linkContent = fetched.ok ? { link: fetched.link, at: env.now?.() ?? new Date() } : { failed: fetched.reason };
     if (!(!fetched.ok && fetched.reason === 'interrupted')) request.onContent?.(linkContent);

@@ -107,6 +107,12 @@ export interface FetchOptions {
   /** Tests only: where the oEmbed of X is asked. Default https://publish.twitter.com/oembed. */
   xOembedEndpoint?: string;
   userAgent?: string;
+  /**
+   * The gateway (D-154): asked for every address before it is requested, the
+   * first one, each redirect and the oEmbed of X. It answers with the exact
+   * address it allowed, or undefined: anything else is not requested.
+   */
+  authorize: (address: string) => Promise<string | undefined>;
   /** Whether a redirect may lead to this host (D-154: a link downloaded by itself stays on the sites of the list). Default: any public one. */
   allowRedirect?: (host: string) => boolean;
 }
@@ -376,7 +382,16 @@ async function get(start: URL, options: FetchOptions, signal: AbortSignal, accep
   const settings = { ...options, maxBytes: options.maxBytes ?? FETCH_MAX_BYTES };
   let url = start;
   for (let hop = 0; ; hop += 1) {
-    const response = await requestOnce(url, settings, signal, accept);
+    // Every address passes the gateway, and only the address it allowed is requested.
+    // A gateway that cannot decide (its log not writable) is a refusal, never a network error.
+    let allowed: string | undefined;
+    try {
+      allowed = await options.authorize(url.href);
+    } catch {
+      throw new FetchError('blocked');
+    }
+    if (allowed !== url.href) throw new FetchError('blocked');
+    const response = await requestOnce(new URL(allowed), settings, signal, accept);
     if (response.status >= 300 && response.status < 400 && response.location !== undefined) {
       if (hop >= MAX_REDIRECTS) throw new FetchError('too-many-redirects');
       let next: URL;
@@ -720,16 +735,6 @@ export function readXOembed(json: unknown, post: string): FetchedLink | undefine
 
 // --- The fetch ----------------------------------------------------------------------
 
-/**
- * The address as the privacy scanner reads it before it leaves (D-154): a
- * post of X as the clean address sent to oEmbed, with its numeric id masked
- * (a post id passes the card check about once in ten); any other link whole.
- */
-export function scannedAddress(value: string): string {
-  const post = xPostUrl(value);
-  return post === undefined ? value : post.replace(/\/status\/\d+$/, '/status/0');
-}
-
 /** The site of a link as the note names it: its host without `www.`. */
 export function siteOf(value: string): string | undefined {
   try {
@@ -743,7 +748,7 @@ export function siteOf(value: string): string | undefined {
  * The content of a link: for a post of X its text through oEmbed, for any
  * other site the page itself. Never throws: a failure is a reason.
  */
-export async function fetchLink(value: string, options: FetchOptions = {}, signal?: AbortSignal): Promise<FetchResult> {
+export async function fetchLink(value: string, options: FetchOptions, signal?: AbortSignal): Promise<FetchResult> {
   const timeout = AbortSignal.timeout(options.timeoutMs ?? FETCH_TIMEOUT_MS);
   const all = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   try {

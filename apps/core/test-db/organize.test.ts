@@ -401,9 +401,11 @@ function linkNote(home: string, url = POST_URL) {
 }
 
 function fakeFetch(asked: string[], result?: FetchResult, limited?: boolean[]) {
-  return (url: string, _signal: AbortSignal, options: { allowRedirect?: (host: string) => boolean }): Promise<FetchResult> => {
-    asked.push(url);
+  return async (url: string, _signal: AbortSignal, options: { allowRedirect?: (host: string) => boolean; authorize: (address: string) => Promise<string | undefined> }): Promise<FetchResult> => {
     limited?.push(options.allowRedirect !== undefined);
+    // As link-fetch.ts does: the gateway first, then only the address it allowed.
+    if ((await options.authorize(url)) !== url) return { ok: false, reason: 'blocked' };
+    asked.push(url);
     return Promise.resolve(
       result ?? {
         ok: true,
@@ -422,6 +424,8 @@ function fakeFetch(asked: string[], result?: FetchResult, limited?: boolean[]) {
 }
 
 test('a link of a listed site is downloaded before the model: the page is data, the note has the content and the original', async () => {
+  const { sql } = db();
+  const before = (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM gateway_log`)[0]?.n ?? 0;
   const { home } = setup();
   const { path } = linkNote(home);
   const requests: ChatRequest[] = [];
@@ -433,6 +437,12 @@ test('a link of a listed site is downloaded before the model: the page is data, 
   );
   assert.deepEqual(outcome, { ok: true, label: 'L2', linked: 0, fetch: 'ok' });
   assert.deepEqual(asked, [POST_URL]);
+  // The address passed the gateway towards the target of links, with the consent of the list; the row never holds it.
+  const rows = await sql<Record<string, unknown>[]>`
+    SELECT target_kind, target, locality, label, decision, rule, summary, payload_sha256 FROM gateway_log ORDER BY id OFFSET ${before}`;
+  const link = rows.find((row) => row.target_kind === 'link');
+  assert.deepEqual({ ...link, payload_sha256: typeof link?.payload_sha256 }, { target_kind: 'link', target: 'link-list', locality: 'cloud', label: 'L2', decision: 'allow', rule: 'link', summary: null, payload_sha256: 'string' });
+  assert.doesNotMatch(JSON.stringify(rows), /taylorotwell|x\.com/);
   const request = requests[0];
   assert.ok(request !== undefined);
   assert.equal(request.messages[0]?.content, ORGANIZE_LINK_PROMPT);

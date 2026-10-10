@@ -12,6 +12,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Sicurezza
 
+- Ogni richiesta di un link (anche i rimandi e la chiamata a publish.twitter.com) passa dal gateway con una destinazione propria: solo l'indirizzo, solo con il tuo consenso (sito in elenco o clic), sempre con lo scanner; il registro non scrive mai l'indirizzo (D-154).
 - Lo scaricamento dei link non raggiunge mai questa macchina né la rete locale (ogni indirizzo controllato alla connessione e a ogni rimando), manda solo l'indirizzo del link senza cookie, ha un tempo e una dimensione massimi, e il testo della pagina arriva al modello come contenuto, mai come istruzioni (D-154).
 
 ## [0.42.0] - 2026-10-10
