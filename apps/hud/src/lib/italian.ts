@@ -255,6 +255,12 @@ function delegateText(detail: string): string {
       ? `1 skill del ${agentName(agent)} non entra nella consegna (oltre il limite o non più nel catalogo)`
       : `${count} skill del ${agentName(agent)} non entrano nella consegna (oltre il limite o non più nel catalogo)`;
   }
+  // `designer · style-skipped · <slug>` (D-163): the style chosen on the card did not reach the delivery.
+  const style = /^(\S+) · style-skipped · (\S+)$/.exec(detail);
+  if (style !== null) {
+    const [, agent = '', slug = ''] = style;
+    return `Lo stile «${slug}» non entra nella consegna del ${agentName(agent)} (oltre il limite o non più nel catalogo): lavora senza`;
+  }
   const started = /^(\S+) · (\w+)\/(\S+)$/.exec(detail);
   if (started === null) return `Passo delegato al ${agentName(detail)}`;
   const [, agent = '', executor = '', model = ''] = started;

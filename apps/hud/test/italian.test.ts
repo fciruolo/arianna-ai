@@ -89,6 +89,7 @@ test('delegation lines: hand-over, the Coder at work, its tools, the waits, its 
   assert.equal(line('delegate', 'coder · claude/sonnet'), 'Il Coder lavora su Claude Code (Claude Sonnet)');
   assert.equal(line('delegate', 'coder · skills-skipped · 2'), '2 skill del Coder non entrano nella consegna (oltre il limite o non più nel catalogo)');
   assert.equal(line('delegate', 'coder · skills-skipped · 1'), '1 skill del Coder non entra nella consegna (oltre il limite o non più nel catalogo)');
+  assert.equal(line('delegate', 'designer · style-skipped · sabbia'), 'Lo stile «sabbia» non entra nella consegna del Designer (oltre il limite o non più nel catalogo): lavora senza');
   assert.equal(line('tool', 'Edit'), 'Il Coder usa Edit');
   // Codex names no tool, only the kind (D-140).
   assert.equal(line('tool', 'command'), 'Il Coder usa il terminale');

@@ -40,6 +40,7 @@ import {
   runLocalDelegation,
   skillsPart,
   type AgentSkills,
+  type CardDesign,
   type CloudExecutor,
   type DelegateEnv,
   type DelegationPlan,
@@ -135,8 +136,8 @@ export interface OrchestratorOptions {
   maxTokens?: number;
   /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
   trialModel?: (modelId: string) => LocalModel;
-  /** The skills block of an agent's delivery (D-161); absent, no agent reads skills. */
-  skills?: (agent: string, maxBytes: number) => AgentSkills;
+  /** The skills block of an agent's delivery (D-161), with the style and skills of a Designer card (D-163); absent, no agent reads skills. */
+  skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
 }
 
 /**

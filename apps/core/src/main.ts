@@ -378,9 +378,16 @@ const orchestrator = createOrchestrator({
   sql,
   agents,
   // The skills left out are written as `skills.skipped` events by the catalog (onEvent above).
-  skills: (agent, maxBytes) => {
-    const delivery = skillsCatalog.skillTexts(agent, [], maxBytes);
-    return { block: delivery.block, skipped: delivery.skipped.length };
+  // A Designer card adds what the user chose on it (D-163): its style of Open Design first, then its skills.
+  skills: (agent, maxBytes, card) => {
+    const delivery = skillsCatalog.skillTexts(agent, card?.skills ?? [], maxBytes, card?.style ?? undefined);
+    const cardSkipped = delivery.refused !== undefined ? [...(card?.skills ?? [])] : delivery.skipped.map((item) => item.id).filter((id) => card?.skills.includes(id) === true);
+    return {
+      block: delivery.block,
+      skipped: delivery.skipped.length,
+      ...(delivery.styleSkipped === undefined ? {} : { styleSkipped: delivery.styleSkipped.slug }),
+      ...(cardSkipped.length === 0 ? {} : { cardSkipped }),
+    };
   },
   kb,
   model: localModel,

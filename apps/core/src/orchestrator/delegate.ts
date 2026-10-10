@@ -27,11 +27,13 @@ import {
 import { createContext, isAtMost, maxLabel, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
+import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
 import { loadConversation, type Conversation, type Message } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
+import { appendEvent } from '../events.ts';
 import type { RunUsage } from '../runs.ts';
 import { applyDeclassifyIn, passGateway } from '../gateway.ts';
 import { liveEditFailure, liveEditOf, postLiveEdit } from '../live-edit.ts';
@@ -76,15 +78,25 @@ export interface DelegateEnv {
   /**
    * The skills assigned to an agent (D-161), as one delimited block of
    * third-party data within `maxBytes` (undefined for none), and how many
-   * were asked and left out. Absent, no agent reads skills.
+   * were asked and left out. With `card`, the style and skills chosen on a
+   * Designer card join the block (D-163). Absent, no agent reads skills.
    */
-  skills?: (agent: string, maxBytes: number) => AgentSkills;
+  skills?: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills;
+}
+
+/** The style of Open Design and the skills chosen on a Designer card (D-163). */
+export interface CardDesign {
+  style: string | null;
+  skills: readonly string[];
 }
 
 /** The skills of one delivery (D-161): the block, and how many were left out (the catalog wrote why, as events). */
 export interface AgentSkills {
   block: string | undefined;
   skipped: number;
+  /** Of the card's choice (D-163): the style left out, and the skills left out. */
+  styleSkipped?: string;
+  cardSkipped?: readonly string[];
 }
 
 /** What the step with an open delegation will do. */
@@ -748,6 +760,9 @@ function promptPart(agent: LoadedAgent, name: string): { text: string; label: La
  * The skills of the agent (D-161) after its prompt: public text (L0) that is
  * not trusted, a block of data delimited, never an instruction to Arianna.
  * None for a card that closes untrusted_content, whatever the settings say.
+ * On a Designer card, the style and the skills the user chose on it join the
+ * block (D-163); what is no longer in the catalog, or does not fit, is left
+ * out and written in the card's history, and the card runs without it.
  */
 export async function skillsPart(
   env: Pick<DelegateEnv, 'skills' | 'sql'>,
@@ -757,10 +772,33 @@ export async function skillsPart(
   maxBytes: number,
 ): Promise<BriefFragment | undefined> {
   if (env.skills === undefined || name === ORCHESTRATOR_AGENT || !agent.card.trifecta.untrusted_content) return undefined;
-  const { block, skipped } = env.skills(name, maxBytes);
+  const card = await cardDesignOf(env.sql, at.task, name);
+  const { block, skipped, styleSkipped, cardSkipped = [] } = env.skills(name, maxBytes, card);
   // What did not fit, or is no longer in the catalog: one line of the delegation's activity (the catalog wrote the events).
   if (skipped > 0) await show(env.sql, at.task, at.step, 'delegate', `${name} · ${SKILLS_SKIPPED} · ${String(skipped)}`);
+  if (styleSkipped !== undefined) await show(env.sql, at.task, at.step, 'delegate', `${name} · ${STYLE_SKIPPED} · ${styleSkipped}`);
+  // The card's own choice left out: in its history, which the detail of the card shows (names of the catalog only, L0).
+  if (card !== undefined && (styleSkipped !== undefined || cardSkipped.length > 0)) {
+    await appendEvent(env.sql, {
+      kind: CARD_DESIGN_SKIPPED,
+      taskId: at.task.id,
+      label: 'L0',
+      payload: { agent: name, ...(styleSkipped === undefined ? {} : { style: styleSkipped }), skills: [...cardSkipped] },
+    }).catch(() => undefined);
+  }
   return block === undefined || block === '' ? undefined : { text: block, label: 'L0', source: `skills:${name}` };
+}
+
+/** The event of a card whose chosen style or skills did not reach the delivery (D-163). */
+export const CARD_DESIGN_SKIPPED = 'card.design-skipped';
+/** The middle word of the activity line of the card's style left out: `<agent> · style-skipped · <slug>` (D-163). */
+export const STYLE_SKIPPED = 'style-skipped';
+
+/** The style and skills chosen on the card, when the step is the Designer's work on its own card (D-163); undefined otherwise. */
+async function cardDesignOf(sql: Sql, task: Task, name: string): Promise<CardDesign | undefined> {
+  if (task.conversationId !== null || task.assignee !== DESIGNER_AGENT || name !== DESIGNER_AGENT) return undefined;
+  const design = await cardDesign(sql, task.id);
+  return design.style === null && design.skills.length === 0 ? undefined : design;
 }
 
 /** The middle word of the activity line of skills left out of a delivery: `<agent> · skills-skipped · <n>`. */

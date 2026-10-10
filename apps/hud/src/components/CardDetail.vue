@@ -7,6 +7,8 @@ import {
   addChecklistItem,
   cardAction,
   cardFileUrl,
+  listDesignStyles,
+  listSkills,
   loadCardDetail,
   markCommitmentDone,
   moveCard,
@@ -32,6 +34,8 @@ import {
   COMMITMENT_STATUS_TEXT,
   dataUrlBase64,
   dependencyChoices,
+  designChoices,
+  DESIGNER_AGENT,
   dueText,
   fileKindText,
   fileRefusal,
@@ -40,6 +44,7 @@ import {
   isImage,
   isWebAddress,
   linkText,
+  MAX_CARD_SKILLS,
   MAX_CRITERIA,
   MAX_GOAL,
   MAX_ITEM,
@@ -161,6 +166,41 @@ async function loadAsks(): Promise<void> {
 }
 watch(() => props.card.assignee, () => void loadAsks());
 onMounted(loadAsks);
+
+// The style of Open Design and the skills of a Designer card (D-163): chosen from the adopted catalogs.
+const isDesigner = computed(() => isTask.value && props.card.assignee === DESIGNER_AGENT);
+const styleCatalog = ref<{ id: string; name: string }[]>([]);
+const skillCatalog = ref<{ id: string; name: string; source: string }[]>([]);
+const catalogsLoaded = ref(false);
+async function loadCatalogs(): Promise<void> {
+  if (!isDesigner.value || catalogsLoaded.value) return;
+  const [styles, skills] = await Promise.allSettled([listDesignStyles(), listSkills()]);
+  styleCatalog.value = styles.status === 'fulfilled' ? styles.value.styles.map((style) => ({ id: style.slug, name: style.name })) : [];
+  skillCatalog.value = skills.status === 'fulfilled' ? skills.value.skills.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source })) : [];
+  catalogsLoaded.value = true;
+}
+watch(isDesigner, () => void loadCatalogs());
+onMounted(loadCatalogs);
+const chosenStyle = computed(() => detail.value?.style ?? null);
+const styleGone = computed(() => chosenStyle.value !== null && catalogsLoaded.value && !styleCatalog.value.some((style) => style.id === chosenStyle.value));
+const chosenSkills = computed(() => designChoices(detail.value?.skills ?? [], catalogsLoaded.value ? skillCatalog.value : (detail.value?.skills ?? []).map((id) => ({ id, name: id }))));
+const skillOptions = computed(() => skillCatalog.value.filter((skill) => !(detail.value?.skills ?? []).includes(skill.id)));
+
+function setStyle(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value;
+  void act(() => updateCard(props.card.id, { style: value === '' ? null : value }));
+}
+
+function addSkill(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  const id = select.value;
+  select.value = '';
+  if (id !== '') void act(() => updateCard(props.card.id, { skills: [...(detail.value?.skills ?? []), id] }));
+}
+
+function removeSkill(id: string): void {
+  void act(() => updateCard(props.card.id, { skills: (detail.value?.skills ?? []).filter((skill) => skill !== id) }));
+}
 
 // "Salvato": a moment after each change the core took.
 const saved = ref(false);
@@ -562,6 +602,38 @@ function absoluteTime(at: string): string {
             </select>
             <span v-if="lockedText !== undefined" id="card-assignee-why" class="text-[12px] text-muted">{{ lockedText }}</span>
           </span>
+
+          <!-- The Designer's card (D-163): a style of Open Design and skills of the catalog, read by the Designer as reference data. -->
+          <template v-if="isDesigner && detail !== null">
+            <label for="card-style" class="text-muted">Stile</label>
+            <span class="flex flex-col gap-1">
+              <select id="card-style" class="field px-2 py-1.5 text-[13px]" :value="chosenStyle ?? ''" :disabled="busy" @change="setStyle">
+                <option value="">Nessuno</option>
+                <option v-if="styleGone && chosenStyle !== null" :value="chosenStyle">{{ chosenStyle }} (non più nel catalogo)</option>
+                <option v-for="style in styleCatalog" :key="style.id" :value="style.id">{{ style.name }}</option>
+              </select>
+              <span v-if="styleGone" class="text-[12px] text-warn">Non è più nel catalogo: la card parte senza.</span>
+              <span v-else-if="catalogsLoaded && styleCatalog.length === 0" class="text-[12px] text-muted">Nessuno stile: scarica il catalogo di Open Design in Impostazioni → Agenti.</span>
+            </span>
+
+            <span id="card-skills-label" class="text-muted">Skill</span>
+            <span class="flex min-w-0 flex-col gap-1.5">
+              <ul v-if="chosenSkills.length > 0" class="flex flex-wrap gap-1.5" aria-labelledby="card-skills-label">
+                <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-full items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[12.5px]" :title="skill.id">
+                  <span class="min-w-0 truncate" :class="{ 'text-warn': skill.gone }">{{ skill.name }}<template v-if="skill.gone"> (non più nel catalogo)</template></span>
+                  <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink" :disabled="busy" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
+                    <Icon name="close" :size="12" />
+                  </button>
+                </li>
+              </ul>
+              <select v-if="skillOptions.length > 0 && chosenSkills.length < MAX_CARD_SKILLS" class="field px-2 py-1.5 text-[13px]" aria-label="Aggiungi una skill" :disabled="busy" @change="addSkill">
+                <option value="">Aggiungi una skill…</option>
+                <option v-for="skill in skillOptions" :key="skill.id" :value="skill.id">{{ skill.name }} · {{ skill.source }}</option>
+              </select>
+              <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[12px] text-muted">Nessuna skill: aggiungi una sorgente in Impostazioni → Agenti.</span>
+              <span v-if="chosenStyle !== null || chosenSkills.length > 0" class="text-[12px] text-muted">Il Designer li legge come testo di riferimento, con la loro licenza.</span>
+            </span>
+          </template>
 
           <label for="card-priority" class="text-muted">Priorità</label>
           <select id="card-priority" class="field px-2 py-1.5 text-[13px]" :value="card.priority" :disabled="busy" @change="setPriority">

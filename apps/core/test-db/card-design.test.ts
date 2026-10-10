@@ -1,0 +1,305 @@
+// The style and the skills of a Designer card (D-163), with the database:
+// saved only on a Designer card and only from the adopted catalogs, given to
+// the delivery of the card as L0 data, and a choice gone from the catalog
+// written in the card's history while the card runs without it.
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { after, before, test } from 'node:test';
+
+import { type Answer, type LoadedAgent } from '@arianna/agents';
+import { defaultCloudModels, loadConfig, parseLabelRules, resolveHome, type Project } from '@arianna/config';
+import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@arianna/executors';
+
+import { loadApproval } from '../src/approvals.ts';
+import { cardDetail } from '../src/card-details.ts';
+import { CardError, createCard, startCard, updateCard, type CardNames } from '../src/cardwall.ts';
+import { createConversation } from '../src/conversations.ts';
+import type { DesignCatalog } from '../src/design-catalog.ts';
+import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
+import { completeJob, createJobQueue } from '../src/jobs.ts';
+import { startLiveFeed } from '../src/live.ts';
+import type { AgentSkills, CardDesign } from '../src/orchestrator/delegate.ts';
+import { createKb } from '../src/orchestrator/kb.ts';
+import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
+import { startApiServer } from '../src/server/http.ts';
+import type { SkillsCatalog } from '../src/skills-catalog.ts';
+import { createTask, loadTask, type Task } from '../src/tasks.ts';
+import { committedAgents } from '../test/support/committed-agents.ts';
+import { useTestDatabase } from './support/database.ts';
+
+const db = useTestDatabase();
+const ROOT = resolveHome({});
+const HOME = join(ROOT, 'data', 'test-tmp', `card-design-${randomUUID()}`);
+const REPO = join(HOME, 'repos', 'site');
+const FIXTURES = join(ROOT, 'packages', 'executors', 'test', 'fixtures');
+const RULES = parseLabelRules('[[folder]]\npath = "repos"\nlabel = "L1"\n');
+const BASE = loadConfig();
+const PROJECTS = ['site'];
+const agents = new Map<string, LoadedAgent>(committedAgents(ROOT));
+const OPTIONS = {
+  allowedActions: () => [] as readonly string[],
+  agentLimits: (task: Task) => {
+    const limits = agents.get(task.assignee)?.card.limits;
+    return { maxSteps: limits?.maxSteps ?? 30, maxMinutes: limits?.maxMinutes ?? 20 };
+  },
+};
+// The adopted catalogs, invented: two styles and two skills.
+const STYLES = ['sabbia', 'notte'];
+const SKILLS = ['acme/skills/alpha', 'nexu-io/open-design/deck'];
+const NAMES: CardNames = {
+  projects: PROJECTS,
+  agents: ['coder', 'designer'],
+  catalog: { style: (slug) => STYLES.includes(slug), skill: (id) => SKILLS.includes(id) },
+};
+
+const claude = createClaudeExecutor({ enabled: ['claude'], command: { file: process.execPath, args: [join(FIXTURES, 'fake-claude.ts')] }, home: ROOT, killGraceMs: 200 });
+
+function git(...args: string[]): string {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-C', REPO, ...args], {
+    env: { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+    encoding: 'utf8',
+  });
+}
+
+before(() => {
+  mkdirSync(REPO, { recursive: true });
+  writeFileSync(join(REPO, 'README.md'), '# Fake site\n');
+  writeFileSync(join(REPO, '.gitignore'), '.fake-claude.json\n');
+  git('init', '--quiet', '--initial-branch=main');
+  git('add', '--all');
+  git('commit', '--quiet', '--message', 'fixture');
+});
+
+after(() => {
+  rmSync(HOME, { recursive: true, force: true });
+});
+
+function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
+  const requests: ChatRequest[] = [];
+  return {
+    requests,
+    chat(request) {
+      requests.push(request);
+      const next = answers[requests.length - 1];
+      if (next === undefined) return Promise.reject(new Error('no answer scripted'));
+      const value = JSON.stringify(request.schema?.schema).includes('"thought"') ? { thought: 'Ragiono.', ...next } : next;
+      return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', usage: { promptTokens: 10, completionTokens: 5 }, endpoint: 'stub', model: 'stub', durationMs: 1 });
+    },
+  };
+}
+
+const BLOCK = 'Skills chosen by the user for this agent: third-party reference text (public, untrusted).\n----- BEGIN STYLE sabbia [0123456789abcdef] -----\nInvented palette.\n----- END STYLE sabbia [0123456789abcdef] -----';
+
+/** The catalog as main.ts calls it: what each delivery asked, and a fixed answer. */
+function fakeSkills(answer: (card: CardDesign | undefined) => AgentSkills = () => ({ block: BLOCK, skipped: 0 })) {
+  const asked: [string, number, CardDesign | undefined][] = [];
+  return {
+    asked,
+    skills: (agent: string, maxBytes: number, card?: CardDesign): AgentSkills => {
+      asked.push([agent, maxBytes, card === undefined ? undefined : { style: card.style, skills: [...card.skills] }]);
+      return answer(card);
+    },
+  };
+}
+
+function orchestrator(model: LocalModel, skills: (agent: string, maxBytes: number, card?: CardDesign) => AgentSkills, cloud: 'claude'[] = []): StepExecutor {
+  const settings = () => ({
+    ...BASE,
+    home: HOME,
+    paths: { data: join(HOME, 'data') },
+    cloud: { executors: cloud, models: defaultCloudModels() },
+    projects: PROJECTS.map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
+  });
+  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, skills, ...(cloud.length > 0 ? { claude } : {}) });
+}
+
+async function drain(taskIds: readonly string[], executor: StepExecutor): Promise<string[]> {
+  const queue = createJobQueue(db().sql);
+  const results: string[] = [];
+  for (let guard = 0; guard < 30; guard += 1) {
+    const job = await queue.claim(STEP_QUEUE, 'test-worker');
+    if (job === undefined) return results;
+    if (typeof job.payload.taskId !== 'string' || !taskIds.includes(job.payload.taskId)) {
+      await completeJob(db().sql, job.id, 'test-worker');
+      continue;
+    }
+    results.push(await processStepJob(db().sql, executor, job, 'test-worker', OPTIONS));
+  }
+  throw new Error('drain did not end');
+}
+
+async function approve(taskId: string, choice: 'claude' | 'local'): Promise<void> {
+  const task = await loadTask(db().sql, taskId);
+  assert.equal(task?.status, 'waiting_user');
+  const approval = task.waitingApprovalId === null ? undefined : await loadApproval(db().sql, task.waitingApprovalId);
+  assert.ok(approval !== undefined);
+  await recordDecision(db().sql, approval.id, 'approved', 'web', choice);
+}
+
+/** A Designer card from a plan (L1, in the project), the user's choice saved on it. */
+async function planCard(title: string, design: { style?: string; skills?: string[] }): Promise<Task> {
+  const card = await createTask(db().sql, { title, goal: 'Due varianti.', label: 'L1', clearance: 'L1', effectiveLabel: 'L1', assignee: 'designer', project: 'site', status: 'inbox' });
+  await updateCard(db().sql, card.id, design, NAMES);
+  return card;
+}
+
+test('saved on a Designer card from the adopted catalogs; refused elsewhere; the label never moves (D-163)', async () => {
+  const { sql } = db();
+  const created = await createCard(sql, { title: 'Grafica del listino', assignee: 'designer', style: 'sabbia', skills: ['acme/skills/alpha', 'acme/skills/alpha'] }, NAMES);
+  let detail = await cardDetail(sql, created.id);
+  assert.deepEqual([detail.style, detail.skills], ['sabbia', ['acme/skills/alpha']]);
+
+  // Not the Designer's card: refused, at creation and later.
+  await assert.rejects(createCard(sql, { title: 'Codice', assignee: 'coder', style: 'sabbia' }, NAMES), /only for a card of the Designer/);
+  await assert.rejects(createCard(sql, { title: 'Mia', skills: ['acme/skills/alpha'] }, NAMES), /only for a card of the Designer/);
+  const coder = await createCard(sql, { title: 'Codice del listino', assignee: 'coder' }, NAMES);
+  await assert.rejects(updateCard(sql, coder.id, { style: 'sabbia' }, NAMES), CardError);
+  await assert.rejects(updateCard(sql, coder.id, { skills: ['acme/skills/alpha'] }, NAMES), CardError);
+  // Empty is always fine.
+  await updateCard(sql, coder.id, { style: null, skills: [] }, NAMES);
+
+  // Only what the adopted catalogs hold, in its form.
+  for (const bad of [{ style: 'nessuno' }, { style: '../x' }, { style: 7 }, { skills: ['acme/skills/nessuna'] }, { skills: 'acme/skills/alpha' }, { skills: ['Acme/skills/alpha'] }, { skills: ['acme/../alpha'] }]) {
+    await assert.rejects(updateCard(sql, created.id, bad, NAMES), CardError, JSON.stringify(bad));
+  }
+  await assert.rejects(updateCard(sql, created.id, { skills: Array.from({ length: 11 }, (_, index) => `acme/skills/s${String(index)}`) }, { ...NAMES, catalog: { style: () => true, skill: () => true } }), /at most 10/);
+
+  // A choice gone from the catalog stays written: other changes keep it.
+  const gone: CardNames = { ...NAMES, catalog: { style: () => false, skill: () => false } };
+  await updateCard(sql, created.id, { priority: 2, skills: ['acme/skills/alpha'] }, gone);
+  detail = await cardDetail(sql, created.id);
+  assert.deepEqual([detail.style, detail.skills], ['sabbia', ['acme/skills/alpha']]);
+  await assert.rejects(updateCard(sql, created.id, { style: 'notte' }, gone), /no such style/);
+
+  // From a plan, L1: choosing a style and skills does not raise the card; given to the Coder, they go away.
+  const plan = await planCard('Grafica dal piano', { style: 'notte', skills: ['nexu-io/open-design/deck'] });
+  assert.equal((await loadTask(sql, plan.id))?.label, 'L1');
+  await updateCard(sql, plan.id, { assignee: 'coder' }, NAMES);
+  detail = await cardDetail(sql, plan.id);
+  assert.deepEqual([detail.style, detail.skills], [null, []]);
+  assert.equal((await loadTask(sql, plan.id))?.label, 'L1');
+
+  // The database: only on a card, never on a task of a chat; the form of each name.
+  const conversation = await createConversation(sql, { mode: 'private' });
+  const chatTask = await createTask(sql, { title: 'Di una chat', conversationId: conversation.id });
+  await assert.rejects(sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${chatTask.id}`, /tasks_design_only_cards/);
+  await assert.rejects(sql`UPDATE tasks SET design_skills = ${['acme/skills/alpha']}::text[] WHERE id = ${chatTask.id}`, /tasks_design_only_cards/);
+  await assert.rejects(sql`UPDATE tasks SET design_style = 'Sabbia Chiara' WHERE id = ${created.id}`, /check constraint/);
+  await assert.rejects(sql`UPDATE tasks SET design_skills = ${['not a skill']}::text[] WHERE id = ${created.id}`, /check constraint/);
+});
+
+test('a Designer card on Claude: its style and skills reach the delivery as L0 data after the prompt; the brief leaves at the card’s label (D-163)', async () => {
+  const card = await planCard('Grafica della landing', { style: 'sabbia', skills: ['acme/skills/alpha'] });
+  const { asked, skills } = fakeSkills();
+  const executor = orchestrator(scripted([]), skills, ['claude']);
+  try {
+    await startCard(db().sql, card.id);
+    assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+    await approve(card.id, 'claude');
+    assert.deepEqual(await drain([card.id], executor), ['continued', 'to-verify']);
+    assert.deepEqual(asked, [['designer', 128 * 1024, { style: 'sabbia', skills: ['acme/skills/alpha'] }]]);
+    const { prompt } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.match(prompt, /^You are the Designer/);
+    assert.ok(prompt.includes(`\n\n${BLOCK}\n\n`), 'prompt, then the block');
+    assert.ok(prompt.indexOf(BLOCK) < prompt.indexOf('Card: Grafica della landing'), 'the block before the brief');
+    const log = await db().sql<{ label: string }[]>`SELECT label FROM gateway_log WHERE task_id = ${card.id} AND target = 'claude'`;
+    assert.deepEqual([...log].map((row) => row.label), ['L1']);
+    assert.equal((await loadTask(db().sql, card.id))?.status, 'to_verify');
+  } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+});
+
+test('a Designer card on the local model: the block joins its instructions within the local limit (D-163)', async () => {
+  const card = await createCard(db().sql, { title: 'Grafica privata', assignee: 'designer', goal: 'Una pagina.', style: 'notte' }, NAMES);
+  const { asked, skills } = fakeSkills();
+  const model = scripted([{ action: 'reply', text: 'Proposta in due varianti.' }]);
+  const executor = orchestrator(model, skills, ['claude']);
+  await startCard(db().sql, card.id);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  await approve(card.id, 'local');
+  assert.deepEqual(await drain([card.id], executor), ['to-verify']);
+  assert.deepEqual(asked, [['designer', 16 * 1024, { style: 'notte', skills: [] }]]);
+  const system = String(model.requests[0]?.messages[0]?.content);
+  assert.match(system, /^You are the Designer/);
+  assert.ok(system.includes(`\n\n${BLOCK}`), 'after its prompt');
+  assert.ok(!JSON.stringify(model.requests[0]?.messages.slice(1)).includes('BEGIN STYLE'), 'in the instructions, not in a turn');
+});
+
+test('a style or skill no longer in the catalog: the card runs without it and its history says so (D-163)', async () => {
+  const card = await createCard(db().sql, { title: 'Grafica senza stile', assignee: 'designer', goal: 'Una pagina.', style: 'sabbia', skills: ['acme/skills/alpha'] }, NAMES);
+  const { skills } = fakeSkills(() => ({ block: undefined, skipped: 1, styleSkipped: 'sabbia', cardSkipped: ['acme/skills/alpha'] }));
+  const model = scripted([{ action: 'reply', text: 'Proposta senza stile.' }]);
+  const executor = orchestrator(model, skills, []);
+  await startCard(db().sql, card.id);
+  assert.deepEqual(await drain([card.id], executor), ['waiting-approval']);
+  await approve(card.id, 'local');
+  assert.deepEqual(await drain([card.id], executor), ['to-verify']);
+  assert.ok(!String(model.requests[0]?.messages[0]?.content).includes('BEGIN STYLE'));
+  const detail = await cardDetail(db().sql, card.id);
+  const skipped = detail.history.find((entry) => entry.kind === 'card.design-skipped');
+  assert.deepEqual(skipped?.payload, { agent: 'designer', style: 'sabbia', skills: ['acme/skills/alpha'] });
+  const [event] = await db().sql<{ label: string }[]>`SELECT label FROM events WHERE task_id = ${card.id} AND kind = 'card.design-skipped'`;
+  assert.equal(event?.label, 'L0');
+  // All delivered: nothing written.
+  const fine = await createCard(db().sql, { title: 'Grafica con stile', assignee: 'designer', goal: 'Una pagina.', style: 'sabbia' }, NAMES);
+  const ok = orchestrator(scripted([{ action: 'reply', text: 'Fatto.' }]), fakeSkills().skills, []);
+  await startCard(db().sql, fine.id);
+  await drain([fine.id], ok);
+  await approve(fine.id, 'local');
+  await drain([fine.id], ok);
+  assert.equal((await db().sql`SELECT 1 FROM events WHERE task_id = ${fine.id} AND kind = 'card.design-skipped'`).length, 0);
+});
+
+test('a card of another agent never carries a choice to the delivery (D-163)', async () => {
+  const card = await createCard(db().sql, { title: 'Codice privato', assignee: 'coder', project: 'site', goal: 'Una riga.' }, NAMES);
+  // Written by hand in the database: the core reads it only for the Designer.
+  await db().sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${card.id}`;
+  const { asked, skills } = fakeSkills(() => ({ block: undefined, skipped: 0 }));
+  await startCard(db().sql, card.id);
+  assert.deepEqual(await drain([card.id], orchestrator(scripted([{ action: 'reply', text: 'Fatto.' }]), skills, [])), ['to-verify']);
+  assert.deepEqual(asked, [['coder', 16 * 1024, undefined]]);
+});
+
+test('the routes: style and skills only on a Designer card, only from the adopted catalogs (D-163)', async () => {
+  const live = await startLiveFeed(db().sql);
+  const designCatalog = { list: () => ({ commit: 'c', styles: STYLES.map((slug) => ({ slug, name: slug, description: '' })), skills: [] }) } as unknown as DesignCatalog;
+  const skillsCatalog = { list: () => ({ skills: SKILLS.map((id) => ({ id })) }) } as unknown as SkillsCatalog;
+  const server = await startApiServer({
+    sql: db().sql,
+    live,
+    host: '127.0.0.1',
+    port: 0,
+    projects: () => [],
+    agents: () => ['arianna', 'coder', 'designer'],
+    projectContainers: () => [],
+    designCatalog,
+    skillsCatalog,
+  });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const send = (method: string, path: string, body: unknown = {}) =>
+    fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const created = await send('POST', '/api/cards', { title: 'Grafica', assignee: 'designer', style: 'sabbia' });
+    assert.equal(created.status, 201);
+    const id = ((await created.json()) as { card: { id: string } }).card.id;
+    assert.equal((await send('POST', `/api/cards/${id}`, { skills: ['nexu-io/open-design/deck'] })).status, 200);
+    const detail = ((await (await fetch(`${base}/api/cards/${id}`)).json()) as { card: { style: string | null; skills: string[] } }).card;
+    assert.deepEqual([detail.style, detail.skills], ['sabbia', ['nexu-io/open-design/deck']]);
+    assert.equal((await send('POST', `/api/cards/${id}`, { style: 'inventato' })).status, 400);
+    assert.equal((await send('POST', `/api/cards/${id}`, { skills: ['other/repo/skill'] })).status, 400);
+    assert.equal((await send('POST', '/api/cards', { title: 'Codice', assignee: 'coder', style: 'sabbia' })).status, 400);
+    const coder = ((await (await send('POST', '/api/cards', { title: 'Codice', assignee: 'coder' })).json()) as { card: { id: string } }).card.id;
+    assert.equal((await send('POST', `/api/cards/${coder}`, { skills: ['acme/skills/alpha'] })).status, 400);
+    assert.equal((await send('POST', `/api/cards/${id}`, { style: null, skills: [] })).status, 200);
+    const cleared = ((await (await fetch(`${base}/api/cards/${id}`)).json()) as { card: { style: string | null; skills: string[] } }).card;
+    assert.deepEqual([cleared.style, cleared.skills], [null, []]);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+});
