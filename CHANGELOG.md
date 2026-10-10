@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.55.0] - 2026-10-10
+
 ### Aggiunto
 
 - "Per il prossimo IM dobbiamo fare le fatture": Arianna scrive la voce nell'IM successivo (o in quello corrente, se lo dici), creandolo sette giorni dopo quando manca (strumento `im.add`, D-167, I-11 P4b); da una chat privata o dalla segretaria chiede prima conferma mostrando il testo esatto, perché l'IM è Interno e lo legge il Coder.
