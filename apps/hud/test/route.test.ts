@@ -6,6 +6,7 @@ import {
   documentTitle,
   isNewAgentPath,
   isOfficePath,
+  isSecretaryPath,
   isSettingsPath,
   isThoughtsPath,
   NEW_AGENT_PATH,
@@ -14,6 +15,7 @@ import {
   knowledgePathFor,
   knowledgeSource,
   pathFor,
+  SECRETARY_PATH,
   THOUGHTS_PATH,
 } from '../src/lib/route.ts';
 
@@ -77,4 +79,16 @@ test('the page "Nuovo agente" has its own address, apart from the sections of th
   assert.ok(isNewAgentPath(`${NEW_AGENT_PATH}/`));
   assert.equal(isSettingsPath(NEW_AGENT_PATH), false);
   for (const path of ['/impostazioni/agenti', '/impostazioni/agenti/nuovo/x', '/agenti/nuovo']) assert.equal(isNewAgentPath(path), false, path);
+});
+
+test('the secretary has its own address (D-156): /segretaria, never its /c/<id>', () => {
+  assert.equal(SECRETARY_PATH, '/segretaria');
+  assert.equal(pathFor(ID, true), '/segretaria');
+  assert.equal(pathFor(ID, false), `/c/${ID}`);
+  assert.equal(pathFor(null, true), '/');
+  assert.ok(isSecretaryPath('/segretaria'));
+  assert.ok(isSecretaryPath('/segretaria/'));
+  assert.ok(!isSecretaryPath('/segretaria/altro'));
+  assert.ok(!isSecretaryPath('/segretari'));
+  assert.equal(conversationFromPath('/segretaria'), undefined);
 });

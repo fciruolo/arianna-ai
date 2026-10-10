@@ -182,6 +182,16 @@ test('only the button opens a session: reading the conversation or writing in it
       conversation: { secretarySessionAt: string };
     };
     assert.ok(Date.parse(clicked.conversation.secretarySessionAt) > Date.parse(at));
+
+    // The address `/segretaria` of the chat (D-156) reads it: same conversation, same session, no click recorded.
+    const [before] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM events WHERE kind = 'secretary.session'`;
+    const read = (await (await fetch(`${base}/api/secretary`)).json()) as { conversation: { id: string; secretary: boolean; secretarySessionAt: string } | null };
+    assert.ok(read.conversation !== null);
+    assert.equal(read.conversation.id, opened.conversation.id);
+    assert.equal(read.conversation.secretary, true);
+    assert.equal(read.conversation.secretarySessionAt, clicked.conversation.secretarySessionAt);
+    const [after] = await db().sql<{ count: number }[]>`SELECT count(*)::int AS count FROM events WHERE kind = 'secretary.session'`;
+    assert.equal(after?.count, before?.count);
   } finally {
     await server.close();
     await live.close();

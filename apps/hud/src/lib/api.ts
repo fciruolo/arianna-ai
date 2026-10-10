@@ -93,9 +93,9 @@ export async function openSecretary(): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('POST', '/api/secretary', {})).conversation;
 }
 
-/** The open commitments and those of today (D-144), by day and time; `today` is the core's local day. */
-export async function listCommitments(): Promise<{ today: string; commitments: Commitment[] }> {
-  return call<{ today: string; commitments: Commitment[] }>('GET', '/api/commitments');
+/** The secretary's conversation for the address `/segretaria` (D-156): no new session (D-146); null before the first click. */
+export async function findSecretary(): Promise<Conversation | null> {
+  return (await call<{ conversation: Conversation | null }>('GET', '/api/secretary')).conversation;
 }
 
 /** "Fatto" on a commitment: the click is the confirmation. */
