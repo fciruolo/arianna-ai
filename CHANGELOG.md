@@ -4,6 +4,27 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.48.0] - 2026-10-10
+
+### Aggiunto
+
+- Catalogo generale di skill nel formato `SKILL.md` di agentskills.io dai repository GitHub che scegli, in `data/catalogs/skills/`: per ogni sorgente "Scarica"/"Aggiorna" con il riepilogo (nuove, cambiate, tolte), "Usa questa versione" o "Scarta", commit fissato; `anthropics/skills`, `mattpocock/skills` e `vercel-labs/skills` suggerite con un clic; le skill di Open Design come sorgente fra le altre (D-161).
+- Impostazioni → Agenti, sezione "Skill": sorgenti, ricerca nelle skill e lettura del testo con sorgente, commit e licenza; nel dettaglio di ogni agente la scheda "Skill" per assegnarle, salvate con la barra delle modifiche in `[agents.<id>] skills` (D-161).
+- Le skill assegnate entrano nella consegna delle deleghe a Claude, Codex e agli agenti locali, dopo il prompt dell'agente, come blocco di dati delimitato entro un limite di dimensione (D-161).
+- Rotte `/api/skills-catalog` e comando `pnpm skills:catalog [list|add|remove|update|adopt|discard]` (D-161).
+- Le skill assegnate entrano anche nelle card che un agente diverso da Arianna lavora sul modello locale, dopo il suo prompt, entro i 16 KiB locali (D-161).
+- Le skill saltate (oltre il limite o non più nel catalogo) lasciano un evento `skills.skipped` con agente, skill e motivo, e una riga nell'attività della delega (D-161).
+- La sezione Skill mostra le voci di `sources.json` scritte a mano con un indirizzo non valido, ignorate (D-161).
+
+### Cambiato
+
+- Il catalogo di Open Design usa il meccanismo comune dei cataloghi git (`git-catalog.ts`), lo stesso delle sorgenti di skill; file e comportamento invariati (D-161).
+
+### Sicurezza
+
+- Il percorso di una skill letto dall'indice si ricontrolla (niente `..`, cartelle nascoste, file diversi da `SKILL.md`, slug di un'altra cartella) e deve stare dentro la cartella della sorgente; "Togli" tiene il blocco della sorgente fino alla fine e non cambia nulla se lo tiene un altro processo (D-161).
+- Delle skill si scaricano solo i `SKILL.md` e i file di licenza, nominati uno per uno dai nomi dell'albero: script e risorse non si scaricano né si eseguono mai; l'indirizzo passa dal gateway (L0, web); il testo è L0 non fidato, mai un'istruzione per Arianna, che non riceve skill, né per un agente con `untrusted_content` chiuso (D-161).
+
 ## [0.47.0] - 2026-10-10
 
 ### Aggiunto

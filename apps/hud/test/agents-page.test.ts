@@ -100,6 +100,9 @@ describe('tabsOf', () => {
     assert.equal(tabsOf(arianna).includes('card'), false);
     assert.equal(tabsOf(grafico).includes('card'), true);
   });
+  it('shows "Skill" for every agent, after the model (D-161)', () => {
+    for (const entry of agentEntries(listing, [])) assert.equal(tabsOf(entry)[3], 'skills');
+  });
 });
 
 describe('changedAgents', () => {
@@ -117,6 +120,15 @@ describe('changedAgents', () => {
     form.agents.revisore = 'sonnet';
     form.characters.grafico = 'miei/grafico';
     assert.deepEqual(changedAgents(form, base), ['coder', 'grafico', 'revisore']);
+  });
+  it('names the agent whose skills changed, not one with an empty list as before (D-161)', () => {
+    const before: AgentParts = { ...copy(), skills: { coder: ['a/b/c'], revisore: [] } };
+    const form = structuredClone(before);
+    assert.deepEqual(changedAgents(form, before), []);
+    form.skills = { coder: ['a/b/c', 'a/b/d'], revisore: [] };
+    assert.deepEqual(changedAgents(form, before), ['coder']);
+    form.skills = { coder: ['a/b/c'], revisore: ['x/y/z'] };
+    assert.deepEqual(changedAgents(form, before), ['revisore']);
   });
   it('names an agent whose character went back to the default', () => {
     const form = copy();

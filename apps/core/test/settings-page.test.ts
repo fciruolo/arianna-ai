@@ -189,6 +189,31 @@ describe('update (ordinary)', () => {
     assert.equal(text(), before);
   });
 
+  it('the skills of an agent (D-161): their own section, refused to Arianna and to a card closing untrusted_content', () => {
+    const refusals = { arianna: 'Arianna reads no skills', coder: null, vault: 'the card of this agent closes untrusted_content' };
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => refusals, onChanged: (change) => changes.push(change) });
+    assert.deepEqual(skilled.read().agentSkills, refusals);
+    skilled.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'opus' } } } });
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'], arianna: [] } } });
+    assert.deepEqual(changes.at(-1), { sections: ['skills'], privacy: false }, 'only the skills changed, not the models');
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { coder: { model: 'opus', skills: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'] } });
+    assert.deepEqual(skilled.read().values?.skills, { coder: ['anthropics/skills/pdf', 'nexu-io/open-design/deck'] });
+    assert.deepEqual(skilled.read().values?.agents, { coder: { model: 'opus' } });
+    // A save of the models keeps the skills, and the other way round.
+    skilled.update({ fingerprint: fingerprint(), values: { agents: { coder: { model: 'sonnet' } } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.coder?.skills, ['anthropics/skills/pdf', 'nexu-io/open-design/deck']);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: [] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents, { coder: { model: 'sonnet' } });
+    const before = text();
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { arianna: ['a/b/c'] } } }), refused('invalid', /skills\.arianna: Arianna reads no skills/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { vault: ['a/b/c'] } } }), refused('invalid', /skills\.vault: the card of this agent closes untrusted_content/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { writer: ['a/b/c'] } } }), refused('invalid', /skills\.writer: no such agent/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: ['A/b/c'] } } }), refused('invalid', /skills\.coder\[0\]/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: 'a/b/c' } } }), refused('invalid', /skills\.coder/));
+    assert.throws(() => page.update({ fingerprint: fingerprint(), values: { skills: { coder: ['a/b/c'] } } }), refused('invalid', /no such agent/), 'without the cards nobody takes skills');
+    assert.equal(text(), before);
+  });
+
   it('an agent without a card keeps its model; a model the card no longer allows is kept while unchanged', () => {
     writeFileSync(file, `${text()}\n[agents.ghost]\nmodel = "opus"\n\n[agents.coder]\nmodel = "fable"\n`);
     const narrow = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => ({ arianna: [], coder: ['sonnet', 'opus'] }) });

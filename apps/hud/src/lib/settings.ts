@@ -92,6 +92,8 @@ export interface SettingsValues {
   personas: Record<string, PersonaValues>;
   /** Agent → the model a new conversation with it starts with (D-116); absent, the router chooses. */
   agents: Record<string, { model: CloudModelAlias }>;
+  /** Agent → the skills of the catalog it reads in each delivery (D-161); optional: an older core sends none. */
+  skills?: Record<string, string[]>;
   /** The model that draws a character (D-123): `[sprites] model`, opus when absent (D-132). */
   sprites: 'sonnet' | 'opus' | 'local';
   /** Messages of the user before an idle agent leaves the conversation (I-8, D-130): `[participants] leave_after`; 0 never. */
@@ -139,6 +141,8 @@ export interface SettingsView {
   voiceDefaults: VoiceValues;
   /** Agent → the cloud models its card allows (D-116); empty for Arianna, whose model is the orchestrator. */
   agentModels: Record<string, CloudModelAlias[]>;
+  /** Agent → why it may receive no skills, null when it may (D-161); optional: an older core sends none. */
+  agentSkills?: Record<string, string | null>;
   /** Only from GET: a write answers without it. */
   local?: LocalServerStatus[];
 }
@@ -168,7 +172,7 @@ export interface PrivacyProposal {
   exits: PrivacyExits;
 }
 
-export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'sprites' | 'participants' | 'notifications' | 'secretary';
+export type OrdinarySection = 'roles' | 'cloudModels' | 'characters' | 'voice' | 'personas' | 'agents' | 'skills' | 'sprites' | 'participants' | 'notifications' | 'secretary';
 
 /** What an ordinary save sends: the values, except the agents, where `null` is "the router chooses". */
 export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection, 'agents'>>> & { agents?: ReturnType<typeof agentsBody> };
@@ -277,6 +281,20 @@ export type AgentsForm = Record<string, CloudModelAlias | ''>;
 
 export function agentsForm(values: SettingsValues['agents'], allowed: SettingsView['agentModels']): AgentsForm {
   return Object.fromEntries(Object.keys(allowed).map((agent) => [agent, Object.hasOwn(values, agent) ? (values[agent]?.model ?? '') : '']));
+}
+
+/** Agent → its skills in the form (D-161): every agent with a card, an empty list for none, so a removal is sent too. */
+export type SkillsForm = Record<string, string[]>;
+
+export function skillsForm(values: SettingsValues['skills'], allowed: SettingsView['agentSkills']): SkillsForm {
+  const given = values ?? {};
+  const agents = new Set([...Object.keys(allowed ?? {}), ...Object.keys(given)]);
+  return Object.fromEntries([...agents].sort().map((agent) => [agent, Object.hasOwn(given, agent) ? [...(given[agent] ?? [])] : []]));
+}
+
+/** Every agent of the form with its list: the core keeps an unchanged list even for an agent that may no longer take skills. */
+export function skillsBody(form: SkillsForm): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(form).map(([agent, ids]) => [agent, [...ids]]));
 }
 
 /** Every agent of the form, `null` for "the router chooses": the core writes exactly this table. */

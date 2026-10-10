@@ -5,6 +5,8 @@ import { isSettingsPath, SETTINGS_PATH } from '../src/lib/route.ts';
 import {
   agentsBody,
   agentsForm,
+  skillsBody,
+  skillsForm,
   changeLines,
   charactersBody,
   chatId,
@@ -107,6 +109,13 @@ test("agents' models (D-116): every agent with a card, '' is the router, sent ba
   assert.deepEqual(form, { arianna: '', coder: 'opus' }, 'an agent without a card is not in the form');
   assert.deepEqual(agentsBody(form), { arianna: { model: null }, coder: { model: 'opus' } });
   assert.deepEqual(agentsBody({ arianna: '', coder: '' }), { arianna: { model: null }, coder: { model: null } });
+});
+
+test('skills of the agents (D-161): every agent with a card, an empty list for none, sent back whole', () => {
+  const form = skillsForm({ coder: ['anthropics/skills/pdf'], ghost: ['a/b/c'] }, { arianna: 'Arianna reads no skills', coder: null, writer: null });
+  assert.deepEqual(form, { arianna: [], coder: ['anthropics/skills/pdf'], ghost: ['a/b/c'], writer: [] }, 'an agent of the file keeps its list');
+  assert.deepEqual(skillsBody(form), form);
+  assert.deepEqual(skillsForm(undefined, undefined), {}, 'an older core: nothing');
 });
 
 test('a model of an agent says why it would not start a conversation now', () => {

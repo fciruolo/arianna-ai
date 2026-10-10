@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
 import {
   ApiError,
@@ -28,6 +28,8 @@ import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, PRIVACY_HINT, resolveSection, se
 import {
   agentsBody,
   agentsForm,
+  skillsBody,
+  skillsForm,
   charactersBody,
   chatId,
   fetchSiteOf,
@@ -60,6 +62,7 @@ import {
   voiceProblem,
   writeError,
   type AgentsForm,
+  type SkillsForm,
   type CloudModelsForm,
   type EndpointForm,
   type LocalServerStatus,
@@ -81,6 +84,7 @@ import {
 import type { CharacterListing, DirectAgent } from '../lib/types.ts';
 import AgentsSettings from './AgentsSettings.vue';
 import DesignCatalog from './DesignCatalog.vue';
+import SkillsCatalog from './SkillsCatalog.vue';
 import Icon from './Icon.vue';
 import ModelsSettings from './ModelsSettings.vue';
 import NotificationDevice from './NotificationDevice.vue';
@@ -126,6 +130,7 @@ interface Forms {
   characters: Record<string, string>;
   personas: Record<string, PersonaForm>;
   agents: AgentsForm;
+  skills: SkillsForm;
   sprites: SettingsValues['sprites'];
   participants: number;
   voice: VoiceForm;
@@ -138,13 +143,14 @@ interface Forms {
   fetchSites: string[];
 }
 
-function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: SettingsView['agentModels']): Forms {
+function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: SettingsView['agentModels'], agentSkills: SettingsView['agentSkills']): Forms {
   return {
     roles: { ...values.roles },
     cloudModels: cloudModelsForm(values.cloudModels),
     characters: { ...values.characters },
     personas: personasForm(values.personas),
     agents: agentsForm(values.agents, agentModels),
+    skills: skillsForm(values.skills, agentSkills),
     sprites: values.sprites,
     participants: values.participants,
     voice: voiceForm(values.voice, defaults),
@@ -158,7 +164,7 @@ function formsOf(values: SettingsValues, defaults: VoiceValues, agentModels: Set
   };
 }
 
-const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
+const SECTIONS: Section[] = ['roles', 'sprites', 'cloudModels', 'characters', 'personas', 'agents', 'skills', 'participants', 'voice', 'notifications', 'secretary', 'executors', 'telegram', 'projects', 'endpoints', 'fetchSites'];
 
 const view = ref<SettingsView | null>(null);
 const local = ref<LocalServerStatus[]>([]);
@@ -176,7 +182,7 @@ const confirmSpent = ref(false);
 /** Counts writes and applies: a read started before one of them is older than the page. */
 let generation = 0;
 
-const base = computed(() => (view.value?.values === null || view.value === null ? null : formsOf(view.value.values, view.value.voiceDefaults, view.value.agentModels)));
+const base = computed(() => (view.value?.values === null || view.value === null ? null : formsOf(view.value.values, view.value.voiceDefaults, view.value.agentModels, view.value.agentSkills)));
 
 function changed(section: Section): boolean {
   return forms.value !== null && base.value !== null && sectionChanged(section, forms.value[section], base.value[section]);
@@ -200,7 +206,7 @@ function apply(next: SettingsView, keep: readonly Section[] = []): void {
     forms.value = null;
     return;
   }
-  const fresh = formsOf(next.values, next.voiceDefaults, next.agentModels);
+  const fresh = formsOf(next.values, next.voiceDefaults, next.agentModels, next.agentSkills);
   if (old !== null) for (const section of kept) (fresh as unknown as Record<Section, unknown>)[section] = old[section];
   forms.value = fresh;
 }
@@ -248,7 +254,7 @@ function markSaved(section: Section): void {
 }
 
 /** The parts the Agenti card saves together, in one write (D-116); it is known by `agents`. */
-const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'participants'];
+const AGENT_PARTS: readonly OrdinarySection[] = ['characters', 'personas', 'agents', 'skills', 'participants'];
 
 /** Saves `parts` (by default the section alone) in one write; the card is known by `section`. False: not saved. */
 async function save(section: OrdinarySection, parts: readonly OrdinarySection[] = [section]): Promise<boolean> {
@@ -262,6 +268,8 @@ async function save(section: OrdinarySection, parts: readonly OrdinarySection[] 
   if (parts.includes('voice')) values.voice = voiceBody(current.voice);
   if (parts.includes('personas')) values.personas = personasBody(current.personas);
   if (parts.includes('agents')) values.agents = agentsBody(current.agents);
+  // An older core has no skills (D-161): nothing to send.
+  if (parts.includes('skills') && view.value?.values?.skills !== undefined) values.skills = skillsBody(current.skills);
   if (parts.includes('sprites')) values.sprites = current.sprites;
   if (parts.includes('participants')) values.participants = current.participants;
   if (parts.includes('notifications')) values.notifications = notificationsBody(current.notifications);
@@ -445,6 +453,8 @@ function resetAgents(): void {
   for (const part of AGENT_PARTS) reset(part);
   delete errors.value.agents;
 }
+/** The Agenti page: told when the catalog of skills changes, so its tab Skill reads it again (D-161). */
+const agentsPage = useTemplateRef<InstanceType<typeof AgentsSettings>>('agentsPage');
 /** Description and prompt of a user's agent changed and not saved: they live in the Agenti page only. */
 const agentTextsDirty = ref(false);
 /** "Apri una chat" from Agenti: the edits not saved are lost on the way, as when leaving the settings. */
@@ -834,6 +844,7 @@ watch(active, () => {
             <!-- Agents (D-116, D-133): the cards on the left, the chosen agent in tabs, one bar to save -->
             <AgentsSettings
               v-if="active === 'agents'"
+              ref="agentsPage"
               :form="forms"
               :base="base ?? forms"
               :view="view"
@@ -854,6 +865,8 @@ watch(active, () => {
             />
             <!-- The catalog of Open Design (D-160): styles for the Designer, adopted only after the summary -->
             <DesignCatalog v-if="active === 'agents'" />
+            <!-- The catalog of skills (D-161): sources from GitHub, adopted only after the summary; assigned in the tab Skill of an agent -->
+            <SkillsCatalog v-if="active === 'agents'" @changed="agentsPage?.skillsCatalogChanged()" />
 
             <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />

@@ -62,6 +62,7 @@ import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
+import type { SkillsCatalog } from '../skills-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
 import { ModelActionError, type ModelActions } from '../model-actions.ts';
@@ -159,6 +160,8 @@ export interface ApiServerOptions {
   huggingface?: HuggingFace;
   /** The catalog of Open Design (D-160): download, adopt, discard, read a style; without it the routes answer 404. */
   designCatalog?: DesignCatalog;
+  /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
+  skillsCatalog?: SkillsCatalog;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -951,6 +954,51 @@ function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
     }),
     route('GET', '/api/design-catalog/styles', () => Promise.resolve({ body: need().list() })),
     route('GET', '/api/design-catalog/styles/:slug', (_request, _url, params) => Promise.resolve({ body: { style: need().styleText(params.slug ?? '') } })),
+  ];
+}
+
+/**
+ * The catalog of skills in Impostazioni → Agenti (D-161): the sources with
+ * their status (polled while a download runs), add and remove a GitHub
+ * repository, "Scarica/Aggiorna" in the background (202), "Usa questa
+ * versione" with the commit the user saw, "Scarta", the list of skills and
+ * the text of one with its notice. A source is `owner/repo`, a skill
+ * `owner/repo/slug` in the query: the catalog checks both, no route takes a path.
+ */
+function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
+  const need = (): SkillsCatalog => {
+    if (catalog === undefined) throw new HttpError(404, 'not found');
+    return catalog;
+  };
+  return [
+    route('GET', '/api/skills-catalog', () => Promise.resolve({ body: need().status() })),
+    route('POST', '/api/skills-catalog/sources', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['url']);
+      return { status: 201, body: need().add(body.url) };
+    }),
+    route('POST', '/api/skills-catalog/remove', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().remove(body.source) };
+    }),
+    route('POST', '/api/skills-catalog/update', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { status: 202, body: need().update(body.source) };
+    }),
+    route('POST', '/api/skills-catalog/adopt', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source', 'commit']);
+      return { body: need().adopt(body.source, body.commit) };
+    }),
+    route('POST', '/api/skills-catalog/discard', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['source']);
+      return { body: need().discard(body.source) };
+    }),
+    route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
+    route('GET', '/api/skills-catalog/skill', (_request, url) => Promise.resolve({ body: { skill: need().text(url.searchParams.get('id') ?? '') } })),
   ];
 }
 
@@ -2196,6 +2244,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
   table.push(...designCatalogRoutes(options.designCatalog));
+  table.push(...skillsCatalogRoutes(options.skillsCatalog));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();

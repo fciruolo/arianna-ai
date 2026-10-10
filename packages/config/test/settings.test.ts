@@ -91,6 +91,14 @@ test('[cloud.models] is written with every alias, the agents\' models in [agents
   assert.doesNotMatch(renderSettings({ ...DEFAULT_SETTINGS, agents: { coder: {} } }), /^\[agents/m);
 });
 
+test('the skills of an agent are written in [agents] and read back (D-161)', () => {
+  const settings = { ...DEFAULT_SETTINGS, agents: { coder: { model: 'opus' as const, skills: ['anthropics/skills/pdf'] }, writer: { skills: ['a/b/c', 'a/b/d'] } } };
+  const text = renderSettings(settings);
+  assert.match(text, /^\[agents\.coder\]\nmodel = "opus"\nskills = \["anthropics\/skills\/pdf"\]\n\n\[agents\.writer\]\nskills = \["a\/b\/c", "a\/b\/d"\]$/m);
+  assert.deepEqual(readSettings(text, HOME, CATALOG).agents, settings.agents);
+  assert.doesNotMatch(renderSettings({ ...DEFAULT_SETTINGS, agents: { coder: { skills: [] } } }), /^\[agents/m);
+});
+
 test('a file with default of [cloud.models] is written back in the new form', () => {
   const old = renderSettings(DEFAULT_SETTINGS).replace(/^astra = true$/m, 'astra = true\ndefault = "opus"');
   const settings = readSettings(old, HOME, CATALOG);

@@ -10,7 +10,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { sheetUrl, type UploadedCharacter } from '../lib/api.ts';
+import { listSkills, sheetUrl, type UploadedCharacter } from '../lib/api.ts';
 import { agentEntries, changedAgents, filterEntries, TAB_TEXT, tabsOf, unsavedNames, type AgentEntry, type AgentFilter, type AgentParts, type AgentTab } from '../lib/agents-page.ts';
 import { agentName } from '../lib/italian.ts';
 import { labelWord, MODEL_TEXT } from '../lib/labels.ts';
@@ -30,6 +30,7 @@ import {
   TONES,
 } from '../lib/persona.ts';
 import { leaveAfterProblem, MAX_LEAVE_AFTER, modelBlocker, type CloudModelAlias, type SettingsView } from '../lib/settings.ts';
+import { filterSkills, skillLicenseText, skillRefusalText, skillsErrorText, withoutSkill, withSkill, type SkillSummary } from '../lib/skills-catalog.ts';
 import type { CharacterChoice, CharacterListing, DirectAgent } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -164,7 +165,45 @@ function choose(id: string): void {
 watch([current, tab], () => {
   const entry = current.value;
   if (entry !== undefined && !entry.official && tab.value === 'card') void loadTexts(entry.id);
+  if (tab.value === 'skills' && skillCatalog.value === null) void loadSkillCatalog();
 });
+
+// Skill (D-161): the skills of the catalog assigned to the agent, saved with the bar in [agents.<id>] skills
+const skillCatalog = ref<SkillSummary[] | null>(null);
+const skillCatalogError = ref('');
+const skillQuery = ref('');
+async function loadSkillCatalog(): Promise<void> {
+  try {
+    skillCatalog.value = (await listSkills()).skills;
+    skillCatalogError.value = '';
+  } catch (cause) {
+    skillCatalogError.value = skillsErrorText(cause);
+  }
+}
+/** The catalog changed (a source added, adopted or removed): read again when the tab is shown. */
+function skillsCatalogChanged(): void {
+  skillCatalog.value = null;
+  if (tab.value === 'skills') void loadSkillCatalog();
+}
+defineExpose({ skillsCatalogChanged });
+const skillsOf = (agent: string): string[] => props.form.skills?.[agent] ?? [];
+/** Why the agent takes no skills; undefined when it may (an older core says nothing: no tab content). */
+const skillRefusal = (agent: string): string | undefined => (props.view.agentSkills === undefined ? 'Il nucleo non gestisce ancora le skill: riavvialo dopo l’aggiornamento.' : skillRefusalText(props.view.agentSkills[agent]));
+const skillOf = (id: string): SkillSummary | undefined => skillCatalog.value?.find((item) => item.id === id);
+const skillChoices = computed(() => {
+  const agent = current.value?.id;
+  if (agent === undefined) return [];
+  const taken = skillsOf(agent);
+  return filterSkills(skillCatalog.value ?? [], skillQuery.value).filter((item) => !taken.includes(item.id)).slice(0, 40);
+});
+function assignSkill(agent: string, id: string): void {
+  if (props.form.skills === undefined) return;
+  props.form.skills[agent] = withSkill(skillsOf(agent), id);
+}
+function unassignSkill(agent: string, id: string): void {
+  if (props.form.skills === undefined) return;
+  props.form.skills[agent] = withoutSkill(skillsOf(agent), id);
+}
 
 // Look (D-118, D-123, D-132)
 const characterOptions = computed(() =>
@@ -691,6 +730,51 @@ const canChat = computed(() => current.value !== undefined && current.value.on &
               </div>
             </template>
           </div>
+        </section>
+
+        <!-- Skill (D-161): third-party text the agent reads in its delegations and local cards, as data -->
+        <section v-if="tab === 'skills'" class="hud-card flex flex-col gap-3 px-4 py-4" role="tabpanel">
+          <p v-if="skillRefusal(current.id)" class="text-[13px] text-muted">{{ skillRefusal(current.id) }}</p>
+          <template v-else>
+            <p class="text-xs text-muted">
+              Le skill assegnate entrano, dopo il suo prompt, nelle deleghe a questo agente (Claude, Codex o modello locale) e nelle card che lavora sul modello locale, come testo di terzi da consultare: mai come istruzione per Arianna, mai nelle chiamate vocali. Si salvano con la barra delle
+              modifiche, in <code class="font-mono">[agents.{{ current.id }}] skills</code> di <code class="font-mono">arianna.toml</code>. Sorgenti e aggiornamenti nella sezione Skill qui sotto.
+            </p>
+            <p v-if="skillsOf(current.id).length === 0" class="text-[13px]">Nessuna skill assegnata.</p>
+            <ul v-else class="m-0 flex list-none flex-col gap-1.5 p-0">
+              <li v-for="id in skillsOf(current.id)" :key="id" class="flex items-start gap-2 rounded-[10px] border border-line px-3 py-2 text-[13px]">
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span class="flex min-w-0 items-baseline gap-2">
+                    <span class="truncate font-medium">{{ skillOf(id)?.name ?? id }}</span>
+                    <span class="truncate font-mono text-[10.5px] text-muted">{{ id }}</span>
+                  </span>
+                  <span v-if="skillCatalog !== null && skillOf(id) === undefined" class="text-xs text-warn">Non è più nel catalogo in uso: non arriva all’agente finché non torna.</span>
+                  <span v-else-if="skillOf(id)" class="text-xs text-muted">{{ skillLicenseText(skillOf(id)?.license ?? null) }}</span>
+                </span>
+                <button type="button" class="btn shrink-0 px-2 py-0.5 text-xs" :aria-label="`Togli ${id}`" @click="unassignSkill(current.id, id)">Togli</button>
+              </li>
+            </ul>
+            <div class="flex flex-col gap-1.5">
+              <input v-model="skillQuery" type="search" class="field px-2.5 py-1.5 text-[13px]" placeholder="Cerca una skill da assegnare" aria-label="Cerca una skill da assegnare" />
+              <p v-if="skillCatalogError" class="text-xs text-danger" role="alert">{{ skillCatalogError }}</p>
+              <p v-else-if="skillCatalog === null" class="text-xs text-muted">Leggo il catalogo…</p>
+              <p v-else-if="skillCatalog.length === 0" class="text-xs text-muted">Il catalogo è vuoto: aggiungi e scarica una sorgente nella sezione Skill qui sotto.</p>
+              <p v-else-if="skillChoices.length === 0" class="text-xs text-muted">Nessuna skill con questa ricerca.</p>
+              <ul v-else class="m-0 flex max-h-[300px] list-none flex-col overflow-auto rounded-[10px] border border-line p-0">
+                <li v-for="item in skillChoices" :key="item.id" class="flex items-start gap-2 border-b border-line px-2.5 py-1.5 last:border-b-0">
+                  <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span class="flex min-w-0 items-baseline gap-2">
+                      <span class="truncate text-[13px] font-medium">{{ item.name }}</span>
+                      <span class="truncate font-mono text-[10.5px] text-muted">{{ item.id }}</span>
+                    </span>
+                    <span v-if="item.description" class="text-xs text-muted">{{ item.description }}</span>
+                    <span class="text-[11px] text-muted">{{ skillLicenseText(item.license) }}</span>
+                  </span>
+                  <button type="button" class="btn shrink-0 px-2 py-0.5 text-xs" :aria-label="`Assegna ${item.id}`" @click="assignSkill(current.id, item.id)">Assegna</button>
+                </li>
+              </ul>
+            </div>
+          </template>
         </section>
       </fieldset>
 
