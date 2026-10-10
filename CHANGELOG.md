@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Nel dettaglio di una card del Designer, i campi facoltativi "Stile" (uno stile del catalogo di Open Design adottato) e "Skill" (una o più skill del catalogo generale), scelti da un menu e salvati sulla card (D-163).
+- Quando la card del Designer parte, su Claude, Codex o in locale, lo stile e le skill scelti entrano nella consegna come blocco di dati con la loro licenza, entro i limiti di dimensione; uno stile o una skill non più nel catalogo si salta e la cronologia della card lo dice (D-163).
+
 ## [0.49.0] - 2026-10-10
 
 ### Cambiato
