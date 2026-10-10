@@ -745,7 +745,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
-          <template v-else-if="page === 'voice-trial'">Impostazioni / <b class="font-medium text-ink">Provino della voce</b></template>
+          <template v-else-if="page === 'voice-trial'">Impostazioni / Voce / <b class="font-medium text-ink">Provino della voce</b></template>
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
           <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
           <template v-else-if="page === 'changelog'">Impostazioni / <b class="font-medium text-ink">Novità</b></template>
@@ -862,7 +862,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <button type="button" class="btn px-2.5 py-1 text-xs" @click="store.closeStrayCall">Chiudila</button>
       </p>
 
-      <VoiceTrial v-if="page === 'voice-trial'" />
+      <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
       <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" />
       <ChangelogPage v-else-if="page === 'changelog'" />

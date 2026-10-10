@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEV_PATH, isSettingsPath, settingsPathFor, settingsSlug, VOICE_TRIAL_PATH } from '../src/lib/route.ts';
+import { DEV_PATH, isSettingsPath, settingsPathFor, settingsSlug } from '../src/lib/route.ts';
 import { BEHAVIOUR_TEXT, hrefOf, pendingTitles, resolveSection, sectionDirty, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
 
 const items = SETTINGS_INDEX.flatMap((group) => group.items);
@@ -37,7 +37,6 @@ test('the address names the section; none or an unknown one falls back to the fi
   assert.equal(resolveSection('non-esiste').item.id, 'models');
   assert.equal(resolveSection('non-esiste').explicit, false);
   // A page of its own is not a section of this page.
-  assert.equal(resolveSection('provino-della-voce').item.id, 'models');
   assert.equal(resolveSection('sviluppo').explicit, false);
 });
 
@@ -70,7 +69,6 @@ test('Modelli locali, Prove dei modelli and Modelli cloud are in Modelli (D-137)
 
 test('the entries lead to their section, or to their own page', () => {
   assert.equal(hrefOf(byId('servers')), '/impostazioni/server-locali');
-  assert.equal(hrefOf(byId('voice-trial')), VOICE_TRIAL_PATH);
   assert.equal(hrefOf(byId('dev-progress')), DEV_PATH);
 });
 
@@ -111,4 +109,10 @@ test('Aspetto holds the theme of this browser (D-158): its own address, no Salva
   assert.equal(BEHAVIOUR_TEXT.browser, 'Vale subito, solo in questo browser');
   assert.equal(sectionDirty('appearance', () => true), false);
   assert.notEqual(resolveSection('tema').item.id, 'appearance');
+});
+
+test('the voice trial is a button of Voce (D-066), not an entry of the index', () => {
+  assert.ok(!items.some((entry) => entry.id === 'voice-trial' || entry.page === '/voce/provino'));
+  // The old slug of the entry opens Voce, where the button is.
+  assert.deepEqual(resolveSection('provino-della-voce'), { item: byId('voice'), explicit: true });
 });
