@@ -86,7 +86,11 @@ export function checkCaptureUrl(value: string): string {
 export function linkInText(text: string): string | undefined {
   const match = /https?:\/\/[^\s<>"'`]+/i.exec(text);
   if (match === null) return undefined;
-  const candidate = match[0].replace(/[.,;:!?)\]}]+$/, '');
+  // Sentence punctuation, Markdown emphasis and closing quotes; a ")" only when unbalanced (Roma_(città) keeps it).
+  let candidate = match[0].replace(/[.,;:!?*_»”’…\]}]+$/, '');
+  while (candidate.endsWith(')') && (candidate.match(/\)/g) ?? []).length > (candidate.match(/\(/g) ?? []).length) {
+    candidate = candidate.slice(0, -1).replace(/[.,;:!?*_»”’…\]}]+$/, '');
+  }
   try {
     return checkCaptureUrl(candidate);
   } catch {
