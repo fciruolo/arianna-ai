@@ -133,6 +133,34 @@ export function cloudWarning(agent: string, project: string | undefined, targets
   return `Ogni messaggio va così com'è a ${providerText(targets)}${files}. Arianna non lo filtra. Per dati personali usa una conversazione privata. ${SESSION_COPY}`;
 }
 
+/**
+ * The same warning in three parts, for the window "Nuovo" (D-158): a short
+ * title, one sentence to read, and the details behind "Dettagli".
+ */
+export function cloudNotice(agent: string, project: string | undefined, targets: readonly CloudExecutorKind[] = ['claude']): { title: string; text: string; details: string } {
+  const files = project === undefined || project === '' ? '' : `Con i messaggi vanno i file del progetto ${project} che ${agentName(agent)} apre. `;
+  return {
+    title: `Va a ${providerText(targets)}`,
+    text: 'Ogni messaggio parte così com’è e Arianna non lo filtra: per dati personali usa una conversazione privata.',
+    details: `${files}${SESSION_COPY}`,
+  };
+}
+
+/**
+ * The arrows in a group of radio buttons (D-158): right and down choose the
+ * next option, left and up the previous one, Home and End the ends, round
+ * the corner; undefined for any other key.
+ */
+export function arrowChoice<T>(options: readonly T[], current: T, key: string): T | undefined {
+  if (options.length === 0) return undefined;
+  const at = Math.max(0, options.indexOf(current));
+  const step: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  if (key === 'Home') return options[0];
+  if (key === 'End') return options.at(-1);
+  const delta = step[key];
+  return delta === undefined ? undefined : options[(at + delta + options.length) % options.length];
+}
+
 /** The note of a direct chat with a local agent: nothing leaves the Mac. */
 export function localNote(agent: string): string {
   return `${agentName(agent)} risponde con il modello locale: niente esce dal Mac. Arianna non è in mezzo.`;

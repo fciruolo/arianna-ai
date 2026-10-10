@@ -15,6 +15,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - La voce "Chiama" esce dalla barra laterale (D-158, supera D-097 in questo punto).
 - Schermata della chiamata, chiamata in arrivo e ricevute nella chat dicono il nome di chi risponde: Arianna o l'agente della chat diretta (D-158).
 - Escono dalla barra laterale il selettore del tema e la riga degli agenti: la colonna Agenti si apre dal pulsante in alto a destra (D-158).
+- Finestra "Nuova conversazione" più larga e ordinata: le quattro schede non vanno mai a capo ("Agente" al posto di "Con un agente", due righe sotto i 640 px), frecce per cambiare scelta e Invio per aprire, nomi degli agenti con l'iniziale maiuscola, descrizioni delle schede ufficiali in italiano, avviso del cloud con titolo breve e "Dettagli", pulsante principale in colore d'accento (D-158).
 
 ### Corretto
 
