@@ -10,6 +10,7 @@ import {
   DEFAULT_PARAMS,
   fitView,
   folderSlots,
+  sourceTexts,
   frameDue,
   frameInterval,
   hubGlow,
@@ -322,4 +323,14 @@ test('the background: black without toggle on the dark theme, the choice on the 
   assert.deepEqual(sceneMode(true, true), { dark: true, toggle: false });
   assert.deepEqual(sceneMode(false, false), { dark: false, toggle: true });
   assert.deepEqual(sceneMode(false, true), { dark: true, toggle: true });
+});
+
+test('the knowledge page names what it shows: notes, or Arianna\'s documents read-only and private (D-155)', () => {
+  assert.equal(sourceTexts('kb').pages, 'note');
+  assert.equal(sourceTexts('kb').note, '');
+  const arianna = sourceTexts('arianna');
+  assert.equal(arianna.pages, 'pagine');
+  assert.match(arianna.note, /sola lettura/);
+  assert.match(arianna.note, /Privato/);
+  assert.notEqual(arianna.emptyText, sourceTexts('kb').emptyText);
 });

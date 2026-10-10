@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { canRead, isAtMost, labelForKbPage, labelForPath, maxLabel, type Context, type Label, type LabelRules } from '@arianna/policy';
 
+import { ARIANNA_DOCS_LABEL, ARIANNA_PAGES, AriannaDocsError, type AriannaDocs } from '../arianna-docs.ts';
 import { isProjectPagePath, KnowledgeError, type ProjectPages } from '../project-knowledge.ts';
 
 /**
@@ -56,9 +57,12 @@ export interface KbSearch {
   skippedAbove: boolean;
 }
 
+/** `kb`: only the pages of kb/, without the projects (D-145) and Arianna's documents (D-155). */
+export type KbScope = 'all' | 'kb';
+
 export interface Kb {
   read(path: string, context: Context): KbPage;
-  search(query: string, context: Context, limit?: number): KbSearch;
+  search(query: string, context: Context, limit?: number, scope?: KbScope): KbSearch;
   /** Writes a page under kb/inbox with the label of what it was written from. */
   write(path: string, content: string, label: Label, source: string): { path: string; label: Label };
 }
@@ -156,9 +160,22 @@ function snippetOf(body: string, words: readonly string[]): string {
  * read with the same rules as kb/ (folder label first, then the header);
  * never written by the tools: `kb.write` stays in kb/inbox.
  */
-export function createKb(options: { home: string; rules: LabelRules; projects?: ProjectPages }): Kb {
+export function createKb(options: { home: string; rules: LabelRules; projects?: ProjectPages; arianna?: AriannaDocs }): Kb {
   const root = join(options.home, KB_DIR);
   const projects = options.projects;
+  const arianna = options.arianna;
+
+  /** A page of Arianna's documents (D-155), at least L2 whatever it says. */
+  function loadAriannaPage(path: string): KbPage {
+    if (arianna === undefined) throw new KbError('not-found', `page ${path} not found`);
+    try {
+      const page = arianna.load(path);
+      return { path: page.path, label: maxLabel(ARIANNA_DOCS_LABEL, page.label), title: page.title, body: page.body };
+    } catch (error) {
+      if (error instanceof AriannaDocsError) throw new KbError(error.code === 'invalid' ? 'invalid-path' : 'not-found', error.message);
+      throw error;
+    }
+  }
 
   /** A page of a project, its errors as the tools' own. */
   function loadProjectPage(path: string): KbPage {
@@ -225,6 +242,15 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
   return {
     read(path, context) {
       const trimmed = path.trim();
+      if (trimmed.startsWith(`${ARIANNA_PAGES}/`)) {
+        const refuseArianna = () =>
+          new KbError('above-clearance', `page ${trimmed} is above what this conversation may read: Arianna's documents are private, open a private conversation`);
+        // L2 at least: below that clearance nothing is looked up, whether the page exists or not.
+        if (!canRead(context, ARIANNA_DOCS_LABEL)) throw refuseArianna();
+        const page = loadAriannaPage(trimmed);
+        if (!canRead(context, page.label)) throw refuseArianna();
+        return page;
+      }
       if (isProjectPagePath(trimmed)) {
         const refuseProject = () =>
           new KbError('above-clearance', `page ${trimmed} is above what this conversation may read: for private documents open a private conversation`);
@@ -247,15 +273,23 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
       return page;
     },
 
-    search(query, context, limit = 5) {
+    search(query, context, limit = 5, scope = 'all') {
       const words = terms(query);
       let skippedAbove = false;
       const scored: (KbHit & { score: number })[] = [];
       // The pages of kb/, then those of the projects (D-145), each with its folder label known before opening it.
       const pages: { path: string; folderLabel: Label; load: () => KbPage }[] = [
         ...list().map((path) => ({ path, folderLabel: labelForPath(options.rules, path), load: () => load(path) })),
-        ...(projects?.list() ?? []).map(({ path, folderLabel }) => ({ path, folderLabel, load: () => loadProjectPage(path) })),
+        ...(scope === 'kb' ? [] : (projects?.list() ?? [])).map(({ path, folderLabel }) => ({ path, folderLabel, load: () => loadProjectPage(path) })),
       ];
+      // Arianna's documents (D-155): L2 at least, so below that clearance they are not even listed,
+      // nor counted as skipped (every work search would end with the note on private pages).
+      if (scope === 'all' && arianna !== undefined && canRead(context, ARIANNA_DOCS_LABEL)) {
+        for (const page of arianna.list()) {
+          const label = maxLabel(ARIANNA_DOCS_LABEL, page.label);
+          pages.push({ path: page.path, folderLabel: label, load: () => ({ path: page.path, label, title: page.title, body: page.body }) });
+        }
+      }
       for (const { path, folderLabel, load: open } of pages) {
         // Folders above the clearance are skipped without opening their pages.
         if (!canRead(context, folderLabel)) {
@@ -284,6 +318,8 @@ export function createKb(options: { home: string; rules: LabelRules; projects?: 
     },
 
     write(path, content, label, source) {
+      // Arianna's documents (D-155) and the projects' notes are read-only for the tools.
+      if (path.trim().startsWith(`${ARIANNA_PAGES}/`)) throw new KbError('not-allowed', `Arianna's documents are read-only: pages can only be written under ${KB_INBOX}/`);
       const checked = checkPagePath(path);
       if (!checked.startsWith(`${KB_INBOX}/`)) {
         throw new KbError('not-allowed', `with autonomy A1 pages can only be written under ${KB_INBOX}/`);

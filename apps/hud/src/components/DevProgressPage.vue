@@ -90,7 +90,7 @@ const pending = computed(() => pendingCount(progress.value?.questions ?? []));
 const pendingLabel = computed(() => pendingText(pending.value));
 const pendingDot = computed(() => pendingBadge(pending.value));
 
-const emit = defineEmits<{ pending: [count: number] }>();
+const emit = defineEmits<{ pending: [count: number]; knowledge: [] }>();
 watch(pending, (count) => {
   if (progress.value !== null) emit('pending', count);
 });
@@ -184,6 +184,15 @@ onMounted(refresh);
           <Icon name="system" :size="16" />
           <h1 id="dev-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Sviluppo di Arianna</h1>
           <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">dai documenti di docs/ · resta qui</span>
+          <button
+            type="button"
+            class="rounded-md p-1.5 text-muted hover:text-ink"
+            title="Leggi i documenti nella Conoscenza (fonte Arianna)"
+            aria-label="Leggi i documenti nella Conoscenza"
+            @click="emit('knowledge')"
+          >
+            <Icon name="knowledge" :size="15" />
+          </button>
           <button type="button" class="rounded-md p-1.5 text-muted hover:text-ink" title="Rileggi i documenti" aria-label="Rileggi i documenti" @click="refresh">
             <Icon name="retry" :size="15" />
           </button>

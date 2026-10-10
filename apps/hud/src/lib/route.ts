@@ -65,9 +65,24 @@ export function isThoughtsPath(pathname: string): boolean {
   return pathname === THOUGHTS_PATH || pathname === `${THOUGHTS_PATH}/`;
 }
 
-/** The knowledge page with a node selected (D-090): `/conoscenza?nota=inbox/x.md`. */
-export function knowledgePathFor(nodeId: string): string {
-  return `${KNOWLEDGE_PATH}?${new URLSearchParams({ nota: nodeId }).toString()}`;
+/** What the knowledge page shows: the user's notes (kb/) or Arianna's own documents (D-155). */
+export type KnowledgeSource = 'kb' | 'arianna';
+
+/**
+ * The knowledge page with a node selected (D-090): `/conoscenza?nota=inbox/x.md`;
+ * with Arianna's documents (D-155) `fonte=arianna` comes first.
+ */
+export function knowledgePathFor(nodeId?: string, source: KnowledgeSource = 'kb'): string {
+  const params = new URLSearchParams();
+  if (source === 'arianna') params.set('fonte', 'arianna');
+  if (nodeId !== undefined) params.set('nota', nodeId);
+  const query = params.toString();
+  return query === '' ? KNOWLEDGE_PATH : `${KNOWLEDGE_PATH}?${query}`;
+}
+
+/** The source the address of the knowledge page asks for: anything but `fonte=arianna` is the notes. */
+export function knowledgeSource(search: string): KnowledgeSource {
+  return new URLSearchParams(search).get('fonte')?.trim().toLowerCase() === 'arianna' ? 'arianna' : 'kb';
 }
 
 /** The node the address of the knowledge page selects, or undefined. */

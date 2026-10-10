@@ -12,6 +12,7 @@ import {
   OFFICE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  knowledgeSource,
   pathFor,
   THOUGHTS_PATH,
 } from '../src/lib/route.ts';
@@ -49,6 +50,18 @@ test('the thoughts page and the knowledge page with a node selected (D-090)', ()
   assert.equal(knowledgeFocus(path.slice(path.indexOf('?'))), 'inbox/2026 pane.md');
   assert.equal(knowledgeFocus(''), undefined);
   assert.equal(knowledgeFocus('?nota='), undefined);
+});
+
+test('the knowledge page of Arianna\'s own documents has its address, anything else is the notes (D-155)', () => {
+  assert.equal(knowledgePathFor(), '/conoscenza');
+  assert.equal(knowledgePathFor(undefined, 'arianna'), '/conoscenza?fonte=arianna');
+  const path = knowledgePathFor('arianna/decisioni/D-145.md', 'arianna');
+  assert.equal(path, '/conoscenza?fonte=arianna&nota=arianna%2Fdecisioni%2FD-145.md');
+  const search = path.slice(path.indexOf('?'));
+  assert.equal(knowledgeSource(search), 'arianna');
+  assert.equal(knowledgeFocus(search), 'arianna/decisioni/D-145.md');
+  assert.equal(knowledgeSource('?fonte=ARIANNA'), 'arianna');
+  for (const other of ['', '?fonte=', '?fonte=kb', '?fonte=docs', '?nota=arianna%2Fx.md']) assert.equal(knowledgeSource(other), 'kb', other);
 });
 
 test('the office has its own address, and nothing else is the office', () => {

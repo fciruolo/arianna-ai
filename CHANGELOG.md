@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Conoscenza: la fonte "Arianna" con i documenti di sviluppo (decisioni una per pagina, proposte, specifiche, novità) letti direttamente da `docs/` e `CHANGELOG.md`, in sola lettura e Privati (L2); Arianna li cerca e li legge con `kb.search` e `kb.read` come `arianna/…`, mai in una conversazione di lavoro (D-155).
+
 ## [0.40.4] - 2026-10-10
 
 ### Corretto

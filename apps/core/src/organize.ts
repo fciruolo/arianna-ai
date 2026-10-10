@@ -337,8 +337,8 @@ export async function organizeNote(env: OrganizeEnv, path: string, signal: Abort
 
   // The closest notes, with the clearance of the private chat: never L3.
   const hits: KbHit[] = env.kb
-    .search(text.slice(0, MAX_QUERY), createContext('L2'), RELATED_LIMIT + 1)
-    // Notes of kb/ only: the pages of the projects (D-145) are not linked from the inbox.
+    .search(text.slice(0, MAX_QUERY), createContext('L2'), RELATED_LIMIT + 1, 'kb')
+    // Notes of kb/ only: the pages of the projects (D-145) and Arianna's documents (D-155) are not linked from the inbox.
     .hits.filter((hit) => hit.path !== path && hit.path.startsWith('kb/') && isAtMost(hit.label, 'L2'))
     .slice(0, RELATED_LIMIT);
   const label = maxLabel(ownLabel, ...hits.map((hit) => hit.label));
