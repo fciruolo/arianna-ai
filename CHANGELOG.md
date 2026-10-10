@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.40.3] - 2026-10-10
+
 ### Cambiato
 
 - L'hook pre-commit rifiuta un commit che contiene ancora i segni di un conflitto di unione (`<<<<<<<`, `=======`, `>>>>>>>`), anche nei file che `pnpm check` non legge come il CHANGELOG (D-018).
