@@ -294,11 +294,24 @@ export function readNote(home: string, rules: LabelRules, name: string): Note {
     ...note,
     organizedAt: fields.get('organized_at') ?? null,
     // A link pasted as a thought has no `url` in its header: the first address of its text (D-154).
-    url: fields.get('url') ?? (fields.get('kind') === 'link' ? (linkInText(parsePage(raw).body) ?? null) : null),
+    url: fields.get('url') ?? (fields.get('kind') === 'link' ? (linkInText(userText(raw, fields.get('status'))) ?? null) : null),
     fetchedAt: fields.get('fetched_at') ?? null,
     fetchFailed: fetchFailed !== undefined && /^[a-z-]{1,40}$/.test(fetchFailed) ? fetchFailed : null,
     body: parsePage(raw).body,
   };
+}
+
+/**
+ * The text the user wrote: the whole body of a note not organized yet, only
+ * the "Testo originale" section of an organized one (never the summary the
+ * model wrote, which could name another address). Empty when it is missing.
+ */
+function userText(raw: string, status: string | undefined): string {
+  const body = parsePage(raw).body;
+  if (status !== 'organized') return body;
+  const heading = '## Testo originale\n';
+  const at = body.startsWith(heading) ? 0 : body.indexOf(`\n${heading}`);
+  return at < 0 ? '' : body.slice(at + (at === 0 ? 0 : 1) + heading.length);
 }
 
 /** The header fields of a capture kept when the note is organized, each checked again: the file may have been edited. */
