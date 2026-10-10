@@ -33,6 +33,7 @@ import {
 import { agentName } from '../lib/italian.ts';
 import { LABEL_TEXT } from '../lib/labels.ts';
 import CardDetail from './CardDetail.vue';
+import FilterMenu from './FilterMenu.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 
@@ -123,10 +124,31 @@ const SORT_MENU: { value: SortKey; text: string }[] = [
 ];
 const sortMenuValue = computed(() => (SORT_MENU.some((item) => item.value === state.value.sort.key) ? state.value.sort.key : ''));
 
-function chooseSort(event: Event): void {
-  const key = (event.target as HTMLSelectElement).value as SortKey;
-  state.value.sort = { key, desc: startsDescending(key) };
-}
+/** The order as a menu: the four orders, plus the one a header of the list chose. */
+const sortChoice = computed({
+  get: () => sortMenuValue.value,
+  set: (key: string) => {
+    if (key !== '') state.value.sort = { key: key as SortKey, desc: startsDescending(key as SortKey) };
+  },
+});
+const sortOptions = computed(() => (sortMenuValue.value === '' ? [{ value: '', text: 'Ordine della lista' }, ...SORT_MENU] : SORT_MENU));
+
+// The options of the filter chips, in the words of the wall.
+const KIND_OPTIONS = [
+  { value: 'all', text: 'Card e impegni' },
+  { value: 'task', text: 'Card' },
+  { value: 'commitment', text: 'Impegni' },
+];
+const projectOptions = computed(() => [
+  { value: 'all', text: 'Tutti i progetti' },
+  { value: 'general', text: 'Generali' },
+  ...projectNames.value.map((name) => ({ value: `p:${name}`, text: name })),
+]);
+const assigneeOptions = computed(() => [
+  { value: 'all', text: 'Chiunque' },
+  { value: 'user', text: 'Tu' },
+  ...agentNames.value.map((agent) => ({ value: `a:${agent}`, text: agentName(agent) })),
+]);
 
 function sortBy(key: SortKey): void {
   const sort = state.value.sort;
@@ -248,6 +270,9 @@ const PRIORITY_FILTERS = [
   { value: '1', text: 'Bassa' },
   { value: '0', text: 'Senza priorità' },
 ] as const;
+const priorityOptions = [{ value: 'all', text: 'Ogni priorità' }, ...PRIORITY_FILTERS];
+const dueOptions = DUE_FILTERS.map((item) => ({ value: item.value, text: item.value === 'all' ? 'Ogni scadenza' : item.text }));
+const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS];
 </script>
 
 <template>
@@ -264,53 +289,35 @@ const PRIORITY_FILTERS = [
         </button>
       </div>
       <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
-        <select v-model="state.filters.project" class="field px-2 py-1 text-[12.5px]" aria-label="Progetto">
-          <option value="all">Tutti i progetti</option>
-          <option value="general">Generali</option>
-          <option v-for="name in projectNames" :key="name" :value="`p:${name}`">{{ name }}</option>
-        </select>
-        <select v-model="state.filters.kind" class="field px-2 py-1 text-[12.5px]" aria-label="Tipo">
-          <option value="all">Card e impegni</option>
-          <option value="task">Card</option>
-          <option value="commitment">Impegni</option>
-        </select>
-        <select v-model="state.filters.assignee" class="field px-2 py-1 text-[12.5px]" aria-label="Chi la fa">
-          <option value="all">Chiunque</option>
-          <option value="user">Tu</option>
-          <option v-for="agent in agentNames" :key="agent" :value="`a:${agent}`">{{ agentName(agent) }}</option>
-        </select>
-        <select v-model="state.filters.priority" class="field px-2 py-1 text-[12.5px]" aria-label="Priorità">
-          <option value="all">Ogni priorità</option>
-          <option v-for="item in PRIORITY_FILTERS" :key="item.value" :value="item.value">{{ item.text }}</option>
-        </select>
-        <select v-model="state.filters.due" class="field px-2 py-1 text-[12.5px]" aria-label="Scadenza">
-          <option v-for="item in DUE_FILTERS" :key="item.value" :value="item.value">{{ item.value === 'all' ? 'Ogni scadenza' : item.text }}</option>
-        </select>
-        <select v-model="state.filters.label" class="field px-2 py-1 text-[12.5px]" aria-label="Etichetta">
-          <option value="all">Ogni etichetta</option>
-          <option v-for="item in LABEL_FILTERS" :key="item.value" :value="item.value">{{ item.text }}</option>
-        </select>
-        <button v-if="filtersActive(state.filters)" type="button" class="rounded-md px-2 py-1 text-[12px] text-muted hover:bg-surface-2 hover:text-ink" @click="resetFilters">Togli i filtri</button>
+        <FilterMenu v-model="state.filters.project" label="Progetto" icon="project" :options="projectOptions" />
+        <FilterMenu v-model="state.filters.kind" label="Tipo" icon="card-body" :options="KIND_OPTIONS" />
+        <FilterMenu v-model="state.filters.assignee" label="Chi la fa" icon="coder" :options="assigneeOptions" />
+        <FilterMenu v-model="state.filters.priority" label="Priorità" icon="priority" :options="priorityOptions" />
+        <FilterMenu v-model="state.filters.due" label="Scadenza" icon="calendar" :options="dueOptions" />
+        <FilterMenu v-model="state.filters.label" label="Etichetta" icon="private" :options="labelOptions" />
+        <button
+          v-if="filtersActive(state.filters)"
+          type="button"
+          class="grid size-[30px] place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
+          title="Togli i filtri"
+          aria-label="Togli i filtri"
+          @click="resetFilters"
+        >
+          <Icon name="close" :size="14" />
+        </button>
       </div>
       <div class="ml-auto flex items-center gap-2">
-        <label class="flex items-center gap-1.5 text-[12.5px] text-muted">
-          <Icon name="sort" :size="14" />
-          <select class="field px-2 py-1 text-[12.5px] text-ink" :value="sortMenuValue" aria-label="Ordina per" @change="chooseSort">
-            <option v-if="sortMenuValue === ''" value="" disabled>Ordine della lista</option>
-            <option v-for="item in SORT_MENU" :key="item.value" :value="item.value">{{ item.text }}</option>
-          </select>
-        </label>
-        <details v-if="state.view === 'board'" class="relative">
-          <summary class="btn cursor-pointer list-none px-3 py-1.5 text-[13px] [&::-webkit-details-marker]:hidden"><Icon name="cardwall" :size="14" />Colonne</summary>
-          <div class="absolute top-full right-0 z-20 mt-1.5 flex w-[240px] flex-col gap-1 rounded-xl border border-line-strong bg-surface p-3 text-[13px] shadow-[0_14px_40px_#0006]">
+        <FilterMenu v-model="sortChoice" label="Ordina per" icon="sort" :options="sortOptions" plain align-right />
+        <FilterMenu v-if="state.view === 'board'" label="Colonne" icon="cardwall" icon-only align-right>
+          <div class="flex w-[220px] flex-col gap-1.5 text-[13px]">
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
-            <p class="hud-title mt-2 mb-1">Mostra</p>
+            <p class="hud-title mt-2 mb-0.5">Mostra</p>
             <label v-for="column in allColumns" :key="column.id" class="flex items-center gap-2">
               <input type="checkbox" class="accent-[var(--accent)]" :checked="!state.prefs.hidden.includes(column.id)" @change="toggleHidden(column.id)" />{{ column.title }}
             </label>
           </div>
-        </details>
+        </FilterMenu>
       </div>
     </div>
 
