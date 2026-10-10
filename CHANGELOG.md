@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.43.0] - 2026-10-10
+
 ### Aggiunto
 
 - I link salvati in Conoscenza si scaricano e si riassumono col modello locale: la nota ha Riassunto, Punti chiave, Contesto, il contenuto citato e il testo originale; per i post di X il testo arriva dall'oEmbed ufficiale di X (D-154).
