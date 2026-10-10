@@ -8,6 +8,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - «Proponi bozza» nella scheda «Regole» di Progetti: il modello comune, le regole ricavate dai file del progetto (gestore di pacchetti, controlli da eseguire, file di stile, parti) e le convenzioni dei framework proposte dal modello locale; la bozza si rilegge e si salva (D-175, I-14 R2).
 
+### Cambiato
+
+- Il Reviewer controlla le modifiche anche rispetto alle regole del progetto e nomina ogni regola non rispettata (D-175, I-14 R3).
+
 ## [0.62.0] - 2026-10-11
 
 ### Aggiunto

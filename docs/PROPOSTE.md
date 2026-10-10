@@ -2623,8 +2623,17 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 
 **Scelte dell'utente** (domande a opzioni del 2026-10-11): (1) **nessun commit**: le modifiche restano nella cartella da rivedere e il commit lo fa l'utente; Arianna lo garantisce con il confinamento (`.git` in sola lettura per Claude e per Codex), non con un interruttore; (2) codice "che non sembri scritto da un'IA" = **niente tracce e stile del progetto** (niente firme o commenti tipo "generato da", commenti solo dove servono, nomi e formattazione come il codice che c'è già): è una regola di testo, il punto di partenza del modello comune; (3) **modello comune nelle Impostazioni** (pagina "Regole dei progetti"), regole proprie del progetto nella pagina Progetti. Dettagli in D-174.
 
+- **R3, prima parte (costruita sul ramo `task/regole-bozza`):** il Reviewer, che riceve già le regole in testa alla delega, controlla il diff anche rispetto a loro (`agents/reviewer.md`).
 - **R2 (costruita, D-175):** «Proponi bozza» su richiesta, nessun blocco (scelta dell'utente del 2026-10-11): regole dei fatti scritte dal codice, convenzioni dei framework dal modello locale.
 - **R1 (fatta, D-174):** `[project_rules]` di `arianna.toml`, modello comune e regole proprie, in testa a ogni delega su Claude e Codex; `.git` in sola lettura. Il parallelismo secondo la quota resta per dopo (un'impostazione dell'orchestratore, non del testo).
+
+**Domande per l'utente.**
+1. **Esportare le regole in `CLAUDE.md` e `AGENTS.md` del progetto?**
+   - Contesto: Le regole stanno in Arianna (D-174). Quando lanci tu Claude Code o Codex nella cartella del progetto, fuori da Arianna, non le vedono. Un pulsante «Esporta» scriverebbe le stesse regole nei due file del repository: è una comodità, Arianna continua a leggere le sue. Scrive però file nel tuo repository, che poi finiscono nei tuoi commit.
+   - Opzione consigliata: Pulsante, solo su richiesta — «Esporta in CLAUDE.md e AGENTS.md» nella scheda Regole, con l'anteprima e la tua conferma ogni volta; i file esistenti si sostituiscono solo se li aveva scritti Arianna.
+   - Opzione: Non serve — Le regole restano solo in Arianna; fuori da Arianna usi i tuoi file come oggi.
+   - Opzione: Sempre aggiornati — Ogni salvataggio delle regole riscrive i due file del progetto da solo.
+   - Esempio: In progetto-test-admin premi «Esporta»: compare l'anteprima di CLAUDE.md con «Commenti in inglese» e «Usa pnpm, mai npm o yarn»; confermi e il file c'è, da committare tu.
 
 ### I-15, il diario dei lavori (richiesta dell'utente del 2026-10-09)
 
