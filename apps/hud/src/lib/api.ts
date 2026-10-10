@@ -1,4 +1,5 @@
 import type { CallInfo } from './calls.ts';
+import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
 import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts';
 import type { GraphData, KnowledgePage } from './graph.ts';
@@ -913,4 +914,63 @@ export async function startService(project: string, service: string, fingerprint
 
 export async function stopService(project: string, service: string): Promise<ServiceLog | null> {
   return (await call<{ run: ServiceLog | null }>('POST', `${browse(project)}/services/stop`, { service })).run;
+}
+
+// ---------------------------------------------------------------------------
+// The clients (I-16, D-168): private (L2), only between this page and the core.
+// ---------------------------------------------------------------------------
+
+/** Every client, archived included, and the approved projects a client may take. */
+export async function listClients(): Promise<{ clients: ClientSummary[]; projects: string[] }> {
+  return call<{ clients: ClientSummary[]; projects: string[] }>('GET', '/api/clients');
+}
+
+export async function readClient(id: string): Promise<Client> {
+  return (await call<{ client: Client }>('GET', `/api/clients/${encodeURIComponent(id)}`)).client;
+}
+
+export async function createClient(form: ClientForm): Promise<string> {
+  return (await call<{ client: { id: string } }>('POST', '/api/clients', form)).client.id;
+}
+
+export async function updateClient(id: string, form: Partial<ClientForm>): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}`, form);
+}
+
+export async function archiveClient(id: string, archived: boolean): Promise<void> {
+  await call('POST', `/api/clients/${encodeURIComponent(id)}/archive`, { archived });
+}
+
+export async function addClientContact(id: string, contact: ContactForm): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts`, contact)).contact;
+}
+
+export async function updateClientContact(id: string, contactId: string, contact: Partial<ContactForm>): Promise<ClientContact> {
+  return (await call<{ contact: ClientContact }>('POST', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, contact)).contact;
+}
+
+export async function removeClientContact(id: string, contactId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, {});
+}
+
+export async function linkClientProject(id: string, project: string): Promise<ClientProject> {
+  return (await call<{ project: ClientProject }>('POST', `/api/clients/${encodeURIComponent(id)}/projects`, { project })).project;
+}
+
+export async function unlinkClientProject(id: string, linkId: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/projects/${encodeURIComponent(linkId)}`, {});
+}
+
+/** The logo as base64 in JSON (the core takes only JSON); the core checks the bytes again. */
+export async function uploadClientLogo(id: string, type: string, data: string): Promise<ClientLogo> {
+  return (await call<{ logo: ClientLogo }>('POST', `/api/clients/${encodeURIComponent(id)}/logo`, { type, data })).logo;
+}
+
+export async function removeClientLogo(id: string): Promise<void> {
+  await call('DELETE', `/api/clients/${encodeURIComponent(id)}/logo`, {});
+}
+
+/** The client of a project, for the header of "Progetti"; null when none has it. */
+export async function clientOfProject(project: string): Promise<{ id: string; displayName: string; logo: ClientLogo | null } | null> {
+  return (await call<{ client: { id: string; displayName: string; logo: ClientLogo | null } | null }>('GET', `/api/clients/of-project/${encodeURIComponent(project)}`)).client;
 }

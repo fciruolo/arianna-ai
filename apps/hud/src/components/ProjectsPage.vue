@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
+import { clientOfProject, listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   agoText,
@@ -20,6 +20,7 @@ import {
   sizeText,
   vscodeUrl,
   partTitle,
+  projectFromSearch,
   type BrowsableContainer,
   type BrowsableProject,
   type CommitDiff,
@@ -29,6 +30,7 @@ import {
   type ServiceState,
   type TreeEntry,
 } from '../lib/projects.ts';
+import { initialsOf, logoUrl, type ClientLogo } from '../lib/clients.ts';
 import Icon from './Icon.vue';
 import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
 
@@ -43,6 +45,8 @@ import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
  * parts (the container itself when it is one git), "Conoscenza" its
  * management folders and notes.
  */
+
+const emit = defineEmits<{ client: [id: string] }>();
 
 const projects = ref<BrowsableProject[] | null>(null);
 const containers = ref<BrowsableContainer[] | null>(null);
@@ -360,10 +364,25 @@ onMounted(async () => {
     const found = await listBrowsableProjects();
     projects.value = found.projects;
     containers.value = found.containers;
-    const first = found.containers[0];
+    // The address may name a project (from the page of its client, D-168).
+    const named = projectFromSearch(window.location.search);
+    const first = found.containers.find((item) => item.name === named) ?? found.containers[0];
     if (first !== undefined) chooseContainer(first.name);
   } catch (cause) {
     problem.value = browseErrorText(cause);
+  }
+});
+
+// The client of the container (D-168): name and logo in the header, a link to its page.
+const client = ref<{ id: string; displayName: string; logo: ClientLogo | null } | null>(null);
+watch(chosenContainer, async (name) => {
+  client.value = null;
+  if (name === null) return;
+  try {
+    const found = await clientOfProject(name);
+    if (chosenContainer.value === name) client.value = found;
+  } catch {
+    // Without the client the header is as before.
   }
 });
 
@@ -458,6 +477,11 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             </div>
           </div>
           <p class="flex flex-wrap items-center gap-x-2.5 font-mono text-xs text-muted">
+            <button v-if="client" type="button" class="inline-flex items-center gap-1.5 rounded-md font-sans text-[12.5px] text-ink hover:text-accent" title="Apri la scheda del cliente" @click="emit('client', client.id)">
+              <img v-if="client.logo" :src="logoUrl(client.id, client.logo) ?? ''" alt="" class="size-4 rounded-[3px] object-contain" />
+              <span v-else class="grid size-4 place-items-center rounded-[3px] bg-surface-2 text-[8px] font-semibold text-muted">{{ initialsOf(client.displayName) }}</span>
+              {{ client.displayName }}
+            </button>
             <span class="truncate">{{ project?.absolute ?? container.absolute }}</span>
             <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
               <Icon name="code" :size="13" />Apri in VS Code

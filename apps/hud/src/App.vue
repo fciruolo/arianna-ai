@@ -18,6 +18,7 @@ import NewConversationDialog from './components/NewConversationDialog.vue';
 import OfficePage from './components/OfficePage.vue';
 import ProjectsPage from './components/ProjectsPage.vue';
 import CardwallPage from './components/CardwallPage.vue';
+import ClientsPage from './components/ClientsPage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
 import ChangelogPage from './components/ChangelogPage.vue';
@@ -38,7 +39,8 @@ import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitA
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
-import { isProjectsPath, PROJECTS_PATH } from './lib/projects.ts';
+import { isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projects.ts';
+import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
@@ -328,9 +330,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'cardwall'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'cardwall', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -410,9 +412,18 @@ function openOffice(): void {
   openPage('office', OFFICE_PATH, 'Ufficio');
 }
 
-/** An approved project, read only (D-134). */
-function openProjects(): void {
-  openPage('projects', PROJECTS_PATH, 'Progetti');
+/** An approved project, read only (D-134); `name` opens that one (from a client's page, D-168). */
+function openProjects(name?: string): void {
+  openPage('projects', projectsPathFor(name), 'Progetti');
+}
+
+/** The client open in "Clienti" (D-168), from the address `/clienti/<id>`; null is the list. */
+const clientShown = ref<string | null>(null);
+
+/** The clients (I-16, D-168): the list, or one client. */
+function openClients(id: string | null = null): void {
+  clientShown.value = id;
+  openPage('clients', clientPathFor(id), 'Clienti');
 }
 
 /** The cards and the commitments in columns (I-13, D-152). */
@@ -500,7 +511,11 @@ function followAddress(): void {
     return;
   }
   if (isProjectsPath(window.location.pathname)) {
-    openProjects();
+    openProjects(projectFromSearch(window.location.search));
+    return;
+  }
+  if (isClientsPath(window.location.pathname)) {
+    openClients(clientFromPath(window.location.pathname) ?? null);
     return;
   }
   if (isCardwallPath(window.location.pathname)) {
@@ -697,7 +712,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @thoughts="openThoughts"
       @knowledge="openKnowledge()"
       @office="openOffice"
-      @projects="openProjects"
+      @projects="openProjects()"
+      @clients="openClients()"
       @cardwall="openCardwall"
       @settings="openSettings"
       @open="openConversation"
@@ -754,6 +770,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
+          <template v-else-if="page === 'clients'">Arianna / <b class="font-medium text-ink">Clienti</b></template>
           <template v-else-if="page === 'cardwall'">Arianna / <b class="font-medium text-ink">Cardwall</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
@@ -869,7 +886,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
-      <ProjectsPage v-else-if="page === 'projects'" />
+      <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
+      <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
       <OfficePage
         v-else-if="page === 'office'"

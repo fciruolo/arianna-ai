@@ -4,6 +4,11 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- La pagina "Clienti" (`/clienti`): anagrafica completa per fatturare in Italia e all'estero (partita IVA e codice fiscale con il controllo, partita IVA UE, codice SDI, PEC, IPA per la pubblica amministrazione, indirizzi, pagamenti, IBAN), contatti con un principale, progetti collegati e logo; tutto Privato (L2), solo su questo computer (D-168, I-16 C1).
+- Nell'intestazione di "Progetti" il nome e il logo del cliente del progetto, con il collegamento alla sua scheda (D-168).
+
 ## [0.54.0] - 2026-10-10
 
 ### Aggiunto
