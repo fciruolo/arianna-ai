@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.62.0] - 2026-10-11
+
 ### Aggiunto
 
 - Le regole dei progetti: un modello comune in Impostazioni → Regole dei progetti e regole proprie per progetto nella scheda «Regole» di Progetti; Arianna le mette in testa a ogni lavoro di Claude o di Codex sul progetto, uguali per tutti e due (D-174, I-14 R1).
