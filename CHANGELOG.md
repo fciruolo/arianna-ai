@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- La conversazione della Segretaria ha il suo indirizzo `/segretaria`: il pulsante porta lì, una ricarica la riapre senza una sessione nuova, un vecchio `/c/<id>` diventa `/segretaria` (D-156).
+- Sopra la chat della Segretaria un mini cardwall: In ritardo, Oggi, Domani, Prossimi giorni (+N più avanti), con gli impegni e le card tue che hanno una data, la riga «Fatti oggi» dove trascinare per segnare fatto e «Apri il cardwall →»; richiudibile, la scelta resta nel browser (D-156).
+
+### Cambiato
+
+- Il vecchio elenco degli impegni sopra la chat della Segretaria è sostituito dal mini cardwall; il clic apre lo stesso dettaglio del cardwall (D-156).
+
 ## [0.41.0] - 2026-10-10
 
 ### Aggiunto

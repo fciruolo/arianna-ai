@@ -610,6 +610,16 @@ export async function openSecretary(sql: Sql): Promise<Conversation> {
   });
 }
 
+/**
+ * The secretary's conversation as it is, for the address `/segretaria` of the
+ * chat (D-156): read only, never created and never a new session (only the
+ * button opens one, D-146). Undefined before the first click.
+ */
+export async function findSecretary(sql: Queryable): Promise<Conversation | undefined> {
+  const [row] = await sql<{ id: string }[]>`SELECT id::text FROM conversations WHERE secretary AND purged_at IS NULL`;
+  return row === undefined ? undefined : loadConversation(sql, row.id);
+}
+
 export async function isSecretaryConversation(sql: Queryable, conversationId: string | null): Promise<boolean> {
   if (conversationId === null) return false;
   const [row] = await sql<{ secretary: boolean }[]>`SELECT secretary FROM conversations WHERE id = ${conversationId}`;

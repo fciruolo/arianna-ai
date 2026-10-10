@@ -52,6 +52,7 @@ import {
   isKnowledgePath,
   isNewAgentPath,
   isOfficePath,
+  isSecretaryPath,
   isSettingsPath,
   isThoughtsPath,
   isVoiceTrialPath,
@@ -73,7 +74,7 @@ import type { Activity, Approval } from './lib/types.ts';
 import { createChatStore } from './store.ts';
 
 const store = createChatStore();
-const { commitmentsVersion, cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
+const { cardsVersion, officeSignals, conversations, archived, systemChats, failure, chat, draft, current, tasks, credits, activityCounts, approvals, participants, models, projects, directAgents, remoteDecisions, status, characters, live, error, sending, notice, toasts } = store;
 const { calls, voiceState, callSession, callStarting, callError, strayCall, incoming } = store;
 const { incognitoEnd, incognitoSoon, ending } = store;
 
@@ -511,6 +512,11 @@ function followAddress(): void {
     return;
   }
   page.value = 'chat';
+  // The secretary's own address (D-156): its conversation, without a new session (D-146).
+  if (isSecretaryPath(window.location.pathname)) {
+    if (current.value?.secretary !== true || chat.value === null) void store.openSecretaryAddress();
+    return;
+  }
   // Incognito (D-136): the address never names the conversation; its entry's state does.
   if (isIncognitoPath(window.location.pathname)) {
     const entry = entryFromState(window.history.state);
@@ -536,6 +542,9 @@ function followAddress(): void {
     if (window.location.pathname !== '/') window.history.replaceState(null, '', '/');
   } else if (chat.value?.conversationId !== id) {
     void store.open(id);
+  } else if (current.value?.secretary === true) {
+    // An old `/c/<id>` entry of the secretary already open (back, forward): its own address (D-156).
+    window.history.replaceState(null, '', pathFor(id, true));
   }
 }
 watch(
@@ -556,9 +565,11 @@ watch(
       writeIncognito({ conversationId: id }, here !== undefined && 'draft' in here ? 'replace' : 'push');
       return;
     }
-    const path = pathFor(id);
+    const secretary = id !== null && current.value?.secretary === true;
+    const path = pathFor(id, secretary);
     if (window.location.pathname === path) return;
-    if (id === null) window.history.replaceState(null, '', path);
+    // `/c/<id>` of the secretary's conversation (a notice, an old link) becomes `/segretaria` in the same entry (D-156).
+    if (id === null || (secretary && conversationFromPath(window.location.pathname) === id)) window.history.replaceState(null, '', path);
     else window.history.pushState(null, '', path);
   },
 );
@@ -895,8 +906,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :agents="directAgents"
       />
       <template v-else-if="chat !== null && current !== undefined">
-      <!-- The secretary's conversation (D-144): its commitments above it, with "Fatto". -->
-      <SecretaryPanel v-if="current.secretary === true" :version="commitmentsVersion" />
+      <!-- The secretary's conversation (D-144): the mini cardwall of its commitments above it (D-156). -->
+      <SecretaryPanel v-if="current.secretary === true" :version="cardsVersion" @cardwall="openCardwall" />
       <ChatView
         class="min-h-0 flex-1"
         :chat="chat"

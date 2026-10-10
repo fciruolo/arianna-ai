@@ -18,6 +18,7 @@ import { noticeUrl, noticeWhere, permissionNow, pushToast, showNotice, type Toas
 import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib/office/signals.ts';
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
+import { isSecretaryPath } from './lib/route.ts';
 import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
@@ -48,8 +49,6 @@ export function createChatStore() {
   /** Saved activity lines per task of the open conversation (D-083). */
   const activityCounts = ref<Record<string, number>>({});
   const approvals = ref<Approval[]>([]);
-  /** Goes up when a commitment of the secretary changes (D-144): its list reads them again. */
-  const commitmentsVersion = ref(0);
   /** Goes up when a card of the cardwall or a commitment may have changed (I-13, D-152): the page reads the wall again. */
   const cardsVersion = ref(0);
   /** The agents in the open conversation besides Arianna and the user (D-125). */
@@ -453,6 +452,26 @@ export function createChatStore() {
   async function openSecretary(): Promise<void> {
     try {
       const conversation = await api.openSecretary();
+      await open(conversation.id, conversation);
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
+  /**
+   * The address `/segretaria` (D-156): a reload, a link or "back" opens the
+   * secretary's conversation without a new session (D-146: only the button
+   * opens one); the first time ever, when there is none yet, it is created as
+   * by the button.
+   */
+  async function openSecretaryAddress(): Promise<void> {
+    try {
+      const found = await api.findSecretary();
+      // The user went elsewhere meanwhile: the answer arrives late and opens nothing.
+      if (!isSecretaryPath(window.location.pathname)) return;
+      if (found !== null && chat.value?.conversationId === found.id) return;
+      const conversation = found ?? (await api.openSecretary());
+      if (!isSecretaryPath(window.location.pathname)) return;
       await open(conversation.id, conversation);
     } catch (cause) {
       fail(cause);
@@ -955,9 +974,6 @@ export function createChatStore() {
         }
         break;
       }
-      case 'commitment.changed':
-        commitmentsVersion.value += 1;
-        break;
       case 'approval.decided':
       case 'approval.requested':
         work.push(refreshApprovals());
@@ -1077,7 +1093,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { commitmentsVersion, cardsVersion, openSecretary, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
+  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, send, decide, chooseModel, rename, archive, pin, purge, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, scheduleCall, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

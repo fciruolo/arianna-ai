@@ -1,9 +1,8 @@
-import type { Commitment } from './types.ts';
-
 /**
- * The list of the secretary (I-12, D-144) beside its conversation: the open
- * commitments by day, the late ones first, and those of today already done.
- * Days are the core's local days ("YYYY-MM-DD"), compared as text.
+ * The secretary (I-12, D-144) in the chat: days in Italian, its sessions
+ * (D-146) and its end-of-day report (D-151). Days are the core's local days
+ * ("YYYY-MM-DD"), compared as text. The commitments above its conversation
+ * are the mini cardwall of `secretary-wall.ts` (D-156).
  */
 const WEEKDAYS = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
 const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
@@ -28,33 +27,6 @@ export function dayLabel(day: string, today: string): string {
   return `${WEEKDAYS[at.getUTCDay()] ?? ''} ${String(at.getUTCDate())} ${MONTHS[at.getUTCMonth()] ?? ''}${year}`;
 }
 
-export interface CommitmentGroup {
-  /** "In ritardo", "Oggi", "Domani", "giovedì 15 ottobre". */
-  title: string;
-  late: boolean;
-  items: Commitment[];
-}
-
-/** By day: the late open ones together first, then each day in order; the cancelled ones never. */
-export function groupCommitments(items: readonly Commitment[], today: string): CommitmentGroup[] {
-  const groups: CommitmentGroup[] = [];
-  const late = items.filter((item) => item.status === 'open' && item.day < today);
-  if (late.length > 0) groups.push({ title: 'In ritardo', late: true, items: late });
-  for (const item of items) {
-    if (item.status === 'cancelled' || item.day < today) continue;
-    const title = dayLabel(item.day, today);
-    const group = groups.find((entry) => !entry.late && entry.title === title);
-    if (group === undefined) groups.push({ title, late: false, items: [item] });
-    else group.items.push(item);
-  }
-  return groups;
-}
-
-/** How many are still to do: the open ones up to today, the late ones included. */
-export function dueCount(items: readonly Commitment[], today: string): number {
-  return items.filter((item) => item.status === 'open' && item.day <= today).length;
-}
-
 /** The line above the first message of the current session of the secretary (D-146). */
 export const SESSION_LINE = 'Nuova sessione · Arianna ricorda solo da qui';
 
@@ -69,24 +41,6 @@ export function sessionStart(messages: readonly { ts: string }[], sessionAt: str
   if (Number.isNaN(at)) return -1;
   const index = messages.findIndex((message) => Date.parse(message.ts) >= at);
   return index === -1 ? messages.length : index;
-}
-
-/**
- * How a closed commitment of today reads in the list (D-151): a short tag and
- * the reason when the user gave one; undefined for an open or cancelled one.
- */
-export function closedText(item: Pick<Commitment, 'status' | 'reason'>): { tag: string; reason: string | null } | undefined {
-  const tag = item.status === 'done' ? 'Fatto' : item.status === 'not_done' ? 'Non fatto' : item.status === 'postponed' ? 'Rinviato' : undefined;
-  if (tag === undefined) return undefined;
-  const reason = item.status !== 'done' && typeof item.reason === 'string' && item.reason.trim() !== '' ? item.reason.trim() : null;
-  return { tag, reason };
-}
-
-/** "rinviato da giovedì 15 ottobre" under an open commitment born from a postponement (D-151), else undefined. */
-export function postponedText(item: Pick<Commitment, 'status' | 'postponedFrom'>, today: string): string | undefined {
-  if (item.status !== 'open' || typeof item.postponedFrom !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.postponedFrom)) return undefined;
-  const label = dayLabel(item.postponedFrom, today);
-  return `rinviato da ${label === 'Oggi' || label === 'Domani' ? label.toLowerCase() : label}`;
 }
 
 /** One line of the end-of-day report the secretary asks to confirm (D-151). */

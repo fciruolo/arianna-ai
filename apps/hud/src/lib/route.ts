@@ -91,9 +91,17 @@ export function knowledgeFocus(search: string): string | undefined {
   return id === undefined || id === '' ? undefined : id;
 }
 
-/** The path of a conversation, or the root when none is open. */
-export function pathFor(conversationId: string | null): string {
-  return conversationId === null ? '/' : `/c/${conversationId}`;
+/** The secretary's one conversation (D-156): its own address instead of `/c/<id>`. */
+export const SECRETARY_PATH = '/segretaria';
+
+export function isSecretaryPath(pathname: string): boolean {
+  return pathname === SECRETARY_PATH || pathname === `${SECRETARY_PATH}/`;
+}
+
+/** The path of a conversation (`/segretaria` for the secretary's, D-156), or the root when none is open. */
+export function pathFor(conversationId: string | null, secretary = false): string {
+  if (conversationId === null) return '/';
+  return secretary ? SECRETARY_PATH : `/c/${conversationId}`;
 }
 
 /** The tab title: the conversation's title, then the app's name. */

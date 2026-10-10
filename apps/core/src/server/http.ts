@@ -19,7 +19,7 @@ import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
 import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, updateCard, type CardNames } from '../cardwall.ts';
-import { CommitmentError, listCommitments, markDone, openSecretary } from '../commitments.ts';
+import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
   archiveConversation,
@@ -1446,6 +1446,8 @@ function secretaryRoutes(sql: Sql): Route[] {
       onlyFields(await readJson(request), []);
       return { body: { conversation: await openSecretary(sql) } };
     }),
+    // The address `/segretaria` of the chat (D-156): the conversation without a new session; null before the first click.
+    route('GET', '/api/secretary', async () => ({ body: { conversation: (await findSecretary(sql)) ?? null } })),
     // The open commitments, the late ones first, and those of today in any status: written from SQL.
     route('GET', '/api/commitments', async () => {
       const today = localDay();
