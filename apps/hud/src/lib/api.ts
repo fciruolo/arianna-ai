@@ -8,6 +8,7 @@ import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ModelAction } from './model-actions.ts';
 import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
+import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
@@ -669,14 +670,15 @@ export async function openDelegationFile(delegationId: string, index: number): P
   return (await call<{ url: string }>('POST', `/api/delegations/${encodeURIComponent(delegationId)}/open`, { index })).url;
 }
 
-/** The graph of kb/ (D-087): pages up to L2 with their links and tags, never their text. */
-export async function loadKnowledgeGraph(): Promise<GraphData> {
-  return call<GraphData>('GET', '/api/knowledge/graph');
+/** The graph of kb/ (D-087), or of Arianna's own documents (D-155): pages up to L2 with their links and tags, never their text. */
+export async function loadKnowledgeGraph(source: KnowledgeSource = 'kb'): Promise<GraphData> {
+  return call<GraphData>('GET', source === 'arianna' ? '/api/knowledge/graph?source=arianna' : '/api/knowledge/graph');
 }
 
-/** One page of kb/ with its text, up to L2; 404 for anything else. */
-export async function loadKnowledgePage(id: string): Promise<KnowledgePage> {
-  return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}`)).page;
+/** One page of kb/ (or of Arianna's documents) with its text, up to L2; 404 for anything else. */
+export async function loadKnowledgePage(id: string, source: KnowledgeSource = 'kb'): Promise<KnowledgePage> {
+  const from = source === 'arianna' ? '&source=arianna' : '';
+  return (await call<{ page: KnowledgePage }>('GET', `/api/knowledge/page?path=${encodeURIComponent(id)}${from}`)).page;
 }
 
 /** The notes of kb/inbox (D-086), newest first: header fields only, never the text. */

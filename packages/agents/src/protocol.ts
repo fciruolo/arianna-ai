@@ -45,7 +45,7 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
 
 /** What the model reads about each tool; the registry's description is for people. */
 const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
-  'kb.search': 'Search the knowledge base; returns page paths and snippets.',
+  'kb.search': "Search the knowledge base; returns page paths and snippets. Pages arianna/... are Arianna's own documents: how she works.",
   'kb.read': 'Read a knowledge base page by path.',
   'kb.write': 'Write a knowledge base page; paths start with kb/.',
   'task.create': 'Create a card in the inbox.',

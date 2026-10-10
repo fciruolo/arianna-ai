@@ -55,9 +55,9 @@ import {
   isSettingsPath,
   isThoughtsPath,
   isVoiceTrialPath,
-  KNOWLEDGE_PATH,
   knowledgeFocus,
   knowledgePathFor,
+  knowledgeSource,
   NEW_AGENT_PATH,
   OFFICE_PATH,
   pathFor,
@@ -65,6 +65,7 @@ import {
   settingsSlug,
   THOUGHTS_PATH,
   VOICE_TRIAL_PATH,
+  type KnowledgeSource,
 } from './lib/route.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, saveTheme, themeAttribute, type Theme } from './lib/theme.ts';
@@ -392,11 +393,14 @@ function openSettings(slug?: string): void {
 
 /** The node the knowledge page selects when it opens (D-090: "Apri nel grafo"). */
 const knowledgeNode = ref<string | undefined>(undefined);
+/** The notes of kb/ or Arianna's own documents (D-155). */
+const knowledgeFrom = ref<KnowledgeSource>('kb');
 
-/** The graph of the knowledge base (D-087), with a node selected when given. */
-function openKnowledge(nodeId?: string): void {
+/** The graph of the knowledge base (D-087), with a node selected when given; `source` picks Arianna's documents (D-155). */
+function openKnowledge(nodeId?: string, source: KnowledgeSource = 'kb'): void {
   knowledgeNode.value = nodeId;
-  openPage('knowledge', nodeId === undefined ? KNOWLEDGE_PATH : knowledgePathFor(nodeId), 'Conoscenza');
+  knowledgeFrom.value = source;
+  openPage('knowledge', knowledgePathFor(nodeId, source), 'Conoscenza');
 }
 
 /** The thoughts (D-090). */
@@ -479,7 +483,7 @@ function followAddress(): void {
     return;
   }
   if (isKnowledgePath(window.location.pathname)) {
-    openKnowledge(knowledgeFocus(window.location.search));
+    openKnowledge(knowledgeFocus(window.location.search), knowledgeSource(window.location.search));
     return;
   }
   if (isDevPath(window.location.pathname)) {
@@ -860,10 +864,10 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
 
       <VoiceTrial v-if="page === 'voice-trial'" />
       <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
-      <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" />
+      <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" />
       <ChangelogPage v-else-if="page === 'changelog'" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
-      <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" />
+      <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <ProjectsPage v-else-if="page === 'projects'" />
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" />

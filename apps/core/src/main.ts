@@ -53,6 +53,7 @@ import { loadModelsOverview } from './models-overview.ts';
 import { delegationRoute } from './orchestrator/delegate.ts';
 import { createKb } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
+import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
@@ -333,7 +334,14 @@ try {
 }
 const adapters = { claude: claude !== undefined, codex: codex !== undefined };
 // D-145: the knowledge of the approved projects is searched and read with kb/, on this computer only.
-const kb = createKb({ home: config.home, rules, projects: createProjectPages(() => settings.current().projects, { home: config.home, rules }) });
+// D-155: Arianna's own documents (docs/, CHANGELOG.md) too, read-only and L2 at least.
+const ariannaDocs = createAriannaDocs({ home: config.home, rules });
+const kb = createKb({
+  home: config.home,
+  rules,
+  projects: createProjectPages(() => settings.current().projects, { home: config.home, rules }),
+  arianna: ariannaDocs,
+});
 const orchestrator = createOrchestrator({
   sql,
   agents,
@@ -573,7 +581,7 @@ const server = await startApiServer({
     log: (id) => logTail(config.paths.data, id),
     memory: () => memory.snapshot(),
   },
-  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path) },
+  capture: { home: config.home, rules, organize: (path) => organizer.enqueue(path), arianna: ariannaDocs },
   modelEvals,
   // The "Modelli" page (I-3): catalogs read at each request, with the adapters that run here (D-140).
   modelsOverview: () =>

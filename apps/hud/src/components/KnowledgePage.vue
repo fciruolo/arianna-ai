@@ -24,6 +24,7 @@ import {
   resolveWikilink,
   rotatePoint,
   sceneMode,
+  sourceTexts,
   seededRandom,
   starPosition,
   step,
@@ -74,6 +75,7 @@ import {
   type Segment,
   type Simulation3,
 } from '../lib/graph3d.ts';
+import type { KnowledgeSource } from '../lib/route.ts';
 import LabelBadge from './LabelBadge.vue';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
@@ -99,7 +101,12 @@ import MarkdownText from './MarkdownText.vue';
 const props = defineProps<{
   /** A node to select once the graph is loaded (D-090, `/conoscenza?nota=…`). */
   focus?: string | undefined;
+  /** The user's notes (kb/) or Arianna's own documents, read-only (D-155, `/conoscenza?fonte=arianna`). */
+  source?: KnowledgeSource | undefined;
 }>();
+const emit = defineEmits<{ source: [source: KnowledgeSource] }>();
+const source = computed<KnowledgeSource>(() => props.source ?? 'kb');
+const texts = computed(() => sourceTexts(source.value));
 
 const root = ref<HTMLDivElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -1363,7 +1370,7 @@ async function select(index: number): Promise<void> {
   const request = ++pageRequest;
   pageLoading.value = true;
   try {
-    const loaded = await loadKnowledgePage(node.id);
+    const loaded = await loadKnowledgePage(node.id, source.value);
     if (request === pageRequest) page.value = loaded;
   } catch (failure) {
     if (request === pageRequest) pageError.value = failure instanceof ApiError && failure.status === 404 ? 'Pagina non più disponibile.' : 'Non riesco a leggere la pagina.';
@@ -1393,11 +1400,16 @@ function formatDate(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('it-IT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+let loadRequest = 0;
 async function load(): Promise<void> {
+  const request = ++loadRequest;
+  const from = source.value;
   loading.value = true;
   error.value = null;
   try {
-    const data = await loadKnowledgeGraph();
+    const data = await loadKnowledgeGraph(from);
+    // A switch of source meanwhile: this graph is not the one shown.
+    if (request !== loadRequest) return;
     const previousIds = graph.value?.nodes.map((node) => node.id) ?? [];
     const previous = new Map(sim?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y }]) ?? []);
     const previous3 = new Map(sim3?.nodes.map((node, i) => [previousIds[i] ?? '', { x: node.x, y: node.y, z: node.z }]) ?? []);
@@ -1423,11 +1435,30 @@ async function load(): Promise<void> {
     applyFocus();
     requestFrame();
   } catch (failure) {
-    error.value = failure instanceof ApiError ? `Non riesco a caricare il grafo (${failure.message}).` : 'Non riesco a caricare il grafo.';
+    if (request === loadRequest) error.value = failure instanceof ApiError ? `Non riesco a caricare il grafo (${failure.message}).` : 'Non riesco a caricare il grafo.';
   } finally {
-    loading.value = false;
+    if (request === loadRequest) loading.value = false;
   }
 }
+
+/** Another source (D-155): a graph of its own, laid out from scratch, nothing selected. */
+watch(source, () => {
+  pageRequest += 1;
+  selected.value = -1;
+  hovered.value = -1;
+  page.value = null;
+  pageError.value = null;
+  pageLoading.value = false;
+  jumpNotice.value = null;
+  focusNotice.value = null;
+  filter.value = '';
+  graph.value = null;
+  sim = null;
+  sim3 = null;
+  adjacency = [];
+  pulses = [];
+  void load();
+});
 
 /** Selects the node the address asks for (a thought opened "in the graph"), once. */
 function applyFocus(): void {
@@ -1631,8 +1662,21 @@ onBeforeUnmount(() => {
             <Icon name="retry" :size="15" />
           </button>
         </div>
+        <div class="kp-seg mt-2" role="group" aria-label="Fonte della conoscenza">
+          <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">LE TUE NOTE</button>
+          <button
+            type="button"
+            :class="{ on: source === 'arianna' }"
+            :aria-pressed="source === 'arianna'"
+            title="I documenti di sviluppo di Arianna: decisioni, proposte, specifiche, novità (sola lettura)"
+            @click="emit('source', 'arianna')"
+          >
+            ARIANNA
+          </button>
+        </div>
+        <p v-if="texts.note !== ''" class="mt-1.5 text-[12px] leading-snug text-muted">{{ texts.note }}</p>
         <p class="mt-1.5 font-mono text-[11px] tracking-[0.04em] text-muted" aria-live="polite">
-          <span class="text-ink">{{ counts.notes }}</span> note · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
+          <span class="text-ink">{{ counts.notes }}</span> {{ texts.pages }} · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
           <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
@@ -1643,7 +1687,7 @@ onBeforeUnmount(() => {
             v-model="filter"
             type="search"
             class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
-            placeholder="Filtra per titolo o #tag"
+            :placeholder="texts.filterPlaceholder"
             aria-label="Filtra le note per titolo o tag"
             @keydown.enter.prevent="chooseResult"
           />
@@ -1656,7 +1700,7 @@ onBeforeUnmount(() => {
               <span class="font-mono text-[10px] text-muted">{{ folderName(node.folder) }}</span>
             </button>
           </li>
-          <li v-if="results.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna nota corrisponde.</li>
+          <li v-if="results.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
         </ul>
       </div>
       <p v-if="focusNotice !== null" role="status" class="pointer-events-auto rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ focusNotice }}</p>
@@ -1687,8 +1731,8 @@ onBeforeUnmount(() => {
     <!-- Empty -->
     <div v-if="!loading && error === null && nodes.length === 0" class="pointer-events-none absolute inset-0 grid place-items-center p-8 text-center">
       <div class="max-w-sm">
-        <p class="font-hud text-lg font-semibold tracking-[0.05em]">La rete è ancora vuota</p>
-        <p class="mt-2 text-sm text-muted">Salva un pensiero con «/nota» o «Salva in inbox»: ogni nota diventa un nodo, i collegamenti fra note diventano archi.</p>
+        <p class="font-hud text-lg font-semibold tracking-[0.05em]">{{ texts.emptyTitle }}</p>
+        <p class="mt-2 text-sm text-muted">{{ texts.emptyText }}</p>
       </div>
     </div>
     <p v-if="loading && nodes.length === 0" class="absolute inset-0 grid place-items-center font-mono text-xs tracking-[0.12em] text-muted">CARICO LA RETE…</p>
@@ -1728,7 +1772,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p v-if="jumpNotice !== null" class="mt-2 text-xs text-warn" role="status">{{ jumpNotice }}</p>
-        <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la nota…</p>
+        <p v-if="pageLoading" class="mt-3 font-mono text-xs text-muted">Leggo la pagina…</p>
         <p v-else-if="pageError !== null" class="mt-3 text-sm text-danger">{{ pageError }}</p>
         <MarkdownText v-else-if="page !== null && page.id === selectedNode.id" class="mt-3" :source="page.body" :wikilink="followWikilink" />
         <section v-if="selectedNeighbours.length > 0" class="mt-4 border-t border-line pt-3">

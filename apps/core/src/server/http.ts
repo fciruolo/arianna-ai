@@ -11,6 +11,7 @@ import type { CharacterChoices, Project } from '@arianna/config';
 import { createContext, isLabel, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
 import { countConversationActivities, listTaskActivities } from '../activities.ts';
+import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
@@ -66,7 +67,7 @@ import { ModelActionError, type ModelActions } from '../model-actions.ts';
 import { ModelEvalError, type ModelEvals } from '../model-evals.ts';
 import type { MemorySnapshot } from '../model-memory.ts';
 import type { ModelsOverview } from '../models-overview.ts';
-import { buildKnowledgeGraph, readKnowledgePage, type GraphCache } from '../knowledge.ts';
+import { buildAriannaGraph, buildKnowledgeGraph, readAriannaPage, readKnowledgePage, type GraphCache } from '../knowledge.ts';
 import { isNoteStatus, listNotes, NoteError, readNote } from '../notes.ts';
 import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
@@ -137,7 +138,7 @@ export interface ApiServerOptions {
    * `organize` queues the organizing of a note by the local model; without it
    * notes are saved and read, not organized.
    */
-  capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean> };
+  capture?: { home: string; rules: LabelRules; organize?: (path: string) => Promise<boolean>; arianna?: AriannaDocs };
   /** Trials of catalog models with the orchestrator evals (D-081). */
   modelEvals?: Pick<ModelEvals, 'request' | 'list' | 'get' | 'cancel'>;
   /** Every model, local and cloud, for the "Modelli" page (I-3, models-overview.ts); without it the route answers 404. */
@@ -720,18 +721,35 @@ function searchRoutes(sql: Sql, capture: ApiServerOptions['capture']): Route[] {
  */
 function knowledgeRoutes(capture: ApiServerOptions['capture']): Route[] {
   const cache: GraphCache = new Map();
+  let arianna: AriannaDocs | undefined;
   const need = (): NonNullable<ApiServerOptions['capture']> => {
     if (capture === undefined) throw new HttpError(404, 'not found');
     return capture;
   };
+  /** `?source=arianna`: Arianna's own documents (D-155), read-only, a source apart from kb/. */
+  const ariannaSource = (url: URL): boolean => {
+    const source = url.searchParams.get('source');
+    if (source === null || source === 'kb') return false;
+    if (source === 'arianna') return true;
+    throw new HttpError(400, 'unknown source');
+  };
+  // The instance of main.ts (one cache in the core); without it, one of these routes.
+  const ariannaDocs = (): AriannaDocs => {
+    const { home, rules, arianna: given } = need();
+    arianna ??= given ?? createAriannaDocs({ home, rules });
+    return arianna;
+  };
   return [
-    route('GET', '/api/knowledge/graph', () => {
+    route('GET', '/api/knowledge/graph', (_request, url) => {
+      if (ariannaSource(url)) return Promise.resolve({ body: buildAriannaGraph(ariannaDocs()) });
       const { home, rules } = need();
       return Promise.resolve({ body: buildKnowledgeGraph(home, rules, cache) });
     }),
     route('GET', '/api/knowledge/page', (_request, url) => {
+      const path = url.searchParams.get('path') ?? '';
+      if (ariannaSource(url)) return Promise.resolve({ body: { page: readAriannaPage(ariannaDocs(), path) } });
       const { home, rules } = need();
-      return Promise.resolve({ body: { page: readKnowledgePage(home, rules, url.searchParams.get('path') ?? '') } });
+      return Promise.resolve({ body: { page: readKnowledgePage(home, rules, path) } });
     }),
   ];
 }

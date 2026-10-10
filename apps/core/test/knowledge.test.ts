@@ -242,6 +242,28 @@ describe('knowledge routes', () => {
     assert.equal(page.page.kind, 'progetto');
   });
 
+  it('serves Arianna’s documents as a source apart, with the same 404 for bad paths and 400 for another source (D-155)', async () => {
+    mkdirSync(join(home, 'docs'), { recursive: true });
+    writeFileSync(join(home, 'docs', 'DECISIONS.md'), '| D-001 | 2026-01-01 | **Siepe di alloro.** Bassa, lungo il viale. | Ombra | Accettata |\n');
+    const graph = (await (await get('/api/knowledge/graph?source=arianna')).json()) as KnowledgeGraph;
+    assert.deepEqual(
+      graph.nodes.map((node) => [node.id, node.folder, node.label]),
+      [['arianna/decisioni/D-001.md', 'decisioni', 'L2']],
+    );
+    const page = (await (await get('/api/knowledge/page?source=arianna&path=arianna%2Fdecisioni%2FD-001.md')).json()) as { page: { body: string; title: string } };
+    assert.equal(page.page.title, 'D-001 · Siepe di alloro');
+    assert.match(page.page.body, /Accettata/);
+    // The notes' graph does not change, and a page of kb/ is not one of Arianna's.
+    assert.equal(((await (await get('/api/knowledge/graph')).json()) as KnowledgeGraph).nodes.length, 3);
+    for (const path of ['arianna%2F..%2Fdocs%2FDECISIONS.md', 'arianna%2Fdecisioni%2FD-999.md', 'work%2Fprogetto.md', '']) {
+      const response = await get(`/api/knowledge/page?source=arianna&path=${path}`);
+      assert.equal(response.status, 404, path);
+      assert.equal(await response.text(), '{"error":"page not found"}', path);
+    }
+    assert.equal((await get('/api/knowledge/graph?source=docs')).status, 400);
+    assert.equal((await get('/api/knowledge/page?source=..&path=x.md')).status, 400);
+  });
+
   it('refuses traversal, links and L3 pages with the same 404, without their content', async () => {
     for (const path of ['..%2Foutside.md', 'public%2F..%2F..%2Foutside.md', 'private%2Flink.md', 'inbox%2Falta.md', 'segreti%2Fconto.md', '.obsidian%2Fworkspace.md', 'manca.md', '']) {
       const response = await get(`/api/knowledge/page?path=${path}`);

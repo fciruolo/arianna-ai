@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { isAtMost, labelForPath, maxLabel, type Label, type LabelRules } from '@arianna/policy';
 
+import { ARIANNA_DOCS_LABEL, isAriannaPagePath, mentionPath, type AriannaDocs } from './arianna-docs.ts';
 import { headerFields, NoteError, noteLabel } from './notes.ts';
 import { checkPagePath, KB_DIR, KB_PROJECT_NOTES, parsePage } from './orchestrator/kb.ts';
 
@@ -422,4 +423,48 @@ export function readKnowledgePage(home: string, rules: LabelRules, id: string): 
     updatedAt: new Date(file.mtimeMs).toISOString(),
     body: parsePage(file.raw).body,
   };
+}
+
+/**
+ * The graph of Arianna's own documents (D-155), a source apart from kb/:
+ * every page up to L2 as a node in the folder of its document (decisioni,
+ * proposte, changelog, SPEC…), an edge for each decision or idea a page
+ * mentions. The text of a page is read one at a time, like kb/.
+ */
+export function buildAriannaGraph(docs: AriannaDocs): KnowledgeGraph {
+  const listed = docs.list();
+  const truncated = listed.length > MAX_GRAPH_PAGES;
+  let hidden = 0;
+  const pages: { id: string; facts: PageFacts; updatedAt: string | null }[] = [];
+  const known = new Set(listed.map((page) => page.path));
+  for (const page of listed.slice(0, MAX_GRAPH_PAGES)) {
+    const label = maxLabel(ARIANNA_DOCS_LABEL, page.label);
+    if (!isAtMost(label, 'L2')) {
+      hidden += 1;
+      continue;
+    }
+    // The parts of a long unit name each other ("Continua in arianna/…"): those are edges too.
+    const named = [...page.body.matchAll(/arianna\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.md/g)].map((match) => match[0]);
+    const links = [...new Set([...page.mentions.map(mentionPath), ...named])].filter((path) => known.has(path));
+    pages.push({ id: page.path, facts: { title: page.title, kind: page.kind, tags: [], label, links }, updatedAt: page.updatedAt });
+  }
+  const graph = graphOf(pages, hidden, truncated);
+  // The folder is the document's, not the first segment (always "arianna").
+  for (const node of graph.nodes) node.folder = node.id.split('/')[1] ?? '';
+  return graph;
+}
+
+/** One page of Arianna's documents with its text, only up to L2; anything else answers the same 404. */
+export function readAriannaPage(docs: AriannaDocs, id: string): KnowledgePage {
+  const refuse = () => new NoteError('not-found', 'page not found');
+  if (typeof id !== 'string' || id.length > 300 || !isAriannaPagePath(id)) throw refuse();
+  let page;
+  try {
+    page = docs.load(id);
+  } catch {
+    throw refuse();
+  }
+  const label = maxLabel(ARIANNA_DOCS_LABEL, page.label);
+  if (!isAtMost(label, 'L2')) throw refuse();
+  return { id: page.path, title: page.title, folder: page.folder, kind: page.kind, tags: [], label, updatedAt: page.updatedAt, body: page.body };
 }

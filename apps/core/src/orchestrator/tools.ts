@@ -42,7 +42,7 @@ export interface ToolResult {
 }
 
 /** Longest page text shown to the model in one result. */
-const MAX_READ = 6_000;
+export const MAX_READ = 6_000;
 
 // Fixed text: whether pages above the clearance matched is never said.
 const SKIPPED_NOTE = 'Private pages were not searched: this conversation may not read them. For private documents, the user can open a private conversation.';
