@@ -9,6 +9,7 @@ import {
   type Answer,
   type DelegateTarget,
   type LoadedAgent,
+  type Planner,
   type ReadAnswer,
   type ToolId,
   type TurnMessage,
@@ -52,6 +53,7 @@ import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
 import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.ts';
+import { plannerFor, writePlan } from './claude-plan.ts';
 import {
   cardBrief,
   cardEnd,
@@ -127,6 +129,8 @@ export interface OrchestratorOptions {
   codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly (claude-direct.ts); for tests. */
   directPrompt?: string;
+  /** What Claude reads first when it writes the cards of a plan (claude-plan.ts); for tests. */
+  plannerPrompt?: string;
   /** Room for the thought and the answer. Default 2048 (D-052). */
   maxTokens?: number;
   /** The local model serving one catalog model, for its trial chat (D-142); without it a trial chat waits for the user. */
@@ -311,6 +315,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     ...(options.claude === undefined ? {} : { claude: options.claude }),
     ...(options.codex === undefined ? {} : { codex: options.codex }),
     ...(options.directPrompt === undefined ? {} : { directPrompt: options.directPrompt }),
+    ...(options.plannerPrompt === undefined ? {} : { plannerPrompt: options.plannerPrompt }),
     ...(options.skills === undefined ? {} : { skills: options.skills }),
   };
   /** What `plan` decided for a step with an open delegation, for its `run`. */
@@ -332,6 +337,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     history: readonly TurnMessage[],
     signal: AbortSignal,
     delegates: readonly DelegateTarget[],
+    planner: Planner,
   ): Promise<{ read: ReadAnswer | undefined; tokensIn: number; tokensOut: number }> {
     // Tokens of both calls count, the discarded one too.
     let tokensIn = 0;
@@ -339,15 +345,15 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
     const call = async (thought: boolean) => {
       const result = await options.model().chat({
         model: ORCHESTRATOR_MODEL,
-        messages: chatMessages(prompt, tools, history, thought, '', delegates),
-        schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates) },
+        messages: chatMessages(prompt, tools, history, thought, '', delegates, planner),
+        schema: { name: RESPONSE_SCHEMA_NAME, schema: responseSchema(tools, thought, delegates, planner) },
         temperature: 0,
         maxTokens: options.maxTokens ?? 2048,
         signal,
       });
       tokensIn += result.usage?.promptTokens ?? 0;
       tokensOut += result.usage?.completionTokens ?? 0;
-      return readAnswer(result.value, tools, thought, delegates);
+      return readAnswer(result.value, tools, thought, delegates, planner);
     };
     let read: ReadAnswer | undefined;
     try {
@@ -771,10 +777,13 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       // The secretary's conversation (D-144): the commitments, and no delegation.
       const secretary = !incognito && (await isSecretaryConversation(sql, task.conversationId));
       const tools = orchestratorTools(agent, delegates.length > 0, !incognito && (await updateOffered(sql, task)), incognito, secretary);
+      // Who writes the cards of a plan (D-164): Claude in a work conversation, from the request alone.
+      const plannerModel = tools.includes(PLAN) ? await plannerFor(env, task.conversationId, label) : undefined;
+      const planner: Planner = plannerModel === undefined ? 'self' : 'claude';
       await show(task, step, 'thinking');
       let asked;
       try {
-        asked = await ask(tools, prompt, allowed, ctx.signal, delegates);
+        asked = await ask(tools, prompt, allowed, ctx.signal, delegates, planner);
       } catch (error) {
         if (error instanceof LocalModelError && error.kind === 'no-endpoint') {
           return { kind: 'wait-user', reason: 'no local model serves the orchestrator: assign one in [roles] (pnpm arianna:init)' };
@@ -820,7 +829,24 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage, delegates);
       if (answer.tool === PLAN) {
         const assignees = ['user', ...delegates.map((target) => target.name)];
-        return runPlanTool(sql, ctx, { turn, label, args: answer.arguments, usage, assignees }, (kind, detail) => show(task, step, kind, detail));
+        const showPlan = (kind: ActivityKind, detail?: string) => show(task, step, kind, detail);
+        if (plannerModel === undefined) return runPlanTool(sql, ctx, { turn, label, args: answer.arguments, usage, assignees }, showPlan);
+        const { title, request } = answer.arguments;
+        const written = await writePlan(env, ctx, { title: String(title), request: String(request), label, agents: delegates, model: plannerModel });
+        const total = {
+          steps: usage.steps,
+          tokensIn: usage.tokensIn + (written.usage?.tokensIn ?? 0),
+          tokensOut: usage.tokensOut + (written.usage?.tokensOut ?? 0),
+          ...(written.usage?.cost === undefined ? {} : { cost: written.usage.cost }),
+        };
+        // Out of quota: the step runs again then, the local model too; nothing was recorded.
+        if (written.kind === 'retry') return { kind: 'retry', at: written.at, reason: written.reason, usage: total };
+        if (written.kind === 'error') {
+          await recordTurn(sql, { ...turn, label, result: `error: ${PLAN}: ${written.reason}. Tell the user the plan could not be written now.` });
+          await show(task, step, 'error', `${PLAN}: ${written.reason}`);
+          return { kind: 'continue', usage: total };
+        }
+        return runPlanTool(sql, ctx, { turn, label: written.label, args: written.args, usage: total, assignees }, showPlan);
       }
       if (isSecretaryTool(answer.tool)) {
         return runSecretaryTool(sql, ctx, { turn, label, tool: answer.tool, args: answer.arguments, usage }, (kind, detail) => show(task, step, kind, detail));

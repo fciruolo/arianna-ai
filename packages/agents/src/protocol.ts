@@ -10,6 +10,21 @@ import type { ToolId } from './tools.ts';
 export const MIN_PLAN_CARDS = 2;
 export const MAX_PLAN_CARDS = 8;
 
+/**
+ * Who writes the cards of `task.plan` (D-164): the local model itself, or
+ * Claude in a work conversation, where the local model hands over only the
+ * request (it does not see when a request in a few words is a large piece of
+ * work, and its cards were poor).
+ */
+export type Planner = 'self' | 'claude';
+
+/** The arguments of `task.plan` when Claude writes the cards (D-164): the request, whole. */
+const PLAN_REQUEST_ARGS: JsonSchema = object({ title: text(120), request: text(2000) }, ['title', 'request']);
+
+/** What the model reads about `task.plan` when Claude writes the cards (D-164). */
+const PLAN_REQUEST_DESCRIPTION =
+  'Hand a large piece of work to the planner, who splits it into cards for the user and the agents (the design, then the code, then the checks) and proposes them to the user. Use it whenever the user asks for something that takes more than one step or more than one person or agent, even said in a few words: a landing page, a new page of a site, a restyling, a feature of an app. "title" is a short name for the work; "request" is what the user wants, in full, with every detail they gave (who does what, what they write themselves). Nothing is created until the user approves the cards in the chat: call it once, and never call task.create or task.delegate for the same work.';
+
 /** Argument schemas of the tools the orchestrator can offer to the model. */
 export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'kb.search': object({ query: text(200), limit: { type: 'integer', minimum: 1, maximum: 20 } }, ['query']),
@@ -92,7 +107,8 @@ export const CODER_ONLY: readonly DelegateTarget[] = [{ name: 'coder', descripti
  * The arguments of `tool`; those of `task.delegate` name the agents of
  * `delegates`, those of `task.plan` the user and the same agents (D-159).
  */
-function argsOf(tool: ToolId, delegates: readonly DelegateTarget[]): JsonSchema | undefined {
+function argsOf(tool: ToolId, delegates: readonly DelegateTarget[], planner: Planner = 'self'): JsonSchema | undefined {
+  if (tool === 'task.plan' && planner === 'claude') return PLAN_REQUEST_ARGS;
   if ((tool !== 'task.delegate' && tool !== 'task.plan') || isCoderOnly(delegates)) return TOOL_ARGS[tool];
   const names = delegates.map((target) => target.name);
   return tool === 'task.plan' ? planArgs(['user', ...names]) : delegateArgs(names);
@@ -138,7 +154,8 @@ function isCoderOnly(delegates: readonly DelegateTarget[]): boolean {
  * that a request one of them does is theirs: the local model would rather
  * answer by itself what it can (a translation, seen on 2026-10-05).
  */
-function descriptionOf(tool: ToolId, delegates: readonly DelegateTarget[]): string {
+function descriptionOf(tool: ToolId, delegates: readonly DelegateTarget[], planner: Planner = 'self'): string {
+  if (tool === 'task.plan' && planner === 'claude') return PLAN_REQUEST_DESCRIPTION;
   const base = DESCRIPTIONS[tool] ?? '';
   if (tool !== 'task.delegate' || isCoderOnly(delegates)) return base;
   const agents = delegates.map((target) => `${target.name}, ${JSON.stringify(target.description)}`).join('; ');
@@ -200,11 +217,12 @@ function optionOf(thought: boolean, properties: Record<string, JsonSchema>, requ
  * The response schema: one option per offered tool, plus reply, plan and
  * refuse. `thought: false` is the fallback without reasoning (D-052).
  * `delegates`: the agents `task.delegate` may name, the Coder alone by default.
+ * `planner`: who writes the cards of `task.plan` (D-164).
  */
-export function responseSchema(tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY): JsonSchema {
+export function responseSchema(tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY, planner: Planner = 'self'): JsonSchema {
   const option = (properties: Record<string, JsonSchema>, required: string[]) => optionOf(thought, properties, required);
   const calls = tools.map((tool) => {
-    const args = argsOf(tool, delegates);
+    const args = argsOf(tool, delegates, planner);
     if (args === undefined) throw new Error(`no argument schema for ${tool}`);
     return option({ action: { const: 'call' }, tool: { const: tool }, arguments: args }, ['action', 'tool', 'arguments']);
   });
@@ -232,17 +250,26 @@ export function responseSchema(tools: readonly ToolId[], thought = true, delegat
  * persona, the prompt is the same byte for byte as without it. `delegates`
  * as in `responseSchema`.
  */
-export function systemPrompt(agentPrompt: string, tools: readonly ToolId[], thought = true, persona = '', delegates: readonly DelegateTarget[] = CODER_ONLY): string {
+export function systemPrompt(
+  agentPrompt: string,
+  tools: readonly ToolId[],
+  thought = true,
+  persona = '',
+  delegates: readonly DelegateTarget[] = CODER_ONLY,
+  planner: Planner = 'self',
+): string {
   const list = tools
-    .map((tool) => `- ${tool}: ${descriptionOf(tool, delegates)} Arguments: ${JSON.stringify(argsOf(tool, delegates))}`)
+    .map((tool) => `- ${tool}: ${descriptionOf(tool, delegates, planner)} Arguments: ${JSON.stringify(argsOf(tool, delegates, planner))}`)
     .join('\n');
   // The examples are about the knowledge base: an agent without it does not read them.
   const examples = tools.includes('kb.search') ? `\n\n${EXAMPLES}` : '';
   // The plan action is the model's own notes; the local model takes it for
   // the cards the user asked for (D-159): said here, where it chooses.
-  const planCards = tools.includes('task.plan')
-    ? '- {"action":"call","tool":"task.plan",...} when the user asks to organize work into cards, or to split it among people or agents (the design, then the code; "i testi li scrivo io"): one call with all the cards, never the plan action below and never task.create for them;\n'
-    : '';
+  const planCards = !tools.includes('task.plan')
+    ? ''
+    : planner === 'claude'
+      ? '- {"action":"call","tool":"task.plan",...} when the user asks for a piece of work that takes several steps, people or agents (a website or a page of it, a restyling, a feature), even in a few words, or asks to organize work into cards: the planner writes the cards, never the plan action below and never task.create or task.delegate for that work;\n'
+      : '- {"action":"call","tool":"task.plan",...} when the user asks to organize work into cards, or to split it among people or agents (the design, then the code; "i testi li scrivo io"): one call with all the cards, never the plan action below and never task.create for them;\n';
   return `${agentPrompt.trim()}
 
 Tools you can use now:
@@ -333,9 +360,10 @@ export function chatMessages(
   thought = true,
   persona = '',
   delegates: readonly DelegateTarget[] = CODER_ONLY,
+  planner: Planner = 'self',
 ): ModelMessage[] {
   return [
-    { role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona, delegates) },
+    { role: 'system', content: systemPrompt(agentPrompt, tools, thought, persona, delegates, planner) },
     ...history.map(
       (message): ModelMessage =>
         // The local model has no tool role: results arrive fenced, as data.
@@ -372,8 +400,14 @@ export function answerText(answer: Answer): string {
  * undefined. The server may not really constrain decoding: never act on an
  * answer that has not passed this.
  */
-export function readAnswer(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY): ReadAnswer | undefined {
-  if (validate(responseSchema(tools, thought, delegates), value).length > 0) return undefined;
+export function readAnswer(
+  value: unknown,
+  tools: readonly ToolId[],
+  thought = true,
+  delegates: readonly DelegateTarget[] = CODER_ONLY,
+  planner: Planner = 'self',
+): ReadAnswer | undefined {
+  if (validate(responseSchema(tools, thought, delegates, planner), value).length > 0) return undefined;
   const { thought: reasoning, ...rest } = value as Record<string, unknown> & { thought?: string };
   const answer = rest as unknown as Answer;
   return reasoning === undefined ? { answer } : { answer, thought: reasoning };

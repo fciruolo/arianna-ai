@@ -84,7 +84,7 @@ function scripted(answers: Answer[]): LocalModel & { requests: ChatRequest[] } {
   };
 }
 
-function orchestrator(model: LocalModel, cloud: 'claude'[] = []): StepExecutor {
+function orchestrator(model: LocalModel, cloud: 'claude'[] = [], plannerPrompt?: string): StepExecutor {
   const settings = () => ({
     ...BASE,
     home: HOME,
@@ -92,7 +92,7 @@ function orchestrator(model: LocalModel, cloud: 'claude'[] = []): StepExecutor {
     cloud: { executors: cloud, models: defaultCloudModels() },
     projects: PROJECTS.map((name): Project => ({ name, path: `repos/${name}`, absolute: join(HOME, 'repos', name), label: 'L1' })),
   });
-  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(cloud.length > 0 ? { claude } : {}) });
+  return createOrchestrator({ sql: db().sql, agents, kb: createKb({ home: HOME, rules: RULES }), model: () => model, settings, rules: RULES, ...(cloud.length > 0 ? { claude } : {}), ...(plannerPrompt === undefined ? {} : { plannerPrompt }) });
 }
 
 async function drain(taskIds: readonly string[], executor: StepExecutor): Promise<string[]> {
@@ -123,6 +123,11 @@ const PLAN: Answer = {
   },
 };
 
+/** In a work conversation with Claude the local model hands over the request, and Claude writes the cards (D-164). */
+const ASK_PLANNER: Answer = { action: 'call', tool: 'task.plan', arguments: { title: 'Landing del sito', request: 'La landing del sito: grafica, codice e testi.' } };
+/** The fake `claude -p` answers with PLAN's cards. */
+const PLANNER = `scenario: answer\nanswer: ${JSON.stringify(PLAN.arguments)}`;
+
 async function waitingApproval(taskId: string) {
   const task = await loadTask(db().sql, taskId);
   assert.equal(task?.status, 'waiting_user');
@@ -144,11 +149,11 @@ async function childrenOf(taskId: string) {
 test('a plan approved in the chat: the cards and their dependencies with the decision, the agents’ ones queued, the answer without the model (D-159)', async () => {
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Facciamo la landing del sito: grafica, codice e testi.');
-  const model = scripted([PLAN]);
-  const executor = orchestrator(model, ['claude']);
+  const model = scripted([ASK_PLANNER]);
+  const executor = orchestrator(model, ['claude'], PLANNER);
   assert.deepEqual(await drain([task.id], executor), ['waiting-approval']);
-  // The model was offered the plan with the agents that can work now.
-  assert.match(JSON.stringify(model.requests[0]?.schema?.schema), /"enum":\["user","coder","designer","reviewer"\]/);
+  // In a work conversation with Claude the local model writes only the request (D-164).
+  assert.match(JSON.stringify(model.requests[0]?.schema?.schema), /"required":\["title","request"\]/);
 
   const approval = await waitingApproval(task.id);
   assert.deepEqual([approval.kind, approval.action, approval.label], ['plan', 'task.plan', 'L1']);
@@ -401,8 +406,8 @@ test('the local model keeps to the agent’s max_label: a card above it offers n
 test('a plan step replayed after a crash: the same approval while pending, the answer once decided meanwhile (D-159)', async () => {
   const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
   const { task } = await postUserMessage(db().sql, conversation.id, 'Dividi il lavoro del sito.');
-  const model = scripted([PLAN]);
-  const executor = orchestrator(model, ['claude']);
+  const model = scripted([ASK_PLANNER]);
+  const executor = orchestrator(model, ['claude'], PLANNER);
   assert.deepEqual(await drain([task.id], executor), ['waiting-approval']);
   const approval = await waitingApproval(task.id);
   const [turn] = await db().sql<{ step: number }[]>`SELECT step FROM task_turns WHERE task_id = ${task.id} ORDER BY step DESC LIMIT 1`;
@@ -599,4 +604,59 @@ test('a private conversation offers the Designer only the local model (D-159)', 
     { executor: 'codex', reason: 'label' },
   ]);
   assert.equal(approval.label, 'L2');
+});
+
+test('Claude writes the cards in a work conversation, from the request alone (D-164)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Mi serve una landing per il sito.');
+  const model = scripted([ASK_PLANNER]);
+  assert.deepEqual(await drain([task.id], orchestrator(model, ['claude'], PLANNER)), ['waiting-approval']);
+  const approval = await waitingApproval(task.id);
+  assert.deepEqual([approval.kind, approval.label, approval.detail.title], ['plan', 'L1', 'Landing del sito']);
+  // The brief passed the gateway towards Claude, within L1; the conversation stays out of it (plannerBrief, test/claude-plan.test.ts).
+  const [log] = await db().sql<{ decision: string; label: string; summary: string | null }[]>`
+    SELECT decision, label::text, summary FROM gateway_log WHERE task_id = ${task.id} AND target = 'claude' ORDER BY id DESC LIMIT 1`;
+  assert.deepEqual([log?.decision, log?.label, log?.summary], ['allow', 'L1', 'cards of a plan written by claude/sonnet']);
+});
+
+test('cards of Claude the code refuses, or no plan at all, are an error the local model reads (D-164)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Rifacciamo la home del sito.');
+  const unknown = JSON.stringify({ title: 'Home', cards: [{ title: 'Uno', goal: 'Tutto.', assignee: 'marketing', blocked_by: [] }, { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [1] }] });
+  const model = scripted([ASK_PLANNER, { action: 'reply', text: 'Non riesco a preparare il piano ora.' }]);
+  assert.deepEqual(await drain([task.id], orchestrator(model, ['claude'], `scenario: answer\nanswer: ${unknown}`)), ['continued', 'answered']);
+  const [turn] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${task.id} ORDER BY step LIMIT 1`;
+  assert.match(turn?.result ?? '', /^error: task\.plan: card 1/);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
+
+  const other = await postUserMessage(db().sql, conversation.id, 'E la pagina dei contatti?');
+  const again = scripted([ASK_PLANNER, { action: 'reply', text: 'Non riesco a preparare il piano ora.' }]);
+  assert.deepEqual(await drain([other.task.id], orchestrator(again, ['claude'], 'scenario: answer\nanswer: non saprei')), ['continued', 'answered']);
+  const [said] = await db().sql<{ result: string }[]>`SELECT result FROM task_turns WHERE task_id = ${other.task.id} ORDER BY step LIMIT 1`;
+  assert.match(said?.result ?? '', /^error: task\.plan: the planner gave no plan/);
+});
+
+test('Claude out of quota: the plan step waits for the reset, nothing recorded (D-164)', async () => {
+  const conversation = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, conversation.id, 'Mi serve una pagina per prenotare.');
+  const results = await drain([task.id], orchestrator(scripted([ASK_PLANNER]), ['claude'], 'scenario: quota'));
+  assert.equal(results.length, 1);
+  assert.notEqual(results[0], 'waiting-approval');
+  assert.equal((await db().sql`SELECT 1 FROM task_turns WHERE task_id = ${task.id}`).length, 0);
+  assert.equal((await db().sql`SELECT 1 FROM approvals WHERE task_id = ${task.id}`).length, 0);
+});
+
+test('the local model writes the cards itself in a private conversation, and without Claude (D-164)', async () => {
+  const privateChat = await createConversation(db().sql, { mode: 'private' });
+  const mine = await postUserMessage(db().sql, privateChat.id, 'Organizza il trasloco in card.');
+  const model = scripted([PLAN]);
+  assert.deepEqual(await drain([mine.task.id], orchestrator(model, ['claude'], PLANNER)), ['waiting-approval']);
+  assert.match(JSON.stringify(model.requests[0]?.schema?.schema), /"blocked_by"/);
+  assert.doesNotMatch(JSON.stringify(model.requests[0]?.schema?.schema), /"request"/);
+
+  const work = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  const { task } = await postUserMessage(db().sql, work.id, 'Organizza il lavoro del sito.');
+  const alone = scripted([{ action: 'call', tool: 'task.plan', arguments: { title: 'Sito', cards: [{ title: 'Una', goal: 'Tutto.', assignee: 'user', blocked_by: [] }, { title: 'Due', goal: 'Altro.', assignee: 'user', blocked_by: [1] }] } }]);
+  assert.deepEqual(await drain([task.id], orchestrator(alone)), ['waiting-approval']);
+  assert.doesNotMatch(JSON.stringify(alone.requests[0]?.schema?.schema), /"request"/);
 });

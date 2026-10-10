@@ -39,6 +39,7 @@ export {
   type Answer,
   type DelegateTarget,
   type ModelMessage,
+  type Planner,
   type ReadAnswer,
   type TurnMessage,
 } from './protocol.ts';

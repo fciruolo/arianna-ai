@@ -86,6 +86,14 @@ switch (scenario) {
     process.stdout.write('this is not json\n');
     hang();
     break;
+  case 'answer': {
+    // The answer is the rest of the line `answer: ...` in the prompt (the planner's JSON, D-164).
+    const said = /^answer: (.*)$/m.exec(prompt)?.[1] ?? '';
+    out(init);
+    out(answer(said));
+    out({ ...result, result: said });
+    break;
+  }
   case 'before-init':
     out(answer('no init first'));
     hang();

@@ -69,6 +69,8 @@ export interface DelegateEnv {
   codex?: CodexExecutor;
   /** What Claude reads first when it answers a system chat directly; DIRECT_PROMPT by default (tests pick a scenario). */
   directPrompt?: string;
+  /** What Claude reads first when it writes the cards of a plan (D-164); PLANNER_PROMPT by default (tests pick a scenario). */
+  plannerPrompt?: string;
   /** The local model, for the agents that only answer (D-119, tappa T3); absent, they take no delegated step. */
   model?: () => LocalModel;
   /**
