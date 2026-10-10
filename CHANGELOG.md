@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Corretto
+
+- Il test del controllo dei segni di conflitto, eseguito dentro l'hook pre-commit, ereditava le variabili `GIT_*` e agiva sul repository vero (impostava `core.bare` o svuotava l'indice di un worktree): ora le toglie.
+
 ## [0.40.3] - 2026-10-10
 
 ### Cambiato

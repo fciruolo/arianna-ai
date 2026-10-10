@@ -21,11 +21,14 @@ test('the hook script: a staged file with a marker refuses the commit, a clean o
   try {
     mkdirSync(join(dir, 'scripts dir'));
     copyFileSync(fileURLToPath(new URL('../scripts/conflict-markers.ts', import.meta.url)), script);
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
+    // Inside the pre-commit hook git hands down GIT_DIR, GIT_INDEX_FILE and friends: without
+    // dropping them, `git init` and `git add` here would act on the real repository.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe', env });
     git('init', '-q');
     writeFileSync(join(dir, 'nota pulita è.md'), '# Titolo\n\ntesto\n');
     git('add', '.');
-    const run = () => spawnSync(process.execPath, [script], { cwd: dir, encoding: 'utf8' });
+    const run = () => spawnSync(process.execPath, [script], { cwd: dir, encoding: 'utf8', env });
     assert.equal(run().status, 0);
     writeFileSync(join(dir, 'unione sbagliata.md'), 'prima\n<<<<<<< HEAD\nnostro\n=======\nloro\n>>>>>>> ramo\n');
     git('add', '.');
