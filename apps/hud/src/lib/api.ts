@@ -121,6 +121,10 @@ export interface CardFieldsInput {
   criteria?: string | null;
   priority?: number;
   planned?: string | null;
+  /** A style of Open Design, by slug; only on a Designer card (D-163). */
+  style?: string | null;
+  /** Skills of the catalog, `owner/repo/slug`; only on a Designer card (D-163). */
+  skills?: string[];
 }
 
 /** A card written on the wall: it starts in the inbox. Its id. */

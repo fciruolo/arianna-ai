@@ -13,6 +13,7 @@ import {
   COMMITMENT_MOVE_TEXT,
   dataUrlBase64,
   defaultState,
+  designChoices,
   fileKindText,
   fileRefusal,
   fileSizeText,
@@ -488,4 +489,23 @@ test('the choice of where a card runs: the ways offered, the ones left out with 
     executorChoices({ title: 'Landing', agent: 'designer', options: ['local'], excluded: [{ executor: 'claude', reason: 'project' }], step: 2, delegation: 'd1' })?.excluded,
     [{ executor: 'Claude', why: 'la conversazione non ha un progetto approvato con la sua cartella' }],
   );
+});
+
+test('the style and skills of a Designer card (D-163): names from the catalog, history and refusals in Italian', () => {
+  const catalog = [
+    { id: 'acme/skills/alpha', name: 'Alpha' },
+    { id: 'nexu-io/open-design/deck', name: 'Deck' },
+  ];
+  assert.deepEqual(designChoices(['nexu-io/open-design/deck', 'acme/skills/gone'], catalog), [
+    { id: 'nexu-io/open-design/deck', name: 'Deck', gone: false },
+    { id: 'acme/skills/gone', name: 'acme/skills/gone', gone: true },
+  ]);
+  assert.deepEqual(designChoices([], catalog), []);
+  assert.equal(historyText({ kind: 'card.changed', payload: { fields: ['style', 'skills'] } }), 'Modificati: stile e skill');
+  assert.equal(historyText({ kind: 'card.design-skipped', payload: { agent: 'designer', style: 'sabbia', skills: ['acme/skills/alpha'] } }), 'Senza lo stile «sabbia» e 1 skill della card: non più nel catalogo o oltre il limite');
+  assert.equal(historyText({ kind: 'card.design-skipped', payload: { agent: 'designer', skills: ['a/b/c', 'a/b/d'] } }), 'Senza 2 skill della card: non più nel catalogo o oltre il limite');
+  assert.equal(historyText({ kind: 'card.design-skipped', payload: { agent: 'designer', skills: [] } }), undefined);
+  assert.equal(cardErrorText(new ApiError(400, 'the style and the skills are only for a card of the Designer')), 'Stile e skill si scelgono solo su una card del Designer.');
+  assert.equal(cardErrorText(new ApiError(400, 'no such style in the catalog')), 'Questo stile non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.');
+  assert.equal(cardErrorText(new ApiError(400, 'at most 10 skills on a card')), 'Una card tiene al massimo 10 skill.');
 });

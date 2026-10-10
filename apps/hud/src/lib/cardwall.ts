@@ -111,6 +111,31 @@ export interface CardDetailData {
   report: CardReport | null;
   /** Where the user chose the card runs, the last time it was asked (D-159). */
   executor: string | null;
+  /** The style of Open Design chosen for a Designer card (D-163); absent from an older core. */
+  style?: string | null;
+  /** The skills of the catalog chosen for it, `owner/repo/slug` (D-163). */
+  skills?: string[];
+}
+
+/** The agent whose cards carry a style and skills of the catalogs (D-163). */
+export const DESIGNER_AGENT = 'designer';
+/** Most skills on one card (migration 0046). */
+export const MAX_CARD_SKILLS = 10;
+
+/** One choice of a menu of the card (D-163): what the catalog names it, or the bare id when it is gone from there. */
+export interface DesignChoice {
+  id: string;
+  name: string;
+  /** No longer in the adopted catalog: the card runs without it. */
+  gone: boolean;
+}
+
+/** The chosen ids, named from the catalog; one no longer there keeps its id and says so. */
+export function designChoices(ids: readonly string[], catalog: readonly { id: string; name: string }[]): DesignChoice[] {
+  return ids.map((id) => {
+    const found = catalog.find((item) => item.id === id);
+    return found === undefined ? { id, name: id, gone: true } : { id, name: found.name, gone: false };
+  });
 }
 
 export interface CardReport {
@@ -638,6 +663,8 @@ const FIELD_TEXT: Record<string, string> = {
   criteria: '«Quando è finito»',
   priority: 'priorità',
   planned: 'data di esecuzione',
+  style: 'stile',
+  skills: 'skill',
 };
 
 const PART_TEXT: Record<string, Record<string, string>> = {
@@ -686,6 +713,14 @@ export function historyText(entry: Pick<HistoryEntry, 'kind' | 'payload'>): stri
         if (typeof value === 'string') return PART_TEXT[part]?.[value] ?? 'Modificata';
       }
       return 'Modificata';
+    }
+    case 'card.design-skipped': {
+      // D-163: what the user chose on the card and did not reach the delivery.
+      const style = typeof payload.style === 'string' ? payload.style : undefined;
+      const skills = Array.isArray(payload.skills) ? payload.skills.filter((item): item is string => typeof item === 'string').length : 0;
+      const parts = [...(style === undefined ? [] : [`lo stile «${style}»`]), ...(skills === 0 ? [] : [skills === 1 ? '1 skill' : `${String(skills)} skill`])];
+      if (parts.length === 0) return undefined;
+      return `Senza ${listText(parts)} della card: non più nel catalogo o oltre il limite`;
     }
     default:
       return undefined;
@@ -755,6 +790,13 @@ const CARD_ERRORS: [RegExp, string | ((match: RegExpExecArray) => string)][] = [
   [/^due must be/, 'La scadenza non è una data valida.'],
   [/^no such card/, 'La card non c’è più.'],
   [/^no such dependency/, 'Questa dipendenza non c’è più.'],
+  // The style and skills of a Designer card (D-163).
+  [/^the style and the skills are only for a card of the Designer/, 'Stile e skill si scelgono solo su una card del Designer.'],
+  [/^no such style in the catalog/, 'Questo stile non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.'],
+  [/^no such skill in the catalog/, 'Questa skill non è nel catalogo adottato: aggiornalo in Impostazioni → Agenti.'],
+  [/^at most (\d+) skills on a card/, (match) => `Una card tiene al massimo ${match[1] ?? ''} skill.`],
+  [/^style must be/, 'Lo stile non è valido.'],
+  [/^(skills must be a list|a skill is)/, 'La skill non è valida.'],
 ];
 
 /** What the cardwall says when the core refuses a change. */
