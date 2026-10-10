@@ -333,7 +333,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
     </p>
 
     <!-- New card: the short form; the detail opens right after for the rest. -->
-    <form v-if="adding" class="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3" @submit.prevent="saveNew" @keydown.esc="adding = false">
+    <form v-if="adding" class="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3" @submit.prevent="saveNew" @keydown.esc.prevent="adding = false">
       <label class="flex min-w-[220px] flex-[2] flex-col gap-1 text-[12px] text-muted"
         >Titolo<input ref="titleInput" v-model="draft.title" maxlength="200" class="field px-2.5 py-1.5 text-[13.5px] text-ink" placeholder="Che cosa c’è da fare" required
       /></label>
