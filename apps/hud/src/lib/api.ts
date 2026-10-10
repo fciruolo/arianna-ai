@@ -703,6 +703,11 @@ export async function preparePrivacy(fingerprint: string, values: Partial<Pick<S
   return call<PrivacyProposal>('POST', '/api/settings/privacy/prepare', { fingerprint, values });
 }
 
+/** "Proponi bozza" (I-14 R2, D-175): the local model drafts the rules of a project; nothing is saved. */
+export async function draftProjectRules(project: string): Promise<{ text: string; model: string | null; partial?: string }> {
+  return call<{ text: string; model: string | null; partial?: string }>('POST', `/api/projects/${encodeURIComponent(project)}/rules-draft`, {});
+}
+
 /** Writes exactly the change prepared with this id. */
 export async function confirmPrivacy(id: string): Promise<SettingsView> {
   return call<SettingsView>('POST', '/api/settings/privacy/confirm', { id });

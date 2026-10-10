@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { ApiError, loadSettings, saveSettings } from '../lib/api.ts';
+import { ApiError, draftProjectRules, loadSettings, saveSettings } from '../lib/api.ts';
 import type { BrowsableContainer } from '../lib/projects.ts';
 import { MAX_PROJECT_RULES, writeError, type SettingsView } from '../lib/settings.ts';
 import Icon from './Icon.vue';
@@ -21,6 +21,11 @@ const own = ref(false);
 const text = ref('');
 const busy = ref(false);
 const saved = ref(false);
+/** "Proponi bozza" (D-175): the model is writing, and the draft shown is not saved yet. */
+const drafting = ref(false);
+const drafted = ref(false);
+/** The model did not answer: the draft holds only what the files say. */
+const partial = ref(false);
 
 const name = computed(() => props.container?.name ?? null);
 const rules = computed(() => view.value?.values?.projectRules);
@@ -29,8 +34,41 @@ const stored = computed(() => (name.value === null || rules.value === undefined 
 const changed = computed(() => (own.value ? stored.value !== text.value : stored.value !== undefined));
 const tooLong = computed(() => own.value && text.value.length > MAX_PROJECT_RULES);
 
+/** Why a draft was not written, from the status of the core. */
+function draftError(error: unknown): string {
+  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : 'errore';
+  if (error.status === 503) return 'Il modello locale non risponde: controlla oMLX in Impostazioni → Server locali.';
+  if (error.status === 504) return 'Il modello locale ci ha messo troppo: riprova fra poco.';
+  if (error.status === 409) return 'Sta già scrivendo un’altra bozza: aspetta che finisca.';
+  if (error.status === 403) return 'Il gateway ha fermato la bozza: i file del progetto contengono qualcosa che non può leggere.';
+  return 'Il modello locale non ha scritto una bozza valida: riprova.';
+}
+
+/** The local model drafts the rules from the folder and the common template; shown in "Regole proprie", not saved. */
+async function propose(): Promise<void> {
+  if (name.value === null || drafting.value) return;
+  // The project the draft is for: one chosen meanwhile never receives it.
+  const asked = name.value;
+  drafting.value = true;
+  problem.value = null;
+  saved.value = false;
+  try {
+    const draft = await draftProjectRules(asked);
+    if (name.value !== asked) return;
+    own.value = true;
+    text.value = draft.text;
+    drafted.value = true;
+    partial.value = draft.partial !== undefined;
+  } catch (error) {
+    if (name.value === asked) problem.value = draftError(error);
+  } finally {
+    drafting.value = false;
+  }
+}
+
 /** The form as the file has it. */
 function fill(): void {
+  drafted.value = false;
   own.value = stored.value !== undefined;
   text.value = stored.value ?? '';
 }
@@ -91,10 +129,19 @@ async function save(): Promise<void> {
     <p v-if="problem !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ problem }}</p>
 
     <template v-if="rules !== undefined">
+      <div v-if="stored === undefined || drafted" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3 py-2 text-[13px]">
+        <Icon name="info" :size="16" class="shrink-0 text-info" />
+        <span v-if="drafted" class="min-w-0 flex-1">
+          Bozza non ancora salvata: il modello comune, le regole ricavate dai file del progetto<template v-if="!partial"> e le convenzioni dei framework proposte dal modello locale</template>. Rileggila, correggila e premi Salva.
+          <template v-if="partial"> Il modello locale non ha risposto: mancano le convenzioni dei framework.</template>
+        </span>
+        <span v-else class="min-w-0 flex-1">Questo progetto usa il modello comune. Arianna può proporti regole adatte, guardando linguaggi, gestore di pacchetti e file di stile della cartella.</span>
+        <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : drafted ? 'Riproponi' : 'Proponi bozza' }}</button>
+      </div>
       <fieldset class="flex flex-wrap gap-2">
         <legend class="sr-only">Quali regole</legend>
         <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px]">
-          <input type="radio" name="rules-mode" :checked="!own" @change="own = false" />Modello comune
+          <input type="radio" name="rules-mode" :checked="!own" @change="own = false; drafted = false" />Modello comune
         </label>
         <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px]">
           <input type="radio" name="rules-mode" :checked="own" @change="chooseOwn" />Regole proprie

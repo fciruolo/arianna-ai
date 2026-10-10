@@ -63,6 +63,7 @@ import { createOrchestrator } from './orchestrator/orchestrator.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
+import { draftProjectRules } from './rules-draft.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
 import { createBotApi } from './telegram/api.ts';
@@ -625,6 +626,11 @@ const server = await startApiServer({
   projectContainers,
   // The tab "Conoscenza" (D-145): kb/progetti of this ARIANNA_HOME for the projects that are one git.
   knowledge: { home: config.home, rules },
+  // "Proponi bozza" (I-14 R2, D-175): the local model drafts the rules of a container; nothing is saved here.
+  rulesDraft: async (name) => {
+    const project = projectContainers().find((item) => item.name === name);
+    return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
+  },
   // The files attached to cards (D-152): private copies, outside git.
   cards: { dir: join(config.home, 'data', 'cards') },
   // The logos of the clients (D-168): private copies, outside git, shown only in the web chat.

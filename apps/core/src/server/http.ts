@@ -60,6 +60,7 @@ import { readClientDashboard } from '../client-dashboard.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
+import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
@@ -188,6 +189,8 @@ export interface ApiServerOptions {
   projectContainers?: () => readonly Project[];
   /** ARIANNA_HOME and labels.toml for the tab "Conoscenza" (kb/progetti, D-145); without it its routes answer 404. */
   knowledge?: KnowledgeEnv;
+  /** "Proponi bozza" of the tab "Regole" (I-14 R2, D-175): the local model drafts a container's rules; without it the route answers 503. */
+  rulesDraft?: (container: string) => Promise<DraftOutcome | undefined>;
   /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
@@ -399,6 +402,7 @@ interface RouteOptions {
   approvedProjects: () => readonly Project[];
   projectContainers: () => readonly Project[];
   knowledge?: KnowledgeEnv | undefined;
+  rulesDraft?: ApiServerOptions['rulesDraft'];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
@@ -1409,6 +1413,36 @@ function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], 
   ];
 }
 
+/** Why a draft of the rules was not written, for the page: a closed list (D-175). */
+const DRAFT_FAILURE_STATUS: Record<DraftFailure, number> = { blocked: 403, unavailable: 503, timeout: 504, truncated: 502, 'bad-response': 502, 'model-error': 502 };
+
+/**
+ * "Proponi bozza" (I-14 R2, D-175): the draft of a container's rules by the
+ * local model, returned to the page and never saved; the user's "Salva" makes
+ * it rules. One at a time: the local model is one.
+ */
+function rulesDraftRoutes(containers: () => readonly Project[], draft: ApiServerOptions['rulesDraft']): Route[] {
+  let running = false;
+  return [
+    route('POST', '/api/projects/:project/rules-draft', async (request, _url, params) => {
+      if (draft === undefined) throw new HttpError(503, 'drafts are not available');
+      const name = params.project ?? '';
+      if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+      onlyFields(await readJson(request), []);
+      if (running) throw new HttpError(409, 'a draft is already being written');
+      running = true;
+      try {
+        const outcome = await draft(name);
+        if (outcome === undefined) throw new HttpError(404, 'not found');
+        if (!outcome.ok) throw new HttpError(DRAFT_FAILURE_STATUS[outcome.reason], `draft not written: ${outcome.reason}`);
+        return { body: { text: outcome.text, model: outcome.model, ...(outcome.partial === undefined ? {} : { partial: outcome.partial }) } };
+      } finally {
+        running = false;
+      }
+    }),
+  ];
+}
+
 /**
  * The page "Progetti" (D-134): an approved project read on this computer.
  * Read only: folders, files, branches, changes, commits and their diff;
@@ -1527,12 +1561,13 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
+    ...rulesDraftRoutes(projectContainers, rulesDraft),
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
@@ -2732,6 +2767,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     cards: options.cards,
     clients: options.clients,
     knowledge: options.knowledge,
+    rulesDraft: options.rulesDraft,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,
