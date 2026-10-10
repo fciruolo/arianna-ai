@@ -74,7 +74,7 @@ test('the agents Arianna may delegate to: the Coder first, then the ones an exec
   const agents = [made('traduttore', 'answer'), made('programmatore', 'code'), made('cercatore', 'web'), made('analista', 'answer')];
   assert.deepEqual(
     delegateTargets(envWith(agents, true), 'arianna').map(({ name }) => name),
-    ['coder', 'analista', 'programmatore', 'reviewer', 'traduttore'],
+    ['coder', 'analista', 'designer', 'programmatore', 'reviewer', 'traduttore'],
   );
   // Without Claude only the agents that answer on the local model; without it either, nobody.
   assert.deepEqual(
@@ -92,7 +92,7 @@ test('with Codex on and Claude off, only the agents whose card names Codex take 
   // The page's agents run on Claude only: Codex does not open them.
   assert.deepEqual(
     delegateTargets(envWith(agents, false, true, true), 'arianna').map(({ name }) => name),
-    ['coder', 'reviewer', 'traduttore'],
+    ['coder', 'designer', 'reviewer', 'traduttore'],
   );
   assert.deepEqual(availableCloud(envWith([], false, true, true)), ['codex']);
   assert.deepEqual(availableCloud(envWith([], true, true, true)), ['claude', 'codex']);

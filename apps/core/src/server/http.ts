@@ -15,10 +15,10 @@ import { createAriannaDocs, type AriannaDocs } from '../arianna-docs.ts';
 import { loadChangelog } from '../changelog.ts';
 import { CaptureError, captureNote, isCaptureKind, MAX_CAPTURE_BYTES } from '../capture.ts';
 import { findConversationNote, saveConversation, type SavedLine } from '../saved-conversations.ts';
-import { listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
+import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, updateCard, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -1479,17 +1479,21 @@ function routes(sql: Sql, { cards, projects, models, defaultModel, agents, chara
     }),
 
     // The web chat is the channel of the decision: a declassification can be decided only here.
+    // `choice`: the executor chosen for a card (D-159), with an approval of kind executor only.
     route('POST', '/api/approvals/:id/decision', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['state']);
+      onlyFields(body, ['state', 'choice']);
       if (body.state !== 'approved' && body.state !== 'rejected') throw new HttpError(400, 'state must be approved or rejected');
+      if (body.choice !== undefined && !isExecutorChoice(body.choice)) throw new HttpError(400, 'choice must be claude, codex or local');
+      const choice = isExecutorChoice(body.choice) ? body.choice : undefined;
       const current = await loadApproval(sql, id);
       if (current === undefined) throw new HttpError(404, 'not found');
       if (current.state !== 'pending') throw new HttpError(409, `the approval is already ${current.state}`);
       try {
-        return { body: { approval: await recordDecision(sql, id, body.state, 'web') } };
+        return { body: { approval: await recordDecision(sql, id, body.state, 'web', choice) } };
       } catch (error) {
+        if (error instanceof ApprovalChoiceError) throw new HttpError(400, error.message);
         // Decided meanwhile (another tab, Telegram): the database refused the second decision.
         if (error instanceof Error && /already decided/.test(error.message)) throw new HttpError(409, 'the approval is already decided');
         throw error;
@@ -1659,6 +1663,22 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
       const body = await readJson(request);
       onlyFields(body, ['to', 'reason']);
       return guard(async () => ({ body: { card: { id, status: (await moveCard(sql, id, body.to, body.reason)).status } } }));
+    }),
+    // D-159: "Avvia" for an agent's card never started, "Riprendi" and "Riprova" for one the engine stopped.
+    route('POST', '/api/cards/:id/start', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await startCard(sql, id)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/resume', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await resumeCard(sql, id)).status } } }));
+    }),
+    route('POST', '/api/cards/:id/retry', async (request, _url, params) => {
+      const id = idParam(params, 'id');
+      onlyFields(await readJson(request), []);
+      return guard(async () => ({ body: { card: { id, status: (await retryCard(sql, id)).status } } }));
     }),
     route('POST', '/api/cards/:id/dependencies', async (request, _url, params) => {
       const id = idParam(params, 'id');

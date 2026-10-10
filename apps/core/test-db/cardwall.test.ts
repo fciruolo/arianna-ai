@@ -269,7 +269,7 @@ test('two dependencies done at once: the held step goes on all the same', async 
   }
 });
 
-test('a held step put on hold by hand and back goes on; a card the engine stopped does not go back by hand', async () => {
+test('a held step put on hold by hand and back goes on; a card the engine stopped goes back to do as "Riprendi" (D-159)', async () => {
   const { sql } = db();
   await drain(finishing());
   const before = await createTask(sql, { title: 'Prima', assignee: 'user' });
@@ -285,12 +285,13 @@ test('a held step put on hold by hand and back goes on; a card the engine stoppe
   await moveCard(sql, task.id, 'ready');
   assert.deepEqual(await drain(executor), ['to-verify']);
 
-  // Stopped by the engine: not from the wall.
+  // Stopped by the engine: dragged back to do, it resumes, its step queued again (D-159).
   const stopped = await submitTask(sql, { title: 'Ferma', assignee: 'coder' });
   await drain({ ...finishing(), run: () => Promise.resolve({ kind: 'wait-user', reason: 'Serve una scelta.' }) });
   assert.equal((await loadTask(sql, stopped.id))?.status, 'waiting_user');
-  await assert.rejects(moveCard(sql, stopped.id, 'ready'), /by hand yet/);
   await assert.rejects(updateCard(sql, stopped.id, { assignee: 'user' }, NAMES), /keeps who does it/);
+  assert.equal((await moveCard(sql, stopped.id, 'ready')).status, 'ready');
+  assert.deepEqual(await drain(executor), ['to-verify']);
 });
 
 test('the reason written by hand stays only on a private card', async () => {

@@ -438,7 +438,11 @@ const TOOL = 'task.delegate';
 /** Quota refusals of one delegation before it fails: a blocked executor does not keep a task at work for days. */
 export const MAX_QUOTA_RETRIES = 5;
 
-export async function planDelegation(env: DelegateEnv, task: Task, delegation: Delegation): Promise<DelegationPlan> {
+/**
+ * `only`: the cloud executor the user chose for a card (D-159): the router
+ * reads the agent's card with that executor alone, so it never picks another.
+ */
+export async function planDelegation(env: DelegateEnv, task: Task, delegation: Delegation, only?: CloudExecutor): Promise<DelegationPlan> {
   const closed = (status: 'failed' | 'refused', result: string, decision?: RouteDecision): DelegationPlan => ({
     kind: 'closed',
     delegation,
@@ -510,7 +514,13 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   const preferred = conversation?.model;
   const preferredModel = preferred !== null && preferred !== undefined && (MODEL_ALIASES as readonly string[]).includes(preferred) ? { preferredModel: preferred as ModelAlias } : {};
   const decision = route(
-    { kind: cloudStepKind(agent.card), agent: agent.card, text: delegation.brief, budgetApproved: budget?.state === 'approved', ...preferredModel },
+    {
+      kind: cloudStepKind(agent.card),
+      agent: only === undefined ? agent.card : { ...agent.card, executors: agent.card.executors.filter((executor) => executor === only) },
+      text: delegation.brief,
+      budgetApproved: budget?.state === 'approved',
+      ...preferredModel,
+    },
     createContext(task.clearance, label),
     await budgetOf(env.sql),
     routerConfigOf(env.settings(), adaptersOf(env)),

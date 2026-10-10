@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { APPROVAL_ACTIONS } from '@arianna/agents';
 import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
-import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type StoredApproval } from './approvals.ts';
+import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
+import { applyPlanApproval } from './card-plans.ts';
 import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
@@ -110,8 +111,9 @@ export type StepOutcome = (
   | { kind: 'retry'; at: Date; reason: string }
   /**
    * The executor wrote an approval of kind `commitment` with the step's turn
-   * (the secretary, D-144): the task waits for the user to confirm it. The
-   * next step finds the decided approval in `approval`.
+   * (the secretary, D-144), `plan` (Arianna's cards, D-159) or `executor` (the
+   * choice of where a card runs, D-159): the task waits for the user to
+   * decide it. The next step finds the decided approval in `approval`.
    */
   | { kind: 'confirm'; approvalId: string }
   /** Anything else that needs the user, e.g. a gateway block with `next: wait-user`. */
@@ -446,7 +448,7 @@ export async function processStepJob(
         // Only a pending confirmation of this very task: anything else is the executor's mistake.
         const [pending] = await tx<{ action: string; state: string }[]>`
           SELECT action, state FROM approvals
-          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind = 'commitment'`;
+          WHERE id = ${outcome.approvalId}::uuid AND task_id = ${task.id} AND kind IN ('commitment', 'plan', 'executor')`;
         // Decided before the task waited for it (the card shows as soon as it is written): the next step answers.
         if (pending !== undefined && (pending.state === 'approved' || pending.state === 'rejected')) {
           await mustSchedule(tx, task.id, { approvalId: outcome.approvalId });
@@ -457,7 +459,7 @@ export async function processStepJob(
           return 'waiting-user';
         }
         await moveTask(tx, task.id, 'waiting_user', { reason: `approval needed: ${pending.action}`, cause: 'approval', approvalId: outcome.approvalId });
-        // The action only: the text of the commitment stays in the approval.
+        // The action only: the text of the commitment or of the plan stays in the approval.
         await appendEvent(tx, {
           kind: 'approval.requested',
           taskId: task.id,
@@ -504,18 +506,20 @@ export async function recordDecision(
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
+  choice?: ExecutorChoice,
 ): Promise<StoredApproval> {
-  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via));
+  return sql.begin((tx) => recordDecisionIn(tx, approvalId, state, via, choice));
 }
 
-/** `recordDecision` inside a transaction the caller holds. */
+/** `recordDecision` inside a transaction the caller holds. `choice`: the executor of an approval of kind `executor` (D-159). */
 export async function recordDecisionIn(
   tx: Queryable,
   approvalId: string,
   state: 'approved' | 'rejected',
   via: DecisionChannel,
+  choice?: ExecutorChoice,
 ): Promise<StoredApproval> {
-  const decided = await decideApproval(tx, approvalId, state, via);
+  const decided = await decideApproval(tx, approvalId, state, via, choice);
   await appendEvent(tx, {
     kind: 'approval.decided',
     ...(decided.taskId === null ? {} : { taskId: decided.taskId }),
@@ -524,6 +528,8 @@ export async function recordDecisionIn(
   });
   // A confirmed commitment (D-144) is noted or marked done with the decision, whatever the task does next.
   if (decided.kind === 'commitment' && state === 'approved') await applyCommitmentApproval(tx, decided);
+  // An approved plan (D-159): its cards and their dependencies are created with the decision.
+  if (decided.kind === 'plan' && state === 'approved') await applyPlanApproval(tx, decided);
   if (decided.taskId !== null) {
     const task = await loadTask(tx, decided.taskId);
     if (task?.status === 'waiting_user' && task.waitingApprovalId === approvalId) {
@@ -539,14 +545,18 @@ export async function recordDecisionIn(
  * Approvals the task was still waiting for expire: they belong to the old context.
  */
 export async function resumeTask(sql: Sql, taskId: string, limits?: NonNullable<NewTask['limits']>): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`
-      UPDATE approvals SET state = 'expired', decided_at = now()
-      WHERE task_id = ${taskId} AND state = 'pending'`;
-    if (limits !== undefined) await setTaskLimits(tx, taskId, limits);
-    await moveTask(tx, taskId, 'ready', { cause: 'user' });
-    await mustSchedule(tx, taskId);
-  });
+  await sql.begin((tx) => resumeTaskIn(tx, taskId, limits));
+}
+
+/** `resumeTask` inside a transaction the caller holds (the cardwall, D-159). */
+export async function resumeTaskIn(tx: Queryable, taskId: string, limits?: NonNullable<NewTask['limits']>): Promise<Task> {
+  await tx`
+    UPDATE approvals SET state = 'expired', decided_at = now()
+    WHERE task_id = ${taskId} AND state = 'pending'`;
+  if (limits !== undefined) await setTaskLimits(tx, taskId, limits);
+  const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
+  await mustSchedule(tx, taskId);
+  return task;
 }
 
 /**
@@ -556,19 +566,22 @@ export async function resumeTask(sql: Sql, taskId: string, limits?: NonNullable<
  * task of an archived or deleted conversation.
  */
 export async function retryTask(sql: Sql, taskId: string): Promise<Task> {
-  return sql.begin(async (tx) => {
-    const [row] = await tx<{ status: string; archived: boolean | null }[]>`
-      SELECT t.status, c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL AS archived
-      FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
-      WHERE t.id = ${taskId} FOR UPDATE OF t`;
-    if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
-    if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
-    if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
-    const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
-    await mustSchedule(tx, taskId);
-    await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
-    return task;
-  });
+  return sql.begin((tx) => retryTaskIn(tx, taskId));
+}
+
+/** `retryTask` inside a transaction the caller holds (the cardwall, D-159). */
+export async function retryTaskIn(tx: Queryable, taskId: string): Promise<Task> {
+  const [row] = await tx<{ status: string; archived: boolean | null }[]>`
+    SELECT t.status, c.archived_at IS NOT NULL OR c.purged_at IS NOT NULL AS archived
+    FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+    WHERE t.id = ${taskId} FOR UPDATE OF t`;
+  if (row === undefined) throw new TaskError(`task ${taskId} does not exist`);
+  if (row.status !== 'failed') throw new TaskError(`task ${taskId} is not failed`);
+  if (row.archived === true) throw new TaskError(`task ${taskId} belongs to an archived conversation`);
+  const task = await moveTask(tx, taskId, 'ready', { cause: 'user' });
+  await mustSchedule(tx, taskId);
+  await appendEvent(tx, { kind: 'task.retried', taskId, label: 'L0', payload: { step: await nextStep(tx, taskId) } });
+  return task;
 }
 
 export interface WorkerOptions extends EngineOptions {

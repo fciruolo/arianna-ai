@@ -6,6 +6,10 @@
 import { validate, type JsonSchema } from './schema.ts';
 import type { ToolId } from './tools.ts';
 
+/** Cards in one plan of `task.plan` (D-159). Before TOOL_ARGS, which reads them. */
+export const MIN_PLAN_CARDS = 2;
+export const MAX_PLAN_CARDS = 8;
+
 /** Argument schemas of the tools the orchestrator can offer to the model. */
 export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'kb.search': object({ query: text(200), limit: { type: 'integer', minimum: 1, maximum: 20 } }, ['query']),
@@ -17,6 +21,7 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
     'status',
   ]),
   'task.delegate': delegateArgs(['coder']),
+  'task.plan': planArgs(['user', 'coder']),
   'user.ask': object({ question: text(500) }, ['question']),
   'file.delete': object({ path: text(300) }, ['path']),
   'channel.send': object({ channel: { type: 'string', enum: ['telegram'] }, text: text(1000) }, ['channel', 'text']),
@@ -50,6 +55,8 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'kb.write': 'Write a knowledge base page; paths start with kb/.',
   'task.create': 'Create a card in the inbox.',
   'task.update': 'Update a card of this conversation: status and a note for the user. With an unknown id it answers with the list of open cards and their ids.',
+  'task.plan':
+    'Propose to the user a plan for a large piece of work that takes several people or agents (for example a website: the design, then the code): 2 to 8 cards in order. Each card has a short title, its goal, who does it ("user", or an agent that can work now) and "blocked_by": the numbers of earlier cards of this plan it must wait for (1 is the first card; [] when it waits for none). Nothing is created until the user approves the plan in the chat: call it once, and never call task.create for the same cards.',
   'task.delegate': 'Hand a step to another agent with a self-contained brief. "reason" is one short line for the user, in their language, on why you bring this agent in (the chat shows it when the agent joins).',
   'user.ask': 'Ask the user a question when the request is unclear or information is missing.',
   'file.delete': 'Delete a file (the user approves before it happens).',
@@ -81,10 +88,33 @@ export interface DelegateTarget {
 /** The Coder alone: `task.delegate` as it was before the user's agents (D-055). */
 export const CODER_ONLY: readonly DelegateTarget[] = [{ name: 'coder', description: 'Writes and changes code in a worktree, with tests' }];
 
-/** The arguments of `tool`; those of `task.delegate` name the agents of `delegates`. */
+/**
+ * The arguments of `tool`; those of `task.delegate` name the agents of
+ * `delegates`, those of `task.plan` the user and the same agents (D-159).
+ */
 function argsOf(tool: ToolId, delegates: readonly DelegateTarget[]): JsonSchema | undefined {
-  if (tool !== 'task.delegate' || isCoderOnly(delegates)) return TOOL_ARGS[tool];
-  return delegateArgs(delegates.map((target) => target.name));
+  if ((tool !== 'task.delegate' && tool !== 'task.plan') || isCoderOnly(delegates)) return TOOL_ARGS[tool];
+  const names = delegates.map((target) => target.name);
+  return tool === 'task.plan' ? planArgs(['user', ...names]) : delegateArgs(names);
+}
+
+/**
+ * The arguments of `task.plan` (D-159): a title and 2 to 8 cards, each with
+ * who does it among `assignees` and the earlier cards it waits for, by their
+ * number in the plan (1-based: the number the model reads in its own list).
+ * Every field is required: local models skip an optional one.
+ */
+function planArgs(assignees: readonly string[]): JsonSchema {
+  const card = object(
+    {
+      title: text(120),
+      goal: text(500),
+      assignee: { type: 'string', enum: [...assignees] },
+      blocked_by: { type: 'array', items: { type: 'integer', minimum: 1, maximum: MAX_PLAN_CARDS - 1 }, maxItems: MAX_PLAN_CARDS - 1 },
+    },
+    ['title', 'goal', 'assignee', 'blocked_by'],
+  );
+  return object({ title: text(120), cards: { type: 'array', minItems: MIN_PLAN_CARDS, maxItems: MAX_PLAN_CARDS, items: card } }, ['title', 'cards']);
 }
 
 /**

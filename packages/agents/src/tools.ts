@@ -33,6 +33,8 @@ export const TOOLS = {
   'kb.search': { description: 'Search the knowledge base within the clearance', opens: [] },
   'kb.write': { description: 'Write a knowledge base page (A1: inbox only)', opens: [] },
   'task.create': { description: 'Create a card (A1: inbox only)', opens: [] },
+  // The cards are created only once the user approves the plan in the web chat (D-159).
+  'task.plan': { description: 'Propose cards with their dependencies, created after the user approves them', opens: [] },
   'task.update': { description: 'Update a card of this conversation (status and note), never the task in progress', opens: [] },
   // Not external communication for the delegating agent, because the delegated
   // step runs in a separate per-task context that has read only the brief: the

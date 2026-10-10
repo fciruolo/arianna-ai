@@ -37,6 +37,7 @@ import {
   repoFor,
   runDelegation,
   runLocalDelegation,
+  type CloudExecutor,
   type DelegateEnv,
   type DelegationPlan,
 } from './delegate.ts';
@@ -48,6 +49,21 @@ import { isLocalTool, runTool, type LocalTool } from './tools.ts';
 import { INCOGNITO_OFF_TOOLS, isIncognitoConversation } from '../incognito.ts';
 import { runTrialChat, trialModelOf } from './trial-chat.ts';
 import { decisionAnswer, isSecretaryTool, runSecretaryTool, secretaryReplay } from './secretary.ts';
+import { PLAN_TOOL, planDecisionAnswer, planReplay, runPlanTool } from './plans.ts';
+import {
+  cardBrief,
+  cardEnd,
+  cardLabel,
+  cardRepo,
+  choiceOf,
+  chosenExecutor,
+  cloudOf,
+  defaultWay,
+  executorOptions,
+  isAgentCard,
+  pendingExecutorApproval,
+  requestExecutor,
+} from './card-run.ts';
 import { isSecretaryConversation } from '../commitments.ts';
 import { loadTurns, recordTurn, type NewTurn, type Turn } from './turns.ts';
 
@@ -80,6 +96,7 @@ export const ORCHESTRATOR_MODEL = 'local-large';
 const CHAT_TOOLS: readonly ToolId[] = ['user.ask'];
 const DELEGATE: ToolId = 'task.delegate';
 const UPDATE: ToolId = 'task.update';
+const PLAN: ToolId = PLAN_TOOL;
 /** Longest message, tool result or turn shown to the model. */
 const MAX_TEXT = 8_000;
 
@@ -114,7 +131,8 @@ export interface OrchestratorOptions {
  * fixed for the whole task). Without one the tool has no valid target, and a
  * local model would reach for it to move its own task instead of asking.
  * In an incognito conversation (D-136) none of INCOGNITO_OFF_TOOLS: what
- * they write would outlive the closing.
+ * they write would outlive the closing. `task.plan` (D-159) everywhere but
+ * the secretary's conversation: the plan is approved in the chat.
  */
 export function orchestratorTools(agent: LoadedAgent, delegation = false, cards = false, incognito = false, secretary = false): ToolId[] {
   return offerable(agent.card.tools).filter(
@@ -124,6 +142,7 @@ export function orchestratorTools(agent: LoadedAgent, delegation = false, cards 
         CHAT_TOOLS.includes(tool) ||
         // The secretary's conversation (D-144) hands no step to another agent: a commitment never leaves in a brief.
         (delegation && !secretary && tool === DELEGATE) ||
+        (!secretary && tool === PLAN) ||
         // The commitments only there, never in an incognito conversation (what they note outlives it).
         (secretary && !incognito && isSecretaryTool(tool))),
   );
@@ -341,7 +360,66 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
   async function delegationPlanFor(task: Task, step: number, direct: boolean): Promise<DelegationPlan | undefined> {
     const delegation = await openDelegation(sql, task.id);
     if (delegation === undefined || (delegation.step >= step && !direct)) return undefined;
-    return planDelegation(env, task, delegation);
+    // The cloud executor the user chose for a card (D-159): the router takes that one only.
+    const ask = isAgentCard(task) && options.agents.get(task.assignee)?.card.executorChoice === 'ask';
+    const only = ask ? cloudOf(await chosenExecutor(sql, task.id)) : undefined;
+    return planDelegation(env, task, delegation, only);
+  }
+
+  /**
+   * The first step of a card of an agent (D-159): the way it runs. Undefined:
+   * on the local model, through the steps below. Otherwise the outcome: the
+   * user's choice to wait for, or the card's delegation opened at this step
+   * (with the declassification of the card when it is above what the agent
+   * may send to the cloud); the next step runs it.
+   */
+  async function cardStart(ctx: StepContext, agent: LoadedAgent): Promise<StepOutcome | undefined> {
+    const { task, step } = ctx;
+    // Already at work on the local model: the steps go on.
+    if ((await loadTurns(sql, task.id)).length > 0) return undefined;
+    const latest = (await loadDelegations(sql, task.id)).at(-1);
+    const ceiling = briefCeiling(agent.card);
+    const opened = (label: Label, brief: string): StepOutcome =>
+      isAtMost(label, ceiling) ? { kind: 'continue', usage: { steps: 0 } } : { kind: 'declassify', text: brief, from: label, to: ceiling, usage: { steps: 0 } };
+    // This step ran before a crash: the same outcome again, never a second delegation.
+    if (latest !== undefined && latest.step === step && (latest.status === 'pending' || latest.status === 'running')) return opened(latest.label, latest.brief);
+    if (latest !== undefined && latest.step === step - 1 && latest.status !== 'pending' && latest.status !== 'running') {
+      return cardEnd(task, latest, { kind: 'continue', usage: { steps: 0 } });
+    }
+    let only: CloudExecutor | undefined;
+    if (agent.card.executorChoice === 'ask') {
+      const decided = ctx.approval?.kind === 'executor' ? ctx.approval : undefined;
+      if (decided?.state === 'rejected') return { kind: 'wait-user', reason: `the user did not choose where ${task.assignee} works: resume the card to choose again`, usage: { steps: 0 } };
+      const choice = choiceOf(decided);
+      if (choice === undefined) {
+        const pending = await pendingExecutorApproval(sql, task.id);
+        if (pending !== undefined) return { kind: 'confirm', approvalId: pending, usage: { steps: 0 } };
+        const choices = executorOptions(env, agent.card, task);
+        if (choices.options.length === 0) return { kind: 'wait-user', reason: `no way for ${task.assignee} to work on this card now`, usage: { steps: 0 } };
+        return { kind: 'confirm', approvalId: await requestExecutor(sql, task, step, task.assignee, choices), usage: { steps: 0 } };
+      }
+      // Checked again: what was allowed when the user chose may not be now.
+      if (!executorOptions(env, agent.card, task).options.includes(choice)) {
+        return { kind: 'wait-user', reason: `${choice} can no longer take this card: resume it to choose again`, usage: { steps: 0 } };
+      }
+      only = cloudOf(choice);
+      if (only === undefined) return undefined;
+    } else {
+      const way = defaultWay(env, agent.card, task);
+      if (way === undefined) return { kind: 'wait-user', reason: `no way for ${task.assignee} to work on this card now`, usage: { steps: 0 } };
+      if (way === 'local') return undefined;
+    }
+    // The card itself is the brief, in the card's project: the way of a delegation (delegate.ts).
+    const brief = cardBrief(task);
+    const label = cardLabel(task);
+    const repo = cardRepo(env, task);
+    await createDelegation(sql, { taskId: task.id, step, agent: task.assignee, brief, label, ...(repo === undefined ? {} : { repo }) });
+    return opened(label, brief);
+  }
+
+  /** The outcome of a card's delegated step: the card ends with it (cardEnd). */
+  async function cardDone(task: Task, outcome: StepOutcome): Promise<StepOutcome> {
+    return cardEnd(task, (await loadDelegations(sql, task.id)).at(-1), outcome);
   }
 
   /** The task is a message of the direct chat with its assignee (D-111). */
@@ -472,6 +550,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const trial = await trialModelOf(sql, task.conversationId);
       if (trial !== undefined) return runTrialChat(sql, ctx, trial, options.trialModel?.(trial));
       const directChat = await isDirectChat(task);
+      const card = isAgentCard(task);
       const planned = plans.get(key) ?? (await delegationPlanFor(task, step, directChat));
       plans.delete(key);
       const plannedDirect = directs.get(key);
@@ -483,11 +562,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         switch (planned.kind) {
           case 'cloud': {
             const outcome = await runDelegation(env, ctx, planned);
-            return directChat ? directChatEnd(task, outcome) : outcome;
+            return directChat ? directChatEnd(task, outcome) : card ? cardDone(task, outcome) : outcome;
           }
           case 'local': {
             const outcome = await runLocalDelegation(env, ctx, planned);
-            return directChat ? directChatEnd(task, outcome) : outcome;
+            return directChat ? directChatEnd(task, outcome) : card ? cardDone(task, outcome) : outcome;
           }
           case 'workspace':
             await show(task, step, 'wait', `workspace · ${planned.repo}`);
@@ -506,6 +585,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
             // Nothing to run: the local step goes on, with the error as the result of the call.
             await updateDelegation(sql, planned.delegation.id, { status: planned.status, result: planned.result, resultLabel: planned.delegation.label });
             await show(task, step, 'error', planned.result.replace(/^error: [^:]+: /, ''));
+            // A card ends here: nobody else reads the result (D-159).
+            if (card) return cardDone(task, { kind: 'continue', usage: { steps: 0 } });
             break;
         }
       }
@@ -514,6 +595,11 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
       const agent = options.agents.get(task.assignee);
       if (agent === undefined) return { kind: 'wait-user', reason: `no agent card for ${task.assignee}` };
+      // A card of an agent (D-159): its first step chooses the way, a delegation or the local model.
+      if (card) {
+        const started = await cardStart(ctx, agent);
+        if (started !== undefined) return started;
+      }
       if (!agent.card.executors.includes('local')) return { kind: 'wait-user', reason: `${task.assignee} does not run on the local model` };
 
       // A chat task ends with one message of Arianna: if it is there, the task is
@@ -524,6 +610,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
       // The user decided a confirmation of the secretary (D-144): the answer is written here, without the model.
       if (ctx.approval?.kind === 'commitment') return decisionAnswer(sql, ctx);
+      // The user decided a plan (D-159): the cards are already created, the answer is written here too.
+      if (ctx.approval?.kind === 'plan') return planDecisionAnswer(sql, ctx);
 
       // Claude answers the system chat (D-064): what `plan` chose, so that the run matches its record.
       const direct = planned !== undefined ? undefined : plannedDirect === undefined ? (await directFor(task))?.model : (plannedDirect ?? undefined);
@@ -540,7 +628,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const done = turns.find((turn) => turn.step === step);
       if (done !== undefined) {
         // A confirmation asked at that step and still pending: wait for it again.
-        const waiting = await secretaryReplay(sql, ctx, done);
+        const waiting = (await secretaryReplay(sql, ctx, done)) ?? (await planReplay(sql, ctx, done));
         if (waiting !== undefined) return waiting;
         const ceilingOf = (name: string): Label => {
           const card = options.agents.get(name)?.card;
@@ -631,6 +719,10 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
         return { kind: 'wait-user', reason: 'the local model asked for a tool it does not have', usage };
       }
       if (answer.tool === DELEGATE) return delegateCall(ctx, turn, label, answer.arguments, usage, delegates);
+      if (answer.tool === PLAN) {
+        const assignees = ['user', ...delegates.map((target) => target.name)];
+        return runPlanTool(sql, ctx, { turn, label, args: answer.arguments, usage, assignees }, (kind, detail) => show(task, step, kind, detail));
+      }
       if (isSecretaryTool(answer.tool)) {
         return runSecretaryTool(sql, ctx, { turn, label, tool: answer.tool, args: answer.arguments, usage }, (kind, detail) => show(task, step, kind, detail));
       }

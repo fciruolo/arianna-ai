@@ -21,7 +21,7 @@ export const INCOGNITO_IDLE_MS = 10 * 60_000;
 /** The pages hear the closing this long before it (`conversation.incognito-closing`). */
 export const INCOGNITO_WARN_MS = 60_000;
 /** The tools that would keep something after the closing: never offered in an incognito conversation (D-136). */
-export const INCOGNITO_OFF_TOOLS = ['kb.write', 'task.create', 'task.update'] as const;
+export const INCOGNITO_OFF_TOOLS = ['kb.write', 'task.create', 'task.plan', 'task.update'] as const;
 
 export type IncognitoCause = 'user' | 'idle' | 'restart';
 
