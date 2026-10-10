@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.40.0] - 2026-10-10
+
 ### Aggiunto
 
 - Pagina «Sviluppo di Arianna»: accanto a ogni domanda senza risposta il pulsantino «Riscrivi più chiara», che chiede a Claude Code di riscriverla con contesto, opzioni ed esempio (nessun modello: una voce fissa in `data/dev/RISPOSTE.md`); la domanda resta aperta e mostra «Riscrittura chiesta» (D-153).
