@@ -60,8 +60,12 @@ const landing = computed(() => status.value?.landing ?? null);
 const busyLanding = computed(() => landing.value?.landing !== null && landing.value?.landing !== undefined);
 
 const blocker = computed(() => (status.value === null ? null : godBlocker(status.value)));
-/** Why «Prova», «Approva funzionalità» and «Non funziona» cannot start now (read again every 10 s), or null. */
-const landBlock = computed(() => landBlocker(landing.value?.installation));
+/** Why the work in the trial, or any work without one, cannot land now (read again every 10 s), or null: the line above the plans. */
+const landBlock = computed(() => landBlocker(landing.value?.installation, true));
+/** The same for one work: a subtask, or a plan with some subtask in the trial; another work waits for the trial. */
+function blockOf(inTrial: boolean): string | null {
+  return landBlocker(landing.value?.installation, inTrial);
+}
 /** Some plan has a landing button: only then the reason is worth a line. */
 const anyLanding = computed(() => plans.value.some((plan) => planLandActionsOf(plan.subtasks).length > 0 || plan.subtasks.some((subtask) => landActionsOf(subtask).length > 0)));
 
@@ -144,6 +148,8 @@ async function land(kind: 'subtasks' | 'plans', id: string, action: LandAction, 
     awaitingRestart.value = { boot: status.value?.boot, since };
   } catch (cause) {
     actionError.value = `«${LAND_TEXT[action]}» non è partito. ${errorText(cause)}`;
+    // The installation may have changed since the last reading: the line above the plans follows now.
+    void refresh();
   } finally {
     acting.value = null;
   }
@@ -258,7 +264,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
         </ul>
       </section>
 
-      <p v-if="landBlock !== null && anyLanding && !busyLanding && !coreGone" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm" role="status">{{ landBlock }}</p>
+      <p v-if="landBlock !== null && anyLanding && !busyLanding && !coreGone" id="god-land-block" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm" role="status">{{ landBlock }}</p>
       <p v-if="actionError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ actionError }}</p>
 
       <article v-for="plan in plans" :key="plan.id" class="hud-card p-4" :aria-label="`Piano ${plan.title}`">
@@ -273,8 +279,9 @@ onBeforeUnmount(() => window.clearInterval(timer));
               type="button"
               class="rounded-lg px-2.5 py-1 text-[12.5px] font-medium disabled:opacity-50"
               :class="LAND_CLASS[action]"
-              :disabled="acting !== null || busyLanding || landBlock !== null"
-              :title="landBlock ?? undefined"
+              :disabled="acting !== null || busyLanding || blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) !== null"
+              :title="blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) ?? undefined"
+              :aria-describedby="landBlock !== null ? 'god-land-block' : undefined"
               @click="startLand('plans', plan.id, action)"
             >
               {{ PLAN_LAND_TEXT[action] }}
@@ -283,7 +290,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
           <div v-if="rejecting !== null && rejecting.kind === 'plans' && rejecting.id === plan.id" class="w-full">
             <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[13px]" placeholder="Cosa non va? Lo leggono i Coder del piano, nel cloud: niente dati personali." />
             <div class="mt-1 flex gap-2">
-              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
+              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
               <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px]" @click="rejecting = null">Annulla</button>
             </div>
           </div>
@@ -312,7 +319,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
             <div v-if="rejecting !== null && rejecting.kind === 'subtasks' && rejecting.id === subtask.id" class="mt-2">
               <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[13px]" placeholder="Cosa non va? Lo legge il Coder, nel cloud: niente dati personali." />
               <div class="mt-1 flex gap-2">
-                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
+                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
                 <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px]" @click="rejecting = null">Annulla</button>
               </div>
             </div>
@@ -325,8 +332,9 @@ onBeforeUnmount(() => window.clearInterval(timer));
                 type="button"
                 class="rounded-lg px-2.5 py-1 text-[12.5px] font-medium disabled:opacity-50"
                 :class="LAND_CLASS[action]"
-                :disabled="acting !== null || busyLanding || landBlock !== null"
-                :title="landBlock ?? undefined"
+                :disabled="acting !== null || busyLanding || blockOf(subtask.trial === true) !== null"
+                :title="blockOf(subtask.trial === true) ?? undefined"
+                :aria-describedby="landBlock !== null ? 'god-land-block' : undefined"
                 @click="startLand('subtasks', subtask.id, action)"
               >
                 {{ LAND_TEXT[action] }}

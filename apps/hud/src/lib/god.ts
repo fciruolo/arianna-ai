@@ -40,18 +40,21 @@ export interface GodLandingView {
 }
 
 /**
- * Why «Prova», «Approva funzionalità» and «Non funziona» cannot start now, in
- * words for the user; null when they can. The same checks the core makes
- * before starting (apps/core/src/god/land.ts), on the installation the status
- * reports: shown next to the plans before the click, not after it.
+ * Why «Prova», «Approva funzionalità» and «Non funziona» of a work cannot
+ * start now, in words for the user; null when they can. The same checks the
+ * core makes before starting (apps/core/src/god/land.ts), on the installation
+ * the status reports: shown before the click, not after it. `inTrial`: the
+ * work (a subtask, or a plan with some subtask) is the one in the trial.
  */
-export function landBlocker(installation: GodLandingView['installation'] | undefined): string | null {
+export function landBlocker(installation: GodLandingView['installation'] | undefined, inTrial: boolean): string | null {
   if (installation === undefined) return null;
   if (installation.trial !== null) {
+    if (!inTrial) return `È in prova un altro lavoro (ramo ${installation.trial}): approvalo o di’ «Non funziona» prima.`;
     return installation.clean ? null : 'Nella prova ci sono modifiche non salvate in un commit: «Approva funzionalità» e «Non funziona» partono quando sono salvate o tolte.';
   }
   if (installation.branch !== 'main') {
-    return `L’installazione è sul ramo ${installation.branch === '' ? '(nessuno)' : installation.branch}, non su main: forse ci sta lavorando Claude Code. «Prova» e «Approva funzionalità» partono quando torna su main.`;
+    const where = installation.branch === '' ? 'non è su un ramo (HEAD staccato)' : `è sul ramo ${installation.branch}`;
+    return `L’installazione ${where}, non su main: forse ci sta lavorando Claude Code. «Prova» e «Approva funzionalità» partono quando torna su main.`;
   }
   if (!installation.clean) {
     return 'Nell’installazione ci sono modifiche non salvate in un commit: forse ci sta lavorando Claude Code. «Prova» e «Approva funzionalità» partono quando sono salvate o tolte.';

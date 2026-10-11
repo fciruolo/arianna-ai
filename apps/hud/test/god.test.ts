@@ -90,13 +90,14 @@ test('the «No» to the proposal is remembered per conversation, and a missing o
   assert.equal(loadDeclined(undefined, 'c1'), null);
 });
 
-test('landBlocker: «Prova» and the others wait for an installation on main and clean, or a clean trial', () => {
-  assert.equal(landBlocker(undefined), null, 'an older core');
-  assert.equal(landBlocker({ branch: 'main', clean: true, trial: null }), null);
-  assert.match(landBlocker({ branch: 'main', clean: false, trial: null }) ?? '', /modifiche non salvate/);
-  assert.match(landBlocker({ branch: 'task/x', clean: true, trial: null }) ?? '', /sul ramo task\/x, non su main/);
-  assert.match(landBlocker({ branch: '', clean: true, trial: null }) ?? '', /\(nessuno\)/, 'a detached head');
+test('landBlocker: «Prova» and the others wait for an installation on main and clean, or a clean trial of the same work', () => {
+  assert.equal(landBlocker(undefined, false), null, 'an older core');
+  assert.equal(landBlocker({ branch: 'main', clean: true, trial: null }, false), null);
+  assert.match(landBlocker({ branch: 'main', clean: false, trial: null }, false) ?? '', /modifiche non salvate/);
+  assert.match(landBlocker({ branch: 'task/x', clean: true, trial: null }, false) ?? '', /sul ramo task\/x, non su main/);
+  assert.match(landBlocker({ branch: '', clean: true, trial: null }, false) ?? '', /HEAD staccato/);
   const trial = 'prova/god-g003-x';
-  assert.equal(landBlocker({ branch: trial, clean: true, trial }), null, 'a trial: approve or reject');
-  assert.match(landBlocker({ branch: trial, clean: false, trial }) ?? '', /Nella prova/);
+  assert.equal(landBlocker({ branch: trial, clean: true, trial }, true), null, 'the work in the trial: approve or reject');
+  assert.match(landBlocker({ branch: trial, clean: false, trial }, true) ?? '', /Nella prova/);
+  assert.match(landBlocker({ branch: trial, clean: true, trial }, false) ?? '', /un altro lavoro \(ramo prova\/god-g003-x\)/, 'another work while one is in the trial');
 });
