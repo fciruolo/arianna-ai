@@ -756,7 +756,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
       // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
-      const context: Context = contextOf(task, label);
+      let context: Context = contextOf(task, label);
       // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
       // prompt, a block of L0 data within the local limit; never for Arianna, never for a card
       // closing untrusted_content (skillsPart). They pass the gateway with the rest.
@@ -886,6 +886,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           autonomy: agent.card.autonomy,
           ...(options.ims === undefined ? {} : { ims: options.ims }),
         });
+        // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
+        if (ran.context !== undefined) context = ran.context;
         // An IM item above what the IM holds (D-167): the turn and the confirmation together, nothing written yet.
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });

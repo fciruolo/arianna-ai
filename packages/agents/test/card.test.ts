@@ -142,6 +142,10 @@ describe('parseAgentCard', () => {
       );
       rejects(card((c) => (c.tools = ['finance.alerts', 'task.delegate'])), /may not list task\.delegate/);
       rejects(card((c) => (c.tools = ['finance.summary', 'task.plan'])), /may not list task\.plan/);
+      // Only finance.* and user.ask: a tool that opens nothing is refused too.
+      rejects(card((c) => (c.tools = ['finance.summary', 'kb.read'])), /may not list kb\.read: only finance\.\* and user\.ask/);
+      rejects(card((c) => (c.tools = ['finance.search', 'user.ask', 'kb.write'])), /may not list kb\.write/);
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = ['finance.alerts'])), 'archivista').tools, ['finance.alerts']);
     });
 
     it('rejects a tool that opens a side declared removed', () => {

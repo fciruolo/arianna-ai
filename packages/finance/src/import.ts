@@ -164,29 +164,40 @@ export function isNewestFirst(rows: readonly Transaction[]): boolean {
   return backward > forward;
 }
 
-/** Reads the file and prepares the import, without saving anything. */
-export function previewImport(bytes: Uint8Array, name: string, options: PreviewOptions): ImportPreview {
+/** A statement read once (readStatement): its rows, and where they come from. */
+export interface Statement {
+  kind: FileKind;
+  rows: SheetRow[];
+  source: ImportPreview['source'];
+  /** The workbook counts days from 1904 (.xlsx only). */
+  date1904: boolean;
+}
+
+/** Reads the file with our own readers: one pass, whatever is done with its rows next. */
+export function readStatement(bytes: Uint8Array, name: string, options: Pick<PreviewOptions, 'sheet' | 'limits'> = {}): Statement {
   const kind = detectKind(bytes, name);
-  let rows: SheetRow[];
-  let source: ImportPreview['source'];
-  let date1904 = false;
   if (kind === 'csv') {
     const csvOptions: CsvReadOptions = {};
     if (name.toLowerCase().endsWith('.tsv')) csvOptions.separator = '\t';
     if (options.limits !== undefined) csvOptions.limits = options.limits;
     const table = readCsv(bytes, csvOptions);
-    rows = table.rows;
-    source = { kind: 'csv', encoding: table.encoding, separator: table.separator };
-  } else {
-    const xlsxOptions: XlsxReadOptions = {};
-    if (options.sheet !== undefined) xlsxOptions.sheet = options.sheet;
-    if (options.limits !== undefined) xlsxOptions.limits = options.limits;
-    const table = readXlsx(bytes, xlsxOptions);
-    rows = table.rows;
-    date1904 = table.date1904;
-    source = { kind: 'xlsx', sheet: table.sheet, sheets: table.sheets };
+    return { kind, rows: table.rows, source: { kind: 'csv', encoding: table.encoding, separator: table.separator }, date1904: false };
   }
+  const xlsxOptions: XlsxReadOptions = {};
+  if (options.sheet !== undefined) xlsxOptions.sheet = options.sheet;
+  if (options.limits !== undefined) xlsxOptions.limits = options.limits;
+  const table = readXlsx(bytes, xlsxOptions);
+  return { kind, rows: table.rows, source: { kind: 'xlsx', sheet: table.sheet, sheets: table.sheets }, date1904: table.date1904 };
+}
 
+/** Reads the file and prepares the import, without saving anything. */
+export function previewImport(bytes: Uint8Array, name: string, options: PreviewOptions): ImportPreview {
+  return previewStatement(readStatement(bytes, name, options), options);
+}
+
+/** Prepares the import of a statement already read, without saving anything. */
+export function previewStatement(statement: Statement, options: PreviewOptions): ImportPreview {
+  const { kind, rows, source, date1904 } = statement;
   const headerIndex = findHeader(rows, options.profile);
   if (headerIndex === null) {
     throw options.profile === undefined

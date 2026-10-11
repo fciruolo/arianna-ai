@@ -141,3 +141,22 @@ test('not a zip, a truncated zip, a workbook without sheets', () => {
   rejects(() => readXlsx(zip([{ name: 'xl/workbook.xml', data: '<workbook><sheets/></workbook>' }])), 'no-sheet');
   rejects(() => readXlsx(zip([{ name: 'other.xml', data: '<x/>' }])), 'bad-xlsx');
 });
+
+test('a long tag without = ends fast: refused past 64 KiB, read in one pass below it', () => {
+  const long = (size: number) =>
+    xlsxParts(statement).map((part) => (part.name === 'xl/sharedStrings.xml' ? { ...part, data: `<sst ${'a'.repeat(size)}><si><t>x</t></si></sst>` } : part));
+  let started = performance.now();
+  rejects(() => readXlsx(zip(long(80_000))), 'bad-xml');
+  assert.ok(performance.now() - started < 1_000);
+  started = performance.now();
+  rejects(() => readXlsx(zip(long(60_000))), 'bad-xml');
+  assert.ok(performance.now() - started < 1_000);
+});
+
+test('attributes: quoted values with > and spaces around =; glued or unquoted ones are refused', () => {
+  const withAttrs = (attrs: string) =>
+    xlsxParts(statement).map((part) => (part.name === 'xl/sharedStrings.xml' && typeof part.data === 'string' ? { ...part, data: part.data.replace('<sst ', `<sst ${attrs} `) } : part));
+  assert.equal(readXlsx(zip(withAttrs('count = "2" note=\'a>b\''))).sheets.length, readXlsx(xlsx(statement)).sheets.length);
+  rejects(() => readXlsx(zip(withAttrs('a="1"b="2"'))), 'bad-xml');
+  rejects(() => readXlsx(zip(withAttrs('a=1'))), 'bad-xml');
+});

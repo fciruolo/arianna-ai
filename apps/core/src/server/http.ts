@@ -120,6 +120,7 @@ import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '
 import { projectFits, type DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
+import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -163,6 +164,8 @@ export interface ApiServerOptions {
   defaultModel?: () => string | undefined;
   /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
   agents?: () => readonly string[];
+  /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
+  financeAgents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
@@ -429,6 +432,7 @@ interface RouteOptions {
   models: () => readonly { executor: string; model: string }[];
   defaultModel: () => string | undefined;
   agents: () => readonly string[];
+  financeAgents: () => readonly string[];
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
@@ -686,6 +690,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       // "/nota" from an incognito conversation (D-136): nothing it says is kept.
       if (conversationId !== undefined && (typeof conversationId !== 'string' || !isUuid(conversationId))) throw new HttpError(400, 'conversationId must be a conversation id');
       if (conversationId !== undefined && (await isIncognitoConversation(sql, conversationId))) return { status: 409, body: { error: 'incognito' } };
+      // Nor from a conversation of the Finances (I-18, D-183): nothing of it goes to kb/.
+      if (conversationId !== undefined && (await isFinanceConversation(sql, conversationId))) return { status: 409, body: { error: 'finance' } };
       // A message of the chat saved once (D-089): its label and, without `text`, its text come from the database.
       if (messageId !== undefined && (typeof messageId !== 'string' || !/^[1-9]\d{0,18}$/.test(messageId))) {
         throw new HttpError(400, 'messageId must be a message id');
@@ -693,6 +699,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const message = messageId === undefined ? undefined : await loadMessage(sql, messageId);
       if (messageId !== undefined && message === undefined) throw new HttpError(404, 'message not found');
       if (message !== undefined && (await isIncognitoConversation(sql, message.conversationId))) return { status: 409, body: { error: 'incognito' } };
+      if (message !== undefined && (await isFinanceConversation(sql, message.conversationId))) return { status: 409, body: { error: 'finance' } };
       const text = body.text ?? message?.body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
@@ -740,6 +747,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (loaded === undefined) throw new HttpError(404, 'not found');
       // Nothing of an incognito conversation is ever saved (D-136): read as one without saves.
       if (loaded.incognito) return { body: { messageIds: [], notes: {}, conversation: false, conversationNote: null, conversationSavedAt: null } };
+      // Nor of a conversation of the Finances (I-18, D-183).
+      if (loaded.finance) return { status: 409, body: { error: 'finance' } };
       const saved = savedMessageNotes(capture.home, capture.rules);
       // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path and time only up to L2.
       const whole = findConversationNote(capture.home, capture.rules, id);
@@ -764,6 +773,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const conversation = await loadConversation(sql, id);
       if (conversation === undefined) throw new HttpError(404, 'not found');
       if (conversation.incognito) return { status: 409, body: { error: 'incognito' } };
+      if (conversation.finance) return { status: 409, body: { error: 'finance' } };
       const lines = await sql<SavedLine[]>`
         SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
       const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
@@ -1724,9 +1734,14 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
+  // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
+  const assignable = (): string[] => {
+    const finance = new Set(financeAgents());
+    return agents().filter((agent) => agent !== 'arianna' && !finance.has(agent));
+  };
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
@@ -1735,10 +1750,10 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
-    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
     ...financeRoutes(sql),
-    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: agents().filter((agent) => agent !== 'arianna') }), onError),
+    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -2094,6 +2109,13 @@ function secretaryRoutes(sql: Sql): Route[] {
   ];
 }
 
+/** The SQLSTATE of an error of PostgreSQL, undefined for any other error. */
+function postgresState(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'PostgresError') return undefined;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === 'string' ? code : 'XX000';
+}
+
 /**
  * The expense tracker (I-18, D-183): the contract of docs/FINANCE-API.md.
  * Private (L2, source finance:*): only the web chat reads and writes it, and
@@ -2110,6 +2132,15 @@ function financeRoutes(sql: Sql): Route[] {
       if (error instanceof HttpError) {
         const code = error.status === 413 ? 'too-large' : error.status === 404 ? 'not-found' : 'invalid';
         return { status: error.status, body: { error: code } };
+      }
+      // A refusal of the database carries the values of the row in its detail (descriptions, amounts):
+      // answered with a code, and reported, if at all, by its SQLSTATE alone.
+      const state = postgresState(error);
+      if (state !== undefined) {
+        if (state === '23505' || state === '23503' || state === '40001' || state === '40P01') return { status: 409, body: { error: 'conflict' } };
+        if (state.startsWith('22') || state.startsWith('23')) return { status: 400, body: { error: 'invalid' } };
+        // eslint-disable-next-line preserve-caught-error -- the cause is the error with the row's values: never attached
+        throw new Error(`finance: the database refused the request (SQLSTATE ${state})`);
       }
       throw error;
     }
@@ -2452,10 +2483,10 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
       throw error;
     }
   };
-  // Arianna does not take cards from the wall: she is the one who hands them out.
+  // Arianna does not take cards from the wall (the caller leaves her out, with the agents of the Finances).
   const known = (): CardNames => {
     const current = names();
-    return { projects: current.projects, agents: current.agents.filter((agent) => agent !== 'arianna'), ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
+    return { projects: current.projects, agents: current.agents, ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
   };
   return [
     route('GET', '/api/cards', async () => {
@@ -3049,6 +3080,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     models: options.models ?? (() => []),
     defaultModel: options.defaultModel ?? (() => undefined),
     agents: options.agents ?? (() => []),
+    financeAgents: options.financeAgents ?? (() => []),
     characters: options.characters,
     voice: options.voice,
     calls: options.calls,

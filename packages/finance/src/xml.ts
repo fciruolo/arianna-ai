@@ -37,26 +37,46 @@ function localName(name: string): string {
   return colon === -1 ? name : name.slice(colon + 1);
 }
 
-const ATTRIBUTE = /([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+/** The longest tag read, attributes included: past it the part is refused (bad-xml), so no tag costs more than this. */
+export const MAX_TAG_CHARS = 64 * 1024;
 
-function parseAttributes(source: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  let consumed = 0;
-  for (const match of source.matchAll(ATTRIBUTE)) {
-    if (source.slice(consumed, match.index).trim() !== '') throw bad('Malformed attribute');
-    consumed = match.index + match[0].length;
-    const name = match[1] ?? '';
-    if (name === 'xmlns' || name.startsWith('xmlns:')) continue;
-    attrs[localName(name)] = decodeEntities(match[2] ?? match[3] ?? '');
-  }
-  if (source.slice(consumed).trim() !== '') throw bad('Malformed attribute');
-  return attrs;
+function isSpace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r';
 }
 
-/** The `>` that closes the tag, skipping quoted attribute values (they may hold `>`). */
+/** `name="value"` or `name='value'` separated by spaces, read in one pass (no regular expression to backtrack). */
+function parseAttributes(source: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  let i = 0;
+  for (;;) {
+    while (isSpace(source[i])) i += 1;
+    if (i >= source.length) return attrs;
+    const nameStart = i;
+    while (i < source.length && !isSpace(source[i]) && source[i] !== '=' && source[i] !== '/' && source[i] !== '>') i += 1;
+    if (i === nameStart) throw bad('Malformed attribute');
+    const name = source.slice(nameStart, i);
+    while (isSpace(source[i])) i += 1;
+    if (source[i] !== '=') throw bad('Malformed attribute');
+    i += 1;
+    while (isSpace(source[i])) i += 1;
+    const quote = source[i];
+    if (quote !== '"' && quote !== "'") throw bad('Malformed attribute');
+    const close = source.indexOf(quote, i + 1);
+    if (close === -1) throw bad('Malformed attribute');
+    const value = source.slice(i + 1, close);
+    i = close + 1;
+    // Attributes are separated by spaces: `a="1"b="2"` is not XML.
+    if (i < source.length && !isSpace(source[i])) throw bad('Malformed attribute');
+    if (name === 'xmlns' || name.startsWith('xmlns:')) continue;
+    attrs[localName(name)] = decodeEntities(value);
+  }
+}
+
+/** The `>` that closes the tag, skipping quoted attribute values (they may hold `>`); a tag longer than MAX_TAG_CHARS is refused. */
 function tagEnd(xml: string, from: number): number {
   let quote = '';
-  for (let j = from; j < xml.length; j += 1) {
+  const limit = Math.min(xml.length, from + MAX_TAG_CHARS);
+  for (let j = from; j < limit; j += 1) {
     const char = xml[j];
     if (quote !== '') {
       if (char === quote) quote = '';
@@ -65,9 +85,10 @@ function tagEnd(xml: string, from: number): number {
     } else if (char === '>') {
       return j;
     } else if (char === '<') {
-      break;
+      throw bad('Unclosed tag');
     }
   }
+  if (limit < xml.length) throw bad('A tag is too long');
   throw bad('Unclosed tag');
 }
 

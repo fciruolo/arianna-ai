@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
@@ -11,7 +13,8 @@ import { requestDeclassify } from '../src/approvals.ts';
 import { createConversation, postUserMessage, writeConversation } from '../src/conversations.ts';
 import { directPolicyOf } from '../src/direct-chat.ts';
 import { processStepJob, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
-import { contextOf, outputSource } from '../src/finance-mark.ts';
+import { recordFailure } from '../src/failures.ts';
+import { contextOf, markTask, outputSource } from '../src/finance-mark.ts';
 import { passGateway } from '../src/gateway.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
 import { startLiveFeed } from '../src/live.ts';
@@ -20,6 +23,7 @@ import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { runTool } from '../src/orchestrator/tools.ts';
 import { startApiServer } from '../src/server/http.ts';
+import { openFailureChat } from '../src/system-chats.ts';
 import { createTask, loadTask } from '../src/tasks.ts';
 import { passToTelegram } from '../src/telegram/outgoing.ts';
 import { canaryPlaces, newCanary } from './support/canary.ts';
@@ -450,4 +454,81 @@ test('the agent of the Finances answers with figures from its tools, on the loca
   // Every text that passed the gateway for it went to a local target, with the mark.
   const log = await sql<{ target: string; decision: string }[]>`SELECT target_kind || ':' || target AS target, decision FROM gateway_log WHERE task_id = ${task.id}`;
   assert.ok(log.every((row) => row.decision === 'allow' && (row.target === 'executor:local' || row.target === 'channel:web')), JSON.stringify(log));
+});
+
+test('nothing of a marked conversation goes to kb/ or to the search; no card or IM item for the agent of the Finances', async () => {
+  const { sql } = db();
+  const home = join(HOME, 'data', 'test-tmp', `finance-${randomUUID()}`);
+  const inbox = join(home, 'kb', 'inbox');
+  mkdirSync(inbox, { recursive: true });
+  const live = await startLiveFeed(sql);
+  const server = await startApiServer({
+    sql,
+    live,
+    host: '127.0.0.1',
+    port: 0,
+    capture: { home, rules: parseLabelRules('') },
+    agents: () => ['arianna', 'coder', 'finanze'],
+    financeAgents: () => ['finanze'],
+  });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const call = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+  try {
+    const word = `fittiziospesa${randomUUID().slice(0, 8)}`;
+    const conversation = await financeConversation();
+    const { message } = await postUserMessage(sql, conversation.id, `Quanto ho speso per ${word}?`);
+    // "Salva" of a message, "/nota" from it, "Salva in inbox" and the saved list: 409 finance, nothing written.
+    assert.deepEqual(await call('POST', '/api/capture', { messageId: message.id }), { status: 409, body: { error: 'finance' } });
+    assert.deepEqual(await call('POST', '/api/capture', { text: 'nota', conversationId: conversation.id }), { status: 409, body: { error: 'finance' } });
+    assert.deepEqual(await call('POST', `/api/conversations/${conversation.id}/save`, {}), { status: 409, body: { error: 'finance' } });
+    assert.deepEqual(await call('GET', `/api/conversations/${conversation.id}/saved`), { status: 409, body: { error: 'finance' } });
+    assert.deepEqual(readdirSync(inbox), []);
+    // The search does not find its messages; the same word in an unmarked private conversation is found.
+    const plain = await createConversation(sql, { mode: 'private' });
+    const { message: other } = await postUserMessage(sql, plain.id, `Promemoria ${word}`);
+    const found = await call('GET', `/api/search?q=${word}`);
+    assert.deepEqual((found.body.messages as { messageId: string }[]).map((hit) => hit.messageId), [other.id]);
+    // An unmarked message is saved as before.
+    assert.equal((await call('POST', '/api/capture', { messageId: other.id })).status, 201);
+
+    // Like Arianna, the agent of the Finances never takes a card.
+    const cards = await call('GET', '/api/cards');
+    assert.deepEqual(cards.body.agents, ['coder']);
+    assert.equal((await call('POST', '/api/cards', { title: 'Spese', assignee: 'finanze' })).status, 400);
+    assert.equal((await call('POST', '/api/cards', { title: 'Codice', assignee: 'coder' })).status, 201);
+  } finally {
+    await server.close();
+    await live.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the mark reaches the conversation of a task born marked, and the system chat of a task marked later (0057)', async () => {
+  const { sql, owner } = db();
+  // Born marked (from a marked parent, here written directly): its conversation is marked by the insert itself.
+  const born = await createConversation(sql, { mode: 'private' });
+  await sql`INSERT INTO tasks (title, conversation_id, clearance, effective_label, finance) VALUES ('Figlio', ${born.id}, 'L2', 'L2', true)`;
+  const [bornRow] = await sql<{ finance: boolean }[]>`SELECT finance FROM conversations WHERE id = ${born.id}`;
+  assert.equal(bornRow?.finance, true);
+
+  // A failed task with its system chat, then marked: the chat is marked too, and stays so when it opens again.
+  const chat = await createConversation(sql, { mode: 'private' });
+  const { task } = await postUserMessage(sql, chat.id, 'Domanda');
+  await owner`UPDATE tasks SET status = 'failed', waiting_reason = NULL WHERE id = ${task.id}`;
+  await sql.begin((tx) => recordFailure(tx, task.id, { origin: 'engine', code: 'engine.step-failed', details: {} }));
+  const system = await openFailureChat(sql, task.id);
+  assert.equal(system.finance, false);
+  await markTask(sql, task.id);
+  const again = await openFailureChat(sql, task.id);
+  assert.equal(again.id, system.id);
+  assert.equal(again.finance, true);
+  assert.equal(again.effectiveLabel, 'L2');
+  // An unmarked task born in a private conversation leaves it as it was.
+  const plain = await createConversation(sql, { mode: 'private' });
+  await sql`INSERT INTO tasks (title, conversation_id, clearance, effective_label) VALUES ('Altro', ${plain.id}, 'L2', 'L2')`;
+  const [plainRow] = await sql<{ finance: boolean }[]>`SELECT finance FROM conversations WHERE id = ${plain.id}`;
+  assert.equal(plainRow?.finance, false);
 });

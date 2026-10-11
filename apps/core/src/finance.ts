@@ -3,13 +3,12 @@ import {
   balanceSeries,
   categorize,
   cellText,
-  detectKind,
   FinanceImportError,
   findHeader,
   monthlyTotals,
   previewImport,
-  readCsv,
-  readXlsx,
+  previewStatement,
+  readStatement,
   ruleFromConfirmation,
   runChecks,
   totalsByCategory,
@@ -25,7 +24,7 @@ import {
   type ImportPreview,
   type Month,
   type MonthTotal,
-  type SheetRow,
+  type Statement,
   type YearOverYear,
 } from '@arianna/finance';
 
@@ -264,25 +263,13 @@ async function fingerprintsOf(sql: Queryable, account: string): Promise<Set<stri
   return new Set(rows.map((row) => row.fingerprint));
 }
 
-/** The rows of the file and the header row the profile (or the guess) finds, for the columns the page shows. */
-function headerOf(request: ImportRequest): { line: number; cells: string[]; sheets: string[] | null; sheet: string | null } | undefined {
-  const kind = detectKind(request.bytes, request.name);
-  let rows: SheetRow[];
-  let sheets: string[] | null = null;
-  let sheet: string | null = null;
-  if (kind === 'csv') {
-    rows = readCsv(request.bytes, request.name.toLowerCase().endsWith('.tsv') ? { separator: '\t' } : {}).rows;
-  } else {
-    const table = readXlsx(request.bytes, request.sheet === undefined ? {} : { sheet: request.sheet });
-    rows = table.rows;
-    sheets = table.sheets;
-    sheet = table.sheet;
-  }
-  const index = findHeader(rows, request.profile);
+/** The header row the profile (or the guess) finds in the statement, for the columns the page shows. */
+function headerOf(statement: Statement, profile: BankProfile | undefined): { line: number; cells: string[] } | undefined {
+  const index = findHeader(statement.rows, profile);
   // No row names the columns: the first non-empty one, so that the user chooses them by hand.
-  const row = index === null ? (request.profile === undefined ? rows[0] : undefined) : rows[index];
+  const row = index === null ? (profile === undefined ? statement.rows[0] : undefined) : statement.rows[index];
   if (row === undefined) return undefined;
-  return { line: row.line, cells: row.cells.map((cell) => cellText(cell).trim()), sheets, sheet };
+  return { line: row.line, cells: row.cells.map((cell) => cellText(cell).trim()) };
 }
 
 function previewOut(preview: ImportPreview, header: string[]): Preview {
@@ -319,25 +306,27 @@ export async function previewFile(sql: Sql, body: Record<string, unknown>): Prom
   const request = importRequest(body, false);
   const account = await loadAccount(sql, request.account);
   const existing = await fingerprintsOf(sql, account.id);
+  // The file is read once (an .xlsx is unzipped and parsed once): the header and the preview come from the same rows.
+  let statement: Statement | undefined;
   try {
-    const header = headerOf(request);
-    const preview = previewImport(request.bytes, request.name, {
+    statement = readStatement(request.bytes, request.name, request.sheet === undefined ? {} : { sheet: request.sheet });
+    const header = headerOf(statement, request.profile);
+    const preview = previewStatement(statement, {
       account: account.id,
       existing,
       currency: account.currency,
       ...(request.profile === undefined ? {} : { profile: request.profile }),
-      ...(request.sheet === undefined ? {} : { sheet: request.sheet }),
     });
     return previewOut(preview, header?.cells ?? []);
   } catch (error) {
     // Columns not recognized, or no row that names them: not an error, the user chooses the columns by hand.
-    if (error instanceof FinanceImportError && (error.code === 'unknown-columns' || error.code === 'no-header') && request.profile === undefined) {
-      const header = headerOf(request);
+    if (statement !== undefined && error instanceof FinanceImportError && (error.code === 'unknown-columns' || error.code === 'no-header') && request.profile === undefined) {
+      const header = headerOf(statement, undefined);
       if (header !== undefined) {
         return {
-          kind: detectKind(request.bytes, request.name),
-          sheets: header.sheets,
-          sheet: header.sheet,
+          kind: statement.kind,
+          sheets: statement.source.kind === 'xlsx' ? statement.source.sheets : null,
+          sheet: statement.source.kind === 'xlsx' ? statement.source.sheet : null,
           profile: null,
           guessed: false,
           headerLine: header.line,
