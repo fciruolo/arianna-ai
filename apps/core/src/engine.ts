@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import { APPROVAL_ACTIONS } from '@arianna/agents';
-import { createContext, isAtMost, isLabel, type Label } from '@arianna/policy';
+import { isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
 import { applyPlanApproval } from './card-plans.ts';
 import { applyCommitmentApproval } from './commitments.ts';
 import type { Queryable, Sql } from './db/client.ts';
 import { appendEvent } from './events.ts';
+import { contextOf, outputSource } from './finance-mark.ts';
 import { describeFailure, recordFailure, type Failure } from './failures.ts';
 import { completeJob, createJobQueue, enqueueJob, errorCode, failJob, requeueStaleJobs, type Job, type JobQueue } from './jobs.ts';
 import { describeLimit, limitReached, MAX_TIMER_MS, parseLimits, remainingMs, stricterLimits, type TaskLimits } from './limits.ts';
@@ -431,8 +432,14 @@ export async function processStepJob(
           await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
           return 'waiting-user';
         }
-        // The task's context: a context that has read finance data is never declassified (D-183).
-        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: `task:${task.id}` }, outcome.to, createContext(task.clearance, task.effectiveLabel), {
+        // A task that has read finance data never asks one (D-183): nothing of it leaves, even with the user's approval.
+        // An invalid request, with its fixed reason (the chat has its Italian text).
+        if (task.finance) {
+          await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
+          return 'waiting-user';
+        }
+        // The task's context, with its finance mark: the policy refuses a marked one too.
+        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: outputSource(task, `task:${task.id}`) }, outcome.to, contextOf(task, task.effectiveLabel), {
           taskId: task.id,
         });
         await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: declassify', cause: 'approval', approvalId: created.id });

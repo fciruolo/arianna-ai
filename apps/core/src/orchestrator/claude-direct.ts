@@ -1,7 +1,8 @@
 import type { TurnMessage } from '@arianna/agents';
 import { prepareEmptyWorkspace, removeWorkspace, type ClaudeModel } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, type Label, type Labeled } from '@arianna/policy';
+import { isAtMost, maxLabel, type Label, type Labeled } from '@arianna/policy';
 
+import { contextOf } from '../finance-mark.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { DIRECT_MODELS, type Conversation, type DirectModel } from '../conversations.ts';
 import type { StepContext, StepOutcome } from '../engine.ts';
@@ -105,7 +106,7 @@ export async function runDirect(env: DelegateEnv, ctx: StepContext, model: Direc
     // Never resumed: the folder of an interrupted run is gone, and the brief carries the whole conversation.
     const fresh: StepContext = { task, step, runId, signal: ctx.signal, setSessionRef: (ref) => ctx.setSessionRef(ref), ...(ctx.approval === undefined ? {} : { approval: ctx.approval }) };
     const result = await runClaudeStep(sql, claude, fresh, {
-      context: createContext(task.clearance, label),
+      context: contextOf(task, label),
       brief: directBrief(history, env.directPrompt),
       workspace,
       model: model satisfies ClaudeModel,

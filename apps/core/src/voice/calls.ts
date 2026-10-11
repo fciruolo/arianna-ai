@@ -5,6 +5,7 @@ import { VOICE_ALIAS, type VoiceConfig } from '@arianna/config';
 import type { LocalModel } from '@arianna/executors';
 import { createContext, isAtMost, labelForUserMessage, maxLabel, scanText, type Label, type Target } from '@arianna/policy';
 
+import { contextOf, type Marked } from '../finance-mark.ts';
 import { ChatError, checkMessageBody, isUuid, listMessages, loadConversation, loadMessage, postUserMessage, taskTitle, type Conversation, type Message } from '../conversations.ts';
 import type { Queryable, Sql } from '../db/client.ts';
 import { directPolicyOf } from '../direct-chat.ts';
@@ -258,7 +259,7 @@ export function createCalls(options: CallsOptions): Calls {
     const conversation = await loadConversation(sql, session.conversationId);
     if (conversation === undefined) return;
     const stored = maxLabel(label, conversation.effectiveLabel);
-    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${callId}` }], createContext(conversation.clearance, stored), { kind: 'channel', id: 'voice' });
+    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${callId}` }], contextOf(conversation, stored), { kind: 'channel', id: 'voice' });
     const [allowed] = decision.decision === 'allow' ? decision.texts : [];
     if (allowed === undefined) return;
     const answer = await options.voice.request('POST', `/calls/${callId}/say`, { json: { text: allowed }, timeoutMs: 10_000 });
@@ -310,17 +311,17 @@ export function createCalls(options: CallsOptions): Calls {
   }
 
   /** Text towards the call (local) goes through the gateway first: what it allows, or undefined. */
-  async function allowSpoken(call: Call, text: string, label: Label, clearance: Label, effective: Label): Promise<string | undefined> {
+  async function allowSpoken(call: Call, text: string, label: Label, owner: Marked, effective: Label): Promise<string | undefined> {
     const stored = maxLabel(label, effective);
-    if (!isAtMost(stored, clearance)) return undefined;
-    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${call.id}` }], createContext(clearance, effective), { kind: 'channel', id: 'voice' });
+    if (!isAtMost(stored, owner.clearance)) return undefined;
+    const decision = await passGateway(sql, [{ value: text, label: stored, source: `call:${call.id}` }], contextOf(owner, effective), { kind: 'channel', id: 'voice' });
     if (decision.decision === 'block') return undefined;
     return decision.texts[0];
   }
 
   /** The reply goes through the gateway towards the call (local), then into the history. */
-  async function storeReply(call: Call, text: string, label: Label, clearance: Label, effective: Label): Promise<boolean> {
-    const allowed = await allowSpoken(call, text, label, clearance, effective);
+  async function storeReply(call: Call, text: string, label: Label, owner: Marked, effective: Label): Promise<boolean> {
+    const allowed = await allowSpoken(call, text, label, owner, effective);
     if (allowed === undefined) return false;
     await insertReply(call, allowed, maxLabel(label, effective));
     return true;
@@ -368,7 +369,7 @@ export function createCalls(options: CallsOptions): Calls {
     const decision = await passGateway(
       sql,
       prompt.messages.map((part) => ({ value: part.content, label: part.label, source: `call:${call.id}` })),
-      createContext(conversation.clearance, effective),
+      contextOf(conversation, effective),
       target,
     );
     if (decision.decision === 'block' || decision.texts.length !== prompt.messages.length) return undefined;
@@ -469,7 +470,7 @@ export function createCalls(options: CallsOptions): Calls {
       if (state() !== 'speaking' || superseded()) return;
       const text = speakable(piece);
       if (text === '') return;
-      const passed = await allowSpoken(call, text, prompt.label, conversation.clearance, effective);
+      const passed = await allowSpoken(call, text, prompt.label, conversation, effective);
       if (state() !== 'speaking' || superseded()) return;
       if (passed === undefined) {
         flow.state = 'blocked';
@@ -554,7 +555,7 @@ export function createCalls(options: CallsOptions): Calls {
       session.delegations += 1;
       await sql`UPDATE calls SET delegations = delegations + 1 WHERE id = ${callId}`;
       follow(callId, taskId, voice.limits.delegationSeconds).catch((error: unknown) => options.onError?.(error));
-      await storeReply(call, CALL_TEXT.delegated, 'L0', conversation.clearance, effective);
+      await storeReply(call, CALL_TEXT.delegated, 'L0', conversation, effective);
       emit(CALL_TEXT.delegated);
       return;
     }
@@ -600,7 +601,7 @@ export function createCalls(options: CallsOptions): Calls {
     session.delegations += 1;
     await sql`UPDATE calls SET delegations = delegations + 1 WHERE id = ${call.id}`;
     follow(call.id, taskId, voice.limits.delegationSeconds).catch((error: unknown) => options.onError?.(error));
-    const allowed = await allowSpoken(call, texts.bridged, speaker.nameLabel, conversation.clearance, conversation.effectiveLabel);
+    const allowed = await allowSpoken(call, texts.bridged, speaker.nameLabel, conversation, conversation.effectiveLabel);
     if (allowed === undefined) {
       emit(CALL_TEXT.notHere);
       return;
@@ -611,7 +612,7 @@ export function createCalls(options: CallsOptions): Calls {
 
   /** A fixed text with the name of an agent in it: through the gateway towards the call (a user agent's name is L1). */
   async function fixedText(call: Call, conversation: Conversation, text: string, label: Label): Promise<string> {
-    return (await allowSpoken(call, text, label, conversation.clearance, conversation.effectiveLabel)) ?? CALL_TEXT.notHere;
+    return (await allowSpoken(call, text, label, conversation, conversation.effectiveLabel)) ?? CALL_TEXT.notHere;
   }
 
   /**
@@ -659,7 +660,7 @@ export function createCalls(options: CallsOptions): Calls {
   async function greetingOf(call: Call, conversation: Conversation, text: string, speaker: Speaker): Promise<string> {
     const greeting = greetingFor(text, speaker);
     if (speaker.kind === 'arianna') return greeting;
-    return (await allowSpoken(call, greeting, speaker.nameLabel, conversation.clearance, conversation.effectiveLabel)) ?? 'Ciao. Dimmi pure.';
+    return (await allowSpoken(call, greeting, speaker.nameLabel, conversation, conversation.effectiveLabel)) ?? 'Ciao. Dimmi pure.';
   }
 
   /** Opens the call on apps/voice with a token for this call; the limits start from the answer. */
@@ -835,7 +836,7 @@ export function createCalls(options: CallsOptions): Calls {
         const message = row === undefined ? undefined : await loadMessage(sql, row.id);
         if (message !== undefined) {
           const label = maxLabel(message.label, conversation.effectiveLabel);
-          const decision = await passGateway(sql, [{ value: summaryToSay(message.body), label, source: `call:${call.id}` }], createContext(conversation.clearance, label), { kind: 'channel', id: 'voice' });
+          const decision = await passGateway(sql, [{ value: summaryToSay(message.body), label, source: `call:${call.id}` }], contextOf(conversation, label), { kind: 'channel', id: 'voice' });
           const [allowed] = decision.decision === 'allow' ? decision.texts : [];
           if (allowed !== undefined) greeting = `${greeting} ${allowed}`;
         }

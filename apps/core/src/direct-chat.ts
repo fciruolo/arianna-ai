@@ -1,4 +1,4 @@
-import type { LoadedAgent } from '@arianna/agents';
+import { isFinanceCard, type LoadedAgent } from '@arianna/agents';
 import { isAtMost, type ConversationMode } from '@arianna/policy';
 
 import { GOD_AGENT, GOD_PROJECT } from './god/clone.ts';
@@ -29,6 +29,11 @@ export interface DirectPolicy {
    * list of agents of "+ Nuovo".
    */
   container?: string;
+  /**
+   * The agent of the Finances (D-183): its conversation is private and marked
+   * from birth, and it answers with its read-only tools on the local model.
+   */
+  finance?: true;
 }
 
 /** True when `project` (a part `<container>:<part>`, or a project of one part) belongs to the container the policy asks for, or the policy asks for none. */
@@ -40,6 +45,11 @@ export function projectFits(policy: Pick<DirectPolicy, 'container'>, project: st
 /** The policy of one agent, or undefined when it cannot answer a direct chat now (its executor is off). */
 export function directPolicyOf(name: string, agent: LoadedAgent, available: { claude: boolean; codex: boolean }): DirectPolicy | undefined {
   if (name === 'arianna') return undefined;
+  // The agent of the Finances (D-183): only in a private conversation, marked from birth, nothing of it goes out.
+  // It answers with its tools on the local model (as Arianna does), not with one call like the other local agents.
+  if (isFinanceCard(agent.card) && agent.card.executors.every((executor) => executor === 'local')) {
+    return { agent: name, description: agent.card.description, cloud: false, executors: [], modes: ['private'], project: false, finance: true };
+  }
   const route = delegationRoute(agent.card);
   if (isCloudRoute(route)) {
     const executors = agent.card.executors.filter((executor): executor is 'claude' | 'codex' => (CLOUD_DELEGATES as readonly string[]).includes(executor) && available[executor as 'claude' | 'codex']);

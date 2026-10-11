@@ -57,6 +57,31 @@ import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '..
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
 import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
+import {
+  alerts as financeAlerts,
+  createAccount as createFinanceAccount,
+  createCategory as createFinanceCategory,
+  createRule as createFinanceRule,
+  deleteBudget as deleteFinanceBudget,
+  deleteCategory as deleteFinanceCategory,
+  deleteRule as deleteFinanceRule,
+  ensureCategories as ensureFinanceCategories,
+  importFile as importFinanceFile,
+  listAccounts as listFinanceAccounts,
+  listBudgets as listFinanceBudgets,
+  listCategories as listFinanceCategories,
+  listImports as listFinanceImports,
+  listRules as listFinanceRules,
+  listTransactions as listFinanceTransactions,
+  previewFile as previewFinanceFile,
+  setBudget as setFinanceBudget,
+  setTransactionCategory as setFinanceTransactionCategory,
+  summary as financeSummary,
+  undoImport as undoFinanceImport,
+  updateAccount as updateFinanceAccount,
+  updateCategory as updateFinanceCategory,
+} from '../finance.ts';
+import { dayParam, FinanceError, MAX_IMPORT_BODY, monthParam } from '../finance-format.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
@@ -1712,6 +1737,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...secretaryRoutes(sql),
     ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
+    ...financeRoutes(sql),
     ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: agents().filter((agent) => agent !== 'arianna') }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
@@ -1800,7 +1826,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       if (policy !== undefined && !projectFits(policy, typeof body.project === 'string' ? body.project : undefined)) {
         throw new HttpError(400, `${policy.agent} works only on the project ${policy.container ?? ''}`);
       }
-      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project };
+      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
       const model = body.mode === 'work' ? defaultModel() : undefined;
@@ -2065,6 +2091,130 @@ function secretaryRoutes(sql: Sql): Route[] {
         throw error;
       }
     }),
+  ];
+}
+
+/**
+ * The expense tracker (I-18, D-183): the contract of docs/FINANCE-API.md.
+ * Private (L2, source finance:*): only the web chat reads and writes it, and
+ * nothing of it goes out. Errors answer `{ error: <code> }`, which the page
+ * translates; the file of an import comes as JSON with its bytes in base64
+ * (the API takes only JSON, security.ts), up to 10 MiB decoded.
+ */
+function financeRoutes(sql: Sql): Route[] {
+  const guard = (handler: Handler): Handler => async (request, url, params) => {
+    try {
+      return await handler(request, url, params);
+    } catch (error) {
+      if (error instanceof FinanceError) return { status: error.status, body: { error: error.code, ...(error.line === null ? {} : { line: error.line }) } };
+      if (error instanceof HttpError) {
+        const code = error.status === 413 ? 'too-large' : error.status === 404 ? 'not-found' : 'invalid';
+        return { status: error.status, body: { error: code } };
+      }
+      throw error;
+    }
+  };
+  const done: Result = { status: 204, body: null };
+  // A DELETE carries no body, or an empty object.
+  const noBody = async (request: IncomingMessage): Promise<void> => {
+    const declared = Number(request.headers['content-length'] ?? '0');
+    if (declared === 0 && request.headers['transfer-encoding'] === undefined) return;
+    onlyFields(await readJson(request), []);
+  };
+  const query = (url: URL, key: string): string | undefined => {
+    const value = url.searchParams.get(key);
+    return value === null || value === '' ? undefined : value;
+  };
+  const integer = (url: URL, key: string): number | undefined => {
+    const value = query(url, key);
+    if (value === undefined) return undefined;
+    if (!/^\d{1,9}$/.test(value)) throw new FinanceError('invalid', 400, `${key} must be a whole number`);
+    return Number(value);
+  };
+  const id = (params: Params, key: string): string => params[key] ?? '';
+  return [
+    route('GET', '/api/finance/accounts', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { accounts: await listFinanceAccounts(sql) } };
+    })),
+    route('POST', '/api/finance/accounts', guard(async (request) => ({ status: 201, body: { account: await createFinanceAccount(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/accounts/:id', guard(async (request, _url, params) => ({ body: { account: await updateFinanceAccount(sql, id(params, 'id'), await readJson(request)) } }))),
+
+    route('POST', '/api/finance/imports/preview', guard(async (request) => ({ body: { preview: await previewFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('POST', '/api/finance/imports', guard(async (request) => ({ status: 201, body: { import: await importFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('GET', '/api/finance/imports', guard(async (_request, url) => ({ body: { imports: await listFinanceImports(sql, url.searchParams.get('account')) } }))),
+    route('DELETE', '/api/finance/imports/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await undoFinanceImport(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/transactions', guard(async (_request, url) => {
+      const uncategorized = query(url, 'uncategorized');
+      if (uncategorized !== undefined && uncategorized !== '1' && uncategorized !== '0') throw new FinanceError('invalid', 400, 'uncategorized must be 1');
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      const category = query(url, 'category');
+      const q = query(url, 'q');
+      const listed = query(url, 'fingerprints');
+      const fingerprints = listed === undefined ? undefined : listed.split(',').map((item) => item.trim()).filter((item) => item !== '');
+      const limit = integer(url, 'limit');
+      const offset = integer(url, 'offset');
+      if (q !== undefined && q.length > 200) throw new FinanceError('invalid', 400, 'q is longer than 200 characters');
+      return {
+        body: await listFinanceTransactions(sql, {
+          ...(account === undefined ? {} : { account }),
+          ...(from === undefined ? {} : { from }),
+          ...(to === undefined ? {} : { to }),
+          ...(category === undefined ? {} : { category }),
+          uncategorized: uncategorized === '1',
+          ...(q === undefined ? {} : { q }),
+          ...(fingerprints === undefined ? {} : { fingerprints }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(offset === undefined ? {} : { offset }),
+        }),
+      };
+    })),
+    route('PATCH', '/api/finance/transactions/:id', guard(async (request, _url, params) => ({ body: await setFinanceTransactionCategory(sql, id(params, 'id'), await readJson(request)) }))),
+
+    route('GET', '/api/finance/categories', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { categories: await listFinanceCategories(sql) } };
+    })),
+    route('POST', '/api/finance/categories', guard(async (request) => ({ status: 201, body: { category: await createFinanceCategory(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/categories/:id', guard(async (request, _url, params) => ({ body: { category: await updateFinanceCategory(sql, id(params, 'id'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/categories/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceCategory(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/rules', guard(async () => ({ body: { rules: await listFinanceRules(sql) } }))),
+    route('POST', '/api/finance/rules', guard(async (request) => ({ status: 201, body: { rule: await createFinanceRule(sql, await readJson(request)) } }))),
+    route('DELETE', '/api/finance/rules/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceRule(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/budgets', guard(async () => ({ body: { budgets: await listFinanceBudgets(sql) } }))),
+    route('PUT', '/api/finance/budgets/:category', guard(async (request, _url, params) => ({ body: { budget: await setFinanceBudget(sql, id(params, 'category'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/budgets/:category', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceBudget(sql, id(params, 'category'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/summary', guard(async (_request, url) => {
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      return {
+        body: await financeSummary(sql, { ...(account === undefined ? {} : { account }), ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) }),
+      };
+    })),
+    route('GET', '/api/finance/alerts', guard(async (_request, url) => ({ body: { alerts: await financeAlerts(sql, monthParam(url.searchParams.get('month'), 'month')) } }))),
   ];
 }
 
@@ -3072,6 +3222,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         } else if ('raw' in result) {
           response.writeHead(200, { ...headers, ...result.headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': result.noStore === true ? 'no-store' : 'no-cache' });
           response.end(result.raw);
+        } else if (result.status === 204) {
+          response.writeHead(204, { ...headers, 'cache-control': 'no-store' });
+          response.end();
         } else {
           sendJson(response, result.status ?? 200, result.body, headers);
         }

@@ -14,6 +14,9 @@ export {
 export { AGENTS_DIR, loadAgent, loadAgents, promptLabelOf, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 export {
   APPROVAL_ACTIONS,
+  FINANCE_TOOLS,
+  isFinanceCard,
+  isFinanceTool,
   isToolId,
   TOOLS,
   toolSpec,

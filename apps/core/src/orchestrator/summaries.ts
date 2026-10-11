@@ -1,7 +1,8 @@
 import type { TurnMessage } from '@arianna/agents';
 import { LocalModelError, type LocalModel } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, type Label, type Labeled } from '@arianna/policy';
+import { isAtMost, maxLabel, type Label, type Labeled } from '@arianna/policy';
 
+import { contextOf } from '../finance-mark.ts';
 import type { Queryable, Sql } from '../db/client.ts';
 import { appendEvent } from '../events.ts';
 import { passGateway } from '../gateway.ts';
@@ -356,7 +357,7 @@ export async function writeMissingSummaries(
       const decision = await passGateway(
         sql,
         part.map((row) => ({ value: summaryInputLine(row), label: row.label, source: `message:${row.id}` })),
-        createContext(task.clearance, label),
+        contextOf(task, label),
         { kind: 'executor', id: 'local', locality: 'local' },
         { taskId: task.id, runId: ids.runId },
       );

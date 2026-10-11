@@ -121,6 +121,29 @@ describe('parseAgentCard', () => {
       }
     });
 
+    it('the finance tools (D-183): local alone at L2, and nothing that hands their data on', () => {
+      const tools = ['finance.summary', 'finance.search', 'finance.alerts', 'user.ask'];
+      assert.deepEqual(parseAgentCard(card((c) => (c.tools = tools)), 'archivista').tools, tools);
+      rejects(
+        card((c) => {
+          c.tools = ['finance.summary'];
+          c.executors = ['local', 'claude'];
+          c.cloud_max_label = 'L1';
+        }),
+        /finance\.summary reads private data/,
+      );
+      rejects(
+        card((c) => {
+          c.tools = ['finance.search'];
+          c.max_label = 'L1';
+          c.trifecta = { private_data: false, untrusted_content: false, external_comms: false };
+        }),
+        /reads private data/,
+      );
+      rejects(card((c) => (c.tools = ['finance.alerts', 'task.delegate'])), /may not list task\.delegate/);
+      rejects(card((c) => (c.tools = ['finance.summary', 'task.plan'])), /may not list task\.plan/);
+    });
+
     it('rejects a tool that opens a side declared removed', () => {
       rejects(card((c) => (c.tools = ['kb.read', 'web.search'])), /web.search opens untrusted_content/);
       rejects(

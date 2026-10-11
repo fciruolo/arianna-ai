@@ -2,7 +2,7 @@
 
 Contratto fra il core (`apps/core`) e la pagina «Finanze» della chat web (`apps/hud`). Tutte le rotte stanno sotto `/api/finance/`, solo loopback e stessa origine come le altre rotte del core. Importi sempre in **centesimi interi**, giorni `YYYY-MM-DD`, mesi `YYYY-MM`, nomi dei campi JSON in camelCase. Le risposte non portano mai testi fuori dalla macchina: la pagina li mostra in locale. Eventi e log del core portano solo id e conteggi.
 
-Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 404 non trovato, 409 conflitto, 413 file troppo grande). I codici d'errore dell'importazione sono quelli di `ImportErrorCode` di `@arianna/finance`; la pagina li traduce in italiano.
+Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 404 non trovato, 409 conflitto, 413 file troppo grande). I codici d'errore dell'importazione sono quelli di `ImportErrorCode` di `@arianna/finance`; la pagina li traduce in italiano. Un errore dell'importazione legato a una riga del file porta anche `line`: `{ "error": "<codice>", "line": 12 }`.
 
 ## Conti
 
@@ -14,7 +14,7 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 40
 
 ## Importazione
 
-- `POST /api/finance/imports/preview` `{ account, name, data, profile?, sheet? }` → `{ preview: Preview }`. `data` è il file in base64 (al più 10 MiB decodificati, altrimenti 413). Nulla viene salvato.
+- `POST /api/finance/imports/preview` `{ account, name, data, profile?, sheet? }` → `{ preview: Preview }`. `data` è il file in base64 (al più 10 MiB decodificati, altrimenti 413). Nulla viene salvato. Colonne non riconosciute (o nessuna riga che le nomini) senza `profile`: **non** è un errore, risposta 200 con `profile: null`, `guessed: false` e `header` (le celle della riga d'intestazione trovata, o della prima riga non vuota), così l'utente sceglie le colonne. Un `profile` (per esempio quello salvato sul conto) che non corrisponde al file: errore `profile-mismatch` (400), e la pagina rifà l'anteprima senza profilo.
 - `POST /api/finance/imports` `{ account, name, data, profile, sheet? }` → `201 { import: ImportRecord }`. Rilegge il file con il profilo confermato, salva le righe nuove, salta i doppioni (stessa impronta già nel conto), salva il profilo sul conto. Il file **non** viene conservato.
 - `GET /api/finance/imports?account=` → `{ imports: ImportRecord[] }`
 - `DELETE /api/finance/imports/:id` → `204`: toglie le righe entrate con quell'importazione (annulla).
@@ -25,10 +25,10 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 40
 
 ## Movimenti
 
-- `GET /api/finance/transactions?account=&from=&to=&category=&uncategorized=1&q=&limit=&offset=` → `{ transactions: Tx[], total }` (dal più recente; `limit` predefinito 100, massimo 500; `q` cerca nella descrizione senza maiuscole né accenti; `category=` un id)
+- `GET /api/finance/transactions?account=&from=&to=&category=&uncategorized=1&q=&fingerprints=&limit=&offset=` → `{ transactions: Tx[], total }` (dal più recente; `limit` predefinito 100, massimo 500; `q` cerca nella descrizione senza maiuscole né accenti; `category=` un id; `fingerprints=` impronte separate da virgole, al più 50, per aprire i movimenti di un avviso)
 - `PATCH /api/finance/transactions/:id` `{ category: string | null, rule?: boolean }` → `{ transaction: Tx, rule: Rule | null }`. La categoria scelta dall'utente (`by: 'user'`); con `rule: true` crea anche la regola proposta da `ruleFromConfirmation` e la applica alle righe senza categoria dell'utente.
 
-`Tx = { id, account, booked, value, description, amount, currency, balance, category: string | null, by: 'rule' | 'user' | null, importId }`.
+`Tx = { id, account, booked, value, description, amount, currency, balance, category: string | null, by: 'rule' | 'user' | null, importId, fingerprint }`.
 
 ## Categorie, regole, budget
 
@@ -40,7 +40,7 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 40
 
 ## Riepilogo e controlli
 
-- `GET /api/finance/summary?account=&from=&to=` → `{ months: MonthTotal[], categories: CategoryTotal[], balance: BalancePoint[], yearOverYear: YearOverYear | null }` (dalle funzioni di `@arianna/finance`; senza `from`/`to` gli ultimi 12 mesi; senza `account` tutti i conti, e `balance` vuoto perché il saldo è per conto)
+- `GET /api/finance/summary?account=&from=&to=` → `{ months: MonthTotal[], categories: CategoryTotal[], balance: BalancePoint[], yearOverYear: YearOverYear | null }` (dalle funzioni di `@arianna/finance`; `from` e `to` sono giorni `YYYY-MM-DD`, compresi; senza `from`/`to` gli ultimi 12 mesi; `yearOverYear` è sul mese di `to`, o sul mese corrente senza `to`, e `null` senza movimenti in nessuno dei due mesi; senza `account` tutti i conti, e `balance` vuoto perché il saldo è per conto)
 - `GET /api/finance/alerts?month=` → `{ alerts: FinanceAlert[] }` (`runChecks` sul mese, predefinito il mese corrente, con i budget salvati)
 
 Le forme `MonthTotal`, `CategoryTotal`, `BalancePoint`, `YearOverYear`, `FinanceAlert` sono quelle esportate da `@arianna/finance` (`packages/finance/src/analysis/`).

@@ -220,6 +220,9 @@ importers:
       '@arianna/executors':
         specifier: workspace:*
         version: link:../../packages/executors
+      '@arianna/finance':
+        specifier: workspace:*
+        version: link:../../packages/finance
       '@arianna/policy':
         specifier: workspace:*
         version: link:../../packages/policy

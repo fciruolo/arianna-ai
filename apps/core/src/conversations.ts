@@ -20,6 +20,12 @@ export interface Conversation {
   mode: ConversationMode;
   clearance: Label;
   effectiveLabel: Label;
+  /**
+   * Has read finance data (D-183, migration 0056): the conversation with the
+   * agent of the Finances is born with it, a task that reads finance data
+   * sets it. Never false again: its tasks are born marked.
+   */
+  finance: boolean;
   workspace: string | null;
   /** The cloud model the user chose for delegated steps (router alias), work conversations only; null lets the router choose. */
   model: string | null;
@@ -127,7 +133,7 @@ export class ChatError extends Error {
   }
 }
 
-const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.workspace, c.model, c.agent,
+const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.finance, c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
   EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
@@ -161,7 +167,7 @@ export interface NewConversation {
    * Who answers in place of Arianna (D-111d), with what its card allows
    * (direct-chat.ts): the caller reads the card, this checks mode and project.
    */
-  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean };
+  agent?: { name: ConversationAgent; modes: readonly ConversationMode[]; project: boolean; finance?: boolean };
   /** An incognito conversation (D-136): never with a direct agent. */
   incognito?: boolean;
   /** The local model under trial (D-142), already checked by the caller against the catalog: incognito and private only. */
@@ -199,9 +205,13 @@ export async function writeConversation(tx: Queryable, options: NewConversation)
   if (incognito && options.agent !== undefined) throw new ChatError('invalid', 'an incognito conversation is answered by Arianna');
   // The trial chat of a local model (D-142) leaves nothing behind: incognito, private, nobody else answers.
   if (options.trialModel !== undefined && (!incognito || options.mode !== 'private')) throw new ChatError('invalid', 'a trial chat is an incognito private conversation');
+  // The agent of the Finances (D-183): private only, and marked from birth: it has read finance data (L2).
+  const finance = options.agent?.finance === true;
+  if (finance && options.mode !== 'private') throw new ChatError('invalid', `${options.agent?.name ?? ''} answers only a private conversation`);
   const [row] = await tx<{ id: string }[]>`
-    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model)
-    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null})
+    INSERT INTO conversations (mode, clearance, workspace, model, agent, incognito, trial_model, finance, effective_label)
+    VALUES (${options.mode}, ${clearanceFor(options.mode)}::privacy_label, ${options.project ?? null}, ${options.model ?? null}, ${options.agent?.name ?? null}, ${incognito}, ${options.trialModel ?? null},
+      ${finance}, ${finance ? 'L2' : 'L0'}::privacy_label)
     RETURNING id::text`;
   if (row === undefined) throw new Error('INSERT INTO conversations returned no row');
   await appendEvent(tx, {
@@ -500,8 +510,8 @@ export async function writeUserMessage(
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
     ? (
-        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean }[]>`
-        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito FROM conversations
+        await tx<{ mode: ConversationMode; clearance: Label; title: string | null; archived: boolean; agent: ConversationAgent | null; workspace: string | null; incognito: boolean; finance: boolean }[]>`
+        SELECT mode, clearance, title, archived_at IS NOT NULL AS archived, agent, workspace, incognito, finance FROM conversations
         WHERE id = ${conversationId} AND purged_at IS NULL FOR UPDATE`
       )[0]
     : undefined;
@@ -535,7 +545,8 @@ export async function writeUserMessage(
     status: 'ready',
   });
   // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
-  if (conversation.agent !== null) {
+  // The agent of the Finances (D-183) answers on the local model with its tools, as Arianna does: no delegation.
+  if (conversation.agent !== null && !conversation.finance) {
     await createDelegation(tx, {
       taskId: task.id,
       step: DIRECT_STEP,

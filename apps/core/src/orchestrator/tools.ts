@@ -4,6 +4,7 @@ import { isAtMost, maxLabel, type Context, type Label } from '@arianna/policy';
 import { PROJECT_NAME } from '../cardwall.ts';
 import { clientsForIm } from '../clients.ts';
 import type { Queryable } from '../db/client.ts';
+import { runFinanceTool } from '../finance-tools.ts';
 import { createTask, type Task } from '../tasks.ts';
 import { updateCard } from './cards.ts';
 import { addImTool, clientProject, namesInText, type ImProposal, type ImToolEnv } from './im-tool.ts';
@@ -19,8 +20,9 @@ import { KbError, type Kb } from './kb.ts';
  * the chat. Neither is `task.delegate`, whose next step runs elsewhere
  * (delegate.ts). `task.update` moves a card of the conversation (cards.ts).
  * `im.add` writes an item in an IM file of a project (im-tool.ts, D-167).
+ * `finance.*` read the expense tracker and mark the task (finance-tools.ts, D-183).
  */
-export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update', 'im.add'] as const satisfies readonly ToolId[];
+export const LOCAL_TOOLS = ['kb.search', 'kb.read', 'kb.write', 'task.create', 'task.update', 'im.add', 'finance.summary', 'finance.search', 'finance.alerts'] as const satisfies readonly ToolId[];
 export type LocalTool = (typeof LOCAL_TOOLS)[number];
 
 export function isLocalTool(tool: ToolId): tool is LocalTool {
@@ -69,6 +71,10 @@ export async function runTool(tool: LocalTool, args: Record<string, unknown>, en
         return await updateCard(args, env);
       case 'im.add':
         return await imItem(args, env);
+      case 'finance.summary':
+      case 'finance.search':
+      case 'finance.alerts':
+        return await runFinanceTool(tool, args, { sql: env.sql, taskId: env.task.id, context: env.context });
     }
   } catch (error) {
     if (error instanceof KbError) return { text: `error: ${tool}: ${error.message}`, label: 'L0' };

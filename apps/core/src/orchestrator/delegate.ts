@@ -1,4 +1,4 @@
-import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
+import { isFinanceCard, promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
 import { ORCHESTRATOR_AGENT, projectNamed, rulesFor, rulesOfProject, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
@@ -28,9 +28,10 @@ import {
   type PreparedNotes,
   type ProjectNoteInput,
 } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
+import { isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit, sha256Hex, type Label, type LabelRules } from '@arianna/policy';
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
+import { contextOf, outputSource, type Marked } from '../finance-mark.ts';
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
 import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } from '../god/clone.ts';
 import { carryParts } from '../god/carry.ts';
@@ -171,8 +172,8 @@ export function isCloudRoute(route: DelegationRoute | undefined): route is Cloud
 export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTarget[] {
   const targets: DelegateTarget[] = [];
   for (const [name, agent] of env.agents) {
-    // GOD answers only in its own chat (D-127): Arianna never hands it a work.
-    if (name === assignee || name === GOD_AGENT) continue;
+    // GOD answers only in its own chat (D-127): Arianna never hands it a work. Nor the agent of the Finances (D-183).
+    if (name === assignee || name === GOD_AGENT || isFinanceCard(agent.card)) continue;
     const where = delegationRoute(agent.card);
     if (isCloudRoute(where) ? cloudReady(env, agent.card) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
   }
@@ -519,7 +520,7 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 
   if (where === 'local') {
     // One call to the local model: no folder, no quota; the router checks the label against the agent.
-    const decision = await routeLocalAgent(env, card, task.clearance, label, delegation.brief);
+    const decision = await routeLocalAgent(env, card, task, label, delegation.brief);
     if (decision.decision === 'wait') return closed('failed', `no local model can take this step now (${decision.reason})`, decision);
     if (decision.locality !== 'local' || env.model === undefined) return closed('failed', `${delegation.agent} runs on the local model only, which is not available for this step`, decision);
     return { kind: 'local', delegation, decision, model: decision.model, label, ...(declassify === undefined ? {} : { declassify }) };
@@ -570,7 +571,8 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
       budgetApproved: budget?.state === 'approved',
       ...preferredModel,
     },
-    createContext(task.clearance, label),
+    // With the task's finance mark (D-183): a marked task is never routed to the cloud.
+    contextOf(task, label),
     await budgetOf(env.sql),
     routerConfigOf(env.settings(), adaptersOf(env)),
   );
@@ -601,11 +603,13 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
 export async function routeLocalAgent(
   env: Pick<DelegateEnv, 'sql' | 'settings' | 'claude' | 'codex'>,
   card: AgentCard,
-  clearance: Label,
+  /** The clearance, or the task with its finance mark (D-183). */
+  owner: Label | Marked,
   label: Label,
   text?: string,
 ): Promise<RouteDecision> {
-  return route({ kind: 'judge', agent: card, ...(text === undefined ? {} : { text }) }, createContext(clearance, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
+  const marked: Marked = typeof owner === 'string' ? { clearance: owner, finance: false } : owner;
+  return route({ kind: 'judge', agent: card, ...(text === undefined ? {} : { text }) }, contextOf(marked, label), await budgetOf(env.sql), routerConfigOf(env.settings(), adaptersOf(env)));
 }
 
 /** The local model an agent answers on now, or undefined when none can (D-158: the calls of its direct chat). */
@@ -756,7 +760,8 @@ async function applyPlannedDeclassify(env: DelegateEnv, task: Task, delegation: 
   const { approvalId, to } = declassify;
   await env.sql.begin(async (tx) => {
     // The task's context: a context that has read finance data is never declassified (D-183).
-    await applyDeclassifyIn(tx, { value: delegation.brief, label, source: `task:${task.id}` }, to, approvalId, createContext(task.clearance, task.effectiveLabel));
+    // The policy refuses it for a task that has read finance data (D-183).
+    await applyDeclassifyIn(tx, { value: delegation.brief, label, source: outputSource(task, `task:${task.id}`) }, to, approvalId, contextOf(task, task.effectiveLabel));
     await updateDelegation(tx, delegation.id, { label: to });
   });
   return to;
@@ -928,7 +933,7 @@ export async function projectNotesFor(
     const decision = await passGateway(
       env.sql,
       [{ value: note.text, label: note.label, source: `project:${project}/${note.path}` }],
-      createContext(at.task.clearance, note.label),
+      contextOf(at.task, note.label),
       { kind: 'executor', id: executor, locality: 'cloud' },
       { taskId: at.task.id, runId: at.runId, summary: PROJECT_NOTE_SUMMARY },
     );
@@ -1044,7 +1049,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const entry = await isEntryDelegation(sql, delegation.id);
   // In the direct chat it reads how to talk with the user without Arianna (D-111): our fixed text, L0.
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
-  const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
+  const message: BriefFragment = { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) };
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   const dossier = godDossierPart(container, path, folder.label);
@@ -1073,7 +1078,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
     const common = {
       // The run has read only the brief and the agent's prompt (docs/PRIVACY-POLICY-SPEC.md): a context of its own,
       // at the highest label of what it reads, as the local run (a prompt of the user is L1, tappa T3b).
-      context: createContext(task.clearance, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
+      // A brief of a task that has read finance data is marked like it (D-183): the gateway keeps it on this machine.
+      context: contextOf(task, brief.reduce<Label>((top, fragment) => maxLabel(top, fragment.label), promptLabelOf(agent))),
       brief,
       ...(sessionRef === undefined ? {} : { sessionRef }),
       ...(persistSession ? {} : { persistSession: false }),
@@ -1318,13 +1324,13 @@ export async function runLocalDelegation(env: DelegateEnv, ctx: StepContext, pla
     ...(skills === undefined ? [] : [skills]),
     ...(direct ? [{ text: DIRECT_LOCAL_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
     ...history,
-    { text: delegation.brief, label, source: `task:${task.id}` },
+    { text: delegation.brief, label, source: outputSource(task, `task:${task.id}`) },
   ];
   const read = parts.reduce<Label>((top, part) => maxLabel(top, part.label), prompt.label);
   const decision = await passGateway(
     sql,
     parts.map((part) => ({ value: part.text, label: part.label, source: part.source })),
-    createContext(task.clearance, read),
+    contextOf(task, read),
     { kind: 'executor', id: 'local', locality: 'local' },
     { taskId: task.id, runId },
   );
