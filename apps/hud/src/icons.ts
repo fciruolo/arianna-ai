@@ -70,6 +70,8 @@ import {
   Sparkles,
   Sun,
   Trash2,
+  Upload,
+  Wallet,
   TriangleAlert,
   VenetianMask,
   X,
@@ -156,6 +158,9 @@ export const ICONS = {
   'image-up': ImageUp,
   dashboard: LayoutDashboard,
   mail: Mail,
+  // The finances (I-18, D-183).
+  finance: Wallet,
+  upload: Upload,
   // GOD (D-127): Arianna developed from inside Arianna.
   god: Sparkles,
 } satisfies Record<string, Component>;

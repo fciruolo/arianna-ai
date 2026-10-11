@@ -8,6 +8,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Finanze nel core: conti, anteprima e importazione di estratti conto CSV ed Excel con i doppioni riconosciuti, movimenti con ricerca, categorie predefinite in italiano, regole, budget, riepilogo per mese e categoria, saldo, confronto con l'anno prima e controlli del mese, sulle rotte `/api/finance/*` del contratto `docs/FINANCE-API.md`; il file importato non si salva (I-18, D-183).
 - Agente «Finanze»: consigli di bilancio sul modello locale con strumenti in sola lettura (`finance.summary`, `finance.search`, `finance.alerts`) che calcolano ogni cifra dal database, mai consigli di investimento; la sua conversazione è privata (I-18, D-183).
+- Finanze: nuova pagina «Finanze» nella barra laterale (indirizzo `/finanze`) con conti, importazione di estratti conto CSV ed Excel con anteprima e profilo della banca correggibile, annullamento di un'importazione, movimenti filtrabili con categoria per riga e «crea una regola», categorie, regole e budget mensili, riepilogo con grafici disegnati in SVG (entrate e uscite per mese, spese per categoria, saldo di un conto, confronto con l'anno prima) e avvisi del mese che portano ai movimenti; un riquadro ricorda che i dati restano su questo computer e nessun modello cloud li legge (I-18, D-183).
 
 ### Sicurezza
 
