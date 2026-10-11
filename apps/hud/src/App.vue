@@ -30,6 +30,7 @@ import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
 import GodPage from './components/GodPage.vue';
+import StudioPage from './components/StudioPage.vue';
 import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { loadDevPending, loadInstallation } from './lib/api.ts';
@@ -46,6 +47,7 @@ import { isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projec
 import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
 import { financePathFor, financeTabFromPath, isFinancePath, type FinanceTab } from './lib/finance.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
+import { DESIGNER_AGENT, isStudioPath, studioFromSearch, studioPathFor, type StudioAddress } from './lib/studio.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
   CHANGELOG_PATH,
@@ -336,9 +338,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -451,6 +453,54 @@ function openFinance(tab?: FinanceTab): void {
   openPage('finance', financePathFor(tab), 'Finanze');
 }
 
+/** What the Studio shows (I-19, D-184): the project and the mockup of its address. */
+const studioAddress = ref<StudioAddress>({});
+
+/**
+ * The Studio (I-19, D-184): the direct chat with the Designer of the chosen
+ * project on the left (its latest one not archived, or a draft of it), the
+ * canvas on the right. Another mockup of the same project changes only the
+ * address; another project opens its chat.
+ */
+function openStudio(address: StudioAddress = {}, how: 'push' | 'replace' = 'push'): void {
+  const sameProject = page.value === 'studio' && studioAddress.value.project === address.project;
+  studioAddress.value = address;
+  const path = studioPathFor(address);
+  if (sameProject) {
+    if (`${window.location.pathname}${window.location.search}` !== path) {
+      if (how === 'replace') window.history.replaceState(null, '', path);
+      else window.history.pushState(null, '', path);
+    }
+    return;
+  }
+  openPage('studio', path, 'Studio');
+  if (address.project !== undefined) void store.openStudioChat(address.project);
+}
+
+/** The direct chat of the Studio: the Designer's conversation, or its draft before the first message. */
+const studioChatOpen = computed(() => {
+  if (page.value !== 'studio') return false;
+  if (draft.value !== null) return draft.value.agent === DESIGNER_AGENT;
+  return current.value?.agent === DESIGNER_AGENT;
+});
+
+/** Why the comments of the Studio cannot leave now, or undefined. */
+const studioChatBlocked = computed(() => {
+  if (!studioChatOpen.value) return 'Apri la conversazione col Designer di questo progetto per inviare i commenti.';
+  if (directAgents.value.length > 0 && !directAgents.value.some((entry) => entry.agent === DESIGNER_AGENT)) return 'Il Designer non può rispondere adesso: controlla Impostazioni → Agenti.';
+  if ((current.value?.archivedAt ?? null) !== null) return 'La conversazione col Designer è archiviata: ripristinala per inviare i commenti.';
+  return undefined;
+});
+
+/** One message to the Designer from the Studio (the comments, O3); the first one creates the conversation. */
+async function sendToDesigner(body: string): Promise<boolean> {
+  if (studioChatBlocked.value !== undefined) return false;
+  return draft.value !== null ? store.sendDraft(body) : store.send(body);
+}
+
+/** Changes when a task of the open chat ends: the Studio reads its list of mockups again. */
+const studioVersion = computed(() => Object.values(tasks.value).filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'to_verify').length);
+
 /** The cards and the commitments in columns (I-13, D-152). */
 function openCardwall(): void {
   openPage('cardwall', CARDWALL_PATH, 'Cardwall');
@@ -555,6 +605,10 @@ function followAddress(): void {
     openCardwall();
     return;
   }
+  if (isStudioPath(window.location.pathname)) {
+    openStudio(studioFromSearch(window.location.search), 'replace');
+    return;
+  }
   page.value = 'chat';
   // The secretary's own address (D-156): its conversation, without a new session (D-146).
   if (isSecretaryPath(window.location.pathname)) {
@@ -594,6 +648,8 @@ function followAddress(): void {
 watch(
   () => [chat.value?.conversationId ?? null, current.value !== undefined] as const,
   ([id, known]) => {
+    // The Studio holds the Designer's chat on its own page and address (I-19, D-184).
+    if (page.value === 'studio') return;
     if (id !== null) page.value = 'chat';
     else if (page.value !== 'chat') return;
     // Not yet read (opened by id, in no list): the address waits, so an incognito id never reaches the history (D-136).
@@ -750,6 +806,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @clients="openClients()"
       @finance="openFinance()"
       @cardwall="openCardwall"
+      @studio="openStudio()"
       @settings="openSettings"
       @open="openConversation"
       @archive="store.archive"
@@ -792,7 +849,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <span v-if="incognitoMode !== undefined" class="truncate opacity-80">· {{ MODE_TEXT[incognitoMode] }}<template v-if="incognitoProject"> · {{ incognitoProject }}</template></span>
         </p>
         <p v-else class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
-          <template v-if="current !== undefined">
+          <template v-if="page === 'studio'">Arianna / <b class="font-medium text-ink">Studio</b><template v-if="studioAddress.project"> / {{ studioAddress.project }}</template></template>
+          <template v-else-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
             <b class="font-medium text-ink">{{ current.title ?? 'Nuova conversazione' }}</b>
           </template>
@@ -927,6 +985,64 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
       <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
+      <StudioPage
+        v-else-if="page === 'studio'"
+        :projects="projects"
+        :address="studioAddress"
+        :version="studioVersion"
+        :send="sendToDesigner"
+        :chat-blocked="studioChatBlocked"
+        @address="(address) => openStudio(address, address.project === studioAddress.project ? 'replace' : 'push')"
+      >
+        <template #chat>
+          <DraftChat
+            v-if="draft !== null && studioChatOpen"
+            :key="draft.key"
+            class="min-h-0 flex-1"
+            :draft="draft"
+            :project-problem="draftProjectProblem(draft, projects.length > 0 ? projects.map((entry) => entry.name) : undefined)"
+            :sending="sending"
+            :send="store.sendDraft"
+            :arianna="characters?.agents.arianna"
+            :characters="characters?.agents"
+            :agents="directAgents"
+          />
+          <ChatView
+            v-else-if="chat !== null && current !== undefined && studioChatOpen"
+            class="min-h-0 flex-1"
+            :chat="chat"
+            :conversation="current"
+            :tasks="tasks"
+            :credits="credits"
+            :activity-counts="activityCounts"
+            :sending="sending"
+            :models="models"
+            :approvals="inChat"
+            :decide="store.decide"
+            :arianna="{ choice: characters?.agents.arianna, pose: ariannaHere }"
+            :status="status"
+            :calls="calls"
+            :participants="participants"
+            :characters="characters?.agents"
+            :direct-agents="directAgents"
+            @send="store.send"
+            @remove-participant="store.removeParticipant"
+            @call-when-done="store.callWhenDone"
+            @cancel-call="store.cancelScheduled"
+            @choose-model="store.chooseModel"
+            @restore="store.archive(current.id, false)"
+            @explain="store.explain"
+            @retry="store.retry"
+            @attach-question="store.attachQuestion"
+            @open="openConversation"
+            @command="runCommand"
+            @legend="showLegend = true"
+            @open-knowledge="openKnowledge"
+            @god-dashboard="openGod"
+          />
+          <p v-else class="p-4 text-sm text-muted">Apro la conversazione col Designer…</p>
+        </template>
+      </StudioPage>
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
       <OfficePage
         v-else-if="page === 'office'"
