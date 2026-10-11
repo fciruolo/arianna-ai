@@ -15,6 +15,7 @@
     "@arianna/executors": "workspace:*",
     "@arianna/finance": "workspace:*",
     "@arianna/policy": "workspace:*",
+    "@arianna/pptx": "workspace:*",
     "@arianna/router": "workspace:*",
     "@arianna/vault": "workspace:*",
     "postgres": "3.4.9",
