@@ -3,12 +3,12 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, read
 import { join } from 'node:path';
 
 import type { Project } from '@arianna/config';
-import { isAtMost, maxLabel, type Label } from '@arianna/policy';
+import { isAtMost, isLabel, maxLabel, type Label } from '@arianna/policy';
 
 import { localTimestamp } from './capture.ts';
 import { parsePage } from './orchestrator/kb.ts';
 import { diaryFolder, KnowledgeError, MAX_NOTE_BYTES, type KnowledgeEnv } from './project-knowledge.ts';
-import { diaryDay, headerLabel, inlineCode, oneLine, type WorkOutcome } from './work-diary.ts';
+import { diaryDay, inlineCode, oneLine, type WorkOutcome } from './work-diary.ts';
 
 /**
  * The summary of the week of the diary of the works (I-15 D2, D-177): next to
@@ -84,7 +84,8 @@ export function weekDays(at: Date): string[] {
 
 /** A name from a heading of a day file, without anything that renders in markdown or Obsidian. */
 function plain(text: string, max = 100): string {
-  return oneLine(text.replace(/[^\p{L}\p{N} .,:()/+@·-]+/gu, ' '), max);
+  // No `:`, `/` nor `@`: a bare address or an email would become a link.
+  return oneLine(text.replace(/[^\p{L}\p{N} .,()+·-]+/gu, ' '), max);
 }
 
 /** The inside of an inline code span as work-diary.ts writes it. */
@@ -165,8 +166,8 @@ export function parseDiaryDay(text: string, day: string, file: string): DiaryWor
       continue;
     }
     if (section === 'files') {
-      const path = /^- (`+.*?`+) \(/.exec(line);
-      const name = path === null ? undefined : fromInlineCode(path[1] ?? '');
+      const path = /^- (`+)(.*?)\1 \(/.exec(line);
+      const name = path === null ? undefined : fromInlineCode(`${path[1] ?? ''}${path[2] ?? ''}${path[1] ?? ''}`);
       if (name !== undefined && name !== '') current.files.push(name);
     }
   }
@@ -324,14 +325,21 @@ export function writeWeekSummary(projects: readonly Project[], project: string, 
     works.push(...found);
   }
   if (works.length === 0) return null;
+  // In order of time: a day may have more files (`<day>-2.md`). The sort is stable.
+  works.sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time));
 
   const target = join(folder.dir, name);
   const path = `${folder.path}/${name}`;
   const existing = lstatSync(target, { throwIfNoEntry: false });
   if (existing !== undefined && !existing.isFile()) throw new KnowledgeError('refused', `${path} is not a regular file`);
-  // A label the user wrote in its header is kept when higher.
-  const declared = existing === undefined ? undefined : headerLabel(target);
-  if (declared !== undefined) label = maxLabel(label, declared);
+  // A label the user wrote in its header is kept when higher; more labels, the highest; one that is not a label, L3.
+  if (existing !== undefined) {
+    const text = readPlain(folder.dir, name);
+    if (text !== undefined) {
+      const declared = parsePage(text).header.labels;
+      for (const value of declared) label = maxLabel(label, isLabel(value) ? value : 'L3');
+    }
+  }
 
   const { year, week } = isoWeek(at);
   const title = `Diario dei lavori della settimana ${String(year)}-W${String(week).padStart(2, '0')}`;

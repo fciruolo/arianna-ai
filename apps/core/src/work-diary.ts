@@ -165,7 +165,7 @@ function readHead(file: string): string {
 }
 
 /** The label a day file declares in its header, when it declares exactly one. */
-export function headerLabel(file: string): Label | undefined {
+function headerLabel(file: string): Label | undefined {
   try {
     const labels = parsePage(readHead(file)).header.labels;
     const [label] = labels;

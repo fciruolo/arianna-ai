@@ -171,12 +171,14 @@ describe('the summary of the week', () => {
   it('nothing in the summary renders from a heading written by hand: no embed, no link', () => {
     const p = container('iniezione');
     write(diary('iniezione'), {
-      '2026-10-08.md': '---\nlabel: L1\n---\n\n## 10:00 · ![[documenti/compenso]] · [x](http://esempio.invalid/a.png) · riuscito\n- Parte: `` a`b ``\n',
+      '2026-10-08.md': '---\nlabel: L1\n---\n\n## 10:00 · ![[documenti/compenso]] · [x](http://esempio.invalid/a.png) mario@esempio.invalid · riuscito\n- Parte: `` a`b ``\n\n### File cambiati (1)\n\n- ``a` (b`` (aggiunto)\n',
     });
     writeWeekSummary([p], 'iniezione', ENV, new Date(2026, 9, 8));
     const text = readFileSync(join(diary('iniezione'), 'settimana-2026-W41.md'), 'utf8');
     assert.doesNotMatch(text, /!\[|\[\[documenti|\]\(/);
+    assert.doesNotMatch(text, /https?:|esempio\.invalid\/|@/);
     assert.match(text, /parte ``a`b``/);
+    assert.match(text, /- ``a` \(b``: 1 lavoro\n/);
   });
 
   it('Workplan raised by the user: the summary takes its label; a label raised in its header stays', () => {
@@ -191,6 +193,8 @@ describe('the summary of the week', () => {
     writeFileSync(file, readFileSync(file, 'utf8').replace('label: L1', 'label: L2'));
     assert.equal(writeWeekSummary([p], 'a-mano', ENV, new Date(2026, 9, 9))?.label, 'L2');
     assert.match(readFileSync(file, 'utf8'), /^---\nlabel: L2\n/);
+    writeFileSync(file, readFileSync(file, 'utf8').replace('label: L2', 'label: L1\nlabel: L3'));
+    assert.equal(writeWeekSummary([p], 'a-mano', ENV, new Date(2026, 9, 9))?.label, 'L3');
   });
 
   it('no diary or no work in the week: nothing written', () => {
