@@ -37,6 +37,13 @@ export const GOD_CONTAINER = `${PROJECTS_DIR}/${GOD_PROJECT}`;
  * so that a clone never recreates the database of the installation.
  */
 export const GOD_MARKER = 'arianna-god';
+/**
+ * The line of the mark that says how the clone was made: `--no-local
+ * --single-branch` from the installation's main only. A clone made before it
+ * (a local clone copied the whole object database: the stash and the objects
+ * no branch reaches) is refused, and has to be made again.
+ */
+export const GOD_MARKER_VERSION = 'clone: main only, no-local (D-127 v2)';
 /** The name of a subtask's part and of its branch's last segment: `g<NNN>-<slug>`. */
 export const SUBTASK_PART = /^g[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$/;
 /** The branch of a subtask in its clone. */
@@ -91,8 +98,15 @@ export function godCloneRefusal(dir: string): string | undefined {
   } catch {
     return 'il clone non è un repository git';
   }
+  let marker: string;
+  try {
+    marker = readFileSync(join(dir, '.git', GOD_MARKER), 'utf8');
+  } catch {
+    return 'la cartella non è un clone fatto da GOD: cancellala e rifalla con pnpm god:clone';
+  }
+  if (!marker.includes(GOD_MARKER_VERSION)) return 'il clone è stato fatto con il metodo vecchio, che copiava anche lo stash e gli oggetti non raggiungibili dell’installazione: cancella la cartella e rifallo con pnpm god:clone';
   for (const name of FORBIDDEN_DATA) {
-    if (existsSync(join(dir, 'data', name))) return `il clone contiene data/${name}: sembra un’installazione con dati veri, non una copia di sviluppo`;
+    if (present(join(dir, 'data', name))) return `il clone contiene data/${name}: sembra un’installazione con dati veri, non una copia di sviluppo`;
   }
   const config = join(dir, 'config', 'arianna.toml');
   if (existsSync(config)) {
@@ -107,31 +121,50 @@ export function godCloneRefusal(dir: string): string | undefined {
   return undefined;
 }
 
+/** True when something is at `path`, a link included (never followed). */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** True when `inner` is inside `outer` (not equal). */
 function inside(inner: string, outer: string): boolean {
   const path = relative(outer, inner);
   return path !== '' && path !== '..' && !path.startsWith(`..${sep}`) && !path.startsWith(sep);
 }
 
+export interface GitOptions {
+  /** Written to the standard input. */
+  input?: string;
+  /** Exit codes that are answers, not errors (`check-ignore` says 1 for "none"). */
+  okCodes?: readonly number[];
+}
+
 export interface GitRunner {
-  (args: readonly string[], cwd: string): Promise<string>;
+  (args: readonly string[], cwd: string, options?: GitOptions): Promise<string>;
 }
 
 /** git with an environment built from nothing (git-catalog.ts) and no hooks; `HOME` an empty folder of data/. */
 export function godGit(home: string, data: string, options: { git?: string; env?: NodeJS.ProcessEnv } = {}): GitRunner {
   const gitHome = join(data, 'god', 'git-home');
-  return (args, cwd) => {
+  return (args, cwd, run = {}) => {
     mkdirSync(gitHome, { recursive: true, mode: 0o700 });
     const env = { ...gitEnv(options.env ?? process.env, 'file', gitHome), GIT_NO_LAZY_FETCH: '1' };
     return new Promise((resolve, reject) => {
-      execFile(options.git ?? 'git', [...GIT_SAFE_CONFIG, ...args], { cwd, env, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8', shell: false }, (error, stdout, stderr) => {
-        if (error === null) {
+      const child = execFile(options.git ?? 'git', [...GIT_SAFE_CONFIG, ...args], { cwd, env, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8', shell: false }, (error, stdout, stderr) => {
+        if (error === null || (typeof error.code === 'number' && (run.okCodes ?? []).includes(error.code))) {
           resolve(stdout);
           return;
         }
         const why = error.killed ? 'took too long' : sanitizeForTerminal(stderr.trim().split('\n').slice(-2).join(' ')).slice(0, 300) || error.message;
         reject(new GodCloneError(`git ${args[0] ?? ''}: ${why}`));
       });
+      child.stdin?.on('error', () => undefined);
+      child.stdin?.end(run.input ?? '');
     });
   };
 }
@@ -177,7 +210,19 @@ export async function cloneState(home: string, data: string, part: string, git: 
 
 /** Writes the mark of a clone of GOD in its git folder. */
 function mark(dir: string): void {
-  writeFileSync(join(dir, '.git', GOD_MARKER), 'A clone of GOD (D-127): docker compose is refused here, the database is the installation\'s.\n');
+  writeFileSync(join(dir, '.git', GOD_MARKER), `A clone of GOD (D-127): docker compose is refused here, the database is the installation's.\n${GOD_MARKER_VERSION}\n`);
+}
+
+/** The installation as the clones' origin: a file URL, so that git transfers objects as over a network (only what main reaches), never copying the object database. */
+export function originOf(home: string): string {
+  return `file://${home}`;
+}
+
+/** Makes a clone of the installation's main only: no stash, no other branch, no tag, no object main does not reach. */
+async function cloneMain(home: string, dir: string, git: GitRunner): Promise<void> {
+  mkdirSync(join(home, GOD_CONTAINER), { recursive: true });
+  await git(['clone', '--quiet', '--no-local', '--single-branch', '--no-tags', '--branch', GOD_MAIN, '--', originOf(home), dir], home);
+  mark(dir);
 }
 
 export interface SyncResult {
@@ -204,17 +249,16 @@ async function syncPart(home: string, data: string, part: string, git: GitRunner
   if (!inside(dir, home)) throw new GodCloneError('the clone must be inside ARIANNA_HOME');
   let created = false;
   if (!existsSync(dir)) {
-    mkdirSync(join(home, GOD_CONTAINER), { recursive: true });
-    await git(['clone', '--quiet', '--no-hardlinks', '--branch', GOD_MAIN, '--', home, dir], home);
+    await cloneMain(home, dir, git);
     created = true;
   } else {
     const refusal = godCloneRefusal(dir);
     if (refusal !== undefined) throw new GodCloneError(refusal);
   }
-  mark(dir);
   // The installation may have moved (ARIANNA_HOME is portable): the remote is set again every time.
-  await git(['remote', 'set-url', 'origin', home], dir);
-  if (!created) await git(['fetch', '--quiet', 'origin'], dir);
+  await git(['remote', 'set-url', 'origin', originOf(home)], dir);
+  // Only main, as the clone: never the other branches, the tags or the stash of the installation.
+  if (!created) await git(['fetch', '--quiet', '--no-tags', 'origin', `+refs/heads/${GOD_MAIN}:refs/remotes/origin/${GOD_MAIN}`], dir);
   // A new clone gets what the sandbox cannot fetch (prepare.ts), before any agent works there.
   let warning: string | undefined;
   if (created && prepare !== undefined) {
@@ -242,9 +286,7 @@ export async function createSubtaskClone(home: string, data: string, part: strin
   if (!SUBTASK_PART.test(part)) throw new GodCloneError(`invalid part ${JSON.stringify(part)}`);
   const dir = godPartDir(home, part);
   if (existsSync(dir)) throw new GodCloneError(`the clone ${part} is already there`);
-  mkdirSync(join(home, GOD_CONTAINER), { recursive: true });
-  await git(['clone', '--quiet', '--no-hardlinks', '--branch', GOD_MAIN, '--', home, dir], home);
-  mark(dir);
+  await cloneMain(home, dir, git);
   await git(['checkout', '--quiet', '-b', subtaskBranch(part)], dir);
   return dir;
 }

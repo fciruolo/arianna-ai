@@ -10,6 +10,7 @@ import {
   cloneState,
   createSubtaskClone,
   GOD_MARKER,
+  GOD_MARKER_VERSION,
   GodCloneError,
   godCloneRefusal,
   godPartDir,
@@ -61,6 +62,10 @@ test('a development copy passes the tripwire; the data of an installation or rea
   assert.match(godCloneRefusal(join(dir, 'missing')) ?? '', /non c’è/);
   assert.match(godCloneRefusal(dir) ?? '', /non è un repository git/);
   mkdirSync(join(dir, '.git'));
+  assert.match(godCloneRefusal(dir) ?? '', /non è un clone fatto da GOD/, 'a folder GOD did not clone');
+  writeFileSync(join(dir, '.git', GOD_MARKER), 'A clone of GOD (D-127): docker compose is refused here.\n');
+  assert.match(godCloneRefusal(dir) ?? '', /metodo vecchio/, 'a clone of the old method copied the stash: made again');
+  writeFileSync(join(dir, '.git', GOD_MARKER), `A clone of GOD.\n${GOD_MARKER_VERSION}\n`);
   assert.equal(godCloneRefusal(dir), undefined);
   // Development: data/tmp and a config without the passwords of the database are fine.
   mkdirSync(join(dir, 'data', 'tmp'), { recursive: true });
@@ -140,4 +145,43 @@ test('a subtask works in a clone of its own, on its branch; never in an existing
   assert.equal(existsSync(join(dir, '.git', GOD_MARKER)), true);
   await assert.rejects(createSubtaskClone(root, data, 'g001-login'), /already there/);
   await assert.rejects(createSubtaskClone(root, data, 'main'), GodCloneError);
+});
+
+test('the clone holds only what main reaches: never the stash, another branch or an unreachable object of the installation', async () => {
+  const { home: root, data } = home();
+  // A stash, a branch and a blob no ref reaches, in the installation.
+  writeFileSync(join(root, 'README.md'), 'secret work in progress\n');
+  git(root, 'stash', 'push', '-q', '-m', 'private');
+  const stash = git(root, 'rev-parse', 'refs/stash').trim();
+  git(root, 'branch', 'other');
+  const lone = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, env: GIT_ENV, input: 'unreachable blob\n', encoding: 'utf8' }).trim();
+  await syncGodClone(root, data);
+  const dir = godPartDir(root, 'main');
+  const has = (object: string, where: string = dir): boolean => {
+    try {
+      execFileSync('git', ['cat-file', '-e', object], { cwd: where, env: GIT_ENV, stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.equal(has(stash), false, 'the stash of the installation is not in the clone');
+  assert.equal(has(lone), false, 'an object no branch reaches is not in the clone');
+  assert.equal(git(dir, 'branch', '-a', '--format=%(refname)').split('\n').some((ref) => ref.endsWith('/other')), false, 'only main');
+  assert.match(git(dir, 'remote', 'get-url', 'origin'), /^file:\/\//);
+  // The update fetches main only.
+  git(root, 'branch', 'later');
+  await syncGodClone(root, data);
+  assert.equal(git(dir, 'branch', '-a', '--format=%(refname)').split('\n').some((ref) => ref.endsWith('/later')), false);
+  // The subtasks' clones too.
+  const sub = await createSubtaskClone(root, data, 'g001-x');
+  assert.equal(has(stash, sub), false);
+  assert.equal(has(lone, sub), false);
+});
+
+test('a clone made by the old method is refused, never updated', async () => {
+  const { home: root, data } = home();
+  await syncGodClone(root, data);
+  writeFileSync(join(godPartDir(root, 'main'), '.git', GOD_MARKER), 'A clone of GOD (D-127): docker compose is refused here.\n');
+  await assert.rejects(syncGodClone(root, data), /metodo vecchio/);
 });
