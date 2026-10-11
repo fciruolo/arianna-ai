@@ -2,6 +2,20 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Studio: nuova pagina «Studio» nella barra laterale (indirizzo `/studio`) con la scelta del progetto, a sinistra la conversazione diretta col Designer e a destra i mockup in una cornice isolata, varianti per gruppo, viste desktop, tablet e mobile, confronto di due varianti affiancate e lettura automatica dei file nuovi (I-19, D-184).
+- Studio: commenti sugli elementi del mockup (clic con «Commenta», elenco modificabile) inviati insieme al Designer come un solo messaggio di revisione (I-19, D-184).
+- Studio: modifica diretta di testo, colori, dimensioni, spaziature e allineamento di un elemento, scritta nel file del progetto solo se non è cambiato nel frattempo (I-19, D-184).
+- Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]` (I-19, D-184).
+- Chat: sotto «File modificati» di una delega, anteprima isolata dei mockup HTML con il collegamento «Apri nello Studio» (I-19, D-184).
+
+### Sicurezza
+
+- I mockup si mostrano in un iframe `sandbox="allow-scripts"` senza `allow-same-origin`, con in testa una Content-Security-Policy che vieta la rete; la pagina accetta solo messaggi di forma fissa dalla finestra del suo iframe (I-19, D-184).
+
 ## [0.75.0] - 2026-10-12
 
 ### Aggiunto
