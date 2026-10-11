@@ -204,7 +204,8 @@ function width(cents: number): string {
             <circle v-for="point in line.points" :key="point.day" :cx="point.x" :cy="point.y" r="6" fill="transparent">
               <title>{{ formatDay(point.day) }} · {{ formatCents(point.balance) }}</title>
             </circle>
-            <text v-for="point in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="LINE_FRAME.height - 10" text-anchor="middle" font-size="10" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
+            <!-- The first and last labels anchored inside the frame, so they are never cut at the edges. -->
+            <text v-for="(point, index) in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="LINE_FRAME.height - 10" :text-anchor="index === 0 ? 'start' : index === lineLabels.length - 1 ? 'end' : 'middle'" font-size="10" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
           </svg>
           <p class="text-xs text-muted">
             Dal {{ formatDay(line.points[0]?.day ?? null) }}: {{ formatCents(line.points[0]?.balance ?? 0) }} · al {{ formatDay(lastBalance?.day ?? null) }}: {{ formatCents(lastBalance?.balance ?? 0) }}. Passa sul grafico per i singoli giorni.

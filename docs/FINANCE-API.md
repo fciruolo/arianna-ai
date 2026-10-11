@@ -40,7 +40,7 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP (400 richiesta sbagliata, 40
 
 ## Riepilogo e controlli
 
-- `GET /api/finance/summary?account=&from=&to=` → `{ months: MonthTotal[], categories: CategoryTotal[], balance: BalancePoint[], yearOverYear: YearOverYear | null }` (dalle funzioni di `@arianna/finance`; `from` e `to` sono giorni `YYYY-MM-DD`, compresi; senza `from`/`to` gli ultimi 12 mesi; `yearOverYear` è sul mese di `to`, o sul mese corrente senza `to`, e `null` senza movimenti in nessuno dei due mesi; senza `account` tutti i conti, e `balance` vuoto perché il saldo è per conto)
+- `GET /api/finance/summary?account=&from=&to=` → `{ months: MonthTotal[], categories: CategoryTotal[], balance: BalancePoint[], yearOverYear: YearOverYear | null }` (dalle funzioni di `@arianna/finance`; `from` e `to` sono giorni `YYYY-MM-DD`, compresi; senza `from`/`to` gli ultimi 12 mesi; `yearOverYear` è sull'ultimo mese del periodo che ha movimenti (senza movimenti, sul mese di `to` o sul mese corrente), e `null` senza movimenti in nessuno dei due mesi confrontati; senza `account` tutti i conti, e `balance` vuoto perché il saldo è per conto)
 - `GET /api/finance/alerts?month=` → `{ alerts: FinanceAlert[] }` (`runChecks` sul mese, predefinito il mese corrente, con i budget salvati)
 
 Le forme `MonthTotal`, `CategoryTotal`, `BalancePoint`, `YearOverYear`, `FinanceAlert` sono quelle esportate da `@arianna/finance` (`packages/finance/src/analysis/`).

@@ -746,8 +746,10 @@ export async function summary(sql: Queryable, query: SummaryQuery, now: Date = n
   if (fromDay > toDay) throw invalid('from must not be after to');
   const rows = await analysisRows(sql, query.account, toDay);
   const inRange = rows.filter((row) => row.booked >= fromDay);
-  // The month of `to` against the same month a year before.
-  const previous = yearOverYear(rows, toDay.slice(0, 7));
+  // The latest month with movements in the range (else the month of `to`) against the same month a year before:
+  // "the last 12 months" end with the current month, often still empty.
+  const latest = inRange.reduce<string | undefined>((max, row) => (max === undefined || row.booked > max ? row.booked : max), undefined);
+  const previous = yearOverYear(rows, (latest ?? toDay).slice(0, 7));
   return {
     months: monthlyTotals(inRange, { from: fromDay.slice(0, 7), to: toDay.slice(0, 7) }),
     categories: totalsByCategory(inRange, { from: fromDay, to: toDay }),

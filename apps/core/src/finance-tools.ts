@@ -78,13 +78,13 @@ async function summaryText(env: FinanceToolEnv, args: Record<string, unknown>): 
   const count = result.months.reduce((sum, month) => sum + month.count, 0);
   if (count === 0) return `Nessun movimento dal ${first} al ${last}, in tutti i conti.`;
   const lines = [
-    `Periodo ${first} – ${last}, tutti i conti: entrate ${euro(income)}, uscite ${euro(expenses)}, netto ${euro(income - expenses)} (${String(count)} movimenti).`,
+    `Periodo ${first} – ${last}, tutti i conti: entrate ${euro(income)}, uscite ${euro(expenses)}, netto ${euro(income - expenses)} (${String(count)} movimenti in tutto, entrate e uscite).`,
     'Per mese:',
-    ...result.months.map((month) => `- ${month.month}: entrate ${euro(month.income)}, uscite ${euro(month.expenses)}, netto ${euro(month.net)} (${String(month.count)} movimenti)`),
+    ...result.months.map((month) => `- ${month.month}: entrate ${euro(month.income)}, uscite ${euro(month.expenses)}, netto ${euro(month.net)} (${String(month.count)} movimenti in tutto, entrate e uscite)`),
     'Per categoria, dalla più costosa:',
     ...result.categories.map(
       (total) =>
-        `- ${total.category === null ? 'Senza categoria' : (names.get(total.category) ?? 'Categoria tolta')}: uscite ${euro(total.expenses)}, entrate ${euro(total.income)} (${String(total.count)} movimenti)`,
+        `- ${total.category === null ? 'Senza categoria' : (names.get(total.category) ?? 'Categoria tolta')}: uscite ${euro(total.expenses)}, entrate ${euro(total.income)} (${String(total.count)} movimenti in tutto, entrate e uscite)`,
     ),
   ];
   const yoy = result.yearOverYear;
