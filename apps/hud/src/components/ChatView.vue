@@ -860,9 +860,10 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <!-- GOD (D-127, G4): in a long chat, GOD proposes to restart from a summary. -->
         <GodCarryProposal
-          v-if="conversation.agent === GOD_AGENT && conversation.archivedAt === null && chat.streaming.length === 0"
+          v-if="conversation.agent === GOD_AGENT && conversation.archivedAt === null"
           :conversation-id="conversation.id"
-          :count="chat.messages.filter((message) => message.role !== 'system').length"
+          :messages="chat.messages"
+          :sending="sending || chat.streaming.length > 0"
           :name="directName"
           @open="(id) => emit('open', id)"
         />

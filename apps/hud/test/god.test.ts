@@ -59,26 +59,33 @@ test('the address of the page of GOD', () => {
   assert.equal(isGodPath('/goddess'), false);
 });
 
-test('proposeCarry: GOD proposes a restart only in a long chat, and again only after more messages', () => {
-  assert.equal(proposeCarry(CARRY_PROPOSE_AT - 1, null), false, 'a short chat');
-  assert.equal(proposeCarry(CARRY_PROPOSE_AT, null), true, 'a long chat');
-  assert.equal(proposeCarry(CARRY_PROPOSE_AT + 5, CARRY_PROPOSE_AT), false, 'just said no');
-  assert.equal(proposeCarry(CARRY_PROPOSE_AT + CARRY_PROPOSE_AGAIN, CARRY_PROPOSE_AT), true, 'enough messages after the no');
-});
+function chat(count: number, last = 'assistant', from = 1): { id: string; role: string }[] {
+  return Array.from({ length: count }, (_, index) => ({ id: String(from + index), role: index === count - 1 ? last : index % 2 === 0 ? 'user' : 'assistant' }));
+}
 
+test('proposeCarry: GOD proposes a restart only in a long chat it has answered, and again only after more messages', () => {
+  assert.equal(proposeCarry(chat(CARRY_PROPOSE_AT - 1), null), false, 'a short chat');
+  assert.equal(proposeCarry(chat(CARRY_PROPOSE_AT), null), true, 'a long chat');
+  assert.equal(proposeCarry([...chat(CARRY_PROPOSE_AT - 1), { id: '999', role: 'system' }], null), false, 'system messages do not count');
+  assert.equal(proposeCarry(chat(CARRY_PROPOSE_AT, 'user'), null), false, 'GOD is still answering');
+  assert.equal(proposeCarry(chat(CARRY_PROPOSE_AT + 5), String(CARRY_PROPOSE_AT)), false, 'just said no');
+  assert.equal(proposeCarry(chat(CARRY_PROPOSE_AT + CARRY_PROPOSE_AGAIN), String(CARRY_PROPOSE_AT)), true, 'enough messages after the no');
+  assert.equal(proposeCarry(chat(100, 'assistant', 500), '480'), true, 'a chat loaded in part: the no is older than what is loaded');
+  assert.equal(proposeCarry(chat(100, 'assistant', 500), '590'), false, 'a chat loaded in part: the no is recent');
+});
 test('the «No» to the proposal is remembered per conversation, and a missing or broken storage reads as none', () => {
   const values = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
   assert.equal(loadDeclined(storage, 'c1'), null);
-  saveDeclined(storage, 'c1', 42);
-  assert.equal(loadDeclined(storage, 'c1'), 42);
+  saveDeclined(storage, 'c1', '42');
+  assert.equal(loadDeclined(storage, 'c1'), '42');
   assert.equal(loadDeclined(storage, 'c2'), null, 'another conversation');
   values.set('arianna.god.carry.declined.c3', 'x');
   assert.equal(loadDeclined(storage, 'c3'), null, 'not a number');
   const broken = { getItem: (): string | null => { throw new Error('blocked'); }, setItem: (): void => { throw new Error('blocked'); } };
   assert.equal(loadDeclined(broken, 'c1'), null);
   assert.doesNotThrow(() => {
-    saveDeclined(broken, 'c1', 42);
+    saveDeclined(broken, 'c1', '42');
   });
   assert.equal(loadDeclined(undefined, 'c1'), null);
 });

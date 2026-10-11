@@ -135,17 +135,29 @@ export const CARRY_PROPOSE_AT = 40;
 /** After a «No», how many more messages before GOD proposes again. */
 export const CARRY_PROPOSE_AGAIN = 20;
 
-/**
- * Whether GOD proposes to restart from a summary: the chat has at least
- * CARRY_PROPOSE_AT messages, and the user did not say «No» in the last
- * CARRY_PROPOSE_AGAIN. `declinedAt` is the count at the last «No», or null.
- */
-export function proposeCarry(count: number, declinedAt: number | null): boolean {
-  if (count < CARRY_PROPOSE_AT) return false;
-  return declinedAt === null || count >= declinedAt + CARRY_PROPOSE_AGAIN;
+/** What the proposal looks at: the messages of the chat (system ones too), oldest first, as loaded. */
+export interface CarryMessage {
+  id: string;
+  role: string;
 }
 
-// The count at the last «No», remembered in this browser (localStorage, in try/catch: it may be missing or refuse).
+/**
+ * Whether GOD proposes to restart from a summary: the chat has at least
+ * CARRY_PROPOSE_AT messages (system ones excluded), GOD answered the latest
+ * one (not while it is still working), and the user did not say «No» in the
+ * last CARRY_PROPOSE_AGAIN. `declinedAfter` is the id of the latest message
+ * at the last «No» (or «Sì»), or null: counted by id, so a chat loaded only
+ * in part (the latest 100 messages) still counts the ones after it.
+ */
+export function proposeCarry(messages: readonly CarryMessage[], declinedAfter: string | null): boolean {
+  const said = messages.filter((message) => message.role !== 'system');
+  if (said.length < CARRY_PROPOSE_AT || said.at(-1)?.role !== 'assistant') return false;
+  if (declinedAfter === null) return true;
+  const after = said.filter((message) => Number(message.id) > Number(declinedAfter)).length;
+  return after >= CARRY_PROPOSE_AGAIN;
+}
+
+// The id of the latest message at the last answer, remembered in this browser (localStorage, in try/catch: it may be missing or refuse).
 const DECLINED_KEY = 'arianna.god.carry.declined.';
 
 interface StorageLike {
@@ -153,19 +165,19 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-/** The count at the last «No» to the proposal in this conversation, or null. */
-export function loadDeclined(storage: StorageLike | undefined, conversationId: string): number | null {
+/** The id of the latest message at the last answer to the proposal in this conversation, or null. */
+export function loadDeclined(storage: StorageLike | undefined, conversationId: string): string | null {
   try {
-    const value = Number(storage?.getItem(DECLINED_KEY + conversationId) ?? '');
-    return Number.isInteger(value) && value > 0 ? value : null;
+    const value = storage?.getItem(DECLINED_KEY + conversationId) ?? null;
+    return value !== null && /^[1-9][0-9]*$/.test(value) ? value : null;
   } catch {
     return null;
   }
 }
 
-export function saveDeclined(storage: StorageLike | undefined, conversationId: string, count: number): void {
+export function saveDeclined(storage: StorageLike | undefined, conversationId: string, messageId: string): void {
   try {
-    storage?.setItem(DECLINED_KEY + conversationId, String(count));
+    storage?.setItem(DECLINED_KEY + conversationId, messageId);
   } catch {
     // Not remembered: GOD proposes again at the next opening.
   }
