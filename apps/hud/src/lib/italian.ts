@@ -292,7 +292,7 @@ function waitText(detail: string): string {
   return 'In attesa dell’esecutore';
 }
 
-const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD' };
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD', finanze: 'Finanze' };
 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
