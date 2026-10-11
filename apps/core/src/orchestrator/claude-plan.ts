@@ -1,8 +1,9 @@
 import { MAX_PLAN_CARDS, MIN_PLAN_CARDS, type DelegateTarget } from '@arianna/agents';
 import { enabledCloudModels } from '@arianna/config';
 import { prepareEmptyWorkspace, removeWorkspace, type ClaudeModel } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, type Label } from '@arianna/policy';
+import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
+import { contextOf } from '../finance-mark.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { DIRECT_MODELS, loadConversation, type Conversation } from '../conversations.ts';
 import type { StepContext } from '../engine.ts';
@@ -136,7 +137,7 @@ export async function writePlan(env: DelegateEnv, ctx: StepContext, input: PlanR
     const fresh: StepContext = { task, step, runId, signal: ctx.signal, setSessionRef: () => Promise.resolve() };
     const result = await runClaudeStep(sql, claude, fresh, {
       // The agents' descriptions are L1 by declaration: the run reads at least that.
-      context: createContext(task.clearance, maxLabel(input.label, 'L1')),
+      context: contextOf(task, maxLabel(input.label, 'L1')),
       brief: plannerBrief(input, env.plannerPrompt),
       workspace,
       model: input.model,

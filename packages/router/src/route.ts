@@ -2,7 +2,7 @@
 // by rules, choice with escalation. Pure: no I/O, no model, no clock. The core
 // writes every decision to router_decisions.
 import type { Difficulty, ExecutorKind } from '@arianna/agents';
-import { canSendTo, isAtMost, isContext, labelOrDefault, type Context, type Label, type Locality } from '@arianna/policy';
+import { canSendTo, isAtMost, isContext, isFinanceContext, labelOrDefault, type Context, type Label, type Locality } from '@arianna/policy';
 
 import {
   candidateKey,
@@ -240,6 +240,9 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
   const issued = isContext(context);
   const label = issued ? labelOrDefault(context.effective) : 'L2';
   const notes = issued ? [] : ['context not issued by the policy, read as L2'];
+  // A context that has read finance data never reaches the cloud (D-183), whatever its label says.
+  const finance = issued && isFinanceContext(context);
+  if (finance) notes.push('finance data: local only');
   const attempts = step.attempts ?? [];
   const signals = {
     base: agent.difficulty,
@@ -260,7 +263,7 @@ export function route(step: Step, context: Context, rawBudget: Budget, rawConfig
   const localityOf = (candidate: Candidate): Locality => (isCloudExecutor(candidate.executor) ? 'cloud' : candidate.locality);
   const privacyOk = (candidate: Candidate): boolean => {
     const locality = localityOf(candidate);
-    return canSendTo(locality, label) && (locality === 'local' || isAtMost(label, cloudCeiling));
+    return canSendTo(locality, label) && (locality === 'local' || (!finance && isAtMost(label, cloudCeiling)));
   };
   const agentOk = (candidate: Candidate): boolean => agent.executors.includes(candidate.executor);
   const blocksOf = (candidate: Candidate): BudgetBlock[] =>

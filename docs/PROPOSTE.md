@@ -2643,22 +2643,8 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 
 **Tappe proposte.** F1 importazione CSV con profili e doppioni, elenco dei movimenti; F2 categorie con regole e grafici; F3 controlli (ricorrenti, insoliti, budget); F4 l'agente locale "Finanze"; F0, prima di tutto, la regola del gateway e i suoi eval.
 
-### Domande per l'utente (I-18)
+### Risposte dell'utente (2026-10-11, D-183)
 
-1. **Excel o solo CSV?**
-   - Contesto: le banche di solito esportano sia CSV sia Excel. Il CSV si legge con codice nostro, senza librerie nuove. Il formato Excel (.xlsx) richiede una libreria esterna, cioè codice di terzi che gira sui tuoi dati, da approvare con una voce in DECISIONS.
-   - Opzione consigliata: Solo CSV all'inizio — niente librerie nuove; dalla banca scegli "esporta CSV", o salvi il file Excel come CSV.
-   - Opzione: Anche Excel subito — più comodo, ma una libreria in più da controllare e aggiornare.
-   - Esempio: Scarichi da home banking "movimenti_ottobre.csv", lo trascini nella pagina Finanze, vedi l'anteprima con 84 righe (3 già presenti, saltate) e premi Importa.
-2. **Come proteggere i dati delle finanze?**
-   - Contesto: oggi Privato (L2) resta sul Mac ma un testo può uscire se lo approvi tu; Segreto (L3) non lo legge nessun modello, quindi l'agente non potrebbe aiutarti. Serve decidere quanto rigida è la regola.
-   - Opzione consigliata: Regola fissa "mai fuori" — leggibili dal modello locale, nessuna uscita nemmeno con la tua approvazione; un errore umano non può farle uscire.
-   - Opzione: Privato come il resto — più semplice, ma un'approvazione sbagliata potrebbe mandare un testo al cloud.
-   - Opzione: Segreto — nessun modello le legge; solo grafici e controlli, niente agente.
-   - Esempio: Chiedi in una chat con Claude "quanto ho speso di Amazon?": il gateway rifiuta perché la risposta richiederebbe dati delle Finanze; la stessa domanda all'agente Finanze (locale) riceve la risposta.
-3. **Da quale tappa partire, quando sarà il momento?**
-   - Contesto: il tracker è un lavoro grande; si costruisce a tappe, ognuna provabile da sola. La regola del gateway (F0) va comunque per prima.
-   - Opzione consigliata: Importazione ed elenco — prima i dati dentro e la lista dei movimenti, poi categorie e grafici.
-   - Opzione: Grafici subito — importazione e grafici insieme, consegna più lunga.
-   - Opzione: Prima l'agente — l'agente locale su dati di prova, poi l'importazione.
-   - Esempio: Con la prima tappa importi tre mesi di estratto conto finto e vedi la lista con totale entrate, uscite e saldo per mese.
+1. **Anche Excel subito.** Claude propone di leggere i file `.xlsx` con codice nostro (un file `.xlsx` è un archivio zip di file XML: `node:zlib` e un lettore XML ristretto), così nessuna libreria di terzi tocca i dati delle finanze e non serve una dipendenza nuova; `.xls` vecchio (binario) rifiutato con l'invito a salvarlo come `.xlsx` o CSV.
+2. **Regola fissa «mai fuori».** Leggibili dal modello locale, nessuna uscita verso cloud, Telegram, telefono o notifiche con contenuto, nemmeno con l'approvazione dell'utente (niente declassificazione).
+3. **"Fai tutto in parallelo".** Tutte le tappe insieme: F0 (regola del gateway) e le parti pure di F1-F3 in parallelo, poi l'unione con database, pagina e agente F4.

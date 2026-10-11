@@ -57,6 +57,31 @@ import { finishClosing, listImClosings, loadImClosing, type ImClosing } from '..
 import { addImItem, closeImItem, createIm, ImError, listIms, readIm, isLastIm, setImItemState, writeImCalendar, writeImEnd, type ImItemRef, type ImOutcome } from '../im.ts';
 import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDocument, readDocument, updateDocument, type Opener } from '../client-documents.ts';
 import { readClientDashboard } from '../client-dashboard.ts';
+import {
+  alerts as financeAlerts,
+  createAccount as createFinanceAccount,
+  createCategory as createFinanceCategory,
+  createRule as createFinanceRule,
+  deleteBudget as deleteFinanceBudget,
+  deleteCategory as deleteFinanceCategory,
+  deleteRule as deleteFinanceRule,
+  ensureCategories as ensureFinanceCategories,
+  importFile as importFinanceFile,
+  listAccounts as listFinanceAccounts,
+  listBudgets as listFinanceBudgets,
+  listCategories as listFinanceCategories,
+  listImports as listFinanceImports,
+  listRules as listFinanceRules,
+  listTransactions as listFinanceTransactions,
+  previewFile as previewFinanceFile,
+  setBudget as setFinanceBudget,
+  setTransactionCategory as setFinanceTransactionCategory,
+  summary as financeSummary,
+  undoImport as undoFinanceImport,
+  updateAccount as updateFinanceAccount,
+  updateCategory as updateFinanceCategory,
+} from '../finance.ts';
+import { dayParam, FinanceError, MAX_IMPORT_BODY, monthParam } from '../finance-format.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
@@ -95,6 +120,7 @@ import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '
 import { projectFits, type DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
+import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
@@ -138,6 +164,8 @@ export interface ApiServerOptions {
   defaultModel?: () => string | undefined;
   /** The ids of the agents (agents/*.yaml): the status panel and the characters list them. */
   agents?: () => readonly string[];
+  /** The agents that read finance data (I-18, D-183): like Arianna, never an assignee of a card or of an IM item. */
+  financeAgents?: () => readonly string[];
   /** The pixel characters (D-060): pack folders and the user's choices, read at each request. */
   characters?: { dirs: CharacterDirs; choices: () => CharacterChoices };
   /** apps/voice (D-066); its state is `off` while `[voice]` is not configured (D-071). */
@@ -404,6 +432,7 @@ interface RouteOptions {
   models: () => readonly { executor: string; model: string }[];
   defaultModel: () => string | undefined;
   agents: () => readonly string[];
+  financeAgents: () => readonly string[];
   characters: ApiServerOptions['characters'];
   voice: VoiceApi | undefined;
   calls: Calls | undefined;
@@ -661,6 +690,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       // "/nota" from an incognito conversation (D-136): nothing it says is kept.
       if (conversationId !== undefined && (typeof conversationId !== 'string' || !isUuid(conversationId))) throw new HttpError(400, 'conversationId must be a conversation id');
       if (conversationId !== undefined && (await isIncognitoConversation(sql, conversationId))) return { status: 409, body: { error: 'incognito' } };
+      // Nor from a conversation of the Finances (I-18, D-183): nothing of it goes to kb/.
+      if (conversationId !== undefined && (await isFinanceConversation(sql, conversationId))) return { status: 409, body: { error: 'finance' } };
       // A message of the chat saved once (D-089): its label and, without `text`, its text come from the database.
       if (messageId !== undefined && (typeof messageId !== 'string' || !/^[1-9]\d{0,18}$/.test(messageId))) {
         throw new HttpError(400, 'messageId must be a message id');
@@ -668,6 +699,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const message = messageId === undefined ? undefined : await loadMessage(sql, messageId);
       if (messageId !== undefined && message === undefined) throw new HttpError(404, 'message not found');
       if (message !== undefined && (await isIncognitoConversation(sql, message.conversationId))) return { status: 409, body: { error: 'incognito' } };
+      if (message !== undefined && (await isFinanceConversation(sql, message.conversationId))) return { status: 409, body: { error: 'finance' } };
       const text = body.text ?? message?.body;
       if (typeof text !== 'string') throw new HttpError(400, 'text is required');
       const chosen = kind ?? 'note';
@@ -715,6 +747,8 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       if (loaded === undefined) throw new HttpError(404, 'not found');
       // Nothing of an incognito conversation is ever saved (D-136): read as one without saves.
       if (loaded.incognito) return { body: { messageIds: [], notes: {}, conversation: false, conversationNote: null, conversationSavedAt: null } };
+      // Nor of a conversation of the Finances (I-18, D-183).
+      if (loaded.finance) return { status: 409, body: { error: 'finance' } };
       const saved = savedMessageNotes(capture.home, capture.rules);
       // The whole conversation saved (I-7, D-131): "Salva in inbox" of the header becomes "Aggiorna"; its path and time only up to L2.
       const whole = findConversationNote(capture.home, capture.rules, id);
@@ -739,6 +773,7 @@ function captureRoutes(sql: Sql, capture: ApiServerOptions['capture'], onError: 
       const conversation = await loadConversation(sql, id);
       if (conversation === undefined) throw new HttpError(404, 'not found');
       if (conversation.incognito) return { status: 409, body: { error: 'incognito' } };
+      if (conversation.finance) return { status: 409, body: { error: 'finance' } };
       const lines = await sql<SavedLine[]>`
         SELECT role, agent, label, body FROM messages WHERE conversation_id = ${id} AND role <> 'system' ORDER BY id`;
       const note = saveConversation({ home: capture.home, rules: capture.rules, conversationId: id, title: conversation.title, lines, floor: conversation.effectiveLabel });
@@ -1699,9 +1734,14 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
+  // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
+  const assignable = (): string[] => {
+    const finance = new Set(financeAgents());
+    return agents().filter((agent) => agent !== 'arianna' && !finance.has(agent));
+  };
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
@@ -1710,9 +1750,10 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
-    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: agents(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
+    ...cardwallRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable(), catalog: cardCatalog(designCatalog, skillsCatalog) }), cards),
     ...clientRoutes(sql, () => ({ projects: projectContainers().map((project) => project.name) }), clients),
-    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: agents().filter((agent) => agent !== 'arianna') }), onError),
+    ...financeRoutes(sql),
+    ...imRoutes(sql, projectContainers, knowledge, () => ({ projects: projectContainers().map((project) => project.name), agents: assignable() }), onError),
     ...modelEvalRoutes(modelEvals),
     ...voiceRoutes(voice),
     ...captureRoutes(sql, capture, onError),
@@ -1800,7 +1841,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       if (policy !== undefined && !projectFits(policy, typeof body.project === 'string' ? body.project : undefined)) {
         throw new HttpError(400, `${policy.agent} works only on the project ${policy.container ?? ''}`);
       }
-      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project };
+      const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project, ...(policy.finance === true ? { finance: true } : {}) };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
       const model = body.mode === 'work' ? defaultModel() : undefined;
@@ -2068,6 +2109,146 @@ function secretaryRoutes(sql: Sql): Route[] {
   ];
 }
 
+/** The SQLSTATE of an error of PostgreSQL, undefined for any other error. */
+function postgresState(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'PostgresError') return undefined;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === 'string' ? code : 'XX000';
+}
+
+/**
+ * The expense tracker (I-18, D-183): the contract of docs/FINANCE-API.md.
+ * Private (L2, source finance:*): only the web chat reads and writes it, and
+ * nothing of it goes out. Errors answer `{ error: <code> }`, which the page
+ * translates; the file of an import comes as JSON with its bytes in base64
+ * (the API takes only JSON, security.ts), up to 10 MiB decoded.
+ */
+function financeRoutes(sql: Sql): Route[] {
+  const guard = (handler: Handler): Handler => async (request, url, params) => {
+    try {
+      return await handler(request, url, params);
+    } catch (error) {
+      if (error instanceof FinanceError) return { status: error.status, body: { error: error.code, ...(error.line === null ? {} : { line: error.line }) } };
+      if (error instanceof HttpError) {
+        const code = error.status === 413 ? 'too-large' : error.status === 404 ? 'not-found' : 'invalid';
+        return { status: error.status, body: { error: code } };
+      }
+      // A refusal of the database carries the values of the row in its detail (descriptions, amounts):
+      // answered with a code, and reported, if at all, by its SQLSTATE alone.
+      const state = postgresState(error);
+      if (state !== undefined) {
+        if (state === '23505' || state === '23503' || state === '40001' || state === '40P01') return { status: 409, body: { error: 'conflict' } };
+        if (state.startsWith('22') || state.startsWith('23')) return { status: 400, body: { error: 'invalid' } };
+        // eslint-disable-next-line preserve-caught-error -- the cause is the error with the row's values: never attached
+        throw new Error(`finance: the database refused the request (SQLSTATE ${state})`);
+      }
+      throw error;
+    }
+  };
+  const done: Result = { status: 204, body: null };
+  // A DELETE carries no body, or an empty object.
+  const noBody = async (request: IncomingMessage): Promise<void> => {
+    const declared = Number(request.headers['content-length'] ?? '0');
+    if (declared === 0 && request.headers['transfer-encoding'] === undefined) return;
+    onlyFields(await readJson(request), []);
+  };
+  const query = (url: URL, key: string): string | undefined => {
+    const value = url.searchParams.get(key);
+    return value === null || value === '' ? undefined : value;
+  };
+  const integer = (url: URL, key: string): number | undefined => {
+    const value = query(url, key);
+    if (value === undefined) return undefined;
+    if (!/^\d{1,9}$/.test(value)) throw new FinanceError('invalid', 400, `${key} must be a whole number`);
+    return Number(value);
+  };
+  const id = (params: Params, key: string): string => params[key] ?? '';
+  return [
+    route('GET', '/api/finance/accounts', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { accounts: await listFinanceAccounts(sql) } };
+    })),
+    route('POST', '/api/finance/accounts', guard(async (request) => ({ status: 201, body: { account: await createFinanceAccount(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/accounts/:id', guard(async (request, _url, params) => ({ body: { account: await updateFinanceAccount(sql, id(params, 'id'), await readJson(request)) } }))),
+
+    route('POST', '/api/finance/imports/preview', guard(async (request) => ({ body: { preview: await previewFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('POST', '/api/finance/imports', guard(async (request) => ({ status: 201, body: { import: await importFinanceFile(sql, await readJson(request, MAX_IMPORT_BODY)) } }))),
+    route('GET', '/api/finance/imports', guard(async (_request, url) => ({ body: { imports: await listFinanceImports(sql, url.searchParams.get('account')) } }))),
+    route('DELETE', '/api/finance/imports/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await undoFinanceImport(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/transactions', guard(async (_request, url) => {
+      const uncategorized = query(url, 'uncategorized');
+      if (uncategorized !== undefined && uncategorized !== '1' && uncategorized !== '0') throw new FinanceError('invalid', 400, 'uncategorized must be 1');
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      const category = query(url, 'category');
+      const q = query(url, 'q');
+      const listed = query(url, 'fingerprints');
+      const fingerprints = listed === undefined ? undefined : listed.split(',').map((item) => item.trim()).filter((item) => item !== '');
+      const limit = integer(url, 'limit');
+      const offset = integer(url, 'offset');
+      if (q !== undefined && q.length > 200) throw new FinanceError('invalid', 400, 'q is longer than 200 characters');
+      return {
+        body: await listFinanceTransactions(sql, {
+          ...(account === undefined ? {} : { account }),
+          ...(from === undefined ? {} : { from }),
+          ...(to === undefined ? {} : { to }),
+          ...(category === undefined ? {} : { category }),
+          uncategorized: uncategorized === '1',
+          ...(q === undefined ? {} : { q }),
+          ...(fingerprints === undefined ? {} : { fingerprints }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(offset === undefined ? {} : { offset }),
+        }),
+      };
+    })),
+    route('PATCH', '/api/finance/transactions/:id', guard(async (request, _url, params) => ({ body: await setFinanceTransactionCategory(sql, id(params, 'id'), await readJson(request)) }))),
+
+    route('GET', '/api/finance/categories', guard(async () => {
+      await ensureFinanceCategories(sql);
+      return { body: { categories: await listFinanceCategories(sql) } };
+    })),
+    route('POST', '/api/finance/categories', guard(async (request) => ({ status: 201, body: { category: await createFinanceCategory(sql, await readJson(request)) } }))),
+    route('PATCH', '/api/finance/categories/:id', guard(async (request, _url, params) => ({ body: { category: await updateFinanceCategory(sql, id(params, 'id'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/categories/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceCategory(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/rules', guard(async () => ({ body: { rules: await listFinanceRules(sql) } }))),
+    route('POST', '/api/finance/rules', guard(async (request) => ({ status: 201, body: { rule: await createFinanceRule(sql, await readJson(request)) } }))),
+    route('DELETE', '/api/finance/rules/:id', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceRule(sql, id(params, 'id'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/budgets', guard(async () => ({ body: { budgets: await listFinanceBudgets(sql) } }))),
+    route('PUT', '/api/finance/budgets/:category', guard(async (request, _url, params) => ({ body: { budget: await setFinanceBudget(sql, id(params, 'category'), await readJson(request)) } }))),
+    route('DELETE', '/api/finance/budgets/:category', guard(async (request, _url, params) => {
+      await noBody(request);
+      await deleteFinanceBudget(sql, id(params, 'category'));
+      return done;
+    })),
+
+    route('GET', '/api/finance/summary', guard(async (_request, url) => {
+      const account = query(url, 'account');
+      const from = dayParam(url.searchParams.get('from'), 'from', 'from');
+      const to = dayParam(url.searchParams.get('to'), 'to', 'to');
+      return {
+        body: await financeSummary(sql, { ...(account === undefined ? {} : { account }), ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) }),
+      };
+    })),
+    route('GET', '/api/finance/alerts', guard(async (_request, url) => ({ body: { alerts: await financeAlerts(sql, monthParam(url.searchParams.get('month'), 'month')) } }))),
+  ];
+}
+
 /**
  * The clients (I-16, D-168, tappa C1): the registry, the contacts, the
  * projects and the logo. Private (L2): only the web chat reads and writes
@@ -2302,10 +2483,10 @@ function cardwallRoutes(sql: Sql, names: () => CardNames, cards: ApiServerOption
       throw error;
     }
   };
-  // Arianna does not take cards from the wall: she is the one who hands them out.
+  // Arianna does not take cards from the wall (the caller leaves her out, with the agents of the Finances).
   const known = (): CardNames => {
     const current = names();
-    return { projects: current.projects, agents: current.agents.filter((agent) => agent !== 'arianna'), ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
+    return { projects: current.projects, agents: current.agents, ...(current.catalog === undefined ? {} : { catalog: current.catalog }) };
   };
   return [
     route('GET', '/api/cards', async () => {
@@ -2899,6 +3080,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     models: options.models ?? (() => []),
     defaultModel: options.defaultModel ?? (() => undefined),
     agents: options.agents ?? (() => []),
+    financeAgents: options.financeAgents ?? (() => []),
     characters: options.characters,
     voice: options.voice,
     calls: options.calls,
@@ -3072,6 +3254,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         } else if ('raw' in result) {
           response.writeHead(200, { ...headers, ...result.headers, 'content-type': result.type, 'content-length': result.raw.length, 'cache-control': result.noStore === true ? 'no-store' : 'no-cache' });
           response.end(result.raw);
+        } else if (result.status === 204) {
+          response.writeHead(204, { ...headers, 'cache-control': 'no-store' });
+          response.end();
         } else {
           sendJson(response, result.status ?? 200, result.body, headers);
         }

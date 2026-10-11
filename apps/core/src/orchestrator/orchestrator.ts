@@ -16,8 +16,9 @@ import {
 } from '@arianna/agents';
 import { enabledCloudModels, ORCHESTRATOR_AGENT, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig } from '@arianna/config';
 import { LocalModelError, type ClaudeExecutor, type CodexExecutor, type LocalModel } from '@arianna/executors';
-import { createContext, isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
+import { isAtMost, maxLabel, type Context, type Label, type Labeled, type LabelRules } from '@arianna/policy';
 
+import { contextOf } from '../finance-mark.ts';
 import { CHAT_AGENT, loadConversation, type DirectModel } from '../conversations.ts';
 import type { Sql } from '../db/client.ts';
 import type { RunSpec, StepContext, StepExecutor, StepOutcome } from '../engine.ts';
@@ -510,7 +511,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
 
   /** The task is a message of the direct chat with its assignee (D-111). */
   async function isDirectChat(task: Task): Promise<boolean> {
-    return task.assignee !== CHAT_AGENT && (await directChatOf(sql, task, task.assignee)) !== undefined;
+    // The agent of the Finances (D-183) answers its marked conversation with its own tools on the local model, as Arianna does.
+    return task.assignee !== CHAT_AGENT && !task.finance && (await directChatOf(sql, task, task.assignee)) !== undefined;
   }
 
   /**
@@ -604,7 +606,7 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
    */
   async function reasonForChat(task: Task, reason: string, label: Label, runId: string): Promise<string | undefined> {
     if (!isAtMost(label, task.clearance)) return undefined;
-    const decision = await passGateway(sql, [{ value: reason, label, source: `task:${task.id}` }], createContext(task.clearance, label), { kind: 'channel', id: 'web' }, { taskId: task.id, runId });
+    const decision = await passGateway(sql, [{ value: reason, label, source: `task:${task.id}` }], contextOf(task, label), { kind: 'channel', id: 'web' }, { taskId: task.id, runId });
     return decision.decision === 'allow' ? decision.texts[0] : undefined;
   }
 
@@ -753,7 +755,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
       const history = await historyOf(sql, options.agents, task, turns, delegations, view);
       if (history.length === 0) return { kind: 'wait-user', reason: 'the task has no request to work on' };
       const label = maxLabel(task.effectiveLabel, ...history.map((part) => part.label));
-      const context: Context = createContext(task.clearance, label);
+      // With the task's finance mark (D-183): the local model reads it, nothing of it goes further.
+      let context: Context = contextOf(task, label);
       // The skills of an assignee other than Arianna (D-161), as in a local delegation: after its
       // prompt, a block of L0 data within the local limit; never for Arianna, never for a card
       // closing untrusted_content (skillsPart). They pass the gateway with the rest.
@@ -883,6 +886,8 @@ export function createOrchestrator(options: OrchestratorOptions): StepExecutor {
           autonomy: agent.card.autonomy,
           ...(options.ims === undefined ? {} : { ims: options.ims }),
         });
+        // A finance read marks the step's context at once (D-183): whatever the step does after it, it does marked.
+        if (ran.context !== undefined) context = ran.context;
         // An IM item above what the IM holds (D-167): the turn and the confirmation together, nothing written yet.
         if (ran.confirm !== undefined) {
           await recordTurn(tx, { ...turn, label: maxLabel(label, ran.label), result: WAITING_IM });
@@ -910,10 +915,15 @@ const TOOL_ACTIVITY: Record<LocalTool, ActivityKind> = {
   'task.create': 'card',
   'task.update': 'card',
   'im.add': 'write',
+  'finance.summary': 'read',
+  'finance.search': 'search',
+  'finance.alerts': 'read',
 };
 
 /** The argument that tells what the tool did: the query, the path, the card title, the card and its new status. */
 function toolDetail(tool: LocalTool, args: Record<string, unknown>): string {
+  // The finance tools show only their name (D-183): what the model looks for stays in the turn.
+  if (tool.startsWith('finance.')) return tool;
   if (tool === UPDATE) return `${String(args.task_id).slice(0, 8)} → ${String(args.status)}`;
   const field = tool === 'kb.search' ? 'query' : tool === 'task.create' || tool === 'im.add' ? 'title' : 'path';
   return String(args[field]);

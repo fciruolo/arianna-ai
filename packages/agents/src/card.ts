@@ -2,6 +2,7 @@ import { isAtMost, LABELS, type Label } from '@arianna/policy';
 
 import {
   APPROVAL_ACTIONS,
+  isFinanceTool,
   isToolId,
   toolSpec,
   TRIFECTA_SIDES,
@@ -157,6 +158,12 @@ export function parseAgentCard(raw: unknown, name: string): AgentCard {
     if (toolSpec(tool).localOnly === true && (hasCloud || isAtMost(maxLabel, 'L1'))) {
       fail(`tool ${tool} reads private data: only a card with max_label L2 or above that runs on the local model alone may list it`);
     }
+  }
+  // Finance data never leaves this machine (D-183): a card that reads it lists the finance tools and user.ask, nothing else
+  // (a list of the allowed, so that a tool added later does not slip in).
+  if (tools.some(isFinanceTool)) {
+    const others = tools.filter((tool) => !isFinanceTool(tool) && tool !== 'user.ask');
+    if (others.length > 0) fail(`a card that reads finance data may not list ${others.join(', ')}: only finance.* and user.ask`);
   }
 
   const autonomy = oneOf(card.autonomy, AUTONOMY_LEVELS, `${where}: autonomy`);

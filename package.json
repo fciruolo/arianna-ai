@@ -45,6 +45,7 @@
     "@arianna/agents": "workspace:*",
     "@arianna/config": "workspace:*",
     "@arianna/executors": "workspace:*",
+    "@arianna/finance": "workspace:*",
     "@arianna/policy": "workspace:*",
     "@arianna/router": "workspace:*",
     "@arianna/vault": "workspace:*",

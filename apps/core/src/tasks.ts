@@ -20,6 +20,8 @@ export interface Task {
   label: Label;
   clearance: Label;
   effectiveLabel: Label;
+  /** Has read finance data (D-183, migration 0056): never false again, and its contexts are marked (finance-mark.ts). */
+  finance: boolean;
   /** 'user' or the name of an agent. */
   assignee: string;
   limits: Record<string, unknown>;
@@ -71,7 +73,7 @@ export class TaskError extends Error {
 function columns(table = ''): string {
   const t = table === '' ? '' : `${table}.`;
   return `${t}id::text, ${t}parent_id::text AS "parentId", ${t}conversation_id::text AS "conversationId", ${t}title, ${t}goal, ${t}done_criteria AS "doneCriteria",
-  ${t}status, ${t}label, ${t}clearance, ${t}effective_label AS "effectiveLabel", ${t}assignee, ${t}limits, ${t}evidence,
+  ${t}status, ${t}label, ${t}clearance, ${t}effective_label AS "effectiveLabel", ${t}finance, ${t}assignee, ${t}limits, ${t}evidence,
   ${t}waiting_reason AS "waitingReason", ${t}waiting_approval_id::text AS "waitingApprovalId", ${t}note, ${t}project, ${t}due_at AS "dueAt", ${t}priority, ${t}planned_on::text AS "plannedOn", ${t}created_at AS "createdAt", ${t}updated_at AS "updatedAt"`;
 }
 const COLUMNS = columns();

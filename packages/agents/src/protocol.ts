@@ -45,6 +45,10 @@ export const TOOL_ARGS: Partial<Record<ToolId, JsonSchema>> = {
   'commitment.list': object({ day: text(80) }, []),
   // MAX_ITEM_TITLE of apps/core/src/im-format.ts.
   'im.add': object({ project: text(100), client: text(200), title: text(300), which: { type: 'string', enum: ['next', 'current'] } }, ['title']),
+  // Months as YYYY-MM; the core takes the last 12 months without them (apps/core/src/finance-tools.ts).
+  'finance.summary': object({ from: text(7), to: text(7) }, []),
+  'finance.search': object({ text: text(100), category: text(60), from: text(10), to: text(10), limit: { type: 'integer', minimum: 1, maximum: 50 } }, []),
+  'finance.alerts': object({ month: text(7) }, []),
   'commitment.done': object({ which: text(200) }, ['which']),
   'commitment.move': object({ which: text(200), day: text(80), time: text(20), reason: text(300) }, ['which']),
   'commitment.report': object(
@@ -81,6 +85,12 @@ const DESCRIPTIONS: Partial<Record<ToolId, string>> = {
   'web.search': 'Search the web.',
   'im.add':
     'Add an item of project work to an IM, the weekly meeting with the client of a project ("per il prossimo IM dobbiamo fare le fatture", "per questo IM: il pagamento"). "title" is the work, one short line in the user\'s words; "which" is "next" (il prossimo IM, the default) or "current" (questo IM, the meeting not over yet); "project" is the project as the user named it, left out in a conversation of a project; "client" is the client as the user named it ("per il prossimo IM del cliente Rossi"), in place of the project: the core finds the project of the client, and when the client has more than one it answers with them: ask the user which, then call again with "client" and "project". The core finds the IM and writes the file, then answers with the IM number, its date and the project: tell the user in one line. In a private conversation the core first asks the user to confirm the exact text in the chat, and writes the answer itself once the user decides: call it all the same, and never ask the user to confirm it yourself. Without a known project it answers with the known ones: ask the user which. Use it only for work to show or do for a client meeting; something the user personally has to do on a day is a commitment for the secretary, not an IM item.',
+  'finance.summary':
+    'The money in and out of the user\'s bank accounts, per month and per category, computed by the core from the imported statements. "from" and "to" are months YYYY-MM (both left out: the last 12 months). Every amount you tell the user must come from a result of a finance tool.',
+  'finance.search':
+    'Find movements of the user\'s bank accounts: "text" is a word of the description (a shop, a service), "category" a category name, "from" and "to" days YYYY-MM-DD or months YYYY-MM, "limit" how many (default 20). Newest first, with the total of the ones found.',
+  'finance.alerts':
+    'The checks of a month (YYYY-MM, default the current one): possible double charges, budgets over or close to their limit, unusual expenses, subscriptions whose amount changed. Computed by the core.',
   'commitment.add':
     'Note something the user has to do on a day (a personal commitment; work for the meeting with the client of a project goes in its IM, with im.add). "text" is what to do, in the user\'s words; "day" is the day exactly as the user said it (oggi, domani, giovedì, 15 ottobre, tra tre giorni); "time" only if the user said one. The core computes the date and asks the user to confirm it before saving: never compute the date yourself, and never ask the user what day it is.',
   'commitment.list':

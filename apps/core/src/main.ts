@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { AGENTS_DIR, loadAgents } from '@arianna/agents';
+import { AGENTS_DIR, isFinanceCard, loadAgents } from '@arianna/agents';
 import {
   catalogModelName,
   CLOUD_MODELS,
@@ -741,6 +741,7 @@ const server = await startApiServer({
   models: () => selectableModels(settings.current(), adapters),
   defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),
   agents: () => [...agents.keys()],
+  financeAgents: () => [...agents].filter(([, agent]) => isFinanceCard(agent.card)).map(([name]) => name),
   // The participant bar (D-125): where an agent runs, and how its name is labelled in the chat.
   // I-8 (D-130): an agent idle for [participants] leave_after messages of the user leaves by itself.
   leaveRule: () => ({ after: settings.current().participants.leaveAfter, nameLabel: (name) => nameLabelOf(agents.get(name)) }),

@@ -2,6 +2,19 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Finanze nel core: conti, anteprima e importazione di estratti conto CSV ed Excel con i doppioni riconosciuti, movimenti con ricerca, categorie predefinite in italiano, regole, budget, riepilogo per mese e categoria, saldo, confronto con l'anno prima e controlli del mese, sulle rotte `/api/finance/*` del contratto `docs/FINANCE-API.md`; il file importato non si salva (I-18, D-183).
+- Agente «Finanze»: consigli di bilancio sul modello locale con strumenti in sola lettura (`finance.summary`, `finance.search`, `finance.alerts`) che calcolano ogni cifra dal database, mai consigli di investimento; la sua conversazione è privata (I-18, D-183).
+- Finanze: nuova pagina «Finanze» nella barra laterale (indirizzo `/finanze`) con conti, importazione di estratti conto CSV ed Excel con anteprima e profilo della banca correggibile, annullamento di un'importazione, movimenti filtrabili con categoria per riga e «crea una regola», categorie, regole e budget mensili, riepilogo con grafici disegnati in SVG (entrate e uscite per mese, spese per categoria, saldo di un conto, confronto con l'anno prima) e avvisi del mese che portano ai movimenti; un riquadro ricorda che i dati restano su questo computer e nessun modello cloud li legge (I-18, D-183).
+
+### Sicurezza
+
+- Segno `finance` salvato su conversazioni, task e run (migrazione 0056), che non torna mai indietro: il core ricrea i contesti segnati, gli output prendono la fonte `finance:derived`, il gateway rifiuta Claude, Codex, Telegram e ogni destinazione cloud (regola `finance`), nessuna declassificazione, il router non manda un task segnato al cloud e il database rifiuta un run cloud di un task segnato (I-18, D-183).
+- Le tabelle delle finanze restano senza DELETE per il core: annullare un'importazione o togliere categorie, regole e budget passa dalla sola funzione `finance_delete`, controllata dal doctor; eventi solo con id e conteggi (I-18, D-183).
+
 ## [0.73.2] - 2026-10-11
 
 ### Corretto

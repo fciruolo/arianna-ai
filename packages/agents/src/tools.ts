@@ -54,6 +54,11 @@ export const TOOLS = {
   // conversation; from a step that read more than the IM holds, after the user confirms the exact text in
   // the web chat. Written by code on this machine, never by a cloud executor.
   'im.add': { description: 'Add an item to the current or next IM of a project; above the IM label, after the user confirms the text', opens: [], localOnly: true },
+  // The expense tracker (I-18, D-183): read only, computed by code from the database. Finance data never
+  // leaves this machine: the read marks the task, and the gateway sends nothing of it to the cloud.
+  'finance.summary': { description: 'Totals of the expense tracker per month and per category in a span, computed by the core', opens: [], localOnly: true },
+  'finance.search': { description: 'Movements of the expense tracker by text, category and span, at most a few', opens: [], localOnly: true },
+  'finance.alerts': { description: 'Checks of a month of the expense tracker: double charges, budgets, unusual expenses, changed subscriptions', opens: [], localOnly: true },
   'repo.read': { description: 'Read files in the run worktree', opens: [] },
   'repo.write': { description: 'Write files in the run worktree', opens: [] },
   // Tests of an untrusted repository may try the network: opens nothing only
@@ -77,4 +82,16 @@ export function isToolId(value: unknown): value is ToolId {
 
 export function toolSpec(id: ToolId): ToolSpec {
   return TOOLS[id];
+}
+
+/** The tools that read finance data (D-183): a card listing one answers only in its own private conversation. */
+export const FINANCE_TOOLS = ['finance.summary', 'finance.search', 'finance.alerts'] as const satisfies readonly ToolId[];
+
+export function isFinanceTool(tool: ToolId): boolean {
+  return (FINANCE_TOOLS as readonly string[]).includes(tool);
+}
+
+/** A card that reads finance data (the agent of the Finances): any tool of FINANCE_TOOLS. */
+export function isFinanceCard(card: { readonly tools: readonly ToolId[] }): boolean {
+  return card.tools.some(isFinanceTool);
 }
