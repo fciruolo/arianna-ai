@@ -444,6 +444,7 @@ Passa da git solo ciò che è nel repository. Non passano: `node_modules`, `data
 
 ## Modo di lavorare concordato
 
+- **Parlare chiaro all'utente** (richiesta del 2026-10-11): niente gergo interno («etichetta», «abbassare l'etichetta» non si capiscono). Usare i termini inglesi dell'interfaccia quando aiutano (select, label, badge, pulsante) e dire cosa cambia in pratica, per esempio «label di privacy: Pubblico, Interno, Privato, Segreto; abbassarla vuol dire meno protezione». Vale per le domande di prova e per i testi della chat.
 - **Claude fa tutto dentro la cartella**: codice, test, commit, branch, merge fast-forward su `main`. L'utente fa solo il push e le azioni fuori dalla cartella.
 - Un branch per task (`task/<id>-<nome>`), merge fast-forward su `main`, branch cancellato.
 - L'utente ha chiesto di arrivare a fine Fase 0 senza fermarsi a ogni task. A fine fase ci si ferma comunque.

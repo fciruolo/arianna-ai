@@ -5,7 +5,7 @@ import { addProjectNote, confirmPrivacy, deleteProjectNote, loadSettings, prepar
 import { ApiError } from '../lib/api.ts';
 import { DELETE_PROJECT_NOTE_TEXT } from '../lib/erase.ts';
 import { errorText } from '../lib/italian.ts';
-import { LABEL_TEXT } from '../lib/labels.ts';
+import { LABEL_OPTION, LABEL_TEXT } from '../lib/labels.ts';
 import { browseErrorText, folderLabelByName, isFolderName, lowers, noteLabels, withFolderLabel, type BrowsableContainer, type KnowledgeFolder, type ProjectKnowledge } from '../lib/projects.ts';
 import { changeLines, writeError, type ChangeLine, type PrivacyProposal } from '../lib/settings.ts';
 import type { Label } from '../lib/types.ts';
@@ -249,7 +249,7 @@ watch(
             </label>
             <label class="flex flex-col gap-1 text-xs text-muted">Etichetta
               <select v-model="adding.label" class="field px-2 py-1.5 text-[13px] text-ink">
-                <option v-for="label in addingLabels" :key="label" :value="label">{{ LABEL_TEXT[label] }}</option>
+                <option v-for="label in addingLabels" :key="label" :value="label">{{ LABEL_OPTION[label] }}</option>
               </select>
             </label>
           </div>

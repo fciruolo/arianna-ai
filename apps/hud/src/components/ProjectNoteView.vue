@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { ApiError, editProjectNote, readProjectNote } from '../lib/api.ts';
-import { LABEL_TEXT } from '../lib/labels.ts';
+import { LABEL_OPTION, LABEL_TEXT } from '../lib/labels.ts';
 import { browseErrorText, lowers, noteLabels, type OpenedNote } from '../lib/projects.ts';
 import type { Label } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -124,9 +124,9 @@ watch(
         <label class="flex flex-col gap-1 text-xs text-muted">Titolo
           <input ref="titleInput" v-model="editing.title" maxlength="200" class="field px-2 py-1.5 text-[13px] text-ink" />
         </label>
-        <label class="flex flex-col gap-1 text-xs text-muted">Etichetta
+        <label class="flex flex-col gap-1 text-xs text-muted">Etichetta di privacy (label)
           <select v-model="editing.label" class="field px-2 py-1.5 text-[13px] text-ink">
-            <option v-for="label in labels" :key="label" :value="label">{{ LABEL_TEXT[label] }}</option>
+            <option v-for="label in labels" :key="label" :value="label">{{ LABEL_OPTION[label] }}</option>
           </select>
         </label>
       </div>
@@ -136,9 +136,9 @@ watch(
       <label class="flex flex-col gap-1 text-xs text-muted">Testo
         <textarea v-model="editing.text" rows="14" class="field px-2 py-1.5 text-[13px] text-ink" />
       </label>
-      <p class="text-xs text-muted">L’etichetta non scende sotto quella della cartella ({{ LABEL_TEXT[note.floor] }}); titolo ed etichetta hanno i loro campi, non vanno fra le righe dell’intestazione.</p>
+      <p class="text-xs text-muted">Nella select la protezione cresce dall’alto in basso. Alzarla è sempre permesso; abbassarla chiede conferma, e mai sotto quella della cartella ({{ LABEL_TEXT[note.floor] }}). Titolo e label hanno i loro campi, non vanno fra le altre righe dell’intestazione.</p>
       <p v-if="goesDown" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[13px]">
-        <b>L’etichetta scende</b> da {{ LABEL_TEXT[note.label] }} a {{ LABEL_TEXT[editing.label] }}: la leggerà anche una conversazione che oggi non la vede.
+        <b>La protezione scende</b> da {{ LABEL_TEXT[note.label] }} a {{ LABEL_TEXT[editing.label] }}: la leggerà anche una conversazione che oggi non la vede.
         <template v-if="editing.confirmLower"> Premi di nuovo per confermare.</template>
       </p>
       <p v-if="editing.error" class="text-sm text-danger" role="alert">{{ editing.error }}</p>
