@@ -119,6 +119,8 @@ export interface SubtaskView extends Omit<SubtaskRow, 'planId'> {
   changed: string[];
   /** Of those, the ones outside the files the subtask owns. */
   outside: string[];
+  /** Files changed (by the Coder, or in the branch ready) that run code on the user's machine once merged. */
+  sensitive: string[];
   /** For a branch ready: whether it is already in the installation's main. */
   merged?: boolean;
   /** For a branch ready: the commands that merge it, run in the folder of the installation. */
@@ -143,8 +145,64 @@ const SUBTASK_COLUMNS = `s.id::text, s.plan_id::text AS "planId", s.position, s.
 const PLAN_COLUMNS = `p.id::text, p.conversation_id::text AS "conversationId", p.message_id::text AS "messageId", p.title, p.model, p.label, p.created_at AS "createdAt"`;
 
 /** The commands that bring a subtask's branch into the installation, run in its folder. */
-export function mergeCommandsOf(part: string): string[] {
-  return [`git fetch ${GOD_CONTAINER}/${part} ${subtaskBranch(part)}`, 'git merge --no-ff FETCH_HEAD'];
+export function mergeCommandsOf(part: string, commit: string): string[] {
+  return [`git fetch ${GOD_CONTAINER}/${part} ${subtaskBranch(part)}`, `git diff --stat ${GOD_MAIN}...${commit}`, `git merge --no-ff ${commit}`];
+}
+
+/** One change staged by "Prepara il ramo": its path and modes (`git diff --cached --raw -z`). */
+export interface StagedChange {
+  path: string;
+  oldMode: string;
+  newMode: string;
+}
+
+/** The output of `git diff --cached --raw -z --no-renames`: `:old new sha sha status\0path\0`, again and again. */
+export function parseRaw(output: string): StagedChange[] {
+  const fields = output.split('\0');
+  const changes: StagedChange[] = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const meta = fields[index] ?? '';
+    const path = fields[index + 1] ?? '';
+    if (!meta.startsWith(':') || path === '') continue;
+    const [oldMode = '', newMode = ''] = meta.slice(1).split(' ');
+    changes.push({ path, oldMode, newMode });
+  }
+  return changes;
+}
+
+/**
+ * Why the changes of a clone must not become a branch (D-127, «Prepara il
+ * ramo»), or undefined: what would reach the installation with the merge and
+ * is not code to review. A .gitignore changed (it decides what git sees in
+ * the installation), the folders and files of an installation (data/, repos/,
+ * config/arianna.toml), what the installation ignores (`ignored`, from git
+ * check-ignore there), links and repositories inside the repository (mode
+ * 120000 and 160000).
+ */
+export function branchRefusal(changes: readonly StagedChange[], ignored: ReadonlySet<string>): string | undefined {
+  for (const change of changes) {
+    const path = change.path;
+    const lower = path.toLowerCase();
+    const name = lower.split('/').at(-1) ?? '';
+    if (name === '.gitignore') return `cambia ${path}: un .gitignore decide cosa vede git nell'installazione`;
+    if (lower.startsWith('data/') || lower.startsWith('repos/') || lower === 'config/arianna.toml') return `tocca ${path}, che appartiene all'installazione e non al codice`;
+    if (change.newMode === '120000' || change.oldMode === '120000') return `${path} è un collegamento simbolico`;
+    if (change.newMode === '160000' || change.oldMode === '160000') return `${path} è un repository dentro il repository`;
+    if (lower.split('/').includes('.git')) return `${path} è dentro una cartella .git`;
+    if (ignored.has(path)) return `${path} è un file che l'installazione ignora (dati locali, non codice)`;
+  }
+  return undefined;
+}
+
+/**
+ * Files a merge brings in that run code or decide what runs, on the user's
+ * machine, outside any sandbox: shown apart in the cruscotto (D-127).
+ */
+export function isSensitive(path: string): boolean {
+  const lower = path.toLowerCase();
+  const name = lower.split('/').at(-1) ?? '';
+  if (['package.json', '.npmrc', '.pnpmfile.cjs', 'compose.yaml', 'pnpm-workspace.yaml', '.mcp.json', '.envrc', '.pre-commit-config.yaml'].includes(name)) return true;
+  return ['.githooks/', '.claude/', 'scripts/', '.vscode/', '.idea/', '.devcontainer/', '.husky/'].some((prefix) => lower.startsWith(prefix) || lower.includes(`/${prefix}`));
 }
 
 /** The first message of a subtask's Coder, as the user reads it in its chat (in Italian: it is the user's side of the chat). */
@@ -306,8 +364,17 @@ export function createGodWork(env: GodWorkEnv) {
       path: `${GOD_CONTAINER}/${row.part}`,
       changed,
       outside: outsideFiles(row.files, changed),
+      sensitive: changed.filter(isSensitive),
     };
-    if (row.state === 'branch' && row.commitSha !== null) return { ...base, merged: await isMerged(row.commitSha), mergeCommands: mergeCommandsOf(row.part) };
+    if (row.state === 'branch' && row.commitSha !== null) {
+      // What the branch itself carries, read from the clone while it is there.
+      const committed = await git(['diff', '--name-only', '-z', `origin/${GOD_MAIN}`, row.commitSha], godPartDir(home, row.part)).then(
+        (out) => out.split('\0').filter((path) => path !== ''),
+        () => [] as string[],
+      );
+      const sensitive = [...new Set([...base.sensitive, ...committed.filter(isSensitive)])];
+      return { ...base, sensitive, merged: await isMerged(row.commitSha), mergeCommands: mergeCommandsOf(row.part, row.commitSha) };
+    }
     return base;
   }
 
@@ -599,6 +666,21 @@ export function createGodWork(env: GodWorkEnv) {
       if (branch !== subtaskBranch(row.part)) throw new GodError('conflict', `il clone è sul ramo ${branch}, non su ${subtaskBranch(row.part)}`);
       if ((await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim() !== '') {
         await git(['add', '--all'], dir);
+        const changes = parseRaw(await git(['diff', '--cached', '--raw', '-z', '--no-renames'], dir));
+        // What the installation ignores, asked to the installation itself (its .gitignore files, not the clone's).
+        const listed = changes.map((change) => change.path);
+        const ignored = new Set(
+          listed.length === 0
+            ? []
+            : (await git(['check-ignore', '--no-index', '-z', '--stdin'], home, { input: `${listed.join('\0')}\0`, okCodes: [1] })).split('\0').filter((path) => path !== ''),
+        );
+        const refused = branchRefusal(changes, ignored);
+        if (refused !== undefined) {
+          // Nothing committed: the changes stay in the clone, unstaged, for the user (or the Coder) to fix.
+          await git(['reset', '--quiet'], dir);
+          await setState(sql, row.id, 'attention', { reason: reason(`ramo non preparato: ${refused}`) });
+          return view(await subtask(id));
+        }
         await git([...COMMIT_IDENTITY, 'commit', '--quiet', '--no-verify', '-m', `${row.title} (GOD ${row.part})`], dir);
       }
       const head = (await git(['rev-parse', 'HEAD'], dir)).trim();

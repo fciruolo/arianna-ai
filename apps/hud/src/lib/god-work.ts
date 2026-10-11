@@ -31,6 +31,8 @@ export interface GodSubtask {
   path: string;
   changed: string[];
   outside: string[];
+  /** Files that run code on the user's machine once merged (package.json, .githooks/, scripts/…); absent from an older core. */
+  sensitive: string[];
   merged?: boolean;
   mergeCommands?: string[];
 }

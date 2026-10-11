@@ -24,6 +24,9 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Sicurezza
 
 - `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).
+- I cloni di GOD contengono solo il `main` dell'installazione: mai lo stash, gli altri rami o gli oggetti non raggiungibili; un clone fatto prima va rifatto (D-127).
+- «Prepara il ramo» non fa il commit di `.gitignore`, `data/`, `repos/`, `config/arianna.toml`, file ignorati dall'installazione, collegamenti simbolici e repository annidati (D-127).
+- Il cruscotto di GOD mette in evidenza i file che eseguono codice una volta uniti, e il merge è fissato sul commit preparato; il nuovo hook `pre-merge-commit` lancia `pnpm check` anche a ogni `git merge` (D-127).
 
 ## [0.64.0] - 2026-10-11
 

@@ -181,9 +181,12 @@ onBeforeUnmount(() => window.clearInterval(timer));
             <p v-if="verdictText(subtask.review) !== null" class="mt-1 text-[12.5px]" :class="subtask.review === 'ok' ? 'text-ok' : subtask.review === 'changes' ? 'text-warn' : 'text-muted'">{{ verdictText(subtask.review) }}</p>
             <p v-if="subtask.changed.length > 0" class="mt-1 font-mono text-[11px] break-words text-muted">Cambiati: {{ subtask.changed.join(' · ') }}</p>
             <p v-if="subtask.outside.length > 0" class="mt-1 text-[12.5px] text-warn">Fuori dai suoi file: {{ subtask.outside.join(', ') }}</p>
+            <p v-if="subtask.sensitive.length > 0" class="mt-1 rounded-lg border border-warn/50 bg-warn/10 px-2 py-1 text-[12.5px]">
+              Da guardare prima di unire, eseguono codice sul tuo computer: {{ subtask.sensitive.join(', ') }}
+            </p>
             <div v-if="subtask.mergeCommands !== undefined" class="mt-2 rounded-lg border border-line bg-surface-2 px-3 py-2">
               <p class="text-[12.5px]">
-                {{ subtask.merged === true ? 'Già unito in main.' : 'Per unirlo, nella cartella dell’installazione (l’hook di pre-commit lancia pnpm check):' }}
+                {{ subtask.merged === true ? 'Già unito in main.' : 'Per unirlo, nella cartella dell’installazione: scarica il ramo, guarda cosa cambia, unisci proprio quel commit (l’hook pre-merge-commit lancia pnpm check):' }}
               </p>
               <pre v-if="subtask.merged !== true" class="mt-1 font-mono text-[11.5px] whitespace-pre-wrap">{{ subtask.mergeCommands.join('\n') }}</pre>
             </div>

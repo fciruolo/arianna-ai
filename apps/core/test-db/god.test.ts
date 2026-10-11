@@ -4,7 +4,7 @@
 // tasks of the chats are moved by hand, as the engine would.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -217,9 +217,10 @@ test('the tick starts a subtask in its own clone with the Coder, then the Review
   assert.equal(branch.state, 'branch');
   assert.match(branch.commitSha ?? '', /^[0-9a-f]{40}$/);
   assert.equal(branch.merged, false);
-  assert.deepEqual(branch.mergeCommands, [`git fetch repos/arianna/${first.part} god/${first.part}`, 'git merge --no-ff FETCH_HEAD']);
+  const sha = branch.commitSha ?? '';
+  assert.deepEqual(branch.mergeCommands, [`git fetch repos/arianna/${first.part} god/${first.part}`, `git diff --stat main...${sha}`, `git merge --no-ff ${sha}`]);
   git(home, 'fetch', '-q', clone, `god/${first.part}`);
-  git(home, 'merge', '-q', '--no-ff', '-m', 'merge', 'FETCH_HEAD');
+  git(home, 'merge', '-q', '--no-ff', '-m', 'merge', sha);
   await work.tick();
   second = await at(plan.id, 2);
   assert.equal(second.state, 'working');
@@ -332,4 +333,47 @@ test('deleting a conversation with GOD: the plan stays unlinked, the summaries g
   assert.equal((await at(other.id, 1)).conversationId, null);
   await work.tick();
   assert.equal((await at(other.id, 1)).state, 'attention', 'a subtask whose chat was erased asks for the user');
+});
+
+test('«Prepara il ramo» does not commit a .gitignore, a link or what the installation ignores: the subtask asks for the user', async () => {
+  await fresh();
+  const { home, work, parts } = setup();
+  const { sql } = db();
+  // What the installation ignores: data/, repos/ and, here, kb/inbox/.
+  writeFileSync(join(home, '.gitignore'), 'data/\nrepos/\nkb/inbox/\n');
+  git(home, 'commit', '-q', '-am', 'ignore kb/inbox');
+  const { messageId } = await godAnswer(parts, PLAN.replace('"blocked_by":[1]', '"blocked_by":[]'));
+  const plan = await work.approve(messageId);
+  await work.tick();
+  const first = await at(plan.id, 1);
+  const coderChat = set(first.conversationId);
+  await answer(coderChat, 'coder', 'Fatto.');
+  await sql`UPDATE god_subtasks SET state = 'reviewed' WHERE id = ${first.id}`;
+  const clone = godPartDir(home, first.part);
+  const head = git(clone, 'rev-parse', 'HEAD').trim();
+  for (const [path, write] of [
+    ['kb/inbox/nota.md', () => {
+      // The clone's own .gitignore was copied from the installation: changed by the Coder, it lets the file in.
+      writeFileSync(join(clone, '.gitignore'), 'data/\nrepos/\n');
+      mkdirSync(join(clone, 'kb', 'inbox'), { recursive: true });
+      writeFileSync(join(clone, 'kb', 'inbox', 'nota.md'), 'privata finta\n');
+    }],
+    ['link', () => {
+      symlinkSync('/etc/hosts', join(clone, 'link'));
+    }],
+  ] as const) {
+    write();
+    const refused = await work.prepareBranch(first.id);
+    assert.equal(refused.state, 'attention', path);
+    assert.match(refused.reason ?? '', /ramo non preparato/);
+    assert.equal(git(clone, 'rev-parse', 'HEAD').trim(), head, 'nothing committed');
+    assert.equal(git(clone, 'diff', '--cached', '--name-only').trim(), '', 'nothing left staged');
+    rmSync(join(clone, path), { recursive: true, force: true });
+    git(clone, 'checkout', '--', '.gitignore');
+  }
+  // Only code: committed.
+  writeFileSync(join(clone, 'quota.txt'), 'fake\n');
+  const ready = await work.prepareBranch(first.id);
+  assert.equal(ready.state, 'branch');
+  assert.notEqual(git(clone, 'rev-parse', 'HEAD').trim(), head);
 });

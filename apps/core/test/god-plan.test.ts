@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { checkGodPlan, overlaps, partName, planBlock, planOfAnswer, safePath, slugOf, withoutPlan } from '../src/god/plan.ts';
 import { concurrencyFor, projection, projectReading } from '../src/god/quota.ts';
-import { mergeCommandsOf, outsideFiles, reviewBrief, subtaskBrief, verdictOf } from '../src/god/work.ts';
+import { branchRefusal, isSensitive, mergeCommandsOf, outsideFiles, parseRaw, reviewBrief, subtaskBrief, verdictOf } from '../src/god/work.ts';
 import { pnpmEnv } from '../src/god/prepare.ts';
 
 const plan = (subtasks: unknown[], title: unknown = 'Barra della quota'): string => JSON.stringify({ title, subtasks });
@@ -88,10 +88,40 @@ test('the messages of the subtask: the Coder\'s brief, the Reviewer\'s, the verd
   assert.equal(verdictOf('boh'), 'unknown');
   assert.equal(verdictOf(undefined), 'unknown');
   assert.deepEqual(outsideFiles(row.files, ['apps/hud/src/P.vue', 'apps/hud/test/p.test.ts', 'apps/core/src/x.ts']), ['apps/core/src/x.ts']);
-  assert.deepEqual(mergeCommandsOf('g002-pagina'), ['git fetch repos/arianna/g002-pagina god/g002-pagina', 'git merge --no-ff FETCH_HEAD']);
+  const sha = 'a'.repeat(40);
+  assert.deepEqual(mergeCommandsOf('g002-pagina', sha), ['git fetch repos/arianna/g002-pagina god/g002-pagina', `git diff --stat main...${sha}`, `git merge --no-ff ${sha}`]);
 });
 
 test('pnpm in a new clone sees the path and the home, nothing of the core', () => {
   const env = pnpmEnv({ PATH: '/bin', HOME: '/utente/x', ARIANNA_HOME: '/secret', PGPASSWORD: 'x', SOPS_AGE_KEY: 'y' });
   assert.deepEqual(env, { CI: '1', PATH: '/bin', HOME: '/utente/x' });
+});
+
+test('«Prepara il ramo» refuses what is not code to review: .gitignore, data, links, nested repositories, what the installation ignores', () => {
+  const raw = ':000000 100644 0000000 1111111 A\0apps/core/src/x.ts\0:100644 100644 2222222 3333333 M\0docs/a b.md\0:000000 120000 0000000 4444444 A\0link\0';
+  assert.deepEqual(parseRaw(raw), [
+    { path: 'apps/core/src/x.ts', oldMode: '000000', newMode: '100644' },
+    { path: 'docs/a b.md', oldMode: '100644', newMode: '100644' },
+    { path: 'link', oldMode: '000000', newMode: '120000' },
+  ]);
+  const file = (path: string, newMode = '100644', oldMode = '000000') => ({ path, oldMode, newMode });
+  const none = new Set<string>();
+  assert.equal(branchRefusal([file('apps/core/src/x.ts'), file('apps/hud/src/Y.vue', '100644', '100644')], none), undefined);
+  assert.match(branchRefusal([file('.gitignore', '100644', '100644')], none) ?? '', /\.gitignore/);
+  assert.match(branchRefusal([file('apps/hud/.gitignore')], none) ?? '', /\.gitignore/);
+  assert.match(branchRefusal([file('data/vault/secrets.yaml')], none) ?? '', /installazione/);
+  assert.match(branchRefusal([file('Repos/demo/x')], none) ?? '', /installazione/);
+  assert.match(branchRefusal([file('config/arianna.toml')], none) ?? '', /installazione/);
+  assert.match(branchRefusal([file('docs/link', '120000')], none) ?? '', /collegamento/);
+  assert.match(branchRefusal([file('was-a-link', '100644', '120000')], none) ?? '', /collegamento/);
+  assert.match(branchRefusal([file('vendor/lib', '160000')], none) ?? '', /repository dentro/);
+  assert.match(branchRefusal([file('kb/inbox/nota.md')], new Set(['kb/inbox/nota.md'])) ?? '', /ignora/);
+  assert.equal(branchRefusal([file('config/arianna.example.toml')], none), undefined, 'the example of the configuration is code');
+});
+
+test('the files that run code on the machine once merged are pointed out', () => {
+  for (const path of ['package.json', 'apps/core/package.json', '.githooks/pre-commit', '.claude/settings.json', 'scripts/compose.ts', '.npmrc', '.pnpmfile.cjs', 'compose.yaml', 'apps/x/.vscode/tasks.json']) {
+    assert.equal(isSensitive(path), true, path);
+  }
+  for (const path of ['apps/core/src/x.ts', 'docs/scripts.md', 'apps/hud/src/scripts-list.ts']) assert.equal(isSensitive(path), false, path);
 });
