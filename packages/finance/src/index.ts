@@ -9,6 +9,9 @@ export { excelSerialToDay, isDateFormatCode, isOleFile, isZipFile, readXlsx } fr
 export type { XlsxReadOptions, XlsxTable } from './xlsx.ts';
 export { DATE_FORMATS, columnOf, findHeader, guessProfile, normalizeHeader, parseAmount, parseDate } from './profiles.ts';
 export type { AmountColumns, BankProfile, DateFormat, DecimalMark } from './profiles.ts';
-export { OccurrenceCounter, fingerprint, normalizeDescription } from './fingerprint.ts';
+// The fingerprint's own normalization, apart from the analysis's normalizeDescription.
+export { OccurrenceCounter, fingerprint, normalizeDescription as fingerprintDescription } from './fingerprint.ts';
 export { detectKind, isNewestFirst, previewImport } from './import.ts';
 export type { FileKind, ImportPreview, PreviewOptions, PreviewRow, RejectReason } from './import.ts';
+
+export * from './analysis/index.ts';

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { fingerprint, normalizeDescription, OccurrenceCounter } from '../src/index.ts';
+import { fingerprint, fingerprintDescription as normalizeDescription, OccurrenceCounter } from '../src/index.ts';
 
 test('descriptions are normalized: case, accents, punctuation, spaces', () => {
   assert.equal(normalizeDescription('  Caffè   DEL Corso, n.3 '), 'caffe del corso n 3');
