@@ -153,19 +153,13 @@ Importatore a sola lettura, che non attiva nulla e non tocca prompt, router né 
    - Opzione: Un comando pnpm agency:fetch — fa tutto da solo; più comodo, ma è codice in più che scarica dalla rete, da scrivere e controllare.
    - Opzione: Più avanti, quando servirà — nessun passo ora; le schede di agency-agents restano non disponibili.
    - Esempio: Nel terminale lanci git clone https://github.com/msitarzewski/agency-agents data/catalogs/agency-agents e poi il checkout; pnpm agency:import ti stampa la versione completa, che Claude scrive in config/agency.lock. Con la tappa T4 quei ruoli compariranno in Impostazioni → Agenti → "+ Nuovo agente".
-6. **Quali gruppi del catalogo ti servono davvero?** Raccomandazione di partenza: `engineering`, `testing`, `design`, `product`, `research`; le altre nell'indice ma nascoste finché non le chiedi.
-   - Contesto: Il catalogo è diviso in 18 gruppi ("divisioni"): codice, test, design, prodotto, ricerca, marketing, vendite, finanza, sanità, giochi e altri. Mostrarli tutti rende l'elenco lungo e pieno di agenti che non userai. Si decide quali mostrare all'inizio; gli altri restano nell'indice, nascosti, e si accendono quando li chiedi.
-   - Opzione consigliata: Cinque gruppi — codice, test, design, prodotto e ricerca, i più vicini al tuo lavoro; gli altri si mostrano quando li chiedi.
-   - Opzione: Tutti e 18 visibili — niente da scegliere, ma oltre 230 agenti da scorrere.
-   - Opzione: Scelgo io l'elenco — scrivi nella risposta i gruppi che vuoi vedere.
-   - Esempio: Quando il catalogo arriva nella pagina Agenti, apri "+ Nuovo agente" e fra le sorgenti vedi 5 gruppi; cercando "marketing" la pagina ti dice che il gruppo è nascosto e ti offre di mostrarlo.
-
 ### Domande chiuse
 
 - 1. Chiusa: è la stessa domanda della conferma conf-D-079 ("Confermi D-079"), che resta aperta; inoltre l'utente ha già scelto di usare le schede di agency-agents fra le sorgenti di un agente nuovo (D-119).
 - 3. Chiusa: decisa in D-119 (tappa T3b): le schede di agency-agents restano L0, con prompt L0.
 - 4. Chiusa: decisa in D-119 (tappa T3b) e nella revisione di D-079 per la tappa T4 (0.9.1): permessi di partenza `code` per engineering e testing, `answer` per gli altri gruppi; autonomia A0 o A1 scelta agente per agente nella pagina Agenti, dentro il tetto A1.
 - 5. Chiusa: decisa in D-119: le schede create o adottate dall'utente stanno in `data/agents/`, fuori da git; in `agents/` solo con la promozione esplicita a "ufficiale".
+- 6. Chiusa (risposta dell'utente, 2026-10-11): tutti e 18 i gruppi del catalogo restano visibili, come oggi; nessun filtro per gruppo.
 - 7. Chiusa: decisa in D-119 (risposte dell'utente del 2026-10-05): le proposte di agency-agents entrano nel modulo "+ Nuovo agente" di Impostazioni → Agenti, accanto ai modelli di scheda (tappa T4, da costruire).
 
 ---
