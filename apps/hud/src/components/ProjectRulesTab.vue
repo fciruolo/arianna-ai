@@ -212,7 +212,7 @@ async function save(): Promise<void> {
 <template>
   <section class="flex max-w-[860px] flex-col gap-3.5 rounded-2xl border border-line bg-surface p-4 md:p-5" aria-label="Regole del progetto">
     <p class="text-[13px] text-muted">
-      Arianna mette queste regole in testa a ogni lavoro di Claude o di Codex su <span class="font-medium text-ink">{{ name }}</span>. Ogni voce dell’elenco va a tutti e due, oppure solo a uno: lo scegli con la select accanto alla regola.
+      Arianna mette queste regole in testa a ogni lavoro di Claude o di Codex su <span class="font-medium text-ink">{{ name }}</span>. Ogni regola va a tutti e due, oppure solo a uno: lo scegli con la select accanto alla regola, qui sotto.
     </p>
 
     <p v-if="problem !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ problem }}</p>
@@ -250,7 +250,7 @@ async function save(): Promise<void> {
 
       <div v-if="items.length > 0" class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5" aria-label="A chi va ogni regola">
         <p class="text-xs text-muted">
-          A chi va ogni regola (le voci dell’elenco che iniziano con «-», «*» o un numero).<template v-if="!own"> Per sceglierlo per questo progetto passa a «Regole proprie».</template>
+          A chi va ogni regola (ogni riga è una regola; le righe rientrate sotto vanno con quella sopra, i titoli con «#» restano per tutti e due).<template v-if="!own"> Per sceglierlo per questo progetto passa a «Regole proprie».</template>
         </p>
         <ul class="flex flex-col divide-y divide-line">
           <li v-for="item in items" :key="item.line" class="flex items-center gap-3 py-1.5 text-[13px]">
@@ -261,7 +261,7 @@ async function save(): Promise<void> {
             <span v-else class="text-xs text-muted">{{ AUDIENCE_TEXT[item.audience] }}</span>
           </li>
         </ul>
-        <p class="text-[11.5px] text-muted">La scelta si scrive nel testo come «[solo Claude Code]» o «[solo Codex]» all’inizio della voce; vale per i lavori dentro Arianna e per l’esportazione. Ricordati di premere Salva.</p>
+        <p class="text-[11.5px] text-muted">La scelta si scrive nel testo come «[solo Claude Code]» o «[solo Codex]» all’inizio della riga; vale per i lavori dentro Arianna e per l’esportazione. Ricordati di premere Salva.</p>
       </div>
 
       <p class="text-xs text-muted">Una chat diretta con il Coder già aperta continua con le regole di quando è iniziata: le nuove valgono dalla prossima conversazione.</p>

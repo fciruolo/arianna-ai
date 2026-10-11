@@ -1,6 +1,6 @@
 /**
- * Who reads each rule of a project (I-14, D-181): every item of a list at the
- * top level is one rule, for both executors unless it starts with the mark
+ * Who reads each rule of a project (I-14, D-181): every line at the margin
+ * (a list item or not, never a heading) is one rule, for both executors unless it starts with the mark
  * `[solo Claude Code]` or `[solo Codex]`. The same marks the core reads in
  * `rulesFor` of @arianna/config: the delegation and the export leave an item
  * out for the other executor. The mark is plain text in the rules, so the
@@ -18,7 +18,7 @@ export const AUDIENCE_TEXT: Record<RuleAudience, string> = {
 const MARK_TEXT: Record<Exclude<RuleAudience, 'both'>, string> = { claude: '[solo Claude Code] ', codex: '[solo Codex] ' };
 
 // The same rules as `ruleLines` of packages/config/src/project-rules.ts: change both together.
-const RULE_ITEM = /^( {0,3})([-*+]|\d{1,3}[.)])([ \t]+)(.*)$/;
+const RULE_ITEM = /^( {0,3})((?:[-*+]|\d{1,3}[.)])[ \t]+)?(?!#)(\S.*)$/;
 const RULE_MARK = /^\[solo (claude code|codex)\][ \t]*/i;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
@@ -31,9 +31,9 @@ export interface RuleItem {
 }
 
 /**
- * The rules of a text: its top-level list items, each with who reads it. The
- * lines indented under an item (sub-items too) belong to it and follow it; a
- * fenced code block is never a rule.
+ * The rules of a text: its lines at the margin, each with who reads it. The
+ * lines indented under one (sub-items too) belong to it and follow it;
+ * headings and fenced code blocks are never rules.
  */
 export function ruleItems(text: string): RuleItem[] {
   const items: RuleItem[] = [];
@@ -58,7 +58,7 @@ export function ruleItems(text: string): RuleItem[] {
     const item = RULE_ITEM.exec(value);
     if (item === null) continue;
     open = (item[1] ?? '').length;
-    const rest = item[4] ?? '';
+    const rest = item[3] ?? '';
     const mark = RULE_MARK.exec(rest);
     if (mark === null) items.push({ line, text: rest, audience: 'both' });
     else items.push({ line, text: rest.slice(mark[0].length), audience: mark[1]?.toLowerCase() === 'codex' ? 'codex' : 'claude' });
@@ -74,7 +74,7 @@ export function withAudience(text: string, line: number, audience: RuleAudience)
   const end = raw.endsWith('\r') ? '\r' : '';
   const item = RULE_ITEM.exec(end === '' ? raw : raw.slice(0, -1));
   if (item === null) return text;
-  const rest = (item[4] ?? '').replace(RULE_MARK, '');
-  lines[line] = `${item[1] ?? ''}${item[2] ?? ''}${item[3] ?? ''}${audience === 'both' ? '' : MARK_TEXT[audience]}${rest}${end}`;
+  const rest = (item[3] ?? '').replace(RULE_MARK, '');
+  lines[line] = `${item[1] ?? ''}${item[2] ?? ''}${audience === 'both' ? '' : MARK_TEXT[audience]}${rest}${end}`;
   return lines.join('\n');
 }

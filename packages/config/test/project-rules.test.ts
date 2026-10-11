@@ -62,6 +62,7 @@ test('rulesFor: an item marked for one executor reaches only it, without the mar
 
 test('rulesFor: no marks is the same text for both; nothing left is undefined; a mark elsewhere is text (D-181)', () => {
   assert.equal(rulesFor('- a\n- b', 'claude'), '- a\n- b');
+  assert.equal(rulesFor('Commenti in inglese.\n[solo Codex] Usa pnpm.\n## Titolo per tutti', 'claude'), 'Commenti in inglese.\n## Titolo per tutti');
   assert.equal(rulesFor('- [solo Codex] solo questa', 'claude'), undefined);
   assert.equal(rulesFor('Scrivi [solo Codex] nel testo', 'claude'), 'Scrivi [solo Codex] nel testo');
   assert.equal(rulesFor('    - [solo Codex] codice indentato', 'claude'), '- [solo Codex] codice indentato');

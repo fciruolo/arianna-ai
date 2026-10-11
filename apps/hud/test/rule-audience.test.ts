@@ -10,8 +10,10 @@ test('ruleItems: the top-level items, each with who reads it, the mark left out 
     { line: 1, text: 'TypeScript strict', audience: 'both' },
     { line: 2, text: 'Usa i subagenti', audience: 'claude' },
     { line: 4, text: 'Test prima', audience: 'codex' },
+    { line: 6, text: 'Paragrafo.', audience: 'both' },
   ]);
-  assert.deepEqual(ruleItems('Solo un paragrafo.\n    - codice indentato'), []);
+  assert.deepEqual(ruleItems('Una regola per riga.\n    - rientrata: va con quella sopra\n## Titolo'), [{ line: 0, text: 'Una regola per riga.', audience: 'both' }]);
+  assert.equal(withAudience('Usa pnpm, mai npm.', 0, 'codex'), '[solo Codex] Usa pnpm, mai npm.');
 });
 
 test('withAudience: writes, changes and removes the mark of one item, nothing else (D-181)', () => {

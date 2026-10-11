@@ -57,11 +57,12 @@ export function rulesOfProject(rules: ProjectRules, project: string): string | u
 export type RuleAudience = 'both' | 'claude' | 'codex';
 
 /**
- * An item of a list at the top level: `- text`, `* text`, `+ text`, `1. text`.
+ * A rule: a line at the margin (up to three spaces), with or without a list
+ * marker (`- `, `* `, `+ `, `1. `), that is not a heading.
  * The chat reads the same marks with a copy of these rules
  * (apps/hud/src/lib/rule-audience.ts): change both together.
  */
-const RULE_ITEM = /^( {0,3})([-*+]|\d{1,3}[.)])([ \t]+)(.*)$/;
+const RULE_ITEM = /^( {0,3})((?:[-*+]|\d{1,3}[.)])[ \t]+)?(?!#)(\S.*)$/;
 /** The mark at the head of an item that keeps it for one executor: `[solo Claude Code]`, `[solo Codex]`. */
 const RULE_MARK = /^\[solo (claude code|codex)\][ \t]*/i;
 /** A fenced code block opens or closes: its lines are text, never rules. */
@@ -78,10 +79,10 @@ export function ruleAudience(item: string): { audience: RuleAudience; text: stri
 export type RuleLine = { kind: 'rule'; audience: RuleAudience; text: string } | { kind: 'inside' } | { kind: 'text' };
 
 /**
- * The lines of the rules, classified (D-181): an item at the top level is a
- * rule; the lines indented under it (sub-items, more text, a code block) are
- * inside it and follow it; a fenced code block outside any rule is text, and
- * so is everything else. Line breaks CRLF or LF.
+ * The lines of the rules, classified (D-181): each line at the margin is a
+ * rule, a list item or not; the lines indented under it (sub-items, more
+ * text, a code block) are inside it and follow it; headings, blank lines and
+ * a fenced code block outside any rule are text. Line breaks CRLF or LF.
  */
 export function ruleLines(text: string): { line: string; is: RuleLine }[] {
   const out: { line: string; is: RuleLine }[] = [];
@@ -112,8 +113,8 @@ export function ruleLines(text: string): { line: string; is: RuleLine }[] {
       continue;
     }
     open = (item[1] ?? '').length;
-    const { audience, text: rest } = ruleAudience(item[4] ?? '');
-    out.push({ line: `${item[1] ?? ''}${item[2] ?? ''}${item[3] ?? ''}${rest}`, is: { kind: 'rule', audience, text: rest } });
+    const { audience, text: rest } = ruleAudience(item[3] ?? '');
+    out.push({ line: `${item[1] ?? ''}${item[2] ?? ''}${rest}`, is: { kind: 'rule', audience, text: rest } });
   }
   return out;
 }
