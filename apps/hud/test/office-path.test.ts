@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { parseMapText, seatPoint, tileCenter, type OfficeMap, type Point } from '../src/lib/office/map.ts';
-import { advance, followPath, retarget, seated, seatOf, walkFrame } from '../src/lib/office/motion.ts';
+import { parseMapText, seatFace, seatPoint, tileCenter, type OfficeMap, type Point } from '../src/lib/office/map.ts';
+import { advance, followPath, pauseSpot, retarget, seated, seatOf, walkFrame } from '../src/lib/office/motion.ts';
 import { canStand, findPath, moveFree, tilesNear, tileOf } from '../src/lib/office/path.ts';
 
 function base(): OfficeMap {
@@ -119,7 +119,47 @@ test('with reduced motion an agent appears at its place; a slot beyond the map g
   assert.deepEqual(moved.seat, MAP.anchors.archive.seat);
   assert.equal(moved.facing, 'up');
   assert.deepEqual(seatOf(MAP, { kind: 'island', slot: 9 }), MAP.anchors.archive.seat);
-  assert.deepEqual(seatOf(MAP, { kind: 'pause', seat: 9 }), MAP.anchors.pause.seats.at(-1));
+});
+
+test('eight agents at the pause never share a spot: sofa and coffee first, then standing in the corner (D-106)', () => {
+  const spots = Array.from({ length: 8 }, (_, seat) => seatOf(MAP, { kind: 'pause', seat }));
+  assert.equal(new Set(spots.map(([c, r]) => `${String(c)},${String(r)}`)).size, 8);
+  // The first four on the map's seats: three on the sofa, one by the coffee.
+  assert.deepEqual(spots.slice(0, 4), [[2, 15], [1, 15], [3, 15], [5, 15]]);
+  assert.equal(MAP.tiles[14 * MAP.width + 5], 'coffee');
+  assert.equal(seatFace(MAP, [5, 15]), 'up');
+  const [cl, rt, cr, rb] = MAP.anchors.pause.room;
+  for (const spot of spots.slice(4)) {
+    const [c, r] = spot;
+    // Free floor of the corner, reached from the entrance, the agent standing in the middle of it.
+    assert.ok(c >= cl && c <= cr && r >= rt && r <= rb, `${String(c)},${String(r)}`);
+    assert.equal(MAP.tiles[r * MAP.width + c], 'floor');
+    assert.notEqual(findPath(MAP, MAP.anchors.entrance, [spot]), null);
+    assert.deepEqual(seatPoint(MAP, spot), tileCenter(spot));
+    assert.equal(seatFace(MAP, spot), 'down');
+  }
+  // Nearest the first seat first: right below it.
+  assert.deepEqual(spots[4], [2, 16]);
+  // The same index gives the same spot.
+  assert.deepEqual(seatOf(MAP, { kind: 'pause', seat: 6 }), spots[6]);
+  // An agent walks to a standing spot and stays there.
+  let actor = retarget(seated(MAP, { kind: 'private' }), MAP, { kind: 'pause', seat: 5 }, false);
+  for (let index = 0; index < 2000 && actor.walking; index++) actor = advance(actor, MAP, 3);
+  assert.deepEqual([actor.x, actor.y], tileCenter(spots[5] ?? [0, 0]));
+});
+
+test('a pause corner without free floor shares its seats in turn, without errors (D-106)', () => {
+  // The corner reduced to the sofa row: no floor in it, only the seats below.
+  const tight: OfficeMap = { ...MAP, anchors: { ...MAP.anchors, pause: { room: [1, 14, 3, 14], seats: [[2, 15], [1, 15]] } } };
+  assert.deepEqual(pauseSpot(tight, 0), [2, 15]);
+  assert.deepEqual(pauseSpot(tight, 1), [1, 15]);
+  assert.deepEqual(pauseSpot(tight, 2), [2, 15]);
+  assert.deepEqual(pauseSpot(tight, 3), [1, 15]);
+  assert.deepEqual(pauseSpot(tight, -1), [2, 15]);
+  // Past every free spot of the base map (4 seats and 10 floor tiles), the spots are shared in turn as well.
+  const distinct = new Set(Array.from({ length: 40 }, (_, seat) => seatOf(MAP, { kind: 'pause', seat }).join(','))).size;
+  assert.equal(distinct, 14);
+  assert.deepEqual(seatOf(MAP, { kind: 'pause', seat: 14 }), MAP.anchors.pause.seats[0]);
 });
 
 test('a path is followed by distance, and the walk frames cycle unless motion is reduced', () => {
