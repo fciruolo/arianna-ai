@@ -405,3 +405,16 @@ test('an agent the chat does not know is named "Agente", never by its id', () =>
   const odd = officeSnapshot(input({ agents: [{ id: 'constructor', state: 'idle', run: null }] }));
   assert.equal(agentOf(odd, 'constructor').name, 'Agente');
 });
+
+test('each agent keeps its own pause spot: one that starts working never moves the others (D-106)', () => {
+  const idle = (id: string) => ({ id, state: 'idle' as const, run: null });
+  const seatOf = (snapshot: ReturnType<typeof officeSnapshot>, id: string) => snapshot.agents.find((agent) => agent.id === id)?.place;
+  const all = officeSnapshot(input({ agents: [idle('arianna'), idle('coder'), idle('designer'), idle('reviewer')] }));
+  const seats = ['coder', 'designer', 'reviewer'].map((id) => JSON.stringify(seatOf(all, id)));
+  assert.equal(new Set(seats).size, 3, 'three different spots');
+  const coderWorks = officeSnapshot(
+    input({ agents: [idle('arianna'), { id: 'coder', state: 'working', run: { executor: 'claude', model: null, startedAt: '', repo: 'arianna-ai' } }, idle('designer'), idle('reviewer')] }),
+  );
+  assert.deepEqual(seatOf(coderWorks, 'designer'), seatOf(all, 'designer'));
+  assert.deepEqual(seatOf(coderWorks, 'reviewer'), seatOf(all, 'reviewer'));
+});

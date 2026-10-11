@@ -61,11 +61,13 @@ export function pauseSpot(map: OfficeMap, index: number): Point {
   const same = (a: Point, b: Point): boolean => a[0] === b[0] && a[1] === b[1];
   const distance = (at: Point): number => Math.abs(at[0] - first[0]) + Math.abs(at[1] - first[1]);
   const from = reachable(map, map.anchors.entrance);
+  // Never standing on a seat of another place, nor in the entrance, should the rooms touch.
+  const elsewhere: Point[] = [map.anchors.entrance, map.anchors.private.seat, map.anchors.archive.seat, ...map.anchors.islands.map((island) => island.seat)];
   const floor: Point[] = [];
   for (let r = room[1]; r <= room[3]; r++) {
     for (let c = room[0]; c <= room[2]; c++) {
       const at: Point = [c, r];
-      if (isWalkable(map, c, r) && from.has(r * map.width + c) && !seats.some((seat) => same(seat, at))) floor.push(at);
+      if (isWalkable(map, c, r) && from.has(r * map.width + c) && ![...seats, ...elsewhere].some((seat) => same(seat, at))) floor.push(at);
     }
   }
   floor.sort((a, b) => distance(a) - distance(b) || b[0] - a[0] || a[1] - b[1]);

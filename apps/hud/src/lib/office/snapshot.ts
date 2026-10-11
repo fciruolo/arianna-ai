@@ -208,13 +208,14 @@ export function officeSnapshot(input: OfficeInput): OfficeSnapshot {
   // Places: the other agents first, so that Arianna takes the pause seat and
   // the island chair left free and nobody moves when she comes.
   const placing = [...ordered.filter((agent) => agent.id !== 'arianna'), ...ordered.filter((agent) => agent.id === 'arianna')];
-  let pauseSeat = 0;
   const places = new Map<string, OfficePlace>();
-  for (const agent of placing) {
+  // Each agent has its own pause spot, its place in this order: one that starts
+  // or stops working never moves the others (the corner has a spot for each).
+  for (const [index, agent] of placing.entries()) {
     const running = agent.state === 'thinking' || agent.state === 'working';
-    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => pauseSeat++));
+    if (agent.id === 'arianna') places.set(agent.id, ariannaPlace(agent.run, running, input.projects, islands, input.now, input.still === true, () => index));
     else if (running) places.set(agent.id, placeOfRepo(agent.run?.repo ?? null, input.projects, islands));
-    else places.set(agent.id, { kind: 'pause', seat: pauseSeat++ });
+    else places.set(agent.id, { kind: 'pause', seat: index });
   }
   shareSeats(places, placing.map((agent) => agent.id));
   const agents = ordered.map((agent): OfficeAgent => {
