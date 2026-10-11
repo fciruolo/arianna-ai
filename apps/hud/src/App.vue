@@ -968,6 +968,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @command="runCommand"
         @legend="showLegend = true"
         @open-knowledge="openKnowledge"
+        @god-dashboard="openGod"
       />
       </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">

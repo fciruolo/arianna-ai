@@ -75,6 +75,7 @@ import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import type { GodApi } from '../god/api.ts';
 import { GodCloneError } from '../god/clone.ts';
+import { GodError } from '../god/work.ts';
 import type { SkillsCatalog } from '../skills-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
@@ -1007,7 +1008,27 @@ function godRoutes(god: GodApi | undefined): Route[] {
       onlyFields(await readJson(request), []);
       return { body: await need().syncClone() };
     }),
+    // G2-G3: the plans approved, the plan under an answer of GOD, "Approva e avvia", the actions of a subtask.
+    route('GET', '/api/god/plans', async () => ({ body: { plans: await needWork().plans() } })),
+    route('GET', '/api/god/messages/:id/plan', async (_request, _url, params) => ({ body: await needWork().messagePlan(params.id ?? '') })),
+    route('POST', '/api/god/plans', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['messageId']);
+      if (typeof body.messageId !== 'string') throw new HttpError(400, 'messageId must be a string');
+      return { status: 201, body: { plan: await needWork().approve(body.messageId) } };
+    }),
+    route('POST', '/api/god/subtasks/:id/:action', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      const action = (['stop', 'resume', 'discard', 'branch'] as const).find((item) => item === params.action);
+      if (action === undefined) throw new HttpError(404, 'not found');
+      return { body: { subtask: await needWork().act(params.id ?? '', action) } };
+    }),
   ];
+  function needWork(): NonNullable<GodApi['work']> {
+    const work = need().work;
+    if (work === undefined) throw new HttpError(404, 'not found');
+    return work;
+  }
 }
 
 function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
@@ -2702,6 +2723,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
   if (error instanceof GodCloneError) return { status: 409, message: error.message };
+  if (error instanceof GodError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
   if (error instanceof DesignCatalogError) return { status: { invalid: 400, 'not-found': 404, conflict: 409, blocked: 403, failed: 502 }[error.code], message: error.message };
   if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };

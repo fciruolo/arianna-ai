@@ -185,6 +185,8 @@ export interface SyncResult {
   /** The clone moved forward to the installation's main (clean, on main). */
   forwarded: boolean;
   state: CloneState;
+  /** A new clone that could not be fully prepared (prepare.ts): why. */
+  warning?: string;
 }
 
 /**
@@ -193,11 +195,11 @@ export interface SyncResult {
  * when it is on main with nothing changed. Never touches a clone with work in
  * it beyond the fetch. Refuses a folder that is not a development copy.
  */
-export async function syncGodClone(home: string, data: string, git: GitRunner = godGit(home, data)): Promise<SyncResult> {
-  return syncPart(home, data, GOD_MAIN, git);
+export async function syncGodClone(home: string, data: string, git: GitRunner = godGit(home, data), prepare?: (dir: string) => Promise<void>): Promise<SyncResult> {
+  return syncPart(home, data, GOD_MAIN, git, prepare);
 }
 
-async function syncPart(home: string, data: string, part: string, git: GitRunner): Promise<SyncResult> {
+async function syncPart(home: string, data: string, part: string, git: GitRunner, prepare?: (dir: string) => Promise<void>): Promise<SyncResult> {
   const dir = godPartDir(home, part);
   if (!inside(dir, home)) throw new GodCloneError('the clone must be inside ARIANNA_HOME');
   let created = false;
@@ -213,6 +215,13 @@ async function syncPart(home: string, data: string, part: string, git: GitRunner
   // The installation may have moved (ARIANNA_HOME is portable): the remote is set again every time.
   await git(['remote', 'set-url', 'origin', home], dir);
   if (!created) await git(['fetch', '--quiet', 'origin'], dir);
+  // A new clone gets what the sandbox cannot fetch (prepare.ts), before any agent works there.
+  let warning: string | undefined;
+  if (created && prepare !== undefined) {
+    await prepare(dir).catch((error: unknown) => {
+      warning = error instanceof Error ? error.message : String(error);
+    });
+  }
   let forwarded = false;
   const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim();
   const dirty = (await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim() !== '';
@@ -221,7 +230,7 @@ async function syncPart(home: string, data: string, part: string, git: GitRunner
     await git(['merge', '--quiet', '--ff-only', `origin/${GOD_MAIN}`], dir);
     forwarded = (await git(['rev-parse', 'HEAD'], dir)).trim() !== before;
   }
-  return { created, forwarded, state: await cloneState(home, data, part, git) };
+  return { created, forwarded, state: await cloneState(home, data, part, git), ...(warning === undefined ? {} : { warning }) };
 }
 
 /**

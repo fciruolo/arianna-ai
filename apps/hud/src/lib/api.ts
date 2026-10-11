@@ -1,4 +1,5 @@
 import type { GodStatus } from './god.ts';
+import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
@@ -266,6 +267,26 @@ export async function loadGod(): Promise<GodStatus> {
 /** "Crea il clone" / "Aggiorna il clone" (D-127): the core runs pnpm god:clone's steps. */
 export async function syncGodClone(): Promise<GodStatus> {
   return call<GodStatus>('POST', '/api/god/clone', {});
+}
+
+/** The plans of GOD approved, the newest first, with their subtasks (D-127, G2-G3). */
+export async function loadGodPlans(): Promise<GodPlan[]> {
+  return (await call<{ plans: GodPlan[] }>('GET', '/api/god/plans')).plans;
+}
+
+/** The plan under an answer of GOD: the proposal checked by the core, and the approved plan if any. */
+export async function loadMessagePlan(messageId: string): Promise<MessagePlan> {
+  return call<MessagePlan>('GET', `/api/god/messages/${encodeURIComponent(messageId)}/plan`);
+}
+
+/** "Approva e avvia": the subtasks start, each in a clone of its own. */
+export async function approveGodPlan(messageId: string): Promise<GodPlan> {
+  return (await call<{ plan: GodPlan }>('POST', '/api/god/plans', { messageId })).plan;
+}
+
+/** Ferma, Riprendi, Scarta, Prepara il ramo of a subtask. */
+export async function actOnSubtask(id: string, action: SubtaskAction): Promise<GodSubtask> {
+  return (await call<{ subtask: GodSubtask }>('POST', `/api/god/subtasks/${encodeURIComponent(id)}/${action}`, {})).subtask;
 }
 
 /** The agents the user may talk with directly now (D-111d). */

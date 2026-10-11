@@ -607,8 +607,8 @@ export interface WorkerOptions extends EngineOptions {
  * timeout, it takes back the jobs of dead workers: this is what makes a task
  * resume after `kill -9` of the core.
  */
-/** Why a step is stopped for good: an incognito closing (D-136) or an erased conversation (D-157). */
-export type StopCause = 'incognito' | 'erase';
+/** Why a step is stopped for good: an incognito closing (D-136), an erased conversation (D-157), "Ferma" of a subtask of GOD (D-127). */
+export type StopCause = 'incognito' | 'erase' | 'god';
 
 export interface Worker {
   start(): Promise<void>;
@@ -659,12 +659,12 @@ export function createWorker(options: WorkerOptions): Worker {
     try {
       const result = await processStepJob(sql, options.executor, job, worker, options, AbortSignal.any([controller.signal, lost.signal, halt.signal]));
       // Stopped for good (D-136): the job fails without another attempt, so the step never runs again.
-      if (halt.signal.aborted && !lost.signal.aborted) await failJob(sql, job.id, worker, stopCause(halt.signal), null);
+      if (halt.signal.aborted && !lost.signal.aborted) await haltedForGood(job.id, taskId, halt.signal);
       // Stopped on purpose: give the job back now instead of after the lock timeout.
       else if (result === 'interrupted' && controller.signal.aborted && !lost.signal.aborted) await queue.release(job.id, worker);
     } catch (error) {
       if (halt.signal.aborted && !lost.signal.aborted) {
-        await failJob(sql, job.id, worker, stopCause(halt.signal), null);
+        await haltedForGood(job.id, taskId, halt.signal);
         return;
       }
       options.onError?.(error);
@@ -683,6 +683,19 @@ export function createWorker(options: WorkerOptions): Worker {
       clearInterval(beat);
       if (taskId !== undefined && halts.get(taskId) === halt) halts.delete(taskId);
     }
+  }
+
+  /**
+   * A step stopped for good: its job fails without another attempt. Stopped
+   * by "Ferma" of GOD (D-127) the task fails too, so that its chat is free for
+   * the next message (an incognito or an erased conversation goes away).
+   */
+  async function haltedForGood(jobId: string, taskId: string | undefined, signal: AbortSignal): Promise<void> {
+    const cause = stopCause(signal);
+    await sql.begin(async (tx) => {
+      await failJob(tx, jobId, worker, cause, null);
+      if (cause === 'god' && taskId !== undefined) await failTask(tx, taskId, { origin: 'engine', code: 'engine.stopped', details: {} });
+    });
   }
 
   let lastSweep = 0;
@@ -734,9 +747,10 @@ export function createWorker(options: WorkerOptions): Worker {
   };
 }
 
-/** The cause a step was stopped with for good: `incognito` unless it was `erase`. */
+/** The cause a step was stopped with for good: `incognito` unless it was `erase` or `god`. */
 function stopCause(signal: AbortSignal): StopCause {
-  return signal.reason === 'erase' ? 'erase' : 'incognito';
+  if (signal.reason === 'erase') return 'erase';
+  return signal.reason === 'god' ? 'god' : 'incognito';
 }
 
 /** A step that kept failing: the task fails with the reason the user reads, its open runs are closed. */

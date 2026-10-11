@@ -11,6 +11,7 @@ import { sanitizeForTerminal as safe } from '@arianna/agents';
 import { loadConfig, resolveHome, type AriannaConfig } from '@arianna/config';
 
 import { GOD_CONTAINER, GOD_PROJECT, GodCloneError, syncGodClone } from '../apps/core/src/god/clone.ts';
+import { prepareGodClone } from '../apps/core/src/god/prepare.ts';
 
 const home = resolveHome();
 let config: AriannaConfig | undefined;
@@ -22,8 +23,9 @@ try {
 const data = config?.paths.data ?? join(home, 'data');
 
 try {
-  const { created, forwarded, state } = await syncGodClone(home, data);
-  if (created) console.log(`Creato ${state.path}: clone di questo repository, solo ciò che è in git (niente data/, niente config/arianna.toml).`);
+  const { created, forwarded, state, warning } = await syncGodClone(home, data, undefined, prepareGodClone({ home }));
+  if (created) console.log(`Creato ${state.path}: clone di questo repository, solo ciò che è in git (niente data/), con la configurazione di sviluppo e le dipendenze dal deposito locale di pnpm.`);
+  if (warning !== undefined) console.log(`Attenzione: ${safe(warning)}; nel clone lancia a mano pnpm install.`);
   else if (forwarded) console.log(`${state.path} aggiornato all'ultimo main dell'installazione.`);
   else console.log(`${state.path} c'è già: scaricati i commit nuovi${state.branch === undefined ? '' : `, ramo ${safe(state.branch)}`}${state.dirty !== undefined && state.dirty > 0 ? `, ${String(state.dirty)} file cambiati non toccati` : ''}.`);
   if (state.behind !== undefined && state.behind > 0) console.log(`Indietro di ${String(state.behind)} commit rispetto al main dell'installazione (il clone ha lavoro suo: aggiornalo a mano).`);

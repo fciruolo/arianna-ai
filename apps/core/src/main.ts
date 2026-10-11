@@ -28,6 +28,8 @@ import { createVault } from '@arianna/vault';
 
 import { directPolicies, type DirectPolicy } from './direct-chat.ts';
 import { createGodApi } from './god/api.ts';
+import { prepareGodClone } from './god/prepare.ts';
+import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
@@ -623,6 +625,21 @@ const directAgents = (): DirectPolicy[] =>
     claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
     codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
   });
+// GOD (D-127, G2-G3): the plans approved become subtasks, each in a clone of
+// its own with the direct chats of the Coder and the Reviewer; a tick moves
+// them on and starts the next ones within the quota.
+const prepareGod = prepareGodClone({ home: config.home });
+const godWork = createGodWork({
+  sql,
+  home: config.home,
+  data: config.paths.data,
+  parts: () => approvedProjects().map((project) => project.name),
+  policy: (agent) => directAgents().find((policy) => policy.agent === agent),
+  models: () => selectableModels(settings.current(), adapters).map((entry) => entry.model),
+  stopTask: (taskId) => worker.stopTask(taskId, 'god'),
+  prepareClone: prepareGod,
+  onError: report,
+});
 const server = await startApiServer({
   sql,
   live,
@@ -664,6 +681,8 @@ const server = await startApiServer({
     data: config.paths.data,
     projects: () => settings.current().projects,
     available: () => directAgents().some((policy) => policy.agent === GOD_AGENT),
+    prepare: prepareGod,
+    work: godWork,
   }),
   participantAgent: (name) => {
     const agent = agents.get(name);
@@ -789,6 +808,12 @@ secretaryTicker.start();
 
 // The IM between meetings (D-167, P4b): the closing asked in the secretary
 // conversation once the meeting is over, and the items of a card in "Fatto".
+// The subtasks of GOD move on every 15 seconds (D-127).
+const godTicker = setInterval(() => {
+  godWork.tick().catch(report);
+}, 15_000);
+godTicker.unref();
+
 const imWatcher = createImWatcher({ sql, projects: projectContainers, env: { home: config.home, rules }, onError: report });
 imWatcher.start();
 
@@ -808,6 +833,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   secretaryTicker.stop();
   imWatcher.stop();
+  clearInterval(godTicker);
   incognitoWatch.stop();
   stopNotices();
   await telegram.close();

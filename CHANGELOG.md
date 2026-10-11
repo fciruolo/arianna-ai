@@ -10,6 +10,9 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - `pnpm god:clone` e «Crea/Aggiorna il clone»: il clone si fa dal repository locale, senza `data/` né `config/arianna.toml`, e si rifiuta se contiene dati di un'installazione (D-127, I-5 G1).
 - Il fascicolo di sviluppo: a ogni lavoro sul codice di Arianna l'agente legge lo stato di HANDOFF, le ultime decisioni, le fasi e i task aperti, scritti dal codice dai documenti del clone (D-127, I-5 G1).
 
+- Il piano di GOD: una richiesta di lavoro diventa una scheda con i sottocompiti e i loro file; «Approva e avvia» li fa partire in parallelo secondo la quota, ciascuno in un clone suo con il Coder (D-127, I-5 G2).
+- Il cruscotto di GOD: stato dei sottocompiti, file cambiati, revisione automatica del Reviewer, Ferma, Riprendi, Scarta e «Prepara il ramo» con i comandi per unirlo (D-127, I-5 G3).
+
 ### Sicurezza
 
 - `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).

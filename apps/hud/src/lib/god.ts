@@ -3,6 +3,8 @@
  * reads from the core (GET /api/god) and the texts it shows, in Italian.
  */
 
+import type { GodQuota } from './god-work.ts';
+
 /** The agent of GOD's chat (agents/god.yaml). */
 export const GOD_AGENT = 'god';
 
@@ -37,6 +39,8 @@ export interface GodStatus {
   main: GodClone;
   available: boolean;
   conversations: GodConversation[];
+  /** Absent from an older core. */
+  quota?: GodQuota;
 }
 
 /** What stops a new conversation with GOD now, in words for the user; null when nothing does. */
