@@ -338,7 +338,7 @@ test('leaveAfterProblem (I-8, D-130): a whole number from 0 (never) to 100', asy
   for (const bad of [-1, 101, 2.5, '10', Number.NaN]) assert.match(leaveAfterProblem(bad) ?? '', /da 0 \(mai\) a 100/, String(bad));
 });
 
-test('the card "Link scaricati" (D-154): an address or a name becomes the host name', () => {
+test('the card "Domini approvati" (D-154): an address or a name becomes the host name', () => {
   assert.equal(fetchSiteOf('x.com'), 'x.com');
   assert.equal(fetchSiteOf('  https://www.YouTube.com/watch?v=1 '), 'youtube.com');
   assert.equal(fetchSiteOf('mobile.x.com'), 'mobile.x.com');

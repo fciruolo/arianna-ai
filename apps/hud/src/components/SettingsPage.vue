@@ -893,7 +893,7 @@ watch(active, () => {
             </SettingsCard>
 
             <!-- Links downloaded and summarized (D-154) -->
-            <SettingsCard v-if="active === 'links'" id="links" title="Link scaricati" kind="privacy" :changed="changed('fetchSites')" :saved="saved === 'fetchSites'" :busy="busy === 'fetchSites'" :error="errors.fetchSites" @cancel="reset('fetchSites')" @save="prepare('fetchSites')">
+            <SettingsCard v-if="active === 'links'" id="links" title="Domini approvati" kind="privacy" :changed="changed('fetchSites')" :saved="saved === 'fetchSites'" :busy="busy === 'fetchSites'" :error="errors.fetchSites" @cancel="reset('fetchSites')" @save="prepare('fetchSites')">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span v-for="(site, index) in forms.fetchSites" :key="site" class="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-surface-2 py-1 pr-1.5 pl-2.5 font-mono text-xs">
                   {{ site }}

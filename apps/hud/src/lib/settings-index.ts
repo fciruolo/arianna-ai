@@ -65,7 +65,7 @@ export const SETTINGS_INDEX: readonly IndexGroup[] = [
       { id: 'project-rules', slug: 'regole-dei-progetti', title: 'Regole dei progetti', behaviour: 'now' },
       { id: 'servers', slug: 'server-locali', title: 'Server locali', behaviour: 'confirm', privacy: true },
       // Links downloaded and summarized (D-154): the sites whose links the core downloads by itself.
-      { id: 'links', slug: 'link-scaricati', title: 'Link scaricati', behaviour: 'confirm', privacy: true },
+      { id: 'links', slug: 'link-scaricati', title: 'Domini approvati', behaviour: 'confirm', privacy: true },
     ],
   },
   {
