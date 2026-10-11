@@ -26,7 +26,6 @@
 | Incognito: verifica dal vivo del profilo di Claude Code | Un run vero con `--no-session-persistence` e l'elenco dei file del profilo di `claude` nella home prima e dopo (D-136, tappa 3) | Prima di usare le incognite di lavoro con dati veri |
 | Modelli: schede cloud da rileggere | Frasi tradotte e prezzi API in `config/cloud-models.catalog.yaml` (D-137, I-3 M1); i nomi dei tre modelli di Codex sono verificati dal vivo il 2026-10-07 (D-141) | I-3 è unita (0.26.0): quando vuoi |
 | Modelli da Hugging Face: scelte di D-139 | Applicate le opzioni consigliate di `docs/I-10-huggingface.md` mentre eri via: esce solo il testo cercato o l'id scelto, dal gateway; solo modelli MLX pubblici; catalogo tuo in `config/models.user-catalog.yaml`; sperimentale e senza ruoli finché non lo promuovi | I-10 è unita (0.31.0): per confermare D-139 |
-| GOD: come semplificare «Riassumi e riparti» | Prova di G4 del 2026-10-11: il pulsante è macchinoso e non si capisce. Proposta di Claude: GOD riparte da sola dal riassunto quando la chat è lunga, con una riga che lo dice (spiegazione sotto) | Prima di toccare G4 |
 
 ### Domande delle proposte della notte del 2026-10-05
 
@@ -527,12 +526,3 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione consigliata: Confermo — le due regole restano; il login arriva con il task 1.13.
 - Opzione: Voglio il login subito — Claude anticipa una parte del 1.13; più lavoro adesso.
 - Esempio: Se in una conversazione di lavoro incolli un IBAN inventato, il messaggio non parte e la chat ti dice perché.
-
-### oq-god-come-semplificare-riassumi-e-riparti
-
-- Contesto: in una chat con GOD, quando la conversazione si allunga, «Riassumi e riparti» apre una chat nuova che parte da un riassunto della vecchia (la vecchia resta intera). Serve perché una chat lunghissima costa più quota e GOD perde i dettagli. Oggi è un pulsante in cima alla chat, sempre visibile, con un nome poco chiaro: non si capisce quando premerlo né cosa succede.
-- Opzione consigliata: Lo fa GOD da sola — oltre una soglia (per esempio 40 messaggi) il messaggio successivo parte già nella chat nuova col riassunto; in chat una riga «Ho ripreso da un riassunto, la conversazione di prima è qui» con il link; nessun pulsante.
-- Opzione: GOD lo propone — oltre la soglia GOD scrive «La chat è lunga: riparto da un riassunto?» con i pulsanti Sì e No; decidi tu ogni volta.
-- Opzione: Pulsante più chiaro — resta il pulsante, rinominato «Nuova chat col riassunto», e compare solo quando la chat è lunga, con una frase che spiega a cosa serve.
-- Opzione: Toglierlo — niente riassunti; una chat lunga resta lunga, e per ripartire apri tu una chat nuova.
-- Esempio: hai scritto 45 messaggi con GOD su una funzione; scrivi il 46°: con l'opzione consigliata la risposta arriva in una chat nuova, «GOD · seguito», che in cima dice «Ho ripreso da un riassunto della chat di prima (apri quella)», e GOD ricorda cosa avete deciso.

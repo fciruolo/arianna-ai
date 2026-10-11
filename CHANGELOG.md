@@ -2,6 +2,12 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Cambiato
+
+- GOD: «Riassumi e riparti» non è più un pulsante fisso; quando la chat è lunga (40 messaggi) GOD chiede in fondo «La chat è lunga: riparto da un riassunto?» con «Sì, riparti» e «No, continua qui», e dopo un «No» richiede solo 20 messaggi più tardi (D-182).
+
 ## [0.72.1] - 2026-10-11
 
 ### Corretto

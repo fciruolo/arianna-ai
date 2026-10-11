@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { carryOriginText, cloneText, discussBlocker, discussTitle, godBlocker, plainItem, type GodStatus } from '../src/lib/god.ts';
+import { CARRY_PROPOSE_AGAIN, CARRY_PROPOSE_AT, carryOriginText, loadDeclined, proposeCarry, saveDeclined, cloneText, discussBlocker, discussTitle, godBlocker, plainItem, type GodStatus } from '../src/lib/god.ts';
 import { GOD_PATH, isGodPath } from '../src/lib/route.ts';
 
 const ready: GodStatus = {
@@ -57,4 +57,28 @@ test('the address of the page of GOD', () => {
   assert.equal(isGodPath('/god'), true);
   assert.equal(isGodPath('/god/'), true);
   assert.equal(isGodPath('/goddess'), false);
+});
+
+test('proposeCarry: GOD proposes a restart only in a long chat, and again only after more messages', () => {
+  assert.equal(proposeCarry(CARRY_PROPOSE_AT - 1, null), false, 'a short chat');
+  assert.equal(proposeCarry(CARRY_PROPOSE_AT, null), true, 'a long chat');
+  assert.equal(proposeCarry(CARRY_PROPOSE_AT + 5, CARRY_PROPOSE_AT), false, 'just said no');
+  assert.equal(proposeCarry(CARRY_PROPOSE_AT + CARRY_PROPOSE_AGAIN, CARRY_PROPOSE_AT), true, 'enough messages after the no');
+});
+
+test('the «No» to the proposal is remembered per conversation, and a missing or broken storage reads as none', () => {
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  assert.equal(loadDeclined(storage, 'c1'), null);
+  saveDeclined(storage, 'c1', 42);
+  assert.equal(loadDeclined(storage, 'c1'), 42);
+  assert.equal(loadDeclined(storage, 'c2'), null, 'another conversation');
+  values.set('arianna.god.carry.declined.c3', 'x');
+  assert.equal(loadDeclined(storage, 'c3'), null, 'not a number');
+  const broken = { getItem: (): string | null => { throw new Error('blocked'); }, setItem: (): void => { throw new Error('blocked'); } };
+  assert.equal(loadDeclined(broken, 'c1'), null);
+  assert.doesNotThrow(() => {
+    saveDeclined(broken, 'c1', 42);
+  });
+  assert.equal(loadDeclined(undefined, 'c1'), null);
 });

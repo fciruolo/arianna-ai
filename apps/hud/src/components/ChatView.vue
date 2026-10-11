@@ -43,6 +43,7 @@ import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
 import GodCarryNote from './GodCarryNote.vue';
+import GodCarryProposal from './GodCarryProposal.vue';
 import GodPlanCard from './GodPlanCard.vue';
 import { GOD_AGENT } from '../lib/god.ts';
 import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
@@ -716,8 +717,8 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
         </section>
 
-        <!-- GOD (D-127, G4): "Riassumi e riparti", and the summary a restarted conversation carries. -->
-        <GodCarryNote v-if="conversation.agent === GOD_AGENT" :conversation-id="conversation.id" :empty="chat.messages.length === 0" @open="(id) => emit('open', id)" />
+        <!-- GOD (D-127, G4): the context a conversation starts from (a summary, an entry of "Novità"). -->
+        <GodCarryNote v-if="conversation.agent === GOD_AGENT" :conversation-id="conversation.id" @open="(id) => emit('open', id)" />
 
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
@@ -856,6 +857,15 @@ onBeforeUnmount(() => clearInterval(clock));
           <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
+
+        <!-- GOD (D-127, G4): in a long chat, GOD proposes to restart from a summary. -->
+        <GodCarryProposal
+          v-if="conversation.agent === GOD_AGENT && conversation.archivedAt === null && chat.streaming.length === 0"
+          :conversation-id="conversation.id"
+          :count="chat.messages.filter((message) => message.role !== 'system').length"
+          :name="directName"
+          @open="(id) => emit('open', id)"
+        />
       </div>
     </div>
 

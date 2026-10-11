@@ -130,6 +130,47 @@ export function plainItem(text: string): string {
   return plain.length <= 80 ? plain : `${plain.slice(0, 79)}…`;
 }
 
+/** "Riassumi e riparti" (G4): from how many messages GOD proposes to restart from a summary. */
+export const CARRY_PROPOSE_AT = 40;
+/** After a «No», how many more messages before GOD proposes again. */
+export const CARRY_PROPOSE_AGAIN = 20;
+
+/**
+ * Whether GOD proposes to restart from a summary: the chat has at least
+ * CARRY_PROPOSE_AT messages, and the user did not say «No» in the last
+ * CARRY_PROPOSE_AGAIN. `declinedAt` is the count at the last «No», or null.
+ */
+export function proposeCarry(count: number, declinedAt: number | null): boolean {
+  if (count < CARRY_PROPOSE_AT) return false;
+  return declinedAt === null || count >= declinedAt + CARRY_PROPOSE_AGAIN;
+}
+
+// The count at the last «No», remembered in this browser (localStorage, in try/catch: it may be missing or refuse).
+const DECLINED_KEY = 'arianna.god.carry.declined.';
+
+interface StorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** The count at the last «No» to the proposal in this conversation, or null. */
+export function loadDeclined(storage: StorageLike | undefined, conversationId: string): number | null {
+  try {
+    const value = Number(storage?.getItem(DECLINED_KEY + conversationId) ?? '');
+    return Number.isInteger(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDeclined(storage: StorageLike | undefined, conversationId: string, count: number): void {
+  try {
+    storage?.setItem(DECLINED_KEY + conversationId, String(count));
+  } catch {
+    // Not remembered: GOD proposes again at the next opening.
+  }
+}
+
 /** One line on where a conversation with GOD starts from. */
 export function carryOriginText(carry: GodCarry): string {
   const version = carry.changelog ?? null;
