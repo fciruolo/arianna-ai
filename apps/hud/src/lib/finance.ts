@@ -121,6 +121,8 @@ export interface Tx {
   category: string | null;
   by: 'rule' | 'user' | null;
   importId: string | null;
+  /** The fingerprint the checks name the row by. */
+  fingerprint: string;
 }
 
 export interface Category {
@@ -239,9 +241,11 @@ export interface TxFilter {
   category: string;
   uncategorized: boolean;
   q: string;
+  /** The rows of a check, by fingerprint; empty for none. */
+  fingerprints: readonly string[];
 }
 
-export const EMPTY_FILTER: Readonly<TxFilter> = { account: '', from: '', to: '', category: '', uncategorized: false, q: '' };
+export const EMPTY_FILTER: Readonly<TxFilter> = { account: '', from: '', to: '', category: '', uncategorized: false, q: '', fingerprints: [] };
 
 /** The query string of the filters; empty values are left out. */
 export function filterQuery(filter: TxFilter, limit: number, offset: number): string {
@@ -252,6 +256,7 @@ export function filterQuery(filter: TxFilter, limit: number, offset: number): st
   if (filter.uncategorized) params.set('uncategorized', '1');
   else if (filter.category !== '') params.set('category', filter.category);
   if (filter.q.trim() !== '') params.set('q', filter.q.trim());
+  if (filter.fingerprints.length > 0) params.set('fingerprints', filter.fingerprints.slice(0, MAX_FINGERPRINTS).join(','));
   params.set('limit', String(limit));
   if (offset > 0) params.set('offset', String(offset));
   return params.toString();
@@ -611,38 +616,21 @@ export function alertText(alert: FinanceAlert, names: NameLookup): AlertText {
   }
 }
 
-/**
- * A word of the merchant to search the descriptions with: the longest of the
- * key (the key drops the bank's boilerplate, so the whole key may not appear
- * as it is in the description).
- */
-export function merchantQuery(merchant: string): string {
-  let best = '';
-  for (const word of merchant.split(/\s+/)) if (word.length > best.length) best = word;
-  return best;
-}
-
-function daysBefore(day: Day, days: number): Day {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
-}
+/** The most fingerprints `GET /api/finance/transactions` takes in one query. */
+export const MAX_FINGERPRINTS = 50;
 
 /**
- * The movements a check is about, as the filters of "Movimenti". The API's
- * movements carry no fingerprint, so the page narrows by account, days,
- * category and a word of the merchant.
+ * The movements a check is about, as the filters of "Movimenti": its rows by
+ * their fingerprints (the most recent 50 when there are more). A budget is
+ * about a whole category in a month: category and days, which may hold more.
  */
 export function alertFilter(alert: FinanceAlert): TxFilter {
   switch (alert.kind) {
-    case 'recurring': {
-      const span = alert.cadence === 'weekly' ? 7 : alert.cadence === 'monthly' ? 31 : 366;
-      return { ...EMPTY_FILTER, account: alert.account, from: daysBefore(alert.lastDay, span * alert.fingerprints.length), to: alert.lastDay, q: merchantQuery(alert.merchant) };
-    }
     case 'unusual':
-      return { ...EMPTY_FILTER, account: alert.account, q: merchantQuery(alert.merchant) };
+      return { ...EMPTY_FILTER, fingerprints: [alert.fingerprint] };
+    case 'recurring':
     case 'duplicate':
-      return { ...EMPTY_FILTER, account: alert.account, from: alert.firstDay, to: alert.lastDay, q: merchantQuery(alert.merchant) };
+      return { ...EMPTY_FILTER, fingerprints: alert.fingerprints.slice(-MAX_FINGERPRINTS) };
     case 'budget':
       return { ...EMPTY_FILTER, category: alert.category, from: `${alert.month}-01`, to: lastDayOf(alert.month) };
   }

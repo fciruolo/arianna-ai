@@ -28,7 +28,6 @@ import {
   IMPORT_ERROR_TEXT,
   isFinancePath,
   lastDayOf,
-  merchantQuery,
   nameLookup,
   nameProblem,
   parseEuroInput,
@@ -169,7 +168,7 @@ test('header choices: trimmed, non-empty, each once', () => {
 
 test('the filters as a query; uncategorized wins over a category', () => {
   assert.equal(filterQuery(EMPTY_FILTER, 100, 0), 'limit=100');
-  assert.equal(filterQuery({ account: 'a1', from: '2026-01-01', to: '2026-01-31', category: 'c1', uncategorized: false, q: ' coop ' }, 50, 100), 'account=a1&from=2026-01-01&to=2026-01-31&category=c1&q=coop&limit=50&offset=100');
+  assert.equal(filterQuery({ account: 'a1', from: '2026-01-01', to: '2026-01-31', category: 'c1', uncategorized: false, q: ' coop ', fingerprints: [] }, 50, 100), 'account=a1&from=2026-01-01&to=2026-01-31&category=c1&q=coop&limit=50&offset=100');
   assert.equal(filterQuery({ ...EMPTY_FILTER, category: 'c1', uncategorized: true }, 100, 0), 'uncategorized=1&limit=100');
 });
 
@@ -198,13 +197,22 @@ test('the sentences of the checks, one per kind', () => {
   assert.equal(alertText({ ...budget, state: 'near', spent: 34000, percent: 85 }, NAMES).tone, 'warn');
 });
 
-test('each check points at its movements', () => {
-  assert.deepEqual(alertFilter({ kind: 'budget', category: 'c1', month: '2026-02', spent: 1, limit: 1, percent: 100, state: 'near', fingerprints: [] }), { ...EMPTY_FILTER, category: 'c1', from: '2026-02-01', to: '2026-02-28' });
-  assert.deepEqual(alertFilter({ kind: 'duplicate', account: 'a1', merchant: 'bar centrale', amount: 1500, fingerprints: [], firstDay: '2026-10-01', lastDay: '2026-10-03', recurring: false }), { ...EMPTY_FILTER, account: 'a1', from: '2026-10-01', to: '2026-10-03', q: 'centrale' });
-  const recurring = alertFilter({ kind: 'recurring', account: 'a1', merchant: 'fit', direction: 'out', cadence: 'monthly', fingerprints: ['a', 'b', 'c'], amount: 1, lastAmount: 2, amountChanged: true, lastDay: '2026-10-02', nextExpected: '2026-11-02' });
-  assert.equal(recurring.to, '2026-10-02');
-  assert.equal(recurring.from, '2026-07-01');
-  assert.equal(merchantQuery('pam super'), 'super');
+test('each check points at its movements: by fingerprint, a budget by category and month', () => {
+  assert.deepEqual(alertFilter({ kind: 'budget', category: 'c1', month: '2026-02', spent: 1, limit: 1, percent: 100, state: 'near', fingerprints: ['x'] }), { ...EMPTY_FILTER, category: 'c1', from: '2026-02-01', to: '2026-02-28' });
+  assert.deepEqual(alertFilter({ kind: 'duplicate', account: 'a1', merchant: 'bar centrale', amount: 1500, fingerprints: ['f1', 'f2'], firstDay: '2026-10-01', lastDay: '2026-10-03', recurring: false }), { ...EMPTY_FILTER, fingerprints: ['f1', 'f2'] });
+  assert.deepEqual(alertFilter({ kind: 'unusual', fingerprint: 'f9', account: 'a1', merchant: 'x', category: null, amount: 1, basis: 'merchant', median: 1, historyCount: 3, ratioPercent: 300 }), { ...EMPTY_FILTER, fingerprints: ['f9'] });
+  const many = Array.from({ length: 60 }, (_, index) => `f${String(index)}`);
+  const recurring = alertFilter({ kind: 'recurring', account: 'a1', merchant: 'fit', direction: 'out', cadence: 'weekly', fingerprints: many, amount: 1, lastAmount: 2, amountChanged: true, lastDay: '2026-10-02', nextExpected: '2026-10-09' });
+  assert.equal(recurring.fingerprints.length, 50);
+  assert.equal(recurring.fingerprints[0], 'f10');
+  assert.equal(recurring.fingerprints[49], 'f59');
+});
+
+test('fingerprints in the query, comma separated, at most 50', () => {
+  assert.equal(filterQuery({ ...EMPTY_FILTER, fingerprints: ['f1', 'f2'] }, 100, 0), 'fingerprints=f1%2Cf2&limit=100');
+  const many = Array.from({ length: 60 }, (_, index) => `f${String(index)}`);
+  const sent = new URLSearchParams(filterQuery({ ...EMPTY_FILTER, fingerprints: many }, 100, 0)).get('fingerprints');
+  assert.equal(sent?.split(',').length, 50);
 });
 
 test('names for the sentences, with a fallback for what was removed', () => {

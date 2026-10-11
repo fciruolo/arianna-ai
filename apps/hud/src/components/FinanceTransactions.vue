@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 import { listFinanceTransactions, setTransactionCategory } from '../lib/api.ts';
-import { amountClass, filterQuery, financeErrorText, formatCents, formatDay, nameLookup, type Account, type Category, type Tx, type TxFilter } from '../lib/finance.ts';
+import { amountClass, EMPTY_FILTER, filterQuery, financeErrorText, formatCents, formatDay, nameLookup, type Account, type Category, type Tx, type TxFilter } from '../lib/finance.ts';
 import Icon from './Icon.vue';
 
 /**
@@ -28,7 +28,7 @@ const names = computed(() => nameLookup(props.accounts, props.categories));
 const outCategories = computed(() => props.categories.filter((category) => category.kind === 'out'));
 const inCategories = computed(() => props.categories.filter((category) => category.kind === 'in'));
 const showAccount = computed(() => filter.account === '' && props.accounts.length > 1);
-const filtered = computed(() => filter.account !== '' || filter.from !== '' || filter.to !== '' || filter.category !== '' || filter.uncategorized || filter.q.trim() !== '');
+const filtered = computed(() => filter.fingerprints.length > 0 || filter.account !== '' || filter.from !== '' || filter.to !== '' || filter.category !== '' || filter.uncategorized || filter.q.trim() !== '');
 
 async function load(append = false): Promise<void> {
   loading.value = true;
@@ -57,7 +57,7 @@ onBeforeUnmount(() => clearTimeout(timer));
 void load();
 
 function clearFilters(): void {
-  Object.assign(filter, { account: '', from: '', to: '', category: '', uncategorized: false, q: '' });
+  Object.assign(filter, { ...EMPTY_FILTER });
 }
 
 async function choose(row: Tx, value: string): Promise<void> {
@@ -119,6 +119,11 @@ async function choose(row: Tx, value: string): Promise<void> {
       <button v-if="filtered" type="button" class="rounded-md px-2 py-1.5 text-xs text-muted hover:text-ink" @click="clearFilters">Togli i filtri</button>
     </div>
 
+    <p v-if="filter.fingerprints.length > 0" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm" role="status">
+      <Icon name="warning" :size="14" />
+      <span class="flex-1">Solo i movimenti dell’avviso scelto.</span>
+      <button type="button" class="btn px-2.5 py-1 text-xs" @click="filter.fingerprints = []">Mostra tutti</button>
+    </p>
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
     <p v-if="notice" class="rounded-lg border border-ok/50 bg-ok/10 px-3 py-2 text-sm" role="status">{{ notice }}</p>
     <p v-if="rows === null && problem === null" class="text-sm text-muted">Carico i movimenti…</p>
