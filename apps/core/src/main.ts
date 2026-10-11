@@ -497,6 +497,8 @@ const settingsPage = createSettingsPage({
   agentSkills: () => Object.fromEntries([...agents].map(([id, agent]) => [id, skillRefusalOf(id, agent.card)])),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
+    // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.
+    settings.refresh();
     appendEvent(sql, { kind: 'settings.changed', label: 'L0', payload: { ...change } }).catch(report);
   },
 });

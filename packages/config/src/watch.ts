@@ -40,6 +40,8 @@ export interface ConfigChange {
 export interface ConfigWatcher {
   /** The configuration to use now: read it at each use, never keep a copy. */
   current(): AriannaConfig;
+  /** Reads the file now, without waiting for the next poll: after the core itself wrote it. */
+  refresh(): void;
   close(): void;
 }
 
@@ -166,6 +168,7 @@ export function watchConfig(options: WatchOptions): ConfigWatcher {
   first.unref();
   return {
     current: () => current,
+    refresh: reload,
     close: () => {
       clearTimeout(first);
       for (const file of files) unwatchFile(file, reload);

@@ -9,6 +9,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Regole dei progetti: una select per ogni regola, «Entrambi / Solo Claude Code / Solo Codex»; vale nei lavori dentro Arianna e nell'esportazione, dove CLAUDE.md e AGENTS.md ricevono ciascuno le sue regole (D-181).
 - Progetti, scheda File: pulsante «Aggiorna»; l'elenco dei file si rilegge anche dopo l'esportazione delle regole e tornando sulla scheda (D-181).
 
+### Corretto
+
+- Impostazioni: ciò che salvi vale subito, non un secondo dopo; un'esportazione delle regole fatta appena dopo «Salva» vede il testo nuovo (D-181).
+
 ## [0.71.0] - 2026-10-11
 
 ### Aggiunto

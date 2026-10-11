@@ -192,3 +192,19 @@ test('diffConfig names the changed sections only', () => {
   assert.deepEqual(diffConfig(config, { ...config, voice: structuredClone(DEFAULT_VOICE) }), { applied: ['voice'], restart: [] });
   assert.deepEqual(diffConfig(config, { ...config, characters: { coder: 'p/robot' } }), { applied: ['characters'], restart: [] });
 });
+
+test('refresh reads the file at once, without waiting for the poll; nothing changed, nothing reported (D-181)', () => {
+  const events: ConfigChange[] = [];
+  const watcher = watchConfig({ initial: loadConfig(ENV), intervalMs: 60_000, onChange: (change) => events.push(change), onError: () => undefined });
+  try {
+    watcher.refresh();
+    assert.equal(events.length, 0);
+    write({ ...BASE, projectRules: { template: 'Commenti in inglese.', projects: {} } });
+    watcher.refresh();
+    assert.equal(watcher.current().projectRules.template, 'Commenti in inglese.');
+    assert.deepEqual(events.map((change) => change.applied), [['projectRules']]);
+  } finally {
+    watcher.close();
+    write(BASE);
+  }
+});
