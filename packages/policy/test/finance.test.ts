@@ -8,6 +8,7 @@ import {
   canUseWebTools,
   contentHash,
   createContext,
+  createLabelRules,
   declassify,
   declassifyRequest,
   derive,
@@ -16,6 +17,7 @@ import {
   isContext,
   isFinanceContext,
   isFinanceSource,
+  labelForSource,
   labelOf,
   PolicyError,
   recordFinanceRead,
@@ -54,11 +56,15 @@ function sealed(): Context {
   return read.context;
 }
 
-test('finance source: only strings starting with finance: are finance data', () => {
+test('finance source: strings starting with finance:, whatever the case and spaces, are finance data', () => {
   assert.equal(isFinanceSource('finance:transactions'), true);
   assert.equal(isFinanceSource('finance:derived'), true);
+  assert.equal(isFinanceSource('Finance:transactions'), true);
+  assert.equal(isFinanceSource('FINANCE:tx'), true);
+  assert.equal(isFinanceSource(' finance:tx'), true);
   assert.equal(isFinanceSource('kb/finance/notes.md'), false);
-  assert.equal(isFinanceSource('Finance:transactions'), false);
+  assert.equal(isFinanceSource('finance'), false);
+  assert.equal(isFinanceSource('my-finance:tx'), false);
   assert.equal(isFinanceSource(undefined), false);
   assert.equal(isFinanceSource(42), false);
 });
@@ -221,10 +227,13 @@ const approvalFor = (item: Labeled<unknown>, from: Label, to: Label): Declassify
 
 test('declassify: finance data is refused, even with an approval for its exact text', () => {
   const item = finance('L2');
-  assert.throws(() => declassifyRequest(item, 'L1'), PolicyError);
-  assert.throws(() => declassify(item, 'L1', approvalFor(item, 'L2', 'L1')), PolicyError);
+  const clear = createContext('L2', 'L2');
+  assert.throws(() => declassifyRequest(item, 'L1', clear), PolicyError);
+  assert.throws(() => declassify(item, 'L1', approvalFor(item, 'L2', 'L1'), clear), PolicyError);
   const derived: Labeled<unknown> = { value: 'Riassunto finto', label: 'L2', source: 'finance:derived' };
-  assert.throws(() => declassify(derived, 'L1', approvalFor(derived, 'L2', 'L1')), PolicyError);
+  assert.throws(() => declassify(derived, 'L1', approvalFor(derived, 'L2', 'L1'), clear), PolicyError);
+  const spelled: Labeled<unknown> = { value: 'Riassunto finto', label: 'L2', source: ' FINANCE:tx' };
+  assert.throws(() => declassifyRequest(spelled, 'L1', clear), PolicyError);
 });
 
 test('declassify: in a marked context it is refused, in an unmarked one it works as before', () => {
@@ -240,5 +249,51 @@ test('declassify: in a marked context it is refused, in an unmarked one it works
   });
   assert.equal(declassifyRequest(item, 'L1', clear).to, 'L1');
   assert.equal(declassify(item, 'L1', approvalFor(item, 'L2', 'L1'), clear).item.label, 'L1');
-  assert.equal(declassify(item, 'L1', approvalFor(item, 'L2', 'L1')).item.label, 'L1');
+});
+
+test('declassify: a context not made by the policy is refused, even one claiming no finance mark', () => {
+  const item = fake('L2');
+  for (const forged of [
+    { clearance: 'L2', effective: 'L2', finance: true },
+    { clearance: 'L2', effective: 'L2' },
+  ] as Context[]) {
+    assert.throws(() => {
+      assertDeclassifiable(forged);
+    }, /not created by the policy/);
+    assert.throws(() => declassifyRequest(item, 'L1', forged), PolicyError);
+    assert.throws(() => declassify(item, 'L1', approvalFor(item, 'L2', 'L1'), forged), PolicyError);
+  }
+});
+
+const SPELLING_TARGETS: readonly Target[] = [WEB_SEARCH, CLAUDE];
+
+test('gateway: another spelling of a finance source is still finance data', () => {
+  for (const source of ['FINANCE:tx', ' finance:tx']) {
+    for (const target of SPELLING_TARGETS) {
+      assert.equal(gatewayCheck([fake('L0', source)], createContext('L1'), target).rule, 'finance', `${source} to ${JSON.stringify(target)}`);
+    }
+  }
+});
+
+test('gateway: a source that is not a string is not finance data; a marked context still blocks it', () => {
+  const odd = { value: 'fake text', label: 'L0', source: 42 } as unknown as Labeled<unknown>;
+  assert.equal(gatewayCheck([odd], createContext('L1'), CLAUDE).rule, 'cloud');
+  assert.equal(labelOf(odd), 'L0');
+  const missing = { value: 'fake text', label: 'L1' } as unknown as Labeled<unknown>;
+  assert.equal(gatewayCheck([missing], sealed(), CLAUDE).rule, 'finance');
+});
+
+test('label rules: a finance source rule below L2 is refused, at L2 or above it is accepted', () => {
+  assert.throws(() => createLabelRules({ folders: [], sources: [{ name: 'finance:transactions', label: 'L1' }] }), /finance data/);
+  assert.throws(() => createLabelRules({ folders: [], sources: [{ name: 'FINANCE:tx', label: 'L0' }] }), /finance data/);
+  const rules = createLabelRules({ folders: [], sources: [{ name: 'finance:transactions', label: 'L2' }, { name: 'web', label: 'L1' }] });
+  assert.equal(labelForSource(rules, 'finance:transactions'), 'L2');
+  assert.equal(labelForSource(rules, 'web'), 'L1');
+});
+
+test('label rules: a finance source is at least L2 even without a rule, other sources keep theirs', () => {
+  const rules = createLabelRules({ folders: [], sources: [{ name: 'web', label: 'L0' }] });
+  assert.equal(labelForSource(rules, 'finance:accounts'), 'L2');
+  assert.equal(labelForSource(rules, 'web'), 'L0');
+  assert.equal(labelForSource(createLabelRules({ folders: [], sources: [{ name: 'finance:vault', label: 'L3' }] }), 'finance:vault'), 'L3');
 });

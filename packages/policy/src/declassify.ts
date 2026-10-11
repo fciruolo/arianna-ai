@@ -1,7 +1,7 @@
 // Lowering a label (docs/PRIVACY-POLICY-SPEC.md, rule 3): only with the user's
 // approval of the exact text, identified by its sha256. Pure: the core loads
 // the approval and writes the returned change to label_changes.
-import { isFinanceContext, isFinanceSource, type Context, type Labeled } from './context.ts';
+import { isContext, isFinanceContext, isFinanceSource, type Context, type Labeled } from './context.ts';
 import { PolicyError } from './errors.ts';
 import { isAtMost, isLabel, labelOrDefault, type Label } from './labels.ts';
 import { payloadText, sha256Hex } from './payload.ts';
@@ -25,24 +25,25 @@ export interface LabelChange {
 }
 
 /**
- * Throws when `context` has read finance data (D-183): nothing written in it
- * is declassified, not even with the user's approval. The core calls it, or
- * passes the context to `declassifyRequest` and `declassify`, before asking
- * for an approval and before applying one.
+ * Throws when `context` was not made by the policy, or has read finance data
+ * (D-183): nothing written in it is declassified, not even with the user's
+ * approval. `declassifyRequest` and `declassify` call it on their context.
  */
 export function assertDeclassifiable(context: Context): void {
+  if (!isContext(context)) throw new PolicyError('declassify: the context was not created by the policy');
   if (isFinanceContext(context)) throw new PolicyError('declassify: the context has read finance data, which never leaves this machine');
 }
 
 /**
  * What an approval request for declassifying `item` to `to` stores in
  * `approvals.detail`: the exact text shown to the user, its sha256 and both labels.
- * Finance data (`finance:*` source) is never declassified; with `context`,
- * neither is anything of a context that has read finance data.
+ * `context` is the conversation or task the text was written in. Finance data
+ * (`finance:*` source) is never declassified, nor is anything of a context
+ * that has read finance data or was not made by the policy.
  */
-export function declassifyRequest(item: Labeled<unknown>, to: Label, context?: Context): { text: string; sha256: string; from: Label; to: Label } {
+export function declassifyRequest(item: Labeled<unknown>, to: Label, context: Context): { text: string; sha256: string; from: Label; to: Label } {
   if (isFinanceSource(item.source)) throw new PolicyError('declassify: finance data never leaves this machine');
-  if (context !== undefined) assertDeclassifiable(context);
+  assertDeclassifiable(context);
   const from = labelOrDefault(item.label);
   const text = payloadText(item.value);
   if (text === undefined) throw new PolicyError('declassify: the value is not text or plain JSON');
@@ -56,9 +57,9 @@ export function declassifyRequest(item: Labeled<unknown>, to: Label, context?: C
  * Returns the item with the lower label and the change to record. Throws
  * unless the approval is an approved declassify for this exact value, from its
  * current label to `to`. The new item's source names the approval. Finance
- * data, and with `context` a context that has read it, throw as in `declassifyRequest`.
+ * data, a context that has read it and a forged context throw as in `declassifyRequest`.
  */
-export function declassify<T>(item: Labeled<T>, to: Label, approval: DeclassifyApproval, context?: Context): { item: Labeled<T>; change: LabelChange } {
+export function declassify<T>(item: Labeled<T>, to: Label, approval: DeclassifyApproval, context: Context): { item: Labeled<T>; change: LabelChange } {
   const request = declassifyRequest(item, to, context);
   if (approval.kind !== 'declassify') throw new PolicyError(`declassify: approval ${approval.id} is not a declassify approval`);
   if (approval.state !== 'approved') throw new PolicyError(`declassify: approval ${approval.id} is ${approval.state}`);

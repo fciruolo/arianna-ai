@@ -1,8 +1,9 @@
 // Labels from folder and source rules (config/labels.toml, docs/PRIVACY-POLICY-SPEC.md).
 import { posix } from 'node:path';
 
+import { FINANCE_LABEL, isFinanceSource } from './context.ts';
 import { PolicyError } from './errors.ts';
-import { isLabel, maxLabel, type Label } from './labels.ts';
+import { isAtMost, isLabel, maxLabel, type Label } from './labels.ts';
 
 export interface FolderRule {
   /** Relative to ARIANNA_HOME, with `/` separators. */
@@ -82,6 +83,9 @@ export function createLabelRules(input: { folders: readonly FolderRule[]; source
     const where = `source rule ${String(index + 1)}`;
     if (!isLabel(rule.label)) throw new PolicyError(`${where}: invalid label ${JSON.stringify(rule.label)}`);
     if (rule.name === '') throw new PolicyError(`${where}: empty name`);
+    if (isFinanceSource(rule.name) && !isAtMost(FINANCE_LABEL, rule.label)) {
+      throw new PolicyError(`${where}: finance data is at least ${FINANCE_LABEL}, not ${rule.label} (D-183)`);
+    }
     if (seenSources.has(rule.name)) throw new PolicyError(`${where}: duplicate rule for ${JSON.stringify(rule.name)}`);
     seenSources.add(rule.name);
     return { name: rule.name, label: rule.label };
@@ -124,7 +128,8 @@ export function labelForKbPage(rules: LabelRules, path: string, declared: unknow
   return maxLabel(folder, isLabel(declared) ? declared : 'L3');
 }
 
-/** Label of data from a source (e.g. `web`, `mail`); L2 for a source without a rule. */
+/** Label of data from a source (e.g. `web`, `mail`); L2 for a source without a rule, at least L2 for finance data (D-183). */
 export function labelForSource(rules: LabelRules, name: string): Label {
-  return rules.sources.find((rule) => rule.name === name)?.label ?? DEFAULT;
+  const label = rules.sources.find((rule) => rule.name === name)?.label ?? DEFAULT;
+  return isFinanceSource(name) ? maxLabel(label, FINANCE_LABEL) : label;
 }

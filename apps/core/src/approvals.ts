@@ -1,4 +1,4 @@
-import { declassifyRequest, labelOrDefault, type DeclassifyApproval, type Label, type Labeled } from '@arianna/policy';
+import { declassifyRequest, labelOrDefault, type Context, type DeclassifyApproval, type Label, type Labeled } from '@arianna/policy';
 
 import type { Queryable } from './db/client.ts';
 
@@ -54,9 +54,10 @@ export async function requestDeclassify(
   sql: Queryable,
   item: Labeled<unknown>,
   to: Label,
+  context: Context,
   options: { taskId?: string } = {},
 ): Promise<StoredApproval> {
-  const detail = declassifyRequest(item, to);
+  const detail = declassifyRequest(item, to, context);
   const [row] = await sql<StoredApproval[]>`
     INSERT INTO approvals (task_id, kind, action, detail, label)
     VALUES (

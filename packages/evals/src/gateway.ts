@@ -36,10 +36,14 @@ interface FragmentInput {
   derivedFrom?: unknown[];
 }
 
+/** An input of `derivedFrom`: a label, or `{ label, source }` with no other key (a typo must fail the case, not be ignored). */
 function derivedInput(from: unknown): Labeled<unknown> {
   if (typeof from === 'object' && from !== null && !Array.isArray(from)) {
-    const input = from as { label?: unknown; source?: unknown };
-    return { value: null, label: input.label as Label, source: typeof input.source === 'string' ? input.source : 'eval' };
+    const input = from as Record<string, unknown>;
+    const unknown = Object.keys(input).filter((key) => key !== 'label' && key !== 'source');
+    if (unknown.length > 0) throw new Error(`"derivedFrom": unknown key(s) ${unknown.join(', ')}`);
+    if (typeof input.source !== 'string') throw new Error('"derivedFrom": "source" must be a string');
+    return { value: null, label: input.label as Label, source: input.source };
   }
   return { value: null, label: from as Label, source: 'eval' };
 }

@@ -47,9 +47,13 @@ export const FINANCE_DERIVED_SOURCE = 'finance:derived';
 /** Finance data is at least Private: no rule lowers it below this label. */
 export const FINANCE_LABEL: Label = 'L2';
 
-/** True when `source` names finance data (`finance:*`). Anything that is not a string is not. */
+/**
+ * True when `source` names finance data (`finance:*`), whatever its case and
+ * surrounding spaces: a different spelling raises a label, it never lowers one.
+ * Anything that is not a string is not.
+ */
 export function isFinanceSource(source: unknown): boolean {
-  return typeof source === 'string' && source.startsWith(FINANCE_SOURCE_PREFIX);
+  return typeof source === 'string' && source.trim().toLowerCase().startsWith(FINANCE_SOURCE_PREFIX);
 }
 
 /**

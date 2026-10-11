@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { APPROVAL_ACTIONS } from '@arianna/agents';
-import { isAtMost, isLabel, type Label } from '@arianna/policy';
+import { createContext, isAtMost, isLabel, type Label } from '@arianna/policy';
 
 import { decideApproval, loadApproval, requestDeclassify, type DecisionChannel, type ExecutorChoice, type StoredApproval } from './approvals.ts';
 import { applyPlanApproval } from './card-plans.ts';
@@ -431,7 +431,8 @@ export async function processStepJob(
           await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
           return 'waiting-user';
         }
-        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: `task:${task.id}` }, outcome.to, {
+        // The task's context: a context that has read finance data is never declassified (D-183).
+        const created = await requestDeclassify(tx, { value: outcome.text, label: from, source: `task:${task.id}` }, outcome.to, createContext(task.clearance, task.effectiveLabel), {
           taskId: task.id,
         });
         await moveTask(tx, task.id, 'waiting_user', { reason: 'approval needed: declassify', cause: 'approval', approvalId: created.id });
