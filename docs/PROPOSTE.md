@@ -2637,8 +2637,8 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 **Come funziona (D-147).** Alla fine di ogni lavoro di un agente nel cloud su un progetto (delega dalla conversazione con Arianna o chat diretta con il Coder, su Claude o su Codex; riuscito, non riuscito o fermato al limite di tempo) il core aggiunge una voce in `Workplan/diario/AAAA-MM-GG.md` della conoscenza del progetto: nel contenitore per i progetti con parti, in `kb/progetti/<progetto>/` per quelli di un solo git. Un file per giorno, una voce per lavoro in coda: in Obsidian si legge la giornata dall'alto in basso. La voce porta ora, agente ed esecutore con il modello, la parte, l'esito, la richiesta così come è uscita dal gateway, i file cambiati, il commit se c'è, il riassunto finale dell'agente e il collegamento alla conversazione; niente che non sia già uscito verso il cloud, quindi mai sopra L1. Le incognite non lasciano voci.
 
 **Tappe.**
-- **D1 (questa):** il diario scritto dal codice, trovato dalla ricerca di Arianna e mostrato nella scheda Conoscenza come nota di Workplan.
-- **D2 (da decidere):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario.
+- **D1 (fatta, 0.35.0):** il diario scritto dal codice, trovato dalla ricerca di Arianna e mostrato nella scheda Conoscenza come nota di Workplan.
+- **D2 (D-177, da provare sul ramo `task/diario-d2`):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario: `Workplan/diario/settimana-AAAA-Www.md` accanto ai giorni, riscritto a ogni voce nuova, con i totali per esito, agente, esecutore e modello, parte, un lavoro per riga con il collegamento al giorno e i file cambiati più spesso. Mai un modello, solo ciò che è già nelle voci; un giorno scritto a mano o rovinato si salta.
 
 ### I-16, i clienti (richiesta dell'utente del 2026-10-10)
 

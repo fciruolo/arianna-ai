@@ -23,6 +23,7 @@ import { createKb } from '../src/orchestrator/kb.ts';
 import { createOrchestrator } from '../src/orchestrator/orchestrator.ts';
 import { loadTask } from '../src/tasks.ts';
 import { diaryDay } from '../src/work-diary.ts';
+import { weekFileName } from '../src/work-diary-week.ts';
 import { committedAgents } from '../test/support/committed-agents.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -176,6 +177,11 @@ test('a delegation on Claude that ends well: an entry with request, files, repor
     assert.match(entry, /### Riassunto di Coder\n\n```text\ndone\n```/);
     // What did not go to the cloud is not in it: the user's message to Arianna.
     assert.doesNotMatch(text, /quaderno/);
+    // The summary of the week, written again with the entry (I-15 D2, D-177).
+    const week = readFileSync(join(HOME, 'kb', 'progetti', 'site', 'Workplan', 'diario', weekFileName(new Date())), 'utf8');
+    assert.match(week, /^---\nlabel: L1\nsource: diary:site\n[\s\S]*kind: diary\n/);
+    assert.match(week, /· Coder · Claude Sonnet[^\n]* · riuscito · tutto il progetto · 2 file · `Add a line to README\.md saying hello\.`/);
+    assert.doesNotMatch(week, /quaderno|```/);
     // Never in the code of the project.
     assert.ok(!existsSync(join(SITE, 'Workplan')));
   } finally {
