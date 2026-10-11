@@ -2638,7 +2638,7 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 
 **Tappe.**
 - **D1 (fatta, 0.35.0):** il diario scritto dal codice, trovato dalla ricerca di Arianna e mostrato nella scheda Conoscenza come nota di Workplan.
-- **D2 (D-177, da provare sul ramo `task/diario-d2`):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario: `Workplan/diario/settimana-AAAA-Www.md` accanto ai giorni, riscritto a ogni voce nuova, con i totali per esito, agente, esecutore e modello, parte, un lavoro per riga con il collegamento al giorno e i file cambiati più spesso. Mai un modello, solo ciò che è già nelle voci; un giorno scritto a mano o rovinato si salta.
+- **D2 (fatta, D-177, 0.66.0):** un riepilogo della settimana, sempre scritto dal codice dalle voci del diario: `Workplan/diario/settimana-AAAA-Www.md` accanto ai giorni, riscritto a ogni voce nuova, con i totali per esito, agente, esecutore e modello, parte, un lavoro per riga con il collegamento al giorno e i file cambiati più spesso. Mai un modello, solo ciò che è già nelle voci; un giorno scritto a mano o rovinato si salta.
 
 ### I-16, i clienti (richiesta dell'utente del 2026-10-10)
 
