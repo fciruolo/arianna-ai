@@ -3,8 +3,8 @@
 // With --tag only the cases carrying that tag run, e.g. `live --tag codex` to
 // spend the quota of one executor only (D-138); the report is
 // report-<tier>-<tag>.json.
-// With --model (tier models only, D-081) the orchestrator runs on that catalog
-// model, `local-large` on the configured endpoints, and the report is
+// With --model (tier models only, D-081) the orchestrator and Finanze run on
+// that catalog model, `local-large` on the configured endpoints, and the report is
 // report-models-<id>.json.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import { CONFIG_FILE, DATA_DIR, loadCatalog, loadConfig, resolveHome } from '@ar
 import { createLocalModel } from '@arianna/executors';
 
 import { loadCases } from './cases.ts';
+import { createFinanceGroup } from './finance-group.ts';
 import { GROUPS } from './groups.ts';
 import { createOrchestratorGroup } from './orchestrator-group.ts';
 import { formatReport } from './report.ts';
@@ -48,8 +49,12 @@ if (modelId !== undefined) {
     console.error('no [[local.endpoints]] in config/arianna.toml');
     process.exit(2);
   }
-  const candidate = createOrchestratorGroup({ model: createLocalModel({ endpoints }) });
-  groups = GROUPS.map((group) => (group.name === 'orchestrator' ? candidate : group));
+  const model = createLocalModel({ endpoints });
+  const candidates = new Map([
+    ['orchestrator', createOrchestratorGroup({ model })],
+    ['finance', createFinanceGroup({ model: () => model })],
+  ]);
+  groups = GROUPS.map((group) => candidates.get(group.name) ?? group);
 }
 if (tag !== undefined) {
   // A group left without cases is not run, rather than failed for having none.

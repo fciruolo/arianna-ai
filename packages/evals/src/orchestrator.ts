@@ -24,6 +24,8 @@ export interface OrchestratorActual {
   arguments?: Record<string, unknown>;
   /** "3-5" when the plan has three to five steps, else the count. */
   steps?: string;
+  /** The text of a reply or the reason of a refusal, kept only when the evaluator asks (the finance group checks the figures). */
+  text?: string;
   schemaOk: boolean;
 }
 
@@ -47,7 +49,7 @@ export interface OrchestratorExpectation {
 }
 
 /** What the measures look at, from the model's answer. */
-export function summarize(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY, planner: Planner = 'self'): OrchestratorActual {
+export function summarize(value: unknown, tools: readonly ToolId[], thought = true, delegates: readonly DelegateTarget[] = CODER_ONLY, planner: Planner = 'self', keepText = false): OrchestratorActual {
   const schemaOk = validate(responseSchema(tools, thought, delegates, planner), value).length === 0;
   const record = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   const action = record.action;
@@ -59,7 +61,10 @@ export function summarize(value: unknown, tools: readonly ToolId[], thought = tr
     const count = Array.isArray(record.steps) ? record.steps.length : 0;
     return { action, steps: count >= 3 && count <= 5 ? '3-5' : String(count), schemaOk };
   }
-  if (action === 'reply' || action === 'refuse') return { action, schemaOk };
+  if (action === 'reply' || action === 'refuse') {
+    const said = action === 'reply' ? record.text : record.reason;
+    return keepText && typeof said === 'string' ? { action, text: said, schemaOk } : { action, schemaOk };
+  }
   return { action: 'invalid', schemaOk: false };
 }
 
@@ -86,7 +91,7 @@ export function matchesExpectation(actual: unknown, expect: unknown): boolean {
   return !(expectation.forbid ?? []).some((outcome) => matches(answer, outcome));
 }
 
-export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string): Evaluate {
+export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string, keepText = false): Evaluate {
   const ask = async (input: OrchestratorInput, thought: boolean, signal: AbortSignal | undefined) => {
     const delegates = input.delegates ?? CODER_ONLY;
     const planner = input.planner ?? 'self';
@@ -102,7 +107,7 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
       maxTokens: 2048,
       timeoutMs: 300_000,
     });
-    return summarize(result.value, input.tools, thought, delegates, planner);
+    return summarize(result.value, input.tools, thought, delegates, planner, keepText);
   };
   return async (raw, signal) => {
     const input = raw as OrchestratorInput;
