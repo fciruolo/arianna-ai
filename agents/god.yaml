@@ -1,0 +1,24 @@
+# GOD (D-127): Arianna developed from inside Arianna. The user talks with it
+# in its own chat, as with Claude Code in a terminal; it works only in the
+# clones of Arianna's repository (repos/arianna, the project `arianna`),
+# never in the installation. It reads the code and the documents of the
+# clone and never writes: the work is done by the Coder in a clone of its
+# own per subtask. In the cloud the private data side is removed by
+# cloud_max_label; it has no network, no knowledge base, no conversation
+# other than its own.
+name: god
+description: Develops Arianna from inside Arianna, in a clone of its code
+max_label: L1
+cloud_max_label: L1
+executors: [claude, codex]
+tools: [repo.read]
+trifecta:
+  private_data: false
+  # The clone is written by cloud executors: its text is not trusted.
+  untrusted_content: true
+  external_comms: false
+autonomy: A1
+difficulty: normal
+limits: { max_steps: 40, max_minutes: 20, max_cost: 0 }
+approvals: []
+prompt: god.md

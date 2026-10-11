@@ -33,13 +33,13 @@ Testo, alternative e raccomandazioni in `docs/PROPOSTE.md`; qui solo l'elenco.
 
 | Proposta | Domanda | Stato |
 | --- | --- | --- |
-| D-078 Sviluppo da dentro Arianna | 1. Clone separato del repository sotto la home come progetto L1, con le modifiche portate solo con `git pull`? | Aperta |
-| D-078 | 2. Una sola memoria di sviluppo (tutto nel clone) o un file distinto per la scheda? | Aperta |
-| D-078 | 3. Scheda nuova `developer` o il `coder` con una regola in più? | Aperta |
-| D-078 | 4. Chi fa il commit nel clone? | Aperta |
-| D-078 | 5. Una sola delega attiva sul progetto di sviluppo? | Aperta |
-| D-078 | 6. Quando cominciare? | Aperta |
-| D-078 | 7. Chi lancia `pnpm check` completo dopo un run? | Aperta |
+| D-078 Sviluppo da dentro Arianna | 1. Clone separato del repository sotto la home come progetto L1, con le modifiche portate solo con `git pull`? | Chiusa (D-127): sì, clone dal repository locale dentro `repos/arianna` come progetto `arianna` L1; i lavori tornano come rami che unisce l'utente |
+| D-078 | 2. Una sola memoria di sviluppo (tutto nel clone) o un file distinto per la scheda? | Chiusa (D-127): una sola memoria in git; il fascicolo è generato a ogni lavoro dai documenti del clone |
+| D-078 | 3. Scheda nuova `developer` o il `coder` con una regola in più? | Chiusa (D-127): scheda nuova `god` in sola lettura; i sottocompiti li fa il `coder` com'è |
+| D-078 | 4. Chi fa il commit nel clone? | Chiusa (D-127): nessun agente (D-174); «Prepara il ramo» fa il commit nel clone al clic dell'utente, l'unione la fa l'utente |
+| D-078 | 5. Una sola delega attiva sul progetto di sviluppo? | Chiusa (D-127): no, sottocompiti in parallelo secondo la quota, ciascuno nel suo clone, mai due sugli stessi file |
+| D-078 | 6. Quando cominciare? | Chiusa (D-127): adesso (2026-10-11) |
+| D-078 | 7. Chi lancia `pnpm check` completo dopo un run? | Chiusa (D-127): nella sandbox build, lint, eval e i test senza servizi; il `pnpm check` completo con l'hook di pre-commit quando l'utente unisce |
 | D-079 Catalogo "Agenzia" | 1. Catalogo come proposto (clone fissato, importatore, schede attive solo con approvazione)? | Chiusa: doppione della conferma `conf-D-079` |
 | D-079 | 2. Chi fa il clone e quando? | Aperta |
 | D-079 | 3. Tetto delle schede adottate: L1 o L0? | Chiusa: L0 (D-119, T3b) |

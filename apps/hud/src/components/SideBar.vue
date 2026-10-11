@@ -10,13 +10,13 @@ import Icon from './Icon.vue';
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
  * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Segretaria, Pensieri, Conoscenza, Progetti, Clienti, Cardwall, Ufficio, Impostazioni); the
+ * Segretaria, GOD, Pensieri, Conoscenza, Progetti, Clienti, Cardwall, Ufficio, Impostazioni); the
  * conversations, pinned first. The theme and the agents are in the top bar
  * (D-158).
  */
 const props = defineProps<{
   live: LiveState;
-  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'office' | 'projects' | 'clients' | 'cardwall';
+  page: 'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'projects' | 'clients' | 'cardwall';
   conversations: Conversation[];
   archived: Conversation[];
   systemChats: Conversation[];
@@ -34,6 +34,7 @@ const emit = defineEmits<{
   search: [];
   create: [];
   secretary: [];
+  god: [];
   thoughts: [];
   knowledge: [];
   projects: [];
@@ -107,6 +108,17 @@ function itemClass(on: boolean): string {
         @click="emit('secretary')"
       >
         <Icon name="secretary" :size="16" />Segretaria
+      </button>
+      <!-- GOD (D-127): Arianna developed from inside Arianna, in a clone of its code. -->
+      <button
+        type="button"
+        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+        :class="itemClass(page === 'god')"
+        :aria-current="page === 'god' ? 'page' : undefined"
+        title="Sviluppa Arianna da dentro Arianna, in un clone del suo codice"
+        @click="emit('god')"
+      >
+        <Icon name="god" :size="16" />GOD
       </button>
       <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'thoughts')" :aria-current="page === 'thoughts' ? 'page' : undefined" @click="emit('thoughts')">
         <Icon name="thoughts" :size="16" />Pensieri

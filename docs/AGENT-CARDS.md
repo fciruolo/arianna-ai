@@ -66,6 +66,7 @@ Gli schemi degli argomenti stanno in `TOOL_ARGS` di `packages/agents/src/protoco
 | Coder | Scrive e modifica codice | L1 nel cloud; L2 solo con modello locale | Claude Code, Codex, locale | Dati privati nel cloud (`cloud_max_label: L1`); comunicazione esterna in locale |
 | Reviewer | Rivede diff e test con un modello diverso da chi ha scritto | L1 | Codex, Claude Code, locale | Comunicazione esterna |
 | Designer | Disegna pagine e schermate come mockup HTML autonomi nel progetto | L1 nel cloud; L2 solo con modello locale | Claude Code, Codex, locale (sceglie l'utente a ogni card) | Dati privati nel cloud (`cloud_max_label: L1`); comunicazione esterna in locale |
+| GOD | Sviluppa Arianna da dentro Arianna (D-127): legge un clone del suo codice in `repos/arianna`, risponde e propone il piano dei sottocompiti; solo in chat diretta sul progetto `arianna`, mai destinatario delle deleghe di Arianna | L1 | Claude Code, Codex (a scelta col modello della chat) | Dati privati (L1 al massimo, solo `repo.read`, niente KB né rete) |
 | Archivista | Classifica e estrae documenti | L2 (L3 solo come riferimenti al vault) | Locale | Comunicazione esterna |
 | Segretario | Bozze, agenda, promemoria | L2 | Locale | Invio senza approvazione; lettura di posta vera solo con Dual LLM |
 | Ricercatore | Cerca sul web | L0 | Claude Code, Codex, locale | Dati privati |

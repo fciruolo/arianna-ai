@@ -2,6 +2,7 @@
 // paths have a single source of truth.
 // Usage: node scripts/compose.ts up -d --wait
 import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { loadConfig } from '@arianna/config';
@@ -18,7 +19,10 @@ const git = (flag: string): string | null => {
     return null;
   }
 };
-const guard = composeGuard(git('--git-dir'), git('--git-common-dir'), process.argv.slice(2));
+const gitDir = git('--git-dir');
+// The mark of a clone of GOD (apps/core/src/god/clone.ts, GOD_MARKER).
+const godClone = gitDir !== null && existsSync(join(gitDir, 'arianna-god'));
+const guard = composeGuard(gitDir, git('--git-common-dir'), process.argv.slice(2), godClone);
 if (!guard.run) {
   console.error(guard.message);
   process.exit(guard.exitCode);

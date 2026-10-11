@@ -2,6 +2,18 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- GOD, Arianna sviluppata da dentro Arianna: voce «GOD» nella barra sopra «Pensieri» e pagina con il clone e le conversazioni; GOD legge un clone del codice in `repos/arianna/main`, mai l'installazione (D-127, I-5 G1).
+- `pnpm god:clone` e «Crea/Aggiorna il clone»: il clone si fa dal repository locale, senza `data/` né `config/arianna.toml`, e si rifiuta se contiene dati di un'installazione (D-127, I-5 G1).
+- Il fascicolo di sviluppo: a ogni lavoro sul codice di Arianna l'agente legge lo stato di HANDOFF, le ultime decisioni, le fasi e i task aperti, scritti dal codice dai documenti del clone (D-127, I-5 G1).
+
+### Sicurezza
+
+- `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).
+
 ## [0.64.0] - 2026-10-11
 
 ### Cambiato

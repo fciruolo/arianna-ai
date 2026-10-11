@@ -28,6 +28,8 @@ import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
 import ThoughtsPage from './components/ThoughtsPage.vue';
+import GodPage from './components/GodPage.vue';
+import { GOD_AGENT } from './lib/god.ts';
 import VoiceTrial from './components/VoiceTrial.vue';
 import { loadDevPending, loadInstallation } from './lib/api.ts';
 import { pendingText } from './lib/dev-progress.ts';
@@ -55,6 +57,7 @@ import {
   isOfficePath,
   isSecretaryPath,
   isSettingsPath,
+  isGodPath,
   isThoughtsPath,
   isVoiceTrialPath,
   knowledgeFocus,
@@ -65,6 +68,7 @@ import {
   pathFor,
   settingsPathFor,
   settingsSlug,
+  GOD_PATH,
   THOUGHTS_PATH,
   VOICE_TRIAL_PATH,
   type KnowledgeSource,
@@ -330,9 +334,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -400,6 +404,16 @@ function openKnowledge(nodeId?: string, source: KnowledgeSource = 'kb'): void {
   knowledgeNode.value = nodeId;
   knowledgeFrom.value = source;
   openPage('knowledge', knowledgePathFor(nodeId, source), 'Conoscenza');
+}
+
+/** GOD (D-127): its clone and its conversations. */
+function openGod(): void {
+  openPage('god', GOD_PATH, 'GOD');
+}
+
+/** A new conversation with GOD on a part of the container of Arianna's clones (D-127). */
+function openGodChat(workspace: string): void {
+  openDraft({ mode: 'work', project: workspace, agent: GOD_AGENT });
 }
 
 /** The thoughts (D-090). */
@@ -504,6 +518,10 @@ function followAddress(): void {
   }
   if (isThoughtsPath(window.location.pathname)) {
     openThoughts();
+    return;
+  }
+  if (isGodPath(window.location.pathname)) {
+    openGod();
     return;
   }
   if (isOfficePath(window.location.pathname)) {
@@ -710,6 +728,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @create="openNew"
       @secretary="openSecretary"
       @thoughts="openThoughts"
+      @god="openGod"
       @knowledge="openKnowledge()"
       @office="openOffice"
       @projects="openProjects()"
@@ -768,6 +787,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
+          <template v-else-if="page === 'god'">Arianna / <b class="font-medium text-ink">GOD</b></template>
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
           <template v-else-if="page === 'clients'">Arianna / <b class="font-medium text-ink">Clienti</b></template>
@@ -886,6 +906,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
+      <GodPage v-else-if="page === 'god'" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
@@ -993,7 +1014,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
     <NewConversationDialog
       v-if="showNew"
       :projects="projects"
-      :agents="directAgents"
+      :agents="directAgents.filter((entry) => entry.container === undefined)"
       :characters="characters?.agents"
       :initial-agent="newWith"
       @close="showNew = false"

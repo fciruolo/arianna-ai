@@ -26,7 +26,9 @@ import { createClaudeExecutor, createCodexExecutor, createLocalModel, type Claud
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
-import { directPolicies } from './direct-chat.ts';
+import { directPolicies, type DirectPolicy } from './direct-chat.ts';
+import { createGodApi } from './god/api.ts';
+import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
@@ -615,6 +617,12 @@ const imReports = createImReporter({
   dataDir: config.paths.data,
   onError: report,
 });
+// D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
+const directAgents = (): DirectPolicy[] =>
+  directPolicies(agents, {
+    claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+    codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+  });
 const server = await startApiServer({
   sql,
   live,
@@ -648,11 +656,15 @@ const server = await startApiServer({
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, voiceDirs.models, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
-  directAgents: () =>
-    directPolicies(agents, {
-      claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
-      codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
-    }),
+  directAgents,
+  // GOD (D-127): the clone of Arianna's code and GOD's conversations.
+  god: createGodApi({
+    sql,
+    home: config.home,
+    data: config.paths.data,
+    projects: () => settings.current().projects,
+    available: () => directAgents().some((policy) => policy.agent === GOD_AGENT),
+  }),
   participantAgent: (name) => {
     const agent = agents.get(name);
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };

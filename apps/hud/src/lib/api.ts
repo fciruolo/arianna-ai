@@ -1,3 +1,4 @@
+import type { GodStatus } from './god.ts';
 import type { CallInfo } from './calls.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
 import type { CardDetailData, CardFile, CardLink, CardWall, ChecklistItem, MoveTarget } from './cardwall.ts';
@@ -255,6 +256,16 @@ export async function loadIncognitoNotice(mode: ConversationMode, project?: stri
 /** "Termina" (D-136): the core stops the work, deletes the texts and says what it deleted and what stays outside; undefined when its answer is not the contract's. */
 export async function endIncognito(conversationId: string): Promise<EndResult | undefined> {
   return parseEndResult(await call<unknown>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/end`, {}));
+}
+
+/** The page of GOD (D-127): project, clone, conversations. */
+export async function loadGod(): Promise<GodStatus> {
+  return call<GodStatus>('GET', '/api/god');
+}
+
+/** "Crea il clone" / "Aggiorna il clone" (D-127): the core runs pnpm god:clone's steps. */
+export async function syncGodClone(): Promise<GodStatus> {
+  return call<GodStatus>('POST', '/api/god/clone', {});
 }
 
 /** The agents the user may talk with directly now (D-111d). */

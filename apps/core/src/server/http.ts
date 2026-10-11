@@ -73,6 +73,8 @@ import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
+import type { GodApi } from '../god/api.ts';
+import { GodCloneError } from '../god/clone.ts';
 import type { SkillsCatalog } from '../skills-catalog.ts';
 import { HubError } from '../hub-http.ts';
 import type { HuggingFace } from '../huggingface.ts';
@@ -87,7 +89,7 @@ import { SettingsError, type SettingsPage } from '../settings-page.ts';
 import type { InstallationInfo } from '../installation.ts';
 import { AlreadySavedError, captureMessage, savedMessageNotes } from '../saved-messages.ts';
 import { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, searchAll, SearchError } from '../search.ts';
-import type { DirectPolicy } from '../direct-chat.ts';
+import { projectFits, type DirectPolicy } from '../direct-chat.ts';
 import { activeParticipants, removeParticipant, type LeaveRule } from '../participants.ts';
 import { eraseConversation, type EraseResult } from '../erase.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
@@ -173,6 +175,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
+  god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
   installation?: () => InstallationInfo;
   /**
@@ -991,6 +995,21 @@ function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
  * the text of one with its notice. A source is `owner/repo`, a skill
  * `owner/repo/slug` in the query: the catalog checks both, no route takes a path.
  */
+/** The page of GOD (D-127): status of the project and the clone, the conversations, "Aggiorna il clone". */
+function godRoutes(god: GodApi | undefined): Route[] {
+  const need = (): GodApi => {
+    if (god === undefined) throw new HttpError(404, 'not found');
+    return god;
+  };
+  return [
+    route('GET', '/api/god', async () => ({ body: await need().status() })),
+    route('POST', '/api/god/clone', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { body: await need().syncClone() };
+    }),
+  ];
+}
+
 function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
   const need = (): SkillsCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
@@ -1657,6 +1676,10 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       // Who answers in place of Arianna (D-111d): only here, at creation; no route changes it later. Its card says how.
       const policy = body.agent === undefined ? undefined : (directAgents?.() ?? []).find((item) => item.agent === body.agent);
       if (body.agent !== undefined && policy === undefined) throw new HttpError(400, 'agent is not one the user may talk with now');
+      // GOD only on a clone of Arianna's code (D-127).
+      if (policy !== undefined && !projectFits(policy, typeof body.project === 'string' ? body.project : undefined)) {
+        throw new HttpError(400, `${policy.agent} works only on the project ${policy.container ?? ''}`);
+      }
       const agent = policy === undefined ? undefined : { name: policy.agent, modes: policy.modes, project: policy.project };
       // A work conversation starts with the user's default model, while this installation offers it:
       // this check, against what the selector offers, is the one that counts.
@@ -2678,6 +2701,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   if (error instanceof SearchError) return { status: 400, message: error.message };
   if (error instanceof UploadError) return { status: error.code === 'invalid' ? 400 : 409, message: error.message };
   if (error instanceof HubError) return { status: { invalid: 400, blocked: 403, 'not-found': 404, conflict: 409, upstream: 502 }[error.code], message: error.message };
+  if (error instanceof GodCloneError) return { status: 409, message: error.message };
   if (error instanceof DesignCatalogError) return { status: { invalid: 400, 'not-found': 404, conflict: 409, blocked: 403, failed: 502 }[error.code], message: error.message };
   if (error instanceof ModelActionError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
   if (error instanceof ModelEvalError) return { status: { 'not-found': 404, invalid: 400, conflict: 409 }[error.code], message: error.message };
@@ -2828,6 +2852,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...modelActionRoutes(options.modelActions));
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
+  table.push(...godRoutes(options.god));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
