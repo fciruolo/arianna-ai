@@ -433,8 +433,10 @@ export async function processStepJob(
           return 'waiting-user';
         }
         // A task that has read finance data never asks one (D-183): nothing of it leaves, even with the user's approval.
-        // An invalid request, with its fixed reason (the chat has its Italian text).
-        if (task.finance) {
+        // An invalid request, with its fixed reason (the chat has its Italian text). The mark is read again, the row
+        // locked: a finance tool of this very step saved it after the task was loaded.
+        const [marked] = await tx<{ finance: boolean }[]>`SELECT finance FROM tasks WHERE id = ${task.id} FOR UPDATE`;
+        if (task.finance || marked?.finance !== false) {
           await moveTask(tx, task.id, 'waiting_user', { reason: 'the agent asked for an invalid declassification', cause: 'approval' });
           return 'waiting-user';
         }

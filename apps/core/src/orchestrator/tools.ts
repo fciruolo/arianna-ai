@@ -48,6 +48,8 @@ export interface ToolResult {
   label: Label;
   /** `im.add` above the label of the IM (D-167): nothing written, the user confirms this first. */
   confirm?: ImProposal;
+  /** The step's context after the tool, when the tool changed it (a finance read marks it, D-183). */
+  context?: Context;
 }
 
 /** Longest page text shown to the model in one result. */

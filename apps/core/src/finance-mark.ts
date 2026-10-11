@@ -1,6 +1,7 @@
 import { createContext, FINANCE_DERIVED_SOURCE, FINANCE_LABEL, type Context, type Label } from '@arianna/policy';
 
 import type { Queryable } from './db/client.ts';
+import { isUuid } from './conversations.ts';
 
 /**
  * The finance mark of the core (I-18, D-183): a conversation, task or run
@@ -40,4 +41,14 @@ export function outputSource(row: Pick<Marked, 'finance'>, source: string): stri
  */
 export async function markTask(sql: Queryable, taskId: string): Promise<void> {
   await sql`UPDATE tasks SET finance = true, effective_label = ${FINANCE_LABEL}::privacy_label, updated_at = now() WHERE id = ${taskId} AND NOT finance`;
+}
+
+/**
+ * The conversation is marked (I-18, D-183): nothing of it is saved in kb/,
+ * whole or a message at a time, nor found by the search.
+ */
+export async function isFinanceConversation(sql: Queryable, conversationId: string): Promise<boolean> {
+  if (!isUuid(conversationId)) return false;
+  const [row] = await sql<{ finance: boolean }[]>`SELECT finance FROM conversations WHERE id = ${conversationId}`;
+  return row?.finance === true;
 }

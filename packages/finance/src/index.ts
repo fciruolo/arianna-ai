@@ -11,7 +11,7 @@ export { DATE_FORMATS, columnOf, findHeader, guessProfile, normalizeHeader, pars
 export type { AmountColumns, BankProfile, DateFormat, DecimalMark } from './profiles.ts';
 // The fingerprint's own normalization, apart from the analysis's normalizeDescription.
 export { OccurrenceCounter, fingerprint, normalizeDescription as fingerprintDescription } from './fingerprint.ts';
-export { detectKind, isNewestFirst, previewImport } from './import.ts';
-export type { FileKind, ImportPreview, PreviewOptions, PreviewRow, RejectReason } from './import.ts';
+export { detectKind, isNewestFirst, previewImport, previewStatement, readStatement } from './import.ts';
+export type { FileKind, ImportPreview, PreviewOptions, PreviewRow, RejectReason, Statement } from './import.ts';
 
 export * from './analysis/index.ts';

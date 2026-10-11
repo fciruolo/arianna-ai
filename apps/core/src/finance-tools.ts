@@ -25,6 +25,8 @@ export interface FinanceToolEnv {
 export interface FinanceToolResult {
   text: string;
   label: Label;
+  /** The context after the read: marked at once (recordFinanceRead), for what the step does next. */
+  context?: Context;
 }
 
 /** Movements shown by one search when the model asks for no number. */
@@ -41,17 +43,19 @@ export async function runFinanceTool(tool: FinanceToolId, args: Record<string, u
   const read = recordFinanceRead(env.context);
   if (!read.allowed) return { text: `error: ${tool}: finance data is read only in a private conversation`, label: 'L0' };
   await markTask(env.sql, env.taskId);
+  // From here on the step works in the marked context, not in the one it started with.
+  const marked: FinanceToolEnv = { ...env, context: read.context };
   try {
     switch (tool) {
       case 'finance.summary':
-        return { text: await summaryText(env, args), label: FINANCE_LABEL };
+        return { text: await summaryText(marked, args), label: FINANCE_LABEL, context: read.context };
       case 'finance.search':
-        return { text: await searchText(env, args), label: FINANCE_LABEL };
+        return { text: await searchText(marked, args), label: FINANCE_LABEL, context: read.context };
       case 'finance.alerts':
-        return { text: await alertsText(env, args), label: FINANCE_LABEL };
+        return { text: await alertsText(marked, args), label: FINANCE_LABEL, context: read.context };
     }
   } catch (error) {
-    if (error instanceof FinanceError) return { text: `error: ${tool}: ${error.message}`, label: FINANCE_LABEL };
+    if (error instanceof FinanceError) return { text: `error: ${tool}: ${error.message}`, label: FINANCE_LABEL, context: read.context };
     throw error;
   }
 }

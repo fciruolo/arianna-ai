@@ -75,9 +75,15 @@ describe('privacy filter', () => {
     assert.equal(pick(decision), 'local/local-large');
     assert.ok(decision.candidates.some((c) => c.model === 'sonnet' && c.outcome === 'privacy'));
     assert.match(decision.reason, /finance data: local only/);
-    // The same work without the mark: the router does not stop at the label of a finance-free context.
-    assert.equal(pick(route(coding(), ctx('L1'), FREE, CONFIG)), 'claude/sonnet');
-    assert.doesNotMatch(route(coding(), ctx('L1'), FREE, CONFIG).reason, /finance/);
+    // The same agent without the mark. At L2 it stays local by the label alone (canSendTo: L2 never reaches the cloud,
+    // so a finance context, always L2, cannot be told apart by the pick): the reason does not name finance.
+    const unmarked = route(coding({ agent }), createContext('L2', 'L2'), FREE, CONFIG);
+    assert.equal(pick(unmarked), 'local/local-large');
+    assert.doesNotMatch(unmarked.reason, /finance/);
+    // At L1, the same agent goes to the cloud: the mark is what kept the first one local.
+    const clean = route(coding({ agent }), createContext('L2', 'L1'), FREE, CONFIG);
+    assert.equal(pick(clean), 'claude/sonnet');
+    assert.doesNotMatch(clean.reason, /finance/);
   });
 
   it('a context not issued by the policy is read as L2', () => {

@@ -759,8 +759,7 @@ async function applyPlannedDeclassify(env: DelegateEnv, task: Task, delegation: 
   if (declassify === undefined || isAtMost(label, declassify.to)) return label;
   const { approvalId, to } = declassify;
   await env.sql.begin(async (tx) => {
-    // The task's context: a context that has read finance data is never declassified (D-183).
-    // The policy refuses it for a task that has read finance data (D-183).
+    // The task's context: the policy refuses to declassify one that has read finance data (D-183).
     await applyDeclassifyIn(tx, { value: delegation.brief, label, source: outputSource(task, `task:${task.id}`) }, to, approvalId, contextOf(task, task.effectiveLabel));
     await updateDelegation(tx, delegation.id, { label: to });
   });
