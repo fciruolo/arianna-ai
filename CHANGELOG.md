@@ -15,6 +15,12 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - «Riassumi e riparti» nelle chat con GOD: una conversazione nuova che riparte da un riassunto scritto dal codice, mentre la vecchia resta intera (D-127, I-5 G4).
 
+- Il personaggio pixel di GOD e la sua isola «GOD» nell'ufficio, dove siedono anche i Coder dei sottocompiti (D-127, I-5 G5).
+
+### Cambiato
+
+- Nell'ufficio le parti di un progetto contenitore stanno sull'isola del loro progetto invece che dietro l'archivio (D-127, I-5 G5).
+
 ### Sicurezza
 
 - `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).

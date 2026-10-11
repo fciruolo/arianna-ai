@@ -5,7 +5,9 @@ import { actOnSubtask, loadGod, loadGodPlans, syncGodClone } from '../lib/api.ts
 import { cloneText, godBlocker, type GodStatus } from '../lib/god.ts';
 import { ACTION_TEXT, actionsOf, quotaText, STATE_TEXT, STATE_TONE, verdictText, waitsText, type GodPlan, type GodSubtask, type SubtaskAction, type Tone } from '../lib/god-work.ts';
 import { errorText } from '../lib/italian.ts';
+import type { CharacterChoice } from '../lib/types.ts';
 import Icon from './Icon.vue';
+import PixelAgent from './PixelAgent.vue';
 
 /**
  * The page of GOD (D-127): Arianna developed from inside Arianna. The clone
@@ -16,6 +18,7 @@ import Icon from './Icon.vue';
  * chats, and Ferma, Riprendi, Scarta, Prepara il ramo; a branch ready shows
  * the commands that merge it, which the user runs. Read again every 10 s.
  */
+const props = defineProps<{ character?: CharacterChoice | undefined }>();
 const emit = defineEmits<{
   /** A new conversation with GOD on this part of the container. */
   chat: [workspace: string];
@@ -102,7 +105,8 @@ onBeforeUnmount(() => window.clearInterval(timer));
     <div class="mx-auto flex max-w-[960px] flex-col gap-5 px-4 pt-5 pb-10 md:px-6">
       <section class="hud-card p-4" aria-labelledby="god-title">
         <div class="flex flex-wrap items-center gap-2">
-          <Icon name="god" :size="16" />
+          <PixelAgent v-if="props.character !== undefined" :choice="props.character" pose="idle" :scale="1" label="GOD" />
+          <Icon v-else name="god" :size="16" />
           <h1 id="god-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">GOD</h1>
           <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted">Arianna sviluppata da dentro Arianna</span>
           <button type="button" class="ml-auto rounded-md p-1.5 text-muted hover:text-ink" title="Rileggi" aria-label="Rileggi" @click="refresh">

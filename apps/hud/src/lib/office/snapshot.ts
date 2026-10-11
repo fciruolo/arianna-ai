@@ -103,7 +103,9 @@ export function assignIslands(projects: OfficeInput['projects'], slots: number):
   const valid: OfficeIsland[] = [];
   const archived: string[] = [];
   let unnamed = 0;
-  for (const project of projects) {
+  for (const listed of projects) {
+    // The parts of a container (D-145, `<project>:<part>`) share the island of their project (D-127: GOD's clones).
+    const project = { ...listed, name: containerOf(listed.name) };
     if (seen.has(project.name)) continue;
     seen.add(project.name);
     if (!PROJECT_NAME.test(project.name)) {
@@ -117,11 +119,17 @@ export function assignIslands(projects: OfficeInput['projects'], slots: number):
   return { islands: valid, archived, unnamed };
 }
 
+/** The project of a part (`demo:admin` → `demo`); a project of one part is its own name. */
+export function containerOf(name: string): string {
+  const at = name.indexOf(':');
+  return at < 0 ? name : name.slice(0, at);
+}
+
 /** The island of a repository the core names (a project name, or its path), or the archive. */
 export function placeOfRepo(repo: string | null, projects: OfficeInput['projects'], islands: readonly OfficeIsland[]): OfficePlace {
   if (repo !== null) {
     const project = projects.find((item) => item.name === repo || item.path === repo || item.path.split('/').at(-1) === repo);
-    const island = project === undefined ? undefined : islands.find((item) => item.project === project.name);
+    const island = project === undefined ? undefined : islands.find((item) => item.project === containerOf(project.name));
     if (island !== undefined) return { kind: 'island', slot: island.slot };
   }
   return { kind: 'archive' };

@@ -906,7 +906,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
-      <GodPage v-else-if="page === 'god'" @chat="openGodChat" @open="openConversation" />
+      <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />

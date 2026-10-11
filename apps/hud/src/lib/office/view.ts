@@ -52,6 +52,11 @@ export interface AreaTag {
 }
 
 /** Projects behind the archive: the named ones and those only counted. */
+/** The name on an island: the project's, or «GOD» for the clones of Arianna's own code (D-127). */
+export function islandName(project: string): string {
+  return project === 'arianna' ? 'GOD' : project;
+}
+
 export function archiveCount(snapshot: Pick<OfficeSnapshot, 'archived' | 'unnamed'>): number {
   return snapshot.archived.length + snapshot.unnamed;
 }
@@ -68,7 +73,7 @@ export function areaTags(map: Pick<OfficeMap, 'anchors'>, snapshot: Pick<OfficeS
     tag(anchors.private.room, 'Privata', 'L2'),
     ...anchors.islands.map((island, slot) => {
       const project = snapshot.islands.find((item) => item.slot === slot);
-      return project === undefined ? tag(island.room, 'libera', null, true) : tag(island.room, project.project, project.label);
+      return project === undefined ? tag(island.room, 'libera', null, true) : tag(island.room, islandName(project.project), project.label);
     }),
     tag(anchors.pause.room, 'Pausa', null),
     tag(anchors.decisions.room, 'Decisioni', null),
