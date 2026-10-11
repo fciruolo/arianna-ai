@@ -131,6 +131,12 @@ test('a plan of GOD is read by the core from the stored answer, approved once, a
   assert.equal(plan.subtasks.length, 2);
   assert.match(plan.subtasks[0]?.part ?? '', /^g\d{3}-calcolo-della-quota$/);
   await assert.rejects(work.approve(messageId), (error: unknown) => error instanceof GodError && error.code === 'conflict');
+  // Two clicks at once on another plan: one approves, the other is told it is approved (never a 500).
+  const twice = await godAnswer(parts, PLAN);
+  const both = await Promise.allSettled([work.approve(twice.messageId), work.approve(twice.messageId)]);
+  assert.equal(both.filter((result) => result.status === 'fulfilled').length, 1);
+  const lost = both.find((result) => result.status === 'rejected');
+  assert.ok(lost?.status === 'rejected' && lost.reason instanceof GodError && lost.reason.code === 'conflict');
   assert.equal((await work.messagePlan(messageId)).approved?.id, plan.id);
 });
 

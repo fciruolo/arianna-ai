@@ -32,7 +32,7 @@ import { createContext, isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
-import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal } from '../god/clone.ts';
+import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } from '../god/clone.ts';
 import { carryParts } from '../god/carry.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
@@ -527,7 +527,10 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   // The folder itself (D-056): with changes the user has not committed, the launch waits for their word.
   const folder = await folderOf(env, delegation);
   if ('error' in folder) return closed('failed', folder.error);
-  const dirty = folder.opened.dirty ?? [];
+  // In the clone of a subtask of GOD (D-127) the uncommitted changes are the subtask's own work, never the
+  // user's: the Coder goes on over them and the Reviewer reviews them, with no consent to ask.
+  const godSubtask = folder.container === GOD_PROJECT && folder.part !== null && SUBTASK_PART.test(folder.part);
+  const dirty = godSubtask ? [] : (folder.opened.dirty ?? []);
   if (dirty.length > 0) {
     const consent = await workspaceApprovalOf(env.sql, delegation);
     if (consent?.state === 'rejected' || consent?.state === 'expired') {

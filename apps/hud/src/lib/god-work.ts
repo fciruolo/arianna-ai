@@ -107,7 +107,9 @@ export function verdictText(review: ReviewVerdict | null): string | null {
 }
 
 /** The actions a subtask offers now, in the order of the buttons. */
-export function actionsOf(subtask: Pick<GodSubtask, 'state'>): SubtaskAction[] {
+export function actionsOf(subtask: Pick<GodSubtask, 'state'> & Partial<Pick<GodSubtask, 'conversationId'>>): SubtaskAction[] {
+  // It asks for the user before its chat was opened (its clone failed): it starts again from the queue.
+  if (subtask.state === 'attention' && subtask.conversationId === null) return ['resume', 'discard'];
   switch (subtask.state) {
     case 'queued':
     case 'working':

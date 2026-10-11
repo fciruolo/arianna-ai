@@ -21,6 +21,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 - Nell'ufficio le parti di un progetto contenitore stanno sull'isola del loro progetto invece che dietro l'archivio (D-127, I-5 G5).
 
+### Corretto
+
+- GOD: il Reviewer di un sottocompito non chiede più la scheda «Cartella con modifiche», i pulsanti del cruscotto rispondono subito, due «Approva e avvia» insieme non danno errore, eliminare una conversazione con GOD non dà errore (D-127).
+
 ### Sicurezza
 
 - `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).

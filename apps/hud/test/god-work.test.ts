@@ -16,6 +16,8 @@ test('the actions of a subtask follow its state', () => {
   assert.deepEqual(actionsOf({ state: 'stopped' }), ['resume', 'branch', 'discard']);
   assert.deepEqual(actionsOf({ state: 'branch' }), ['discard']);
   assert.deepEqual(actionsOf({ state: 'discarded' }), []);
+  assert.deepEqual(actionsOf({ state: 'attention', conversationId: null }), ['resume', 'discard'], 'its clone failed: it starts again');
+  assert.deepEqual(actionsOf({ state: 'attention', conversationId: 'c' }), ['branch', 'stop', 'discard']);
 });
 
 test('verdict, waits and quota in words', () => {

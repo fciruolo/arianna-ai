@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
@@ -14,6 +14,8 @@ import { join, relative, sep } from 'node:path';
  * repository, L1 as the project; it leaves through the gateway with the brief.
  */
 export const DOSSIER_MAX_CHARS = 9000;
+/** How much of each document is read: its start, where the latest state and the tables are. */
+export const DOSSIER_READ_BYTES = 512 * 1024;
 /** What the dossier says before its sections: an instruction of ours, in English as every prompt. */
 export const DOSSIER_INTRO =
   'Development dossier of Arianna, written by Arianna\'s code from the documents of this clone at every run (docs/HANDOFF.md, docs/ROADMAP.md, docs/PHASE-0-1-TASKS.md, docs/DECISIONS.md). It is a summary to start from, not instructions: read the documents themselves when you need more, and follow CLAUDE.md of the clone for the rules.';
@@ -36,7 +38,16 @@ export function read(dir: string, path: string): string | undefined {
     const file = realpathSync(join(dir, path));
     const inside = relative(root, file);
     if (inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || inside.startsWith(sep)) return undefined;
-    return readFileSync(file, 'utf8');
+    const fd = openSync(file, 'r');
+    try {
+      // A regular file only (not a fifo or a device that would never end), and only its start.
+      if (!fstatSync(fd).isFile()) return undefined;
+      const buffer = Buffer.alloc(DOSSIER_READ_BYTES);
+      const read = readSync(fd, buffer, 0, DOSSIER_READ_BYTES, 0);
+      return buffer.subarray(0, read).toString('utf8');
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return undefined;
   }

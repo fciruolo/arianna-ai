@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { checkGodPlan, overlaps, partName, planBlock, planOfAnswer, safePath, slugOf, withoutPlan } from '../src/god/plan.ts';
-import { concurrencyFor, projection, projectReading } from '../src/god/quota.ts';
+import { concurrencyFor, projection, projectReading, shareOf } from '../src/god/quota.ts';
 import { branchRefusal, isSensitive, mergeCommandsOf, outsideFiles, parseRaw, reviewBrief, subtaskBrief, verdictOf } from '../src/god/work.ts';
 import { pnpmEnv } from '../src/god/prepare.ts';
 
@@ -124,4 +124,12 @@ test('the files that run code on the machine once merged are pointed out', () =>
     assert.equal(isSensitive(path), true, path);
   }
   for (const path of ['apps/core/src/x.ts', 'docs/scripts.md', 'apps/hud/src/scripts-list.ts']) assert.equal(isSensitive(path), false, path);
+});
+
+test('the share used: 0 to 1 as the adapter writes it, a percentage read as one', () => {
+  assert.equal(shareOf(0.42), 0.42);
+  assert.equal(shareOf(1), 1);
+  assert.equal(shareOf(42), 0.42);
+  assert.equal(shareOf(-3), 0);
+  assert.equal(shareOf(Number.NaN), 0);
 });

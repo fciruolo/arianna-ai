@@ -297,16 +297,29 @@ async function changedFiles(sql: Queryable, conversationId: string): Promise<str
   return rows.map((row) => row.path);
 }
 
-async function setState(sql: Queryable, id: string, state: SubtaskState, extra: { reason?: string | null; review?: ReviewVerdict | null; conversationId?: string; reviewConversationId?: string; commitSha?: string } = {}): Promise<void> {
-  await sql`
+/**
+ * Moves a subtask from the state it was read in (`row.state`): a change made
+ * meanwhile (a click of the user while the tick worked, or the other way
+ * round) wins, and this one is dropped. True when it moved.
+ */
+async function setState(
+  sql: Queryable,
+  row: Pick<SubtaskRow, 'id' | 'state'>,
+  state: SubtaskState,
+  extra: { reason?: string | null; review?: ReviewVerdict | null; conversationId?: string; reviewConversationId?: string; commitSha?: string } = {},
+): Promise<boolean> {
+  const moved = await sql`
     UPDATE god_subtasks SET state = ${state}, reason = ${extra.reason ?? null},
+      review = CASE WHEN ${extra.review !== undefined}::boolean THEN ${extra.review ?? null}::text ELSE review END,
       conversation_id = coalesce(${extra.conversationId ?? null}::uuid, conversation_id),
       review_conversation_id = coalesce(${extra.reviewConversationId ?? null}::uuid, review_conversation_id),
       commit_sha = coalesce(${extra.commitSha ?? null}::text, commit_sha),
       updated_at = now()
-    WHERE id = ${id}`;
-  if (extra.review !== undefined) await sql`UPDATE god_subtasks SET review = ${extra.review} WHERE id = ${id}`;
-  await appendEvent(sql, { kind: 'god.subtask', label: 'L0', payload: { subtaskId: id, state } });
+    WHERE id = ${row.id} AND state = ${row.state}
+    RETURNING id`;
+  if (moved.length === 0) return false;
+  await appendEvent(sql, { kind: 'god.subtask', label: 'L0', payload: { subtaskId: row.id, state } });
+  return true;
 }
 
 /** A short reason in our words, kept within the column. */
@@ -318,13 +331,7 @@ export function createGodWork(env: GodWorkEnv) {
   const { sql, home, data } = env;
   const git = env.git ?? godGit(home, data);
   const now = env.now ?? (() => new Date());
-  let chain: Promise<unknown> = Promise.resolve();
-  /** One change of the subtasks at a time (tick and actions): the core is one process. */
-  const serial = <T>(work: () => Promise<T>): Promise<T> => {
-    const run = chain.then(work);
-    chain = run.catch(() => undefined);
-    return run;
-  };
+  let ticking: Promise<void> | undefined;
 
   async function isMerged(commit: string): Promise<boolean> {
     return git(['merge-base', '--is-ancestor', commit, `refs/heads/${GOD_MAIN}`], home).then(
@@ -414,6 +421,8 @@ export function createGodWork(env: GodWorkEnv) {
     if ('error' in checked) throw new GodError('invalid', checked.error);
     if (!isAtMost(answer.label, 'L1')) throw new GodError('invalid', 'il piano è sopra Interno: non va ai sottocompiti');
     const id = await sql.begin(async (tx) => {
+      // One approval at a time: the numbering of the parts and the plan of a message are decided here.
+      await tx`SELECT pg_advisory_xact_lock(hashtext('arianna.god-plans'))`;
       const [existing] = await tx<{ id: string }[]>`SELECT id::text FROM god_plans WHERE message_id = ${messageId}::bigint`;
       if (existing !== undefined) throw new GodError('conflict', 'questo piano è già approvato');
       // One numbering for every subtask ever made: a part's folder is never reused (the column is unique).
@@ -482,21 +491,21 @@ export function createGodWork(env: GodWorkEnv) {
     try {
       await cloneFor(row.part);
     } catch (error) {
-      await setState(sql, row.id, 'attention', { reason: reason(`il clone non si è creato: ${error instanceof Error ? error.message : String(error)}`) });
+      await setState(sql, row, 'attention', { reason: reason(`il clone non si è creato: ${error instanceof Error ? error.message : String(error)}`) });
       return;
     }
     if (!env.parts().includes(godWorkspace(row.part))) {
-      await setState(sql, row.id, 'attention', { reason: `il progetto arianna non è registrato su ${GOD_CONTAINER}: il Coder non può aprire il clone` });
+      await setState(sql, row, 'attention', { reason: `il progetto arianna non è registrato su ${GOD_CONTAINER}: il Coder non può aprire il clone` });
       return;
     }
     const conversationId = await openChat(CODER_AGENT, coder, row.part, plan.model, subtaskBrief(plan, row, total));
-    await setState(sql, row.id, 'working', { conversationId });
+    await setState(sql, row, 'working', { conversationId });
   }
 
   async function startReview(row: SubtaskRow): Promise<void> {
     const reviewer = env.policy(REVIEWER_AGENT);
     if (reviewer === undefined) {
-      if (row.state !== 'reviewed') await setState(sql, row.id, 'reviewed', { review: 'unknown', reason: 'nessun revisore può lavorare ora: rivedi tu le modifiche' });
+      if (row.state !== 'reviewed') await setState(sql, row, 'reviewed', { review: 'unknown', reason: 'nessun revisore può lavorare ora: rivedi tu le modifiche' });
       return;
     }
     if (row.reviewConversationId !== null) {
@@ -506,11 +515,11 @@ export function createGodWork(env: GodWorkEnv) {
         if (error instanceof ChatError && error.code === 'busy') return;
         throw error;
       }
-      await setState(sql, row.id, 'reviewing', { review: null });
+      await setState(sql, row, 'reviewing', { review: null });
       return;
     }
     const reviewConversationId = await openChat(REVIEWER_AGENT, reviewer, row.part, null, reviewBrief(row, false));
-    await setState(sql, row.id, 'reviewing', { review: null, reviewConversationId });
+    await setState(sql, row, 'reviewing', { review: null, reviewConversationId });
   }
 
   /** Moves the subtasks on from what their chats say, then starts the queued ones the quota allows. */
@@ -519,7 +528,7 @@ export function createGodWork(env: GodWorkEnv) {
     for (const row of open) {
       if (row.conversationId === null) {
         // Its chat was erased while it worked: the user decides (Prepara il ramo with what is there, or Scarta).
-        if (row.state === 'working' || row.state === 'reviewing') await setState(sql, row.id, 'attention', { reason: 'la chat del Coder è stata eliminata: prepara il ramo con quello che c\'è, oppure scarta' });
+        if (row.state === 'working' || row.state === 'reviewing') await setState(sql, row, 'attention', { reason: 'la chat del Coder è stata eliminata: prepara il ramo con quello che c\'è, oppure scarta' });
         continue;
       }
       const coder = await latestTask(sql, row.conversationId);
@@ -530,18 +539,18 @@ export function createGodWork(env: GodWorkEnv) {
       const newer = coder !== undefined && (review === undefined ? row.state !== 'reviewed' || work === 'busy' : coder.createdAt > review.createdAt);
       if (row.state === 'working' || row.state === 'attention' || ((row.state === 'reviewing' || row.state === 'reviewed') && newer)) {
         if (work === 'busy') {
-          if (row.state !== 'working') await setState(sql, row.id, 'working');
+          if (row.state !== 'working') await setState(sql, row, 'working');
         } else if (work === 'answered') {
           await startReview(row);
         } else if (row.state !== 'attention') {
-          await setState(sql, row.id, 'attention', { reason: 'il Coder non ha finito: guarda la sua chat e scrivigli, oppure Prepara il ramo con quello che c\'è' });
+          await setState(sql, row, 'attention', { reason: 'il Coder non ha finito: guarda la sua chat e scrivigli, oppure Prepara il ramo con quello che c\'è' });
         }
         continue;
       }
       if (row.state === 'reviewing' && row.reviewConversationId !== null) {
         const outcome = outcomeOf(review);
-        if (outcome === 'answered') await setState(sql, row.id, 'reviewed', { review: verdictOf(await latestAnswer(sql, row.reviewConversationId)) });
-        else if (outcome === 'stuck') await setState(sql, row.id, 'reviewed', { review: 'unknown', reason: 'la revisione non è finita: guarda la chat del Reviewer' });
+        if (outcome === 'answered') await setState(sql, row, 'reviewed', { review: verdictOf(await latestAnswer(sql, row.reviewConversationId)) });
+        else if (outcome === 'stuck') await setState(sql, row, 'reviewed', { review: 'unknown', reason: 'la revisione non è finita: guarda la chat del Reviewer' });
       }
     }
 
@@ -556,7 +565,7 @@ export function createGodWork(env: GodWorkEnv) {
       const siblings = await loadSubtasks('s.plan_id = $1', [row.planId]);
       const waits = await waitingFor(row, siblings);
       if (waits !== undefined) {
-        if (waits.discarded) await setState(sql, row.id, 'attention', { reason: waits.text });
+        if (waits.discarded) await setState(sql, row, 'attention', { reason: waits.text });
         else if (row.reason !== waits.text) await sql`UPDATE god_subtasks SET reason = ${waits.text}, updated_at = now() WHERE id = ${row.id}`;
         continue;
       }
@@ -577,8 +586,12 @@ export function createGodWork(env: GodWorkEnv) {
     return undefined;
   }
 
+  /** One tick at a time: a tick asked while one runs is that one (the clone of a subtask and pnpm install take minutes). */
   function tick(): Promise<void> {
-    return serial(step);
+    ticking ??= step().finally(() => {
+      ticking = undefined;
+    });
+    return ticking;
   }
 
   async function subtask(id: string): Promise<SubtaskRow> {
@@ -596,55 +609,54 @@ export function createGodWork(env: GodWorkEnv) {
   }
 
   /** "Ferma": the steps at work stop, and nothing new starts for it until "Riprendi". */
-  function stop(id: string): Promise<SubtaskView> {
-    return serial(async () => {
+  async function stop(id: string): Promise<SubtaskView> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const row = await subtask(id);
       if (!['queued', 'working', 'reviewing', 'reviewed', 'attention'].includes(row.state)) throw new GodError('conflict', 'questo sottocompito non è al lavoro');
       await stopChats(row);
-      await setState(sql, row.id, 'stopped', { reason: 'fermato da te' });
-      return view(await subtask(id));
-    });
+      // The tick may have moved it meanwhile: read again and stop that.
+      if (await setState(sql, row, 'stopped', { reason: 'fermato da te' })) break;
+    }
+    return view(await subtask(id));
   }
 
   /** "Riprendi": a subtask never started goes back in the queue; one started tells its Coder to go on. */
-  function resume(id: string): Promise<SubtaskView> {
-    return serial(async () => {
-      const row = await subtask(id);
-      if (row.state !== 'stopped') throw new GodError('conflict', 'solo un sottocompito fermato riprende');
-      if (row.conversationId === null) {
-        await setState(sql, row.id, 'queued');
-      } else {
-        try {
-          await sql.begin((tx) => writeUserMessage(tx, row.conversationId ?? '', 'Riprendi il sottocompito da dove ti eri fermato: guarda le modifiche non committate e finisci il lavoro.'));
-        } catch (error) {
-          if (error instanceof ChatError && error.code === 'busy') throw new GodError('conflict', 'il Coder sta ancora lavorando: aspetta che si fermi');
-          throw error;
-        }
-        await setState(sql, row.id, 'working');
+  async function resume(id: string): Promise<SubtaskView> {
+    const row = await subtask(id);
+    if (row.state !== 'stopped' && !(row.state === 'attention' && row.conversationId === null)) {
+      throw new GodError('conflict', 'riprende un sottocompito fermato, o uno che aspetta te prima di partire');
+    }
+    if (row.conversationId === null) {
+      await setState(sql, row, 'queued');
+    } else {
+      try {
+        await sql.begin((tx) => writeUserMessage(tx, row.conversationId ?? '', 'Riprendi il sottocompito da dove ti eri fermato: guarda le modifiche non committate e finisci il lavoro.'));
+      } catch (error) {
+        if (error instanceof ChatError && error.code === 'busy') throw new GodError('conflict', 'il Coder sta ancora lavorando: aspetta che si fermi');
+        throw error;
       }
-      return view(await subtask(id));
-    });
+      await setState(sql, row, 'working');
+    }
+    return view(await subtask(id));
   }
 
   /** "Scarta": the work stops and its clone is deleted (the branch was never merged, or the user does not want it). */
-  function discard(id: string): Promise<SubtaskView> {
-    return serial(async () => {
-      const row = await subtask(id);
-      if (row.state === 'discarded') throw new GodError('conflict', 'già scartato');
-      await stopChats(row);
-      // An agent still at work could write in the folder while it is deleted: the user tries again once it stopped.
-      for (const conversationId of [row.conversationId, row.reviewConversationId]) {
-        if (conversationId !== null && outcomeOf(await latestTask(sql, conversationId)) === 'busy') {
-          if (row.state !== 'stopped') await setState(sql, row.id, 'stopped', { reason: 'fermato da te' });
-          throw new GodError('conflict', 'il lavoro si sta fermando: riprova «Scarta» fra qualche secondo');
-        }
+  async function discard(id: string): Promise<SubtaskView> {
+    const row = await subtask(id);
+    if (row.state === 'discarded') throw new GodError('conflict', 'già scartato');
+    await stopChats(row);
+    // An agent still at work could write in the folder while it is deleted: the user tries again once it stopped.
+    for (const conversationId of [row.conversationId, row.reviewConversationId]) {
+      if (conversationId !== null && outcomeOf(await latestTask(sql, conversationId)) === 'busy') {
+        if (row.state !== 'stopped') await setState(sql, row, 'stopped', { reason: 'fermato da te' });
+        throw new GodError('conflict', 'il lavoro si sta fermando: riprova «Scarta» fra qualche secondo');
       }
-      const dir = godPartDir(home, row.part);
-      // Only a clone of GOD: the mark in its git folder says so.
-      if (existsSync(join(dir, '.git', GOD_MARKER))) rmSync(dir, { recursive: true, force: true });
-      await setState(sql, row.id, 'discarded', { reason: 'scartato da te' });
-      return view(await subtask(id));
-    });
+    }
+    const dir = godPartDir(home, row.part);
+    // Only a clone of GOD: the mark in its git folder says so.
+    if (existsSync(join(dir, '.git', GOD_MARKER))) rmSync(dir, { recursive: true, force: true });
+    await setState(sql, row, 'discarded', { reason: 'scartato da te' });
+    return view(await subtask(id));
   }
 
   /**
@@ -652,43 +664,41 @@ export function createGodWork(env: GodWorkEnv) {
    * the subtask's branch, at the user's click (the agents never commit,
    * D-174), with git and no hooks; then the page shows how to merge it.
    */
-  function prepareBranch(id: string): Promise<SubtaskView> {
-    return serial(async () => {
-      const row = await subtask(id);
-      if (!['reviewed', 'attention', 'stopped'].includes(row.state)) throw new GodError('conflict', 'il ramo si prepara dopo la revisione, o con il lavoro fermo');
-      for (const conversationId of [row.conversationId, row.reviewConversationId]) {
-        if (conversationId !== null && outcomeOf(await latestTask(sql, conversationId)) === 'busy') throw new GodError('conflict', 'un agente sta ancora lavorando su questo sottocompito');
+  async function prepareBranch(id: string): Promise<SubtaskView> {
+    const row = await subtask(id);
+    if (!['reviewed', 'attention', 'stopped'].includes(row.state)) throw new GodError('conflict', 'il ramo si prepara dopo la revisione, o con il lavoro fermo');
+    for (const conversationId of [row.conversationId, row.reviewConversationId]) {
+      if (conversationId !== null && outcomeOf(await latestTask(sql, conversationId)) === 'busy') throw new GodError('conflict', 'un agente sta ancora lavorando su questo sottocompito');
+    }
+    const dir = godPartDir(home, row.part);
+    const refusal = godCloneRefusal(dir);
+    if (refusal !== undefined) throw new GodError('conflict', refusal);
+    const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim();
+    if (branch !== subtaskBranch(row.part)) throw new GodError('conflict', `il clone è sul ramo ${branch}, non su ${subtaskBranch(row.part)}`);
+    if ((await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim() !== '') {
+      await git(['add', '--all'], dir);
+      const changes = parseRaw(await git(['diff', '--cached', '--raw', '-z', '--no-renames'], dir));
+      // What the installation ignores, asked to the installation itself (its .gitignore files, not the clone's).
+      const listed = changes.map((change) => change.path);
+      const ignored = new Set(
+        listed.length === 0
+          ? []
+          : (await git(['check-ignore', '--no-index', '-z', '--stdin'], home, { input: `${listed.join('\0')}\0`, okCodes: [1] })).split('\0').filter((path) => path !== ''),
+      );
+      const refused = branchRefusal(changes, ignored);
+      if (refused !== undefined) {
+        // Nothing committed: the changes stay in the clone, unstaged, for the user (or the Coder) to fix.
+        await git(['reset', '--quiet'], dir);
+        await setState(sql, row, 'attention', { reason: reason(`ramo non preparato: ${refused}`) });
+        return view(await subtask(id));
       }
-      const dir = godPartDir(home, row.part);
-      const refusal = godCloneRefusal(dir);
-      if (refusal !== undefined) throw new GodError('conflict', refusal);
-      const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim();
-      if (branch !== subtaskBranch(row.part)) throw new GodError('conflict', `il clone è sul ramo ${branch}, non su ${subtaskBranch(row.part)}`);
-      if ((await git(['status', '--porcelain', '--untracked-files=all'], dir)).trim() !== '') {
-        await git(['add', '--all'], dir);
-        const changes = parseRaw(await git(['diff', '--cached', '--raw', '-z', '--no-renames'], dir));
-        // What the installation ignores, asked to the installation itself (its .gitignore files, not the clone's).
-        const listed = changes.map((change) => change.path);
-        const ignored = new Set(
-          listed.length === 0
-            ? []
-            : (await git(['check-ignore', '--no-index', '-z', '--stdin'], home, { input: `${listed.join('\0')}\0`, okCodes: [1] })).split('\0').filter((path) => path !== ''),
-        );
-        const refused = branchRefusal(changes, ignored);
-        if (refused !== undefined) {
-          // Nothing committed: the changes stay in the clone, unstaged, for the user (or the Coder) to fix.
-          await git(['reset', '--quiet'], dir);
-          await setState(sql, row.id, 'attention', { reason: reason(`ramo non preparato: ${refused}`) });
-          return view(await subtask(id));
-        }
-        await git([...COMMIT_IDENTITY, 'commit', '--quiet', '--no-verify', '-m', `${row.title} (GOD ${row.part})`], dir);
-      }
-      const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
-      const base = (await git(['rev-parse', `origin/${GOD_MAIN}`], dir)).trim();
-      if (head === base) throw new GodError('conflict', 'nel clone non c\'è nessuna modifica da preparare');
-      await setState(sql, row.id, 'branch', { commitSha: head, reason: null });
-      return view(await subtask(id));
-    });
+      await git([...COMMIT_IDENTITY, 'commit', '--quiet', '--no-verify', '-m', `${row.title} (GOD ${row.part})`], dir);
+    }
+    const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+    const base = (await git(['rev-parse', `origin/${GOD_MAIN}`], dir)).trim();
+    if (head === base) throw new GodError('conflict', 'nel clone non c\'è nessuna modifica da preparare');
+    await setState(sql, row, 'branch', { commitSha: head, reason: null });
+    return view(await subtask(id));
   }
 
   /** "Riassumi e riparti" (G4): a new conversation with GOD from a summary of `conversationId`. */

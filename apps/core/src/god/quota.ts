@@ -53,6 +53,17 @@ export function concurrencyFor(projected: number | undefined): number {
   return 1;
 }
 
+/**
+ * The share used, 0 to 1. The adapter of Claude records `utilization` as the
+ * binary gives it in `rate_limit_info.unifiedWindows` (packages/executors,
+ * claude/stream.ts), documented there as 0 to 1; a value above 1 is read as
+ * a percentage, in case the binary gives one.
+ */
+export function shareOf(utilization: number): number {
+  if (!Number.isFinite(utilization) || utilization < 0) return 0;
+  return utilization > 1 ? utilization / 100 : utilization;
+}
+
 /** The latest reading of each window of Claude, from the events of the last week. */
 export async function quotaReadings(sql: Queryable, now: Date = new Date()): Promise<QuotaReading[]> {
   const rows = await sql<{ payload: { window?: unknown; utilization?: unknown; resetsAt?: unknown } }[]>`
@@ -64,7 +75,7 @@ export async function quotaReadings(sql: Queryable, now: Date = new Date()): Pro
   for (const { payload } of rows) {
     const resetsAt = typeof payload.resetsAt === 'string' ? new Date(payload.resetsAt) : undefined;
     if (typeof payload.window !== 'string' || typeof payload.utilization !== 'number' || resetsAt === undefined || Number.isNaN(resetsAt.getTime())) continue;
-    readings.push({ window: payload.window, utilization: payload.utilization, resetsAt });
+    readings.push({ window: payload.window, utilization: shareOf(payload.utilization), resetsAt });
   }
   return readings;
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { DOSSIER_INTRO, godDossier, read, section } from '../src/god/dossier.ts';
+import { DOSSIER_INTRO, DOSSIER_READ_BYTES, godDossier, read, section } from '../src/god/dossier.ts';
 import { godDossierPart } from '../src/orchestrator/delegate.ts';
 
 const roots: string[] = [];
@@ -115,4 +115,12 @@ test('a link of the clone towards a file outside it is never read: the cloud wri
   writeFileSync(join(dir, 'docs', 'real.md'), '**Stato finto.**\n');
   symlinkSync(join(dir, 'docs', 'real.md'), join(dir, 'docs', 'DECISIONS.md'));
   assert.equal(read(dir, 'docs/DECISIONS.md'), '**Stato finto.**\n');
+});
+
+test('only regular files, and only their start: a folder in place of a document is not read', () => {
+  const dir = clone({});
+  mkdirSync(join(dir, 'docs', 'HANDOFF.md'));
+  assert.equal(read(dir, 'docs/HANDOFF.md'), undefined);
+  writeFileSync(join(dir, 'docs', 'DECISIONS.md'), `**inizio**\n${'x'.repeat(DOSSIER_READ_BYTES + 10)}`);
+  assert.equal(read(dir, 'docs/DECISIONS.md')?.length, DOSSIER_READ_BYTES);
 });

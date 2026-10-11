@@ -13,7 +13,9 @@ import { CONFIG_FILE, DEFAULT_SETTINGS, loadCatalog, writeSettings } from '@aria
  *   (as `pnpm arianna:init --defaults`): without it some tests fail; no
  *   password is in it, so the clone stays a development copy;
  * - node_modules, from the local store of pnpm, offline, with the exact
- *   lockfile and no install scripts.
+ *   lockfile and no install scripts, copied (or cloned by the file system),
+ *   never hard links: a file the cloud changes in the clone must not change
+ *   the store, nor the dependencies of the installation.
  * Best effort: a step that fails is reported, the clone stays as it is.
  */
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -42,7 +44,7 @@ export function prepareGodClone(options: PrepareOptions): (dir: string) => Promi
     await new Promise<void>((resolve, reject) => {
       execFile(
         options.pnpm ?? 'pnpm',
-        ['install', '--offline', '--frozen-lockfile', '--ignore-scripts', '--reporter=silent'],
+        ['install', '--offline', '--frozen-lockfile', '--ignore-scripts', '--config.package-import-method=clone-or-copy', '--reporter=silent'],
         { cwd: dir, env: pnpmEnv(options.env ?? process.env), timeout: INSTALL_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, shell: false },
         (error) => {
           if (error === null) resolve();
