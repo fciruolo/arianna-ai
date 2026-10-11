@@ -8,7 +8,9 @@ import { join } from 'node:path';
  * skipped and counted, code blocks are skipped, never an error that breaks the
  * page. The file is documentation of the repository, L2 by default
  * (default-deny, as the documents of D-102): the core reads it from a fixed
- * path and serves it only to the local web chat.
+ * path and serves it only to the local web chat. "Parlane con GOD" (D-178)
+ * reads instead the copy main holds in git (god/changelog-carry.ts): that
+ * one is in the clones of GOD already, Arianna's own code, L1 (D-127).
  */
 
 export const CHANGELOG_FILE = 'CHANGELOG.md';

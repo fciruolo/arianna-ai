@@ -635,6 +635,7 @@ const godWork = createGodWork({
   home: config.home,
   data: config.paths.data,
   parts: () => approvedProjects().map((project) => project.name),
+  projects: () => settings.current().projects,
   policy: (agent) => directAgents().find((policy) => policy.agent === agent),
   models: () => selectableModels(settings.current(), adapters).map((entry) => entry.model),
   stopTask: (taskId) => worker.stopTask(taskId, 'god'),

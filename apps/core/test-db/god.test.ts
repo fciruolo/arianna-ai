@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
+import type { Project } from '@arianna/config';
+
 import { createConversation, listMessages, loadConversation, writeUserMessage } from '../src/conversations.ts';
 import type { DirectPolicy } from '../src/direct-chat.ts';
 import { gitEnv } from '../src/git-catalog.ts';
@@ -431,4 +433,7 @@ test('"Parlane con GOD" waits for GOD and for the project arianna', async () => 
   await assert.rejects(off.discuss(ref), (error: unknown) => error instanceof GodError && /Claude o Codex/.test(error.message));
   const unregistered = createGodWork({ ...base, parts: () => [], policy: (agent) => policy(agent) });
   await assert.rejects(unregistered.discuss(ref), (error: unknown) => error instanceof GodError && /non è registrato/.test(error.message));
+  // A project arianna elsewhere, even with a folder main there: refused before anything is written.
+  const elsewhere = createGodWork({ ...base, parts: () => ['arianna:main'], projects: () => [{ name: 'arianna', path: 'repos/altro', label: 'L1' } as Project], policy: (agent) => policy(agent) });
+  await assert.rejects(elsewhere.discuss(ref), (error: unknown) => error instanceof GodError && error.code === 'conflict' && /deve puntare a repos\/arianna/.test(error.message));
 });

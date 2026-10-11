@@ -130,6 +130,7 @@ export async function versionGit(git: GitRunner, home: string, version: string):
   // Only what main reaches, as the clones of GOD: a tag elsewhere says nothing.
   const base = (await git(['merge-base', commit, `refs/heads/${GOD_MAIN}`], home, { okCodes: [1] }).catch(() => '')).trim();
   if (base !== commit) return `the tag ${tag} is not on main`;
+  // The tag before along the first parent: the tags are put on the commits of main.
   const previous = (await git(['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', `${commit}^`], home, { okCodes: [128] }).catch(() => '')).trim();
   const before = previous === '' ? '' : (await git(['rev-parse', '--verify', '--quiet', `refs/tags/${previous}^{commit}`], home, { okCodes: [1] }).catch(() => '')).trim();
   const since = /^[0-9a-f]{40,64}$/.test(before) ? before : undefined;

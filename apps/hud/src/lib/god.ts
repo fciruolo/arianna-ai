@@ -91,6 +91,19 @@ export function discussBlocker(status: GodStatus | null): string | null {
   return godBlocker(status);
 }
 
+/** The tooltip of "Parlane con GOD": why it is off, or what it does (an entry not released must be on main first). */
+export function discussTitle(blocker: string | null, unreleased: boolean): string {
+  if (blocker !== null) return blocker;
+  const what = 'Una conversazione nuova con GOD su questa voce, con la versione, le decisioni citate, i commit e i file toccati';
+  return unreleased ? `${what}. Una voce non rilasciata deve essere già in main.` : what;
+}
+
+/** An entry without its Markdown marks, at most 80 characters: for screen readers. */
+export function plainItem(text: string): string {
+  const plain = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`]+/g, '').replace(/\s+/g, ' ').trim();
+  return plain.length <= 80 ? plain : `${plain.slice(0, 79)}…`;
+}
+
 /** One line on where a conversation with GOD starts from. */
 export function carryOriginText(carry: GodCarry): string {
   const version = carry.changelog ?? null;

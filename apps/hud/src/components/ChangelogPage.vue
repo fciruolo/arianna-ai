@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 
 import { discussWithGod, loadChangelog, loadGod } from '../lib/api.ts';
 import { currentText, orderVersions, sectionTone, skippedText, versionDate, versionTitle, type SectionTone } from '../lib/changelog.ts';
-import { discussBlocker, type GodStatus } from '../lib/god.ts';
+import { discussBlocker, discussTitle, plainItem, type GodStatus } from '../lib/god.ts';
 import { errorText } from '../lib/italian.ts';
 import type { Changelog, ChangelogVersion } from '../lib/types.ts';
 import Icon from './Icon.vue';
@@ -42,6 +42,8 @@ async function discuss(entry: ChangelogVersion, section: string, text: string, i
     emit('open', conversation.id);
   } catch (cause) {
     godError.value = `Non sono riuscita ad aprire la conversazione con GOD. ${errorText(cause)}`;
+    // GOD may have changed since the page opened (the clone removed, an executor off): the button follows.
+    void refreshGod();
   } finally {
     opening.value = null;
   }
@@ -150,8 +152,8 @@ function reload(): void {
                 type="button"
                 class="inline-flex shrink-0 items-center gap-1 self-start rounded-md border border-line px-1.5 py-0.5 text-[11.5px] text-muted hover:border-line-strong hover:text-ink disabled:opacity-50 disabled:hover:border-line disabled:hover:text-muted"
                 :disabled="godOff !== null || opening !== null"
-                :title="godOff ?? 'Una conversazione nuova con GOD su questa voce, con la versione, le decisioni citate, i commit e i file toccati'"
-                :aria-label="`Parlane con GOD: ${item.slice(0, 80)}`"
+                :title="discussTitle(godOff, entry.unreleased)"
+                :aria-label="`Parlane con GOD: ${plainItem(item)}`"
                 @click="discuss(entry, section.title, item, index)"
               >
                 <Icon name="god" :size="12" />{{ opening === itemKey(entry, section.title, index) ? 'Apro…' : 'Parlane con GOD' }}

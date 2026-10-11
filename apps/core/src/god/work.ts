@@ -1,6 +1,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { Project } from '@arianna/config';
 import { isAtMost, type Label } from '@arianna/policy';
 
 import { ChatError, loadConversation, loadMessage, writeConversation, writeUserMessage, type Conversation } from '../conversations.ts';
@@ -21,6 +22,7 @@ import {
   subtaskBranch,
   type GitRunner,
 } from './clone.ts';
+import { projectState } from './api.ts';
 import { carryOf, createCarry, createChangelogConversation } from './carry.ts';
 import { changelogCarry, type ChangelogRef } from './changelog-carry.ts';
 import { overlaps, partName, planOfAnswer, type GodPlanProposal } from './plan.ts';
@@ -67,6 +69,8 @@ export interface GodWorkEnv {
   data: string;
   /** The names of the approved work parts now (`arianna:main`, `arianna:g001-…`, other projects). */
   parts: () => readonly string[];
+  /** The projects of arianna.toml now: "Parlane con GOD" checks that `arianna` is on repos/arianna. */
+  projects?: () => readonly Project[];
   /** The direct chat policy of an agent now (direct-chat.ts), undefined when it cannot answer. */
   policy: (agent: string) => DirectPolicy | undefined;
   /** The cloud models a work conversation may choose now. */
@@ -321,6 +325,12 @@ async function setState(
   if (moved.length === 0) return false;
   await appendEvent(sql, { kind: 'god.subtask', label: 'L0', payload: { subtaskId: row.id, state } });
   return true;
+}
+
+/** A refusal of the chat as an answer of GOD: not found, invalid, or a conflict (busy, archived, …). */
+function godErrorOf(error: ChatError): GodError {
+  const code = error.code === 'not-found' || error.code === 'invalid' ? error.code : 'conflict';
+  return new GodError(code, error.message);
 }
 
 /** A short reason in our words, kept within the column. */
@@ -709,7 +719,7 @@ export function createGodWork(env: GodWorkEnv) {
     try {
       return await createCarry(sql, { from: conversationId, projects: env.parts(), agent: { name: GOD_AGENT, modes: god.modes, project: god.project } });
     } catch (error) {
-      if (error instanceof ChatError) throw new GodError(error.code === 'not-found' ? 'not-found' : 'invalid', error.message);
+      if (error instanceof ChatError) throw godErrorOf(error);
       throw error;
     }
   }
@@ -730,7 +740,9 @@ export function createGodWork(env: GodWorkEnv) {
     const god = env.policy(GOD_AGENT);
     if (god === undefined) throw new GodError('conflict', 'GOD non può rispondere ora: accendi Claude o Codex');
     const workspace = godWorkspace(GOD_MAIN);
-    if (!env.parts().includes(workspace)) throw new GodError('conflict', 'il progetto arianna non è registrato: Impostazioni → Progetti');
+    const registered = env.projects === undefined ? undefined : projectState(env.projects());
+    if (registered === 'wrong-path') throw new GodError('conflict', `il progetto arianna deve puntare a ${GOD_CONTAINER}: Impostazioni → Progetti`);
+    if (registered === 'missing' || !env.parts().includes(workspace)) throw new GodError('conflict', 'il progetto arianna non è registrato: Impostazioni → Progetti');
     const dir = godPartDir(home, GOD_MAIN);
     if (!existsSync(dir)) throw new GodError('conflict', 'il clone di GOD non c\'è ancora: crealo dalla pagina GOD');
     const refused = godCloneRefusal(dir);
@@ -739,7 +751,7 @@ export function createGodWork(env: GodWorkEnv) {
       const context = await changelogCarry(git, home, ref);
       return await createChangelogConversation(sql, { carry: context, projects: env.parts(), agent: { name: GOD_AGENT, modes: god.modes, project: god.project } });
     } catch (error) {
-      if (error instanceof ChatError) throw new GodError(error.code === 'not-found' ? 'not-found' : 'invalid', error.message);
+      if (error instanceof ChatError) throw godErrorOf(error);
       throw error;
     }
   }
