@@ -2633,3 +2633,38 @@ Le regole devono valere allo stesso modo per Claude e per Codex, qualunque dei d
 **S3 costruita** (D-173, ramo `task/spotlight-s3`): il cliente al posto del progetto in `im.add`.
 
 **Tappe proposte.** S1 l'azione "Di' ad Arianna" con la risposta in notifica; S2 "Annota"; S3 il cliente al posto del progetto in `im.add` (dopo I-16).
+
+### I-18, il tracker delle spese (richiesta dell'utente del 2026-10-11)
+
+**Cosa ha chiesto l'utente.** "Una pagina di tracker delle spese. Questi documenti NON DEVONO MAI e dico MAI uscire dal mio pc in NESSUN modo." Importazione da Excel o CSV esportati dai conti bancari, grafici, strumenti di controllo e consigli da un agente di finanza personale "OBBLIGATORIAMENTE locale". Idea per il futuro, non ancora da costruire.
+
+**Proposta di Claude.**
+- **Una classe di dati più rigida di Privato.** Oggi un testo Privato (L2) può uscire se l'utente approva la sua declassificazione; Segreto (L3) non lo legge nessun modello, nemmeno quello locale, quindi niente agente. Le finanze vogliono una via di mezzo: leggibili dal modello locale, **mai** in uscita, nemmeno con l'approvazione. Proposta: la fonte `finance:*` come regola fissa del gateway (`packages/policy`), che rifiuta ogni uscita verso cloud, Telegram, telefono e notifiche con contenuto, con test positivi e negativi ed eval dedicati; l'output del modello che le ha lette eredita il vincolo (come l'etichetta più alta). La sandbox di Claude e Codex nega già `ARIANNA_HOME` e il database; GOD e il suo fascicolo non le vedono.
+- **Dove stanno.** Tabelle nel PostgreSQL locale (`finance_accounts`, `finance_transactions`, `finance_categories`, `finance_rules`, `finance_imports`); i file importati in `data/finance/imports/` (cartella 0700, fuori da git), cancellabili dopo l'import. Mai in `kb/`. Backup cifrati con la chiave del vault.
+- **Importazione.** CSV con un lettore scritto da noi (separatore, decimali con la virgola, date italiane, codifica); Excel `.xlsx` richiede una libreria nuova (voce in DECISIONS) oppure si esporta in CSV. Per ogni banca un profilo che ricorda le colonne (data, descrizione, importo o dare/avere, saldo); anteprima prima di salvare; doppioni riconosciuti dall'impronta di data, importo e descrizione, così un estratto conto importato due volte non raddoppia.
+- **Categorie.** Regole scritte dall'utente ("ESSELUNGA → Spesa"), poi il modello locale propone la categoria delle righe sconosciute e l'utente conferma; ogni conferma può diventare una regola.
+- **Grafici e controlli** (calcolati dal codice, mai dal modello): entrate e uscite per mese, spese per categoria, andamento del saldo, confronto con lo stesso mese dell'anno prima; abbonamenti e addebiti ricorrenti riconosciuti da soli (con l'avviso quando un importo cambia), spese insolite, doppi addebiti, budget per categoria con la soglia superata.
+- **L'agente "Finanze".** Una scheda in `agents/` con esecutore solo locale, bloccato dal router e dal gateway (nessuna delega al cloud, nessuno strumento di rete); legge i totali e le righe tramite strumenti in sola lettura; dà consigli di bilancio (dove si spende di più, abbonamenti da rivedere, obiettivi di risparmio), non consigli di investimento.
+- **Nessuna traccia fuori.** Le notifiche e il messaggio del mattino dicono solo "c'è un avviso nelle Finanze", mai importi o nomi; i log e gli eventi portano solo id e conteggi.
+
+**Tappe proposte.** F1 importazione CSV con profili e doppioni, elenco dei movimenti; F2 categorie con regole e grafici; F3 controlli (ricorrenti, insoliti, budget); F4 l'agente locale "Finanze"; F0, prima di tutto, la regola del gateway e i suoi eval.
+
+### Domande per l'utente (I-18)
+
+1. **Excel o solo CSV?**
+   - Contesto: le banche di solito esportano sia CSV sia Excel. Il CSV si legge con codice nostro, senza librerie nuove. Il formato Excel (.xlsx) richiede una libreria esterna, cioè codice di terzi che gira sui tuoi dati, da approvare con una voce in DECISIONS.
+   - Opzione consigliata: Solo CSV all'inizio — niente librerie nuove; dalla banca scegli "esporta CSV", o salvi il file Excel come CSV.
+   - Opzione: Anche Excel subito — più comodo, ma una libreria in più da controllare e aggiornare.
+   - Esempio: Scarichi da home banking "movimenti_ottobre.csv", lo trascini nella pagina Finanze, vedi l'anteprima con 84 righe (3 già presenti, saltate) e premi Importa.
+2. **Come proteggere i dati delle finanze?**
+   - Contesto: oggi Privato (L2) resta sul Mac ma un testo può uscire se lo approvi tu; Segreto (L3) non lo legge nessun modello, quindi l'agente non potrebbe aiutarti. Serve decidere quanto rigida è la regola.
+   - Opzione consigliata: Regola fissa "mai fuori" — leggibili dal modello locale, nessuna uscita nemmeno con la tua approvazione; un errore umano non può farle uscire.
+   - Opzione: Privato come il resto — più semplice, ma un'approvazione sbagliata potrebbe mandare un testo al cloud.
+   - Opzione: Segreto — nessun modello le legge; solo grafici e controlli, niente agente.
+   - Esempio: Chiedi in una chat con Claude "quanto ho speso di Amazon?": il gateway rifiuta perché la risposta richiederebbe dati delle Finanze; la stessa domanda all'agente Finanze (locale) riceve la risposta.
+3. **Da quale tappa partire, quando sarà il momento?**
+   - Contesto: il tracker è un lavoro grande; si costruisce a tappe, ognuna provabile da sola. La regola del gateway (F0) va comunque per prima.
+   - Opzione consigliata: Importazione ed elenco — prima i dati dentro e la lista dei movimenti, poi categorie e grafici.
+   - Opzione: Grafici subito — importazione e grafici insieme, consegna più lunga.
+   - Opzione: Prima l'agente — l'agente locale su dati di prova, poi l'importazione.
+   - Esempio: Con la prima tappa importi tre mesi di estratto conto finto e vedi la lista con totale entrate, uscite e saldo per mese.
