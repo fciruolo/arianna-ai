@@ -480,7 +480,18 @@ function onListScroll(): void {
   if (element !== null) stuck = element.scrollHeight - element.scrollTop - element.clientHeight < NEAR_BOTTOM;
 }
 watch(
-  () => [props.chat.messages.length, props.chat.streaming.map((reply) => reply.text.length).join(), props.approvals.length],
+  // What arrives after the messages too (credits, activity logs, closing cards, GOD's proposal once
+  // `sending` turns false): it grows the list, which the ResizeObserver alone may not see in time
+  // (a hidden tab); GOD's proposal (G4) then stayed below the bottom.
+  () => [
+    props.chat.messages.length,
+    props.chat.streaming.map((reply) => reply.text.length).join(),
+    props.approvals.length,
+    props.credits.size,
+    steps.value.size,
+    closings.value.size,
+    props.sending,
+  ],
   async () => {
     await nextTick();
     observeContent();
