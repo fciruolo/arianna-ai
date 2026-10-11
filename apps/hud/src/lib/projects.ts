@@ -74,6 +74,20 @@ export interface ProjectKnowledge {
   repoFolders: KnowledgeFolder[];
 }
 
+/** A note opened in "Conoscenza": what the user reads and edits by hand. */
+export interface OpenedNote {
+  path: string;
+  title: string;
+  label: Label;
+  /** The lowest label the note may have: its folder's. */
+  floor: Label;
+  /** The other lines of the header, `key: value` (label and title have their own fields). */
+  header: string[];
+  body: string;
+  /** The file as read: a save goes only over this same file. */
+  version: string;
+}
+
 /** The label a new folder takes by its name (D-145): Workplan and IM Interne, every other Privata. */
 export function folderLabelByName(name: string): Label {
   return ['workplan', 'im'].includes(name.trim().toLowerCase()) ? 'L1' : 'L2';

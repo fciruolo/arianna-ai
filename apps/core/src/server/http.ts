@@ -59,7 +59,7 @@ import { addDocument, archiveDocument, listDocuments, MAX_DOCUMENT_BYTES, openDo
 import { readClientDashboard } from '../client-dashboard.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
-import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
+import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
 import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
@@ -1436,6 +1436,31 @@ function projectKnowledgeRoutes(sql: Sql, containers: () => readonly Project[], 
       const note = writeProjectNote(containers(), project.name, need(), { folder: body.folder, title: body.title, text: body.text, label: body.label, id: randomUUID() });
       return { status: 201, body: { note } };
     }),
+    // A note opened and edited by hand: the user sees every note of the tab, any label.
+    route('GET', '/api/browse/:project/knowledge/note', (_request, url, params) => {
+      const project = containerParam(params);
+      return Promise.resolve({ body: { note: readProjectNote(containers(), project.name, need(), url.searchParams.get('path') ?? '') } });
+    }),
+    route('POST', '/api/browse/:project/knowledge/note', async (request, _url, params) => {
+      const project = containerParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'title', 'label', 'header', 'text', 'version', 'lower']);
+      const header = body.header;
+      if (
+        typeof body.path !== 'string' ||
+        typeof body.title !== 'string' ||
+        typeof body.text !== 'string' ||
+        typeof body.version !== 'string' ||
+        !isLabel(body.label) ||
+        !Array.isArray(header) ||
+        !header.every((line): line is string => typeof line === 'string') ||
+        (body.lower !== undefined && typeof body.lower !== 'boolean')
+      ) {
+        throw new HttpError(400, 'path, title, label, header, text and version are required');
+      }
+      const note = editProjectNote(containers(), project.name, need(), body.path, { title: body.title, label: body.label, header, text: body.text, version: body.version, lower: body.lower === true });
+      return { body: { note } };
+    }),
     // The IM of the project (D-167): the files of the folder IM, the items changed only while the file is the one the user saw.
     route('GET', '/api/browse/:project/im', (_request, _url, params) => {
       const project = containerParam(params);
@@ -2790,7 +2815,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
   if (error instanceof KnowledgeError) {
-    const status = { invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
+    const status = { changed: 409, invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };
   }
   if (error instanceof SearchError) return { status: 400, message: error.message };

@@ -12,6 +12,7 @@ import type { Label } from '../lib/types.ts';
 import DeleteConfirm from './DeleteConfirm.vue';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
+import ProjectNoteView from './ProjectNoteView.vue';
 
 /**
  * The tab "Conoscenza" of Progetti (I-11, D-145, tappa P2): the management
@@ -21,6 +22,7 @@ import LabelBadge from './LabelBadge.vue';
  * and a label that goes down says so before the confirmation. "+ Conoscenza"
  * writes a new note; its label is shown before saving and can only go up.
  * Everything stays on this computer: the Coder does not see these folders.
+ * A note's title opens it, to read and to edit by hand (ProjectNoteView).
  */
 const props = defineProps<{ container: BrowsableContainer }>();
 
@@ -52,6 +54,9 @@ const notesByFolder = computed(() => {
 const existingFolder = (path: string): KnowledgeFolder | undefined => knowledge.value?.folders.find((folder) => folder.path.toLowerCase() === path.trim().toLowerCase());
 const folderLabel = (path: string): Label | undefined => existingFolder(path)?.label;
 
+// --- The note open above the panels, by its path.
+const opened = ref<string | null>(null);
+
 // --- "Elimina" of a note (D-157): its file goes for good, after the confirmation in place.
 const deleting = ref<string | null>(null);
 const removing = ref(false);
@@ -64,6 +69,7 @@ async function removeNote(path: string): Promise<void> {
   try {
     await deleteProjectNote(props.container.name, path);
     deleting.value = null;
+    if (opened.value === path) opened.value = null;
     await load();
   } catch (cause) {
     deleteError.value = `Non ho eliminato la nota. ${errorText(cause)}`;
@@ -173,6 +179,7 @@ watch(
   () => props.container.name,
   () => {
     knowledge.value = null;
+    opened.value = null;
     relabel.value = null;
     adding.value = null;
     saved.value = null;
@@ -187,6 +194,8 @@ watch(
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
     <p v-else-if="knowledge === null" class="text-sm text-muted">Leggo la conoscenza…</p>
     <template v-else>
+      <ProjectNoteView v-if="opened" class="lg:col-span-2" :project="container.name" :path="opened" @close="opened = null" @saved="load" />
+
       <!-- The panel of the folders: one selector each (D-145) -->
       <section class="rounded-2xl border border-line bg-surface" aria-labelledby="folders-title">
         <header class="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -283,7 +292,16 @@ watch(
                   "
                 />
                 <div v-else class="flex items-center gap-2">
-                  <span class="min-w-0 flex-1 truncate" :title="note.path">{{ note.title }}</span>
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 truncate text-left transition hover:text-accent hover:underline"
+                    :class="opened === note.path ? 'font-semibold text-accent' : ''"
+                    :title="note.path"
+                    :aria-current="opened === note.path ? 'true' : undefined"
+                    @click="opened = note.path"
+                  >
+                    {{ note.title }}
+                  </button>
                   <LabelBadge :label="note.label" class="text-xs" />
                   <button
                     type="button"

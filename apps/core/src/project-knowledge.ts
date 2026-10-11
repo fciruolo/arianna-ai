@@ -1,4 +1,5 @@
-import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { closeSync, constants, fchmodSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { MAX_CODER_NOTES, MAX_CODER_NOTES_BYTES } from '@arianna/executors';
@@ -32,7 +33,7 @@ export const MAX_NOTE_TEXT = 64 * 1024;
 const MAX_TITLE = 200;
 const MAX_ATTEMPTS = 50;
 
-export type KnowledgeErrorCode = 'invalid' | 'not-found' | 'refused' | 'too-large' | 'unavailable';
+export type KnowledgeErrorCode = 'changed' | 'invalid' | 'not-found' | 'refused' | 'too-large' | 'unavailable';
 
 /** Messages name fixed reasons and folder names, never the text of a note. */
 export class KnowledgeError extends Error {
@@ -611,6 +612,185 @@ export function deleteProjectNote(projects: readonly Project[], name: string, en
   const base = knowledgeBase(projects, name, env);
   if (!base.exists || !base.folders.some((folder) => folder.path === segments[0])) throw refuse();
   if (!unlinkPlainFile(base.root, segments)) throw refuse();
+}
+
+/** A note opened in the tab "Conoscenza": what the user reads and edits by hand. */
+export interface OpenedNote {
+  path: string;
+  title: string;
+  /** The effective label: the folder's, raised by the header. */
+  label: Label;
+  /** The lowest label the note may have: its folder's (and an explicit rule of labels.toml over kb/progetti). */
+  floor: Label;
+  /** The other lines of the header, `key: value`, as written in the file (label and title have their own fields). */
+  header: string[];
+  body: string;
+  /** The sha256 of the file as read: a save goes only over this same file. */
+  version: string;
+}
+
+const MAX_HEADER_LINES = 40;
+const MAX_HEADER_LINE = 500;
+/** A line the user writes: the key starts with a letter, so `---: x` cannot close the header. */
+const HEADER_LINE = /^([A-Za-z_][A-Za-z_-]*)[ \t]*:(.*)$/;
+/** A key as `parsePage` reads it, indented or not: label and title are recognized the same way. */
+const READ_KEY = /^\s*([A-Za-z_-]+)\s*:/;
+
+/** The lines between the two `---` of a header, or none (no header, or one never closed). */
+function rawHeaderLines(text: string): string[] {
+  const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  if (!/^---[ \t]*\n/.test(normalized)) return [];
+  const start = normalized.indexOf('\n') + 1;
+  const end = normalized.indexOf('\n---', start - 1);
+  if (end < start) return [];
+  return normalized.slice(start, end).split('\n');
+}
+
+/**
+ * A note of the tab "Conoscenza" by its path (relative to where the knowledge
+ * is): a markdown file inside a management folder, never hidden, never through
+ * a link; anything else answers not found, as for "Elimina".
+ */
+function locateNote(projects: readonly Project[], name: string, env: KnowledgeEnv, path: string): { base: KnowledgeBase; file: string; segments: string[] } {
+  const refuse = (): KnowledgeError => new KnowledgeError('not-found', 'note not found');
+  if (typeof path !== 'string' || path.length > 1024 || !path.toLowerCase().endsWith('.md')) throw refuse();
+  const segments = path.split('/');
+  if (segments.length < 2 || segments.some((segment) => segment === '' || segment === '.' || segment === '..' || segment.startsWith('.') || segment.includes('\\') || segment.includes('\0'))) throw refuse();
+  const base = knowledgeBase(projects, name, env);
+  if (!base.exists || !base.folders.some((folder) => folder.path === segments[0])) throw refuse();
+  const file = join(base.root, ...segments);
+  try {
+    let dir = base.root;
+    for (const segment of segments.slice(0, -1)) {
+      dir = join(dir, segment);
+      if (!lstatSync(dir).isDirectory()) throw refuse();
+    }
+    const stat = lstatSync(file);
+    if (!stat.isFile()) throw refuse();
+    if (stat.size > MAX_NOTE_BYTES) throw new KnowledgeError('too-large', 'the note is too large to open here');
+    if (realpathSync(file) !== file) throw refuse();
+  } catch (error) {
+    if (error instanceof KnowledgeError) throw error;
+    throw refuse();
+  }
+  return { base, file, segments };
+}
+
+function readNoteFile(file: string): string {
+  return readHead(file, MAX_NOTE_BYTES + 1);
+}
+
+const versionOf = (content: string): string => createHash('sha256').update(content, 'utf8').digest('hex');
+
+/** "Apri" of a note (Conoscenza): its title, label, other header lines and text, with the version to save over. */
+export function readProjectNote(projects: readonly Project[], name: string, env: KnowledgeEnv, path: string): OpenedNote {
+  const { base, file, segments } = locateNote(projects, name, env, path);
+  let content: string;
+  try {
+    content = readNoteFile(file);
+  } catch {
+    throw new KnowledgeError('not-found', 'note not found');
+  }
+  const { header, body } = parsePage(content);
+  const lines = rawHeaderLines(content).filter((line) => {
+    const key = READ_KEY.exec(line)?.[1]?.toLowerCase();
+    return line.trim() !== '' && key !== 'label' && key !== 'title';
+  });
+  return {
+    path,
+    title: header.title !== undefined && header.title !== '' ? header.title : (segments.at(-1)?.replace(/\.md$/i, '') ?? path),
+    label: baseLabel(base, path, header.labels),
+    floor: baseLabel(base, path, []),
+    header: lines,
+    body,
+    version: versionOf(content),
+  };
+}
+
+export interface NoteEdit {
+  title: string;
+  label: Label;
+  header: readonly string[];
+  text: string;
+  /** The version the user opened: another change in between is refused. */
+  version: string;
+  /** True when the user confirmed a label lower than the one in force. */
+  lower?: boolean;
+}
+
+/**
+ * "Modifica" of a note by hand (Conoscenza): the whole file written again from
+ * the fields, the header first (label and title from their fields, then the
+ * other lines as the user wrote them), the text in the body. The label never
+ * below the folder's; lower than the one in force only with `lower`. Written
+ * only over the same file the user opened (its version), to a temporary file
+ * beside it then renamed, never through a link.
+ */
+export function editProjectNote(projects: readonly Project[], name: string, env: KnowledgeEnv, path: string, edit: NoteEdit): OpenedNote {
+  if (!isLabel(edit.label)) throw new KnowledgeError('invalid', `label must be one of ${LABELS.join(', ')}`);
+  if (typeof edit.version !== 'string' || !/^[0-9a-f]{64}$/.test(edit.version)) throw new KnowledgeError('invalid', 'invalid version');
+  const title = typeof edit.title === 'string' ? edit.title.trim() : '';
+  if (title === '' || title.length > MAX_TITLE || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(title)) throw new KnowledgeError('invalid', `title must be one line of at most ${String(MAX_TITLE)} characters`);
+  // The whole file is checked below against MAX_NOTE_BYTES: a note that opens can be saved as it is.
+  if (typeof edit.text !== 'string' || Buffer.byteLength(edit.text, 'utf8') > MAX_NOTE_BYTES) throw new KnowledgeError('too-large', 'the text is too long');
+  const text = edit.text.replace(/\r\n/g, '\n').trim();
+  if (text.includes('\0')) throw new KnowledgeError('invalid', 'the text holds a NUL character');
+  if (!Array.isArray(edit.header) || edit.header.length > MAX_HEADER_LINES) throw new KnowledgeError('invalid', `the header holds at most ${String(MAX_HEADER_LINES)} lines`);
+  const header: string[] = [];
+  for (const raw of edit.header) {
+    if (typeof raw !== 'string') throw new KnowledgeError('invalid', 'a header line must be text');
+    const line = raw.trim();
+    if (line === '') continue;
+    const key = HEADER_LINE.exec(line)?.[1];
+    if (key === undefined || line.length > MAX_HEADER_LINE || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(line)) throw new KnowledgeError('invalid', 'each header line is one "key: value" line');
+    // A key with "label" in it would be read as a label: the label has its own field.
+    if (/label/i.test(key) || key.toLowerCase() === 'title') throw new KnowledgeError('invalid', `the key ${key} has its own field`);
+    header.push(line);
+  }
+
+  const opened = readProjectNote(projects, name, env, path);
+  if (opened.version !== edit.version) throw new KnowledgeError('changed', 'the note changed since it was opened');
+  if (!isAtMost(opened.floor, edit.label)) throw new KnowledgeError('invalid', `the folder is ${opened.floor}: the note cannot be lower`);
+  if (!isAtMost(opened.label, edit.label) && edit.lower !== true) throw new KnowledgeError('invalid', 'the label goes down: confirm it');
+
+  const content = `${['---', `label: ${edit.label}`, `title: ${JSON.stringify(title)}`, ...header, '---'].join('\n')}\n\n${text}${text === '' ? '' : '\n'}`;
+  if (Buffer.byteLength(content, 'utf8') > MAX_NOTE_BYTES) throw new KnowledgeError('too-large', 'the text is too long');
+
+  const { file } = locateNote(projects, name, env, path);
+  // The note keeps its permissions: a rewrite does not change who can read it.
+  const mode = lstatSync(file).mode & 0o777;
+  const dir = join(file, '..');
+  const temp = join(dir, `.${randomBytes(8).toString('hex')}.tmp`);
+  let fd: number;
+  try {
+    fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  } catch {
+    throw new KnowledgeError('unavailable', 'cannot write the note');
+  }
+  let written = false;
+  try {
+    fchmodSync(fd, mode);
+    writeFileSync(fd, content);
+    written = true;
+  } catch {
+    // Disk full, I/O error: below, the temporary file goes.
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    // Last look: the same file the user opened, still a plain file where the path says.
+    if (!written || versionOf(readNoteFile(locateNote(projects, name, env, path).file)) !== edit.version) throw new KnowledgeError('changed', 'the note changed since it was opened');
+    renameSync(temp, file);
+  } catch (error) {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Already gone.
+    }
+    if (error instanceof KnowledgeError) throw error;
+    throw new KnowledgeError('unavailable', 'cannot write the note');
+  }
+  return readProjectNote(projects, name, env, path);
 }
 
 /** A page of a project for `kb.search`: its path for the tools, and its folder label (known without opening it). */

@@ -5,14 +5,14 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { after, describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 
 import { resolveHome, type Project } from '@arianna/config';
 import { createContext, createLabelRules } from '@arianna/policy';
 
 import { listPageIds } from '../src/knowledge.ts';
 import { createKb, KbError } from '../src/orchestrator/kb.ts';
-import { coderNotes, createProjectPages, knowledgeRules, KnowledgeError, privateKnowledge, readProjectKnowledge, writeProjectNote } from '../src/project-knowledge.ts';
+import { coderNotes, createProjectPages, editProjectNote, knowledgeRules, KnowledgeError, privateKnowledge, readProjectKnowledge, readProjectNote, writeProjectNote } from '../src/project-knowledge.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `knowledge-${randomUUID()}`);
 const BOX = join(HOME, 'repos', 'progetto-test');
@@ -351,5 +351,84 @@ describe('the notes the Coder may read (I-11 P3, D-166)', () => {
     const { notes } = coderNotes([solo], 'solo', { home, rules: createLabelRules({ folders: [], sources: [] }) });
     assert.deepEqual(notes.map(({ path }) => path), ['Workplan/piano.md']);
     assert.deepEqual(coderNotes([solo], 'solo', { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) }).notes, []);
+  });
+});
+
+describe('a note opened and edited by hand', () => {
+  before(() => {
+    write(BOX, { 'Workplan/da-modificare.md': '---\nlabel: L2\nsource: capture:hud:x1\ntitle: "Vecchio titolo"\nkind: note\n---\n\nTesto finto di prova.\n' });
+  });
+  const path = 'Workplan/da-modificare.md';
+  const open = () => readProjectNote(PROJECTS, 'progetto-test', ENV, path);
+  const edit = (extra: Partial<Parameters<typeof editProjectNote>[4]> = {}) => {
+    const opened = open();
+    return editProjectNote(PROJECTS, 'progetto-test', ENV, path, { title: opened.title, label: opened.label, header: opened.header, text: opened.body, version: opened.version, ...extra });
+  };
+
+  it('opens a note with its title, label, floor, other header lines and text', () => {
+    const opened = open();
+    assert.equal(opened.title, 'Vecchio titolo');
+    assert.equal(opened.label, 'L2');
+    assert.equal(opened.floor, 'L1');
+    assert.deepEqual(opened.header, ['source: capture:hud:x1', 'kind: note']);
+    assert.equal(opened.body, 'Testo finto di prova.\n');
+    assert.match(opened.version, /^[0-9a-f]{64}$/);
+  });
+
+  it('opens a note without a header by its file name, at its folder label', () => {
+    const opened = readProjectNote(PROJECTS, 'progetto-test', ENV, 'IM/riunione.md');
+    assert.equal(opened.title, 'riunione');
+    assert.deepEqual(opened.header, []);
+    assert.match(opened.body, /^# Riunione/);
+  });
+
+  it('refuses to open a link, a path outside, a hidden or missing file', () => {
+    for (const bad of ['Workplan/collegata.md', '../fuori/segreto.md', 'Workplan/../IM/riunione.md', 'Workplan/.nascosta.md', 'Workplan/mancante.md', 'progetto-test-admin/src/a.md', 'Workplan/cartella-collegata/segreto.md']) {
+      assert.throws(() => readProjectNote(PROJECTS, 'progetto-test', ENV, bad), (error) => error instanceof KnowledgeError && error.code === 'not-found', bad);
+    }
+  });
+
+  it('writes title, label, header and text again; the label in the text stays text', () => {
+    const saved = edit({ title: 'Nuovo titolo', label: 'L3', header: ['source: capture:hud:x1', 'kind: note', 'cliente: Rossi finto'], text: 'Testo cambiato.\n---\nlabel: L0\n' });
+    assert.equal(saved.title, 'Nuovo titolo');
+    assert.equal(saved.label, 'L3');
+    assert.deepEqual(saved.header, ['source: capture:hud:x1', 'kind: note', 'cliente: Rossi finto']);
+    assert.equal(readFileSync(join(BOX, path), 'utf8'), '---\nlabel: L3\ntitle: "Nuovo titolo"\nsource: capture:hud:x1\nkind: note\ncliente: Rossi finto\n---\n\nTesto cambiato.\n---\nlabel: L0\n');
+    assert.equal(readProjectKnowledge(PROJECTS, 'progetto-test', ENV).notes.find((item) => item.path === path)?.label, 'L3');
+    assert.deepEqual(readdirSync(join(BOX, 'Workplan')).filter((name) => name.endsWith('.tmp')), []);
+  });
+
+  it('an indented label or title of the file is not among the other header lines', () => {
+    write(BOX, { 'IM/rientrata.md': '---\n  label: L2\n\ttitle: Rientrata\nkind: note\n---\n\nx\n' });
+    const opened = readProjectNote(PROJECTS, 'progetto-test', ENV, 'IM/rientrata.md');
+    assert.deepEqual(opened.header, ['kind: note']);
+    assert.equal(opened.label, 'L2');
+  });
+
+  it('a lower label only when confirmed, never below the folder', () => {
+    assert.throws(() => edit({ label: 'L2' }), (error) => error instanceof KnowledgeError && /confirm/.test(error.message));
+    assert.equal(edit({ label: 'L1', lower: true }).label, 'L1');
+    assert.throws(() => edit({ label: 'L0', lower: true }), (error) => error instanceof KnowledgeError && /cannot be lower/.test(error.message));
+  });
+
+  it('refuses a save over a note changed since it was opened', () => {
+    const opened = open();
+    writeFileSync(join(BOX, path), `${readFileSync(join(BOX, path), 'utf8')}aggiunta\n`);
+    assert.throws(
+      () => editProjectNote(PROJECTS, 'progetto-test', ENV, path, { title: 'x', label: opened.label, header: [], text: 'y', version: opened.version }),
+      (error) => error instanceof KnowledgeError && error.code === 'changed',
+    );
+  });
+
+  it('refuses header lines that hide a label or are not "key: value"', () => {
+    for (const line of ['label: L0', 'x-label: L0', 'title: altro', 'senza due punti', '---', '---: x', '-chiave: x', 'chiave: a\u0000b']) {
+      assert.throws(() => edit({ header: [line] }), (error) => error instanceof KnowledgeError && error.code === 'invalid', line);
+    }
+  });
+
+  it('refuses a save through a link', () => {
+    const opened = readProjectNote(PROJECTS, 'progetto-test', ENV, 'IM/riunione.md');
+    assert.throws(() => editProjectNote(PROJECTS, 'progetto-test', ENV, 'Workplan/collegata.md', { title: 'x', label: 'L2', header: [], text: 'y', version: opened.version }), KnowledgeError);
+    assert.match(readFileSync(join(OUTSIDE, 'segreto.md'), 'utf8'), /fuori dal progetto/);
   });
 });

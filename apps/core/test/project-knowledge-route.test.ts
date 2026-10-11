@@ -120,3 +120,27 @@ test('the IM of a project (D-167): created, read, an item added and moved, a sta
   assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/im/1/items', { title: '  ', version: (moved.body.im as { version: string }).version })).status, 400);
   assert.equal((await send(server.port, 'GET', '/api/browse/altro/im')).status, 404);
 });
+
+test('a note opened and edited by hand: a stale version, an extra field, a hidden label refused', async (t) => {
+  const sql = { unsafe: () => Promise.resolve([]) } as unknown as Sql;
+  const server = await startApiServer({ sql, live: undefined as unknown as LiveFeed, host: '127.0.0.1', port: 0, approvedProjects: () => workParts(CONTAINERS), projectContainers: () => CONTAINERS, knowledge: { home: join(HOME, 'arianna'), rules: createLabelRules({ folders: [], sources: [] }) } });
+  t.after(async () => {
+    await server.close();
+  });
+
+  const opened = await send(server.port, 'GET', `/api/browse/progetto-test/knowledge/note?${new URLSearchParams({ path: 'documenti/contratto.md' }).toString()}`);
+  assert.equal(opened.status, 200);
+  const note = opened.body.note as { title: string; label: string; floor: string; header: string[]; body: string; version: string };
+  assert.deepEqual([note.title, note.label, note.floor, note.body], ['contratto', 'L2', 'L2', '# Contratto finto\n']);
+  assert.equal((await send(server.port, 'GET', '/api/browse/progetto-test/knowledge/note?path=progetto-test-admin%2FREADME.md')).status, 404);
+
+  const edit = { path: 'documenti/contratto.md', title: 'Contratto', label: 'L3', header: ['cliente: Rossi finto'], text: 'Testo nuovo.', version: note.version };
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, folder: 'Workplan' })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, header: ['label: L0'] })).status, 400);
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', { ...edit, label: 'L1' })).status, 400);
+  const saved = await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', edit);
+  assert.equal(saved.status, 200);
+  assert.equal(readFileSync(join(BOX, 'documenti', 'contratto.md'), 'utf8'), '---\nlabel: L3\ntitle: "Contratto"\ncliente: Rossi finto\n---\n\nTesto nuovo.\n');
+  // The version opened before the save is no longer the file.
+  assert.equal((await send(server.port, 'POST', '/api/browse/progetto-test/knowledge/note', edit)).status, 409);
+});

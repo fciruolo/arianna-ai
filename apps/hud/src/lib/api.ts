@@ -20,7 +20,7 @@ import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
-import type { BrowsableContainer, BrowsableProject, CommitDiff, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
+import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
 import type { Approval, Changelog, CharacterChoice, Commitment, CharacterListing, CloudModel, Conversation, ConversationAgent, ConversationMode, DelegationDiff, DirectAgent, ExecutorChoice, FilePreview, Label, Message, MessageCredit, Participant, ProjectInfo, RecentDelegation, SavedActivity, StatusSnapshot, Task, TaskFailure } from './types.ts';
 
@@ -911,6 +911,16 @@ export async function readProjectKnowledge(project: string): Promise<ProjectKnow
 /** "+ Conoscenza" (D-145): a new note; the header is written by the core, the label never below the folder's. */
 export async function addProjectNote(project: string, note: { folder: string; title: string; label: Label; text: string }): Promise<{ path: string; label: Label }> {
   return (await call<{ note: { path: string; label: Label } }>('POST', `${browse(project)}/knowledge`, note)).note;
+}
+
+/** A note of a project opened in "Conoscenza", by its path there. */
+export async function readProjectNote(project: string, path: string): Promise<OpenedNote> {
+  return (await call<{ note: OpenedNote }>('GET', `${browse(project)}/knowledge/note?${new URLSearchParams({ path }).toString()}`)).note;
+}
+
+/** A note edited by hand: written only over the version opened; `lower` confirms a label that goes down. */
+export async function editProjectNote(project: string, note: { path: string; title: string; label: Label; header: string[]; text: string; version: string; lower: boolean }): Promise<OpenedNote> {
+  return (await call<{ note: OpenedNote }>('POST', `${browse(project)}/knowledge/note`, note)).note;
 }
 
 /** "Elimina" of a note of a project (D-157), by its path in the tab "Conoscenza". */
