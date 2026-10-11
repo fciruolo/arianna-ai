@@ -123,6 +123,8 @@ import { eraseConversation, type EraseResult } from '../erase.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
+import { appendEvent, type NewEvent } from '../events.ts';
+import { exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
@@ -206,6 +208,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
+  studioPptx?: PptxCodec;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
@@ -2109,6 +2113,75 @@ function secretaryRoutes(sql: Sql): Route[] {
   ];
 }
 
+/** A body of the Studio: the text of a mockup up to 2 MiB, JSON-escaped (a control character is six bytes), and some room. */
+const MAX_STUDIO_BODY = MAX_MOCKUP_BYTES * 6 + 64 * 1024;
+
+/**
+ * The Studio of design (I-19, D-184): the contract of docs/STUDIO-API.md.
+ * Mockups of an approved project, read, rewritten with their sha256 and
+ * exported as .pptx; errors answer `{ error: <code> }` (and the current
+ * `sha256` with `changed`).
+ */
+function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx: PptxCodec | undefined): Route[] {
+  const deps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), ...(pptx === undefined ? {} : { pptx }) };
+  const guard =
+    (handler: Handler): Handler =>
+    async (request, url, params) => {
+      try {
+        return await handler(request, url, params);
+      } catch (error) {
+        if (error instanceof StudioError) return { status: STUDIO_STATUS[error.code], body: { error: error.code, ...(error.sha256 === undefined ? {} : { sha256: error.sha256 }) } };
+        if (error instanceof HttpError) {
+          if (error.status === 413) return { status: 413, body: { error: 'too-large' } };
+          return error.status === 404 ? { status: 404, body: { error: 'not-found' } } : { status: 400, body: { error: 'invalid' } };
+        }
+        throw error;
+      }
+    };
+  const projectParam = (params: Params): string => {
+    try {
+      return decodeURIComponent(params.project ?? '');
+    } catch {
+      throw new HttpError(404, 'not found');
+    }
+  };
+  return [
+    route(
+      'GET',
+      '/api/studio/:project/mockups',
+      guard(async (_request, _url, params) => ({ body: await listMockups(deps, projectParam(params)) })),
+    ),
+    route(
+      'GET',
+      '/api/studio/:project/file',
+      guard(async (_request, url, params) => ({ body: await readMockup(deps, projectParam(params), url.searchParams.get('path') ?? undefined) })),
+    ),
+    route(
+      'PUT',
+      '/api/studio/:project/file',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'text', 'base']);
+        return { body: await writeMockup(deps, project, { path: body.path, text: body.text, base: body.base }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/pptx',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'deck']);
+        const { name, bytes } = await exportPptx(deps, project, { path: body.path, deck: body.deck });
+        const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        const encoded = encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+        return { raw: bytes, type: PPTX_TYPE, headers: { 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}` }, noStore: true };
+      }),
+    ),
+  ];
+}
+
 /** The SQLSTATE of an error of PostgreSQL, undefined for any other error. */
 function postgresState(error: unknown): string | undefined {
   if (!(error instanceof Error) || error.name !== 'PostgresError') return undefined;
@@ -3157,6 +3230,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
   table.push(...godRoutes(options.god));
+  table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();
