@@ -12,6 +12,7 @@ import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts'
 import type { HubCard, HubSearchResult } from './huggingface.ts';
 import type { ClientDashboard } from './client-dashboard.ts';
 import type { ClientDocument, DocumentForm } from './client-documents.ts';
+import type { Account, BankProfile, Budget, Category, FinanceAlert, ImportRecord, Preview, Rule, Summary, Tx } from './finance.ts';
 import type { ImCalendar, ImInvoice, ImOverview, NewInvoice } from './im-billing.ts';
 import type { ImClosing, ImDetail, ImItemRef, ImItemState, ImOutcome, ImReportJob, ImSummary, ReportAgent, ReportLanguage } from './im.ts';
 import type { ModelAction } from './model-actions.ts';
@@ -41,7 +42,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
@@ -1154,4 +1155,115 @@ export async function removeClientLogo(id: string): Promise<void> {
 /** The client of a project, for the header of "Progetti"; null when none has it. */
 export async function clientOfProject(project: string): Promise<{ id: string; displayName: string; logo: ClientLogo | null } | null> {
   return (await call<{ client: { id: string; displayName: string; logo: ClientLogo | null } | null }>('GET', `/api/clients/of-project/${encodeURIComponent(project)}`)).client;
+}
+
+// ---------------------------------------------------------------------------
+// The finances (I-18, D-183, docs/FINANCE-API.md): private (L2, rule
+// `finance`), only between this page and the core of this Mac.
+// ---------------------------------------------------------------------------
+
+const FINANCE = '/api/finance';
+
+function financeId(id: string): string {
+  return encodeURIComponent(id);
+}
+
+export async function listFinanceAccounts(): Promise<Account[]> {
+  return (await call<{ accounts: Account[] }>('GET', `${FINANCE}/accounts`)).accounts;
+}
+
+export async function createFinanceAccount(name: string, currency?: string): Promise<Account> {
+  return (await call<{ account: Account }>('POST', `${FINANCE}/accounts`, currency === undefined ? { name } : { name, currency })).account;
+}
+
+export async function updateFinanceAccount(id: string, change: { name?: string; archived?: boolean }): Promise<Account> {
+  return (await call<{ account: Account }>('PATCH', `${FINANCE}/accounts/${financeId(id)}`, change)).account;
+}
+
+/** The file read in the browser, in base64; nothing is saved. */
+export interface ImportRequest {
+  account: string;
+  name: string;
+  data: string;
+  profile?: BankProfile;
+  sheet?: string;
+}
+
+export async function previewFinanceImport(request: ImportRequest): Promise<Preview> {
+  return (await call<{ preview: Preview }>('POST', `${FINANCE}/imports/preview`, request)).preview;
+}
+
+export async function runFinanceImport(request: ImportRequest & { profile: BankProfile }): Promise<ImportRecord> {
+  return (await call<{ import: ImportRecord }>('POST', `${FINANCE}/imports`, request)).import;
+}
+
+export async function listFinanceImports(account: string): Promise<ImportRecord[]> {
+  return (await call<{ imports: ImportRecord[] }>('GET', `${FINANCE}/imports?${new URLSearchParams({ account }).toString()}`)).imports;
+}
+
+/** "Annulla" an import: its rows go away. */
+export async function undoFinanceImport(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/imports/${financeId(id)}`, {});
+}
+
+/** `query` from `filterQuery` of finance.ts. */
+export async function listFinanceTransactions(query: string): Promise<{ transactions: Tx[]; total: number }> {
+  return call<{ transactions: Tx[]; total: number }>('GET', `${FINANCE}/transactions?${query}`);
+}
+
+export async function setTransactionCategory(id: string, category: string | null, rule: boolean): Promise<{ transaction: Tx; rule: Rule | null }> {
+  return call<{ transaction: Tx; rule: Rule | null }>('PATCH', `${FINANCE}/transactions/${financeId(id)}`, rule ? { category, rule: true } : { category });
+}
+
+export async function listFinanceCategories(): Promise<Category[]> {
+  return (await call<{ categories: Category[] }>('GET', `${FINANCE}/categories`)).categories;
+}
+
+export async function createFinanceCategory(name: string, kind: Category['kind']): Promise<Category> {
+  return (await call<{ category: Category }>('POST', `${FINANCE}/categories`, { name, kind })).category;
+}
+
+export async function renameFinanceCategory(id: string, name: string): Promise<void> {
+  await call('PATCH', `${FINANCE}/categories/${financeId(id)}`, { name });
+}
+
+export async function deleteFinanceCategory(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/categories/${financeId(id)}`, {});
+}
+
+export async function listFinanceRules(): Promise<Rule[]> {
+  return (await call<{ rules: Rule[] }>('GET', `${FINANCE}/rules`)).rules;
+}
+
+export async function createFinanceRule(match: string, category: string): Promise<Rule> {
+  return (await call<{ rule: Rule }>('POST', `${FINANCE}/rules`, { match, category })).rule;
+}
+
+export async function deleteFinanceRule(id: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/rules/${financeId(id)}`, {});
+}
+
+export async function listFinanceBudgets(): Promise<Budget[]> {
+  return (await call<{ budgets: Budget[] }>('GET', `${FINANCE}/budgets`)).budgets;
+}
+
+export async function setFinanceBudget(category: string, monthly: number): Promise<Budget> {
+  return (await call<{ budget: Budget }>('PUT', `${FINANCE}/budgets/${financeId(category)}`, { monthly })).budget;
+}
+
+export async function deleteFinanceBudget(category: string): Promise<void> {
+  await call('DELETE', `${FINANCE}/budgets/${financeId(category)}`, {});
+}
+
+/** Without `from`/`to`, the last 12 months; without `account`, every account (and no balance). */
+export async function readFinanceSummary(filter: { account?: string; from?: string; to?: string }): Promise<Summary> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) if (value !== '') params.set(key, value);
+  const query = params.toString();
+  return call<Summary>('GET', `${FINANCE}/summary${query === '' ? '' : `?${query}`}`);
+}
+
+/** The checks of a month (`YYYY-MM`), the current one without it. */
+export async function readFinanceAlerts(month?: string): Promise<FinanceAlert[]> {
+  return (await call<{ alerts: FinanceAlert[] }>('GET', `${FINANCE}/alerts${month === undefined ? '' : `?${new URLSearchParams({ month }).toString()}`}`)).alerts;
 }

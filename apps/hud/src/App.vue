@@ -19,6 +19,7 @@ import OfficePage from './components/OfficePage.vue';
 import ProjectsPage from './components/ProjectsPage.vue';
 import CardwallPage from './components/CardwallPage.vue';
 import ClientsPage from './components/ClientsPage.vue';
+import FinancePage from './components/FinancePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
 import ChangelogPage from './components/ChangelogPage.vue';
@@ -43,6 +44,7 @@ import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
 import { isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projects.ts';
 import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
+import { financePathFor, financeTabFromPath, isFinancePath, type FinanceTab } from './lib/finance.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
@@ -334,9 +336,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'cardwall', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -440,6 +442,15 @@ function openClients(id: string | null = null): void {
   openPage('clients', clientPathFor(id), 'Clienti');
 }
 
+/** The tab open in "Finanze" (I-18, D-183), from the address `/finanze/<tab>`; undefined is the summary. */
+const financeTab = ref<FinanceTab | undefined>(undefined);
+
+/** The finances (I-18, D-183): private, only on this Mac. */
+function openFinance(tab?: FinanceTab): void {
+  financeTab.value = tab;
+  openPage('finance', financePathFor(tab), 'Finanze');
+}
+
 /** The cards and the commitments in columns (I-13, D-152). */
 function openCardwall(): void {
   openPage('cardwall', CARDWALL_PATH, 'Cardwall');
@@ -534,6 +545,10 @@ function followAddress(): void {
   }
   if (isClientsPath(window.location.pathname)) {
     openClients(clientFromPath(window.location.pathname) ?? null);
+    return;
+  }
+  if (isFinancePath(window.location.pathname)) {
+    openFinance(financeTabFromPath(window.location.pathname));
     return;
   }
   if (isCardwallPath(window.location.pathname)) {
@@ -733,6 +748,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       @office="openOffice"
       @projects="openProjects()"
       @clients="openClients()"
+      @finance="openFinance()"
       @cardwall="openCardwall"
       @settings="openSettings"
       @open="openConversation"
@@ -791,6 +807,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <template v-else-if="page === 'office'">Arianna / <b class="font-medium text-ink">Ufficio</b></template>
           <template v-else-if="page === 'projects'">Arianna / <b class="font-medium text-ink">Progetti</b></template>
           <template v-else-if="page === 'clients'">Arianna / <b class="font-medium text-ink">Clienti</b></template>
+          <template v-else-if="page === 'finance'">Arianna / <b class="font-medium text-ink">Finanze</b></template>
           <template v-else-if="page === 'cardwall'">Arianna / <b class="font-medium text-ink">Cardwall</b></template>
           <template v-else-if="draft !== null">{{ MODE_TEXT[draft.mode] }} / <template v-if="draft.project">{{ draft.project }} / </template><b class="font-medium text-ink">Nuova conversazione</b></template>
           <template v-else>Arianna</template>
@@ -909,6 +926,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
+      <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
       <CardwallPage v-else-if="page === 'cardwall'" :version="cardsVersion" :approvals="withoutIncognito(approvals)" :decide="store.decide" />
       <OfficePage
         v-else-if="page === 'office'"

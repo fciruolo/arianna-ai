@@ -2,6 +2,12 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Finanze: nuova pagina «Finanze» nella barra laterale (indirizzo `/finanze`) con conti, importazione di estratti conto CSV ed Excel con anteprima e profilo della banca correggibile, annullamento di un'importazione, movimenti filtrabili con categoria per riga e «crea una regola», categorie, regole e budget mensili, riepilogo con grafici disegnati in SVG (entrate e uscite per mese, spese per categoria, saldo di un conto, confronto con l'anno prima) e avvisi del mese che portano ai movimenti; un riquadro ricorda che i dati restano su questo computer e nessun modello cloud li legge (I-18, D-183).
+
 ## [0.73.2] - 2026-10-11
 
 ### Corretto
