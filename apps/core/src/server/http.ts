@@ -61,6 +61,7 @@ import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview,
 import { IM_STATES } from '../im-format.ts';
 import { deleteProjectNote, KnowledgeError, readProjectKnowledge, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
+import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
 import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
@@ -191,6 +192,12 @@ export interface ApiServerOptions {
   knowledge?: KnowledgeEnv;
   /** "Proponi bozza" of the tab "Regole" (I-14 R2, D-175): the local model drafts a container's rules; without it the route answers 503. */
   rulesDraft?: (container: string) => Promise<DraftOutcome | undefined>;
+  /**
+   * "Esporta in CLAUDE.md e AGENTS.md" of the tab "Regole" (I-14 R3, D-176):
+   * the preview (null: the container has no rules) and the writing of the
+   * text the user saw; without it the routes answer 503.
+   */
+  rulesExport?: { plan: (container: string) => ExportPlan | null; write: (container: string, seen: ExportPlan) => ExportOutcome };
   /** The tab Servizi of "Progetti" (D-134, tappa 2); without it the routes answer 404. */
   services?: ServiceManager;
   /** "Sviluppo di Arianna" (D-102): the home whose docs/ are read, and the event of an answer saved. */
@@ -403,6 +410,7 @@ interface RouteOptions {
   projectContainers: () => readonly Project[];
   knowledge?: KnowledgeEnv | undefined;
   rulesDraft?: ApiServerOptions['rulesDraft'];
+  rulesExport?: ApiServerOptions['rulesExport'];
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
@@ -1444,6 +1452,45 @@ function rulesDraftRoutes(containers: () => readonly Project[], draft: ApiServer
 }
 
 /**
+ * "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): GET is the preview,
+ * POST writes the files of the text the preview showed, and only the new ones
+ * and those Arianna wrote; the user's own files are never touched.
+ */
+function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiServerOptions['rulesExport']): Route[] {
+  const container = (params: Params): string => {
+    if (exporter === undefined) throw new HttpError(503, 'export is not available');
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+    return name;
+  };
+  return [
+    route('GET', '/api/projects/:project/rules-export', (_request, _url, params) => {
+      const name = container(params);
+      const plan = exporter?.plan(name);
+      if (plan === undefined || plan === null) throw new HttpError(409, 'the project has no rules');
+      return Promise.resolve({ body: plan });
+    }),
+    route('POST', '/api/projects/:project/rules-export', async (request, _url, params) => {
+      const name = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['text', 'files']);
+      if (typeof body.text !== 'string') throw new HttpError(400, 'text must be the rules of the preview');
+      const files = Array.isArray(body.files) ? body.files : null;
+      const seen = files?.map((file: unknown) => {
+        if (file === null || typeof file !== 'object') return null;
+        const { path, status } = file as Record<string, unknown>;
+        return typeof path === 'string' && typeof status === 'string' && ['new', 'same', 'arianna', 'foreign'].includes(status) ? { path, status: status as ExportPlan['files'][number]['status'] } : null;
+      });
+      if (seen === undefined || seen.length > 1000 || seen.some((file) => file === null)) throw new HttpError(400, 'files must be the files of the preview');
+      const outcome = exporter?.write(name, { text: body.text, files: seen.filter((file) => file !== null) });
+      if (outcome === undefined) throw new HttpError(503, 'export is not available');
+      if (!outcome.ok) throw new HttpError(409, outcome.reason === 'no-rules' ? 'the project has no rules' : 'the rules or the files changed after the preview');
+      return { body: { files: outcome.files } };
+    }),
+  ];
+}
+
+/**
  * The page "Progetti" (D-134): an approved project read on this computer.
  * Read only: folders, files, branches, changes, commits and their diff;
  * "Apri" for a page or an image with the links of D-117. Nothing is written
@@ -1561,13 +1608,14 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   return [
     ...delegationRoutes(sql, approvedProjects, openLinks),
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
     ...rulesDraftRoutes(projectContainers, rulesDraft),
+    ...rulesExportRoutes(projectContainers, rulesExport),
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
@@ -2768,6 +2816,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     clients: options.clients,
     knowledge: options.knowledge,
     rulesDraft: options.rulesDraft,
+    rulesExport: options.rulesExport,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,

@@ -64,6 +64,7 @@ import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
 import { draftProjectRules } from './rules-draft.ts';
+import { NO_RULES, planRulesExport, writeRulesExport } from './rules-export.ts';
 import { startApiServer } from './server/http.ts';
 import { createSettingsPage } from './settings-page.ts';
 import { createBotApi } from './telegram/api.ts';
@@ -630,6 +631,17 @@ const server = await startApiServer({
   rulesDraft: async (name) => {
     const project = projectContainers().find((item) => item.name === name);
     return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
+  },
+  // "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): the saved rules, in the parts of the container, on request.
+  rulesExport: {
+    plan: (name) => {
+      const project = projectContainers().find((item) => item.name === name);
+      return project === undefined ? null : (planRulesExport({ home: config.home }, project, settings.current().projectRules) ?? null);
+    },
+    write: (name, seen) => {
+      const project = projectContainers().find((item) => item.name === name);
+      return project === undefined ? NO_RULES : writeRulesExport({ home: config.home }, project, settings.current().projectRules, seen);
+    },
   },
   // The files attached to cards (D-152): private copies, outside git.
   cards: { dir: join(config.home, 'data', 'cards') },

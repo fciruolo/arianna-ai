@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { ApiError, draftProjectRules, loadSettings, saveSettings } from '../lib/api.ts';
+import { ApiError, draftProjectRules, loadSettings, previewRulesExport, saveSettings, writeRulesExport, type RulesExportStatus } from '../lib/api.ts';
 import type { BrowsableContainer } from '../lib/projects.ts';
 import { MAX_PROJECT_RULES, writeError, type SettingsView } from '../lib/settings.ts';
 import Icon from './Icon.vue';
@@ -26,6 +26,11 @@ const drafting = ref(false);
 const drafted = ref(false);
 /** The model did not answer: the draft holds only what the files say. */
 const partial = ref(false);
+
+/** "Esporta in CLAUDE.md e AGENTS.md" (D-176): the preview the user confirms, then what was written. */
+const exportPreview = ref<{ project: string; text: string; files: { path: string; status: RulesExportStatus }[] } | null>(null);
+const exported = ref<{ path: string; status: 'written' | 'same' | 'foreign' }[] | null>(null);
+const exporting = ref(false);
 
 const name = computed(() => props.container?.name ?? null);
 const rules = computed(() => view.value?.values?.projectRules);
@@ -66,9 +71,63 @@ async function propose(): Promise<void> {
   }
 }
 
+/** What the preview says of each file. */
+const EXPORT_STATUS: Record<RulesExportStatus | 'written', string> = {
+  new: 'nuovo',
+  same: 'già uguale, non cambia',
+  arianna: 'scritto da Arianna: lo aggiorno',
+  foreign: 'tuo: non lo tocco',
+  written: 'scritto',
+};
+
+const exportWrites = computed(() => exportPreview.value?.files.some((file) => file.status === 'new' || file.status === 'arianna') ?? false);
+
+function exportError(error: unknown): string {
+  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : 'errore';
+  if (error.status === 409) return error.message.includes('changed') ? 'Le regole o i file sono cambiati dopo l’anteprima: riaprila.' : 'Il progetto non ha regole da esportare.';
+  return error.message;
+}
+
+async function openExport(): Promise<void> {
+  if (name.value === null || exporting.value) return;
+  const asked = name.value;
+  exporting.value = true;
+  problem.value = null;
+  exported.value = null;
+  try {
+    const preview = await previewRulesExport(asked);
+    if (name.value === asked) exportPreview.value = { project: asked, ...preview };
+  } catch (error) {
+    if (name.value === asked) problem.value = exportError(error);
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function confirmExport(): Promise<void> {
+  const preview = exportPreview.value;
+  // Only the preview of the project on the page, with the rules saved.
+  if (preview === null || preview.project !== name.value || changed.value || exporting.value) return;
+  const asked = preview.project;
+  exporting.value = true;
+  problem.value = null;
+  try {
+    const result = await writeRulesExport(asked, preview);
+    if (name.value !== asked) return;
+    exported.value = result.files;
+    exportPreview.value = null;
+  } catch (error) {
+    if (name.value === asked) problem.value = exportError(error);
+  } finally {
+    exporting.value = false;
+  }
+}
+
 /** The form as the file has it. */
 function fill(): void {
   drafted.value = false;
+  exportPreview.value = null;
+  exported.value = null;
   own.value = stored.value !== undefined;
   text.value = stored.value ?? '';
 }
@@ -86,7 +145,16 @@ async function load(): Promise<void> {
   }
 }
 
-watch(name, () => void load(), { immediate: true });
+watch(
+  name,
+  () => {
+    // A preview belongs to its project: gone at once, before the settings answer.
+    exportPreview.value = null;
+    exported.value = null;
+    void load();
+  },
+  { immediate: true },
+);
 
 /** "Regole proprie": the first time, a copy of the template to start from. */
 function chooseOwn(): void {
@@ -169,7 +237,35 @@ async function save(): Promise<void> {
         <span>Gli agenti non fanno mai commit: la cartella <code class="font-mono">.git</code> è in sola lettura per loro, le modifiche restano da rivedere e il commit lo fai tu.</span>
       </p>
 
-      <div class="flex items-center justify-end gap-2.5">
+      <div v-if="exportPreview !== null" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[13px]" aria-label="Anteprima dell’esportazione">
+        <p>Scrivo queste regole, uguali, in CLAUDE.md (per Claude Code) e in AGENTS.md (per Codex), così le vedono anche quando li lanci tu nella cartella. I file restano da committare a te.</p>
+        <pre class="max-h-[240px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.text }}</pre>
+        <ul class="flex flex-col gap-0.5 text-xs">
+          <li v-for="file in exportPreview.files" :key="file.path" class="flex gap-2">
+            <code class="font-mono">{{ file.path }}</code><span :class="file.status === 'foreign' ? 'text-warn' : 'text-muted'">{{ EXPORT_STATUS[file.status] }}</span>
+          </li>
+          <li v-if="exportPreview.files.length === 0" class="text-muted">Nessuna parte del progetto è una cartella con git: non c’è dove scrivere.</li>
+        </ul>
+        <div class="flex items-center justify-end gap-2.5">
+          <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="exporting" @click="exportPreview = null">Annulla</button>
+          <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px] font-semibold" :disabled="exporting || changed || !exportWrites" @click="confirmExport">Conferma ed esporta</button>
+        </div>
+      </div>
+      <div v-if="exported !== null" role="status" class="flex flex-col gap-0.5 rounded-[10px] border border-ok/45 bg-ok/9 px-3 py-2 text-xs">
+        <span class="text-[13px]">Esportazione fatta: ricordati di committare i file nel progetto.</span>
+        <span v-for="file in exported" :key="file.path"><code class="font-mono">{{ file.path }}</code> — {{ EXPORT_STATUS[file.status] }}</span>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-end gap-2.5">
+        <button
+          type="button"
+          class="btn mr-auto px-3 py-1.5 text-[13px]"
+          :disabled="changed || exporting || exportPreview !== null"
+          :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md del progetto, dopo un’anteprima'"
+          @click="openExport"
+        >
+          Esporta in CLAUDE.md e AGENTS.md
+        </button>
         <span v-if="saved && !changed" role="status" class="text-xs text-ok">Salvato</span>
         <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="!changed || busy" @click="fill">Annulla</button>
         <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px] font-semibold" :disabled="!changed || busy || tooLong" @click="save">Salva</button>
