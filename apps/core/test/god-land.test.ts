@@ -7,7 +7,7 @@ import { after, test } from 'node:test';
 
 import { gitEnv } from '../src/git-catalog.ts';
 import { createSubtaskClone, godGit, godPartDir } from '../src/god/clone.ts';
-import { changelogLine, commandRunner, createGodLanding, nextMinor, tailOf, trialBranch, versionOf, withRelease, withVersion, type CommandRunner, type GodLandingView } from '../src/god/land.ts';
+import { changelogLine, commandRunner, landingEnv, createGodLanding, nextMinor, tailOf, trialBranch, versionOf, withRelease, withVersion, type CommandRunner, type GodLandingView } from '../src/god/land.ts';
 import { GodError, type SubtaskRow, type SubtaskView } from '../src/god/work.ts';
 
 const roots: string[] = [];
@@ -332,4 +332,9 @@ test('a trial lands or goes whole; a plan takes only what is not in main yet; a 
   assert.equal(head(fx), 'main');
   assert.equal(git(fx.home, 'status', '--porcelain').trim(), '');
   assert.equal(await fx.landing.recover(), false);
+});
+
+test('the environment of pnpm check: only the variables named, never a password or a proxy', () => {
+  const env = landingEnv({ PATH: '/bin', HOME: '/h', PGPASSWORD: 'x', SOPS_AGE_KEY: 'k', HTTPS_PROXY: 'http://p', ARIANNA_DB_PASSWORD: 'y', LANG: '' });
+  assert.deepEqual(env, { PATH: '/bin', HOME: '/h' });
 });

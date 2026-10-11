@@ -4,7 +4,6 @@ import { join } from 'node:path';
 
 import { sanitizeForTerminal } from '@arianna/agents';
 
-import { cleanChildEnv } from '../child-env.ts';
 import { GOD_MAIN, godPartDir, originOf, subtaskBranch, TRIAL_PREFIX, type GitRunner } from './clone.ts';
 import { branchRefusal, COMMIT_IDENTITY, GodError, isSensitive, parseRaw, type GodWork, type SubtaskRow } from './work.ts';
 
@@ -91,8 +90,23 @@ export interface GodLandingEnv {
   onError?: (error: unknown) => void;
 }
 
+/**
+ * The environment of the hook and of the build: only the variables named,
+ * never the database passwords or the age key. No dead proxy, unlike the
+ * processes that receive L2 (child-env.ts): the tests check the proxy of the
+ * environment themselves, and nothing here handles private data.
+ */
+export function landingEnv(from: NodeJS.ProcessEnv): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of INHERITED) {
+    const value = from[key];
+    if (value !== undefined && value !== '') env[key] = value;
+  }
+  return env;
+}
+
 export function commandRunner(): CommandRunner {
-  const env = cleanChildEnv(process.env, INHERITED);
+  const env = landingEnv(process.env);
   return (command, args, cwd, timeoutMs) =>
     new Promise((resolve) => {
       execFile(command, [...args], { cwd, env, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', shell: false }, (error, stdout, stderr) => {
