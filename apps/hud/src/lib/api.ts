@@ -1,4 +1,4 @@
-import type { ChangelogRef, GodCarry, GodStatus } from './god.ts';
+import type { ChangelogRef, GodCarry, GodLandingView, GodStatus, LandAction } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
@@ -287,6 +287,11 @@ export async function approveGodPlan(messageId: string): Promise<GodPlan> {
 /** Ferma, Riprendi, Scarta, Prepara il ramo of a subtask. */
 export async function actOnSubtask(id: string, action: SubtaskAction): Promise<GodSubtask> {
   return (await call<{ subtask: GodSubtask }>('POST', `/api/god/subtasks/${encodeURIComponent(id)}/${action}`, {})).subtask;
+}
+
+/** «Prova», «Approva funzionalità», «Non funziona» (D-179) on a subtask or on a whole plan: the work goes on in the core. */
+export async function landGod(kind: 'subtasks' | 'plans', id: string, action: LandAction, text = ''): Promise<GodLandingView> {
+  return (await call<{ landing: GodLandingView }>('POST', `/api/god/${kind}/${encodeURIComponent(id)}/land/${action}`, action === 'reject' ? { text } : {})).landing;
 }
 
 /** "Riassumi e riparti" (D-127, G4): a new conversation with GOD from a summary of this one. */

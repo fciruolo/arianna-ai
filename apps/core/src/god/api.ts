@@ -5,7 +5,8 @@ import type { Queryable } from '../db/client.ts';
 import type { ChangelogRef } from './changelog-carry.ts';
 import { cloneState, GOD_AGENT, GOD_CONTAINER, GOD_MAIN, GOD_PROJECT, godWorkspace, syncGodClone, type CloneState } from './clone.ts';
 import { concurrencyFor, projection, quotaReadings } from './quota.ts';
-import type { GodWork, MessagePlan, PlanView, SubtaskView } from './work.ts';
+import type { GodLanding, GodLandingView, LandAction } from './land.ts';
+import { GodError, type GodWork, type MessagePlan, type PlanView, type SubtaskView } from './work.ts';
 
 /**
  * What the page of GOD shows (D-127): whether the project is registered as it
@@ -25,6 +26,10 @@ export interface GodStatus {
   conversations: GodConversation[];
   /** The projected share of the fullest window of Claude (null: no reading), and the subtasks at once it allows. */
   quota: { projection: number | null; concurrency: number };
+  /** «Prova», «Approva funzionalità», «Non funziona» (D-179): the installation's branch, the operation at work, the last outcome. */
+  landing?: GodLandingView;
+  /** This run of the core: the page reloads when it changes (a restart of D-179). */
+  boot?: string;
 }
 
 export interface GodConversation {
@@ -47,6 +52,10 @@ export interface GodApiOptions {
   prepare?: (dir: string) => Promise<void>;
   /** Plans and subtasks (G2-G3); absent, their routes answer 404. */
   work?: GodWork;
+  /** D-179; absent, its routes answer 404. */
+  landing?: GodLanding;
+  /** This run of the core. */
+  boot?: string;
 }
 
 export type SubtaskAction = 'stop' | 'resume' | 'discard' | 'branch';
@@ -65,6 +74,8 @@ export interface GodApi {
     /** "Parlane con GOD" (I-6, D-178): a new conversation with GOD about an entry of the register of the versions. */
     discuss(ref: ChangelogRef): Promise<Conversation>;
   };
+  /** D-179: on one subtask, or on every live subtask of a plan; `text` is what the user saw, for «Non funziona». */
+  land?(target: { subtask: string } | { plan: string }, action: LandAction, text: string): Promise<GodLandingView>;
 }
 
 /** The conversations with GOD, the latest active first: not archived, not deleted. */
@@ -98,12 +109,34 @@ export function createGodApi(options: GodApiOptions): GodApi {
       available: options.available(),
       conversations: await godConversations(sql),
       quota: { projection: projected ?? null, concurrency: concurrencyFor(projected) },
+      ...(options.landing === undefined ? {} : { landing: await options.landing.view() }),
+      ...(options.boot === undefined ? {} : { boot: options.boot }),
     };
   };
   // One sync at a time: a second click waits for the first.
   let syncing: Promise<unknown> = Promise.resolve();
+  const landing = options.landing;
   return {
     status,
+    ...(landing === undefined || work === undefined
+      ? {}
+      : {
+          async land(target, action, text) {
+            let ids: string[];
+            let title: string;
+            if ('plan' in target) {
+              ({ ids, title } = await landing.planTargets(target.plan));
+            } else {
+              const [row] = await work.rows([target.subtask]);
+              if (row === undefined) throw new GodError('not-found', 'not found');
+              ids = [row.id];
+              title = row.title;
+            }
+            if (action === 'trial') return landing.trial(ids, title);
+            if (action === 'approve') return landing.approve(ids, title);
+            return landing.reject(ids, text);
+          },
+        }),
     async syncClone() {
       const run = syncing.then(() => syncGodClone(home, data, undefined, options.prepare));
       syncing = run.catch(() => undefined);

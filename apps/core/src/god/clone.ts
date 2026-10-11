@@ -46,6 +46,9 @@ export const GOD_MARKER = 'arianna-god';
 export const GOD_MARKER_VERSION = 'clone: main only, no-local (D-127 v2)';
 /** The name of a subtask's part and of its branch's last segment: `g<NNN>-<slug>`. */
 export const SUBTASK_PART = /^g[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$/;
+/** The branches of the installation where a trial of GOD runs (D-179): `prova/god-<part>`. */
+export const TRIAL_PREFIX = 'prova/god-';
+
 /** The branch of a subtask in its clone. */
 export function subtaskBranch(part: string): string {
   return `god/${part}`;

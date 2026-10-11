@@ -1038,6 +1038,19 @@ function godRoutes(god: GodApi | undefined): Route[] {
       return { status: 201, body: { conversation: await needWork().discuss(changelogRefOf(body)) } };
     }),
     route('GET', '/api/god/conversations/:id/carry', async (_request, _url, params) => ({ body: { carry: await needWork().carry(idParam(params, 'id')) } })),
+    // D-179: «Prova», «Approva funzionalità», «Non funziona» on a subtask or a whole plan; the work goes on in the background.
+    route('POST', '/api/god/:kind/:id/land/:action', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['text']);
+      const action = (['trial', 'approve', 'reject'] as const).find((item) => item === params.action);
+      const kind = params.kind === 'subtasks' ? 'subtask' : params.kind === 'plans' ? 'plan' : undefined;
+      const api = need();
+      if (action === undefined || kind === undefined || api.land === undefined) throw new HttpError(404, 'not found');
+      if (body.text !== undefined && typeof body.text !== 'string') throw new HttpError(400, 'text must be a string');
+      const id = params.id ?? '';
+      const target = kind === 'plan' ? { plan: id } : { subtask: id };
+      return { status: 202, body: { landing: await api.land(target, action, typeof body.text === 'string' ? body.text : '') } };
+    }),
     route('POST', '/api/god/subtasks/:id/:action', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       const action = (['stop', 'resume', 'discard', 'branch'] as const).find((item) => item === params.action);

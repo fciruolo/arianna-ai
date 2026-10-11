@@ -35,6 +35,8 @@ export interface GodSubtask {
   sensitive: string[];
   merged?: boolean;
   mergeCommands?: string[];
+  /** The installation is on the trial branch that carries it (D-179). */
+  trial?: boolean;
 }
 
 export interface GodPlan {
@@ -83,7 +85,7 @@ export const STATE_TEXT: Record<SubtaskState, string> = {
   reviewed: 'rivisto',
   attention: 'serve te',
   stopped: 'fermato',
-  branch: 'ramo pronto',
+  branch: 'pronto',
   discarded: 'scartato',
 };
 
@@ -107,7 +109,7 @@ export function verdictText(review: ReviewVerdict | null): string | null {
 }
 
 /** The actions a subtask offers now, in the order of the buttons. */
-export function actionsOf(subtask: Pick<GodSubtask, 'state'> & Partial<Pick<GodSubtask, 'conversationId'>>): SubtaskAction[] {
+export function actionsOf(subtask: Pick<GodSubtask, 'state'> & Partial<Pick<GodSubtask, 'conversationId' | 'merged' | 'trial'>>): SubtaskAction[] {
   // It asks for the user before its chat was opened (its clone failed): it starts again from the queue.
   if (subtask.state === 'attention' && subtask.conversationId === null) return ['resume', 'discard'];
   switch (subtask.state) {
@@ -117,11 +119,11 @@ export function actionsOf(subtask: Pick<GodSubtask, 'state'> & Partial<Pick<GodS
       return ['stop', 'discard'];
     case 'reviewed':
     case 'attention':
-      return ['branch', 'stop', 'discard'];
+      return ['stop', 'discard'];
     case 'stopped':
-      return ['resume', 'branch', 'discard'];
+      return ['resume', 'discard'];
     case 'branch':
-      return ['discard'];
+      return subtask.merged === true || subtask.trial === true ? [] : ['discard'];
     case 'discarded':
       return [];
   }
@@ -133,6 +135,49 @@ export const ACTION_TEXT: Record<SubtaskAction, string> = {
   discard: 'Scarta',
   branch: 'Prepara il ramo',
 };
+
+export type LandAction = 'trial' | 'approve' | 'reject';
+
+type Landable = Pick<GodSubtask, 'state'> & Partial<Pick<GodSubtask, 'conversationId' | 'merged' | 'trial'>>;
+
+/** Ready to be tried or approved: reviewed, or stopped with its chat, or a branch not in main yet. */
+function landable(subtask: Landable): boolean {
+  if (subtask.merged === true || subtask.trial === true) return false;
+  if (subtask.state === 'branch' || subtask.state === 'reviewed') return true;
+  return (subtask.state === 'attention' || subtask.state === 'stopped') && subtask.conversationId !== null && subtask.conversationId !== undefined;
+}
+
+/** «Prova», «Approva funzionalità», «Non funziona» of one subtask now (D-179). */
+export function landActionsOf(subtask: Landable): LandAction[] {
+  if (subtask.trial === true) return ['approve', 'reject'];
+  return landable(subtask) ? ['trial', 'approve'] : [];
+}
+
+/** The same for a whole plan: its live subtasks (not discarded, not in main) all ready, or some in the trial. */
+export function planLandActionsOf(subtasks: readonly Landable[]): LandAction[] {
+  const live = subtasks.filter((subtask) => subtask.state !== 'discarded' && subtask.merged !== true);
+  if (live.some((subtask) => subtask.trial === true)) return ['approve', 'reject'];
+  return live.length > 1 && live.every(landable) ? ['trial', 'approve'] : [];
+}
+
+export const LAND_TEXT: Record<LandAction, string> = {
+  trial: 'Prova',
+  approve: 'Approva funzionalità',
+  reject: 'Non funziona',
+};
+
+export const PLAN_LAND_TEXT: Record<LandAction, string> = {
+  trial: 'Prova tutto',
+  approve: 'Approva tutto',
+  reject: 'Non funziona',
+};
+
+/** The badge of a subtask: in trial and in main say more than «ramo pronto». */
+export function badgeOf(subtask: Pick<GodSubtask, 'state'> & Partial<Pick<GodSubtask, 'merged' | 'trial'>>): { text: string; tone: Tone } {
+  if (subtask.merged === true) return { text: 'in main', tone: 'ok' };
+  if (subtask.trial === true) return { text: 'in prova', tone: 'info' };
+  return { text: STATE_TEXT[subtask.state], tone: STATE_TONE[subtask.state] };
+}
 
 /** The projected quota in words. */
 export function quotaText(quota: GodQuota): string {

@@ -20,6 +20,7 @@ import {
   godPartOf,
   godWorkspace,
   subtaskBranch,
+  TRIAL_PREFIX,
   type GitRunner,
 } from './clone.ts';
 import { projectState } from './api.ts';
@@ -86,7 +87,7 @@ export interface GodWorkEnv {
   onError?: (error: unknown) => void;
 }
 
-interface SubtaskRow {
+export interface SubtaskRow {
   id: string;
   planId: string;
   position: number;
@@ -130,6 +131,8 @@ export interface SubtaskView extends Omit<SubtaskRow, 'planId'> {
   merged?: boolean;
   /** For a branch ready: the commands that merge it, run in the folder of the installation. */
   mergeCommands?: string[];
+  /** For a branch ready: the installation is on the trial branch that carries it («Prova», D-179). */
+  trial?: boolean;
 }
 
 export interface PlanView extends PlanRow {
@@ -351,6 +354,19 @@ export function createGodWork(env: GodWorkEnv) {
     );
   }
 
+  /** Whether the installation is on a trial branch of GOD that carries `commit` (D-179). */
+  async function inTrial(commit: string): Promise<boolean> {
+    const head = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], home).then(
+      (out) => out.trim(),
+      () => '',
+    );
+    if (!head.startsWith(TRIAL_PREFIX)) return false;
+    return git(['merge-base', '--is-ancestor', commit, 'HEAD'], home).then(
+      () => true,
+      () => false,
+    );
+  }
+
   async function loadPlan(id: string): Promise<PlanRow | undefined> {
     const [row] = await sql.unsafe<PlanRow[]>(`SELECT ${PLAN_COLUMNS} FROM god_plans p WHERE p.id = $1`, [id]);
     return row;
@@ -391,7 +407,9 @@ export function createGodWork(env: GodWorkEnv) {
         () => [] as string[],
       );
       const sensitive = [...new Set([...base.sensitive, ...committed.filter(isSensitive)])];
-      return { ...base, sensitive, merged: await isMerged(row.commitSha), mergeCommands: mergeCommandsOf(row.part, row.commitSha) };
+      const merged = await isMerged(row.commitSha);
+      const trial = !merged && (await inTrial(row.commitSha));
+      return { ...base, sensitive, merged, trial, mergeCommands: mergeCommandsOf(row.part, row.commitSha) };
     }
     return base;
   }
@@ -712,6 +730,39 @@ export function createGodWork(env: GodWorkEnv) {
     return view(await subtask(id));
   }
 
+  /** The subtasks with these ids, in the order of their plans; unknown ids are refused. */
+  async function rows(ids: readonly string[]): Promise<SubtaskRow[]> {
+    return Promise.all(ids.map(subtask));
+  }
+
+  /** A plan by id. */
+  async function plan(id: string): Promise<PlanRow> {
+    const found = /^[0-9a-f-]{36}$/.test(id) ? await loadPlan(id) : undefined;
+    if (found === undefined) throw new GodError('not-found', 'not found');
+    return found;
+  }
+
+  /** The subtasks of a plan still alive (not discarded), in their order. */
+  async function planRows(planId: string): Promise<SubtaskRow[]> {
+    if (!/^[0-9a-f-]{36}$/.test(planId)) throw new GodError('not-found', 'not found');
+    const found = await loadSubtasks('s.plan_id = $1::uuid', [planId]);
+    if (found.length === 0) throw new GodError('not-found', 'not found');
+    return found.filter((row) => row.state !== 'discarded');
+  }
+
+  /**
+   * «Non funziona» after a trial (D-179): the user's words go to the Coder of
+   * the subtask, which goes back to work on its clone (its prepared commit
+   * stays: the next «Prova» commits on top of it).
+   */
+  async function reopen(id: string, text: string): Promise<void> {
+    const row = await subtask(id);
+    if (row.state !== 'branch' || row.conversationId === null) throw new GodError('conflict', 'questo sottocompito non è un ramo pronto con la sua chat');
+    const body = `Il lavoro provato nell'installazione non va. Cosa ha visto l'utente:\n\n${text}\n\nCorreggi nel clone e finisci il lavoro.`;
+    await sql.begin((tx) => writeUserMessage(tx, row.conversationId ?? '', body));
+    await setState(sql, row, 'working', { reason: null });
+  }
+
   /** "Riassumi e riparti" (G4): a new conversation with GOD from a summary of `conversationId`. */
   async function restart(conversationId: string): Promise<Conversation> {
     const god = env.policy(GOD_AGENT);
@@ -756,7 +807,7 @@ export function createGodWork(env: GodWorkEnv) {
     }
   }
 
-  return { messagePlan, approve, plans, tick, stop, resume, discard, prepareBranch, restart, carry, discuss };
+  return { messagePlan, approve, plans, tick, stop, resume, discard, prepareBranch, restart, carry, discuss, rows, plan, planRows, reopen };
 }
 
 export type GodWork = ReturnType<typeof createGodWork>;

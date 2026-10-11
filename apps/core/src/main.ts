@@ -1,6 +1,7 @@
 // Usage: node apps/core/src/main.ts
 // Starts the core: migrations, task worker, live feed, API, WebSocket and web chat.
-import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -28,6 +29,8 @@ import { createVault } from '@arianna/vault';
 
 import { directPolicies, type DirectPolicy } from './direct-chat.ts';
 import { createGodApi } from './god/api.ts';
+import { godGit } from './god/clone.ts';
+import { createGodLanding } from './god/land.ts';
 import { prepareGodClone } from './god/prepare.ts';
 import { createGodWork } from './god/work.ts';
 import { GOD_AGENT } from './god/clone.ts';
@@ -99,6 +102,21 @@ function endpointPort(url: string | undefined): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+// A restart asked by GOD (D-179): the previous core must have let go of the port and the worker first.
+const restartAfter = Number(process.env.ARIANNA_RESTART_AFTER ?? '');
+delete process.env.ARIANNA_RESTART_AFTER;
+if (Number.isInteger(restartAfter) && restartAfter > 0) {
+  const gone = (): boolean => {
+    try {
+      process.kill(restartAfter, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (let waited = 0; waited < 300_000 && !gone(); waited += 200) await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
 const config = loadConfig();
@@ -642,6 +660,47 @@ const godWork = createGodWork({
   prepareClone: prepareGod,
   onError: report,
 });
+// «Prova», «Approva funzionalità», «Non funziona» (D-179): GOD's work in the installation, then a restart on it.
+const godLanding = createGodLanding({
+  home: config.home,
+  data: config.paths.data,
+  work: godWork,
+  git: godGit(config.home, config.paths.data),
+  development: () => app.development,
+  restart: restartCore,
+  onError: report,
+});
+/**
+ * A new core on the code now in the installation: this one stops in order
+ * (port, worker, services) and starts the new one, detached, as its last step
+ * (its log in data/logs/core.log); the new one waits for this pid to be gone.
+ */
+let restartAsked = false;
+function restartCore(): void {
+  restartAsked = true;
+  process.kill(process.pid, 'SIGTERM');
+}
+function spawnSuccessor(): void {
+  const logs = join(config.paths.data, 'logs');
+  mkdirSync(logs, { recursive: true, mode: 0o700 });
+  const log = openSync(join(logs, 'core.log'), 'a', 0o600);
+  const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+    cwd: process.cwd(),
+    env: { ...process.env, ARIANNA_RESTART_AFTER: String(process.pid) },
+    detached: true,
+    stdio: ['ignore', log, log],
+  });
+  child.unref();
+}
+// A trial of GOD left half-made by a core stopped in the middle goes back to main.
+await godLanding.recover().then(
+  (recovered) => {
+    if (recovered) console.error('GOD: a trial left half-made was undone, the installation is back on main');
+  },
+  (error: unknown) => {
+    report(error);
+  },
+);
 const server = await startApiServer({
   sql,
   live,
@@ -696,6 +755,8 @@ const server = await startApiServer({
     available: () => directAgents().some((policy) => policy.agent === GOD_AGENT),
     prepare: prepareGod,
     work: godWork,
+    landing: godLanding,
+    boot: `${String(process.pid)}-${String(Date.now())}`,
   }),
   participantAgent: (name) => {
     const agent = agents.get(name);
@@ -866,7 +927,10 @@ async function shutdown(): Promise<void> {
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     shutdown().then(
-      () => process.exit(0),
+      () => {
+        if (restartAsked) spawnSuccessor();
+        process.exit(0);
+      },
       (error: unknown) => {
         report(error);
         process.exit(1);

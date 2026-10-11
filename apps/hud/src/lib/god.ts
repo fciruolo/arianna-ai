@@ -30,6 +30,15 @@ export interface GodConversation {
   lastAt: string;
 }
 
+export type LandAction = 'trial' | 'approve' | 'reject';
+
+/** The installation, the operation of D-179 at work and the last outcome. */
+export interface GodLandingView {
+  installation: { branch: string; clean: boolean; trial: string | null };
+  landing: { action: LandAction; parts: string[]; phase: string; startedAt: string } | null;
+  outcome: { ok: boolean; text: string; at: string } | null;
+}
+
 export interface GodStatus {
   project: 'missing' | 'wrong-path' | 'ok';
   /** The part GOD's chat opens on: `arianna:main`. */
@@ -41,6 +50,23 @@ export interface GodStatus {
   conversations: GodConversation[];
   /** Absent from an older core. */
   quota?: GodQuota;
+  /** «Prova» and «Approva funzionalità» (D-179); absent from an older core. */
+  landing?: GodLandingView;
+  /** This run of the core; absent from an older core. */
+  boot?: string;
+}
+
+/**
+ * After «Prova», «Approva» or «Non funziona» started at `since` on the core
+ * run `boot`: 'reload' once a new core answers, 'done' when the operation
+ * ended without a restart (an outcome after the click that failed), 'wait'
+ * otherwise.
+ */
+export function afterLanding(started: { boot: string | undefined; since: string }, status: Pick<GodStatus, 'boot' | 'landing'>): 'reload' | 'done' | 'wait' {
+  if (status.boot !== undefined && started.boot !== undefined && status.boot !== started.boot) return 'reload';
+  const outcome = status.landing?.outcome ?? null;
+  if (status.landing?.landing === null && outcome !== null && !outcome.ok && outcome.at >= started.since) return 'done';
+  return 'wait';
 }
 
 /** What stops a new conversation with GOD now, in words for the user; null when nothing does. */
