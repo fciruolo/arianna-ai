@@ -165,7 +165,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
         <header class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 class="font-hud text-[15px] font-semibold">{{ plan.title }}</h2>
           <span class="font-mono text-[11px] text-muted">{{ when(plan.createdAt) }}</span>
-          <button type="button" class="ml-auto text-[12.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
+          <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[12.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
         </header>
         <ol class="flex flex-col gap-3">
           <li v-for="subtask in plan.subtasks" :key="subtask.id" class="rounded-lg border border-line px-3 py-2.5">

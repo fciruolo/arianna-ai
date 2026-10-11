@@ -37,8 +37,9 @@ export interface GodSubtask {
 
 export interface GodPlan {
   id: string;
-  conversationId: string;
-  messageId: string;
+  /** Null once the conversation of GOD was deleted. */
+  conversationId: string | null;
+  messageId: string | null;
   title: string;
   model: string | null;
   createdAt: string;

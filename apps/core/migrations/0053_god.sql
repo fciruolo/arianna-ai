@@ -6,13 +6,18 @@
 -- conversation with GOD reads from the one it restarts from ("Riassumi e
 -- riparti", G4). Work data of Arianna's own code: L1 at most, never private.
 -- The core never deletes (D-046): a subtask is discarded, not removed.
--- See docs/DATA-MODEL.md.
+-- Deleting a conversation (purge_conversation, 0026; erase_conversation,
+-- 0043): the plans and subtasks born there stay, unlinked from its chats and
+-- messages, as the cards of D-157 (they describe clones that are still on
+-- the disk); the summaries a restarted conversation carries go with either
+-- conversation. See docs/DATA-MODEL.md.
 
 CREATE TABLE god_plans (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id  uuid NOT NULL REFERENCES conversations (id),
-  -- The answer of GOD that holds the plan: approved once.
-  message_id       bigint NOT NULL UNIQUE REFERENCES messages (id),
+  -- NULL once the conversation is erased (the plan stays, unlinked).
+  conversation_id  uuid REFERENCES conversations (id) ON DELETE SET NULL,
+  -- The answer of GOD that holds the plan: approved once. NULL once the message is deleted.
+  message_id       bigint UNIQUE REFERENCES messages (id) ON DELETE SET NULL,
   title            text NOT NULL CHECK (btrim(title) <> '' AND length(title) <= 120),
   -- The model of GOD's conversation when the user approved: the subtasks start on it (Claude or Codex).
   model            text CHECK (model ~ '^[a-z][a-z0-9-]{0,31}$'),
@@ -38,8 +43,9 @@ CREATE TABLE god_subtasks (
   reason                  text CHECK (length(reason) <= 300),
   -- The Reviewer's verdict: approved, changes asked, or not said.
   review                  text CHECK (review IN ('ok', 'changes', 'unknown')),
-  conversation_id         uuid REFERENCES conversations (id),
-  review_conversation_id  uuid REFERENCES conversations (id),
+  -- The chats of the Coder and of the Reviewer; NULL once erased (the subtask asks for the user).
+  conversation_id         uuid REFERENCES conversations (id) ON DELETE SET NULL,
+  review_conversation_id  uuid REFERENCES conversations (id) ON DELETE SET NULL,
   -- The commit of "Prepara il ramo" on god/<part>.
   commit_sha              text CHECK (commit_sha ~ '^[0-9a-f]{40}$'),
   created_at              timestamptz NOT NULL DEFAULT now(),
@@ -47,16 +53,28 @@ CREATE TABLE god_subtasks (
   UNIQUE (plan_id, position)
 );
 
-CREATE INDEX god_subtasks_open_idx ON god_subtasks (state) WHERE state IN ('queued', 'working', 'reviewing', 'attention');
+CREATE INDEX god_subtasks_open_idx ON god_subtasks (state) WHERE state IN ('queued', 'working', 'reviewing', 'reviewed', 'attention');
 
 CREATE TABLE god_carries (
   -- The new conversation with GOD, and the one it restarts from.
-  conversation_id       uuid PRIMARY KEY REFERENCES conversations (id),
-  from_conversation_id  uuid NOT NULL REFERENCES conversations (id),
+  conversation_id       uuid PRIMARY KEY REFERENCES conversations (id) ON DELETE CASCADE,
+  from_conversation_id  uuid NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
   body                  text NOT NULL CHECK (btrim(body) <> '' AND length(body) <= 12000),
   label                 privacy_label NOT NULL DEFAULT 'L1' CHECK (label <= 'L1'),
   created_at            timestamptz NOT NULL DEFAULT now()
 );
+
+-- A conversation deleted from the list (purge_conversation keeps its row,
+-- with purged_at): the summaries it carries or that quote it go with its texts.
+CREATE FUNCTION god_carries_purge() RETURNS trigger
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+BEGIN
+  DELETE FROM god_carries WHERE conversation_id = NEW.id OR from_conversation_id = NEW.id;
+  RETURN NEW;
+END
+$$;
+CREATE TRIGGER god_carries_purge AFTER UPDATE OF purged_at ON conversations
+  FOR EACH ROW WHEN (OLD.purged_at IS NULL AND NEW.purged_at IS NOT NULL) EXECUTE FUNCTION god_carries_purge();
 
 GRANT SELECT, INSERT, UPDATE ON god_plans, god_subtasks TO arianna_app;
 GRANT SELECT, INSERT ON god_carries TO arianna_app;

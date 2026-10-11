@@ -102,8 +102,9 @@ interface SubtaskRow {
 
 interface PlanRow {
   id: string;
-  conversationId: string;
-  messageId: string;
+  /** Null once the conversation of GOD was erased: the plan stays, unlinked (0053). */
+  conversationId: string | null;
+  messageId: string | null;
   title: string;
   model: string | null;
   label: Label;
@@ -449,7 +450,11 @@ export function createGodWork(env: GodWorkEnv) {
   async function step(): Promise<void> {
     const open = await loadSubtasks(`s.state IN ('queued', 'working', 'reviewing', 'reviewed', 'attention')`, []);
     for (const row of open) {
-      if (row.conversationId === null) continue;
+      if (row.conversationId === null) {
+        // Its chat was erased while it worked: the user decides (Prepara il ramo with what is there, or Scarta).
+        if (row.state === 'working' || row.state === 'reviewing') await setState(sql, row.id, 'attention', { reason: 'la chat del Coder è stata eliminata: prepara il ramo con quello che c\'è, oppure scarta' });
+        continue;
+      }
       const coder = await latestTask(sql, row.conversationId);
       const work = outcomeOf(coder);
       const review = row.reviewConversationId === null ? undefined : await latestTask(sql, row.reviewConversationId);

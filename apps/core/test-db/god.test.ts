@@ -242,7 +242,7 @@ test('a Coder that does not finish asks for the user; Ferma, Riprendi and Scarta
   await sql`UPDATE tasks SET status = 'failed' WHERE conversation_id = ${coderChat}`;
   const resumed = await work.resume(first.id);
   assert.equal(resumed.state, 'working');
-  await sql`UPDATE tasks SET status = 'waiting_user' WHERE conversation_id = ${coderChat}`;
+  await sql`UPDATE tasks SET status = 'waiting_user', waiting_reason = 'serve una risposta' WHERE conversation_id = ${coderChat}`;
   await work.tick();
   assert.equal((await at(plan.id, 1)).state, 'attention');
   const dir = godPartDir(home, first.part);
@@ -295,4 +295,41 @@ test('"Riassumi e riparti": a new conversation with GOD, same part and model, wi
   const empty = await createConversation(sql, { mode: 'work', project: 'arianna:main', projects: parts(), agent: policyFor('god') });
   await assert.rejects(work.restart(empty.id), (error: unknown) => error instanceof GodError && error.code === 'invalid');
   assert.equal(await work.carry(conversationId), null);
+});
+
+test('deleting a conversation with GOD: the plan stays unlinked, the summaries go (purge and erase)', async () => {
+  await fresh();
+  const { work, parts } = setup();
+  const { sql } = db();
+  // "Elimina" from the archive (purge_conversation, 0026): the texts go, the row stays.
+  const first = await godAnswer(parts, `Ecco.\n${PLAN}`);
+  const plan = await work.approve(first.messageId);
+  const restarted = await work.restart(first.conversationId);
+  await sql`UPDATE conversations SET archived_at = now() WHERE id = ${first.conversationId}`;
+  await sql`SELECT purge_conversation(${first.conversationId})`;
+  const [kept] = await sql<{ conversationId: string | null; messageId: string | null }[]>`
+    SELECT conversation_id::text AS "conversationId", message_id::text AS "messageId" FROM god_plans WHERE id = ${plan.id}`;
+  assert.ok(kept !== undefined);
+  assert.equal(kept.messageId, null, 'the message is gone, the plan stays');
+  assert.equal(kept.conversationId, first.conversationId);
+  assert.equal(await carryOf(sql, restarted.id), undefined, 'the summary quoting a deleted conversation goes with it');
+
+  // "Elimina" for good (erase_conversation, 0043): the rows go, the plan and its subtasks stay unlinked.
+  const second = await godAnswer(parts, `Ecco.\n${PLAN}`);
+  const other = await work.approve(second.messageId);
+  await work.tick();
+  const started = await at(other.id, 1);
+  const coderChat = set(started.conversationId);
+  const again = await work.restart(second.conversationId);
+  await sql`SELECT erase_conversation(${second.conversationId})`;
+  await sql`SELECT erase_conversation(${coderChat})`;
+  const [unlinked] = await sql<{ conversationId: string | null; messageId: string | null }[]>`
+    SELECT conversation_id::text AS "conversationId", message_id::text AS "messageId" FROM god_plans WHERE id = ${other.id}`;
+  assert.ok(unlinked !== undefined);
+  assert.equal(unlinked.conversationId, null);
+  assert.equal(unlinked.messageId, null);
+  assert.equal(await carryOf(sql, again.id), undefined);
+  assert.equal((await at(other.id, 1)).conversationId, null);
+  await work.tick();
+  assert.equal((await at(other.id, 1)).state, 'attention', 'a subtask whose chat was erased asks for the user');
 });
