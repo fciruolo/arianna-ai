@@ -693,8 +693,9 @@ export function createWorker(options: WorkerOptions): Worker {
   async function haltedForGood(jobId: string, taskId: string | undefined, signal: AbortSignal): Promise<void> {
     const cause = stopCause(signal);
     await sql.begin(async (tx) => {
-      await failJob(tx, jobId, worker, cause, null);
-      if (cause === 'god' && taskId !== undefined) await failTask(tx, taskId, { origin: 'engine', code: 'engine.stopped', details: {} });
+      const result = await failJob(tx, jobId, worker, cause, null);
+      // Only a step still running here: one that already ended (its job done, the next one queued) is left as it is.
+      if (cause === 'god' && result === 'failed' && taskId !== undefined) await failTask(tx, taskId, { origin: 'engine', code: 'engine.stopped', details: {} });
     });
   }
 

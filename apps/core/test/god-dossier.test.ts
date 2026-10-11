@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { DOSSIER_INTRO, godDossier, section } from '../src/god/dossier.ts';
+import { DOSSIER_INTRO, godDossier, read, section } from '../src/god/dossier.ts';
 import { godDossierPart } from '../src/orchestrator/delegate.ts';
 
 const roots: string[] = [];
@@ -98,4 +98,21 @@ test('only a run on the container of Arianna\'s clones reads the dossier, at the
   assert.equal(part.source, 'god:dossier:arianna');
   assert.equal(godDossierPart('demo', dir, 'L1'), undefined);
   assert.equal(godDossierPart('arianna', '', 'L1'), undefined);
+});
+
+test('a link of the clone towards a file outside it is never read: the cloud writes the clones', () => {
+  const outside = clone({ 'docs/HANDOFF.md': '**Nota privata finta: non deve uscire.**\n' });
+  const dir = clone({});
+  symlinkSync(join(outside, 'docs', 'HANDOFF.md'), join(dir, 'docs', 'HANDOFF.md'));
+  assert.equal(read(dir, 'docs/HANDOFF.md'), undefined);
+  assert.equal(godDossier(dir), undefined);
+  // docs/ itself a link: the same.
+  const other = clone({});
+  rmSync(join(other, 'docs'), { recursive: true });
+  symlinkSync(join(outside, 'docs'), join(other, 'docs'));
+  assert.equal(godDossier(other), undefined);
+  // A link that stays inside the clone is fine.
+  writeFileSync(join(dir, 'docs', 'real.md'), '**Stato finto.**\n');
+  symlinkSync(join(dir, 'docs', 'real.md'), join(dir, 'docs', 'DECISIONS.md'));
+  assert.equal(read(dir, 'docs/DECISIONS.md'), '**Stato finto.**\n');
 });

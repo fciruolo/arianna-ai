@@ -43,6 +43,11 @@ function fakeHome(): string {
   return home;
 }
 
+/** The tick reads every subtask of the database: the ones of earlier tests are put aside. */
+async function fresh(): Promise<void> {
+  await db().sql`UPDATE god_subtasks SET state = 'discarded' WHERE state <> 'discarded'`;
+}
+
 const policy = (agent: string): DirectPolicy => ({ agent, description: agent, cloud: true, executors: ['claude'], modes: ['work'], project: true });
 
 function setup() {
@@ -64,6 +69,7 @@ function setup() {
       stopped.push(taskId);
       return true;
     },
+    tickOnApprove: false,
   });
   return { home, work, parts, stopped };
 }
@@ -156,6 +162,7 @@ function set(value: string | null): string {
 }
 
 test('the tick starts a subtask in its own clone with the Coder, then the Reviewer, and reads the verdict', async () => {
+  await fresh();
   const { home, work, parts } = setup();
   const { sql } = db();
   const { messageId } = await godAnswer(parts, PLAN);
@@ -219,6 +226,7 @@ test('the tick starts a subtask in its own clone with the Coder, then the Review
 });
 
 test('a Coder that does not finish asks for the user; Ferma, Riprendi and Scarta', async () => {
+  await fresh();
   const { home, work, parts, stopped } = setup();
   const { sql } = db();
   const { messageId } = await godAnswer(parts, PLAN.replace('"blocked_by":[1]', '"blocked_by":[]'));

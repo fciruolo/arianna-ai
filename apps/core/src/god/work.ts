@@ -76,6 +76,8 @@ export interface GodWorkEnv {
   prepareClone?: (dir: string) => Promise<void>;
   git?: GitRunner;
   now?: () => Date;
+  /** "Approva e avvia" moves the subtasks at once (default); tests tick by hand. */
+  tickOnApprove?: boolean;
   onError?: (error: unknown) => void;
 }
 
@@ -365,7 +367,7 @@ export function createGodWork(env: GodWorkEnv) {
     });
     const plan = await loadPlan(id);
     if (plan === undefined) throw new Error('the plan is missing');
-    void tick().catch((error: unknown) => env.onError?.(error));
+    if (env.tickOnApprove !== false) void tick().catch((error: unknown) => env.onError?.(error));
     return planView(plan);
   }
 
@@ -426,7 +428,7 @@ export function createGodWork(env: GodWorkEnv) {
   async function startReview(row: SubtaskRow): Promise<void> {
     const reviewer = env.policy(REVIEWER_AGENT);
     if (reviewer === undefined) {
-      await setState(sql, row.id, 'reviewed', { review: 'unknown', reason: 'nessun revisore può lavorare ora: rivedi tu le modifiche' });
+      if (row.state !== 'reviewed') await setState(sql, row.id, 'reviewed', { review: 'unknown', reason: 'nessun revisore può lavorare ora: rivedi tu le modifiche' });
       return;
     }
     if (row.reviewConversationId !== null) {
@@ -451,8 +453,9 @@ export function createGodWork(env: GodWorkEnv) {
       const coder = await latestTask(sql, row.conversationId);
       const work = outcomeOf(coder);
       const review = row.reviewConversationId === null ? undefined : await latestTask(sql, row.reviewConversationId);
-      // The user wrote to the Coder after the latest review: the work is on again.
-      const newer = coder !== undefined && (review === undefined || coder.createdAt > review.createdAt);
+      // The user wrote to the Coder after the latest review: the work is on again. Reviewed without a Reviewer
+      // (none could work): only a new message to the Coder, at work now, starts it again.
+      const newer = coder !== undefined && (review === undefined ? row.state !== 'reviewed' || work === 'busy' : coder.createdAt > review.createdAt);
       if (row.state === 'working' || row.state === 'attention' || ((row.state === 'reviewing' || row.state === 'reviewed') && newer)) {
         if (work === 'busy') {
           if (row.state !== 'working') await setState(sql, row.id, 'working');
@@ -557,6 +560,13 @@ export function createGodWork(env: GodWorkEnv) {
       const row = await subtask(id);
       if (row.state === 'discarded') throw new GodError('conflict', 'già scartato');
       await stopChats(row);
+      // An agent still at work could write in the folder while it is deleted: the user tries again once it stopped.
+      for (const conversationId of [row.conversationId, row.reviewConversationId]) {
+        if (conversationId !== null && outcomeOf(await latestTask(sql, conversationId)) === 'busy') {
+          if (row.state !== 'stopped') await setState(sql, row.id, 'stopped', { reason: 'fermato da te' });
+          throw new GodError('conflict', 'il lavoro si sta fermando: riprova «Scarta» fra qualche secondo');
+        }
+      }
       const dir = godPartDir(home, row.part);
       // Only a clone of GOD: the mark in its git folder says so.
       if (existsSync(join(dir, '.git', GOD_MARKER))) rmSync(dir, { recursive: true, force: true });

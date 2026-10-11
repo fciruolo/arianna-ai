@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 
 /**
  * The dossier of GOD (D-127): what a run on Arianna's own code reads before
@@ -25,9 +25,18 @@ const ROW_CHARS = 280;
 const TASK_ROWS = 8;
 const DECISION_ROWS = 10;
 
-function read(dir: string, path: string): string | undefined {
+/**
+ * A document of the clone, read only when it is really inside the clone: the
+ * cloud writes the clones, and a link (the file, or `docs/` itself) towards a
+ * file of the installation would otherwise put it in the brief as L1.
+ */
+export function read(dir: string, path: string): string | undefined {
   try {
-    return readFileSync(join(dir, path), 'utf8');
+    const root = realpathSync(dir);
+    const file = realpathSync(join(dir, path));
+    const inside = relative(root, file);
+    if (inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || inside.startsWith(sep)) return undefined;
+    return readFileSync(file, 'utf8');
   } catch {
     return undefined;
   }

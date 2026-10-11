@@ -1,4 +1,4 @@
-import { maxLabel, type Label } from '@arianna/policy';
+import { isAtMost, maxLabel, type Label } from '@arianna/policy';
 
 import { ChatError, loadConversation, writeConversation, type Conversation } from '../conversations.ts';
 import type { Queryable, Sql } from '../db/client.ts';
@@ -79,6 +79,7 @@ export async function createCarry(
   if (source?.agent !== GOD_AGENT || godPartOf(source.workspace) === undefined || source.workspace === null) throw new ChatError('not-found', 'not a conversation with GOD');
   const summary = await carrySummary(sql, source.id);
   if (summary === undefined) throw new ChatError('invalid', 'la conversazione è vuota: non c\'è niente da riassumere');
+  if (!isAtMost(summary.label, 'L1')) throw new ChatError('invalid', 'la conversazione contiene dati sopra Interno: il riassunto non può andare a GOD');
   const workspace = source.workspace;
   return sql.begin(async (tx) => {
     const conversation = await writeConversation(tx, {

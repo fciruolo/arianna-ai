@@ -68,7 +68,7 @@ async function sync(): Promise<void> {
 }
 
 const CONFIRM: Partial<Record<SubtaskAction, string>> = {
-  discard: 'Scartare il sottocompito? Il lavoro si ferma e il suo clone si cancella: le modifiche non unite in main si perdono.',
+  discard: 'Scartare il sottocompito? Il lavoro si ferma e il suo clone si cancella con il suo ramo: le modifiche non unite in main si perdono.',
   branch: 'Preparare il ramo? Il nucleo fa il commit di ciò che il Coder ha lasciato nel clone, sul ramo del sottocompito.',
 };
 
