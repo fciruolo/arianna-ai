@@ -246,7 +246,7 @@ export const SECTION_TEXT: Record<string, string> = {
   telegram: 'Telegram',
   projects: 'Progetti',
   endpoints: 'Server locali',
-  fetchSites: 'Link scaricati',
+  fetchSites: 'Domini approvati',
   paths: 'percorsi',
   database: 'database',
   server: 'server',
@@ -664,7 +664,7 @@ export function voiceProblem(form: VoiceForm): string | undefined {
 }
 
 /**
- * A site as typed in the card "Link scaricati" (D-154): an address or a host
+ * A site as typed in the card "Domini approvati" (D-154): an address or a host
  * name becomes the host name, lowercase, without `www.`; undefined when it is
  * not a name like "example.com".
  */

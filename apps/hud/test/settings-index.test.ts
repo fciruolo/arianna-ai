@@ -20,7 +20,7 @@ test('groups by subject, no group named after how a section takes effect', () =>
   for (const item of items.filter((entry) => entry.privacy === true)) assert.equal(item.behaviour, 'confirm');
   assert.deepEqual(
     items.filter((entry) => entry.privacy === true).map((entry) => entry.title),
-    ['Esecutori cloud', 'Progetti', 'Server locali', 'Link scaricati'],
+    ['Esecutori cloud', 'Progetti', 'Server locali', 'Domini approvati'],
   );
   assert.equal(BEHAVIOUR_TEXT.confirm, 'Chiede conferma prima di salvare');
   // Ids and slugs are unique.
@@ -30,6 +30,8 @@ test('groups by subject, no group named after how a section takes effect', () =>
 
 test('the address names the section; none or an unknown one falls back to the first', () => {
   assert.deepEqual(resolveSection('progetti'), { item: byId('projects'), explicit: true });
+  // Domini approvati keeps the slug it had as Link scaricati.
+  assert.deepEqual(resolveSection('link-scaricati'), { item: byId('links'), explicit: true });
   // Telegram is off (D-110): its old address falls back to the first section.
   assert.equal(resolveSection('telegram').item.id, 'models');
   assert.equal(resolveSection(undefined).item.id, 'models');
