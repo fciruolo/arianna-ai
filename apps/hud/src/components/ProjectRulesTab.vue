@@ -4,16 +4,19 @@ import { computed, ref, watch } from 'vue';
 import { ApiError, draftProjectRules, loadSettings, previewRulesExport, saveSettings, writeRulesExport, type RulesExportStatus } from '../lib/api.ts';
 import type { BrowsableContainer } from '../lib/projects.ts';
 import { MAX_PROJECT_RULES, writeError, type SettingsView } from '../lib/settings.ts';
+import { AUDIENCE_TEXT, ruleItems, withAudience, type RuleAudience } from '../lib/rule-audience.ts';
 import Icon from './Icon.vue';
 
 /**
  * The tab "Regole" of "Progetti" (I-14, tappa R1, D-174): the rules Arianna
- * puts at the head of every delegation on this project, the same for Claude
- * and for Codex. The project follows the common template of Settings, or has
+ * puts at the head of every delegation on this project; each item of the list
+ * goes to both executors or to one only, with its select (D-181). The project follows the common template of Settings, or has
  * its own text, which starts as a copy of the template. Saved in
  * `[project_rules]` of arianna.toml through the settings page of the core.
  */
 const props = defineProps<{ container: BrowsableContainer | null }>();
+/** The files of the project changed: the tab File reads its tree again. */
+const emit = defineEmits<{ exported: [] }>();
 
 const view = ref<SettingsView | null>(null);
 const problem = ref<string | null>(null);
@@ -28,8 +31,8 @@ const drafted = ref(false);
 const partial = ref(false);
 
 /** "Esporta in CLAUDE.md e AGENTS.md" (D-176): the preview the user confirms, then what was written. */
-const exportPreview = ref<{ project: string; text: string; files: { path: string; status: RulesExportStatus }[] } | null>(null);
-const exported = ref<{ path: string; status: 'written' | 'same' | 'foreign' }[] | null>(null);
+const exportPreview = ref<{ project: string; text: string; files: { path: string; status: RulesExportStatus }[]; contents?: Record<'CLAUDE.md' | 'AGENTS.md', string> } | null>(null);
+const exported = ref<{ path: string; status: 'written' | 'same' | 'foreign' | 'removed' }[] | null>(null);
 const exporting = ref(false);
 
 const name = computed(() => props.container?.name ?? null);
@@ -38,6 +41,21 @@ const template = computed(() => rules.value?.template ?? '');
 const stored = computed(() => (name.value === null || rules.value === undefined || !Object.hasOwn(rules.value.projects, name.value) ? undefined : rules.value.projects[name.value]));
 const changed = computed(() => (own.value ? stored.value !== text.value : stored.value !== undefined));
 const tooLong = computed(() => own.value && text.value.length > MAX_PROJECT_RULES);
+
+/** The rules shown with who reads them: the own text being written, or the template. */
+const items = computed(() => ruleItems(own.value ? text.value : template.value));
+const AUDIENCES: readonly RuleAudience[] = ['both', 'claude', 'codex'];
+const EXPORT_NAMES = ['CLAUDE.md', 'AGENTS.md'] as const;
+
+function chooseAudience(line: number, event: Event): void {
+  text.value = withAudience(text.value, line, (event.target as HTMLSelectElement).value as RuleAudience);
+}
+
+/** The two files of the preview hold different texts when some rule is for one executor only. */
+const exportSplit = computed(() => {
+  const contents = exportPreview.value?.contents;
+  return contents !== undefined && contents['CLAUDE.md'] !== contents['AGENTS.md'];
+});
 
 /** Why a draft was not written, from the status of the core. */
 function draftError(error: unknown): string {
@@ -72,15 +90,17 @@ async function propose(): Promise<void> {
 }
 
 /** What the preview says of each file. */
-const EXPORT_STATUS: Record<RulesExportStatus | 'written', string> = {
+const EXPORT_STATUS: Record<RulesExportStatus | 'written' | 'removed', string> = {
   new: 'nuovo',
   same: 'già uguale, non cambia',
   arianna: 'scritto da Arianna: lo aggiorno',
   foreign: 'tuo: non lo tocco',
+  stale: 'scritto da Arianna, ora senza regole per lui: lo tolgo',
   written: 'scritto',
+  removed: 'tolto',
 };
 
-const exportWrites = computed(() => exportPreview.value?.files.some((file) => file.status === 'new' || file.status === 'arianna') ?? false);
+const exportWrites = computed(() => exportPreview.value?.files.some((file) => file.status === 'new' || file.status === 'arianna' || file.status === 'stale') ?? false);
 
 function exportError(error: unknown): string {
   if (!(error instanceof ApiError)) return error instanceof Error ? error.message : 'errore';
@@ -116,6 +136,7 @@ async function confirmExport(): Promise<void> {
     if (name.value !== asked) return;
     exported.value = result.files;
     exportPreview.value = null;
+    emit('exported');
   } catch (error) {
     if (name.value === asked) problem.value = exportError(error);
   } finally {
@@ -191,7 +212,7 @@ async function save(): Promise<void> {
 <template>
   <section class="flex max-w-[860px] flex-col gap-3.5 rounded-2xl border border-line bg-surface p-4 md:p-5" aria-label="Regole del progetto">
     <p class="text-[13px] text-muted">
-      Arianna mette queste regole in testa a ogni lavoro di Claude o di Codex su <span class="font-medium text-ink">{{ name }}</span>, uguali per tutti e due.
+      Arianna mette queste regole in testa a ogni lavoro di Claude o di Codex su <span class="font-medium text-ink">{{ name }}</span>. Ogni voce dell’elenco va a tutti e due, oppure solo a uno: lo scegli con la select accanto alla regola.
     </p>
 
     <p v-if="problem !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ problem }}</p>
@@ -227,6 +248,22 @@ async function save(): Promise<void> {
         <span v-if="tooLong" class="text-danger">Al massimo {{ MAX_PROJECT_RULES }} caratteri.</span>
       </label>
 
+      <div v-if="items.length > 0" class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5" aria-label="A chi va ogni regola">
+        <p class="text-xs text-muted">
+          A chi va ogni regola (le voci dell’elenco che iniziano con «-», «*» o un numero).<template v-if="!own"> Per sceglierlo per questo progetto passa a «Regole proprie».</template>
+        </p>
+        <ul class="flex flex-col divide-y divide-line">
+          <li v-for="item in items" :key="item.line" class="flex items-center gap-3 py-1.5 text-[13px]">
+            <span class="min-w-0 flex-1 break-words">{{ item.text }}</span>
+            <select v-if="own" class="field px-2 py-1 text-[12.5px] text-ink" :value="item.audience" :aria-label="`A chi va la regola: ${item.text}`" @change="chooseAudience(item.line, $event)">
+              <option v-for="audience in AUDIENCES" :key="audience" :value="audience">{{ AUDIENCE_TEXT[audience] }}</option>
+            </select>
+            <span v-else class="text-xs text-muted">{{ AUDIENCE_TEXT[item.audience] }}</span>
+          </li>
+        </ul>
+        <p class="text-[11.5px] text-muted">La scelta si scrive nel testo come «[solo Claude Code]» o «[solo Codex]» all’inizio della voce; vale per i lavori dentro Arianna e per l’esportazione. Ricordati di premere Salva.</p>
+      </div>
+
       <p class="text-xs text-muted">Una chat diretta con il Coder già aperta continua con le regole di quando è iniziata: le nuove valgono dalla prossima conversazione.</p>
       <p class="flex items-start gap-1.5 text-xs text-muted">
         <Icon name="gateway" :size="14" class="mt-px shrink-0 text-warn" />
@@ -238,11 +275,20 @@ async function save(): Promise<void> {
       </p>
 
       <div v-if="exportPreview !== null" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[13px]" aria-label="Anteprima dell’esportazione">
-        <p>Scrivo queste regole, uguali, in CLAUDE.md (per Claude Code) e in AGENTS.md (per Codex), così le vedono anche quando li lanci tu nella cartella. I file restano da committare a te.</p>
-        <pre class="max-h-[240px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.text }}</pre>
+        <p>
+          Scrivo le regole in CLAUDE.md (per Claude Code) e in AGENTS.md (per Codex), così le vedono anche quando li lanci tu nella cartella<template v-if="exportSplit">: ognuno riceve solo le regole per lui</template>. I file restano da committare a te.
+        </p>
+        <template v-if="exportSplit && exportPreview.contents">
+          <template v-for="file in EXPORT_NAMES" :key="file">
+            <p class="font-mono text-xs text-muted">{{ file }}</p>
+            <pre v-if="exportPreview.contents[file] !== ''" class="max-h-[200px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.contents[file] }}</pre>
+            <p v-else class="text-xs text-muted">Nessuna regola per lui: il file non si scrive (se l’aveva scritto Arianna, si toglie).</p>
+          </template>
+        </template>
+        <pre v-else class="max-h-[240px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.text }}</pre>
         <ul class="flex flex-col gap-0.5 text-xs">
           <li v-for="file in exportPreview.files" :key="file.path" class="flex gap-2">
-            <code class="font-mono">{{ file.path }}</code><span :class="file.status === 'foreign' ? 'text-warn' : 'text-muted'">{{ EXPORT_STATUS[file.status] }}</span>
+            <code class="font-mono">{{ file.path }}</code><span :class="file.status === 'foreign' || file.status === 'stale' ? 'text-warn' : 'text-muted'">{{ EXPORT_STATUS[file.status] }}</span>
           </li>
           <li v-if="exportPreview.files.length === 0" class="text-muted">Nessuna parte del progetto è una cartella con git: non c’è dove scrivere.</li>
         </ul>

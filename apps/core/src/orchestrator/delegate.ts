@@ -1,5 +1,5 @@
 import { promptLabelOf, type AgentCard, type DelegateTarget, type LoadedAgent, type ToolId } from '@arianna/agents';
-import { ORCHESTRATOR_AGENT, projectNamed, rulesOfProject, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
+import { ORCHESTRATOR_AGENT, projectNamed, rulesFor, rulesOfProject, SKILLS_DELIVERY_BYTES, workParts, type AriannaConfig, type Project } from '@arianna/config';
 import {
   changedToolConfig,
   fileFingerprints,
@@ -801,12 +801,14 @@ export const PROJECT_RULES_INTRO = 'Rules of this project, written by the user: 
 
 /**
  * The rules of the project (I-14, D-174) after the agent's prompt: the user's
- * text of [project_rules], L1 by declaration, the same for Claude and for
- * Codex. None when the project has none, or when the task's clearance is
- * below L1 (an L0 task never reads it).
+ * text of [project_rules], L1 by declaration, as the executor of the run
+ * reads it: an item marked for the other one is left out (D-181). None when
+ * nothing is left, or when the task's clearance is below L1 (an L0 task never
+ * reads it).
  */
-export function projectRulesPart(config: Pick<AriannaConfig, 'projectRules'>, container: string, clearance: Label): BriefFragment | undefined {
-  const text = rulesOfProject(config.projectRules, container);
+export function projectRulesPart(config: Pick<AriannaConfig, 'projectRules'>, container: string, clearance: Label, executor: CloudExecutor): BriefFragment | undefined {
+  const saved = rulesOfProject(config.projectRules, container);
+  const text = saved === undefined ? undefined : rulesFor(saved, executor);
   if (text === undefined || !projectRulesFit(clearance)) return undefined;
   return { text: `${PROJECT_RULES_INTRO}\n\n${text}`, label: PROJECT_RULES_LABEL, source: `project-rules:${container}` };
 }
@@ -1043,7 +1045,7 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const direct = (await directChatOf(sql, task, delegation.agent)) !== undefined;
   const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
-  const rules = projectRulesPart(env.settings(), container, task.clearance);
+  const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   const dossier = godDossierPart(container, path, folder.label);
   // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
   const restarted = container === GOD_PROJECT && direct ? await carryParts(sql, task.conversationId) : [];

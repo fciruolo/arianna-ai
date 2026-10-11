@@ -241,10 +241,30 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? parts[0]?.[1] ?? '')).toUpperCase();
 }
 
-async function loadFolder(dir: string): Promise<void> {
+/** The tree read again, with the folders open as they are, and the changes of git: files written meanwhile appear. */
+function refreshTree(): void {
+  // The rows stay while the new listing comes: no flash of "Carico…".
+  for (const dir of ['', ...openFolders.value]) void loadFolder(dir, true);
+  void loadGit();
+  void refreshFile();
+}
+
+/** The file open on the right read again, in place: an exported CLAUDE.md shows its new text. */
+async function refreshFile(): Promise<void> {
+  const path = selected.value;
+  if (project.value === null || path === null || file.value === null) return;
+  try {
+    const found = await readProjectFile(project.value.name, path);
+    if (selected.value === path) file.value = found;
+  } catch (cause) {
+    if (selected.value === path) fileProblem.value = browseErrorText(cause);
+  }
+}
+
+async function loadFolder(dir: string, keep = false): Promise<void> {
   if (project.value === null) return;
   const name = project.value.name;
-  folders.value = { ...folders.value, [dir]: 'loading' };
+  if (!keep || folders.value[dir] === undefined) folders.value = { ...folders.value, [dir]: 'loading' };
   try {
     const listing = await listProjectDir(name, dir);
     if (chosen.value === name) folders.value = { ...folders.value, [dir]: listing };
@@ -392,6 +412,8 @@ watch(chosenContainer, async (name) => {
 });
 
 watch(tab, (now) => {
+  // Back on File from another tab: files written meanwhile (an export, a run) appear without a click.
+  if (now === 'file' && folders.value[''] !== undefined) refreshTree();
   if (now === 'git') void loadGit();
   if (now === 'svc') void loadServices();
 });
@@ -554,7 +576,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- IM (D-167, P4d): calendar, price, every IM with its money, the invoices -->
       <ProjectImTab v-else-if="tab === 'im'" :container="container" />
       <!-- REGOLE (I-14, D-174): the rules at the head of every delegation on the project -->
-      <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" />
+      <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" @exported="refreshTree" />
 
       <template v-else-if="project">
       <!-- FILE: the tree and the file, one split pane -->
@@ -563,6 +585,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
           <label class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-muted">
             <Icon name="search" :size="14" />
             <input v-model="query" type="search" placeholder="Cerca fra le cartelle aperte" aria-label="Cerca un file" class="w-full bg-transparent text-[13px] text-ink" />
+            <button type="button" class="shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted transition hover:text-ink" title="Rilegge l’elenco dei file" @click.prevent="refreshTree">Aggiorna</button>
           </label>
           <div class="min-h-0 flex-1 overflow-auto p-1.5 font-mono text-[12.5px] max-md:max-h-80">
             <p v-if="folders[''] === 'loading'" class="px-2 py-1 text-muted">Carico…</p>

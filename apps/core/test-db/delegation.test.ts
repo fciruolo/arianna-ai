@@ -317,11 +317,18 @@ test('the rules of the project go after the prompt, L1, the same text for every 
 
 test('projectRulesPart: the own text or the template, L1, only for a clearance of L1 or more (D-174)', () => {
   const config = { projectRules: { template: 'T', projects: { own: 'O', empty: '' } } };
-  assert.deepEqual(projectRulesPart(config, 'own', 'L1'), { text: `${PROJECT_RULES_INTRO}\n\nO`, label: 'L1', source: 'project-rules:own' });
-  assert.equal(projectRulesPart(config, 'any', 'L2')?.text, `${PROJECT_RULES_INTRO}\n\nT`);
-  assert.equal(projectRulesPart(config, 'empty', 'L1'), undefined);
-  assert.equal(projectRulesPart(config, 'own', 'L0'), undefined, 'an L0 task never reads them');
-  assert.equal(projectRulesPart({ projectRules: { projects: {} } }, 'own', 'L1'), undefined);
+  assert.deepEqual(projectRulesPart(config, 'own', 'L1', 'claude'), { text: `${PROJECT_RULES_INTRO}\n\nO`, label: 'L1', source: 'project-rules:own' });
+  assert.equal(projectRulesPart(config, 'any', 'L2', 'codex')?.text, `${PROJECT_RULES_INTRO}\n\nT`);
+  assert.equal(projectRulesPart(config, 'empty', 'L1', 'claude'), undefined);
+  assert.equal(projectRulesPart(config, 'own', 'L0', 'claude'), undefined, 'an L0 task never reads them');
+  assert.equal(projectRulesPart({ projectRules: { projects: {} } }, 'own', 'L1', 'claude'), undefined);
+});
+
+test('projectRulesPart: an item marked for one executor reaches only that one (D-181)', () => {
+  const config = { projectRules: { projects: { own: '- Per tutti\n- [solo Claude Code] Per Claude\n- [solo Codex] Per Codex', codex: '- [solo Codex] Solo questa' } } };
+  assert.equal(projectRulesPart(config, 'own', 'L1', 'claude')?.text, `${PROJECT_RULES_INTRO}\n\n- Per tutti\n- Per Claude`);
+  assert.equal(projectRulesPart(config, 'own', 'L1', 'codex')?.text, `${PROJECT_RULES_INTRO}\n\n- Per tutti\n- Per Codex`);
+  assert.equal(projectRulesPart(config, 'codex', 'L1', 'claude'), undefined, 'nothing left for Claude');
 });
 
 test('a delegation of an incognito conversation runs claude without saving its session (D-136); a normal one saves it', async () => {

@@ -978,7 +978,7 @@ watch(active, () => {
               @save="save('projectRules')"
             >
               <p class="text-xs text-muted">
-                Le regole che valgono per tutti i progetti: Arianna le mette in testa a ogni lavoro di Claude o di Codex su un progetto, uguali per tutti e due. Un
+                Le regole che valgono per tutti i progetti: Arianna le mette in testa a ogni lavoro di Claude o di Codex su un progetto. Una voce dell’elenco che inizia con «[solo Claude Code]» o «[solo Codex]» va solo a quello. Un
                 progetto può avere regole proprie al posto di queste, nella pagina Progetti, scheda «Regole».
               </p>
               <label class="flex flex-col gap-1 text-xs text-muted">

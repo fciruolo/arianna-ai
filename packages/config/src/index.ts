@@ -100,7 +100,7 @@ export {
   type ProjectLabel,
   type ProjectPart,
 } from './projects.ts';
-export { MAX_PROJECT_RULES, parseProjectRules, rulesOfProject, type ProjectRules } from './project-rules.ts';
+export { MAX_PROJECT_RULES, parseProjectRules, ruleAudience, rulesFor, rulesOfProject, type ProjectRules, type RuleAudience } from './project-rules.ts';
 export { aliasesOf, parseRoles, ROLE_ALIASES, VOICE_ALIAS, type Roles } from './roles.ts';
 export {
   DEFAULT_NOTIFICATIONS,

@@ -50,6 +50,7 @@ describe('rules export (D-176)', () => {
         { path: 'CLAUDE.md', status: 'new' },
         { path: 'AGENTS.md', status: 'new' },
       ],
+      contents: { 'CLAUDE.md': TEXT, 'AGENTS.md': TEXT },
     });
     const outcome = writeRulesExport({ home }, project, RULES, plan);
     assert.deepEqual(outcome, { ok: true, files: [{ path: 'CLAUDE.md', status: 'written' }, { path: 'AGENTS.md', status: 'written' }] });
@@ -59,6 +60,34 @@ describe('rules export (D-176)', () => {
     assert.deepEqual(readdirSync(project.absolute).sort(), ['.git', 'AGENTS.md', 'CLAUDE.md']);
     assert.deepEqual(Object.keys(ledgerOf(home)).sort(), ['sito/AGENTS.md', 'sito/CLAUDE.md']);
     assert.equal(planRulesExport({ home }, project, RULES)?.files[0]?.status, 'same');
+  });
+
+  it('an item marked for one executor goes only in its file; a file with nothing for it is not written (D-181)', () => {
+    const { home, project } = setup(null);
+    const marked: ProjectRules = { projects: { sito: '- Per tutti\n- [solo Claude Code] Usa i subagenti\n- [solo Codex] Patch piccole' } };
+    const plan = preview(home, project, marked);
+    assert.deepEqual(plan.contents, { 'CLAUDE.md': '- Per tutti\n- Usa i subagenti\n', 'AGENTS.md': '- Per tutti\n- Patch piccole\n' });
+    assert.deepEqual(writeRulesExport({ home }, project, marked, plan), { ok: true, files: [{ path: 'CLAUDE.md', status: 'written' }, { path: 'AGENTS.md', status: 'written' }] });
+    assert.equal(readFileSync(join(project.absolute, 'AGENTS.md'), 'utf8'), '- Per tutti\n- Patch piccole\n');
+    assert.equal(planRulesExport({ home }, project, marked)?.files.every((file) => file.status === 'same'), true);
+    // Now every rule is for Codex: the CLAUDE.md Arianna wrote goes, with its line of the ledger.
+    const onlyCodex: ProjectRules = { projects: { sito: '- [solo Codex] Patch piccole' } };
+    const stale = preview(home, project, onlyCodex);
+    assert.deepEqual(stale.files, [{ path: 'CLAUDE.md', status: 'stale' }, { path: 'AGENTS.md', status: 'arianna' }]);
+    assert.deepEqual(writeRulesExport({ home }, project, onlyCodex, stale), { ok: true, files: [{ path: 'CLAUDE.md', status: 'removed' }, { path: 'AGENTS.md', status: 'written' }] });
+    assert.deepEqual(readdirSync(project.absolute).sort(), ['.git', 'AGENTS.md']);
+    assert.deepEqual(Object.keys(ledgerOf(home)), ['sito/AGENTS.md']);
+    assert.deepEqual(preview(home, project, onlyCodex).files, [{ path: 'AGENTS.md', status: 'same' }]);
+  });
+
+  it('a file of the user with no rule for its executor is listed and never removed (D-181)', () => {
+    const { home, project } = setup(null);
+    writeFileSync(join(project.absolute, 'CLAUDE.md'), 'Mie regole.\n');
+    const onlyCodex: ProjectRules = { projects: { sito: '- [solo Codex] Patch piccole' } };
+    const plan = preview(home, project, onlyCodex);
+    assert.deepEqual(plan.files, [{ path: 'CLAUDE.md', status: 'foreign' }, { path: 'AGENTS.md', status: 'new' }]);
+    writeRulesExport({ home }, project, onlyCodex, plan);
+    assert.equal(readFileSync(join(project.absolute, 'CLAUDE.md'), 'utf8'), 'Mie regole.\n');
   });
 
   it('replaces a file Arianna wrote with the new rules', () => {

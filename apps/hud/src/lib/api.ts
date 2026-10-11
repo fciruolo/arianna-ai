@@ -761,16 +761,16 @@ export async function draftProjectRules(project: string): Promise<{ text: string
 }
 
 /** new: not there; same: already the rules; arianna: written by Arianna, replaced; foreign: the user's, left alone (D-176). */
-export type RulesExportStatus = 'new' | 'same' | 'arianna' | 'foreign';
+export type RulesExportStatus = 'new' | 'same' | 'arianna' | 'foreign' | 'stale';
 
 /** The preview of "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176). */
-export async function previewRulesExport(project: string): Promise<{ text: string; files: { path: string; status: RulesExportStatus }[] }> {
-  return call<{ text: string; files: { path: string; status: RulesExportStatus }[] }>('GET', `/api/projects/${encodeURIComponent(project)}/rules-export`);
+export async function previewRulesExport(project: string): Promise<{ text: string; files: { path: string; status: RulesExportStatus }[]; contents?: Record<'CLAUDE.md' | 'AGENTS.md', string> }> {
+  return call<{ text: string; files: { path: string; status: RulesExportStatus }[]; contents?: Record<'CLAUDE.md' | 'AGENTS.md', string> }>('GET', `/api/projects/${encodeURIComponent(project)}/rules-export`);
 }
 
 /** Writes the files of this preview; 409 when the rules or the files changed meanwhile. */
-export async function writeRulesExport(project: string, preview: { text: string; files: { path: string; status: RulesExportStatus }[] }): Promise<{ files: { path: string; status: 'written' | 'same' | 'foreign' }[] }> {
-  return call<{ files: { path: string; status: 'written' | 'same' | 'foreign' }[] }>('POST', `/api/projects/${encodeURIComponent(project)}/rules-export`, { text: preview.text, files: preview.files });
+export async function writeRulesExport(project: string, preview: { text: string; files: { path: string; status: RulesExportStatus }[] }): Promise<{ files: { path: string; status: 'written' | 'same' | 'foreign' | 'removed' }[] }> {
+  return call<{ files: { path: string; status: 'written' | 'same' | 'foreign' | 'removed' }[] }>('POST', `/api/projects/${encodeURIComponent(project)}/rules-export`, { text: preview.text, files: preview.files });
 }
 
 /** Writes exactly the change prepared with this id. */

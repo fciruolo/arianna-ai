@@ -7,7 +7,7 @@ import { asTable, ConfigError, onlyKeys } from './validate.ts';
  * `[project_rules.projects]` gives a project its own rules instead (an empty
  * text: no rules for that project). Free text of the user, L1 by declaration
  * like a persona (D-107): Arianna puts it at the head of every delegation on
- * the project, the same for Claude and for Codex, and it passes the gateway.
+ * the project (an item marked `[solo Claude Code]` or `[solo Codex]` only to that executor, D-181), and it passes the gateway.
  * Written only by the user (Settings, the page Progetti, by hand), never by an
  * agent. A project not in the list follows the template.
  */
@@ -51,4 +51,88 @@ export function parseProjectRules(value: unknown): ProjectRules {
 export function rulesOfProject(rules: ProjectRules, project: string): string | undefined {
   const text = Object.hasOwn(rules.projects, project) ? rules.projects[project] : rules.template;
   return text === undefined || text.trim() === '' ? undefined : text.trim();
+}
+
+/** Who reads a rule (I-14, D-181): both executors, or only one. */
+export type RuleAudience = 'both' | 'claude' | 'codex';
+
+/**
+ * An item of a list at the top level: `- text`, `* text`, `+ text`, `1. text`.
+ * The chat reads the same marks with a copy of these rules
+ * (apps/hud/src/lib/rule-audience.ts): change both together.
+ */
+const RULE_ITEM = /^( {0,3})([-*+]|\d{1,3}[.)])([ \t]+)(.*)$/;
+/** The mark at the head of an item that keeps it for one executor: `[solo Claude Code]`, `[solo Codex]`. */
+const RULE_MARK = /^\[solo (claude code|codex)\][ \t]*/i;
+/** A fenced code block opens or closes: its lines are text, never rules. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** The audience of the text of one list item, and the item without its mark. */
+export function ruleAudience(item: string): { audience: RuleAudience; text: string } {
+  const mark = RULE_MARK.exec(item);
+  if (mark === null) return { audience: 'both', text: item };
+  return { audience: mark[1]?.toLowerCase() === 'codex' ? 'codex' : 'claude', text: item.slice(mark[0].length) };
+}
+
+/** One line of the rules as the two readers walk them: a rule, a line that belongs to the rule above, or other text. */
+export type RuleLine = { kind: 'rule'; audience: RuleAudience; text: string } | { kind: 'inside' } | { kind: 'text' };
+
+/**
+ * The lines of the rules, classified (D-181): an item at the top level is a
+ * rule; the lines indented under it (sub-items, more text, a code block) are
+ * inside it and follow it; a fenced code block outside any rule is text, and
+ * so is everything else. Line breaks CRLF or LF.
+ */
+export function ruleLines(text: string): { line: string; is: RuleLine }[] {
+  const out: { line: string; is: RuleLine }[] = [];
+  let open: number | undefined;
+  let fence: string | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (fence !== undefined) {
+      out.push({ line, is: open === undefined ? { kind: 'text' } : { kind: 'inside' } });
+      if (line.trimStart().startsWith(fence)) fence = undefined;
+      continue;
+    }
+    const width = line.length - line.trimStart().length;
+    const opening = FENCE.exec(line);
+    if (open !== undefined && (line.trim() === '' || width > open)) {
+      if (opening !== null && line.trim() !== '') fence = (opening[1] ?? '```').slice(0, 3);
+      out.push({ line, is: { kind: 'inside' } });
+      continue;
+    }
+    open = undefined;
+    if (opening !== null) {
+      fence = (opening[1] ?? '```').slice(0, 3);
+      out.push({ line, is: { kind: 'text' } });
+      continue;
+    }
+    const item = RULE_ITEM.exec(line);
+    if (item === null) {
+      out.push({ line, is: { kind: 'text' } });
+      continue;
+    }
+    open = (item[1] ?? '').length;
+    const { audience, text: rest } = ruleAudience(item[4] ?? '');
+    out.push({ line: `${item[1] ?? ''}${item[2] ?? ''}${item[3] ?? ''}${rest}`, is: { kind: 'rule', audience, text: rest } });
+  }
+  return out;
+}
+
+/**
+ * The rules as one executor reads them (D-181): the items marked for the other
+ * one left out, with everything under them; the marks removed. Every other
+ * line (headings, paragraphs, code blocks) is for both. Undefined when nothing
+ * is left.
+ */
+export function rulesFor(text: string, executor: 'claude' | 'codex'): string | undefined {
+  const kept: string[] = [];
+  let skipping = false;
+  for (const { line, is } of ruleLines(text)) {
+    if (is.kind === 'rule') skipping = is.audience !== 'both' && is.audience !== executor;
+    else if (is.kind === 'text') skipping = false;
+    // A blank line inside a left-out rule is kept: the lines collapse below.
+    if (!skipping || line.trim() === '') kept.push(line);
+  }
+  const result = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return result === '' ? undefined : result;
 }

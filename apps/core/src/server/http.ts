@@ -1570,7 +1570,7 @@ function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiSe
       const seen = files?.map((file: unknown) => {
         if (file === null || typeof file !== 'object') return null;
         const { path, status } = file as Record<string, unknown>;
-        return typeof path === 'string' && typeof status === 'string' && ['new', 'same', 'arianna', 'foreign'].includes(status) ? { path, status: status as ExportPlan['files'][number]['status'] } : null;
+        return typeof path === 'string' && typeof status === 'string' && ['new', 'same', 'arianna', 'foreign', 'stale'].includes(status) ? { path, status: status as ExportPlan['files'][number]['status'] } : null;
       });
       if (seen === undefined || seen.length > 1000 || seen.some((file) => file === null)) throw new HttpError(400, 'files must be the files of the preview');
       const outcome = exporter?.write(name, { text: body.text, files: seen.filter((file) => file !== null) });
