@@ -39,6 +39,26 @@ export interface GodLandingView {
   outcome: { ok: boolean; text: string; at: string } | null;
 }
 
+/**
+ * Why «Prova», «Approva funzionalità» and «Non funziona» cannot start now, in
+ * words for the user; null when they can. The same checks the core makes
+ * before starting (apps/core/src/god/land.ts), on the installation the status
+ * reports: shown next to the plans before the click, not after it.
+ */
+export function landBlocker(installation: GodLandingView['installation'] | undefined): string | null {
+  if (installation === undefined) return null;
+  if (installation.trial !== null) {
+    return installation.clean ? null : 'Nella prova ci sono modifiche non salvate in un commit: «Approva funzionalità» e «Non funziona» partono quando sono salvate o tolte.';
+  }
+  if (installation.branch !== 'main') {
+    return `L’installazione è sul ramo ${installation.branch === '' ? '(nessuno)' : installation.branch}, non su main: forse ci sta lavorando Claude Code. «Prova» e «Approva funzionalità» partono quando torna su main.`;
+  }
+  if (!installation.clean) {
+    return 'Nell’installazione ci sono modifiche non salvate in un commit: forse ci sta lavorando Claude Code. «Prova» e «Approva funzionalità» partono quando sono salvate o tolte.';
+  }
+  return null;
+}
+
 export interface GodStatus {
   project: 'missing' | 'wrong-path' | 'ok';
   /** The part GOD's chat opens on: `arianna:main`. */

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CARRY_PROPOSE_AGAIN, CARRY_PROPOSE_AT, carryOriginText, loadDeclined, proposeCarry, saveDeclined, cloneText, discussBlocker, discussTitle, godBlocker, plainItem, type GodStatus } from '../src/lib/god.ts';
+import { CARRY_PROPOSE_AGAIN, CARRY_PROPOSE_AT, carryOriginText, landBlocker, loadDeclined, proposeCarry, saveDeclined, cloneText, discussBlocker, discussTitle, godBlocker, plainItem, type GodStatus } from '../src/lib/god.ts';
 import { GOD_PATH, isGodPath } from '../src/lib/route.ts';
 
 const ready: GodStatus = {
@@ -88,4 +88,15 @@ test('the «No» to the proposal is remembered per conversation, and a missing o
     saveDeclined(broken, 'c1', '42');
   });
   assert.equal(loadDeclined(undefined, 'c1'), null);
+});
+
+test('landBlocker: «Prova» and the others wait for an installation on main and clean, or a clean trial', () => {
+  assert.equal(landBlocker(undefined), null, 'an older core');
+  assert.equal(landBlocker({ branch: 'main', clean: true, trial: null }), null);
+  assert.match(landBlocker({ branch: 'main', clean: false, trial: null }) ?? '', /modifiche non salvate/);
+  assert.match(landBlocker({ branch: 'task/x', clean: true, trial: null }) ?? '', /sul ramo task\/x, non su main/);
+  assert.match(landBlocker({ branch: '', clean: true, trial: null }) ?? '', /\(nessuno\)/, 'a detached head');
+  const trial = 'prova/god-g003-x';
+  assert.equal(landBlocker({ branch: trial, clean: true, trial }), null, 'a trial: approve or reject');
+  assert.match(landBlocker({ branch: trial, clean: false, trial }) ?? '', /Nella prova/);
 });
