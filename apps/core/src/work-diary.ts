@@ -74,7 +74,7 @@ export function diaryDay(at: Date): string {
 }
 
 /** One line, without control characters, at most `max` characters. */
-function oneLine(text: string, max = 200): string {
+export function oneLine(text: string, max = 200): string {
   const line = text.replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim();
   return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
 }
@@ -97,7 +97,7 @@ function fenced(text: string): string {
 }
 
 /** A path as inline code, whatever backticks it holds. */
-function inlineCode(text: string): string {
+export function inlineCode(text: string): string {
   const ticks = '`'.repeat(longestTicks(text) + 1);
   const padded = text.startsWith('`') || text.endsWith('`') ? ` ${text} ` : text;
   return `${ticks}${padded}${ticks}`;
@@ -165,7 +165,7 @@ function readHead(file: string): string {
 }
 
 /** The label a day file declares in its header, when it declares exactly one. */
-function headerLabel(file: string): Label | undefined {
+export function headerLabel(file: string): Label | undefined {
   try {
     const labels = parsePage(readHead(file)).header.labels;
     const [label] = labels;

@@ -47,6 +47,7 @@ import { coderNotes, KnowledgeError, privateKnowledge, type CoderNotes } from '.
 import { openReply, postActivity, type ActivityKind } from '../reply.ts';
 import type { Task } from '../tasks.ts';
 import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
+import { writeWeekSummary } from '../work-diary-week.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
 
@@ -664,12 +665,14 @@ async function recordWork(env: DelegateEnv, work: WorkRecord): Promise<void> {
       SELECT payload ->> 'model' AS model FROM events WHERE run_id = ${work.runId} AND kind = 'executor.model' ORDER BY id DESC LIMIT 1`;
     const config = env.settings();
     const label = work.report === undefined ? work.label : maxLabel(work.label, work.report.label);
+    const at = new Date();
+    const knowledge = { home: config.home, rules: env.rules };
     writeWorkDiary(
       config.projects,
       work.container,
-      { home: config.home, rules: env.rules },
+      knowledge,
       {
-        at: new Date(),
+        at,
         agent: work.delegation.agent,
         executor: work.executor,
         alias: work.alias,
@@ -686,6 +689,12 @@ async function recordWork(env: DelegateEnv, work: WorkRecord): Promise<void> {
         label,
       },
     );
+    // The summary of the week, written again from the day files (I-15 D2, D-177): its error never touches the entry.
+    try {
+      writeWeekSummary(config.projects, work.container, knowledge, at);
+    } catch (error) {
+      console.error(`week summary of the diary not written: ${error instanceof KnowledgeError ? error.code : error instanceof Error ? error.name : 'error'}`);
+    }
   } catch (error) {
     // The work stays as it ended; the log says only the kind of error, never a text of the work.
     console.error(`work diary not written: ${error instanceof KnowledgeError ? error.code : error instanceof Error ? error.name : 'error'}`);
