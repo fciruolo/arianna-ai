@@ -1017,6 +1017,12 @@ function godRoutes(god: GodApi | undefined): Route[] {
       if (typeof body.messageId !== 'string') throw new HttpError(400, 'messageId must be a string');
       return { status: 201, body: { plan: await needWork().approve(body.messageId) } };
     }),
+    // G4: "Riassumi e riparti", and the summary a conversation restarts from.
+    route('POST', '/api/god/conversations/:id/restart', async (request, _url, params) => {
+      onlyFields(await readJson(request), []);
+      return { status: 201, body: { conversation: await needWork().restart(idParam(params, 'id')) } };
+    }),
+    route('GET', '/api/god/conversations/:id/carry', async (_request, _url, params) => ({ body: { carry: await needWork().carry(idParam(params, 'id')) } })),
     route('POST', '/api/god/subtasks/:id/:action', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       const action = (['stop', 'resume', 'discard', 'branch'] as const).find((item) => item === params.action);

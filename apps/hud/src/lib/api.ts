@@ -289,6 +289,16 @@ export async function actOnSubtask(id: string, action: SubtaskAction): Promise<G
   return (await call<{ subtask: GodSubtask }>('POST', `/api/god/subtasks/${encodeURIComponent(id)}/${action}`, {})).subtask;
 }
 
+/** "Riassumi e riparti" (D-127, G4): a new conversation with GOD from a summary of this one. */
+export async function restartGodConversation(conversationId: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/god/conversations/${encodeURIComponent(conversationId)}/restart`, {})).conversation;
+}
+
+/** The summary a conversation with GOD restarts from, or null. */
+export async function loadGodCarry(conversationId: string): Promise<{ body: string; from: string } | null> {
+  return (await call<{ carry: { body: string; from: string } | null }>('GET', `/api/god/conversations/${encodeURIComponent(conversationId)}/carry`)).carry;
+}
+
 /** The agents the user may talk with directly now (D-111d). */
 export async function listDirectAgents(): Promise<DirectAgent[]> {
   return (await call<{ agents: DirectAgent[] }>('GET', '/api/direct-agents')).agents;

@@ -33,6 +33,7 @@ import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@aria
 
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
 import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal } from '../god/clone.ts';
+import { carryParts } from '../god/carry.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
@@ -1032,12 +1033,15 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
   const rules = projectRulesPart(env.settings(), container, task.clearance);
   const dossier = godDossierPart(container, path, folder.label);
+  // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
+  const restarted = container === GOD_PROJECT && direct ? await carryParts(sql, task.conversationId) : [];
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
     ...(rules === undefined ? [] : [rules]),
     ...(dossier === undefined ? [] : [dossier]),
+    ...restarted,
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];

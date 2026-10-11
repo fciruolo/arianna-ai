@@ -12,6 +12,8 @@ import { after, test } from 'node:test';
 import { createConversation, listMessages, loadConversation, writeUserMessage } from '../src/conversations.ts';
 import type { DirectPolicy } from '../src/direct-chat.ts';
 import { gitEnv } from '../src/git-catalog.ts';
+import { createGodApi } from '../src/god/api.ts';
+import { carryOf, carryParts } from '../src/god/carry.ts';
 import { godPartDir } from '../src/god/clone.ts';
 import { createGodWork, GodError } from '../src/god/work.ts';
 import { useTestDatabase } from './support/database.ts';
@@ -241,4 +243,48 @@ test('a Coder that does not finish asks for the user; Ferma, Riprendi and Scarta
   assert.equal(gone.state, 'discarded');
   assert.equal(existsSync(dir), false);
   await assert.rejects(work.discard(first.id), GodError);
+});
+
+test('the page of GOD lists its conversations and the quota', async () => {
+  const { home, parts } = setup();
+  const { sql } = db();
+  const { conversationId } = await godAnswer(parts, 'Una risposta qualsiasi.');
+  const api = createGodApi({ sql, home, data: join(home, 'data'), projects: () => [], available: () => true });
+  const status = await api.status();
+  assert.equal(status.project, 'missing');
+  assert.equal(status.main.exists, false);
+  assert.ok(status.conversations.some((item) => item.id === conversationId));
+  assert.ok(status.quota.concurrency >= 1);
+});
+
+test('"Riassumi e riparti": a new conversation with GOD, same part and model, with the summary of the old one for its first session', async () => {
+  const { work, parts } = setup();
+  const { sql } = db();
+  const { conversationId, messageId } = await godAnswer(parts, `Ecco come.\n${PLAN}`);
+  await work.approve(messageId);
+  await sql`INSERT INTO messages (conversation_id, role, label, body) VALUES (${conversationId}, 'user', 'L1', 'Aggiungi la barra della quota')`;
+  const next = await work.restart(conversationId);
+  assert.notEqual(next.id, conversationId);
+  assert.equal(next.agent, 'god');
+  assert.equal(next.workspace, 'arianna:main');
+  assert.equal(next.model, 'luna');
+  assert.match(next.title ?? '', /^Ripresa:/);
+  const carry = await carryOf(sql, next.id);
+  assert.ok(carry !== undefined);
+  assert.equal(carry.label, 'L1');
+  assert.equal(carry.from, conversationId);
+  assert.match(carry.body, /Aggiungi la barra della quota/);
+  assert.match(carry.body, /Ecco come\./);
+  assert.doesNotMatch(carry.body, /god-plan/, 'the plan block is told as its subtasks, not as JSON');
+  assert.match(carry.body, /Plan «Barra della quota»:\n- 1\. Calcolo della quota — /);
+  const parts2 = await carryParts(sql, next.id);
+  assert.equal(parts2.length, 2);
+  assert.equal(parts2[0]?.label, 'L0');
+  assert.deepEqual(await carryParts(sql, conversationId), [], 'the old conversation carries nothing');
+  // Only a conversation with GOD restarts; an empty one has nothing to summarize.
+  const coderChat = await createConversation(sql, { mode: 'work', project: 'arianna:main', projects: parts(), agent: policyFor('coder') });
+  await assert.rejects(work.restart(coderChat.id), (error: unknown) => error instanceof GodError && error.code === 'not-found');
+  const empty = await createConversation(sql, { mode: 'work', project: 'arianna:main', projects: parts(), agent: policyFor('god') });
+  await assert.rejects(work.restart(empty.id), (error: unknown) => error instanceof GodError && error.code === 'invalid');
+  assert.equal(await work.carry(conversationId), null);
 });

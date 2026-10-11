@@ -1,5 +1,6 @@
 import type { Project } from '@arianna/config';
 
+import type { Conversation } from '../conversations.ts';
 import type { Queryable } from '../db/client.ts';
 import { cloneState, GOD_AGENT, GOD_CONTAINER, GOD_MAIN, GOD_PROJECT, godWorkspace, syncGodClone, type CloneState } from './clone.ts';
 import { concurrencyFor, projection, quotaReadings } from './quota.ts';
@@ -58,6 +59,8 @@ export interface GodApi {
     messagePlan(messageId: string): Promise<MessagePlan>;
     approve(messageId: string): Promise<PlanView>;
     act(subtaskId: string, action: SubtaskAction): Promise<SubtaskView>;
+    restart(conversationId: string): Promise<Conversation>;
+    carry(conversationId: string): Promise<{ body: string; from: string } | null>;
   };
 }
 
@@ -117,6 +120,8 @@ export function createGodApi(options: GodApiOptions): GodApi {
               if (action === 'discard') return work.discard(subtaskId);
               return work.prepareBranch(subtaskId);
             },
+            restart: (conversationId) => work.restart(conversationId),
+            carry: (conversationId) => work.carry(conversationId),
           },
         }),
   };

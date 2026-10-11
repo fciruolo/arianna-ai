@@ -13,6 +13,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Il piano di GOD: una richiesta di lavoro diventa una scheda con i sottocompiti e i loro file; «Approva e avvia» li fa partire in parallelo secondo la quota, ciascuno in un clone suo con il Coder (D-127, I-5 G2).
 - Il cruscotto di GOD: stato dei sottocompiti, file cambiati, revisione automatica del Reviewer, Ferma, Riprendi, Scarta e «Prepara il ramo» con i comandi per unirlo (D-127, I-5 G3).
 
+- «Riassumi e riparti» nelle chat con GOD: una conversazione nuova che riparte da un riassunto scritto dal codice, mentre la vecchia resta intera (D-127, I-5 G4).
+
 ### Sicurezza
 
 - `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).

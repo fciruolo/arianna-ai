@@ -42,6 +42,7 @@ import ImClosingCard from './ImClosingCard.vue';
 import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
+import GodCarryNote from './GodCarryNote.vue';
 import GodPlanCard from './GodPlanCard.vue';
 import { GOD_AGENT } from '../lib/god.ts';
 import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
@@ -714,6 +715,9 @@ onBeforeUnmount(() => clearInterval(clock));
             </div>
           </div>
         </section>
+
+        <!-- GOD (D-127, G4): "Riassumi e riparti", and the summary a restarted conversation carries. -->
+        <GodCarryNote v-if="conversation.agent === GOD_AGENT" :conversation-id="conversation.id" :empty="chat.messages.length === 0" @open="(id) => emit('open', id)" />
 
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
