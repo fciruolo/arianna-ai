@@ -292,7 +292,7 @@ function waitText(detail: string): string {
   return 'In attesa dell’esecutore';
 }
 
-const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer' };
+const AGENT_TEXT: Record<string, string> = { coder: 'Coder', arianna: 'Arianna', designer: 'Designer', god: 'GOD' };
 
 /** The agent as the user reads it. */
 export function agentName(agent: string): string {
@@ -315,6 +315,7 @@ const OFFICIAL_DESCRIPTION: Record<string, { en: string; it: string }> = {
   coder: { en: 'Writes and changes code in a worktree, with tests', it: 'Scrive e modifica il codice in un worktree, con i test' },
   reviewer: { en: 'Reviews changes and their tests in a project, without changing files', it: 'Rivede le modifiche e i loro test in un progetto, senza cambiare file' },
   designer: { en: 'Designs pages and screens as self-contained HTML mockups in the project', it: 'Disegna pagine e schermate come mockup HTML autonomi nel progetto' },
+  god: { en: 'Develops Arianna from inside Arianna, in a clone of its code', it: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
 };
 
 /** The description of an agent's card as the chat shows it: the Italian text of an official card, the card's own otherwise. */

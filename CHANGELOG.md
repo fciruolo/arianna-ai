@@ -2,6 +2,36 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- GOD, Arianna sviluppata da dentro Arianna: voce «GOD» nella barra sopra «Pensieri» e pagina con il clone e le conversazioni; GOD legge un clone del codice in `repos/arianna/main`, mai l'installazione (D-127, I-5 G1).
+- `pnpm god:clone` e «Crea/Aggiorna il clone»: il clone si fa dal repository locale, senza `data/` né `config/arianna.toml`, e si rifiuta se contiene dati di un'installazione (D-127, I-5 G1).
+- Il fascicolo di sviluppo: a ogni lavoro sul codice di Arianna l'agente legge lo stato di HANDOFF, le ultime decisioni, le fasi e i task aperti, scritti dal codice dai documenti del clone (D-127, I-5 G1).
+
+- Il piano di GOD: una richiesta di lavoro diventa una scheda con i sottocompiti e i loro file; «Approva e avvia» li fa partire in parallelo secondo la quota, ciascuno in un clone suo con il Coder (D-127, I-5 G2).
+- Il cruscotto di GOD: stato dei sottocompiti, file cambiati, revisione automatica del Reviewer, Ferma, Riprendi, Scarta e «Prepara il ramo» con i comandi per unirlo (D-127, I-5 G3).
+
+- «Riassumi e riparti» nelle chat con GOD: una conversazione nuova che riparte da un riassunto scritto dal codice, mentre la vecchia resta intera (D-127, I-5 G4).
+
+- Il personaggio pixel di GOD e la sua isola «GOD» nell'ufficio, dove siedono anche i Coder dei sottocompiti (D-127, I-5 G5).
+
+### Cambiato
+
+- Nell'ufficio le parti di un progetto contenitore stanno sull'isola del loro progetto invece che dietro l'archivio (D-127, I-5 G5).
+
+### Corretto
+
+- GOD: il Reviewer di un sottocompito non chiede più la scheda «Cartella con modifiche», i pulsanti del cruscotto rispondono subito, due «Approva e avvia» insieme non danno errore, eliminare una conversazione con GOD non dà errore (D-127).
+
+### Sicurezza
+
+- `docker compose` è rifiutato in un clone di GOD, così un clone non ricrea mai il database dell'installazione (D-127, I-5 G1).
+- I cloni di GOD contengono solo il `main` dell'installazione: mai lo stash, gli altri rami o gli oggetti non raggiungibili; un clone fatto prima va rifatto (D-127).
+- «Prepara il ramo» non fa il commit di `.gitignore`, `data/`, `repos/`, `config/arianna.toml`, file ignorati dall'installazione, collegamenti simbolici e repository annidati (D-127).
+- Il cruscotto di GOD mette in evidenza i file che eseguono codice una volta uniti, e il merge è fissato sul commit preparato; il nuovo hook `pre-merge-commit` lancia `pnpm check` anche a ogni `git merge` (D-127).
+
 ## [0.66.0] - 2026-10-11
 
 ### Aggiunto

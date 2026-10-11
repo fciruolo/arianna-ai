@@ -58,6 +58,13 @@ export function isOfficePath(pathname: string): boolean {
   return pathname === OFFICE_PATH || pathname === `${OFFICE_PATH}/`;
 }
 
+/** The page of GOD (D-127): Arianna developed from inside Arianna. */
+export const GOD_PATH = '/god';
+
+export function isGodPath(pathname: string): boolean {
+  return pathname === GOD_PATH || pathname === `${GOD_PATH}/`;
+}
+
 /** The page of the thoughts (D-090). */
 export const THOUGHTS_PATH = '/pensieri';
 

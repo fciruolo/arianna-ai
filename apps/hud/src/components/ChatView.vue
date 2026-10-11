@@ -42,6 +42,10 @@ import ImClosingCard from './ImClosingCard.vue';
 import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
+import GodCarryNote from './GodCarryNote.vue';
+import GodPlanCard from './GodPlanCard.vue';
+import { GOD_AGENT } from '../lib/god.ts';
+import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
@@ -94,7 +98,14 @@ const emit = defineEmits<{
   command: [action: Exclude<CommandAction, { kind: 'note' | 'help' }>];
   /** "Apri nella Conoscenza" after "Salva in inbox": the note selected in the graph of kb/. */
   openKnowledge: [nodeId: string];
+  /** The cruscotto of GOD (D-127), from the card of an approved plan. */
+  godDashboard: [];
 }>();
+
+/** An answer of GOD with a plan block (D-127, G2): the card of the plan under it. */
+function godPlanIn(message: { agent: string | null; body: string }): boolean {
+  return message.agent === GOD_AGENT && hasPlanBlock(message.body);
+}
 
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
@@ -705,6 +716,9 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
         </section>
 
+        <!-- GOD (D-127, G4): "Riassumi e riparti", and the summary a restarted conversation carries. -->
+        <GodCarryNote v-if="conversation.agent === GOD_AGENT" :conversation-id="conversation.id" :empty="chat.messages.length === 0" @open="(id) => emit('open', id)" />
+
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
         <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
@@ -765,7 +779,9 @@ onBeforeUnmount(() => clearInterval(clock));
               <LabelBadge :label="message.label" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
-            <MarkdownText class="px-[15px] py-3" :source="message.body" />
+            <MarkdownText class="px-[15px] py-3" :source="godPlanIn(message) ? withoutPlan(message.body) : message.body" />
+            <!-- The plan of GOD (D-127, G2): the card to approve, read again by the core. -->
+            <GodPlanCard v-if="godPlanIn(message)" class="mx-[15px] mb-3" :message-id="message.id" @dashboard="emit('godDashboard')" />
             <CreditLine v-if="credits.get(message.id) !== undefined" class="border-t border-line px-[15px] py-2.5" :credit="credits.get(message.id)!" />
           </article>
 

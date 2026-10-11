@@ -67,6 +67,7 @@ import {
   SquareKanban,
   SquareTerminal,
   TextAlignStart,
+  Sparkles,
   Sun,
   Trash2,
   TriangleAlert,
@@ -155,6 +156,8 @@ export const ICONS = {
   'image-up': ImageUp,
   dashboard: LayoutDashboard,
   mail: Mail,
+  // GOD (D-127): Arianna developed from inside Arianna.
+  god: Sparkles,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

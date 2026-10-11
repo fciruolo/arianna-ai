@@ -19,6 +19,8 @@ export interface DirectAgent {
   modes: ConversationMode[];
   /** The conversation needs an approved project. */
   project: boolean;
+  /** Only on a part of this project (GOD, D-127): opened from its own entry, not from "+ Nuovo". */
+  container?: string;
 }
 
 export interface Conversation {

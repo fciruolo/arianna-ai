@@ -26,7 +26,11 @@ import { createClaudeExecutor, createCodexExecutor, createLocalModel, type Claud
 import { createContext, spendAllowed } from '@arianna/policy';
 import { createVault } from '@arianna/vault';
 
-import { directPolicies } from './direct-chat.ts';
+import { directPolicies, type DirectPolicy } from './direct-chat.ts';
+import { createGodApi } from './god/api.ts';
+import { prepareGodClone } from './god/prepare.ts';
+import { createGodWork } from './god/work.ts';
+import { GOD_AGENT } from './god/clone.ts';
 import { connect } from './db/client.ts';
 import { prepareDatabase, resolveLogin } from './db/logins.ts';
 import { loadMigrations, migrationStatus } from './db/migrate.ts';
@@ -616,6 +620,27 @@ const imReports = createImReporter({
   dataDir: config.paths.data,
   onError: report,
 });
+// D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
+const directAgents = (): DirectPolicy[] =>
+  directPolicies(agents, {
+    claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
+    codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
+  });
+// GOD (D-127, G2-G3): the plans approved become subtasks, each in a clone of
+// its own with the direct chats of the Coder and the Reviewer; a tick moves
+// them on and starts the next ones within the quota.
+const prepareGod = prepareGodClone({ home: config.home });
+const godWork = createGodWork({
+  sql,
+  home: config.home,
+  data: config.paths.data,
+  parts: () => approvedProjects().map((project) => project.name),
+  policy: (agent) => directAgents().find((policy) => policy.agent === agent),
+  models: () => selectableModels(settings.current(), adapters).map((entry) => entry.model),
+  stopTask: (taskId) => worker.stopTask(taskId, 'god'),
+  prepareClone: prepareGod,
+  onError: report,
+});
 const server = await startApiServer({
   sql,
   live,
@@ -660,11 +685,17 @@ const server = await startApiServer({
   // D-142: "Prova in chat" opens only for a model of the catalog that writes text, with its files on the disk.
   trialRefusal: (modelId) => trialRefusal(loadCatalog(config.home), modelId, voiceDirs.models, fileSize),
   // D-111d: who the user may talk with directly, from the cards, with Claude on or off as now.
-  directAgents: () =>
-    directPolicies(agents, {
-      claude: adapters.claude && settings.current().cloud.executors.includes('claude'),
-      codex: adapters.codex && settings.current().cloud.executors.includes('codex'),
-    }),
+  directAgents,
+  // GOD (D-127): the clone of Arianna's code and GOD's conversations.
+  god: createGodApi({
+    sql,
+    home: config.home,
+    data: config.paths.data,
+    projects: () => settings.current().projects,
+    available: () => directAgents().some((policy) => policy.agent === GOD_AGENT),
+    prepare: prepareGod,
+    work: godWork,
+  }),
   participantAgent: (name) => {
     const agent = agents.get(name);
     return agent === undefined ? undefined : { executor: delegationRoute(agent.card) ?? agent.card.executors[0] ?? null, nameLabel: nameLabelOf(agent) };
@@ -789,6 +820,12 @@ secretaryTicker.start();
 
 // The IM between meetings (D-167, P4b): the closing asked in the secretary
 // conversation once the meeting is over, and the items of a card in "Fatto".
+// The subtasks of GOD move on every 15 seconds (D-127).
+const godTicker = setInterval(() => {
+  godWork.tick().catch(report);
+}, 15_000);
+godTicker.unref();
+
 const imWatcher = createImWatcher({ sql, projects: projectContainers, env: { home: config.home, rules }, onError: report });
 imWatcher.start();
 
@@ -808,6 +845,7 @@ async function shutdown(): Promise<void> {
   settings.close();
   secretaryTicker.stop();
   imWatcher.stop();
+  clearInterval(godTicker);
   incognitoWatch.stop();
   stopNotices();
   await telegram.close();

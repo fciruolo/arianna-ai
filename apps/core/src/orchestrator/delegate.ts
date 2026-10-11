@@ -32,6 +32,9 @@ import { createContext, isAtMost, maxLabel, PROJECT_RULES_LABEL, projectRulesFit
 import { MODEL_ALIASES, route, type ModelAlias, type RouteDecision } from '@arianna/router';
 
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
+import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } from '../god/clone.ts';
+import { carryParts } from '../god/carry.ts';
+import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
 import { loadConversation, type Conversation, type Message } from '../conversations.ts';
@@ -168,7 +171,8 @@ export function isCloudRoute(route: DelegationRoute | undefined): route is Cloud
 export function delegateTargets(env: DelegateEnv, assignee: string): DelegateTarget[] {
   const targets: DelegateTarget[] = [];
   for (const [name, agent] of env.agents) {
-    if (name === assignee) continue;
+    // GOD answers only in its own chat (D-127): Arianna never hands it a work.
+    if (name === assignee || name === GOD_AGENT) continue;
     const where = delegationRoute(agent.card);
     if (isCloudRoute(where) ? cloudReady(env, agent.card) : where === 'local' && env.model !== undefined) targets.push({ name, description: agent.card.description });
   }
@@ -429,6 +433,12 @@ async function folderOf(
   if (project === undefined) return { error: `the project ${repo} is no longer among the projects the user approved: tell the user` };
   const container = config.projects.find((item) => item.name === project.project);
   if (container === undefined) return { error: `the project ${repo} is no longer among the projects the user approved: tell the user` };
+  // The clones of Arianna's own code (D-127): only a development copy, never a folder with the data of an installation.
+  if (container.name === GOD_PROJECT) {
+    if (container.path !== GOD_CONTAINER) return { error: `the project ${GOD_PROJECT} must be the folder ${GOD_CONTAINER}, where the clones of Arianna live: tell the user` };
+    const refusal = godCloneRefusal(project.absolute);
+    if (refusal !== undefined) return { error: `the folder of ${repo} is not a development copy of Arianna (${refusal}): the agent does not open it; tell the user` };
+  }
   if (project.part === null) {
     // The container is the Coder's folder: its management folders sit inside it, open to the run. A note or a
     // file above L1 there keeps the Coder out (D-145); the notes of such a project live in kb/progetti instead,
@@ -518,7 +528,10 @@ export async function planDelegation(env: DelegateEnv, task: Task, delegation: D
   // The folder itself (D-056): with changes the user has not committed, the launch waits for their word.
   const folder = await folderOf(env, delegation);
   if ('error' in folder) return closed('failed', folder.error);
-  const dirty = folder.opened.dirty ?? [];
+  // In the clone of a subtask of GOD (D-127) the uncommitted changes are the subtask's own work, never the
+  // user's: the Coder goes on over them and the Reviewer reviews them, with no consent to ask.
+  const godSubtask = folder.container === GOD_PROJECT && folder.part !== null && SUBTASK_PART.test(folder.part);
+  const dirty = godSubtask ? [] : (folder.opened.dirty ?? []);
   if (dirty.length > 0) {
     const consent = await workspaceApprovalOf(env.sql, delegation);
     if (consent?.state === 'rejected' || consent?.state === 'expired') {
@@ -799,6 +812,18 @@ export function projectRulesPart(config: Pick<AriannaConfig, 'projectRules'>, co
 }
 
 /**
+ * The dossier of GOD (D-127) after the rules: written by the code from the
+ * documents of the clone the run works in, for every run on the container of
+ * Arianna's own code (GOD's chat, the subtasks, their reviews). The project's
+ * label, as every file of the clone; through the gateway with the brief.
+ */
+export function godDossierPart(container: string, path: string, label: Label): BriefFragment | undefined {
+  if (container !== GOD_PROJECT || path === '') return undefined;
+  const text = godDossier(path);
+  return text === undefined ? undefined : { text, label, source: `god:dossier:${container}` };
+}
+
+/**
  * The skills of the agent (D-161) after its prompt: public text (L0) that is
  * not trusted, a block of data delimited, never an instruction to Arianna.
  * None for a card that closes untrusted_content, whatever the settings say.
@@ -1019,11 +1044,16 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const message: BriefFragment = { text: delegation.brief, label, source: `task:${task.id}` };
   const skills = await skillsPart(env, { task, step }, agent, delegation.agent, SKILLS_DELIVERY_BYTES.cloud);
   const rules = projectRulesPart(env.settings(), container, task.clearance);
+  const dossier = godDossierPart(container, path, folder.label);
+  // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
+  const restarted = container === GOD_PROJECT && direct ? await carryParts(sql, task.conversationId) : [];
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
     { text: NO_COMMIT_TEXT, label: 'L0' as const, source: 'arianna:no-commit' },
     ...(rules === undefined ? [] : [rules]),
+    ...(dossier === undefined ? [] : [dossier]),
+    ...restarted,
     ...(entry ? [{ text: ENTRY_TEXT, label: 'L0' as const, source: 'arianna:entry' }] : []),
     ...(direct ? [{ text: DIRECT_CHAT_TEXT, label: 'L0' as const, source: 'arianna:direct' }] : []),
   ];

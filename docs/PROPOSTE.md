@@ -5,7 +5,7 @@ Forma lunga delle proposte D-078, D-079, D-080, D-093, D-094, D-095, D-096, D-10
 ## D-078 — Arianna sviluppata da dentro Arianna
 
 - **Data:** 2026-10-05
-- **Stato:** Proposta, da discutere
+- **Stato:** Sostituita da D-127 (2026-10-11): le domande qui sotto sono chiuse, le risposte sono in `docs/DECISIONS.md`
 - **Collegate:** D-034 (schede), D-049/D-050 (profilo e sandbox di `claude`), D-055 (delega), D-056 (cartella vera), D-058 (progetti), punto 12 di HANDOFF (memoria fra sessioni come Codex)
 
 ### Contesto
@@ -62,47 +62,9 @@ Prima parte di codice, dopo le risposte:
 - **File:** `agents/developer.yaml` + `agents/developer.md` (scheda: `max_label: L1`, `executors: [claude, codex]`, `tools: [repo.read, repo.write, repo.test, user.ask]`, `trifecta.private_data: false`, prompt con "leggi `CLAUDE.md` e `docs/HANDOFF.md`, aggiornala a fine lavoro, non fare commit"); `apps/core/src/orchestrator/tools.ts` (nessuno strumento `kb.*` quando la conversazione è sul progetto di sviluppo); `apps/core/src/orchestrator/delegate.ts` (una sola delega attiva per progetto marcato `dev = true`); `packages/config/src/projects.ts` (campo facoltativo `dev = true` in `[[project]]`, al massimo un progetto); `apps/hud/src/components/ConversationList.vue` (voce "Sviluppo").
 - **Test:** scheda `developer` valida e rifiutata con `max_label: L2` o con `kb.read` (`packages/agents/test`); in una conversazione sul progetto `dev` gli strumenti offerti non contengono `kb.*` e una chiamata `kb.search` forzata è rifiutata (`apps/core/test`); seconda delega sullo stesso progetto mentre la prima è aperta → carta in Inbox (`apps/core/test-db`); `projects.ts` rifiuta due progetti `dev` e accetta zero o uno; il brief di una delega dalla scheda Sviluppo non contiene testo di altre conversazioni (caso eval nel gruppo gateway).
 
-### Domande per l'utente
+### Domande chiuse
 
-1. **Il Coder sviluppa Arianna in una copia separata del codice, con solo dati finti?** Raccomandazione: sì, clone `~/arianna-dev` come progetto L1, con le modifiche portate nell'installazione solo con `git pull`; è l'unica forma che non apre `data/` e non richiede di allentare D-058.
-   - Contesto: Vuoi poter sviluppare Arianna chattando con Arianna. Chi scrive il codice è il Coder, un agente che lavora con Claude Code. Il Coder però non può lavorare nella cartella dell'installazione vera, perché lì ci sono database, password e le tue conversazioni (la regola dei progetti, D-058, lo vieta). Si decide dove lavora. La proposta è una copia separata del codice (un "clone" di git) sotto la tua cartella utente, che contiene solo dati finti ed è registrata come progetto di livello L1 (dati di lavoro che possono andare a Claude).
-   - Opzione consigliata: Sì, copia separata — il Coder vede solo il codice e i dati finti; le modifiche arrivano all'installazione vera solo quando tu lanci git pull; nessuna regola di sicurezza va allentata.
-   - Opzione: Nella cartella dell'installazione — più comodo, ma il Coder vedrebbe database, cassaforte delle password e conversazioni: contraddice D-058 e la regola "solo dati finti in sviluppo".
-   - Opzione: Rimandare — si continua solo con Claude Code nel terminale; nessun lavoro ora, ma niente sviluppo da dentro Arianna.
-   - Esempio: Nella scheda "Sviluppo" chiedi di aggiungere un test; il Coder lo scrive in ~/arianna-dev. Guardi i file cambiati, fai il commit nella copia e poi, nella cartella vera, git pull porta il test nell'installazione. Il database con le tue conversazioni non è mai stato visibile al Coder.
-2. **Una sola memoria di sviluppo, tutta nella copia, o due file separati?** Raccomandazione: (c1), tutto lo sviluppo si sposta nel clone, anche Claude Code nel terminale, con una sola `docs/HANDOFF.md`; con (c2), un file distinto `docs/DEV-HANDOFF.md`, due memorie vanno tenute allineate a mano. Se HANDOFF diventa troppo lungo, un `docs/DEV-LOG.md` solo in coda (una voce per run), sempre in git.
-   - Contesto: Fra una sessione e l'altra lo sviluppo si ricorda le cose grazie al file docs/HANDOFF.md (dove siamo, cosa resta, cosa aspetta te). Se si sviluppa sia nella copia (dalla chat di Arianna) sia nella cartella vera (da Claude Code nel terminale), nascono due HANDOFF che dicono cose diverse. Si decide come tenere una memoria sola.
-   - Opzione consigliata: Tutto nella copia, una sola HANDOFF — anche Claude Code nel terminale lavora nella copia; la cartella vera riceve solo git pull; niente da allineare a mano.
-   - Opzione: Un file in più per la chat — docs/DEV-HANDOFF.md per la scheda Sviluppo; il terminale resta com'è, ma due memorie vanno lette tutte e due e tenute allineate a mano.
-   - Esempio: Lunedì dal terminale chiudi il lavoro "barre di scorrimento" e lo scrivi in HANDOFF; martedì dalla chat chiedi "cosa resta?". Con una sola HANDOFF il Coder lo sa; con due file legge DEV-HANDOFF, dove quel lavoro non c'è, e potrebbe rifarlo.
-3. **Per lo sviluppo di Arianna serve un agente nuovo o basta il Coder con una regola in più?** Raccomandazione: scheda nuova `developer` (L1, niente `kb.*`); la differenza (niente KB, legge e aggiorna HANDOFF, non fa commit) è dichiarativa e testabile, e lascia il `coder` com'è per gli altri progetti.
-   - Contesto: Una "scheda agente" è il file che dice a un agente cosa può fare: strumenti, livello di riservatezza, regole. Per sviluppare Arianna servono regole in più: niente accesso alle tue note (la knowledge base, strumenti kb), rileggere e aggiornare HANDOFF, non fare commit. Si decide se scriverle in una scheda nuova o aggiungerle al Coder che già esiste.
-   - Opzione consigliata: Scheda nuova "developer" — le regole stanno nel file e un test le controlla; il Coder resta com'è per gli altri progetti.
-   - Opzione: Coder con una regola in più — un file in meno, ma la regola speciale vale solo "a parole" nel prompt e rischia di toccare anche gli altri progetti.
-   - Esempio: Nella chat di sviluppo scrivi "cerca nei miei appunti come avevamo chiamato la funzione". Con la scheda developer lo strumento di ricerca nelle note non esiste proprio e un test lo garantisce; con il Coder modificato dipende da una frase nel prompt.
-4. **Chi fa il commit nella copia di sviluppo?** Raccomandazione: l'utente, a mano, dopo aver visto i file cambiati e `pnpm check`; più avanti una scheda di approvazione "commit" (azione locale reversibile) se l'utente la vuole.
-   - Contesto: Un commit salva una modifica nella storia del codice. Dopo che il Coder ha lavorato nella copia, qualcuno deve decidere se quella modifica entra nella storia. Si decide chi lo fa: tu o l'agente.
-   - Opzione consigliata: Tu, a mano — dopo aver visto i file cambiati e il controllo completo (pnpm check); nulla entra senza che tu l'abbia guardato; più avanti, se vuoi, un pulsante di approvazione.
-   - Opzione: Il Coder, da solo — più veloce, ma codice che poi gira con i tuoi dati veri entrerebbe senza la tua revisione.
-   - Opzione: Subito un pulsante "commit" — un clic invece di un comando, ma è codice in più da costruire adesso.
-   - Esempio: Il Coder modifica 3 file per una nuova pagina; Arianna ti mostra l'elenco e l'esito del controllo (verde). Apri le differenze, ti convincono e lanci git commit nella copia.
-5. **Sul progetto di sviluppo un solo lavoro alla volta, gli altri in coda?** Raccomandazione: sì, una sola delega attiva, le altre richieste in coda come carte; è la regola "una cosa alla volta" messa nel codice.
-   - Contesto: Una "delega" è un lavoro che Arianna passa al Coder. Se mentre il Coder lavora chiedi un'altra modifica, due lavori sullo stesso codice possono pestarsi i piedi. Si decide se ammettere un solo lavoro alla volta sul progetto di sviluppo, mettendo gli altri in coda come carte (i promemoria di lavoro della chat).
-   - Opzione consigliata: Uno alla volta, gli altri in coda — la regola "una cosa alla volta" la garantisce il codice; le richieste nuove aspettano in Inbox e partono dopo.
-   - Opzione: Più lavori in parallelo — si fa prima, ma due lavori possono modificare gli stessi file e il risultato diventa difficile da controllare.
-   - Esempio: Il Coder sta rifacendo la pagina Impostazioni e tu scrivi "aggiungi anche un pulsante Esporta". Invece di partire un secondo lavoro compare la carta "in coda dopo il lavoro in corso", che parte quando il primo finisce.
-6. **Quando cominciare a costruire lo sviluppo da dentro Arianna?** Raccomandazione: dopo la prova dal vivo di D-058 su un progetto finto e dopo il server MCP di Arianna (1.10: il 1.6 l'ha rinviato, D-050; `docs/PRIVACY-POLICY-SPEC.md` diceva 1.6 in un punto ed è stata allineata a 1.10 il 2026-10-05), perché senza `user.ask` il Coder su `claude -p` non può fare domande a metà lavoro.
-   - Contesto: Mancano due pezzi. Il primo è la prova dal vivo del Coder su un tuo progetto fuori dalla cartella di Arianna (D-058). Il secondo è il "server MCP" di Arianna, cioè il canale che dà al Coder lo strumento user.ask per farti domande a metà lavoro. Si decide se aspettarli o partire prima.
-   - Opzione consigliata: Dopo la prova e il server MCP — si parte su basi verificate e il Coder può chiederti chiarimenti mentre lavora.
-   - Opzione: Subito, senza domande a metà — si comincia prima, ma il Coder non può fermarsi a chiedere: deve indovinare o abbandonare il lavoro.
-   - Opzione: Dopo la Fase 1A — nessuna fretta, la priorità resta alla fase in corso.
-   - Esempio: Chiedi "rifai i colori della chat". Con user.ask il Coder a metà ti chiede "tengo il verde attuale come accento?"; senza, sceglie da solo e magari devi rifare tutto.
-7. **Chi lancia il controllo completo (`pnpm check`) dopo un lavoro del Coder?** Raccomandazione: all'inizio tu, a mano nel clone; più avanti il core, fuori dalla sandbox, con ambiente minimo e solo dopo che hai visto i file cambiati.
-   - Contesto: pnpm check è il controllo completo del codice: tipi, test, stile, eval. Il Coder lavora in una "sandbox", una gabbia senza rete, dove molti test che avviano piccoli server sul Mac non possono girare. Quindi il controllo completo va lanciato fuori dalla gabbia, eseguendo codice appena scritto dal Coder. Si decide chi lo fa.
-   - Opzione consigliata: Prima tu, poi il core — all'inizio lo lanci tu nella copia; più avanti lo fa il core, senza segreti e solo dopo che hai visto i file cambiati.
-   - Opzione: Subito il core, in automatico — comodo, ma esegue fuori dalla gabbia codice appena scritto prima che tu lo guardi.
-   - Opzione: Solo i controlli nella gabbia — niente passi a mano, ma i test che avviano server restano scoperti.
-   - Esempio: Il Coder finisce con controlli dei tipi, stile ed eval verdi nella gabbia. Apri il terminale in ~/arianna-dev, lanci pnpm check e vedi fallire un test dei server locali: lo segnali in chat prima del commit.
+Chiuse il 2026-10-11 da D-127 (GOD): clone dal repository locale dentro `repos/arianna` come progetto `arianna` L1 (non sotto la home); una sola memoria in git, con un fascicolo generato a ogni lavoro dai documenti del clone; scheda nuova `god` in sola lettura, i sottocompiti li fa il `coder`; nessun commit degli agenti (D-174), «Prepara il ramo» al clic dell'utente e unione dell'utente; sottocompiti in parallelo secondo la quota, mai sugli stessi file; si comincia adesso; il `pnpm check` completo gira con l'hook di pre-commit quando l'utente unisce.
 
 ---
 
@@ -2506,7 +2468,7 @@ Letti i sistemi di orchestrazione per lo sviluppo: modello orchestratore-esecuto
 - **Parallelo:** secondo la quota, come la regola di CLAUDE.md: sotto il 50% di proiezione fino a 4-6 sottocompiti, fra 50 e 100% fino a 2, sopra uno alla volta; mai due sottocompiti sugli stessi file.
 - **Contesto:** fascicolo generato a ogni richiesta (HANDOFF, fase della ROADMAP, task aperti, ultime decisioni) più gli ultimi messaggi, e pulsante "riassumi e riparti"; la chat che vede l'utente resta intera.
 - **Prove dei lavori (anche fuori da GOD, per questa fase):** "prova tu e unisci": Claude rivede, fa i test (quelli col database da `main`), prova nel browser e unisce con la sua versione; all'utente si chiede la prova solo per ciò che si vede.
-- Da decidere ancora: personaggio di GOD, nome della voce nella barra, dove sta il suo ufficio, id della decisione (proposta: D-127).
+- **Deciso il 2026-10-11 (D-127):** la voce si chiama «GOD» e sta sopra «Pensieri»; personaggio pixel originale e isola sua nell'ufficio scelti da Claude; clone separato dentro `repos/arianna`; tappe G1-G5 nella decisione.
 
 ### I-11, progetti con la loro conoscenza (richiesta dell'utente del 2026-10-08, prioritaria)
 
