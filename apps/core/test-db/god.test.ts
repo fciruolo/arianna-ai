@@ -14,7 +14,7 @@ import type { DirectPolicy } from '../src/direct-chat.ts';
 import { gitEnv } from '../src/git-catalog.ts';
 import { createGodApi } from '../src/god/api.ts';
 import { carryOf, carryParts } from '../src/god/carry.ts';
-import { godPartDir } from '../src/god/clone.ts';
+import { godPartDir, syncGodClone } from '../src/god/clone.ts';
 import { createGodWork, GodError } from '../src/god/work.ts';
 import { useTestDatabase } from './support/database.ts';
 
@@ -382,4 +382,53 @@ test('«Prepara il ramo» does not commit a .gitignore, a link or what the insta
   const ready = await work.prepareBranch(first.id);
   assert.equal(ready.state, 'branch');
   assert.notEqual(git(clone, 'rev-parse', 'HEAD').trim(), head);
+});
+
+test('"Parlane con GOD" (I-6, D-178): a new conversation with GOD on main, with the entry of the register as its context', async () => {
+  const { home, work, parts } = setup();
+  const { sql } = db();
+  writeFileSync(join(home, 'CHANGELOG.md'), '# Registro\n\n## [0.2.0] - 2026-10-02\n\n### Aggiunto\n\n- La barra finta della quota (D-127, I-5).\n');
+  git(home, 'add', '-A');
+  git(home, 'commit', '-q', '-m', '0.2.0: barra finta');
+  git(home, 'tag', '-a', 'v0.2.0', '-m', '0.2.0');
+  const ref = { version: '0.2.0', section: 'Aggiunto', text: 'La barra finta della quota (D-127, I-5).' };
+  // No clone yet: refused, nothing written.
+  await assert.rejects(work.discuss(ref), (error: unknown) => error instanceof GodError && error.code === 'conflict' && /clone/.test(error.message));
+  await syncGodClone(home, join(home, 'data'));
+  const conversation = await work.discuss(ref);
+  assert.equal(conversation.agent, 'god');
+  assert.equal(conversation.workspace, 'arianna:main');
+  assert.equal(conversation.mode, 'work');
+  assert.match(conversation.title ?? '', /^Su 0\.2\.0: La barra finta della quota/);
+  const carry = await carryOf(sql, conversation.id);
+  assert.ok(carry !== undefined);
+  assert.equal(carry.label, 'L1');
+  assert.equal(carry.from, null);
+  assert.equal(carry.changelog, '0.2.0');
+  assert.match(carry.body, /It cites: D-127, I-5\./);
+  assert.match(carry.body, /tag v0\.2\.0/);
+  assert.deepEqual(await work.carry(conversation.id), { body: carry.body, from: null, changelog: '0.2.0' });
+  const read = await carryParts(sql, conversation.id);
+  assert.deepEqual(read.map((part) => [part.label, part.source]), [['L0', 'arianna:god-changelog'], ['L1', 'god:changelog:0.2.0']]);
+  // An entry main does not hold: refused.
+  await assert.rejects(work.discuss({ ...ref, text: 'Una voce inventata.' }), (error: unknown) => error instanceof GodError && error.code === 'not-found');
+  // The database keeps exactly one source, and a version or `unreleased`.
+  const other = await createConversation(sql, { mode: 'work', project: 'arianna:main', projects: parts(), agent: policyFor('god') });
+  await assert.rejects(sql`INSERT INTO god_carries (conversation_id, body) VALUES (${other.id}, 'x')`);
+  await assert.rejects(sql`INSERT INTO god_carries (conversation_id, from_changelog, body) VALUES (${other.id}, 'v0.2.0', 'x')`);
+  await assert.rejects(sql`INSERT INTO god_carries (conversation_id, from_conversation_id, from_changelog, body) VALUES (${other.id}, ${conversation.id}, '0.2.0', 'x')`);
+  // The summary goes with its conversation.
+  await sql`UPDATE conversations SET archived_at = now() WHERE id = ${conversation.id}`;
+  await sql`SELECT purge_conversation(${conversation.id})`;
+  assert.equal(await carryOf(sql, conversation.id), undefined);
+});
+
+test('"Parlane con GOD" waits for GOD and for the project arianna', async () => {
+  const { home } = setup();
+  const base = { sql: db().sql, home, data: join(home, 'data'), models: () => ['sonnet'], stopTask: () => true, tickOnApprove: false };
+  const ref = { version: null, section: 'Aggiunto', text: 'x' };
+  const off = createGodWork({ ...base, parts: () => ['arianna:main'], policy: () => undefined });
+  await assert.rejects(off.discuss(ref), (error: unknown) => error instanceof GodError && /Claude o Codex/.test(error.message));
+  const unregistered = createGodWork({ ...base, parts: () => [], policy: (agent) => policy(agent) });
+  await assert.rejects(unregistered.discuss(ref), (error: unknown) => error instanceof GodError && /non è registrato/.test(error.message));
 });

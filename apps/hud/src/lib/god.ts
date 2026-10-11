@@ -64,3 +64,36 @@ export function cloneText(clone: GodClone): string {
   if (clone.dirty !== undefined && clone.dirty > 0) parts.push(`${String(clone.dirty)} file cambiati`);
   return parts.join(' · ');
 }
+
+/** The context a conversation with GOD starts from: an earlier conversation ("Riassumi e riparti") or an entry of "Novità" (I-6). */
+export interface GodCarry {
+  body: string;
+  /** The conversation it restarts from, or null. */
+  from: string | null;
+  /** The version of the entry of "Novità" it starts from (X.Y.Z or `unreleased`), or null; absent from an older core. */
+  changelog?: string | null;
+}
+
+/** Which entry of "Novità" "Parlane con GOD" is about: the core finds it again in CHANGELOG.md of main. */
+export interface ChangelogRef {
+  version: string | null;
+  section: string;
+  text: string;
+}
+
+/**
+ * Why "Parlane con GOD" is off, in words for the user; null when it is on.
+ * `status` null: the core did not answer about GOD (an older core, or an error).
+ */
+export function discussBlocker(status: GodStatus | null): string | null {
+  if (status === null) return 'GOD non risponde: apri la pagina GOD per vedere perché.';
+  if (status.project === 'ok' && !status.main.exists) return 'Il clone di GOD non c’è ancora: crealo dalla pagina GOD.';
+  return godBlocker(status);
+}
+
+/** One line on where a conversation with GOD starts from. */
+export function carryOriginText(carry: GodCarry): string {
+  const version = carry.changelog ?? null;
+  if (version === null) return 'Riparte da una conversazione precedente.';
+  return version === 'unreleased' ? 'Parte da una voce delle Novità non ancora rilasciata.' : `Parte da una voce delle Novità, versione ${version}.`;
+}

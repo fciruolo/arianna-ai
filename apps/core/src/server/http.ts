@@ -75,6 +75,7 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import type { GodApi } from '../god/api.ts';
+import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
 import { GodError } from '../god/work.ts';
 import type { SkillsCatalog } from '../skills-catalog.ts';
@@ -1029,6 +1030,12 @@ function godRoutes(god: GodApi | undefined): Route[] {
     route('POST', '/api/god/conversations/:id/restart', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return { status: 201, body: { conversation: await needWork().restart(idParam(params, 'id')) } };
+    }),
+    // I-6, D-178: "Parlane con GOD" from an entry of "Novità"; the core finds the entry again in the installation's main.
+    route('POST', '/api/god/changelog', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['version', 'section', 'text']);
+      return { status: 201, body: { conversation: await needWork().discuss(changelogRefOf(body)) } };
     }),
     route('GET', '/api/god/conversations/:id/carry', async (_request, _url, params) => ({ body: { carry: await needWork().carry(idParam(params, 'id')) } })),
     route('POST', '/api/god/subtasks/:id/:action', async (request, _url, params) => {

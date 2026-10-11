@@ -2393,7 +2393,7 @@ Sei idee scritte dall'utente in un messaggio solo. Qui sono riordinate per dipen
 | I-4 | Modalità incognita: una conversazione che non salva niente | funzione di privacy | 13-17 h | decisione D- | proposta `docs/I-4-incognito.md` (ramo `task/i4-incognito-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-3 | Una pagina "Modelli" sola, locali e cloud, con le schede | funzione | 28-41 h (tappe M1-M6) | task 1.16 per M6 | proposta `docs/I-3-modelli.md` (ramo `task/i3-modelli-proposta`), scelte dell'utente fatte: da scrivere come decisione e implementare |
 | I-5 | GOD: agente dedicato allo sviluppo di Arianna, con chat e ufficio suoi, instradatore davanti e più Claude Code/Codex in parallelo | progetto grande | da stimare dopo la ricerca | D-120, D-055/D-056, D-095 | D-127, G1-G5 unite in 0.67.0 (provate da Claude; prova dell'utente da fare) |
-| I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | dopo GOD |
+| I-6 | Nel registro delle versioni, un pulsante per ogni voce che apre una chat con GOD sul lavoro fatto | funzione | 4-6 h | I-5 | D-178, ramo `task/i6-parlane-god` (migrazione 0054), prova dell'utente da fare |
 | I-7 | "Salva in inbox" per l'intera conversazione, con riassunto e contesto come per il singolo messaggio | funzione | da stimare | "Salva in inbox" del messaggio, riassunti delle conversazioni | D-131, provata e unita in 0.20.0 |
 | I-8 | Un agente entrato in chat ne esce da solo quando non serve più | funzione | 3-5 h | D-125 | D-130, unita in 0.19.0, prova dell'utente da fare |
 | I-9 | Una skill di Claude Code per la pixel art (oggi non esiste): regole di disegno, controlli e esempi del progetto, riusabile per i personaggi nuovi disegnati a mano | idea | da stimare | D-132 | annotata il 2026-10-06, da decidere |
@@ -2427,7 +2427,7 @@ L'utente vuole capire prima di tutto **se è possibile e se conviene** sviluppar
 
 ### I-6, chat dal registro delle versioni
 
-Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre una chat con il contesto caricato: testo della voce, decisione D-NNN, commit e file toccati (L0/L1, è codice di Arianna). Dipende da I-5.
+Accanto a ogni voce della pagina "Novità" un pulsante "Parlane con GOD" apre una chat con il contesto caricato: testo della voce, decisione D-NNN, commit e file toccati (L0/L1, è codice di Arianna). Dipende da I-5. Attuata con D-178.
 
 ### I-7, salvare l'intera conversazione nella conoscenza
 

@@ -1,4 +1,4 @@
-import type { GodStatus } from './god.ts';
+import type { ChangelogRef, GodCarry, GodStatus } from './god.ts';
 import type { GodPlan, GodSubtask, MessagePlan, SubtaskAction } from './god-work.ts';
 import type { CallInfo } from './calls.ts';
 import type { Client, ClientContact, ClientForm, ClientLogo, ClientProject, ClientSummary, ContactForm } from './clients.ts';
@@ -295,8 +295,13 @@ export async function restartGodConversation(conversationId: string): Promise<Co
 }
 
 /** The summary a conversation with GOD restarts from, or null. */
-export async function loadGodCarry(conversationId: string): Promise<{ body: string; from: string } | null> {
-  return (await call<{ carry: { body: string; from: string } | null }>('GET', `/api/god/conversations/${encodeURIComponent(conversationId)}/carry`)).carry;
+export async function loadGodCarry(conversationId: string): Promise<GodCarry | null> {
+  return (await call<{ carry: GodCarry | null }>('GET', `/api/god/conversations/${encodeURIComponent(conversationId)}/carry`)).carry;
+}
+
+/** "Parlane con GOD" (I-6, D-178): a new conversation with GOD about an entry of "Novità"; the core finds it again in git. */
+export async function discussWithGod(ref: ChangelogRef): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', '/api/god/changelog', ref)).conversation;
 }
 
 /** The agents the user may talk with directly now (D-111d). */

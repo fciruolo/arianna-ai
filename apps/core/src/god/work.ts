@@ -21,7 +21,8 @@ import {
   subtaskBranch,
   type GitRunner,
 } from './clone.ts';
-import { carryOf, createCarry } from './carry.ts';
+import { carryOf, createCarry, createChangelogConversation } from './carry.ts';
+import { changelogCarry, type ChangelogRef } from './changelog-carry.ts';
 import { overlaps, partName, planOfAnswer, type GodPlanProposal } from './plan.ts';
 import { concurrencyFor, projection, quotaReadings } from './quota.ts';
 
@@ -714,13 +715,36 @@ export function createGodWork(env: GodWorkEnv) {
   }
 
   /** The summary a conversation with GOD restarts from (the chat shows it), or null. */
-  async function carry(conversationId: string): Promise<{ body: string; from: string } | null> {
+  async function carry(conversationId: string): Promise<{ body: string; from: string | null; changelog: string | null } | null> {
     if (!/^[0-9a-f-]{36}$/.test(conversationId)) throw new GodError('not-found', 'not found');
     const found = await carryOf(sql, conversationId);
-    return found === undefined ? null : { body: found.body, from: found.from };
+    return found === undefined ? null : { body: found.body, from: found.from, changelog: found.changelog };
   }
 
-  return { messagePlan, approve, plans, tick, stop, resume, discard, prepareBranch, restart, carry };
+  /**
+   * "Parlane con GOD" (I-6, D-178): a new conversation with GOD on the part
+   * `main` that starts from an entry of the register of the versions, found
+   * again by the core in the installation's main with what git says of it.
+   */
+  async function discuss(ref: ChangelogRef): Promise<Conversation> {
+    const god = env.policy(GOD_AGENT);
+    if (god === undefined) throw new GodError('conflict', 'GOD non può rispondere ora: accendi Claude o Codex');
+    const workspace = godWorkspace(GOD_MAIN);
+    if (!env.parts().includes(workspace)) throw new GodError('conflict', 'il progetto arianna non è registrato: Impostazioni → Progetti');
+    const dir = godPartDir(home, GOD_MAIN);
+    if (!existsSync(dir)) throw new GodError('conflict', 'il clone di GOD non c\'è ancora: crealo dalla pagina GOD');
+    const refused = godCloneRefusal(dir);
+    if (refused !== undefined) throw new GodError('conflict', `il clone di GOD non si può usare: ${refused}`);
+    try {
+      const context = await changelogCarry(git, home, ref);
+      return await createChangelogConversation(sql, { carry: context, projects: env.parts(), agent: { name: GOD_AGENT, modes: god.modes, project: god.project } });
+    } catch (error) {
+      if (error instanceof ChatError) throw new GodError(error.code === 'not-found' ? 'not-found' : 'invalid', error.message);
+      throw error;
+    }
+  }
+
+  return { messagePlan, approve, plans, tick, stop, resume, discard, prepareBranch, restart, carry, discuss };
 }
 
 export type GodWork = ReturnType<typeof createGodWork>;

@@ -2,6 +2,7 @@ import type { Project } from '@arianna/config';
 
 import type { Conversation } from '../conversations.ts';
 import type { Queryable } from '../db/client.ts';
+import type { ChangelogRef } from './changelog-carry.ts';
 import { cloneState, GOD_AGENT, GOD_CONTAINER, GOD_MAIN, GOD_PROJECT, godWorkspace, syncGodClone, type CloneState } from './clone.ts';
 import { concurrencyFor, projection, quotaReadings } from './quota.ts';
 import type { GodWork, MessagePlan, PlanView, SubtaskView } from './work.ts';
@@ -60,7 +61,9 @@ export interface GodApi {
     approve(messageId: string): Promise<PlanView>;
     act(subtaskId: string, action: SubtaskAction): Promise<SubtaskView>;
     restart(conversationId: string): Promise<Conversation>;
-    carry(conversationId: string): Promise<{ body: string; from: string } | null>;
+    carry(conversationId: string): Promise<{ body: string; from: string | null; changelog: string | null } | null>;
+    /** "Parlane con GOD" (I-6, D-178): a new conversation with GOD about an entry of the register of the versions. */
+    discuss(ref: ChangelogRef): Promise<Conversation>;
   };
 }
 
@@ -122,6 +125,7 @@ export function createGodApi(options: GodApiOptions): GodApi {
             },
             restart: (conversationId) => work.restart(conversationId),
             carry: (conversationId) => work.carry(conversationId),
+            discuss: (ref) => work.discuss(ref),
           },
         }),
   };

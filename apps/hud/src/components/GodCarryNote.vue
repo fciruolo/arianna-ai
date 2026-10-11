@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 
 import { loadGodCarry, restartGodConversation } from '../lib/api.ts';
+import { carryOriginText, type GodCarry } from '../lib/god.ts';
 import { errorText } from '../lib/italian.ts';
 import Icon from './Icon.vue';
 
@@ -9,12 +10,18 @@ import Icon from './Icon.vue';
  * At the top of a conversation with GOD (D-127, G4): "Riassumi e riparti",
  * which opens a new conversation with a fresh session that starts from a
  * summary of this one written by the code; and, in a conversation restarted
- * that way, the summary it carries (what GOD read with the dossier).
+ * that way, the summary it carries (what GOD read with the dossier); in one
+ * opened by "Parlane con GOD" (I-6), the entry of "Novità" and its git facts.
  */
 const props = defineProps<{ conversationId: string; empty: boolean }>();
 const emit = defineEmits<{ open: [id: string] }>();
 
-const carry = ref<{ body: string; from: string } | null>(null);
+const carry = ref<GodCarry | null>(null);
+
+function openFrom(): void {
+  const from = carry.value?.from ?? null;
+  if (from !== null) emit('open', from);
+}
 const shown = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -52,10 +59,12 @@ async function restart(): Promise<void> {
     <div class="flex flex-wrap items-center gap-2">
       <Icon name="god" :size="14" />
       <span v-if="carry !== null" class="min-w-0 flex-1 text-[12.5px]">
-        Riparte da una conversazione precedente.
-        <button type="button" class="text-info hover:underline" @click="shown = !shown">{{ shown ? 'Nascondi il riassunto' : 'Mostra il riassunto' }}</button>
-        ·
-        <button type="button" class="text-info hover:underline" @click="emit('open', carry.from)">apri quella</button>
+        {{ carryOriginText(carry) }}
+        <button type="button" class="text-info hover:underline" @click="shown = !shown">{{ shown ? 'Nascondi il contesto' : 'Mostra il contesto' }}</button>
+        <template v-if="carry.from !== null">
+          ·
+          <button type="button" class="text-info hover:underline" @click="openFrom">apri quella</button>
+        </template>
       </span>
       <span v-else class="min-w-0 flex-1 text-[12.5px] text-muted">Quando la conversazione si allunga, riparti da un riassunto: la chat resta qui intera.</span>
       <button

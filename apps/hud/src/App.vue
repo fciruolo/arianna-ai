@@ -902,7 +902,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
       <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" />
-      <ChangelogPage v-else-if="page === 'changelog'" />
+      <ChangelogPage v-else-if="page === 'changelog'" @open="openConversation" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />

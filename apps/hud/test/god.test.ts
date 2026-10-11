@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cloneText, godBlocker, type GodStatus } from '../src/lib/god.ts';
+import { carryOriginText, cloneText, discussBlocker, godBlocker, type GodStatus } from '../src/lib/god.ts';
 import { GOD_PATH, isGodPath } from '../src/lib/route.ts';
 
 const ready: GodStatus = {
@@ -26,6 +26,21 @@ test('the line of the clone: branch, short commit, how far behind, files changed
   assert.equal(cloneText(ready.main), 'repos/arianna/main · ramo main · commit 0123456 · allineato al main dell’installazione');
   assert.equal(cloneText({ ...ready.main, behind: 3, dirty: 2 }), 'repos/arianna/main · ramo main · commit 0123456 · 3 commit indietro rispetto al main · 2 file cambiati');
   assert.equal(cloneText({ path: 'repos/arianna/main', exists: false }), 'repos/arianna/main: non c’è ancora.');
+});
+
+test('"Parlane con GOD" (I-6) is off, with the reason, until GOD can answer', () => {
+  assert.equal(discussBlocker(ready), null);
+  assert.match(discussBlocker(null) ?? '', /GOD non risponde/);
+  assert.match(discussBlocker({ ...ready, project: 'missing' }) ?? '', /Impostazioni → Progetti/);
+  assert.match(discussBlocker({ ...ready, main: { path: 'repos/arianna/main', exists: false } }) ?? '', /crealo dalla pagina GOD/);
+  assert.match(discussBlocker({ ...ready, available: false }) ?? '', /Claude o Codex/);
+});
+
+test('where a conversation with GOD starts from: an earlier one, or an entry of "Novità"', () => {
+  assert.equal(carryOriginText({ body: 'x', from: 'a1b2', changelog: null }), 'Riparte da una conversazione precedente.');
+  assert.equal(carryOriginText({ body: 'x', from: 'a1b2' }), 'Riparte da una conversazione precedente.', 'an older core');
+  assert.equal(carryOriginText({ body: 'x', from: null, changelog: '0.65.0' }), 'Parte da una voce delle Novità, versione 0.65.0.');
+  assert.equal(carryOriginText({ body: 'x', from: null, changelog: 'unreleased' }), 'Parte da una voce delle Novità non ancora rilasciata.');
 });
 
 test('the address of the page of GOD', () => {
