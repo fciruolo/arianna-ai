@@ -7,6 +7,7 @@ import {
   createLabelRules,
   declassify,
   derive,
+  deriveSource,
   gatewayCheck,
   secretMatcher,
   type DeclassifyApproval,
@@ -24,12 +25,23 @@ import { contextOf, type ContextInput } from './context-input.ts';
 
 /**
  * A payload fragment. `derivedFrom` lists the labels of the inputs a model read
- * to write it: its label is then the taint of those inputs, not `label`.
+ * to write it, or `{ label, source }` for an input with its source: its label
+ * and source are then the taint of those inputs, not `label` and `source`.
+ * `source` defaults to `eval`; `finance:*` is finance data (D-183).
  */
 interface FragmentInput {
   value: unknown;
   label?: unknown;
+  source?: unknown;
   derivedFrom?: unknown[];
+}
+
+function derivedInput(from: unknown): Labeled<unknown> {
+  if (typeof from === 'object' && from !== null && !Array.isArray(from)) {
+    const input = from as { label?: unknown; source?: unknown };
+    return { value: null, label: input.label as Label, source: typeof input.source === 'string' ? input.source : 'eval' };
+  }
+  return { value: null, label: from as Label, source: 'eval' };
 }
 
 
@@ -133,10 +145,12 @@ export type WorkspaceOutcome =
   | { decision: 'block'; rule: 'not-allowlisted' | 'workspace-scan'; findings?: string[] };
 
 function toFragment(input: FragmentInput): Labeled<unknown> {
-  const label = Array.isArray(input.derivedFrom)
-    ? derive(input.derivedFrom.map((from) => ({ value: null, label: from as Label, source: 'eval' })))
-    : (input.label as Label);
-  return { value: input.value, label, source: 'eval' };
+  const source = typeof input.source === 'string' ? input.source : 'eval';
+  if (Array.isArray(input.derivedFrom)) {
+    const inputs = input.derivedFrom.map(derivedInput);
+    return { value: input.value, label: derive(inputs), source: deriveSource(inputs, source) };
+  }
+  return { value: input.value, label: input.label as Label, source };
 }
 
 function outcomeOf(decision: WorkspaceDecision): WorkspaceOutcome {
@@ -161,6 +175,7 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
   const input = raw as GatewayInput;
   if (!Array.isArray(input.payload)) throw new Error('"payload" must be a list');
   let payload = input.payload.map(toFragment);
+  const { context, deniedReads } = contextOf(input.context);
 
   if (input.declassify !== undefined) {
     const [item] = payload;
@@ -173,13 +188,12 @@ export function evaluateGateway(raw: unknown): GatewayOutcome | WorkspaceOutcome
       detail: { sha256: spec.sha256 === 'exact' ? contentHash(item.value) : spec.sha256, from: spec.from, to: spec.to },
     };
     try {
-      payload = [declassify(item, to, approval).item];
+      payload = [declassify(item, to, approval, context).item];
     } catch {
       return { declassify: 'refused' };
     }
   }
 
-  const { context, deniedReads } = contextOf(input.context);
   const denied = deniedReads === 0 ? {} : { deniedReads };
   const secrets = secretMatcher(input.secrets ?? []);
   const decision = gatewayCheck(payload, context, input.target, secrets);

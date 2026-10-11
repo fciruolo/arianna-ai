@@ -15,6 +15,18 @@ export interface Context {
   readonly clearance: Label;
   /** Highest label actually read so far. Only goes up. */
   readonly effective: Label;
+  /**
+   * Present, and true, once the context has read finance data (D-183). It is
+   * never removed: every context derived from a marked one is marked too, and
+   * the gateway sends nothing of a marked context to a cloud target.
+   */
+  readonly finance?: true;
+}
+
+/** Options of `createContext`. */
+export interface ContextOptions {
+  /** A context that has read finance data: needs clearance and effective L2. */
+  finance?: boolean;
 }
 
 export type ConversationMode = 'work' | 'private';
@@ -28,14 +40,45 @@ const MAX_CLEARANCE: Label = 'L2';
 /** Highest effective label with which cloud executors and web tools stay allowed. */
 const CLOUD_CEILING: Label = 'L1';
 
+/** Sources of finance data start with this prefix, e.g. `finance:transactions` (D-183). */
+export const FINANCE_SOURCE_PREFIX = 'finance:';
+/** The source of what a model or tool wrote after reading finance data. */
+export const FINANCE_DERIVED_SOURCE = 'finance:derived';
+/** Finance data is at least Private: no rule lowers it below this label. */
+export const FINANCE_LABEL: Label = 'L2';
+
+/** True when `source` names finance data (`finance:*`). Anything that is not a string is not. */
+export function isFinanceSource(source: unknown): boolean {
+  return typeof source === 'string' && source.startsWith(FINANCE_SOURCE_PREFIX);
+}
+
+/**
+ * The label a value really has: its label (L2 when invalid), raised to L2 when
+ * its source is finance data, whatever label it was given.
+ */
+export function labelOf(item: Labeled<unknown>): Label {
+  const label = labelOrDefault(item.label);
+  return isFinanceSource(item.source) ? maxLabel(label, FINANCE_LABEL) : label;
+}
+
 /**
  * Taint: the output of a model or tool has the highest label among its inputs.
- * Inputs without a valid label count as L2. An output with no known inputs has
- * no provenance, so it is L2 as well.
+ * Inputs without a valid label count as L2, finance inputs at least L2. An
+ * output with no known inputs has no provenance, so it is L2 as well.
  */
 export function derive(inputs: readonly Labeled<unknown>[]): Label {
   if (inputs.length === 0) return 'L2';
-  return maxLabel(...inputs.map((input) => labelOrDefault(input.label)));
+  return maxLabel(...inputs.map(labelOf));
+}
+
+/**
+ * The source of an output: `finance:derived` when any input is finance data,
+ * `source` otherwise. The core labels every model or tool output with
+ * `{ label: derive(inputs), source: deriveSource(inputs, source) }`, so the
+ * finance mark follows the text wherever it goes next (gateway, declassify).
+ */
+export function deriveSource(inputs: readonly Labeled<unknown>[], source: string): string {
+  return inputs.some((input) => isFinanceSource(input.source)) ? FINANCE_DERIVED_SOURCE : source;
 }
 
 /** Work conversations are bound to a repository and stop at L1; private ones reach L2. */
@@ -47,16 +90,31 @@ export function clearanceFor(mode: ConversationMode): Label {
 // literal or a context parsed from JSON could claim any effective label.
 const issued = new WeakSet<Context>();
 
-export function createContext(clearance: Label, effective: Label = 'L0'): Context {
+/**
+ * A context cleared for `clearance` that has read up to `effective`. With
+ * `{ finance: true }` it is marked as having read finance data (D-183): that
+ * needs both labels at L2, since finance data is L2. The core recreates a
+ * stored context with the mark it had: dropping it is a bug, as is lowering
+ * `effective`.
+ */
+export function createContext(clearance: Label, effective: Label = 'L0', options: ContextOptions = {}): Context {
   if (!isAtMost(clearance, MAX_CLEARANCE)) {
     throw new PolicyError(`no context can be cleared for ${clearance}`);
   }
   if (!isAtMost(effective, clearance)) {
     throw new PolicyError(`effective label ${effective} is above clearance ${clearance}`);
   }
-  const context = Object.freeze({ clearance, effective });
+  if (options.finance === true && effective !== FINANCE_LABEL) {
+    throw new PolicyError(`a context that has read finance data has effective ${FINANCE_LABEL}, not ${effective}`);
+  }
+  const context: Context = Object.freeze(options.finance === true ? { clearance, effective, finance: true as const } : { clearance, effective });
   issued.add(context);
   return context;
+}
+
+/** True when the context was made by the policy and has read finance data: nothing of it goes to the cloud. */
+export function isFinanceContext(context: Context): boolean {
+  return isContext(context) && context.finance === true;
 }
 
 /**
@@ -91,9 +149,15 @@ export function canRead(context: Context, label: Label): boolean {
  * Applies a read to the context. Allowed reads raise the effective label
  * (contamination); denied reads leave the context exactly as it was.
  * An invalid label is read as L2.
+ *
+ * `source` is where the value read comes from: a `finance:*` source is read as
+ * at least L2 (so a work context, cleared for L1, cannot read it) and marks
+ * the context for good (D-183). The core passes the source of every read of
+ * finance data; without it the read counts as an ordinary one.
  */
-export function recordRead(context: Context, label: Label): ReadResult {
-  const read = labelOrDefault(label);
+export function recordRead(context: Context, label: Label, source?: string): ReadResult {
+  const finance = isFinanceSource(source);
+  const read = finance ? maxLabel(labelOrDefault(label), FINANCE_LABEL) : labelOrDefault(label);
   if (!canRead(context, read)) {
     return {
       allowed: false,
@@ -101,15 +165,21 @@ export function recordRead(context: Context, label: Label): ReadResult {
       reason: `reading ${read} is above the clearance ${context.clearance} of this context`,
     };
   }
-  return { allowed: true, context: createContext(context.clearance, maxLabel(context.effective, read)) };
+  const marked = finance || context.finance === true;
+  return { allowed: true, context: createContext(context.clearance, maxLabel(context.effective, read), { finance: marked }) };
 }
 
-/** A context that has read L2 stays local: cloud executors are allowed only up to L1. */
+/** `recordRead` of finance data: the value read is L2 at least and the context is marked. */
+export function recordFinanceRead(context: Context, label: Label = FINANCE_LABEL): ReadResult {
+  return recordRead(context, label, FINANCE_DERIVED_SOURCE);
+}
+
+/** A context that has read L2, or finance data, stays local: cloud executors are allowed only up to L1. */
 export function canUseCloud(context: Context): boolean {
-  return isAtMost(context.effective, CLOUD_CEILING);
+  return context.finance !== true && isAtMost(context.effective, CLOUD_CEILING);
 }
 
-/** A web query from a context that has read L2 could carry it out: same ceiling as the cloud. */
+/** A web query from a context that has read L2, or finance data, could carry it out: same rule as the cloud. */
 export function canUseWebTools(context: Context): boolean {
-  return isAtMost(context.effective, CLOUD_CEILING);
+  return context.finance !== true && isAtMost(context.effective, CLOUD_CEILING);
 }
