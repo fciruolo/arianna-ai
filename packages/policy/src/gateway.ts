@@ -1,7 +1,7 @@
 // The only exit (docs/PRIVACY-POLICY-SPEC.md, rules 4, 9 and 10). Pure: it
 // decides, the core writes the decision to gateway_log before anything is sent.
-import { canUseCloud, isContext, type Context, type Labeled } from './context.ts';
-import { canSendTo, labelOrDefault, maxLabel, type Label, type Locality } from './labels.ts';
+import { canUseCloud, isContext, isFinanceSource, labelOf, type Context, type Labeled } from './context.ts';
+import { canSendTo, maxLabel, type Label, type Locality } from './labels.ts';
 import { payloadText, scanParts } from './payload.ts';
 import { scanText, type Finding } from './scanner.ts';
 import type { KnownSecrets } from './secrets.ts';
@@ -34,6 +34,7 @@ export type Target =
 /** Which rule decided; stored in `gateway_log.rule`. */
 export type GatewayRule =
   | 'invalid-input'
+  | 'finance'
   | 'secret'
   | 'contaminated'
   | 'cloud-label'
@@ -254,17 +255,20 @@ function block(
  * Decides whether a payload may go to a target. Checks, in order:
  * 1. inputs are well formed (a context made by the policy, a known target whose
  *    locality matches what is known about it, a list of fragments);
- * 2. no fragment is L3, whatever the target;
- * 3. every fragment has a text form (text or plain JSON);
- * 4. no fragment contains the value of a secret revealed by the vault
+ * 2. nothing goes to a cloud target (cloud executor, Telegram, phone, push,
+ *    web search, link) when a fragment is finance data (`finance:*` source)
+ *    or the context has read some (D-183), whatever the labels;
+ * 3. no fragment is L3, whatever the target;
+ * 4. every fragment has a text form (text or plain JSON);
+ * 5. no fragment contains the value of a secret revealed by the vault
  *    (`secrets`), whatever its label and the target;
- * 5. local targets take up to L2;
- * 6. cloud targets (cloud executors, Telegram, phone, web search) need a context
+ * 6. local targets take up to L2;
+ * 7. cloud targets (cloud executors, Telegram, phone, web search) need a context
  *    that has read at most L1, a payload of at most L1, and a clean scan.
  *
  * `context` is the session the payload belongs to on the sending side: the run
  * for a brief to a cloud executor, the task for a channel message or a web query.
- * Fragments without a valid label count as L2. Reasons name labels and rules,
+ * Fragments without a valid label count as L2, finance fragments at least L2. Reasons name labels and rules,
  * never content, so they can be logged.
  *
  * An allowed decision carries `texts`, the exact text checked for each fragment:
@@ -285,7 +289,7 @@ export function gatewayCheck(
   if (!Array.isArray(fragments) || !fragments.every((fragment) => typeof fragment === 'object' && fragment !== null)) {
     return block('invalid-input', 'L2', 'payload is not a list of labeled fragments', 'stay-local');
   }
-  const label = maxLabel(...payload.map((fragment) => labelOrDefault(fragment.label)));
+  const label = maxLabel(...payload.map(labelOf));
   if (!isContext(context)) return block('invalid-input', label, 'context was not created by the policy', 'stay-local');
   if (!isTarget(target)) return block('invalid-input', label, 'unknown target', 'stay-local');
   // Types do not hold at runtime: a missing matcher must not mean "no secrets".
@@ -298,6 +302,16 @@ export function gatewayCheck(
 
   const locality = localityOf(target);
   const onBlock: NextStep = target.kind === 'channel' && locality === 'cloud' ? 'notify-reference' : 'stay-local';
+
+  // Finance data never leaves this machine (D-183): no label, approval or scan changes this.
+  if (locality === 'cloud') {
+    if (payload.some((fragment) => isFinanceSource(fragment.source))) {
+      return block('finance', label, 'finance data goes to local targets only', onBlock);
+    }
+    if (context.finance === true) {
+      return block('finance', label, 'the session has read finance data: it stays local', onBlock);
+    }
+  }
 
   if (label === 'L3') return block('secret', label, 'L3 never leaves the vault: send a vault:// reference', onBlock);
 

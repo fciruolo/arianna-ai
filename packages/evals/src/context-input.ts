@@ -5,12 +5,27 @@ import { createContext, isLabel, recordRead, type Context, type Label } from '@a
  * `forged: true` passes a look-alike object instead of a context made by the
  * policy. `reads` are labels the session read, in order, applied with
  * `recordRead`: an allowed read raises `effective`, a denied one changes nothing.
+ * A read may be `{ label, source }`: a `finance:*` source marks the context (D-183).
  */
 export interface ContextInput {
   clearance: Label;
   effective?: Label;
   forged?: boolean;
-  reads?: Label[];
+  reads?: (Label | ReadInput)[];
+}
+
+/** A read with the source of the value read. */
+export interface ReadInput {
+  label: Label;
+  source: string;
+}
+
+function readOf(raw: unknown): ReadInput | undefined {
+  if (isLabel(raw)) return { label: raw, source: 'eval' };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const read = raw as Record<string, unknown>;
+  if (Object.keys(read).some((key) => key !== 'label' && key !== 'source')) return undefined;
+  return isLabel(read.label) && typeof read.source === 'string' ? { label: read.label, source: read.source } : undefined;
 }
 
 const KEYS = new Set(['clearance', 'effective', 'forged', 'reads']);
@@ -33,16 +48,17 @@ export function contextOf(raw: unknown): BuiltContext {
   const input = raw as ContextInput;
   if (input.reads !== undefined) {
     if (!Array.isArray(input.reads)) throw new Error('"context.reads" must be a list');
-    for (const label of input.reads as unknown[]) {
-      if (!isLabel(label)) throw new Error(`"context.reads": ${JSON.stringify(label)} is not a label L0..L3`);
+    for (const read of input.reads as unknown[]) {
+      if (readOf(read) === undefined) throw new Error(`"context.reads": ${JSON.stringify(read)} is not a label L0..L3 nor { label, source }`);
     }
     if (input.forged === true) throw new Error('"context.reads" cannot be used with "forged": a forged context reads nothing');
   }
   if (input.forged === true) return { context: { clearance: input.clearance, effective: input.effective ?? 'L0' }, deniedReads: 0 };
   let context = createContext(input.clearance, input.effective);
   let deniedReads = 0;
-  for (const label of input.reads ?? []) {
-    const read = recordRead(context, label);
+  for (const raw of input.reads ?? []) {
+    const { label, source } = readOf(raw) as ReadInput;
+    const read = recordRead(context, label, source);
     if (!read.allowed) deniedReads += 1;
     context = read.context;
   }

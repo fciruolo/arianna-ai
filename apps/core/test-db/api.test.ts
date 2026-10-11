@@ -8,6 +8,7 @@ import { after, before, test } from 'node:test';
 import WebSocket from 'ws';
 
 import { resolveHome } from '@arianna/config';
+import { createContext } from '@arianna/policy';
 
 import { applyDeclassify } from '../src/gateway.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepContext, type StepExecutor, type StepOutcome } from '../src/engine.ts';
@@ -513,7 +514,7 @@ function declassifier(): StepExecutor & { seen: StepContext[] } {
       seen.push(ctx);
       if (ctx.approval === undefined) return { kind: 'declassify', text: 'Brief finto per Claude Code', to: 'L1' };
       if (ctx.approval.state !== 'approved') return { kind: 'wait-user', reason: 'the user refused the brief' };
-      const lowered = await applyDeclassify(db().sql, { value: 'Brief finto per Claude Code', label: 'L2', source: `task:${ctx.task.id}` }, 'L1', ctx.approval.id);
+      const lowered = await applyDeclassify(db().sql, { value: 'Brief finto per Claude Code', label: 'L2', source: `task:${ctx.task.id}` }, 'L1', ctx.approval.id, createContext(ctx.task.clearance, ctx.task.effectiveLabel));
       const reply = await openReply(db().sql, ctx.task.id, { runId: ctx.runId });
       await reply.finish(`Inviato: ${lowered.label}`, 'L2');
       return { kind: 'done', evidence: [{ kind: 'declassified', label: lowered.label }] };
