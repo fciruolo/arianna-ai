@@ -47,7 +47,7 @@ Leggi `docs/SPEC.md` per il contesto e `docs/ROADMAP.md` per la fase corrente. L
 | `pnpm lint` | ESLint con regole che vedono i tipi |
 | `pnpm eval` | Eval deterministici (gateway, router): niente modelli né rete; fallisce sotto soglia |
 | `pnpm eval:models` | Eval che richiedono il modello locale (orchestratore, estrazione, retrieval) |
-| `pnpm eval:models --model <id>` | Come sopra, con l'orchestratore su un modello del catalogo (`local-large` sugli endpoint di `arianna.toml`); rapporto in `data/evals/report-models-<id>.json` (D-081). Dal core la stessa prova parte in background da Impostazioni → Modelli, nella scheda del modello |
+| `pnpm eval:models --model <id>` | Come sopra, con l'orchestratore e l'agente Finanze su un modello del catalogo (`local-large` sugli endpoint di `arianna.toml`); rapporto in `data/evals/report-models-<id>.json` (D-081). Dal core la stessa prova parte in background da Impostazioni → Modelli, nella scheda del modello |
 | `pnpm eval:live` | Eval dal vivo con `claude` e `codex` (contratto, canarino); consumano quota |
 | `pnpm eval:live --tag <tag>` | Solo i casi con quell'etichetta, per esempio `--tag codex` per consumare la sola quota di ChatGPT (D-138); rapporto in `data/evals/report-live-<tag>.json`. Vale anche per gli altri livelli |
 | `pnpm check` | `build` + `test` + `lint` + `eval`; l'hook git `.githooks/pre-commit` lo esegue a ogni commit e lo rifiuta se fallisce |
