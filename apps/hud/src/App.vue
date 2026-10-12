@@ -41,7 +41,7 @@ import { entryFromState, INCOGNITO_PATH, incognitoState, isIncognitoPath, splitA
 import { markTitle, type InstallationInfo } from './lib/installation.ts';
 import { LABEL_TEXT, MODE_TEXT } from './lib/labels.ts';
 import type { SearchTarget } from './lib/search.ts';
-import { isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projects.ts';
+import { folderFromSearch, invoiceFromSearch, isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projects.ts';
 import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
 import { financePathFor, financeTabFromPath, isFinancePath, type FinanceTab } from './lib/finance.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
@@ -415,9 +415,12 @@ function openOffice(): void {
   openPage('office', OFFICE_PATH, 'Ufficio');
 }
 
+/** Grows at every opening of "Progetti": the page, already open, reads the address again (D-191: the grid or a project). */
+const projectsVisit = ref(0);
 /** An approved project, read only (D-134); `name` opens that one (from a client's page, D-168). */
 function openProjects(name?: string, folder?: string, invoice?: string): void {
   openPage('projects', projectsPathFor(name, folder, invoice), 'Progetti');
+  projectsVisit.value += 1;
 }
 
 /** The client open in "Clienti" (D-168), from the address `/clienti/<id>`; null is the list. */
@@ -589,7 +592,8 @@ function followAddress(): void {
     return;
   }
   if (isProjectsPath(window.location.pathname)) {
-    openProjects(projectFromSearch(window.location.search));
+    // The folder and the invoice too: "back" to an address with them does not push a new one (D-191).
+    openProjects(projectFromSearch(window.location.search), folderFromSearch(window.location.search), invoiceFromSearch(window.location.search));
     return;
   }
   if (isClientsPath(window.location.pathname)) {
@@ -977,7 +981,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
-      <ProjectsPage v-else-if="page === 'projects'" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
+      <ProjectsPage v-else-if="page === 'projects'" :visit="projectsVisit" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" @settings="openSettings" @cardwall="openCardwall" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />
       <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
       <StudioPage

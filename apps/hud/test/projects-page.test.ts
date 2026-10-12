@@ -22,6 +22,7 @@ import {
   priceChanges,
   priceChangeText,
   priceEditable,
+  PROJECT_TABS,
   ruleChanges,
   ruleRows,
   settingsChanges,
@@ -69,7 +70,11 @@ const invoice = (change: Partial<ImInvoice> = {}): ImInvoice => ({
   ...change,
 });
 
-test('the part tabs are File, Git and Servizi; a part is pressed only there', () => {
+test('the tabs in one row; the part tabs are File, Git and Servizi; a part is pressed only there', () => {
+  assert.deepEqual(
+    PROJECT_TABS.map((item) => item.text),
+    ['File', 'Git', 'Servizi', 'Conoscenza', 'IM', 'Regole'],
+  );
   assert.equal(isPartTab('file'), true);
   assert.equal(isPartTab('svc'), true);
   assert.equal(isPartTab('im'), false);

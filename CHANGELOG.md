@@ -7,7 +7,9 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Cambiato
 
 - Progetti, testata: nome del progetto nel carattere normale, cliente con il logo sotto, quattro numeri cliccabili (Branch, Modifiche, Servizi, Prossimo IM con l'avviso delle fatture scadute) e larghezza come Finanze e Clienti (D-191).
-- Progetti: schede in due gruppi, «Parte» (File, Git, Servizi) e «Progetto» (Conoscenza, IM, Regole); il selettore delle parti compare solo nel primo gruppo (D-191).
+- Progetti: elenco dei progetti a card come i Clienti, con cliente, parti, calendario e prossimo IM, «Da fatturare», «In attesa» con le scadute e «Incassato» dell'anno; clic apre il progetto, «‹ Progetti» torna alla griglia, l'ultima card aggiunge un progetto (D-191).
+- Progetti: schede in una sola fila (File, Git, Servizi, Conoscenza, IM, Regole); il selettore delle parti compare solo in File, Git e Servizi (D-191).
+- Progetti, testata: «Apri in VS Code» e «Apri nello Studio» restano sulla riga del nome, il percorso lungo si accorcia con «…» (D-191).
 - Progetti, IM: quattro numeri in alto; calendario e prezzo in un solo modulo con un solo «Salva» che compare solo con modifiche e dice cosa cambia (D-191).
 - Progetti, IM: il prezzo di un IM si cambia nella sua cella, le righe cambiate si colorano e un solo «Salva» li scrive tutti; «Non si fattura» nel menu ⋯ della riga; fatture come tabella con le azioni nel menu ⋯ e l'avviso della scaduta in cima (D-191).
 - Progetti, Regole: un solo elenco nel carattere normale con il selettore a pillola Entrambi / Solo Claude Code / Solo Codex, «Modifica come testo», interruttore Modello comune / Regole proprie, esportazione in alto con l'anteprima in una finestra e barra di salvataggio solo con modifiche (D-191).

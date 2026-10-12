@@ -3,24 +3,21 @@ import { ruleItems, type RuleAudience, type RuleItem } from './rule-audience.ts'
 import type { KnowledgeFolder, KnowledgeNote } from './projects.ts';
 
 /**
- * The page "Progetti" revised (D-191): the tabs in two groups, the numbers
+ * The page "Progetti" revised (D-191): the tabs in one row, the numbers
  * at the top, the one form of calendar and price with its save bar, the
  * prices of single IM edited in their cells, the rules as a list and the
  * notes by folder. Pure helpers: nothing here reads or writes the core.
  * Prices and invoices stay Privati (L2) between the page and the core.
  */
 
-// --- The tabs: "Parte" reads the part chosen, "Progetto" the whole container ---
+// --- The tabs: one row; File, Git and Servizi read the part chosen, the others the whole container ---
 
 export type ProjectTab = 'file' | 'git' | 'svc' | 'know' | 'im' | 'rules';
 
-export const PART_TABS = [
+export const PROJECT_TABS = [
   { id: 'file', text: 'File' },
   { id: 'git', text: 'Git' },
   { id: 'svc', text: 'Servizi' },
-] as const satisfies readonly { id: ProjectTab; text: string }[];
-
-export const PROJECT_TABS = [
   { id: 'know', text: 'Conoscenza' },
   { id: 'im', text: 'IM' },
   { id: 'rules', text: 'Regole' },
@@ -31,7 +28,7 @@ export function isPartTab(tab: ProjectTab): boolean {
   return tab === 'file' || tab === 'git' || tab === 'svc';
 }
 
-/** A part shows as chosen only in the group "Parte": in IM or Regole no part is in use. */
+/** A part shows as chosen only in File, Git and Servizi: in IM or Regole no part is in use. */
 export function partPressed(tab: ProjectTab, part: string, chosen: string | null): boolean {
   return isPartTab(tab) && part === chosen;
 }

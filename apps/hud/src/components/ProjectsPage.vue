@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { clientOfProject, deleteProjectPath, listBrowsableProjects, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readImOverview, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
+import { clientOfProject, deleteProjectPath, listBrowsableProjects, listClients, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readImOverview, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import { calendarText, todayInput, type ImOverview } from '../lib/im-billing.ts';
 import { imDayText } from '../lib/im.ts';
-import { isPartTab, nextIm, overdueInvoices, overdueText, partPressed, PART_TABS, PROJECT_TABS, type ProjectTab } from '../lib/projects-page.ts';
+import { cardMoneyText, overdueShortText, partsText, projectCardIm, projectInitials, sortProjectCards, type ProjectCardIm } from '../lib/project-cards.ts';
+import { isPartTab, nextIm, overdueInvoices, overdueText, partPressed, PROJECT_TABS, type ProjectTab } from '../lib/projects-page.ts';
 import {
   agoText,
   browseErrorText,
@@ -26,6 +27,7 @@ import {
   folderFromSearch,
   invoiceFromSearch,
   projectFromSearch,
+  projectsPathFor,
   type BrowsableContainer,
   type BrowsableProject,
   type CommitDiff,
@@ -54,10 +56,13 @@ import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
  * parts (the container itself when it is one git), "Conoscenza" its
  * management folders and notes.
  * D-191: the name in the normal font, four numbers on top (Branch, Modifiche,
- * Servizi, Prossimo IM), the tabs in two groups, "Parte" (File, Git,
- * Servizi: the part chosen) and "Progetto" (Conoscenza, IM, Regole: the whole
- * container), errors and empty states that say what to do.
+ * Servizi, Prossimo IM), the tabs in one row (the pills of the parts only in
+ * File, Git and Servizi), errors and empty states that say what to do.
+ * Without `?progetto=` the page is a grid of cards, as the clients (D-190).
+ * `visit` changes at every opening of the page from outside (a link, "back"):
+ * the address is read again.
  */
+const props = defineProps<{ visit: number }>();
 
 const emit = defineEmits<{ client: [id: string]; studio: [project: string]; conversation: [id: string]; settings: [slug: string]; cardwall: [] }>();
 
@@ -461,27 +466,110 @@ async function loadProjects(): Promise<void> {
     const found = await listBrowsableProjects();
     projects.value = found.projects;
     containers.value = found.containers;
-    // The address may name a project (from the page of its client, D-168) or a part of one, with a folder (from the Studio, D-185).
-    const named = projectFromSearch(window.location.search);
-    const part = found.projects.find((item) => item.name === named);
-    const first = found.containers.find((item) => item.name === (part?.project ?? named)) ?? found.containers[0];
-    if (first !== undefined) chooseContainer(first.name);
-    if (part !== undefined && chosen.value !== part.name && first?.name === part.project) choosePart(part.name);
-    // An invoice from the dashboard of its client (D-190): the IM tab, its "Totale e scadenza…" open.
-    const invoice = invoiceFromSearch(window.location.search);
-    if (invoice !== undefined && first !== undefined) {
-      amendInvoice.value = invoice;
-      tab.value = 'im';
-    }
-    const folder = folderFromSearch(window.location.search);
-    if (folder !== undefined && part !== undefined && chosen.value === part.name) {
-      tab.value = 'file';
-      openPath(folder);
-    }
+    applyAddress();
+    if (chosenContainer.value === null) void loadCards(found.containers);
   } catch (cause) {
     problem.value = browseErrorText(cause);
   }
 }
+
+/**
+ * The project the address names: none is the grid of cards; a project (from
+ * the page of its client, D-168) or a part of one, with a folder (from the
+ * Studio, D-185), or an invoice (from the dashboard of its client, D-190).
+ */
+function applyAddress(): void {
+  const found = containers.value;
+  if (found === null) return;
+  amendInvoice.value = null;
+  const named = projectFromSearch(window.location.search);
+  const part = (projects.value ?? []).find((item) => item.name === named);
+  const first = found.find((item) => item.name === (part?.project ?? named));
+  switcherOpen.value = false;
+  if (first === undefined) {
+    chosenContainer.value = null;
+    chosen.value = null;
+    return;
+  }
+  chooseContainer(first.name);
+  if (part !== undefined && chosen.value !== part.name) choosePart(part.name);
+  // An invoice: the IM tab, its "Totale e scadenza…" open.
+  const invoice = invoiceFromSearch(window.location.search);
+  if (invoice !== undefined) {
+    amendInvoice.value = invoice;
+    tab.value = 'im';
+  }
+  const folder = folderFromSearch(window.location.search);
+  if (folder !== undefined && part !== undefined && chosen.value === part.name) {
+    tab.value = 'file';
+    openPath(folder);
+  }
+}
+
+// Opened again from outside (a link from Clienti or the Studio, "back"): the address says what to show.
+watch(
+  () => props.visit,
+  () => {
+    // A first reading that failed is tried again at the next opening.
+    if (containers.value === null) {
+      void loadProjects();
+      return;
+    }
+    applyAddress();
+    if (chosenContainer.value === null) void loadCards(containers.value);
+  },
+);
+
+/** A card, the switcher, "‹ Progetti": the address follows, so "back" and a reload find the same view. */
+function go(name: string | null): void {
+  const path = projectsPathFor(name ?? undefined);
+  if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState(null, '', path);
+  if (name === null) {
+    switcherOpen.value = false;
+    amendInvoice.value = null;
+    chosenContainer.value = null;
+    chosen.value = null;
+    if (containers.value !== null) void loadCards(containers.value);
+  } else chooseContainer(name);
+}
+
+// The grid of cards (D-191, as the clients of D-190): client, parts, calendar, next IM and three numbers per project.
+const thisYear = new Date().getFullYear();
+const cardIm = ref(new Map<string, ProjectCardIm>());
+const cardFailed = ref(new Set<string>());
+const cardClients = ref(new Map<string, { id: string; displayName: string; logo: ClientLogo | null }>());
+let cardsRead = 0;
+async function loadCards(list: readonly BrowsableContainer[]): Promise<void> {
+  const request = ++cardsRead;
+  const today = todayInput();
+  void listClients()
+    .then((found) => {
+      if (request !== cardsRead) return;
+      const owners = new Map<string, { id: string; displayName: string; logo: ClientLogo | null }>();
+      for (const item of found.clients) for (const name of item.projects) owners.set(name, { id: item.id, displayName: item.displayName, logo: item.logo });
+      cardClients.value = owners;
+    })
+    .catch(() => {
+      // Without the clients the cards show the project's letters.
+    });
+  // One read per card; a newer round (the page opened again) wins over a slower one.
+  await Promise.all(
+    list.map(async (item) => {
+      try {
+        const overview = await readImOverview(item.name);
+        if (request !== cardsRead) return;
+        cardIm.value = new Map(cardIm.value).set(item.name, projectCardIm(overview, today, thisYear));
+        const failed = new Set(cardFailed.value);
+        failed.delete(item.name);
+        cardFailed.value = failed;
+      } catch {
+        if (request !== cardsRead || cardIm.value.has(item.name)) return;
+        cardFailed.value = new Set(cardFailed.value).add(item.name);
+      }
+    }),
+  );
+}
+const cards = computed(() => sortProjectCards(containers.value ?? [], new Map([...cardIm.value].map(([name, im]) => [name, im.money?.overdue ?? 0]))));
 
 // The client of the container (D-168): name and logo in the header, a link to its page.
 const client = ref<{ id: string; displayName: string; logo: ClientLogo | null } | null>(null);
@@ -594,23 +682,78 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       </span>
     </div>
 
+    <!-- THE GRID (D-191, as the clients of D-190): each approved project a card -->
+    <template v-else-if="chosenContainer === null">
+      <p class="text-[13px] text-muted">{{ containers.length === 1 ? '1 progetto' : `${String(containers.length)} progetti` }} · numeri del {{ thisYear }}</p>
+      <ul class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+        <li v-for="item in cards" :key="item.name" class="flex">
+          <button
+            type="button"
+            class="flex w-full flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 text-left transition-colors hover:border-accent"
+            :class="(cardIm.get(item.name)?.money?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : ''"
+            @click="go(item.name)"
+          >
+            <span v-for="owner in [cardClients.get(item.name) ?? null]" :key="owner?.id ?? 'none'" class="flex items-center gap-3">
+              <img v-if="owner && logoUrl(owner.id, owner.logo)" :src="logoUrl(owner.id, owner.logo) ?? undefined" alt="" class="size-[52px] shrink-0 rounded-xl border border-line bg-white object-contain p-0.5" />
+              <span v-else class="grid size-[52px] shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-[17px] font-semibold text-accent" aria-hidden="true">{{ projectInitials(item.name) }}</span>
+              <span class="min-w-0">
+                <b class="block truncate text-[16px] leading-snug font-semibold">{{ item.name }}</b>
+                <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
+                  <template v-if="owner">{{ owner.displayName }}</template><template v-else>Nessun cliente</template>
+                  <template v-if="partsText(item)"> · {{ partsText(item) }}</template>
+                </span>
+              </span>
+            </span>
+            <span v-for="im in [cardIm.get(item.name) ?? null]" :key="item.name + '-im'" class="flex min-h-[42px] flex-col text-[14px]">
+              <template v-if="im">
+                <span class="truncate">{{ im.calendar ?? 'Nessun calendario degli IM' }}</span>
+                <span class="truncate text-[13px] text-muted">{{ im.next ? `Prossimo: ${im.next}` : 'Nessun IM aperto' }}</span>
+              </template>
+              <span v-else class="truncate font-mono text-[12.5px] text-muted" :title="item.absolute">{{ item.absolute }}</span>
+            </span>
+            <span v-for="im in [cardIm.get(item.name) ?? null]" :key="item.name + '-money'" class="mt-auto border-t border-line pt-3">
+              <span v-if="im === null && cardFailed.has(item.name)" class="text-[13px] text-warn">Numeri non disponibili: apri il progetto e guarda la scheda IM.</span>
+              <span v-else-if="im === null" class="text-[13px] text-muted">Leggo…</span>
+              <span v-else-if="im.money === null" class="text-[13px] text-muted">Nessun IM: i numeri compaiono con il primo IM chiuso, dalla scheda IM.</span>
+              <span v-else class="grid grid-cols-3 gap-2">
+                <span class="flex min-w-0 flex-col"><span class="text-xs text-muted">Da fatturare</span><b class="truncate text-[17px] tabular-nums">{{ cardMoneyText(im.money.toInvoice, im.money.currency) }}</b></span>
+                <span class="flex min-w-0 flex-col">
+                  <span class="text-xs text-muted">In attesa</span>
+                  <b class="truncate text-[17px] tabular-nums" :class="im.money.overdue > 0 ? 'text-danger' : ''">{{ cardMoneyText(im.money.awaiting, im.money.currency) }}</b>
+                  <span v-if="im.money.overdue > 0" class="text-xs text-danger">{{ overdueShortText(im.money.overdue) }}</span>
+                </span>
+                <span class="flex min-w-0 flex-col"><span class="text-xs text-muted">Incassato {{ thisYear }}</span><b class="truncate text-[17px] tabular-nums">{{ cardMoneyText(im.money.paid, im.money.currency) }}</b></span>
+              </span>
+            </span>
+          </button>
+        </li>
+        <li class="flex">
+          <button type="button" class="grid min-h-[200px] w-full place-items-center rounded-2xl border border-dashed border-line-strong text-[15px] font-semibold text-muted hover:border-accent hover:text-accent" title="Apre Impostazioni → Progetti" @click="emit('settings', 'progetti')">
+            <span class="flex items-center gap-2"><Icon name="new" :size="16" />Aggiungi un progetto</span>
+          </button>
+        </li>
+      </ul>
+      <p class="mt-auto inline-flex items-center gap-1.5 text-xs text-muted"><Icon name="private" :size="13" />Prezzi e fatture restano su questo computer.</p>
+    </template>
+
     <template v-else-if="container">
-      <!-- Masthead: which project, whose, where (D-191) -->
-      <header class="flex flex-wrap items-center gap-x-4 gap-y-3">
+      <!-- Masthead: which project, whose, where (D-191); the buttons stay on the row of the name, the path shortens -->
+      <header class="flex flex-wrap items-center gap-x-4 gap-y-3 md:flex-nowrap">
+        <button type="button" class="btn shrink-0 px-2.5 py-1 text-xs whitespace-nowrap" title="Torna a tutti i progetti" @click="go(null)"><span class="rotate-180"><Icon name="expand" :size="13" /></span>Progetti</button>
         <div class="grid size-12 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-[16px] font-semibold text-accent" aria-hidden="true">{{ initials(container.name) }}</div>
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1 basis-[220px]">
           <div class="relative">
             <button
               type="button"
-              class="flex items-center gap-2 text-[22px] leading-tight font-semibold"
+              class="flex max-w-full items-center gap-2 text-[22px] leading-tight font-semibold"
               :aria-expanded="switcherOpen"
               aria-haspopup="listbox"
               title="Cambia progetto"
               @click="switcherOpen = !switcherOpen"
             >
-              {{ container.name }}<span class="rotate-90 text-muted"><Icon name="expand" :size="15" /></span>
+              <span class="truncate">{{ container.name }}</span><span class="shrink-0 rotate-90 text-muted"><Icon name="expand" :size="15" /></span>
             </button>
-            <div v-if="switcherOpen" class="absolute top-full left-0 z-20 mt-1.5 min-w-[280px] rounded-xl border border-line-strong bg-surface p-1.5 shadow-[0_14px_40px_#0006]" role="listbox">
+            <div v-if="switcherOpen" class="absolute top-full left-0 z-20 mt-1.5 max-w-[calc(100vw-32px)] min-w-[280px] rounded-xl border border-line-strong bg-surface p-1.5 shadow-[0_14px_40px_#0006]" role="listbox">
               <button
                 v-for="item in containers"
                 :key="item.name"
@@ -619,7 +762,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                 :aria-selected="item.name === container.name"
                 class="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-accent/15"
                 :class="item.name === container.name ? 'bg-accent/15' : ''"
-                @click="chooseContainer(item.name)"
+                @click="go(item.name)"
               >
                 <span class="block text-[14.5px]">{{ item.name }}<span v-if="!item.single" class="text-muted"> · {{ item.parts.length === 1 ? '1 parte' : `${String(item.parts.length)} parti` }}</span></span>
                 <span class="block truncate font-mono text-[12.5px] text-muted">{{ item.absolute }}</span>
@@ -635,14 +778,14 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             </button>
             <span v-if="!container.single">{{ parts.length === 1 ? '1 parte' : `${String(parts.length)} parti` }}</span>
             <span v-if="imOverview?.calendar.calendar">IM {{ calendarText(imOverview.calendar.calendar) }}</span>
-            <span class="max-w-full truncate font-mono text-[13px]" title="Cartella sul computer">{{ isPartTab(tab) && project ? project.absolute : container.absolute }}</span>
           </p>
+          <p class="mt-0.5 truncate font-mono text-[13px] text-muted" :title="isPartTab(tab) && project ? project.absolute : container.absolute">{{ isPartTab(tab) && project ? project.absolute : container.absolute }}</p>
         </div>
-        <div class="ml-auto flex flex-wrap gap-1.5">
-          <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px]" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
+        <div class="flex shrink-0 gap-1.5 max-md:w-full max-md:flex-wrap">
+          <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] whitespace-nowrap" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
             <Icon name="code" :size="14" />Apri in VS Code
           </a>
-          <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px]" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
+          <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] whitespace-nowrap" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
             <Icon name="studio" :size="14" />Apri nello Studio
           </button>
         </div>
@@ -679,26 +822,10 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         </button>
       </div>
 
-      <!-- The tabs in two groups (D-191): "Parte" reads the part chosen, "Progetto" the whole container -->
+      <!-- The tabs in one row (D-191, after the trial): File, Git and Servizi read the part chosen, the others the whole project -->
       <nav class="flex flex-wrap items-end gap-0.5 border-b border-line" aria-label="Schede del progetto">
-        <template v-if="project !== null">
-          <span class="pr-1.5 pb-2.5 pl-0.5 text-[12.5px] text-muted">Parte</span>
-          <button
-            v-for="item in PART_TABS"
-            :key="item.id"
-            type="button"
-            :aria-current="tab === item.id ? 'true' : undefined"
-            class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px]"
-            :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
-            @click="tab = item.id"
-          >
-            {{ item.text }}
-          </button>
-          <span class="mx-2.5 mb-2 h-[22px] w-px bg-line-strong" aria-hidden="true"></span>
-        </template>
-        <span class="pr-1.5 pb-2.5 pl-0.5 text-[12.5px] text-muted">Progetto</span>
         <button
-          v-for="item in PROJECT_TABS"
+          v-for="item in PROJECT_TABS.filter((entry) => project !== null || !isPartTab(entry.id))"
           :key="item.id"
           type="button"
           :aria-current="tab === item.id ? 'true' : undefined"
@@ -715,7 +842,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
         <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="private" :size="13" />Sola lettura: niente checkout né commit da qui</span>
       </nav>
 
-      <!-- The parts of the container (D-145): only in the group "Parte" -->
+      <!-- The parts of the container (D-145): only in File, Git and Servizi -->
       <div v-if="!container.single && parts.length === 0" class="flex max-w-2xl items-center gap-2.5 rounded-xl border border-info/45 bg-info/9 px-3 py-2 text-[14px]">
         <span class="text-info"><Icon name="info" :size="15" /></span>
         <span>Nessuna sottocartella con un proprio git: il Coder non ha dove lavorare. File, Git e Servizi compaiono quando una parte ha il suo git.</span>
