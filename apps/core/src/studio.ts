@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Project } from '@arianna/config';
@@ -50,6 +50,16 @@ export interface Mockup {
   /** ISO 8601. */
   modified: string;
   sha256: string;
+  /** Style and skills of the Designer's run that wrote it, from the register next to the mockups (D-185); absent: not known. */
+  design?: VariantDesign;
+}
+
+/** The style (a slug of Open Design, or null: none) and the skills a variant was written with. */
+export interface VariantDesign {
+  style: string | null;
+  skills: string[];
+  /** ISO 8601: when the run that wrote it ended. */
+  at: string;
 }
 
 /** How a checked deck is read and written: `@arianna/pptx`, a fake in the tests. */
@@ -158,6 +168,107 @@ async function readMockupBytes(root: string, path: string): Promise<Buffer> {
   return bytes;
 }
 
+/**
+ * The register of the variants (I-20, D-185, choice of the user): a JSON
+ * file next to the mockups, written by the core (never by the model) when a
+ * run of the Designer ends, with the style and skills of each variant it
+ * wrote. It travels with the project; a variant without an entry is "not known".
+ */
+export const REGISTER_NAME = 'varianti.json';
+/** Largest register read or written; entries kept at most (the oldest go first). */
+export const MAX_REGISTER_BYTES = 256 * 1024;
+export const MAX_REGISTER_ENTRIES = 2000;
+const DESIGN_SLUG = /^[a-z0-9][a-z0-9._-]{0,99}$/;
+const MAX_VARIANT_SKILLS = 10;
+
+/** An entry of the register as the page may see it, or undefined: the file is the project's, anyone may have edited it. */
+function checkedDesign(raw: unknown): VariantDesign | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const { style, skills, at } = raw as Record<string, unknown>;
+  if (style !== null && (typeof style !== 'string' || !DESIGN_SLUG.test(style))) return undefined;
+  if (!Array.isArray(skills) || skills.length > MAX_VARIANT_SKILLS || !skills.every((skill) => typeof skill === 'string' && DESIGN_SLUG.test(skill))) return undefined;
+  if (typeof at !== 'string' || at.length > 40 || Number.isNaN(Date.parse(at))) return undefined;
+  return { style, skills: [...(skills as string[])], at };
+}
+
+/** The register of a folder of mockups: entries by file name; an empty map when it is missing, a link, too large or not ours. */
+async function readRegister(root: string, folder: string): Promise<Map<string, VariantDesign> | undefined> {
+  const path = join(root, folder, REGISTER_NAME);
+  const stats = await lstat(path).catch(() => undefined);
+  if (stats === undefined) return new Map();
+  if (!stats.isFile() || stats.size > MAX_REGISTER_BYTES) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, { encoding: 'utf8', flag: constants.O_RDONLY | constants.O_NOFOLLOW }));
+  } catch {
+    return undefined;
+  }
+  const variants = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>).variants : undefined;
+  if (typeof variants !== 'object' || variants === null || Array.isArray(variants)) return undefined;
+  const entries = new Map<string, VariantDesign>();
+  for (const [name, raw] of Object.entries(variants)) {
+    const design = checkedDesign(raw);
+    if (design !== undefined && mockupName(name)) entries.set(name, design);
+  }
+  return entries;
+}
+
+/**
+ * Notes in the register the style and skills of the mockups a run of the
+ * Designer wrote (I-20, D-185): the `.html` files directly inside the folder
+ * of the mockups among `paths` (relative to `root`), changed since `since`.
+ * Never throws: a register that cannot be read or written is left alone.
+ */
+export async function recordVariantDesign(root: string, paths: readonly string[], design: { style: string | null; skills: readonly string[] }, since: Date, now: Date = new Date()): Promise<string[]> {
+  if (root === '') return [];
+  try {
+    const folder = await mockupFolder(root);
+    if ((await folderState(root, folder)) !== 'ok') return [];
+    const prefix = `${folder}/`;
+    const written: string[] = [];
+    for (const path of paths) {
+      const name = path.startsWith(prefix) ? path.slice(prefix.length) : '';
+      if (!mockupName(name)) continue;
+      const stats = await lstat(join(root, path)).catch(() => undefined);
+      // Only what this run wrote: a file the user changed before and the run left alone keeps its entry.
+      if (stats?.isFile() === true && stats.mtimeMs >= since.getTime() - 1000) written.push(name);
+    }
+    if (written.length === 0) return [];
+    const entry = checkedDesign({ style: design.style, skills: [...design.skills], at: now.toISOString() });
+    if (entry === undefined) return [];
+    const register = await readRegister(root, folder);
+    // A register that is not ours (a link, a broken file) is not replaced.
+    if (register === undefined) return [];
+    for (const name of written) {
+      register.delete(name);
+      register.set(name, entry);
+    }
+    const kept = [...register.entries()].slice(-MAX_REGISTER_ENTRIES);
+    const text = `${JSON.stringify({ note: 'Stile e skill di ogni variante, scritti da Arianna alla fine di un lavoro del Designer (D-185).', variants: Object.fromEntries(kept) }, null, 2)}\n`;
+    if (Buffer.byteLength(text) > MAX_REGISTER_BYTES) return [];
+    const target = join(root, folder, REGISTER_NAME);
+    const temporary = join(root, folder, `.${REGISTER_NAME}.${randomBytes(6).toString('hex')}.studio-tmp`);
+    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o644);
+    try {
+      try {
+        await handle.writeFile(text);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const existing = await lstat(target).catch(() => undefined);
+      if (existing !== undefined && !existing.isFile()) throw new Error('the register is not a plain file');
+      await rename(temporary, target);
+    } catch (error) {
+      await unlink(temporary).catch(() => undefined);
+      throw error;
+    }
+    return written.map((name) => `${prefix}${name}`);
+  } catch {
+    return [];
+  }
+}
+
 /** Where a deleted mockup goes (D-184, choice of the user): a folder inside the mockups, which the list does not show. */
 export const RETIRED_FOLDER = 'eliminati';
 
@@ -216,6 +327,11 @@ export async function listMockups(deps: StudioDeps, project: string): Promise<{ 
       files.push({ path, name, ...groupOf(name), bytes: bytes.length, modified: stats.mtime.toISOString(), sha256: sha256Of(bytes) });
     }
     files.sort((a, b) => (a.group === b.group ? (a.variant ?? -1) - (b.variant ?? -1) || a.name.localeCompare(b.name) : a.group.localeCompare(b.group)));
+    const register = (await readRegister(root, folder)) ?? new Map<string, VariantDesign>();
+    for (const file of files) {
+      const design = register.get(file.name);
+      if (design !== undefined) file.design = design;
+    }
     return { folder, files, highest: await highestVariants(root, folder, files) };
   });
 }
@@ -299,11 +415,15 @@ export async function writeMockup(deps: StudioDeps, project: string, body: { pat
  * Deletes a mockup from the Studio (D-184, choice of the user) when its
  * sha256 is still `base`: the file moves to `<folder>/eliminati/` (same
  * name; a name already there gets `~<hex>`), out of the list and of the
- * variants, and can be put back by hand. Event `studio.delete`.
+ * variants, and can be put back by hand. With `permanent` (I-20, D-185:
+ * the box of the window, off by default) it is removed for good instead,
+ * and `retired` is null. Event `studio.delete`.
  */
-export async function deleteMockup(deps: StudioDeps, project: string, body: { path: unknown; base: unknown }): Promise<{ path: string; retired: string }> {
+export async function deleteMockup(deps: StudioDeps, project: string, body: { path: unknown; base: unknown; permanent?: unknown }): Promise<{ path: string; retired: string | null }> {
   if (typeof body.base !== 'string' || !/^[0-9a-f]{64}$/.test(body.base)) throw new StudioError('invalid', 'base must be the sha256 read');
+  if (body.permanent !== undefined && typeof body.permanent !== 'boolean') throw new StudioError('invalid', 'permanent must be true or false');
   const base = body.base;
+  const permanent = body.permanent === true;
   return studied(async () => {
     const { root } = await projectRoot(deps, project);
     const folder = await mockupFolder(root);
@@ -314,6 +434,16 @@ export async function deleteMockup(deps: StudioDeps, project: string, body: { pa
       const { project: found, path, name, bytes } = await loadMockup(deps, project, body.path);
       const old = sha256Of(bytes);
       if (old !== base) throw new StudioError('changed', 'the mockup changed since it was read', old);
+      if (permanent) {
+        const absolute = join(root, path);
+        const now = await lstat(absolute).catch(() => undefined);
+        if (first === undefined || now === undefined || !now.isFile() || now.ino !== first.ino || now.dev !== first.dev) {
+          throw new StudioError('changed', 'the mockup changed while it was deleted', old);
+        }
+        await unlink(absolute);
+        await deps.record({ kind: 'studio.delete', label: found.label, payload: { project: found.name, path, retired: null, permanent: true, sha256: old } });
+        return { path, retired: null };
+      }
       const retiredFolder = `${folder}/${RETIRED_FOLDER}`;
       await mkdir(join(root, retiredFolder), { mode: 0o755 }).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;

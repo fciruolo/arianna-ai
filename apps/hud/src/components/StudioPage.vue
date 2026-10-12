@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, deleteMockup, exportMockupPptx, listDesignStyles, listMockups, listSkills, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
+import { ApiError, deleteMockup, exportMockupPptx, listDesignStyles, listMockups, listSkills, listStyleSamples, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
+import type { StyleSummary } from '../lib/design-catalog.ts';
+import type { SkillSummary } from '../lib/skills-catalog.ts';
 import { buildSrcdoc, type FrameRect } from '../lib/studio-frame.ts';
 import { deckFromDocument, editSource, hasSlides, parseMockup } from '../lib/studio-dom.ts';
 import {
@@ -18,6 +20,7 @@ import {
   STUDIO_SKILLS_MAX,
   studioDesignKey,
   studioErrorText,
+  variantDesignText,
   variantLabel,
   VIEW_TEXT,
   VIEW_WIDTH,
@@ -29,11 +32,15 @@ import {
   type StudioDesign,
   type StudioEdit as EditRequest,
   type StudioView,
+  type StyleSample,
 } from '../lib/studio.ts';
 import type { ProjectInfo } from '../lib/types.ts';
 import type { IconName } from '../icons.ts';
+import ConfirmDialog from './ConfirmDialog.vue';
 import Icon from './Icon.vue';
 import StudioComments from './StudioComments.vue';
+import StudioDesignDialog from './StudioDesignDialog.vue';
+import DesignTextDialog from './DesignTextDialog.vue';
 import StudioEdit from './StudioEdit.vue';
 import StudioFloat from './StudioFloat.vue';
 import StudioFrame from './StudioFrame.vue';
@@ -60,6 +67,8 @@ const emit = defineEmits<{
   address: [address: StudioAddress];
   /** The style and skills chosen for this project: the app sends them with every message to the Designer. */
   design: [design: StudioDesign];
+  /** "Apri in Progetti" (I-20, D-185): the project with the folder of its mockups open in File. */
+  projects: [project: string, folder: string];
 }>();
 
 const project = computed(() => props.address.project);
@@ -209,25 +218,38 @@ function followScroll(from: 'shown' | 'other', x: number, y: number): void {
   (from === 'shown' ? otherFrame.value : shownFrame.value)?.scrollTo(x, y);
 }
 
-// Delete (D-184, choice of the user): the file moves to eliminati/, its number is never used again.
+// Delete (D-184, choice of the user): the file moves to eliminati/, its number is never used again;
+// the window explains it and, with its box (off by default), deletes for good instead (I-20, D-185).
 const confirmingDelete = ref(false);
 const deleting = ref(false);
+const deletePermanent = ref(false);
+const deleteProblem = ref<string | null>(null);
 watch(
   () => props.address.file,
   () => {
     confirmingDelete.value = false;
   },
 );
+function askDelete(): void {
+  deletePermanent.value = false;
+  deleteProblem.value = null;
+  confirmingDelete.value = true;
+}
 async function deleteShown(): Promise<void> {
   const name = project.value;
   const file = shown.value;
   if (name === undefined || file === null || deleting.value) return;
   deleting.value = true;
+  deleteProblem.value = null;
+  const permanent = deletePermanent.value;
   try {
-    await deleteMockup(name, file.path, file.sha256);
+    await deleteMockup(name, file.path, file.sha256, permanent);
     const next = afterDeletion(list.value?.files ?? [], file.path);
     confirmingDelete.value = false;
-    notice.value = `${file.path.split('/').at(-1) ?? file.path} eliminato: è in ${list.value?.folder ?? 'mockups'}/eliminati/ del progetto, il suo numero non verrà più usato.`;
+    const fileName = file.path.split('/').at(-1) ?? file.path;
+    notice.value = permanent
+      ? `${fileName} eliminato per sempre; il suo numero non verrà più usato.`
+      : `${fileName} eliminato: è in ${list.value?.folder ?? 'mockups'}/eliminati/ del progetto (si ripristina da Progetti → File), il suo numero non verrà più usato.`;
     await loadList();
     // The variant compared was the one deleted: another one, not the one shown next.
     if (otherPath.value === file.path || otherPath.value === next) {
@@ -237,7 +259,7 @@ async function deleteShown(): Promise<void> {
     }
     choose(next);
   } catch (cause) {
-    exportProblem.value = studioErrorText(cause);
+    deleteProblem.value = studioErrorText(cause);
     if (cause instanceof ApiError && cause.status === 409) await loadFile(file.path, 'shown');
   } finally {
     deleting.value = false;
@@ -256,6 +278,11 @@ function toggleCompare(): void {
 // sent with every message of the Studio to the Designer (D-184); remembered per project in this browser.
 const styleCatalog = ref<{ id: string; name: string }[]>([]);
 const skillCatalog = ref<{ id: string; name: string; source: string }[]>([]);
+/** For the window of style and skills (I-20, D-185): the whole entries and the small page of each style. */
+const styleEntries = ref<StyleSummary[]>([]);
+const skillEntries = ref<SkillSummary[]>([]);
+const samples = ref<Record<string, StyleSample>>({});
+const designOpen = ref(false);
 const catalogsLoaded = ref(false);
 const design = ref<StudioDesign>(NO_DESIGN);
 
@@ -283,9 +310,12 @@ function useDesign(next: StudioDesign, save: boolean): void {
 }
 
 async function loadCatalogs(): Promise<void> {
-  const [styles, skills] = await Promise.allSettled([listDesignStyles(), listSkills()]);
-  styleCatalog.value = styles.status === 'fulfilled' ? styles.value.styles.map((style) => ({ id: style.slug, name: style.name })) : [];
-  skillCatalog.value = skills.status === 'fulfilled' ? skills.value.skills.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source })) : [];
+  const [styles, skills, sampled] = await Promise.allSettled([listDesignStyles(), listSkills(), listStyleSamples()]);
+  styleEntries.value = styles.status === 'fulfilled' ? styles.value.styles : [];
+  skillEntries.value = skills.status === 'fulfilled' ? skills.value.skills : [];
+  samples.value = sampled.status === 'fulfilled' ? sampled.value.samples : {};
+  styleCatalog.value = styleEntries.value.map((style) => ({ id: style.slug, name: style.name }));
+  skillCatalog.value = skillEntries.value.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source }));
   catalogsLoaded.value = true;
   useDesign(design.value, false);
 }
@@ -295,24 +325,24 @@ watch(project, (name) => {
 }, { immediate: true });
 onMounted(() => void loadCatalogs());
 
-const chosenSkills = computed(() => design.value.skills.map((id) => skillCatalog.value.find((skill) => skill.id === id) ?? { id, name: id, source: '' }));
-const skillOptions = computed(() => skillCatalog.value.filter((skill) => !design.value.skills.includes(skill.id)));
+const styleNameOf = (slug: string): string | undefined => styleCatalog.value.find((style) => style.id === slug)?.name;
+const skillNameOf = (id: string): string | undefined => skillCatalog.value.find((skill) => skill.id === id)?.name;
+const designSummary = computed(() => {
+  const style = design.value.style === null ? 'nessuno' : (styleNameOf(design.value.style) ?? design.value.style);
+  const count = design.value.skills.length;
+  return `Stile: ${style} · ${count === 0 ? 'nessuna skill' : count === 1 ? '1 skill' : `${String(count)} skill`}`;
+});
+const shownSample = computed(() => (design.value.style === null ? undefined : samples.value[design.value.style]));
 
-function setStyle(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value;
-  useDesign({ ...design.value, style: value === '' ? null : value }, true);
+function applyDesign(next: StudioDesign): void {
+  useDesign({ style: next.style, skills: next.skills.slice(0, STUDIO_SKILLS_MAX) }, true);
+  designOpen.value = false;
 }
 
-function addSkill(event: Event): void {
-  const select = event.target as HTMLSelectElement;
-  const id = select.value;
-  select.value = '';
-  if (id !== '' && design.value.skills.length < STUDIO_SKILLS_MAX) useDesign({ ...design.value, skills: [...design.value.skills, id] }, true);
-}
-
-function removeSkill(id: string): void {
-  useDesign({ ...design.value, skills: design.value.skills.filter((skill) => skill !== id) }, true);
-}
+/** What the variant shown, and the one compared, were made with (register next to the mockups, D-185). */
+const otherFile = computed(() => list.value?.files.find((file) => file.path === otherPath.value));
+/** The whole text of a style or a skill, from the line under the toolbar. */
+const detail = ref<{ kind: 'style' | 'skill'; id: string; title: string } | null>(null);
 
 let nextId = 1;
 const sending = ref(false);
@@ -496,36 +526,23 @@ const side = ref<'chat' | 'canvas'>('canvas');
         </select>
       </label>
       <template v-if="project !== undefined">
-        <!-- Style and skills for the Designer (O2): every message of the Studio carries them. -->
-        <label class="flex items-center gap-1.5 text-[12.5px] text-muted">
-          Stile
-          <select class="field max-w-[180px] px-2 py-1 text-[13px] text-ink" :value="design.style ?? ''" title="Stile di Open Design che il Designer legge con ogni messaggio dello Studio" @change="setStyle">
-            <option value="">Nessuno</option>
-            <option v-for="style in styleCatalog" :key="style.id" :value="style.id">{{ style.name }}</option>
-          </select>
-        </label>
-        <div class="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted">
-          <span id="studio-skills-label">Skill</span>
-          <ul v-if="chosenSkills.length > 0" class="flex flex-wrap gap-1" aria-labelledby="studio-skills-label">
-            <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[12px] text-ink" :title="skill.id">
-              <span class="min-w-0 truncate">{{ skill.name }}</span>
-              <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
-                <Icon name="close" :size="11" />
-              </button>
-            </li>
-          </ul>
-          <select
-            v-if="skillOptions.length > 0 && design.skills.length < STUDIO_SKILLS_MAX"
-            class="field max-w-[200px] px-2 py-1 text-[13px] text-ink"
-            aria-label="Aggiungi una skill"
-            title="Skill del catalogo che il Designer legge con ogni messaggio dello Studio"
-            @change="addSkill"
-          >
-            <option value="">{{ chosenSkills.length === 0 ? 'Nessuna' : 'Aggiungi…' }}</option>
-            <option v-for="skill in skillOptions" :key="skill.id" :value="skill.id">{{ skill.name }} · {{ skill.source }}</option>
-          </select>
-          <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[11.5px]">nessuna nel catalogo</span>
-        </div>
+        <!-- Style and skills for the Designer (O2): every message of the Studio carries them; chosen in a window (I-20, D-185). -->
+        <button
+          type="button"
+          class="btn inline-flex max-w-[320px] items-center gap-2 px-2.5 py-1 text-[12.5px]"
+          title="Scegli lo stile di Open Design e le skill che il Designer legge con ogni messaggio dello Studio"
+          :disabled="!catalogsLoaded"
+          @click="designOpen = true"
+        >
+          <span v-if="shownSample" class="flex h-3.5 w-7 shrink-0 overflow-hidden rounded-sm" aria-hidden="true">
+            <span class="flex-1" :style="{ backgroundColor: shownSample.hero }" /><span class="flex-1" :style="{ backgroundColor: shownSample.background }" /><span class="flex-1" :style="{ backgroundColor: shownSample.accent }" />
+          </span>
+          <Icon v-else name="studio" :size="13" />
+          <span class="min-w-0 truncate">{{ designSummary }}</span>
+        </button>
+        <button type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]" title="Il progetto in Progetti, con la cartella dei mockup aperta in File" @click="emit('projects', project, list?.folder ?? 'mockups')">
+          <Icon name="project" :size="13" />Apri in Progetti
+        </button>
       </template>
       <p class="flex items-center gap-1.5 text-[11.5px] text-muted" role="note">
         <Icon name="private" :size="12" />I mockup si vedono in una cornice isolata: niente rete, niente accesso alla chat.
@@ -583,7 +600,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
                 class="rounded-md border px-2 py-0.5 font-mono text-[11px]"
                 :class="file.path === address.file ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong text-muted hover:text-ink'"
                 :aria-pressed="file.path === address.file"
-                :title="`${file.name} · ${new Date(file.modified).toLocaleString('it-IT')}`"
+                :title="`${file.name} · ${new Date(file.modified).toLocaleString('it-IT')} · ${variantDesignText(file.design, styleNameOf, skillNameOf)}`"
                 @click="choose(file.path)"
               >{{ variantLabel(file) }}</button>
             </div>
@@ -634,21 +651,38 @@ const side = ref<'chat' | 'canvas'>('canvas');
               <Icon name="fullscreen" :size="13" />Schermo intero
             </button>
             <span class="ml-auto" />
-            <template v-if="confirmingDelete && shown !== null">
-              <span class="text-xs">Eliminare <b class="font-mono">{{ shown.path.split('/').at(-1) }}</b>? Va in <code class="font-mono">{{ list.folder }}/eliminati/</code>.</span>
-              <button type="button" class="btn px-2.5 py-1 text-xs text-danger" :disabled="deleting" @click="deleteShown">{{ deleting ? 'Elimino…' : 'Elimina' }}</button>
-              <button type="button" class="btn px-2.5 py-1 text-xs" @click="confirmingDelete = false">Annulla</button>
-            </template>
             <button
-              v-else
               type="button"
               class="btn px-2.5 py-1 text-xs"
               :disabled="shown === null"
               title="Toglie questa variante: il file va nella cartella eliminati del progetto"
-              @click="confirmingDelete = true"
+              @click="askDelete"
             ><Icon name="delete" :size="13" />Elimina</button>
             <button type="button" class="btn px-2.5 py-1 text-xs" title="Rileggi l’elenco dei mockup" @click="loadList(); loadFile(address.file, 'shown')"><Icon name="retry" :size="13" />Ricarica</button>
           </div>
+          <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-[11.5px] text-muted">
+            <template v-for="entry in comparing && otherFile !== undefined ? [current, otherFile] : [current]" :key="entry?.path">
+              <span v-if="entry !== undefined">
+                <b class="font-mono font-normal text-ink">{{ entry.name }}</b> ·
+                <template v-if="entry.design === undefined">{{ variantDesignText(undefined, styleNameOf, skillNameOf) }}</template>
+                <template v-else>
+                  Fatta con
+                  <template v-if="entry.design.style === null">nessuno stile</template>
+                  <button v-else type="button" class="text-ink underline hover:text-accent" title="Leggi lo stile" @click="detail = { kind: 'style', id: entry.design.style, title: styleNameOf(entry.design.style) ?? entry.design.style }">
+                    stile {{ styleNameOf(entry.design.style) ?? entry.design.style }}
+                  </button>
+                  ·
+                  <template v-if="entry.design.skills.length === 0">nessuna skill</template>
+                  <template v-else>
+                    skill:
+                    <template v-for="(skill, at) in entry.design.skills" :key="skill">
+                      <button type="button" class="text-ink underline hover:text-accent" title="Leggi la skill" @click="detail = { kind: 'skill', id: skill, title: skillNameOf(skill) ?? skill }">{{ skillNameOf(skill) ?? skill }}</button><template v-if="at < entry.design.skills.length - 1">, </template>
+                    </template>
+                  </template>
+                </template>
+              </span>
+            </template>
+          </p>
           <p v-if="pickMode === 'comment'" class="text-[11.5px] text-muted">Fai clic su un elemento della pagina per commentarlo; i link e i pulsanti non scattano.</p>
           <p v-else-if="pickMode === 'edit'" class="text-[11.5px] text-muted">Fai clic su un elemento per cambiarne testo, colori e spaziature.</p>
           <p v-if="exportProblem !== null" class="text-xs text-warn" role="alert">{{ exportProblem }}</p>
@@ -725,6 +759,41 @@ const side = ref<'chat' | 'canvas'>('canvas');
         </template>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="confirmingDelete && shown !== null && list !== null"
+      :title="deletePermanent ? 'Eliminare per sempre la variante?' : 'Eliminare la variante?'"
+      :confirm-text="deleting ? 'Elimino…' : deletePermanent ? 'Elimina per sempre' : 'Elimina'"
+      :danger="deletePermanent"
+      :busy="deleting"
+      :problem="deleteProblem"
+      @confirm="deleteShown"
+      @cancel="confirmingDelete = false"
+    >
+      <p v-if="deletePermanent"><b class="font-mono">{{ shown.path.split('/').at(-1) }}</b> esce dallo Studio e dalle varianti e il file viene cancellato dal progetto.</p>
+      <p v-else>
+        <b class="font-mono">{{ shown.path.split('/').at(-1) }}</b> esce dallo Studio e dalle varianti. Il file non si cancella: va nella cartella
+        <code class="font-mono">{{ list.folder }}/eliminati/</code> del progetto, da dove si rimette a posto in Progetti → File con «Ripristina».
+      </p>
+      <p class="text-xs text-muted">Il suo numero non verrà più usato: la prossima variante del Designer prende il numero seguente.</p>
+      <label class="flex items-start gap-2 rounded-lg border px-3 py-2 text-[13px]" :class="deletePermanent ? 'border-danger/60 bg-danger/10' : 'border-line'">
+        <input v-model="deletePermanent" type="checkbox" class="mt-0.5 accent-[var(--danger)]" />
+        <span>
+          Elimina definitivamente
+          <span v-if="deletePermanent" class="block text-xs text-danger">Il file sparisce subito, senza passare da eliminati/: da Arianna non si recupera.</span>
+        </span>
+      </label>
+    </ConfirmDialog>
+    <DesignTextDialog v-if="detail !== null" :kind="detail.kind" :id="detail.id" :title="detail.title" @close="detail = null" />
+    <StudioDesignDialog
+      v-if="designOpen"
+      :styles="styleEntries"
+      :skills="skillEntries"
+      :samples="samples"
+      :design="design"
+      @apply="applyDesign"
+      @close="designOpen = false"
+    />
 
     <!-- The print (PDF): its own frame, out of sight, the only one with allow-modals. -->
     <iframe

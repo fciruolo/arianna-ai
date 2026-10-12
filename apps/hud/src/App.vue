@@ -431,8 +431,8 @@ function openOffice(): void {
 }
 
 /** An approved project, read only (D-134); `name` opens that one (from a client's page, D-168). */
-function openProjects(name?: string): void {
-  openPage('projects', projectsPathFor(name), 'Progetti');
+function openProjects(name?: string, folder?: string): void {
+  openPage('projects', projectsPathFor(name, folder), 'Progetti');
 }
 
 /** The client open in "Clienti" (D-168), from the address `/clienti/<id>`; null is the list. */
@@ -475,6 +475,12 @@ function openStudio(address: StudioAddress = {}, how: 'push' | 'replace' = 'push
   }
   openPage('studio', path, 'Studio');
   if (address.project !== undefined) void store.openStudioChat(address.project);
+}
+
+/** "Apri nello Studio" of a chat with the Designer (I-20, D-185): its project, by name or folder. */
+function openStudioOf(workspace: string): void {
+  const name = projects.value.find((entry) => entry.name === workspace || entry.path === workspace)?.name;
+  openStudio(name === undefined ? {} : { project: name });
 }
 
 /** The direct chat of the Studio: the Designer's conversation, or its draft before the first message. */
@@ -991,7 +997,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
-      <ProjectsPage v-else-if="page === 'projects'" @client="openClients" />
+      <ProjectsPage v-else-if="page === 'projects'" @client="openClients" @studio="(name) => openStudio({ project: name })" />
       <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
       <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
       <StudioPage
@@ -1002,6 +1008,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :send="sendToDesigner"
         :chat-blocked="studioChatBlocked"
         @design="(design) => (studioDesign = design)"
+        @projects="(name, folder) => openProjects(name, folder)"
         @address="(address) => openStudio(address, address.project === studioAddress.project ? 'replace' : 'push')"
       >
         <template #chat>
@@ -1036,6 +1043,8 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :characters="characters?.agents"
             :direct-agents="directAgents"
             @send="(body) => store.send(body, messageDesign(studioDesign))"
+            :studio-file="studioAddress.file"
+            @restarted="(id) => store.reloadConversation(id)"
             @remove-participant="store.removeParticipant"
             @call-when-done="store.callWhenDone"
             @cancel-call="store.cancelScheduled"
@@ -1113,6 +1122,9 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @legend="showLegend = true"
         @open-knowledge="openKnowledge"
         @god-dashboard="openGod"
+        studio-link
+        @studio="openStudioOf"
+        @restarted="(id) => store.reloadConversation(id)"
       />
       </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">
