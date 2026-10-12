@@ -13,8 +13,9 @@ import Icon from './Icon.vue';
  * with the master password. Only the text of the field leaves, once, as an
  * Interna message of that conversation; the note stays Private.
  */
-const props = defineProps<{ project: string; path: string; original: string; version: string }>();
-const emit = defineEmits<{ close: []; open: [conversationId: string] }>();
+/** `conversation`: the chat it was opened from ("Allega nota privata"): no select, the text goes there. */
+const props = defineProps<{ project: string; path: string; original: string; version: string; conversation?: string }>();
+const emit = defineEmits<{ close: []; open: [conversationId: string]; released: [conversationId: string] }>();
 
 const text = ref('');
 /** The text of the latest proposal, to tell whether the user changed it. */
@@ -53,6 +54,10 @@ function useOriginal(): void {
 
 onMounted(async () => {
   void propose();
+  if (props.conversation !== undefined) {
+    conversationId.value = props.conversation;
+    return;
+  }
   try {
     targets.value = await noteReleaseTargets(props.project);
     conversationId.value = targets.value[0]?.id ?? '';
@@ -77,6 +82,7 @@ async function release(): Promise<void> {
     const done = await releaseProjectNote(props.project, { path: props.path, version: props.version, text: text.value, conversationId: conversationId.value, password: password.value });
     const target = targets.value?.find((item) => item.id === done.conversationId);
     released.value = { conversationId: done.conversationId, title: target === undefined ? 'la conversazione' : targetText(target) };
+    emit('released', done.conversationId);
   } catch (cause) {
     problem.value = releaseErrorText(cause);
   } finally {
@@ -100,7 +106,7 @@ async function release(): Promise<void> {
     </template>
     <form v-else class="flex flex-col gap-3" @submit.prevent="release">
       <p class="text-[13px] text-muted">
-        La nota è <b class="text-ink">Privata</b> e non esce mai da sola. Da qui ne esce <b class="text-ink">una volta</b> solo il testo del campo a destra, dopo che l’hai letto e approvato con la master password: va nella conversazione di lavoro che scegli, come messaggio Interno, e da lì Arianna e il Coder possono usarlo. La versione anonima la propone il modello locale: aiuta, ma non è una garanzia, conta quello che approvi.
+        La nota è <b class="text-ink">Privata</b> e non esce mai da sola. Da qui ne esce <b class="text-ink">una volta</b> solo il testo del campo a destra, dopo che l’hai letto e approvato con la master password: va {{ conversation === undefined ? 'nella conversazione di lavoro che scegli' : 'in questa conversazione' }}, come messaggio Interno, e da lì Arianna e il Coder possono usarlo. La versione anonima la propone il modello locale: aiuta, ma non è una garanzia, conta quello che approvi.
       </p>
       <div class="grid gap-3 lg:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-1 text-xs text-muted">
@@ -120,8 +126,8 @@ async function release(): Promise<void> {
         <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="proposing || busy" title="Copia l’originale nel campo, per togliere a mano i dati" @click="useOriginal">Parti dall’originale</button>
       </div>
       <p v-if="warning" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[13px]" role="alert">{{ warning }}</p>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="flex flex-col gap-1 text-xs text-muted">Conversazione di lavoro del progetto
+      <div class="grid gap-3" :class="conversation === undefined ? 'sm:grid-cols-2' : ''">
+        <label v-if="conversation === undefined" class="flex flex-col gap-1 text-xs text-muted">Conversazione di lavoro del progetto
           <select v-model="conversationId" class="field px-2 py-1.5 text-[13px] text-ink" :disabled="targets === null || targets.length === 0">
             <option v-for="target in targets ?? []" :key="target.id" :value="target.id">{{ targetText(target) }}</option>
           </select>

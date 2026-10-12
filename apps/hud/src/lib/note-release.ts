@@ -61,3 +61,16 @@ export function targetText(target: { title: string | null; workspace: string; ag
   const title = target.title?.trim() || `Senza titolo (${target.workspace})`;
   return target.agent === null ? title : `${title} · chat diretta`;
 }
+
+/**
+ * The project whose Private notes "Allega nota privata" offers in a chat: a
+ * work conversation on a project or one of its parts (`<project>:<part>`),
+ * never archived, incognito or of the finances; null elsewhere. The core
+ * checks the same when the text leaves.
+ */
+export function releaseProject(conversation: { mode: string; workspace: string | null; incognito?: boolean; finance?: boolean; archivedAt?: string | null }): string | null {
+  if (conversation.mode !== 'work' || conversation.incognito === true || conversation.finance === true) return null;
+  if (conversation.archivedAt !== undefined && conversation.archivedAt !== null) return null;
+  const project = conversation.workspace?.split(':')[0] ?? '';
+  return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(project) ? project : null;
+}

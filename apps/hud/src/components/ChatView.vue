@@ -14,6 +14,7 @@ import { DIRECT_MODELS } from '../lib/failures.ts';
 import { listImClosings } from '../lib/api.ts';
 import { closingsByMessage, type ImClosing } from '../lib/im.ts';
 import { NOTE_OFF_TEXT } from '../lib/incognito.ts';
+import { releaseProject } from '../lib/note-release.ts';
 import { activityText, agentName, reasonText } from '../lib/italian.ts';
 import {
   inboxNodeId,
@@ -51,6 +52,7 @@ import { hasPlanBlock, withoutPlan } from '../lib/god-work.ts';
 import MessageActions from './MessageActions.vue';
 import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
+import PrivateNoteAttach from './PrivateNoteAttach.vue';
 import PixelAgent from './PixelAgent.vue';
 import SessionLine from './SessionLine.vue';
 import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
@@ -122,6 +124,16 @@ function godPlanIn(message: { agent: string | null; body: string }): boolean {
 
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
+/** "Allega nota privata" (D-187): the project of a work chat whose Private notes may leave once into it. */
+const attachProject = computed(() => releaseProject(props.conversation));
+const attaching = ref(false);
+// Another conversation opened: the panel was for the one before, its text must never go there unseen.
+watch(
+  () => props.conversation.id,
+  () => {
+    attaching.value = false;
+  },
+);
 /** The secretary's conversation (D-146): the index of the first message of its current session, -1 elsewhere. */
 const session = computed(() =>
   props.conversation.secretary === true
@@ -979,6 +991,16 @@ onBeforeUnmount(() => clearInterval(clock));
           class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
           @submit.prevent="submit()"
         >
+          <button
+            v-if="attachProject !== null"
+            type="button"
+            class="mb-1 grid size-[30px] shrink-0 place-items-center rounded-full text-muted hover:text-ink"
+            :title="`Allega una nota privata di ${attachProject}: esce una volta, anonima, con la master password`"
+            aria-label="Allega nota privata"
+            @click="attaching = true"
+          >
+            <Icon name="gateway" :size="16" />
+          </button>
           <label for="composer" class="sr-only">Messaggio</label>
           <textarea
             id="composer"
@@ -1007,6 +1029,7 @@ onBeforeUnmount(() => clearInterval(clock));
           </button>
         </form>
       </div>
+      <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false" />
       <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
         <span class="min-w-0 flex-1">
           Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
