@@ -4,6 +4,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Novità di Open Design: a ogni «Aggiorna catalogo» il core legge dall'API pubblica di GitHub release e commit fra la versione in uso e quella nuova, il modello locale li raggruppa in poche voci in italiano (senza modello, l'elenco dei commit per tipo), e la pagina «Sviluppo di Arianna» le mostra con «Da rifare nello Studio», che le scrive in `data/dev/RISPOSTE.md` per Claude Code; un riepilogo compare anche accanto al confronto di stili e skill (I-21, D-186).
+
 ## [0.76.0] - 2026-10-12
 
 ### Aggiunto

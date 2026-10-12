@@ -7,6 +7,7 @@ import { pendingFromBody, type Progress as DevProgress } from './dev-progress.ts
 import type { GraphData, KnowledgePage } from './graph.ts';
 import { parseEndResult, parseNotice, type EndResult, type IncognitoNotice } from './incognito.ts';
 import { parseInstallation, type InstallationInfo } from './installation.ts';
+import type { NewsPair } from './design-news.ts';
 import type { CatalogStatus as DesignCatalogStatus, StyleListing as DesignStyleListing, StyleText as DesignStyleText } from './design-catalog.ts';
 import type { SkillListing, SkillsStatus, SkillText } from './skills-catalog.ts';
 import type { HubCard, HubSearchResult } from './huggingface.ts';
@@ -890,6 +891,16 @@ export async function sendDevAnswer(key: string, text: string): Promise<{ key: s
 /** `logged` is missing for a request already there: its event was the first one's. */
 export async function askDevRewrite(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
   return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/answers', { key, rewrite: true });
+}
+
+/** "Novità di Open Design" (I-21, D-186): the news of the version waiting and of the one in use, with what was already chosen. */
+export async function loadOdNews(): Promise<NewsPair> {
+  return (await call<{ news: NewsPair }>('GET', '/api/dev/od-news')).news;
+}
+
+/** "Da rifare nello Studio": the entry, named by its key only, goes to data/dev/RISPOSTE.md; `already` when it was there. */
+export async function sendOdNewsRedo(key: string): Promise<{ key: string; at: string; already: boolean; logged?: boolean }> {
+  return call<{ key: string; at: string; already: boolean; logged?: boolean }>('POST', '/api/dev/od-news', { key });
 }
 
 /** "Novità": the register of the versions, read by the core from CHANGELOG.md. */

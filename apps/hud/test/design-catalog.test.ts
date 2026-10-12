@@ -37,6 +37,9 @@ describe('the button', () => {
     assert.equal(shouldPoll(status({ job: running })), true);
     assert.equal(shouldPoll(status({ job: { ...running, status: 'done' } })), false);
     assert.equal(shouldPoll(null), false);
+    // The news of the version downloaded (I-21): read again until it is made.
+    assert.equal(shouldPoll(status({ job: { ...running, status: 'done' }, newsPreparing: true })), true);
+    assert.equal(shouldPoll(status({ job: { ...running, status: 'done' }, newsPreparing: false })), false);
   });
 });
 
