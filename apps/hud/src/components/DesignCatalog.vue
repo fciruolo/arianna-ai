@@ -171,6 +171,20 @@ async function choose(slug: string): Promise<void> {
           <p v-if="status.pending.diff.styles.changedSlugs.length > 0" class="mt-1"><b class="font-semibold">Cambiati:</b> <span class="font-mono">{{ status.pending.diff.styles.changedSlugs.join(', ') }}</span></p>
           <p v-if="status.pending.diff.styles.removedSlugs.length > 0" class="mt-1"><b class="font-semibold">Tolti:</b> <span class="font-mono">{{ status.pending.diff.styles.removedSlugs.join(', ') }}</span></p>
         </details>
+        <!-- The news of Open Design (I-21, D-186): what changed in the software, not only in styles and skills -->
+        <p v-if="status.newsPreparing" class="text-xs text-muted" role="status">Preparo le novità da GitHub (note di rilascio e commit)…</p>
+        <p v-else-if="status.pending.news?.state === 'missing' && status.adopted !== null" class="text-xs text-muted">{{ status.pending.news.message }}</p>
+        <details v-else-if="status.pending.news?.state === 'ready' && status.pending.news.items.length > 0" class="text-xs" open>
+          <summary class="cursor-pointer text-muted select-none">Novità del software ({{ status.pending.news.items.length }})</summary>
+          <ul class="m-0 mt-1 flex list-disc flex-col gap-0.5 pl-4">
+            <li v-for="item in status.pending.news.items.slice(0, 12)" :key="item.key">
+              <b class="font-semibold">{{ item.title }}</b><template v-if="item.summary !== ''"> — {{ item.summary }}</template>
+            </li>
+          </ul>
+          <p class="mt-1 text-muted">
+            {{ status.pending.news.items.length > 12 ? `E altre ${status.pending.news.items.length - 12}. ` : '' }}Per scegliere cosa rifare nello Studio: Impostazioni → Sviluppo di Arianna → Novità di Open Design.
+          </p>
+        </details>
         <div class="flex flex-wrap justify-end gap-2">
           <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting" @click="discard">Scarta</button>
           <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="acting" @click="adopt">Usa questa versione</button>

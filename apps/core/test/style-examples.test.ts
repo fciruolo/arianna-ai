@@ -153,3 +153,25 @@ test('without Claude on this installation nothing starts', async () => {
   const ask = createCloudText({ sql: {} as Sql, claude: undefined, data: HOME });
   await assert.rejects(ask({ parts: [{ text: 'x', source: 's' }], purpose: 'prova' }), (error: unknown) => error instanceof CloudTextError && error.code === 'unavailable');
 });
+
+test('a new version of the catalog with the same DESIGN.md keeps the example: only the notice changed', async () => {
+  const texts: Record<string, string> = { alfa: 'Licenza, versione 1111111\n\n---\n\n# Alfa\n`#112233`\n' };
+  let calls = 0;
+  const examples = createStyleExamples({
+    dir: join(HOME, 'd'),
+    source: source(texts),
+    ask: () => {
+      calls += 1;
+      return Promise.resolve(ANSWER);
+    },
+  });
+  examples.generate('alfa');
+  await examples.idle();
+  texts.alfa = 'Licenza, versione 2222222\n\n---\n\n# Alfa\n`#112233`\n';
+  assert.equal(examples.status().examples.alfa?.current, true);
+  examples.generateMissing();
+  await examples.idle();
+  assert.equal(calls, 1);
+  texts.alfa = 'Licenza, versione 2222222\n\n---\n\n# Alfa\n`#ffffff`\n';
+  assert.equal(examples.status().examples.alfa?.current, false);
+});

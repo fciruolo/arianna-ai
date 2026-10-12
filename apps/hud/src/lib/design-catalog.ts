@@ -4,6 +4,7 @@
  * public text of a third party: the page shows it, never as an instruction.
  */
 import { ApiError } from './api.ts';
+import type { DesignNews } from './design-news.ts';
 import { errorText } from './italian.ts';
 
 export interface KindChanges {
@@ -38,8 +39,11 @@ export interface CatalogStatus {
   page: string;
   license: { name: string; copyright: string | null; notice: string | null };
   adopted: (CatalogVersion & { adoptedAt: string }) | null;
-  pending: (CatalogVersion & { diff: { styles: KindChanges; skills: KindChanges } }) | null;
+  /** `news`: the news of Open Design of the version waiting (I-21, D-186), null while missing. */
+  pending: (CatalogVersion & { diff: { styles: KindChanges; skills: KindChanges }; news?: DesignNews | null }) | null;
   job: CatalogJob | null;
+  /** The news of the version just downloaded is being made. */
+  newsPreparing?: boolean;
 }
 
 export interface StyleSummary {
@@ -77,9 +81,9 @@ export function updateBlocked(status: CatalogStatus | null): string | undefined 
   return undefined;
 }
 
-/** The status is read again every 1.5 s while a download runs. */
+/** The status is read again every 1.5 s while a download runs, or its news is being made. */
 export function shouldPoll(status: CatalogStatus | null): boolean {
-  return status?.job?.status === 'running';
+  return status?.job?.status === 'running' || status?.newsPreparing === true;
 }
 
 function plural(count: number, one: string, many: string): string {

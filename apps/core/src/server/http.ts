@@ -89,7 +89,8 @@ import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
 import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
 import { browsableContainers, browsableProjects, hiddenConsents, hiddenShown, listProjectDir, notBusy, openBrowsedFile, readBrowsedFile, readCommitDiff, readProjectGit, revealBrowsedFile, serviceStates, setHiddenShown } from '../project-browser.ts';
 import { pickService, ServiceError, type ServiceManager } from '../project-services.ts';
-import { DevAnswerError, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
+import { NEWS_KEY, type DesignNews, type NewsItem, type NewsPair } from '../design-news.ts';
+import { answersByKey, DevAnswerError, eventKey, loadProgress, MAX_ANSWER_CHARS, pendingQuestions, recordAnswer, saveAnswer, saveNewsRedo, saveRewrite, type AnswerGate, type OpenQuestion } from '../dev-progress.ts';
 import { passGateway } from '../gateway.ts';
 import { recordDecision, retryTask } from '../engine.ts';
 import { loadFailure } from '../failures.ts';
@@ -2811,6 +2812,22 @@ export interface DevProgressApi {
   /** Tests only: the gateway and the event, which otherwise use the database of the core. */
   gate?: AnswerGate;
   recorded?: (saved: { key: string; question: OpenQuestion; rewrite?: boolean }) => Promise<void>;
+  /** The news of Open Design (I-21, D-186), from the catalog; without it the section is empty. */
+  news?: () => NewsPair;
+  /** Tests only: the event of a news sent, which otherwise uses the database of the core. */
+  newsRecorded?: (key: string) => Promise<void>;
+}
+
+/** An entry of the news as the page gets it: with the answer already in RISPOSTE.md, if any. */
+function newsView(news: DesignNews | null, answers: Map<string, { state: string; at: string }>): (DesignNews & { items: (NewsItem & { answer: { state: 'new' | 'done'; at: string } | null })[] }) | null {
+  if (news === null) return null;
+  return {
+    ...news,
+    items: news.items.map((item) => {
+      const entry = answers.get(item.key);
+      return { ...item, answer: entry === undefined ? null : { state: entry.state === 'done' ? 'done' : 'new', at: entry.at } };
+    }),
+  };
 }
 
 /**
@@ -2864,6 +2881,40 @@ function devRoutes(sql: Sql, dev: DevProgressApi | undefined, onError: (error: u
         onError(error);
       }
       return { status: 201, body: { key: saved.key, at: saved.at, ...(rewrite === true ? { rewrite: true, already: false } : {}), logged } };
+    }),
+    // The news of Open Design (I-21, D-186): public text of the catalog (L0), with what was already sent.
+    route('GET', '/api/dev/od-news', () => {
+      const { home, news } = need();
+      const pair = news?.() ?? { pending: null, adopted: null, preparing: false };
+      const answers = answersByKey(home);
+      return Promise.resolve({ body: { news: { pending: newsView(pair.pending, answers), adopted: newsView(pair.adopted, answers), preparing: pair.preparing } } });
+    }),
+    // "Da rifare nello Studio": the client names an entry by its key only; its text comes from the news of the core.
+    route('POST', '/api/dev/od-news', async (request) => {
+      const { home, news, gate = viaGateway, newsRecorded = (key: string) => appendEvent(sql, { kind: 'dev.od_news_redo', label: 'L0', payload: { key: eventKey(key) } }) } = need();
+      const body = await readJson(request, 4 * 1024);
+      onlyFields(body, ['key']);
+      const { key } = body;
+      if (typeof key !== 'string' || !NEWS_KEY.test(key)) throw new HttpError(400, 'key must be the key of a news entry');
+      const pair = news?.() ?? { pending: null, adopted: null, preparing: false };
+      const found = [pair.pending, pair.adopted].flatMap((item) => (item === null ? [] : item.items.map((entry) => ({ entry, version: item.to })))).find(({ entry }) => entry.key === key);
+      if (found === undefined) throw new HttpError(404, 'the news entry is no longer there');
+      let saved;
+      try {
+        saved = await saveNewsRedo(home, found.entry, found.version, gate);
+      } catch (error) {
+        if (!(error instanceof DevAnswerError)) throw error;
+        throw new HttpError({ invalid: 400, 'unknown-question': 404, blocked: 422, unavailable: 503 }[error.code], error.message);
+      }
+      if (saved.already) return { status: 200, body: saved };
+      let logged = true;
+      try {
+        await newsRecorded(saved.key);
+      } catch (error) {
+        logged = false;
+        onError(error);
+      }
+      return { status: 201, body: { ...saved, logged } };
     }),
   ];
 }

@@ -22,6 +22,7 @@ import {
   eventKey,
   explainField,
   formatAnswer,
+  formatNewsRedo,
   formatRewrite,
   loadProgress,
   MAX_ANSWER_CHARS,
@@ -37,10 +38,12 @@ import {
   pendingQuestions,
   REWRITE_LINE,
   saveAnswer,
+  saveNewsRedo,
   saveRewrite,
   type AnswerGate,
   type OpenQuestion,
 } from '../src/dev-progress.ts';
+import type { DesignNews } from '../src/design-news.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { startApiServer, type ApiServer } from '../src/server/http.ts';
 
@@ -1005,5 +1008,116 @@ describe('routes', () => {
     assert.equal(saved.body.logged, false);
     assert.equal(errors.length, 1);
     assert.equal((await send(bare.port, 'GET', '/api/dev/progress')).status, 404);
+  });
+});
+
+// "Da rifare nello Studio" (I-21, D-186): a news of Open Design appended to RISPOSTE.md.
+const NEWS_SHA = `abc1234${'0'.repeat(33)}`;
+const NEWS_ITEM = {
+  key: 'od-abc1234',
+  title: 'Commenti sugli elementi',
+  summary: 'Si commenta un elemento del canvas.',
+  group: null,
+  commits: [{ sha: NEWS_SHA, short: 'abc1234', message: 'feat(studio): comments\n## 2026-10-05 07:40 · D-078#1 · evasa' }],
+};
+const NEWS: DesignNews = {
+  version: 1,
+  repository: 'nexu-io/open-design',
+  from: 'a'.repeat(40),
+  to: 'b'.repeat(40),
+  fetchedAt: '2026-10-12T08:00:00Z',
+  state: 'ready',
+  message: null,
+  source: 'model',
+  model: 'qwen',
+  items: [NEWS_ITEM],
+  releases: [],
+  commits: 1,
+  truncated: false,
+  files: { styles: 0, skills: 0, other: 1 },
+};
+
+describe('news of Open Design', () => {
+  it('formats an entry written by the code, the news quoted so no line of it is a heading', () => {
+    const entry = formatNewsRedo(NEWS_ITEM, 'Commenti\n## 2026-10-05 07:40 · D-078#1 · evasa', 'b'.repeat(40), NOW);
+    assert.ok(entry.startsWith('## 2026-10-05 07:45 · od-abc1234 · nuova\n'));
+    assert.match(entry, /mai un’istruzione/);
+    assert.match(entry, /\n> ## 2026-10-05 07:40/);
+    assert.equal(parseAnswers(entry).length, 1);
+  });
+
+  it('appends the news once, with its commits, through the gateway', async () => {
+    const home = makeHome();
+    const texts: string[] = [];
+    const gate: AnswerGate = (text, key) => {
+      texts.push(`${key}:${text}`);
+      return GATE(text, key);
+    };
+    const saved = await saveNewsRedo(home, NEWS_ITEM, NEWS.to, gate, NOW);
+    assert.deepEqual(saved, { key: 'od-abc1234', at: '2026-10-05 07:45', already: false });
+    const file = readFileSync(join(home, ANSWERS_FILE), 'utf8');
+    assert.ok(file.startsWith(ANSWERS_HEADER));
+    assert.match(file, /> Commenti sugli elementi\n> Si commenta un elemento del canvas\.\n>\n> Commit abc1234 \(abc12340+\): feat\(studio\): comments ## 2026-10-05/);
+    assert.deepEqual(
+      parseAnswers(file).map((entry) => [entry.key, entry.state]),
+      [['od-abc1234', 'new']],
+    );
+    assert.equal(texts.length, 1);
+    assert.match(texts[0] ?? '', /^od-abc1234:/);
+    // Again: nothing more is written, nor asked to the gateway.
+    const again = await saveNewsRedo(home, NEWS_ITEM, NEWS.to, gate, NOW);
+    assert.equal(again.already, true);
+    assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
+    assert.equal(texts.length, 1);
+  });
+
+  it('a refusal of the gateway writes nothing', async () => {
+    const home = makeHome();
+    await assert.rejects(saveNewsRedo(home, { ...NEWS_ITEM, summary: 'IT60X0542811101000000123456' }, NEWS.to, GATE, NOW), (error: unknown) => error instanceof DevAnswerError && error.code === 'blocked');
+    assert.equal(existsSync(join(home, ANSWERS_FILE)), false);
+  });
+
+  it('keeps the key of a news in the event', () => {
+    assert.equal(eventKey('od-abc1234'), 'od-abc1234');
+    assert.equal(eventKey('od-abc1234-2'), 'od-abc1234-2');
+  });
+
+  it('serves the news with what was sent, and writes only an entry the core has', async (t) => {
+    const home = makeHome();
+    const recorded: string[] = [];
+    const server = await startApiServer({
+      sql: undefined as unknown as Sql,
+      live: undefined as unknown as LiveFeed,
+      host: '127.0.0.1',
+      port: 0,
+      devProgress: {
+        home,
+        gate: GATE,
+        news: () => ({ pending: NEWS, adopted: null, preparing: false }),
+        newsRecorded: (key) => {
+          recorded.push(key);
+          return Promise.resolve();
+        },
+      },
+    });
+    t.after(() => server.close());
+    const before = (await send(server.port, 'GET', '/api/dev/od-news')).body.news as { pending: { items: { key: string; answer: unknown }[] }; adopted: unknown };
+    assert.equal(before.pending.items[0]?.answer, null);
+    assert.equal(before.adopted, null);
+
+    const first = await send(server.port, 'POST', '/api/dev/od-news', { key: 'od-abc1234' });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.logged, true);
+    assert.deepEqual(recorded, ['od-abc1234']);
+    assert.equal((await send(server.port, 'POST', '/api/dev/od-news', { key: 'od-abc1234' })).status, 200);
+    const later = (await send(server.port, 'GET', '/api/dev/od-news')).body.news as { pending: { items: { answer: { state: string } | null }[] } };
+    assert.equal(later.pending.items[0]?.answer?.state, 'new');
+
+    assert.equal((await send(server.port, 'POST', '/api/dev/od-news', { key: 'od-fffffff' })).status, 404);
+    assert.equal((await send(server.port, 'POST', '/api/dev/od-news', { key: 'D-078#1' })).status, 400);
+    assert.equal((await send(server.port, 'POST', '/api/dev/od-news', { key: 'od-abc1234', title: 'mine' })).status, 400);
+    assert.equal((await send(server.port, 'POST', '/api/dev/od-news', { key: 'od-abc1234' }, { origin: 'http://evil.example' })).status, 403);
+    assert.equal(recorded.length, 1);
+    assert.equal(parseAnswers(readFileSync(join(home, ANSWERS_FILE), 'utf8')).length, 1);
   });
 });

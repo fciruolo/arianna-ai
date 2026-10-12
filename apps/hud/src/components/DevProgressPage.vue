@@ -38,6 +38,7 @@ import {
 } from '../lib/dev-progress.ts';
 import { errorText } from '../lib/italian.ts';
 import Icon from './Icon.vue';
+import OdNews from './OdNews.vue';
 
 /**
  * "Sviluppo di Arianna" (D-102): a bar of what is done, in progress and still
@@ -355,6 +356,9 @@ onMounted(refresh);
           </ul>
         </details>
       </section>
+
+      <!-- The news of Open Design (I-21, D-186) -->
+      <OdNews v-if="progress !== null" />
 
       <!-- The list -->
       <section v-if="progress !== null" class="flex flex-col gap-3" aria-labelledby="dev-list">

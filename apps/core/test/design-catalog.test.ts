@@ -634,3 +634,70 @@ describe('routes', () => {
     }
   });
 });
+
+describe('news of Open Design (I-21, D-186)', () => {
+  /** A fake API: the comparison of any two commits holds one feature commit; the releases fail. */
+  function news(asked: string[]): NonNullable<Parameters<typeof createDesignCatalog>[0]['news']> {
+    return {
+      get: (path) => {
+        asked.push(path);
+        if (path.includes('/compare/')) return Promise.resolve({ total_commits: 1, commits: [{ sha: 'e'.repeat(40), commit: { message: 'feat: comments on elements' } }], files: [{ filename: 'apps/web/x.ts' }] });
+        return Promise.reject(new Error('offline'));
+      },
+      gateway: async () => {},
+      noModel: 'test',
+    };
+  }
+
+  it('makes the news beside the version waiting, follows adopt and discard, and never fails the update', async () => {
+    const repo = upstream(STARTING);
+    const asked: string[] = [];
+    const { catalog, dir, events } = catalogFor(repo, { news: news(asked) });
+    await downloaded(catalog);
+    const first = catalog.status().pending;
+    assert.ok(first !== null);
+    assert.equal(first.news?.state, 'missing', 'no version in use: no news');
+    assert.deepEqual(asked, []);
+    catalog.adopt(first.commit);
+    assert.equal(existsSync(join(dir, 'open-design.next.news.json')), false);
+    assert.equal(catalog.news().adopted?.to, first.commit);
+
+    write(repo, { 'design-systems/beta/DESIGN.md': style('Beta', 'Now green.') });
+    await downloaded(catalog);
+    const second = catalog.status().pending;
+    assert.ok(second !== null);
+    assert.equal(catalog.status().newsPreparing, false);
+    assert.equal(second.news?.state, 'ready');
+    assert.equal(second.news.from, first.commit);
+    assert.equal(second.news.source, 'raw');
+    assert.deepEqual(
+      second.news.items.map((item) => item.key),
+      ['od-eeeeeee'],
+    );
+    assert.match(asked.join(' '), new RegExp(`/compare/${first.commit}\\.\\.\\.${second.commit}`));
+    assert.equal(catalog.news().pending?.to, second.commit);
+    assert.ok(events.includes('design-catalog.news'));
+
+    catalog.discard();
+    assert.equal(existsSync(join(dir, 'open-design.next.news.json')), false);
+    assert.equal(catalog.news().pending, null);
+    assert.equal(catalog.news().adopted?.to, first.commit, 'the news of the version in use stays');
+
+    await downloaded(catalog);
+    const third = catalog.status().pending;
+    assert.ok(third !== null);
+    catalog.adopt(third.commit);
+    assert.equal(catalog.news().adopted?.items[0]?.key, 'od-eeeeeee');
+    assert.equal(catalog.news().adopted?.to, third.commit);
+  });
+
+  it('a news that cannot be written leaves the version waiting as it is', async () => {
+    const repo = upstream(STARTING);
+    const { catalog, dir } = catalogFor(repo, { news: { ...news([]), get: () => Promise.reject(new Error('down')) } });
+    mkdirSync(join(dir, 'open-design.next.news.json'), { recursive: true });
+    await downloaded(catalog);
+    assert.equal(catalog.status().job?.status, 'done');
+    assert.ok(catalog.status().pending !== null);
+    assert.equal(catalog.status().pending?.news, null);
+  });
+});

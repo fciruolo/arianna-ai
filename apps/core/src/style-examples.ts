@@ -83,6 +83,17 @@ export class StyleExampleError extends Error {
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
+/**
+ * The DESIGN.md without the license notice the catalog puts at its head
+ * (`<notice>\n\n---\n\n<DESIGN.md>`, design-catalog.ts): the notice names the
+ * version of the catalog, so with it every new version would make every
+ * example old even when the style did not change.
+ */
+export function designBody(text: string): string {
+  const at = text.indexOf('\n\n---\n\n');
+  return at === -1 ? text : text.slice(at + '\n\n---\n\n'.length);
+}
+
 /** One page as Sonnet wrote it, checked: a whole HTML document, no resource from the network, not too large. */
 export function checkedPage(raw: string): string | undefined {
   const page = raw
@@ -134,7 +145,7 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
 
   function currentSha(slug: string): string | undefined {
     try {
-      return sha256(options.source.styleText(slug).text);
+      return sha256(designBody(options.source.styleText(slug).text));
     } catch {
       return undefined;
     }
@@ -179,7 +190,7 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
     try {
       writeFileSync(join(temporary, 'landing.html'), pages.landing);
       writeFileSync(join(temporary, 'deck.html'), pages.deck);
-      writeFileSync(join(temporary, 'meta.json'), `${JSON.stringify({ sha256: sha256(text), at: new Date().toISOString(), model: EXAMPLE_MODEL })}\n`);
+      writeFileSync(join(temporary, 'meta.json'), `${JSON.stringify({ sha256: sha256(designBody(text)), at: new Date().toISOString(), model: EXAMPLE_MODEL })}\n`);
       rmSync(folderOf(slug), { recursive: true, force: true });
       renameSync(temporary, folderOf(slug));
     } catch (error) {

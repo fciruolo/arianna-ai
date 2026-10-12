@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -27,6 +27,7 @@ import {
   type JobView,
   type KindChanges,
 } from './git-catalog.ts';
+import { NEWS_FILE, NEXT_NEWS_FILE, prepareNews, readNews, readNewsFile, writeNewsFile, type DesignNews, type NewsDeps, type NewsPair } from './design-news.ts';
 
 export { BUSY_MESSAGE, cleanBody, cleanLine, gitEnv, MAX_TREE_BYTES, MAX_TREE_FILES, PENDING_MESSAGE, SLUG, type CatalogGateway, type JobView, type KindChanges };
 
@@ -110,8 +111,10 @@ export interface CatalogStatus {
   page: string;
   license: { name: string; copyright: string | null; notice: string | null };
   adopted: (VersionView & { adoptedAt: string }) | null;
-  pending: (VersionView & { diff: DesignDiff }) | null;
+  pending: (VersionView & { diff: DesignDiff; news: DesignNews | null }) | null;
   job: JobView | null;
+  /** The news of the version just downloaded is being made (I-21, D-186). */
+  newsPreparing: boolean;
 }
 
 export interface StyleListing {
@@ -156,6 +159,11 @@ export interface DesignCatalogOptions {
   env?: NodeJS.ProcessEnv;
   git?: string;
   now?: () => Date;
+  /**
+   * The news of Open Design (I-21, D-186), made after each download that
+   * leaves a version waiting; without it, none. Never fails the download.
+   */
+  news?: NewsDeps;
 }
 
 export interface DesignCatalog {
@@ -169,6 +177,8 @@ export interface DesignCatalog {
   discard(): CatalogStatus;
   list(): StyleListing;
   styleText(slug: unknown): DesignStyleText;
+  /** The news of the version waiting and of the one in use (I-21). */
+  news(): NewsPair;
 }
 
 const REMOTE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/;
@@ -418,17 +428,59 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
     ...(options.now === undefined ? {} : { now: options.now }),
   });
 
+  // The news (I-21): made after the download, outside the busy file, and
+  // written only for the commit it was made for; `idle()` waits for it too.
+  let newsRunning: Promise<void> = Promise.resolve();
+  let newsPreparing = false;
+  const nextNews = join(options.dir, NEXT_NEWS_FILE);
+  const adoptedNews = join(options.dir, NEWS_FILE);
+
+  /** A news file away; one that cannot go (a folder put there) never stops the catalog. */
+  function dropNews(path: string): void {
+    try {
+      rmSync(path, { force: true });
+    } catch {
+      // readNews() reads only a regular file for its own commit.
+    }
+  }
+
+  function news(): NewsPair {
+    const current = source.adopted();
+    const next = source.pending();
+    return { ...readNews(options.dir, { pending: next?.commit ?? null, adopted: current?.index.commit ?? null }), preparing: newsPreparing };
+  }
+
+  async function makeNews(deps: NewsDeps, from: { commit: string; committedAt: string | null } | null): Promise<void> {
+    const job = source.job();
+    const next = source.pending();
+    if (job?.status !== 'done' || job.outcome !== 'pending' || next === undefined) return;
+    newsPreparing = true;
+    try {
+      const made = await prepareNews(deps, from, { commit: next.commit });
+      // Adopted meanwhile: the news follows its commit.
+      if (source.pending()?.commit === made.to) writeNewsFile(options.dir, NEXT_NEWS_FILE, made);
+      else if (source.adopted()?.index.commit === made.to) writeNewsFile(options.dir, NEWS_FILE, made);
+      options.onEvent?.('design-catalog.news', { commit: made.to, state: made.state, source: made.source ?? 'none', items: made.items.length });
+    } catch {
+      // The news never fails the catalog: a file that cannot be written leaves none.
+    } finally {
+      newsPreparing = false;
+    }
+  }
+
   function status(): CatalogStatus {
     const current = source.adopted();
     const next = source.pending();
     const license = next?.license ?? current?.index.license ?? { name: DESIGN_LICENSE, copyright: null, notice: null };
+    const pendingNews = next === undefined ? undefined : readNewsFile(nextNews);
     return {
       repository,
       page: DESIGN_REPOSITORY_PAGE,
       license,
       adopted: current === undefined ? null : { ...versionView(current.index), adoptedAt: current.lock.adoptedAt },
-      pending: next === undefined ? null : { ...versionView(next), diff: diffIndexes(current?.index.entries ?? [], next.entries) },
+      pending: next === undefined ? null : { ...versionView(next), diff: diffIndexes(current?.index.entries ?? [], next.entries), news: pendingNews?.to === next.commit ? pendingNews : null },
       job: source.job(),
+      newsPreparing,
     };
   }
 
@@ -447,19 +499,34 @@ export function createDesignCatalog(options: DesignCatalogOptions): DesignCatalo
   return {
     status,
     update: () => {
+      const current = source.adopted();
       source.update();
+      // No version was waiting (update refuses otherwise): a news file left there is stale.
+      dropNews(nextNews);
+      const deps = options.news;
+      const from = current === undefined ? null : { commit: current.index.commit, committedAt: current.index.committedAt };
+      newsRunning = source.idle().then(() => (deps === undefined ? undefined : makeNews(deps, from)));
       return status();
     },
-    idle: () => source.idle(),
+    idle: () => newsRunning.then(() => source.idle()),
     adopt: (commit) => {
-      source.adopt(commit);
+      const adopted = source.adopt(commit);
+      // The news of the version waiting becomes the news of the version in use.
+      try {
+        if (readNewsFile(nextNews)?.to === adopted.commit) renameSync(nextNews, adoptedNews);
+        else dropNews(nextNews);
+      } catch {
+        // Only the news is lost: readNews() shows none for another commit.
+      }
       return status();
     },
     discard: () => {
       source.discard();
+      dropNews(nextNews);
       return status();
     },
     list,
+    news,
     styleText: (slug) => {
       if (source.adopted() === undefined) throw new CatalogError('not-found', 'the catalog of Open Design has not been downloaded');
       return designStyleText(options.dir, slug);
