@@ -255,9 +255,9 @@ function retry(): void {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3" aria-label="Regole del progetto">
+  <div class="flex flex-col gap-3" role="region" aria-label="Regole del progetto">
     <!-- Wide rules on the left, a sticky column of settings on the right; below 1100 px the column goes under (D-193) -->
-    <div class="grid grid-cols-1 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_340px]">
+    <div class="grid grid-cols-1 items-start gap-4" :class="rules !== undefined ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_340px]' : ''">
       <section class="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 md:p-5">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="mr-auto text-[16px] font-semibold">Regole per Claude Code e Codex</h2>
@@ -283,6 +283,7 @@ function retry(): void {
               Bozza non ancora salvata: il modello comune, le regole ricavate dai file del progetto<template v-if="!partial"> e le convenzioni dei framework proposte dal modello locale</template>. Rileggila, correggila e salva.
               <template v-if="partial"> Il modello locale non ha risposto: mancano le convenzioni dei framework.</template>
             </span>
+            <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : 'Riproponi' }}</button>
           </div>
 
           <label v-if="own && asText" class="flex flex-col gap-1 text-[13px] text-muted">
@@ -331,30 +332,30 @@ function retry(): void {
         </template>
       </section>
 
-      <aside v-if="rules !== undefined" class="flex min-w-0 flex-col gap-3 min-[1100px]:sticky min-[1100px]:top-3" aria-label="Impostazioni delle regole">
-        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4">
-          <h3 class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Quali regole</h3>
-          <span class="flex w-full overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Quali regole">
+      <aside v-if="rules !== undefined" class="flex min-w-0 flex-col gap-3 [@media(min-width:1100px)_and_(min-height:720px)]:sticky [@media(min-width:1100px)_and_(min-height:720px)]:top-3" aria-label="Impostazioni delle regole">
+        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-mode">
+          <h3 id="rules-side-mode" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Quali regole</h3>
+          <span class="flex w-full overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-labelledby="rules-side-mode">
             <button type="button" class="flex-1 px-2 py-1.5 text-[14px]" :class="!own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="!own" @click="chooseMode(false)">Modello comune</button>
             <button type="button" class="flex-1 border-l border-line-strong px-2 py-1.5 text-[14px]" :class="own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="own" @click="chooseMode(true)">Regole proprie</button>
           </span>
           <p class="mt-2 text-[13px] text-muted">{{ own ? 'Partono da una copia del modello comune; vuote = nessuna regola.' : 'Le stesse di ogni progetto senza regole proprie.' }}</p>
         </section>
 
-        <section v-if="stored === undefined || drafted" class="rounded-2xl border border-line bg-surface-2 px-5 py-4">
-          <h3 class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Bozza</h3>
-          <p class="mb-2 text-[13.5px]">Arianna può proporre regole adatte guardando linguaggi, gestore di pacchetti e file di stile delle parti.</p>
+        <section v-if="stored === undefined || drafted" class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-draft">
+          <h3 id="rules-side-draft" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Bozza</h3>
+          <p class="mb-2 text-[13.5px]">{{ drafted ? 'C’è una bozza da rileggere a sinistra: salvala o riproponila.' : 'Arianna può proporre regole adatte guardando linguaggi, gestore di pacchetti e file di stile delle parti.' }}</p>
           <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : drafted ? 'Riproponi' : 'Proponi bozza' }}</button>
         </section>
 
-        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4">
-          <h3 class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Esporta</h3>
+        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-export">
+          <h3 id="rules-side-export" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Esporta</h3>
           <p class="mb-2 text-[13.5px]">Scrive le regole salvate in <code class="font-mono text-[13px]">CLAUDE.md</code> e <code class="font-mono text-[13px]">AGENTS.md</code> delle parti, dopo un’anteprima. Il commit lo fai tu.</p>
           <button
             type="button"
             class="btn px-2.5 py-1 text-xs"
             :disabled="changed || exporting || exportPreview !== null"
-            :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md del progetto, dopo un’anteprima'"
+            :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md delle parti, dopo un’anteprima'"
             @click="openExport"
           >
             {{ exporting && exportPreview === null ? 'Preparo l’anteprima…' : 'Esporta in CLAUDE.md e AGENTS.md…' }}
@@ -363,7 +364,7 @@ function retry(): void {
 
         <ul class="grid list-disc gap-1 pl-5 text-[13px] text-muted">
           <li>Il testo va al cloud come <b class="font-semibold">Interno</b>, dal gateway: niente nomi di clienti, importi o password (il salvataggio li rifiuta).</li>
-          <li>Valgono dalla prossima conversazione con il Coder; gli agenti non fanno mai commit, il commit lo fai tu.</li>
+          <li>Valgono dalla prossima conversazione con il Coder.</li>
         </ul>
       </aside>
     </div>
