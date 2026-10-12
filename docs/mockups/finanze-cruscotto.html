@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finanze, cruscotto</title>
+<!--
+  Anteprima della revisione delle pagine Finanze (richiesta dell'utente del
+  2026-10-12, scelta «Cruscotto + sistemazioni»). Stessi token della chat dopo
+  D-188. File autonomo, niente rete; font letti da node_modules di apps/hud con
+  percorsi relativi. Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 500; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35;
+    --in: #4e9466; --out: #3f6fa8; color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b;
+    --in: #7cc796; --out: #7fb4f0; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .note { padding: 12px 16px 0; max-width: 1100px; font-size: 14px; }
+  .note p { margin: 0 0 6px; } .note ul { margin: 0; padding-left: 20px; }
+
+  .page { max-width: 1240px; margin: 0 auto; padding: 16px; }
+  .privacy { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+  .tabs span { padding: 8px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tabs span.on { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 14px; }
+  .filters label { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); min-width: 150px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 14px 16px; min-width: 0; }
+  h3 { margin: 0 0 10px; font: 600 12px/1.2 "Chakra Petch", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  h3 small { font: 13px Figtree, sans-serif; letter-spacing: 0; text-transform: none; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .kpi .v { font-size: 26px; font-weight: 600; line-height: 1.2; }
+  .kpi .d { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .up { color: var(--danger); } .down { color: var(--ok); }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 200px; padding: 8px 4px 0; border-bottom: 1px solid var(--line); }
+  .chart .m { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 3px; height: 100%; }
+  .chart i { width: 40%; max-width: 18px; border-radius: 3px 3px 0 0; }
+  .chart .in { background: var(--in); } .chart .out { background: var(--out); }
+  .labels { display: flex; gap: 10px; padding: 4px; font-size: 12px; color: var(--muted); }
+  .labels span { flex: 1; text-align: center; }
+  .legend { display: flex; gap: 14px; font: 13px Figtree, sans-serif; letter-spacing: 0; text-transform: none; color: var(--muted); }
+  h3 .link { font: 13px Figtree, sans-serif; letter-spacing: 0; text-transform: none; }
+  .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .cat { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 10px; font-size: 14px; }
+  .cat .track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+  .cat .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .cat .track i.over { background: var(--danger); }
+  .cat .sub { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  .list { display: flex; flex-direction: column; }
+  .list .r { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .list .r:last-child { border-bottom: 0; }
+  .muted { color: var(--muted); }
+  .alert { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .alert:last-child { border-bottom: 0; }
+  .alert .ic { color: var(--warn); }
+  .link { color: var(--accent); font-size: 13px; text-decoration: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line-strong); }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:hover td { background: var(--surface); }
+  td.amt, th.amt { text-align: right; }
+  .desc b { font-weight: 500; }
+  .desc small { display: block; color: var(--muted); font-size: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .chip.none { border-style: dashed; color: var(--muted); }
+  .chip .rule { font-size: 11.5px; color: var(--muted); }
+  .menu { position: absolute; z-index: 3; margin-top: 4px; width: 240px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); box-shadow: 0 10px 30px #0002; padding: 6px; font-size: 14px; }
+  .menu div { padding: 5px 8px; border-radius: 6px; } .menu div:hover { background: var(--bg); }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+  .menu .act { color: var(--accent); }
+
+  .budget { display: grid; grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1.2fr); gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .budget input { width: 100%; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); text-align: right; }
+  .budget input.changed { border-color: var(--accent); background: var(--surface-2); }
+  .savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface-2); font-size: 14px; }
+  .btn { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .view { display: none; } .view.on { display: block; }
+  @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid2, .grid3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Finanze, cruscotto</b>
+  <span>Scheda</span>
+  <span class="seg" id="vseg">
+    <button data-v="riepilogo" aria-pressed="true">Riepilogo</button>
+    <button data-v="movimenti">Movimenti</button>
+    <button data-v="budget">Categorie e budget</button>
+  </span>
+  <span>Tema</span>
+  <span class="seg" id="tseg"><button data-t="light" aria-pressed="true">Chiaro</button><button data-t="dark">Scuro</button></span>
+</div>
+<div class="note" id="note"></div>
+
+<div class="page">
+  <div class="privacy">🔒 Questi dati restano su questo computer: nessun modello cloud li legge.</div>
+  <div class="tabs"><span data-tab="riepilogo">Riepilogo</span><span data-tab="movimenti">Movimenti</span><span>Importa</span><span>Conti</span><span data-tab="budget">Categorie e budget</span><span>Avvisi</span></div>
+
+  <!-- Riepilogo -->
+  <section class="view" id="riepilogo">
+    <div class="filters">
+      <label>Periodo<select class="field"><option>Ultimi 12 mesi</option></select></label>
+      <label>Conto<select class="field"><option>Tutti i conti</option></select></label>
+    </div>
+    <div class="kpis">
+      <div class="card kpi"><h3>Saldo dei conti</h3><div class="v num">2.844,24 €</div><div class="d">2 conti · ultimo movimento 27/09</div></div>
+      <div class="card kpi"><h3>Uscite di settembre</h3><div class="v num">225,49 €</div><div class="d"><span class="up">−42%</span> rispetto ad agosto</div></div>
+      <div class="card kpi"><h3>Entrate di settembre</h3><div class="v num">1.800,00 €</div><div class="d">uguali ad agosto</div></div>
+      <div class="card kpi"><h3>Budget del mese</h3><div class="v num">1 su 4</div><div class="d"><span class="up">superato: Ristoranti</span></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Entrate e uscite per mese <span class="legend"><span><b style="background:var(--in)"></b>Entrate 3.600,00 €</span><span><b style="background:var(--out)"></b>Uscite 755,76 €</span></span></h3>
+        <div class="chart" id="chart"></div>
+        <div class="labels" id="labels"></div>
+      </div>
+      <div class="card">
+        <h3>Spese per categoria <small>12 mesi</small></h3>
+        <div class="cat"><span>Spesa</span><span class="num">243,80 €</span><div class="track"><i style="width:48%"></i></div><span class="sub">32% · budget 300 € al mese</span></div>
+        <div class="cat"><span>Ristoranti</span><span class="num">64,00 €</span><div class="track"><i class="over" style="width:100%"></i></div><span class="sub">budget di settembre 50 €: superato di 14 €</span></div>
+        <div class="cat"><span>Abbonamenti</span><span class="num">25,98 €</span><div class="track"><i style="width:9%"></i></div><span class="sub">3%</span></div>
+        <div class="cat"><span class="muted">Senza categoria</span><span class="num">421,98 €</span><div class="track"><i style="width:68%;background:var(--muted)"></i></div><span class="sub">56% · <a class="link" href="#">assegnale in Movimenti</a></span></div>
+      </div>
+    </div>
+    <div class="grid3">
+      <div class="card">
+        <h3>Ultimi movimenti <a class="link" href="#">tutti</a></h3>
+        <div class="list">
+          <div class="r"><span class="muted">27/09</span><span>Supermercato Alfa Milano</span><span class="num">−46,20 €</span></div>
+          <div class="r"><span class="muted">27/09</span><span>Supermercato Alfa Milano</span><span class="num">−48,20 €</span></div>
+          <div class="r"><span class="muted">15/09</span><span>Streaming Beta</span><span class="num">−12,99 €</span></div>
+          <div class="r"><span class="muted">10/09</span><span>Trattoria Gamma</span><span class="num">−64,00 €</span></div>
+          <div class="r"><span class="muted">01/09</span><span>Stipendio Ditta Finta</span><span class="num down">+1.800,00 €</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Rispetto all'anno prima <small>settembre</small></h3>
+        <div class="cat"><span>Uscite 2026</span><span class="num">225,49 €</span><div class="track"><i style="width:12%;background:var(--out)"></i></div></div>
+        <div class="cat"><span>Uscite 2025</span><span class="num">0,00 €</span><div class="track"><i style="width:0"></i></div></div>
+        <div class="cat"><span>Entrate 2026</span><span class="num">1.800,00 €</span><div class="track"><i style="width:100%;background:var(--in)"></i></div></div>
+        <div class="cat"><span>Entrate 2025</span><span class="num">0,00 €</span><div class="track"><i style="width:0"></i></div></div>
+      </div>
+      <div class="card">
+        <h3>Avvisi <a class="link" href="#">tutti</a></h3>
+        <div class="alert"><span class="ic">●</span><span>Doppio addebito? Due spese da Supermercato Alfa il 27/09 (46,20 € e 48,20 €)</span></div>
+        <div class="alert"><span class="ic">●</span><span>Ristoranti: budget di settembre superato (64 € su 50 €)</span></div>
+        <div class="alert"><span class="ic" style="color:var(--ok)">●</span><span class="muted">Nessun addebito ricorrente cambiato</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Movimenti -->
+  <section class="view" id="movimenti">
+    <div class="filters">
+      <label>Conto<select class="field"><option>Tutti i conti</option></select></label>
+      <label>Dal<input class="field" style="min-width:130px" value="01/07/2026"></label>
+      <label>Al<input class="field" style="min-width:130px" value="12/10/2026"></label>
+      <label>Categoria<select class="field"><option>Tutte</option></select></label>
+      <label style="flex:1">Cerca<input class="field" style="width:100%" placeholder="Cerca nella descrizione"></label>
+    </div>
+    <div class="card" style="padding:4px 6px">
+      <table>
+        <thead><tr><th style="width:96px">Data</th><th>Descrizione</th><th style="width:220px">Categoria</th><th class="amt" style="width:130px">Importo</th></tr></thead>
+        <tbody>
+          <tr><td class="muted">27/09/2026</td><td class="desc"><b>Supermercato Alfa Milano</b><small>Pagamento POS · carta ****1234 · Conto finto di prova</small></td><td style="position:relative"><span class="chip">Spesa <span class="rule">regola</span> ▾</span></td><td class="amt num">−46,20 €</td></tr>
+          <tr><td class="muted">27/09/2026</td><td class="desc"><b>Supermercato Alfa Milano</b><small>Pagamento POS · carta ****1234 · Conto finto di prova</small></td><td style="position:relative"><span class="chip">Spesa <span class="rule">regola</span> ▾</span></td><td class="amt num">−48,20 €</td></tr>
+          <tr><td class="muted">15/09/2026</td><td class="desc"><b>Streaming Beta</b><small>Addebito SDD · abbonamento · Conto finto di prova</small></td><td style="position:relative"><span class="chip none" id="openmenu">Senza categoria ▾</span>
+            <div class="menu" id="menu"><div>Abbonamenti</div><div>Svago</div><div>Shopping</div><div class="muted">altre 9…</div><hr><div class="act">☐ Abbonamenti anche per i prossimi «Streaming Beta» (crea una regola)</div></div></td><td class="amt num">−12,99 €</td></tr>
+          <tr><td class="muted">10/09/2026</td><td class="desc"><b>Trattoria Gamma</b><small>Pagamento POS · Conto finto di prova</small></td><td><span class="chip none">Senza categoria ▾</span></td><td class="amt num">−64,00 €</td></tr>
+          <tr><td class="muted">05/09/2026</td><td class="desc"><b>Supermercato Alfa Milano</b><small>Pagamento POS · carta ****1234 · Conto finto di prova</small></td><td><span class="chip">Spesa <span class="rule">regola</span> ▾</span></td><td class="amt num">−52,10 €</td></tr>
+          <tr><td class="muted">01/09/2026</td><td class="desc"><b>Stipendio Ditta Finta Srl</b><small>Bonifico in entrata · Conto finto di prova</small></td><td><span class="chip none">Senza categoria ▾</span></td><td class="amt num down">+1.800,00 €</td></tr>
+          <tr><td class="muted">28/08/2026</td><td class="desc"><b>Negozio Delta Elettronica</b><small>Pagamento POS · Conto finto di prova</small></td><td><span class="chip none">Senza categoria ▾</span></td><td class="amt num">−399,00 €</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Categorie e budget -->
+  <section class="view" id="budget">
+    <div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+      <div class="card">
+        <h3>Budget mensili <small>uscite di ottobre</small></h3>
+        <div class="budget muted" style="font-size:12.5px"><span>Categoria</span><span style="text-align:right">al mese</span><span>speso finora</span></div>
+        <div class="budget"><span>Spesa</span><input value="300 €"><span><div class="cat" style="margin:0"><div class="track"><i style="width:31%"></i></div><span class="sub">94,40 € · 31%</span></div></span></div>
+        <div class="budget"><span>Ristoranti</span><input class="changed" value="80 €"><span><div class="cat" style="margin:0"><div class="track"><i style="width:0"></i></div><span class="sub">0 € · era 50 €</span></div></span></div>
+        <div class="budget"><span>Abbonamenti</span><input value="30 €"><span><div class="cat" style="margin:0"><div class="track"><i style="width:0"></i></div><span class="sub">0 €</span></div></span></div>
+        <div class="budget"><span>Svago</span><input placeholder="—"><span class="muted" style="font-size:13px">nessun budget</span></div>
+        <div class="budget"><span>Shopping</span><input placeholder="—"><span class="muted" style="font-size:13px">nessun budget</span></div>
+        <div class="budget" style="border:0"><span class="muted">altre 7 categorie di uscita…</span><span></span><span></span></div>
+        <div class="savebar"><span>1 budget cambiato</span><span style="margin-left:auto"></span><button class="btn">Annulla</button><button class="btn p">Salva</button></div>
+      </div>
+      <div class="card">
+        <h3>Categorie <small>12 uscite · 2 entrate</small></h3>
+        <div style="display:flex;gap:8px;margin-bottom:10px"><input class="field" style="flex:1" placeholder="Nuova categoria"><select class="field" style="min-width:110px"><option>Uscita</option></select><button class="btn p">+ Aggiungi</button></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span class="chip">Abbonamenti</span><span class="chip">Bollette</span><span class="chip">Casa</span><span class="chip">Ristoranti</span><span class="chip">Salute</span><span class="chip">Shopping</span><span class="chip">Spesa</span><span class="chip">Svago</span><span class="chip">Tasse</span><span class="chip">Trasporti</span><span class="chip">Rimborsi</span><span class="chip">Altre spese</span>
+          <span class="chip" style="border-color:var(--in)">Stipendio</span><span class="chip" style="border-color:var(--in)">Altre entrate</span>
+        </div>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">Clic su una categoria per rinominarla o eliminarla.</p>
+        <h3 style="margin-top:18px">Regole <small>1</small></h3>
+        <div class="list"><div class="r" style="grid-template-columns:minmax(0,1fr) auto auto"><span>«supermercato alfa milano»</span><span>→ Spesa</span><span class="muted">✕</span></div></div>
+        <p class="muted" style="font-size:13px;margin:6px 0 0">Le regole nascono anche da Movimenti, dal menu della categoria.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const months = ['nov','dic','gen','feb','mar','apr','mag','giu','lug','ago','set','ott'];
+  const inc = [0,0,0,0,0,0,0,0,0,1800,1800,0];
+  const out = [0,0,0,0,0,0,0,6,58,466,225,0];
+  const chart = document.getElementById('chart'), labels = document.getElementById('labels');
+  months.forEach((m, i) => {
+    const col = document.createElement('div'); col.className = 'm';
+    col.innerHTML = `<i class="in" style="height:${inc[i] / 18}%"></i><i class="out" style="height:${Math.max(out[i] / 18, out[i] ? 1 : 0)}%"></i>`;
+    chart.appendChild(col);
+    const l = document.createElement('span'); l.textContent = m; labels.appendChild(l);
+  });
+  const notes = {
+    riepilogo: `<p><b>Riepilogo come cruscotto</b>, a tutta larghezza come le altre schede (stessa larghezza massima ovunque, così passando da una scheda all'altra non «salta»).</p><ul>
+      <li><b>In alto quattro numeri:</b> saldo dei conti, uscite ed entrate dell'ultimo mese con il confronto col mese prima, budget superati. Esempio: «Budget del mese 1 su 4 · superato: Ristoranti».</li>
+      <li><b>Sotto:</b> grafico largo e, accanto, spese per categoria con il budget dentro la barra (rossa se superato) e il collegamento per assegnare quelle «Senza categoria».</li>
+      <li><b>In fondo:</b> ultimi cinque movimenti, confronto con l'anno prima e gli avvisi del mese, ciascuno con «tutti».</li></ul>`,
+    movimenti: `<p><b>Movimenti a righe basse.</b></p><ul>
+      <li><b>Descrizione leggibile:</b> in grassetto il nome del negozio, sotto in piccolo tipo di pagamento, carta e conto; niente più maiuscolo della banca. La colonna Conto sparisce (è nella seconda riga).</li>
+      <li><b>Categoria come pulsante a pillola</b> («Spesa ▾», tratteggiato se manca); «regola» accanto dice che l'ha messa una regola. La casella «crea una regola» non sta più sotto ogni riga: è l'ultima voce del menu che si apre (vedi la riga di Streaming Beta).</li>
+      <li>Importo vicino al resto, entrate in verde.</li></ul>`,
+    budget: `<p><b>Categorie e budget su due colonne.</b></p><ul>
+      <li><b>Budget:</b> un campo per categoria e <b>un solo «Salva»</b> in una barra che compare solo quando hai cambiato qualcosa («1 budget cambiato · Annulla · Salva»). Accanto a ogni budget quanto hai speso nel mese.</li>
+      <li><b>Categorie</b> come pillole compatte (clic per rinominare o eliminare) al posto di dodici righe con matita e cestino; le regole sotto.</li></ul>`
+  };
+  const root = document.documentElement;
+  function setV(v) {
+    document.querySelectorAll('#vseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === v));
+    document.querySelectorAll('.tabs span').forEach(s => s.classList.toggle('on', s.dataset.tab === v));
+    document.getElementById('note').innerHTML = notes[v];
+  }
+  function setT(t) { root.dataset.theme = t; document.querySelectorAll('#tseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t)); }
+  document.getElementById('vseg').onclick = e => e.target.dataset.v && setV(e.target.dataset.v);
+  document.getElementById('tseg').onclick = e => e.target.dataset.t && setT(e.target.dataset.t);
+  setV('riepilogo'); setT('light');
+</script>
+</body>
+</html>
