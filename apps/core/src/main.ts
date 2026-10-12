@@ -25,7 +25,7 @@ import {
 } from '@arianna/config';
 import { createClaudeExecutor, createCodexExecutor, createLocalModel, type ClaudeExecutor, type CodexExecutor } from '@arianna/executors';
 import { createContext, spendAllowed } from '@arianna/policy';
-import { createVault } from '@arianna/vault';
+import { createVault, MASTER_PASSWORD_REF, VaultError, verifyMasterPassword } from '@arianna/vault';
 
 import { directPolicies, type DirectPolicy } from './direct-chat.ts';
 import { createGodApi } from './god/api.ts';
@@ -72,6 +72,7 @@ import { createKb } from './orchestrator/kb.ts';
 import { createProjectPages } from './project-knowledge.ts';
 import { createAriannaDocs } from './arianna-docs.ts';
 import { createOrchestrator } from './orchestrator/orchestrator.ts';
+import { createNoteReleaser } from './note-release.ts';
 import { createNoteOrganizer, organizeModelReady } from './organize.ts';
 import { agentDefaultModel, agentModels, selectableModels, WORK_AGENT } from './orchestrator/routing.ts';
 import { installationInfo } from './installation.ts';
@@ -753,6 +754,30 @@ const server = await startApiServer({
     const project = projectContainers().find((item) => item.name === name);
     return project === undefined ? undefined : draftProjectRules({ sql, model: localModel }, project, settings.current().projectRules);
   },
+  // "Fai uscire una volta" of a Private note (I-11 P5, D-187): the hash of the master password is read from the vault at each try.
+  noteRelease: createNoteReleaser({
+    sql,
+    model: localModel,
+    projects: projectContainers,
+    knowledge: { home: config.home, rules },
+    checkPassword: async (password) => {
+      let hash: string;
+      try {
+        hash = (await createVault({ data: config.paths.data }).resolve(MASTER_PASSWORD_REF)).reveal();
+      } catch (error) {
+        // No vault, no key in it, or a vault the age key cannot open: as if no password were set.
+        if (error instanceof VaultError && ['no-vault', 'decrypt-failed', 'empty', 'sops-missing'].includes(error.code)) return 'unset';
+        throw error;
+      }
+      try {
+        return (await verifyMasterPassword(hash, password)) ? 'ok' : 'wrong';
+      } catch (error) {
+        // Something else than the line of pnpm vault:master under the key: set it again.
+        if (error instanceof RangeError) return 'unset';
+        throw error;
+      }
+    },
+  }),
   // "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): the saved rules, in the parts of the container, on request.
   rulesExport: {
     plan: (name) => {

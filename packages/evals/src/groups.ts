@@ -1,6 +1,7 @@
 import { loadConfig } from '@arianna/config';
 import { createLocalModel, type LocalModel } from '@arianna/executors';
 
+import { createAnonymizeGroup } from './anonymize-group.ts';
 import { canary, matchesCanary } from './canary.ts';
 import { contract, matchesContract } from './contract.ts';
 import { createFinanceGroup, financePrompt } from './finance-group.ts';
@@ -52,6 +53,7 @@ export const GROUPS: readonly EvalGroup[] = [
   },
   orchestrator(),
   createFinanceGroup({ model: configuredModel, prompt: () => financePrompt(configured().home) }),
+  createAnonymizeGroup(configuredModel),
   {
     name: 'extraction',
     tier: 'models',
