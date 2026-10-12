@@ -480,8 +480,12 @@ function openStudio(address: StudioAddress = {}, how: 'push' | 'replace' = 'push
 /** The direct chat of the Studio: the Designer's conversation, or its draft before the first message. */
 const studioChatOpen = computed(() => {
   if (page.value !== 'studio') return false;
-  if (draft.value !== null) return draft.value.agent === DESIGNER_AGENT;
-  return current.value?.agent === DESIGNER_AGENT;
+  // Only the chat of the project shown: never one of another project still open.
+  const name = studioAddress.value.project;
+  const info = projects.value.find((entry) => entry.name === name);
+  if (name === undefined || info === undefined) return false;
+  if (draft.value !== null) return draft.value.agent === DESIGNER_AGENT && draft.value.project === name;
+  return current.value?.agent === DESIGNER_AGENT && current.value.workspace === info.path;
 });
 
 /** Why the comments of the Studio cannot leave now, or undefined. */

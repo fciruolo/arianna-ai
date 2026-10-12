@@ -1,4 +1,4 @@
-import { isStudioSelector } from './studio-frame.ts';
+import { excerptMatches, isStudioSelector } from './studio-frame.ts';
 import { deckFromParts, EDIT_STYLES, editProblems, type Deck, type EditStyle, type SlideParts, type StudioEdit } from './studio.ts';
 
 /**
@@ -31,15 +31,17 @@ export interface Editable {
   /** The text can be changed only when the element holds text alone. */
   textEditable: boolean;
   text: string;
+  /** False when its text is not the one of the element picked in the frame (a script of the mockup changed it). */
+  matches: boolean;
   styles: Record<EditStyle, string>;
 }
 
-export function readEditable(doc: Document, selector: string): Editable | undefined {
+export function readEditable(doc: Document, selector: string, excerpt: string): Editable | undefined {
   const element = elementAt(doc, selector);
   if (element === null) return undefined;
   const styles = Object.fromEntries(EDIT_STYLES.map((name) => [name, element.style.getPropertyValue(name)])) as Record<EditStyle, string>;
   const textEditable = element.children.length === 0;
-  return { textEditable, text: textEditable ? element.textContent : '', styles };
+  return { textEditable, text: textEditable ? element.textContent : '', matches: excerptMatches(element.textContent, excerpt), styles };
 }
 
 /** The document back to text, with its doctype. */
@@ -49,18 +51,22 @@ export function serializeMockup(doc: Document): string {
   return `${doctype}${doc.documentElement.outerHTML}\n`;
 }
 
-export type EditResult = { ok: true; text: string } | { ok: false; reason: 'not-found' | 'invalid' | 'not-text' };
+export type EditResult = { ok: true; text: string } | { ok: false; reason: 'not-found' | 'invalid' | 'not-text' | 'changed' };
 
 /**
  * Applies an edit to the source of a mockup: the text of the element (when
  * it holds text alone) and the allowed styles, inline on the element. The
- * new source, or why not.
+ * selector comes from the live frame, so the element found in the source
+ * must have the `excerpt` of the one picked: otherwise the mockup's scripts
+ * changed the page and the edit would land on another element. The new
+ * source, or why not.
  */
-export function editSource(source: string, edit: StudioEdit): EditResult {
+export function editSource(source: string, edit: StudioEdit, excerpt: string): EditResult {
   if (editProblems(edit).length > 0) return { ok: false, reason: 'invalid' };
   const doc = parseMockup(source);
   const element = elementAt(doc, edit.selector);
   if (element === null) return { ok: false, reason: 'not-found' };
+  if (!excerptMatches(element.textContent, excerpt)) return { ok: false, reason: 'changed' };
   if (edit.text !== undefined && edit.text !== element.textContent) {
     if (element.children.length > 0) return { ok: false, reason: 'not-text' };
     element.textContent = edit.text;

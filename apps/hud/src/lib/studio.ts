@@ -251,6 +251,9 @@ export interface StudioEdit {
 
 export const EDIT_TEXT_MAX = 5000;
 
+/** Why a direct edit is refused when the element in the file is not the one picked in the frame. */
+export const STUDIO_EDIT_CHANGED = 'L’elemento nel file è diverso da quello scelto (il mockup lo cambia con uno script): chiedi la modifica al Designer.';
+
 /** The styles that are not valid, by their label; empty when the edit can be applied. */
 export function editProblems(edit: StudioEdit): string[] {
   const problems: string[] = [];
@@ -296,12 +299,42 @@ export interface SlideParts {
 
 export const DECK_LIMITS = { slides: 200, title: 200, slideTitle: 300, subtitle: 300, items: 30, paragraph: 2000, bullet: 500, notes: 5000 } as const;
 
+/**
+ * Text a slide can hold, as `parseDeck` of `@arianna/pptx` wants it: line
+ * ends as `\n` (`\r\n` and `\r` included), and without the C0 controls
+ * other than `\n` and `\t`, DEL, the C1 controls, lone surrogates and
+ * U+FFFE/U+FFFF.
+ */
+export function slideText(text: string): string {
+  return Array.from(text.replace(/\r\n?/g, '\n'), (char) => {
+    const code = char.codePointAt(0) ?? 0;
+    if (char === '\n' || char === '\t') return char;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || (code >= 0xd800 && code <= 0xdfff) || code === 0xfffe || code === 0xffff) return '';
+    return char;
+  }).join('');
+}
+
+/** At most `max` code points (as `parseDeck` counts), never half of a surrogate pair; `ellipsis` ends a cut text with «…». */
+export function cutText(text: string, max: number, ellipsis: boolean): string {
+  const chars = Array.from(text);
+  if (chars.length <= max) return text;
+  return ellipsis ? `${chars.slice(0, max - 1).join('').trimEnd()}…` : chars.slice(0, max).join('');
+}
+
 /** Text on one line, without control characters, cut at `max`. */
 function clean(text: string | undefined, max: number): string | undefined {
   if (text === undefined) return undefined;
-  const line = withoutControls(text).replace(/\s+/g, ' ').trim();
+  // Controls become spaces first, so the words they separated stay apart.
+  const line = slideText(withoutControls(text)).replace(/\s+/g, ' ').trim();
   if (line === '') return undefined;
-  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
+  return cutText(line, max, true);
+}
+
+/** The notes keep their lines. */
+function cleanNotes(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const notes = cutText(slideText(text).trim(), DECK_LIMITS.notes, false).trimEnd();
+  return notes === '' ? undefined : notes;
 }
 
 function list(items: readonly string[], max: number): string[] {
@@ -333,8 +366,8 @@ export function deckFromParts(title: string, parts: readonly SlideParts[]): Deck
     if (paragraphs.length > 0) slide.paragraphs = paragraphs;
     const bullets = list(part.bullets, DECK_LIMITS.bullet);
     if (bullets.length > 0) slide.bullets = bullets;
-    const notes = part.notes === undefined ? undefined : withoutControls(part.notes).trim().slice(0, DECK_LIMITS.notes);
-    if (notes !== undefined && notes !== '') slide.notes = notes;
+    const notes = cleanNotes(part.notes);
+    if (notes !== undefined) slide.notes = notes;
     const background = hexColor(part.background);
     if (background !== undefined) slide.background = background;
     const color = hexColor(part.color);

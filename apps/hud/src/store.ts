@@ -739,9 +739,13 @@ export function createChatStore() {
    * Designer on a project, the latest one not archived; without one, a draft
    * of it, so the conversation is born with the first message (D-108).
    */
+  // Grows with each call: an answer that arrives after a change of project is dropped.
+  let studioChatToken = 0;
   async function openStudioChat(project: string): Promise<void> {
+    const token = ++studioChatToken;
     error.value = null;
     if (projects.value.length === 0) await refreshProjects();
+    if (token !== studioChatToken) return;
     const info = projects.value.find((entry) => entry.name === project);
     if (info === undefined) {
       close();

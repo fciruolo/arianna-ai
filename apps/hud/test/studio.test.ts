@@ -8,18 +8,21 @@ import { Script } from 'node:vm';
 import { ApiError } from '../src/lib/api.ts';
 import {
   buildSrcdoc,
+  excerptMatches,
   excerptOf,
   highlightMessage,
   isStudioSelector,
   modeMessage,
   nthSelector,
   parseFrameMessage,
+  pickedExcerpt,
   STUDIO_CSP,
   STUDIO_SOURCE,
   studioScript,
 } from '../src/lib/studio-frame.ts';
 import {
   commentProblem,
+  cutText,
   deckFromParts,
   editProblems,
   exportName,
@@ -30,6 +33,7 @@ import {
   nextVariantName,
   pickMockup,
   reviewMessage,
+  slideText,
   studioErrorText,
   studioFromSearch,
   studioPathFor,
@@ -257,7 +261,7 @@ test('the deck keeps the limits of the contract', () => {
   assert.equal(first.subtitle, undefined);
   assert.deepEqual(first.paragraphs, ['Uno', 'Due']);
   assert.equal(first.bullets?.length, 30);
-  assert.equal(first.notes, 'Note  del relatore');
+  assert.equal(first.notes, 'Note del relatore');
   assert.equal(first.background, '#ffffff');
   assert.equal(first.color, '#123456');
   assert.equal('accent' in first, false);
@@ -265,6 +269,51 @@ test('the deck keeps the limits of the contract', () => {
   assert.equal('paragraphs' in second, false);
   assert.equal(hexColor('#abc'), '#aabbcc');
   assert.equal(hexColor('blue'), undefined);
+});
+
+// Every character parseDeck of @arianna/pptx refuses.
+// eslint-disable-next-line no-control-regex
+const REFUSED = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+test('slide text: line ends as \\n, without what a slide cannot hold', () => {
+  assert.equal(slideText('uno\r\ndue\rtre\nquattro\tcinque'), 'uno\ndue\ntre\nquattro\tcinque');
+  assert.equal(slideText('a\u0001b\u007fc\u0085d\ufffee\uffff'), 'abcde');
+  assert.equal(slideText('x\ud83dy\ude00z'), 'xyz');
+  assert.equal(slideText('ok 😀'), 'ok 😀');
+  assert.equal(REFUSED.test(slideText('\u0000\u000b\u001f\u0080\u009f\ud800\udfff\ufffe')), false);
+});
+
+test('texts are cut by code point, never through a surrogate pair', () => {
+  // The emoji is two UTF-16 units across the limit: kept whole or dropped, never halved.
+  const text = `${'a'.repeat(8)}😀bcd`;
+  const cut = cutText(text, 10, true);
+  assert.equal(cut, `${'a'.repeat(8)}😀…`);
+  assert.equal(Array.from(cut).length, 10);
+  assert.equal(cutText(text, 9, false), `${'a'.repeat(8)}😀`);
+  assert.equal(cutText(`${'a'.repeat(9)}😀`, 10, true), `${'a'.repeat(9)}😀`);
+  assert.equal(REFUSED.test(cutText(`${'a'.repeat(9)}😀😀`, 10, true)), false);
+  const deck = deckFromParts('Titolo', [
+    { title: `${'b'.repeat(298)}😀😀😀`, paragraphs: ['riga\r\naltra'], bullets: [], notes: `${'n'.repeat(4999)}😀😀\r\nfine` },
+  ]);
+  const slide = deck?.slides.at(0);
+  assert.ok(slide !== undefined);
+  assert.equal(Array.from(slide.title ?? '').length, 300);
+  assert.equal(REFUSED.test(slide.title ?? ''), false);
+  assert.equal(slide.title?.endsWith('😀…'), true);
+  assert.deepEqual(slide.paragraphs, ['riga altra']);
+  assert.equal(Array.from(slide.notes ?? '').length, 5000);
+  assert.equal(slide.notes?.endsWith('😀'), true);
+  assert.deepEqual(deckFromParts('T', [{ paragraphs: [], bullets: [], notes: 'uno\r\ndue\u0002' }])?.slides.at(0)?.notes, 'uno\ndue');
+});
+
+test('the direct edit checks the excerpt of the element picked', () => {
+  assert.equal(pickedExcerpt('  Ciao\n  mondo '), 'Ciao mondo');
+  assert.equal(pickedExcerpt('a\u0001b'), 'a b');
+  assert.equal(pickedExcerpt('x'.repeat(200)), excerptOf('x'.repeat(200), 120));
+  assert.equal(excerptMatches('  Prezzo:\n 10 €', 'Prezzo: 10 €'), true);
+  assert.equal(excerptMatches('Prezzo: 12 €', 'Prezzo: 10 €'), false);
+  assert.equal(excerptMatches('', ''), true);
+  assert.equal(excerptMatches('Titolo', ''), false);
 });
 
 test('exported files take the name of the mockup', () => {

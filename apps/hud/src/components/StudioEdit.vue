@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 
 import { parseMockup, readEditable } from '../lib/studio-dom.ts';
-import { EDIT_STYLES, EDIT_TEXT_MAX, STYLE_HINT, STYLE_LABEL, validStyle, type EditStyle, type StudioEdit } from '../lib/studio.ts';
+import { EDIT_STYLES, EDIT_TEXT_MAX, STUDIO_EDIT_CHANGED, STYLE_HINT, STYLE_LABEL, validStyle, type EditStyle, type StudioEdit } from '../lib/studio.ts';
 import Icon from './Icon.vue';
 
 /**
@@ -11,10 +11,10 @@ import Icon from './Icon.vue';
  * from the live frame). "Salva" hands the edit to the page, which writes it
  * with the `base` it read.
  */
-const props = defineProps<{ source: string; selector: string; tag: string; saving: boolean }>();
+const props = defineProps<{ source: string; selector: string; tag: string; excerpt: string; saving: boolean }>();
 const emit = defineEmits<{ save: [edit: StudioEdit]; close: [] }>();
 
-const editable = computed(() => readEditable(parseMockup(props.source), props.selector));
+const editable = computed(() => readEditable(parseMockup(props.source), props.selector, props.excerpt));
 const text = ref('');
 const styles = ref<Record<EditStyle, string>>(Object.fromEntries(EDIT_STYLES.map((name) => [name, ''])) as Record<EditStyle, string>);
 
@@ -36,7 +36,7 @@ const changed = computed(() => {
 
 function save(): void {
   const value = editable.value;
-  if (value === undefined || invalid.value.length > 0 || text.value.length > EDIT_TEXT_MAX) return;
+  if (value === undefined || !value.matches || invalid.value.length > 0 || text.value.length > EDIT_TEXT_MAX) return;
   const changedStyles: StudioEdit['styles'] = {};
   for (const name of EDIT_STYLES) if (styles.value[name].trim() !== value.styles[name]) changedStyles[name] = styles.value[name].trim();
   emit('save', { selector: props.selector, ...(value.textEditable && text.value !== value.text ? { text: text.value } : {}), styles: changedStyles });
@@ -54,6 +54,7 @@ function save(): void {
     <p v-if="editable === undefined" class="text-xs text-warn">
       Questo elemento non c’è nel file: l’hanno aggiunto gli script della pagina. Scegline un altro, o chiedi la modifica al Designer con un commento.
     </p>
+    <p v-else-if="!editable.matches" class="text-xs text-warn" role="alert">{{ STUDIO_EDIT_CHANGED }}</p>
     <template v-else>
       <label v-if="editable.textEditable" class="flex flex-col gap-1">
         <span class="text-xs text-muted">Testo</span>

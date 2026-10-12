@@ -16,6 +16,10 @@ export default defineConfig({
     host: DEV_HOST,
     port: DEV_PORT,
     strictPort: true,
+    // The core serves the page with its own Content-Security-Policy; Vite does
+    // not. Only frame-src here (the rest would break Vite's HMR): a frame of the
+    // Studio cannot be navigated to an outside site in development either.
+    headers: { 'Content-Security-Policy': "frame-src 'self'" },
     proxy: {
       '/api': {
         target: CORE,

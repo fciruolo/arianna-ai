@@ -10,6 +10,7 @@ import {
   groupMockups,
   pickMockup,
   reviewMessage,
+  STUDIO_EDIT_CHANGED,
   studioErrorText,
   variantLabel,
   VIEW_TEXT,
@@ -65,7 +66,7 @@ const pickMode = ref<PickMode>('none');
 const comments = ref<StudioComment[]>([]);
 const pending = ref<{ selector: string; tag: string; excerpt: string } | null>(null);
 const highlight = ref<string | null>(null);
-const editing = ref<{ selector: string; tag: string } | null>(null);
+const editing = ref<{ selector: string; tag: string; excerpt: string } | null>(null);
 const saving = ref(false);
 const editProblem = ref<string | null>(null);
 
@@ -78,9 +79,6 @@ function choose(file: string | undefined): void {
 }
 
 function chooseProject(name: string): void {
-  comments.value = [];
-  pending.value = null;
-  editing.value = null;
   emit('address', name === '' ? {} : { project: name });
 }
 
@@ -132,6 +130,12 @@ async function loadFile(path: string | undefined, target: 'shown' | 'other'): Pr
 watch(project, () => {
   list.value = null;
   shown.value = null;
+  // Comments, a pending pick and an edit belong to the project they were made on.
+  comments.value = [];
+  pending.value = null;
+  editing.value = null;
+  editProblem.value = null;
+  highlight.value = null;
   void loadList();
 }, { immediate: true });
 watch(() => props.address.file, (path) => {
@@ -193,8 +197,9 @@ function setMode(mode: PickMode): void {
 
 function onPick(pick: { selector: string; rect: FrameRect; tag: string; excerpt: string }): void {
   highlight.value = pick.selector;
+  editProblem.value = null;
   if (pickMode.value === 'comment') pending.value = { selector: pick.selector, tag: pick.tag, excerpt: pick.excerpt };
-  else if (pickMode.value === 'edit') editing.value = { selector: pick.selector, tag: pick.tag };
+  else if (pickMode.value === 'edit') editing.value = { selector: pick.selector, tag: pick.tag, excerpt: pick.excerpt };
 }
 
 function addComment(text: string): void {
@@ -238,16 +243,19 @@ async function sendComments(): Promise<void> {
 async function saveEdit(edit: EditRequest): Promise<void> {
   const name = project.value;
   const base = shown.value;
-  if (name === undefined || base === null || saving.value) return;
+  const picked = editing.value;
+  if (name === undefined || base === null || picked === null || saving.value) return;
   editProblem.value = null;
-  const result = editSource(base.text, edit);
+  const result = editSource(base.text, edit, picked.excerpt);
   if (!result.ok) {
     editProblem.value =
       result.reason === 'not-found'
         ? 'L’elemento non c’è più nel file.'
-        : result.reason === 'not-text'
-          ? 'Il testo di questo elemento contiene altri elementi.'
-          : 'Valori non accettati.';
+        : result.reason === 'changed'
+          ? STUDIO_EDIT_CHANGED
+          : result.reason === 'not-text'
+            ? 'Il testo di questo elemento contiene altri elementi.'
+            : 'Valori non accettati.';
     return;
   }
   saving.value = true;
@@ -502,7 +510,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
               @send="sendComments"
             />
             <div v-if="editing !== null && shown !== null" class="flex flex-col gap-1">
-              <StudioEdit :source="shown.text" :selector="editing.selector" :tag="editing.tag" :saving="saving" @save="saveEdit" @close="editing = null; highlight = null" />
+              <StudioEdit :source="shown.text" :selector="editing.selector" :tag="editing.tag" :excerpt="editing.excerpt" :saving="saving" @save="saveEdit" @close="editing = null; highlight = null" />
               <p v-if="editProblem !== null" class="text-xs text-warn" role="alert">{{ editProblem }}</p>
             </div>
           </div>

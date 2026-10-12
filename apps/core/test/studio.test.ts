@@ -14,7 +14,7 @@ import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { groupOf, mockupFolder, PPTX_TYPE, type PptxCodec } from '../src/studio.ts';
 import { startApiServer } from '../src/server/http.ts';
-import { FRAME_TTL_MS, FrameStore, frameHeaders, MAX_FRAME_BYTES, MAX_FRAMES } from '../src/studio-frames.ts';
+import { FRAME_TTL_MS, FrameStore, frameHeaders, MAX_FRAME_BYTES, MAX_FRAMES, PRINT_SCRIPT } from '../src/studio-frames.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `studio-${randomUUID()}`);
 after(() => {
@@ -301,4 +301,30 @@ test('a frame refused: wrong fields, too large, unknown or malformed token', asy
   assert.equal((await call(port, 'POST', '/api/studio-frames', { html: 'x'.repeat(MAX_FRAME_BYTES + 1) })).status, 413);
   assert.equal((await call(port, 'GET', `/api/studio-frames/${'0'.repeat(32)}`)).status, 404);
   assert.equal((await call(port, 'GET', '/api/studio-frames/nope')).status, 404);
+});
+
+test('the frame that prints runs only the print script, the same text the page writes', () => {
+  const page = readFileSync(join(resolveHome({}), 'apps', 'hud', 'src', 'lib', 'studio-frame.ts'), 'utf8');
+  assert.ok(page.includes(JSON.stringify(PRINT_SCRIPT)), 'PRINT_SCRIPT differs between the core and the page');
+  const printing = frameHeaders(true)['content-security-policy'] ?? '';
+  const hash = createHash('sha256').update(PRINT_SCRIPT).digest('base64');
+  assert.match(printing, new RegExp(`script-src 'sha256-${hash.replace(/[+/=]/g, (char) => `\\${char}`)}';`));
+  assert.doesNotMatch(printing, /script-src[^;]*unsafe-inline/);
+  assert.match(frameHeaders(false)['content-security-policy'] ?? '', /script-src 'unsafe-inline'/);
+});
+
+test('a frame handed over from another site or as text/plain is refused', async (t) => {
+  const { port } = await server(t);
+  const post = (headers: Record<string, string>): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const request = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: '/api/studio-frames', headers }, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.on('error', reject);
+      request.end(JSON.stringify({ html: '<p>x</p>' }));
+    });
+  assert.equal(await post({ 'content-type': 'application/json', origin: 'https://example.com' }), 403);
+  assert.equal(await post({ 'content-type': 'text/plain' }), 415);
+  assert.equal(await post({ 'content-type': 'application/json' }), 201);
 });

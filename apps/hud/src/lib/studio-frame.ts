@@ -290,6 +290,21 @@ export function withoutControls(text: string): string {
   }).join('');
 }
 
+/**
+ * The excerpt the page receives for an element whose text is `text`: the
+ * frame's `excerptOf` cut, then `parseFrameMessage`'s `withoutControls`, in
+ * that order. The direct edit compares it with the element found in the
+ * source, so it never writes into another element than the one picked.
+ */
+export function pickedExcerpt(text: string): string {
+  return withoutControls(excerptOf(text, EXCERPT_MAX));
+}
+
+/** True when the element of the source has the text of the element picked in the live frame. */
+export function excerptMatches(sourceText: string, picked: string): boolean {
+  return pickedExcerpt(sourceText) === picked;
+}
+
 /** The messages the page sends to the frame. */
 export function modeMessage(comment: boolean): { source: string; type: 'mode'; comment: boolean } {
   return { source: STUDIO_SOURCE, type: 'mode', comment };
