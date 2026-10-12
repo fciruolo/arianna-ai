@@ -306,6 +306,27 @@ test('safeHref refuses disguised schemes and keeps what URL normalizes', () => {
   assert.deepEqual(parseInline('[a](<https://e.example/x y> "titolo")'), [{ kind: 'link', href: 'https://e.example/x%20y', children: [text('a')] }]);
 });
 
+test('a list of works: each box as its mark, the box out of the text (D-193)', () => {
+  assert.deepEqual(parseMarkdown('- [x] fatto\n- [ ] da fare\n- [/] in corso\n- [>] spostato\n- [-] tolto\n- [X] fatto anche'), [
+    {
+      kind: 'list',
+      ordered: false,
+      start: 1,
+      items: [[paragraph(text('fatto'))], [paragraph(text('da fare'))], [paragraph(text('in corso'))], [paragraph(text('spostato'))], [paragraph(text('tolto'))], [paragraph(text('fatto anche'))]],
+      tasks: ['done', 'todo', 'doing', 'moved', 'dropped', 'done'],
+    },
+  ]);
+  assert.deepEqual(parseMarkdown('- [x] uno\n- due'), [{ kind: 'list', ordered: false, start: 1, items: [[paragraph(text('uno'))], [paragraph(text('due'))]], tasks: ['done', null] }]);
+});
+
+test('what is not a box stays text: a link, another mark, no space after it', () => {
+  const plain = (source: string): boolean => parseMarkdown(source).every((block) => block.kind !== 'list' || block.tasks === undefined);
+  assert.ok(plain('- [sito](https://example.org)'));
+  assert.ok(plain('- [?] forse'));
+  assert.ok(plain('- [x]attaccato'));
+  assert.ok(plain('- voce [x] in mezzo'));
+});
+
 test('inlineText flattens a label', () => {
   assert.equal(inlineText(parseInline('**a** `b` [c](https://example.org)')), 'a b c');
 });

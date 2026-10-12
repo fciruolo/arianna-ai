@@ -197,7 +197,15 @@ describe('the diary in the knowledge of Arianna', () => {
   it('the tab Conoscenza lists the day file as a note of Workplan; kb.search finds it at its label', () => {
     const knowledge = readProjectKnowledge([DEMO], 'demo', ENV);
     const note = knowledge.notes.find((item) => item.path === 'Workplan/diario/2026-10-09.md');
-    assert.deepEqual(note, { folder: 'Workplan', path: 'Workplan/diario/2026-10-09.md', title: 'Diario dei lavori del 2026-10-09', label: 'L1' });
+    assert.deepEqual(note, {
+      folder: 'Workplan',
+      path: 'Workplan/diario/2026-10-09.md',
+      title: 'Diario dei lavori del 2026-10-09',
+      label: 'L1',
+      date: '2026-10-09T14:32',
+      status: null,
+      excerpt: 'Voci scritte da Arianna alla fine di ogni lavoro nel progetto demo.',
+    });
 
     const kb = createKb({ home: ARIANNA, rules: RULES, projects: createProjectPages(() => [DEMO], ENV) });
     const found = kb.search('Aggiungi riga README', createContext('L1'), 20);

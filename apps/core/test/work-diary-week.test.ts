@@ -242,7 +242,10 @@ describe('the summary in the knowledge of Arianna', () => {
 
     const knowledge = readProjectKnowledge([demo], 'demo', ENV);
     const note = knowledge.notes.find((item) => item.path === 'Workplan/diario/settimana-2026-W41.md');
-    assert.deepEqual(note, { folder: 'Workplan', path: 'Workplan/diario/settimana-2026-W41.md', title: 'Diario dei lavori della settimana 2026-W41', label: 'L1' });
+    assert.ok(note);
+    const { folder, path, title, label, status, excerpt } = note;
+    assert.deepEqual({ folder, path, title, label, status }, { folder: 'Workplan', path: 'Workplan/diario/settimana-2026-W41.md', title: 'Diario dei lavori della settimana 2026-W41', label: 'L1', status: null });
+    assert.match(excerpt ?? '', /^Riepilogo dei lavori nel progetto demo/);
 
     const kb = createKb({ home: ARIANNA, rules: RULES, projects: createProjectPages(() => [demo], ENV) });
     const found = kb.search('settimana zibaldone', createContext('L1'), 20);

@@ -81,6 +81,12 @@ export interface KnowledgeNote {
   path: string;
   title: string;
   label: Label;
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` (header `data`, `date`, `captured_at`, else the file's change), or null (D-193). */
+  date: string | null;
+  /** The `stato` of the header (an IM: previsto, in corso, chiuso), or null. */
+  status: string | null;
+  /** The first line of text of the note, at most about 160 characters, or null. */
+  excerpt: string | null;
 }
 
 /** The tab "Conoscenza" (D-145). */

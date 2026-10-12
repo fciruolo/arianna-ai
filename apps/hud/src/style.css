@@ -569,6 +569,53 @@ body {
   .md li::marker {
     color: var(--muted);
   }
+  /* A list of works (D-193, the IM of D-167): boxes only to read, no bullet. */
+  .md ul.md-tasks,
+  .md ol.md-tasks {
+    list-style: none;
+    padding-left: 0;
+  }
+  .md li.md-task {
+    display: flex;
+    gap: 0.6em;
+    align-items: baseline;
+  }
+  .md-task-text {
+    min-width: 0;
+    flex: 1;
+  }
+  .md-box {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1;
+    transform: translateY(2px);
+  }
+  .md-task-done .md-box {
+    border-color: var(--ok);
+    background: var(--ok);
+    color: var(--bg);
+  }
+  .md-task-doing .md-box {
+    border-color: var(--info);
+    background: linear-gradient(90deg, var(--info) 50%, transparent 50%);
+  }
+  .md-task-moved .md-box {
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+  .md-task-dropped .md-box {
+    color: var(--muted);
+  }
+  .md-task-dropped .md-task-text {
+    color: var(--muted);
+    text-decoration: line-through;
+  }
   .md blockquote {
     padding-left: 0.85em;
     border-left: 3px solid var(--line-strong);

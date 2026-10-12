@@ -12,7 +12,7 @@ import { createContext, createLabelRules } from '@arianna/policy';
 
 import { listPageIds } from '../src/knowledge.ts';
 import { createKb, KbError } from '../src/orchestrator/kb.ts';
-import { coderNotes, createProjectPages, editProjectNote, knowledgeRules, KnowledgeError, privateKnowledge, readProjectKnowledge, readProjectNote, writeProjectNote } from '../src/project-knowledge.ts';
+import { coderNotes, createProjectPages, editProjectNote, EXCERPT_CHARS, knowledgeRules, KnowledgeError, noteDate, noteExcerpt, noteSummary, privateKnowledge, readProjectKnowledge, readProjectNote, writeProjectNote } from '../src/project-knowledge.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `knowledge-${randomUUID()}`);
 const BOX = join(HOME, 'repos', 'progetto-test');
@@ -430,5 +430,58 @@ describe('a note opened and edited by hand', () => {
     const opened = readProjectNote(PROJECTS, 'progetto-test', ENV, 'IM/riunione.md');
     assert.throws(() => editProjectNote(PROJECTS, 'progetto-test', ENV, 'Workplan/collegata.md', { title: 'x', label: 'L2', header: [], text: 'y', version: opened.version }), KnowledgeError);
     assert.match(readFileSync(join(OUTSIDE, 'segreto.md'), 'utf8'), /fuori dal progetto/);
+  });
+});
+
+describe('date, state and first line of a note in the list (D-193)', () => {
+  const IM_32 =
+    '---\nim: 32\ndata: 2026-10-08 10:00\nstato: chiuso\n---\n\n# IM-32 · giovedì 8 ottobre 2026, 10:00\n\n## Lavori\n\n- [x] Pagamento con carta — Parte 1 #card-3f9a1c2e\n- [x] Pagina dei contratti: filtro per anno\n- [>] Esportazione degli ordini in CSV\n- [-] Tema scuro\n- [ ] Fatture\n\n## Report\n';
+
+  it('an IM: the date and state of its header, its first works joined without markers nor cards', () => {
+    assert.deepEqual(noteSummary(IM_32), {
+      date: '2026-10-08T10:00',
+      status: 'chiuso',
+      excerpt: 'Pagamento con carta — Parte 1; Pagina dei contratti: filtro per anno; Esportazione degli ordini in CSV; Tema scuro',
+    });
+  });
+
+  it('the date from `date`, else from `captured_at` as written; a day stays a day; quotes go', () => {
+    assert.equal(noteSummary('---\ndate: "2026-09-30"\n---\nTesto.').date, '2026-09-30');
+    assert.equal(noteSummary('---\nsource: x\ncaptured_at: 2026-10-09T10:30:00+02:00\n---\n\nTesto.').date, '2026-10-09T10:30');
+    assert.equal(noteSummary('---\ndata: domani\ncaptured_at: 2026-10-09T10:30:00+02:00\n---\nx').date, '2026-10-09T10:30');
+    assert.equal(noteDate('ieri'), null);
+  });
+
+  it('no header: no date nor state, the first line of text past the headings', () => {
+    assert.deepEqual(noteSummary('# Riunione\n\n## Chi c’era\n\n> Il **portale** clienti va in prova.\n'), { date: null, status: null, excerpt: 'Il portale clienti va in prova.' });
+  });
+
+  it('no body, or only headings and rules: no excerpt', () => {
+    assert.equal(noteSummary('---\nstato: previsto\n---\n').excerpt, null);
+    assert.equal(noteSummary('---\nstato: previsto\n---\n').status, 'previsto');
+    assert.equal(noteExcerpt('# Titolo\n\n## Lavori\n\n---\n\n## Note\n'), null);
+    assert.equal(noteSummary('---\nstato:\n---\n# Solo un titolo\n').status, null);
+  });
+
+  it('a long line is cut at EXCERPT_CHARS with «…»', () => {
+    const excerpt = noteExcerpt(`${'parola '.repeat(60)}fine`) ?? '';
+    assert.equal(excerpt.length, EXCERPT_CHARS);
+    assert.ok(excerpt.endsWith('…'));
+    assert.equal(noteExcerpt('Breve.'), 'Breve.');
+  });
+
+  it('the list gives each note date, state and excerpt; without a date in the header, the time the file changed', () => {
+    write(BOX, { 'IM/IM-32.md': IM_32 });
+    const notes = readProjectKnowledge(PROJECTS, 'progetto-test', ENV).notes;
+    const im = notes.find((note) => note.path === 'IM/IM-32.md');
+    assert.ok(im);
+    assert.equal(im.date, '2026-10-08T10:00');
+    assert.equal(im.status, 'chiuso');
+    const plain = notes.find((note) => note.path === 'IM/riunione.md');
+    assert.ok(plain);
+    assert.match(plain.date ?? '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    assert.equal(plain.status, null);
+    assert.equal(plain.excerpt, 'Il portale clienti va in prova.');
+    rmSync(join(BOX, 'IM', 'IM-32.md'));
   });
 });

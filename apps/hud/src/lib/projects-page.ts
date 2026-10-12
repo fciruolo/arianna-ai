@@ -325,23 +325,118 @@ export interface NoteGroup {
   notes: KnowledgeNote[];
 }
 
+/** The most recent first (D-193): by date, a note without one last, then by title. */
+export function byDateDesc(a: Pick<KnowledgeNote, 'date' | 'title'>, b: Pick<KnowledgeNote, 'date' | 'title'>): number {
+  if (a.date !== b.date) {
+    if (a.date === null) return 1;
+    if (b.date === null) return -1;
+    return a.date < b.date ? 1 : -1;
+  }
+  return a.title.localeCompare(b.title, 'it');
+}
+
 /**
  * The notes by folder, every folder of the project in its order (folders of
- * notes not listed after); with a search, only the notes whose title or path
- * holds it, and only the folders with some.
+ * notes not listed after), each with its notes the most recent first; with
+ * a search, only the notes whose title, path or first line holds it, and
+ * only the folders with some. `only`: just that folder (D-193, the folder
+ * chosen on the left).
  */
-export function noteGroups(folders: readonly KnowledgeFolder[], notes: readonly KnowledgeNote[], query: string): NoteGroup[] {
+export function noteGroups(folders: readonly KnowledgeFolder[], notes: readonly KnowledgeNote[], query: string, only: string | null = null): NoteGroup[] {
   const needle = query.trim().toLocaleLowerCase('it');
+  const holds = (text: string | null): boolean => text !== null && text.toLocaleLowerCase('it').includes(needle);
   const groups = new Map<string, NoteGroup>();
   for (const folder of folders) groups.set(folder.path, { folder: folder.path, label: folder.label, notes: [] });
   for (const note of notes) {
-    if (needle !== '' && !note.title.toLocaleLowerCase('it').includes(needle) && !note.path.toLocaleLowerCase('it').includes(needle)) continue;
+    if (needle !== '' && !holds(note.title) && !holds(note.path) && !holds(note.excerpt)) continue;
     const group = groups.get(note.folder) ?? { folder: note.folder, label: undefined, notes: [] };
     group.notes.push(note);
     groups.set(note.folder, group);
   }
-  const out = [...groups.values()];
+  for (const group of groups.values()) group.notes.sort(byDateDesc);
+  const out = [...groups.values()].filter((group) => only === null || group.folder === only);
   return needle === '' ? out : out.filter((group) => group.notes.length > 0);
+}
+
+const MONTH_SHORT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'] as const;
+const NOTE_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?$/;
+
+/** "8 ott" in the list; "8 ott 2025" when the year is not `year` (D-193); '' without a date. */
+export function noteDayText(date: string | null, year: number): string {
+  const match = date === null ? null : NOTE_DATE.exec(date);
+  if (match === null) return '';
+  const month = MONTH_SHORT[Number(match[2]) - 1] ?? '';
+  const day = `${String(Number(match[3]))} ${month}`;
+  return Number(match[1]) === year ? day : `${day} ${match[1] ?? ''}`;
+}
+
+/** "8 ott 2026, 10:00" or "8 ott 2026", for the open note; the value as written when it is not a date. */
+export function noteDateText(value: string): string {
+  const match = NOTE_DATE.exec(value.trim().replace(' ', 'T').slice(0, 16));
+  if (match === null) return value.trim();
+  const day = `${String(Number(match[3]))} ${MONTH_SHORT[Number(match[2]) - 1] ?? ''} ${match[1] ?? ''}`;
+  return match[4] === undefined ? day : `${day}, ${match[4]}`;
+}
+
+/** The colour of a state pill: chiuso is done, previsto and in corso still to come, anything else plain. */
+export function statusTone(status: string): 'done' | 'next' | 'plain' {
+  const folded = status.trim().toLocaleLowerCase('it');
+  if (folded === 'chiuso' || folded === 'fatto') return 'done';
+  if (folded === 'previsto' || folded === 'in corso') return 'next';
+  return 'plain';
+}
+
+const RANK: Readonly<Record<KnowledgeNote['label'], number>> = { L0: 0, L1: 1, L2: 2, L3: 3 };
+
+/** The label a row shows: only a note above its folder (its header raised it, D-193); null otherwise. */
+export function raisedLabel(note: Pick<KnowledgeNote, 'label'>, folder: KnowledgeFolder['label'] | undefined): KnowledgeNote['label'] | null {
+  return folder !== undefined && RANK[note.label] > RANK[folder] ? note.label : null;
+}
+
+/**
+ * The open note's title and the text under it (D-193): a body that starts
+ * with a `# ` heading gives it as the title ("IM-32 · giovedì 8 ottobre…"),
+ * so it is not read twice; otherwise the note's own title and the whole body.
+ */
+export function noteHeading(title: string, body: string): { title: string; body: string } {
+  const match = /^\s*# +(.+?)[ \t#]*(?:\n|$)/.exec(body);
+  const heading = match?.[1]?.trim() ?? '';
+  if (match === null || heading === '') return { title, body };
+  return { title: heading, body: body.slice(match[0].length).replace(/^\n+/, '') };
+}
+
+/** The header of an open note as a row of data (D-193): IM number, date, state, the other keys as they are. */
+export interface NoteMeta {
+  im: string | null;
+  /** Formatted: "8 ott 2026, 10:00". */
+  date: string | null;
+  status: string | null;
+  other: { key: string; value: string }[];
+}
+
+const META_LINE = /^\s*([A-Za-z_][A-Za-z_-]*)\s*:(.*)$/;
+
+export function noteMeta(header: readonly string[]): NoteMeta {
+  const meta: NoteMeta = { im: null, date: null, status: null, other: [] };
+  const dates = new Map<string, string>();
+  for (const line of header) {
+    const match = META_LINE.exec(line);
+    if (match === null) {
+      if (line.trim() !== '') meta.other.push({ key: '', value: line.trim() });
+      continue;
+    }
+    const key = (match[1] ?? '').toLowerCase();
+    const value = (match[2] ?? '').trim().replace(/^"(.*)"$/, '$1');
+    if (key === 'im' && meta.im === null && value !== '') meta.im = value;
+    else if (key === 'stato' && meta.status === null && value !== '') meta.status = value;
+    else if ((key === 'data' || key === 'date' || key === 'captured_at') && !dates.has(key) && value !== '') dates.set(key, value);
+    else meta.other.push({ key: match[1] ?? '', value });
+  }
+  const date = dates.get('data') ?? dates.get('date') ?? dates.get('captured_at');
+  meta.date = date === undefined ? null : noteDateText(date);
+  // The dates not shown in the row stay among the other keys.
+  for (const [key, value] of dates) if (value !== date) meta.other.push({ key, value });
+  return meta;
 }
 
 /** How many notes a folder holds, among those read. */

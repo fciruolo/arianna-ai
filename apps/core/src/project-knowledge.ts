@@ -52,6 +52,16 @@ export interface KnowledgeNote {
   path: string;
   title: string;
   label: Label;
+  /**
+   * When the note is about (D-193): `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`, from
+   * the header (`data`, then `date`, then `captured_at`), else the time the
+   * file was last changed; null when neither is known.
+   */
+  date: string | null;
+  /** The `stato` of the header (an IM: previsto, in corso, chiuso), or null. */
+  status: string | null;
+  /** The first line of real text of the body, at most EXCERPT_CHARS; null without text. */
+  excerpt: string | null;
 }
 
 export interface ProjectKnowledge {
@@ -287,6 +297,107 @@ function fileLabel(root: string, rules: LabelRules, path: string, link: boolean)
   }
 }
 
+/** The longest excerpt of a note in the list (D-193), with its "…". */
+export const EXCERPT_CHARS = 160;
+/** How many items of a list of works the excerpt joins. */
+const EXCERPT_TASKS = 4;
+/** The keys of the header that date a note, in order (D-193). */
+const DATE_KEYS = ['data', 'date', 'captured_at'] as const;
+const DATE_VALUE = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}):(\d{2}))?/;
+const TASK_ITEM = /^\s*[-*+][ \t]+\[[ xX/>-]\][ \t]+(.*)$/;
+const NOT_TEXT = /^(?:-{3,}|\*{3,}|_{3,}|`{3,}.*|~{3,}.*)$/;
+
+export interface NoteSummary {
+  date: string | null;
+  status: string | null;
+  excerpt: string | null;
+}
+
+/** A header value without its quotes. */
+function headerValue(value: string): string {
+  const trimmed = value.trim();
+  return /^(".*"|'.*')$/.test(trimmed) ? trimmed.slice(1, -1).trim() : trimmed;
+}
+
+/** `2026-10-08 10:00`, `2026-10-09T10:30:00+02:00` → `2026-10-08T10:00`, `2026-10-09T10:30`; only a day stays a day. */
+export function noteDate(value: string): string | null {
+  const match = DATE_VALUE.exec(headerValue(value));
+  if (match === null) return null;
+  const day = match[1] ?? '';
+  return match[2] === undefined ? day : `${day}T${match[2]}:${match[3] ?? '00'}`;
+}
+
+/** A line of text as the excerpt shows it: no list or quote marker, no `#card-…`, no emphasis marks. */
+function plainLine(line: string): string {
+  return line
+    .replace(/^\s*(?:>\s*)+/, '')
+    .replace(/^\s*(?:[-*+]|\d{1,9}[.)])[ \t]+/, '')
+    .replace(/(^|\s)#card-[0-9A-Za-z]+/g, '$1')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clip(text: string): string {
+  return text.length <= EXCERPT_CHARS ? text : `${text.slice(0, EXCERPT_CHARS - 1).trimEnd()}…`;
+}
+
+/**
+ * The excerpt of a body (D-193): its first line of real text, past blank
+ * lines, headings, rules and fences; a list of works (`- [x] …`) gives its
+ * first items joined by «; ». Null when there is no text.
+ */
+export function noteExcerpt(body: string): string | null {
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#') || NOT_TEXT.test(trimmed)) continue;
+    if (TASK_ITEM.test(line)) {
+      const items: string[] = [];
+      for (let j = i; j < lines.length && items.length < EXCERPT_TASKS; j++) {
+        const item = TASK_ITEM.exec(lines[j] ?? '');
+        if (item === null) break;
+        const text = plainLine(item[1] ?? '');
+        if (text !== '') items.push(text);
+      }
+      if (items.length > 0) return clip(items.join('; '));
+      continue;
+    }
+    const text = plainLine(line);
+    if (text !== '') return clip(text);
+  }
+  return null;
+}
+
+/** Date, state and excerpt of a note from its first bytes (D-193); the date null when the header has none. */
+export function noteSummary(text: string): NoteSummary {
+  const values = new Map<string, string>();
+  for (const line of rawHeaderLines(text)) {
+    const match = READ_KEY.exec(line);
+    const key = match?.[1]?.toLowerCase();
+    if (match === null || key === undefined || values.has(key)) continue;
+    values.set(key, headerValue(line.slice(match[0].length)));
+  }
+  let date: string | null = null;
+  for (const key of DATE_KEYS) {
+    const value = values.get(key);
+    date = value === undefined ? null : noteDate(value);
+    if (date !== null) break;
+  }
+  const status = values.get('stato') ?? '';
+  return { date, status: status === '' ? null : status, excerpt: noteExcerpt(parsePage(text).body) };
+}
+
+/** When a file was last changed, as `YYYY-MM-DDTHH:MM` local time; null when it cannot be read. */
+function modifiedDate(file: string): string | null {
+  try {
+    return localTimestamp(lstatSync(file).mtime).slice(0, 16);
+  } catch {
+    return null;
+  }
+}
+
 /** The tab "Conoscenza" (D-145): the management folders with their labels and the notes with theirs. */
 export function readProjectKnowledge(projects: readonly Project[], name: string, env: KnowledgeEnv): ProjectKnowledge {
   const base = knowledgeBase(projects, name, env);
@@ -301,14 +412,19 @@ export function readProjectKnowledge(projects: readonly Project[], name: string,
       }
       let title = path.split('/').at(-1)?.replace(/\.md$/i, '') ?? path;
       let label: Label;
+      let summary: NoteSummary = { date: null, status: null, excerpt: null };
+      const file = join(base.root, ...path.split('/'));
       try {
-        const { header } = parsePage(readHead(join(base.root, ...path.split('/')), HEADER_BYTES));
+        const head = readHead(file, HEADER_BYTES);
+        const { header } = parsePage(head);
         label = baseLabel(base, path, header.labels);
         if (header.title !== undefined && header.title !== '') title = header.title;
+        summary = noteSummary(head);
       } catch {
         label = 'L3';
       }
-      notes.push({ folder, path, title, label });
+      if (summary.date === null) summary.date = modifiedDate(file);
+      notes.push({ folder, path, title, label, ...summary });
       return true;
     });
   }

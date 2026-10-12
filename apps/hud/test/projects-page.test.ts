@@ -13,7 +13,11 @@ import {
   imListText,
   isPartTab,
   nextIm,
+  noteDateText,
+  noteDayText,
   noteGroups,
+  noteHeading,
+  noteMeta,
   notesCountText,
   overdueInvoices,
   overdueText,
@@ -22,6 +26,7 @@ import {
   priceChanges,
   priceChangeText,
   priceEditable,
+  raisedLabel,
   PROJECT_TABS,
   ruleChanges,
   ruleRows,
@@ -31,6 +36,7 @@ import {
   settingsSummary,
   settingsWrites,
   shortDay,
+  statusTone,
   todoText,
   type ImSettings,
 } from '../src/lib/projects-page.ts';
@@ -256,7 +262,78 @@ test('what a save of the rules changes, in words', () => {
 });
 
 const folder = (path: string, label: KnowledgeFolder['label'] = 'L1'): KnowledgeFolder => ({ path, label, defaultLabel: label, chosen: false });
-const note = (folderPath: string, title: string): KnowledgeNote => ({ folder: folderPath, path: `${folderPath}/${title}.md`, title, label: 'L1' });
+const note = (folderPath: string, title: string, extra: Partial<KnowledgeNote> = {}): KnowledgeNote => ({
+  folder: folderPath,
+  path: `${folderPath}/${title}.md`,
+  title,
+  label: 'L1',
+  date: null,
+  status: null,
+  excerpt: null,
+  ...extra,
+});
+
+test('the notes of a folder the most recent first, a search also on the first line, one folder only when chosen (D-193)', () => {
+  const folders = [folder('IM'), folder('Workplan')];
+  const notes = [
+    note('IM', 'IM-32', { date: '2026-10-08T10:00', excerpt: 'Pagamento con carta' }),
+    note('IM', 'calendario'),
+    note('IM', 'IM-34', { date: '2026-10-22T10:00' }),
+    note('IM', 'Avvio', { date: '2026-10-01' }),
+    note('Workplan', 'Piano', { date: '2026-09-30' }),
+  ];
+  assert.deepEqual(noteGroups(folders, notes, '')[0]?.notes.map((item) => item.title), ['IM-34', 'IM-32', 'Avvio', 'calendario']);
+  assert.deepEqual(noteGroups(folders, notes, 'carta').map((group) => group.notes.map((item) => item.title).join()), ['IM-32']);
+  assert.deepEqual(noteGroups(folders, notes, '', 'Workplan').map((group) => group.folder), ['Workplan']);
+  assert.deepEqual(noteGroups(folders, notes, 'carta', 'Workplan'), []);
+});
+
+test('dates of the notes in Italian, short in the list and long in the open note (D-193)', () => {
+  assert.equal(noteDayText('2026-10-08T10:00', 2026), '8 ott');
+  assert.equal(noteDayText('2025-01-31', 2026), '31 gen 2025');
+  assert.equal(noteDayText(null, 2026), '');
+  assert.equal(noteDayText('domani', 2026), '');
+  assert.equal(noteDateText('2026-10-08 10:00'), '8 ott 2026, 10:00');
+  assert.equal(noteDateText('2026-10-09T10:30:00+02:00'), '9 ott 2026, 10:30');
+  assert.equal(noteDateText('2026-09-30'), '30 set 2026');
+  assert.equal(noteDateText('giovedì'), 'giovedì');
+});
+
+test('state pills and the label of a row only above its folder (D-193)', () => {
+  assert.equal(statusTone('chiuso'), 'done');
+  assert.equal(statusTone('Previsto'), 'next');
+  assert.equal(statusTone('in corso'), 'next');
+  assert.equal(statusTone('sospeso'), 'plain');
+  assert.equal(raisedLabel({ label: 'L2' }, 'L1'), 'L2');
+  assert.equal(raisedLabel({ label: 'L1' }, 'L1'), null);
+  assert.equal(raisedLabel({ label: 'L2' }, undefined), null);
+});
+
+test('a body that starts with a heading gives the title of the open note, once (D-193)', () => {
+  assert.deepEqual(noteHeading('IM-32', '# IM-32 · giovedì 8 ottobre 2026\n\n## Lavori\n'), { title: 'IM-32 · giovedì 8 ottobre 2026', body: '## Lavori\n' });
+  assert.deepEqual(noteHeading('Piano', 'Testo.\n# Dopo'), { title: 'Piano', body: 'Testo.\n# Dopo' });
+  assert.deepEqual(noteHeading('Piano', '## Sezione\nx'), { title: 'Piano', body: '## Sezione\nx' });
+  assert.deepEqual(noteHeading('Piano', '#senza spazio'), { title: 'Piano', body: '#senza spazio' });
+});
+
+test('the header of an open note as a row of data, the other keys as they are (D-193)', () => {
+  assert.deepEqual(noteMeta(['im: 32', 'data: 2026-10-08 10:00', 'stato: chiuso', 'chiamata: 2026-10-09 15:00']), {
+    im: '32',
+    date: '8 ott 2026, 10:00',
+    status: 'chiuso',
+    other: [{ key: 'chiamata', value: '2026-10-09 15:00' }],
+  });
+  assert.deepEqual(noteMeta(['source: capture:hud:x', 'captured_at: 2026-10-09T10:30:00+02:00', 'kind: note']), {
+    im: null,
+    date: '9 ott 2026, 10:30',
+    status: null,
+    other: [
+      { key: 'source', value: 'capture:hud:x' },
+      { key: 'kind', value: 'note' },
+    ],
+  });
+  assert.deepEqual(noteMeta([]), { im: null, date: null, status: null, other: [] });
+});
 
 test('the notes by folder, with a search on title and path', () => {
   const folders = [folder('Workplan'), folder('IM'), folder('documenti', 'L2')];
