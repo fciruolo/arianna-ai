@@ -480,6 +480,16 @@ export function taskTitle(body: string): string {
   return chars.length <= TITLE_LENGTH ? line : `${chars.slice(0, TITLE_LENGTH - 1).join('')}…`;
 }
 
+/** The agent of the direct chat whose messages may carry a style and skills (D-184); as DESIGNER_AGENT of cardwall.ts. */
+export const DESIGN_CHAT_AGENT = 'designer';
+
+export interface MessageOptions {
+  channel?: MessageChannel;
+  leave?: LeaveRule;
+  /** The style and skills chosen in the Studio (I-19, D-184), already checked against the catalogs. */
+  design?: { style: string | null; skills: readonly string[] };
+}
+
 /**
  * Writes the user's message and starts the task that answers it, in one
  * transaction. The message carries the conversation's clearance (the user
@@ -491,7 +501,7 @@ export async function postUserMessage(
   sql: Sql,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
+  options: MessageOptions = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   return sql.begin((tx) => writeUserMessage(tx, conversationId, body, options));
@@ -505,7 +515,7 @@ export async function writeUserMessage(
   tx: Queryable,
   conversationId: string,
   body: string,
-  options: { channel?: MessageChannel; leave?: LeaveRule } = {},
+  options: MessageOptions = {},
 ): Promise<{ message: Message; task: Task }> {
   checkMessageBody(body);
   const conversation = isUuid(conversationId)
@@ -523,6 +533,11 @@ export async function writeUserMessage(
     if (kinds.length > 0) {
       throw new ChatError('scanner', `a work conversation cannot hold this message (${kinds.join(', ')}): open a private conversation`);
     }
+  }
+
+  // The style and skills of the Studio (D-184): only in the direct chat with the Designer.
+  if (options.design !== undefined && conversation.agent !== DESIGN_CHAT_AGENT) {
+    throw new ChatError('invalid', 'the style and the skills are only for the direct chat with the Designer');
   }
 
   // The direct chat runs one Coder at a time in the project folder (D-111): the next message waits for the answer.
@@ -544,6 +559,10 @@ export async function writeUserMessage(
     assignee: conversation.agent ?? CHAT_AGENT,
     status: 'ready',
   });
+  // Names of public text (D-184): the task's label stays what it is; the Designer reads them as a card's (D-163).
+  if (options.design !== undefined) {
+    await tx`UPDATE tasks SET design_style = ${options.design.style}, design_skills = ${[...options.design.skills]}::text[] WHERE id = ${task.id}`;
+  }
   // In the direct chat the message is the brief, as it is: the step goes to the agent without a step of Arianna's (D-111).
   // The agent of the Finances (D-183) answers on the local model with its tools, as Arianna does: no delegation.
   if (conversation.agent !== null && !conversation.finance) {

@@ -868,9 +868,14 @@ export const CARD_DESIGN_SKIPPED = 'card.design-skipped';
 /** The middle word of the activity line of the card's style left out: `<agent> · style-skipped · <slug>` (D-163). */
 export const STYLE_SKIPPED = 'style-skipped';
 
-/** The style and skills chosen on the card, when the step is the Designer's work on its own card (D-163); undefined otherwise. */
+/**
+ * The style and skills chosen on the card (D-163), or with the message of the
+ * direct chat with the Designer in the Studio (D-184), when the step is the
+ * Designer's work on its own task; undefined otherwise. A delegation of
+ * Arianna's to the Designer is Arianna's task: it carries none.
+ */
 async function cardDesignOf(sql: Sql, task: Task, name: string): Promise<CardDesign | undefined> {
-  if (task.conversationId !== null || task.assignee !== DESIGNER_AGENT || name !== DESIGNER_AGENT) return undefined;
+  if (task.assignee !== DESIGNER_AGENT || name !== DESIGNER_AGENT) return undefined;
   const design = await cardDesign(sql, task.id);
   return design.style === null && design.skills.length === 0 ? undefined : design;
 }
@@ -1131,7 +1136,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const carried = earlier.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...earlier];
   // The notes of the project the agent may read (D-166): told in every brief, a resumed session included (the copy is new at each run).
   const projectNotes = await projectNotesFor(env, { task, step, runId }, delegation.agent, container, executor);
-  const asked: BriefFragment[] = projectNotes === undefined ? [message] : [projectNotes.fragment, message];
+  // A style or skills chosen with this message (the Studio, D-184): a resumed session never saw the opening, so they go with the message.
+  const chosen = session !== undefined && skills !== undefined && (await cardDesignOf(sql, task, delegation.agent)) !== undefined ? [skills] : [];
+  const asked: BriefFragment[] = [...chosen, ...(projectNotes === undefined ? [] : [projectNotes.fragment]), message];
   // The copy of the notes lives as long as this attempt: removed however it ends.
   try {
     let result: CloudStepResult;

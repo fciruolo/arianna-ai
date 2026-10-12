@@ -2,6 +2,31 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- Pacchetto `@arianna/pptx`: `parseDeck` controlla il deck dello Studio con i limiti del contratto e `writePptx` scrive un file .pptx 16:9 (titolo, sottotitolo, paragrafi, punti elenco, colori, caratteri e dimensioni del testo, note del relatore) con codice nostro e `node:zlib`, senza dipendenze, in modo deterministico (I-19, D-184).
+- Rotte dello Studio nel core (`/api/studio/:project/...`, contratto in `docs/STUDIO-API.md`): elenco, lettura e scrittura dei mockup con impronta, esportazione PPTX; eventi `studio.edit` e `studio.export` senza testo (I-19, D-184).
+- Studio: nuova pagina «Studio» nella barra laterale (indirizzo `/studio`) con la scelta del progetto, a sinistra la conversazione diretta col Designer e a destra i mockup in una cornice isolata, varianti per gruppo, viste desktop, tablet e mobile, confronto di due varianti affiancate e lettura automatica dei file nuovi (I-19, D-184).
+- Studio: commenti sugli elementi del mockup (clic con «Commenta», finestra spostabile con il campo già pronto, elenco modificabile) inviati insieme al Designer come un solo messaggio di revisione (I-19, D-184).
+- Studio: modifica diretta di testo (anche i pezzi di testo di un titolo con un corsivo o un grassetto dentro), colori, dimensioni, spaziature e allineamento di un elemento, nella finestra spostabile, scritta nel file del progetto solo se non è cambiato nel frattempo (I-19, D-184).
+- Studio: select «Stile» e «Skill» nella barra in alto, dai cataloghi di Open Design e delle skill e ricordate per progetto; ogni messaggio dello Studio al Designer (chat e commenti) le porta e il Designer le legge come testo di riferimento con la loro licenza, come su una card (migrazione 0058) (I-19, D-184).
+- Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]`, con colori, caratteri e dimensioni misurati sulla pagina com'è a schermo (I-19, D-184).
+- Studio: la conversazione col Designer del progetto si ritrova anche a pagina appena aperta e dopo il primo messaggio (il core tiene il progetto per nome) (I-19, D-184).
+- Studio: «Elimina» sulla variante mostrata, con conferma nella pagina: il file va in `mockups/eliminati/` del progetto e il suo numero non viene più usato (I-19, D-184).
+- Studio: con «Confronta» la variante a confronto si sceglie nella barra degli strumenti e la spunta facoltativa «Scorri insieme» fa scorrere le due pagine insieme (I-19, D-184).
+- Studio: «Schermo intero» per la variante mostrata o per le due a confronto, con «Scorri insieme» e uscita con Esc (I-19, D-184).
+- Chat: sotto «File modificati» di una delega, i mockup HTML scritti con il collegamento «Apri nello Studio» (I-19, D-184).
+
+### Corretto
+
+- Studio: lo stile e le skill scelti arrivano al Designer anche quando la conversazione continua una sessione già aperta (prima arrivavano solo al primo messaggio) (I-19, D-184).
+
+### Sicurezza
+
+- I mockup si mostrano in un iframe `sandbox="allow-scripts"` senza `allow-same-origin`, con in testa una Content-Security-Policy che vieta la rete; la pagina accetta solo messaggi di forma fissa dalla finestra del suo iframe (I-19, D-184).
+
 ## [0.75.0] - 2026-10-12
 
 ### Aggiunto

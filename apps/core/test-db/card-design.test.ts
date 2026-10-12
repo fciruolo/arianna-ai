@@ -16,7 +16,7 @@ import { createClaudeExecutor, type ChatRequest, type LocalModel } from '@ariann
 import { loadApproval } from '../src/approvals.ts';
 import { cardDetail } from '../src/card-details.ts';
 import { CardError, createCard, startCard, updateCard, type CardNames } from '../src/cardwall.ts';
-import { createConversation } from '../src/conversations.ts';
+import { ChatError, createConversation, postUserMessage } from '../src/conversations.ts';
 import type { DesignCatalog } from '../src/design-catalog.ts';
 import { processStepJob, recordDecision, STEP_QUEUE, type StepExecutor } from '../src/engine.ts';
 import { completeJob, createJobQueue } from '../src/jobs.ts';
@@ -183,11 +183,11 @@ test('saved on a Designer card from the adopted catalogs; refused elsewhere; the
   assert.deepEqual([detail.style, detail.skills], [null, []]);
   assert.equal((await loadTask(sql, plan.id))?.label, 'L1');
 
-  // The database: only on a card, never on a task of a chat; the form of each name.
+  // The database: only on a card or in the direct chat with the Designer (D-184), never on a task of another chat; the form of each name.
   const conversation = await createConversation(sql, { mode: 'private' });
   const chatTask = await createTask(sql, { title: 'Di una chat', conversationId: conversation.id });
-  await assert.rejects(sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${chatTask.id}`, /tasks_design_only_cards/);
-  await assert.rejects(sql`UPDATE tasks SET design_skills = ${['acme/skills/alpha']}::text[] WHERE id = ${chatTask.id}`, /tasks_design_only_cards/);
+  await assert.rejects(sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${chatTask.id}`, /tasks_design_only_designer/);
+  await assert.rejects(sql`UPDATE tasks SET design_skills = ${['acme/skills/alpha']}::text[] WHERE id = ${chatTask.id}`, /tasks_design_only_designer/);
   await assert.rejects(sql`UPDATE tasks SET design_style = 'Sabbia Chiara' WHERE id = ${created.id}`, /check constraint/);
   await assert.rejects(sql`UPDATE tasks SET design_skills = ${['not a skill']}::text[] WHERE id = ${created.id}`, /check constraint/);
 });
@@ -298,6 +298,104 @@ test('the routes: style and skills only on a Designer card, only from the adopte
     assert.equal((await send('POST', `/api/cards/${id}`, { style: null, skills: [] })).status, 200);
     const cleared = ((await (await fetch(`${base}/api/cards/${id}`)).json()) as { card: { style: string | null; skills: string[] } }).card;
     assert.deepEqual([cleared.style, cleared.skills], [null, []]);
+  } finally {
+    await server.close();
+    await live.close();
+  }
+});
+
+/** The direct chat with the Designer of the project, as the Studio opens it (I-19, D-184). */
+function designerChat() {
+  return createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: { name: 'designer', modes: ['work'], project: true } });
+}
+
+test('the Studio: style and skills sent with a message of the direct chat with the Designer reach its delivery (D-184)', async () => {
+  const { sql } = db();
+  const direct = await designerChat();
+  const { task } = await postUserMessage(sql, direct.id, 'Una landing in due varianti.', { design: { style: 'sabbia', skills: ['acme/skills/alpha'] } });
+  const [row] = await sql<{ style: string | null; skills: string[]; label: string }[]>`SELECT design_style AS style, design_skills AS skills, label FROM tasks WHERE id = ${task.id}`;
+  assert.deepEqual([row?.style, row?.skills], ['sabbia', ['acme/skills/alpha']]);
+  assert.equal(row?.label, task.label, 'names of public text: the label never moves');
+  const { asked, skills } = fakeSkills();
+  try {
+    await drain([task.id], orchestrator(scripted([]), skills, ['claude']));
+    assert.deepEqual(asked, [['designer', 128 * 1024, { style: 'sabbia', skills: ['acme/skills/alpha'] }]]);
+    const { prompt } = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(prompt.includes(`\n\n${BLOCK}\n\n`), 'after its prompt, as on a card');
+    // The next message without a choice: nothing of the first one.
+    const next = await postUserMessage(sql, direct.id, 'Ancora una.');
+    const plain = fakeSkills();
+    await drain([next.task.id], orchestrator(scripted([]), plain.skills, ['claude']));
+    assert.deepEqual(plain.asked, [['designer', 128 * 1024, undefined]]);
+    const resumed = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(!resumed.prompt.includes(BLOCK), 'a resumed session without a choice: only the new message');
+    // A choice on a later message of the same session: it goes with the message (the session never saw the opening).
+    const third = await postUserMessage(sql, direct.id, 'Ora con lo stile.', { design: { style: 'sabbia', skills: [] } });
+    const styled = fakeSkills();
+    await drain([third.task.id], orchestrator(scripted([]), styled.skills, ['claude']));
+    const later = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(later.prompt.includes(BLOCK), 'the style reaches a resumed session');
+    assert.ok(later.prompt.indexOf(BLOCK) < later.prompt.indexOf('Ora con lo stile.'), 'before the message');
+  } finally {
+    execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
+  }
+});
+
+test('the Studio: a style or skills only in the direct chat with the Designer, also for the database (D-184)', async () => {
+  const { sql } = db();
+  const design = { style: 'sabbia', skills: [] };
+  const coder = await createConversation(sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: { name: 'coder', modes: ['work'], project: true } });
+  const plain = await createConversation(sql, { mode: 'work', project: 'site', projects: PROJECTS });
+  for (const conversation of [coder, plain]) {
+    await assert.rejects(postUserMessage(sql, conversation.id, 'Una pagina.', { design }), (error: unknown) => error instanceof ChatError && error.code === 'invalid' && /direct chat with the Designer/.test(error.message));
+    assert.equal((await sql`SELECT 1 FROM tasks WHERE conversation_id = ${conversation.id}`).length, 0, 'nothing written');
+  }
+  // The trigger: a task of Arianna's chat or of the Coder's, never; the Designer's, yes.
+  const arianna = await createTask(sql, { title: 'Di Arianna', conversationId: plain.id, label: 'L1', clearance: 'L1' });
+  await assert.rejects(sql`UPDATE tasks SET design_skills = ${['acme/skills/alpha']}::text[] WHERE id = ${arianna.id}`, /tasks_design_only_designer/);
+  const ofCoder = await createTask(sql, { title: 'Del Coder', conversationId: coder.id, assignee: 'coder', label: 'L1', clearance: 'L1' });
+  await assert.rejects(sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${ofCoder.id}`, /tasks_design_only_designer/);
+  const direct = await designerChat();
+  const ofDesigner = await createTask(sql, { title: 'Del Designer', conversationId: direct.id, assignee: 'designer', label: 'L1', clearance: 'L1' });
+  await sql`UPDATE tasks SET design_style = 'sabbia' WHERE id = ${ofDesigner.id}`;
+  // Moved to another chat with its choice: refused.
+  await assert.rejects(sql`UPDATE tasks SET conversation_id = ${plain.id} WHERE id = ${ofDesigner.id}`, /tasks_design_only_designer/);
+});
+
+test('the route of a message: style and skills only from the adopted catalogs and only to the Designer (D-184)', async () => {
+  const live = await startLiveFeed(db().sql);
+  const designCatalog = { list: () => ({ commit: 'c', styles: STYLES.map((slug) => ({ slug, name: slug, description: '' })), skills: [] }) } as unknown as DesignCatalog;
+  const skillsCatalog = { list: () => ({ skills: SKILLS.map((id) => ({ id })) }) } as unknown as SkillsCatalog;
+  const server = await startApiServer({
+    sql: db().sql,
+    live,
+    host: '127.0.0.1',
+    port: 0,
+    projects: () => [],
+    agents: () => ['arianna', 'coder', 'designer'],
+    projectContainers: () => [],
+    designCatalog,
+    skillsCatalog,
+  });
+  const base = `http://127.0.0.1:${String(server.port)}`;
+  const post = (id: string, body: unknown) => fetch(`${base}/api/conversations/${id}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const direct = await designerChat();
+    const coder = await createConversation(db().sql, { mode: 'work', project: 'site', projects: PROJECTS, agent: { name: 'coder', modes: ['work'], project: true } });
+    // Refused before anything is written.
+    for (const bad of [{ style: 'inventato' }, { style: 'Sabbia Chiara' }, { skills: ['other/repo/skill'] }, { skills: 'acme/skills/alpha' }, { style: 7 }]) {
+      assert.equal((await post(direct.id, { body: 'Una pagina.', ...bad })).status, 400, JSON.stringify(bad));
+    }
+    assert.equal((await post(coder.id, { body: 'Una pagina.', style: 'sabbia' })).status, 400);
+    assert.equal((await post(direct.id, { body: 'Una pagina.', other: 1 })).status, 400, 'only the known fields');
+    assert.equal((await db().sql`SELECT 1 FROM tasks WHERE conversation_id IN ${db().sql([direct.id, coder.id])}`).length, 0);
+    // Empty is no choice, anywhere.
+    assert.equal((await post(coder.id, { body: 'Una riga.', style: null, skills: [] })).status, 201);
+    const sent = await post(direct.id, { body: 'Una pagina.', style: 'notte', skills: ['nexu-io/open-design/deck', 'acme/skills/alpha'] });
+    assert.equal(sent.status, 201);
+    const { task } = (await sent.json()) as { task: { id: string } };
+    const [row] = await db().sql<{ style: string | null; skills: string[] }[]>`SELECT design_style AS style, design_skills AS skills FROM tasks WHERE id = ${task.id}`;
+    assert.deepEqual([row?.style, row?.skills], ['notte', ['nexu-io/open-design/deck', 'acme/skills/alpha']]);
   } finally {
     await server.close();
     await live.close();

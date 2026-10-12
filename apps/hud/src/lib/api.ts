@@ -20,6 +20,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
+import type { Deck, MockupList, MockupText } from './studio.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
@@ -336,8 +337,9 @@ export async function listMessages(conversationId: string, beforeId?: string): P
   return (await call<{ messages: Message[] }>('GET', path)).messages;
 }
 
-export async function sendMessage(conversationId: string, body: string): Promise<{ message: Message; task: Task }> {
-  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body });
+/** `design`: the style and skills chosen in the Studio (I-19, D-184), only for the direct chat with the Designer. */
+export async function sendMessage(conversationId: string, body: string, design?: { style?: string; skills?: string[] }): Promise<{ message: Message; task: Task }> {
+  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
 }
 
 /** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */
@@ -1266,4 +1268,54 @@ export async function readFinanceSummary(filter: { account?: string; from?: stri
 /** The checks of a month (`YYYY-MM`), the current one without it. */
 export async function readFinanceAlerts(month?: string): Promise<FinanceAlert[]> {
   return (await call<{ alerts: FinanceAlert[] }>('GET', `${FINANCE}/alerts${month === undefined ? '' : `?${new URLSearchParams({ month }).toString()}`}`)).alerts;
+}
+
+// ---------------------------------------------------------------------------
+// The Studio (I-19, D-184, docs/STUDIO-API.md): the mockups of an approved
+// project, read and written only on this Mac.
+// ---------------------------------------------------------------------------
+
+/**
+ * Hands a built frame document to the core, which serves it back with a policy of its own
+ * (a srcdoc frame would inherit the chat's policy and lose the mockup's inline scripts and styles).
+ */
+export async function studioFrame(html: string, print = false): Promise<string> {
+  return (await call<{ url: string }>('POST', '/api/studio-frames', { html, print })).url;
+}
+
+function studioBase(project: string): string {
+  return `/api/studio/${encodeURIComponent(project)}`;
+}
+
+export async function listMockups(project: string): Promise<MockupList> {
+  return call<MockupList>('GET', `${studioBase(project)}/mockups`);
+}
+
+export async function readMockup(project: string, path: string): Promise<MockupText> {
+  return call<MockupText>('GET', `${studioBase(project)}/file?${new URLSearchParams({ path }).toString()}`);
+}
+
+/** The direct edit (O6): only when the file is still `base`; 409 `changed` otherwise. */
+export async function writeMockup(project: string, path: string, text: string, base: string): Promise<{ path: string; sha256: string }> {
+  return call<{ path: string; sha256: string }>('PUT', `${studioBase(project)}/file`, { path, text, base });
+}
+
+/** Deletes a mockup (D-184): it moves to `<folder>/eliminati/` of the project, only if it is still the version read. */
+export async function deleteMockup(project: string, path: string, base: string): Promise<{ path: string; retired: string }> {
+  return call<{ path: string; retired: string }>('POST', `${studioBase(project)}/delete`, { path, base });
+}
+
+/** The .pptx of a presentation, as a file to save. */
+export async function exportMockupPptx(project: string, path: string, deck: Deck): Promise<Blob> {
+  const response = await fetch(`${studioBase(project)}/pptx`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path, deck }),
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new ApiError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`, data);
+  }
+  return response.blob();
 }

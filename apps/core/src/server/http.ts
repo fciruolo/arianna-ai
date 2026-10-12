@@ -18,7 +18,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -123,6 +123,9 @@ import { eraseConversation, type EraseResult } from '../erase.ts';
 import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
+import { appendEvent, type NewEvent } from '../events.ts';
+import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
+import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
@@ -206,6 +209,8 @@ export interface ApiServerOptions {
   designCatalog?: DesignCatalog;
   /** The catalog of skills (D-161): sources, download, adopt, discard, read a skill; without it the routes answer 404. */
   skillsCatalog?: SkillsCatalog;
+  /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
+  studioPptx?: PptxCodec;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
@@ -1967,10 +1972,18 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('POST', '/api/conversations/:id/messages', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['body']);
+      onlyFields(body, ['body', 'style', 'skills']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
+      // The style and skills chosen in the Studio (I-19, D-184): checked as on a Designer card (D-163).
+      let design;
+      try {
+        design = checkDesignChoice(body, cardCatalog(designCatalog, skillsCatalog));
+      } catch (error) {
+        if (error instanceof CardError) throw new HttpError(400, error.message);
+        throw error;
+      }
       const leave = leaveRule?.();
-      const { message, task } = await postUserMessage(sql, id, body.body, leave === undefined ? {} : { leave });
+      const { message, task } = await postUserMessage(sql, id, body.body, { ...(leave === undefined ? {} : { leave }), ...(design === undefined ? {} : { design }) });
       return { status: 201, body: { message, task } };
     }),
 
@@ -2105,6 +2118,105 @@ function secretaryRoutes(sql: Sql): Route[] {
         if (error instanceof CommitmentError) throw new HttpError(error.code === 'not-found' ? 404 : 409, error.code === 'not-found' ? 'not found' : 'the commitment is not open');
         throw error;
       }
+    }),
+  ];
+}
+
+/** A body of the Studio: the text of a mockup up to 2 MiB, JSON-escaped (a control character is six bytes), and some room. */
+const MAX_STUDIO_BODY = MAX_MOCKUP_BYTES * 6 + 64 * 1024;
+
+/**
+ * The Studio of design (I-19, D-184): the contract of docs/STUDIO-API.md.
+ * Mockups of an approved project, read, rewritten with their sha256 and
+ * exported as .pptx; errors answer `{ error: <code> }` (and the current
+ * `sha256` with `changed`).
+ */
+function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx: PptxCodec | undefined): Route[] {
+  const deps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), ...(pptx === undefined ? {} : { pptx }) };
+  const guard =
+    (handler: Handler): Handler =>
+    async (request, url, params) => {
+      try {
+        return await handler(request, url, params);
+      } catch (error) {
+        if (error instanceof StudioError) return { status: STUDIO_STATUS[error.code], body: { error: error.code, ...(error.sha256 === undefined ? {} : { sha256: error.sha256 }) } };
+        if (error instanceof HttpError) {
+          if (error.status === 413) return { status: 413, body: { error: 'too-large' } };
+          return error.status === 404 ? { status: 404, body: { error: 'not-found' } } : { status: 400, body: { error: 'invalid' } };
+        }
+        throw error;
+      }
+    };
+  // Frames handed over by the page (studio-frames.ts): one store per server, in memory only.
+  const frames = new FrameStore();
+  const projectParam = (params: Params): string => {
+    try {
+      return decodeURIComponent(params.project ?? '');
+    } catch {
+      throw new HttpError(404, 'not found');
+    }
+  };
+  return [
+    route(
+      'GET',
+      '/api/studio/:project/mockups',
+      guard(async (_request, _url, params) => ({ body: await listMockups(deps, projectParam(params)) })),
+    ),
+    route(
+      'GET',
+      '/api/studio/:project/file',
+      guard(async (_request, url, params) => ({ body: await readMockup(deps, projectParam(params), url.searchParams.get('path') ?? undefined) })),
+    ),
+    route(
+      'PUT',
+      '/api/studio/:project/file',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'text', 'base']);
+        return { body: await writeMockup(deps, project, { path: body.path, text: body.text, base: body.base }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/delete',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'base']);
+        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/pptx',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'deck']);
+        const { name, bytes } = await exportPptx(deps, project, { path: body.path, deck: body.deck });
+        const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+        const encoded = encodeURIComponent(name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+        return { raw: bytes, type: PPTX_TYPE, headers: { 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}` }, noStore: true };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio-frames',
+      guard(async (request) => {
+        const body = await readJson(request, MAX_FRAME_BYTES * 6 + 1024);
+        onlyFields(body, ['html', 'print']);
+        const { html, print = false } = body;
+        if (typeof html !== 'string' || typeof print !== 'boolean') throw new HttpError(400, 'invalid frame');
+        if (Buffer.byteLength(html, 'utf8') > MAX_FRAME_BYTES) throw new HttpError(413, 'frame too large');
+        return { status: 201, body: { url: `/api/studio-frames/${frames.put({ html, print })}` } };
+      }),
+    ),
+    route('GET', '/api/studio-frames/:token', (_request, _url, params) => {
+      const token = params.token ?? '';
+      const found = /^[0-9a-f]{32}$/.test(token) ? frames.get(token) : undefined;
+      if (found === undefined) return Promise.resolve({ status: 404, body: { error: 'not-found' } });
+      return Promise.resolve({ raw: Buffer.from(found.html, 'utf8'), type: 'text/html; charset=utf-8', headers: frameHeaders(found.print), noStore: true });
     }),
   ];
 }
@@ -3157,6 +3269,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
   table.push(...godRoutes(options.god));
+  table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();
   /** The pages that last said they are in view (I-1). */
   const visible = new Set<WebSocket>();

@@ -20,6 +20,7 @@ import { emptySignals, noteActivity, notePause, type OfficeSignals } from './lib
 import { loadDismissed, remoteDecisions as notesFrom, saveDismissed, type RemoteDecision } from './lib/remote-decisions.ts';
 import { withoutParticipant } from './lib/participants.ts';
 import { isSecretaryPath } from './lib/route.ts';
+import { DESIGNER_AGENT as STUDIO_AGENT, type MessageDesign } from './lib/studio.ts';
 import type { Approval, CharacterListing, CloudModel, Conversation, ConversationMode, DirectAgent, ExecutorChoice, MessageCredit, Participant, ProjectInfo, StatusSnapshot, Task, TaskFailure } from './lib/types.ts';
 
 /** The events after which the cardwall reads its cards again (I-13, D-152). */
@@ -653,7 +654,7 @@ export function createChatStore() {
    * the message must be sent again), sends the message, then opens the
    * conversation. False keeps the text in the field.
    */
-  async function sendDraft(body: string): Promise<boolean> {
+  async function sendDraft(body: string, design?: MessageDesign): Promise<boolean> {
     const start = draft.value;
     if (start === null || sending.value) return false;
     error.value = null;
@@ -677,7 +678,7 @@ export function createChatStore() {
       } else {
         id = step.conversationId;
       }
-      await api.sendMessage(id, body);
+      await api.sendMessage(id, body, design);
       // The user left the draft meanwhile: the message is in, the page stays where the user went.
       if (draft.value?.key !== start.key) return true;
       // An incognito conversation never enters a list (D-136): the page holds it alone.
@@ -733,6 +734,41 @@ export function createChatStore() {
     if (chat.value?.conversationId === id) await startCall();
   }
 
+  /**
+   * The left side of the Studio (I-19, D-184): the direct chat with the
+   * Designer on a project, the latest one not archived; without one, a draft
+   * of it, so the conversation is born with the first message (D-108).
+   */
+  // Grows with each call: an answer that arrives after a change of project is dropped.
+  let studioChatToken = 0;
+  async function openStudioChat(project: string): Promise<void> {
+    const token = ++studioChatToken;
+    error.value = null;
+    if (projects.value.length === 0) await refreshProjects();
+    if (token !== studioChatToken) return;
+    const info = projects.value.find((entry) => entry.name === project);
+    if (info === undefined) {
+      close();
+      return;
+    }
+    // Read from the core: on a page opened at /studio the list may not be loaded yet.
+    const listed = await api.listConversations().catch(() => conversations.value);
+    if (token !== studioChatToken) return;
+    const found = listed.find(
+      (conversation) =>
+        conversation.agent === STUDIO_AGENT &&
+        (conversation.workspace === info.name || conversation.workspace === info.path) &&
+        conversation.archivedAt === null &&
+        conversation.incognito !== true,
+    );
+    if (found !== undefined) {
+      if (chat.value?.conversationId !== found.id) await open(found.id);
+      return;
+    }
+    if (draft.value?.agent === STUDIO_AGENT && draft.value.project === project) return;
+    openDraft({ mode: 'work', project, agent: STUDIO_AGENT });
+  }
+
   async function create(mode: ConversationMode, project?: string): Promise<void> {
     error.value = null;
     try {
@@ -744,7 +780,7 @@ export function createChatStore() {
     }
   }
 
-  async function send(body: string): Promise<boolean> {
+  async function send(body: string, design?: MessageDesign): Promise<boolean> {
     const state = chat.value;
     if (state === null || body.trim() === '') return false;
     error.value = null;
@@ -775,7 +811,7 @@ export function createChatStore() {
       }
       // Whatever is left must be a message: a command never reaches Arianna.
       if (!goesToArianna(body)) return false;
-      const { message, task } = await api.sendMessage(state.conversationId, body);
+      const { message, task } = await api.sendMessage(state.conversationId, body, design);
       if (chat.value?.conversationId === state.conversationId) chat.value = mergeMessages(chat.value, [message]);
       tasks.value = { ...tasks.value, [task.id]: task };
       return true;
@@ -1135,7 +1171,7 @@ export function createChatStore() {
     window.clearTimeout(soonTimer);
   }
 
-  return { cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
+  return { openStudioChat, cardsVersion, openSecretary, openSecretaryAddress, incognitoEnd, incognitoSoon, ending, endIncognito, openIncognito, officeSignals, conversations, archived, systemChats, failure, explain, closeFailure, retry, openSystemChat, attachQuestion, chat, current, tasks, credits, activityCounts, approvals, participants, removeParticipant, models, projects, directAgents, refreshProjects, remoteDecisions, status, refreshStatus, characters, refreshCharacters, live, error, sending, notice, toasts, dismissToast, openToast, open, close, create, draft, openDraft, sendDraft, callDraft, send, decide, chooseModel, rename, archive, pin, erase, dismissDecision, start, stop, calls, voiceState, refreshVoice, callSession, callStarting, callError, startCall, hangUp, strayCall, closeStrayCall, incoming, answerIncoming, declineIncoming, callWhenDone, cancelScheduled };
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

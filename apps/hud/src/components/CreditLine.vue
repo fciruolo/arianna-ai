@@ -3,10 +3,12 @@ import { computed, ref } from 'vue';
 
 import { loadDelegationDiff, loadDelegationFile, openDelegationFile } from '../lib/api.ts';
 import { canOpen, canPreview, codeFence, diffRows, diffTotals } from '../lib/delegations.ts';
+import { isMockupPath } from '../lib/studio.ts';
 import { baseCommitText, CHANGE_TEXT, DIFF_ERROR_TEXT, creditText, diffCountText, filesTitle, previewErrorText } from '../lib/italian.ts';
 import type { DelegationDiff, DelegationFile, FileDiff, FileDiffError, FilePreview, MessageCredit } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
+import MockupLink from './MockupLink.vue';
 
 /**
  * Under an answer written in the cloud (D-082): who wrote it, on which
@@ -20,6 +22,9 @@ const props = defineProps<{ credit: MessageCredit }>();
 
 const files = computed(() => props.credit.files ?? []);
 const open = ref<number | null>(null);
+
+/** The mockups the run wrote (I-19, D-184, O1): each with a link to the Studio under the list (the user's choice: no preview in the chat). */
+const mockups = computed(() => (props.credit.delegationId === null ? [] : files.value.filter((file) => file.change !== 'deleted' && isMockupPath(file.path))));
 const whole = ref(false);
 const preview = ref<FilePreview | null>(null);
 const loading = ref(false);
@@ -229,5 +234,8 @@ async function showWhole(index: number): Promise<void> {
         </li>
       </ul>
     </details>
+    <template v-if="credit.repo !== null">
+      <MockupLink v-for="mockup in mockups" :key="mockup.path" :path="mockup.path" :project="credit.repo" />
+    </template>
   </div>
 </template>
