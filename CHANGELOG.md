@@ -13,7 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Studio: modifica diretta di testo (anche i pezzi di testo di un titolo con un corsivo o un grassetto dentro), colori, dimensioni, spaziature e allineamento di un elemento, nella finestra spostabile, scritta nel file del progetto solo se non è cambiato nel frattempo (I-19, D-184).
 - Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]`, con colori, caratteri e dimensioni misurati sulla pagina com'è a schermo (I-19, D-184).
 - Studio: la conversazione col Designer del progetto si ritrova anche a pagina appena aperta e dopo il primo messaggio (il core tiene il progetto per nome) (I-19, D-184).
-- Chat: sotto «File modificati» di una delega, anteprima isolata dei mockup HTML con il collegamento «Apri nello Studio» (I-19, D-184).
+- Chat: sotto «File modificati» di una delega, i mockup HTML scritti con il collegamento «Apri nello Studio» (I-19, D-184).
 
 ### Sicurezza
 

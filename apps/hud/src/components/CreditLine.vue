@@ -8,7 +8,7 @@ import { baseCommitText, CHANGE_TEXT, DIFF_ERROR_TEXT, creditText, diffCountText
 import type { DelegationDiff, DelegationFile, FileDiff, FileDiffError, FilePreview, MessageCredit } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import MarkdownText from './MarkdownText.vue';
-import MockupPreview from './MockupPreview.vue';
+import MockupLink from './MockupLink.vue';
 
 /**
  * Under an answer written in the cloud (D-082): who wrote it, on which
@@ -23,10 +23,8 @@ const props = defineProps<{ credit: MessageCredit }>();
 const files = computed(() => props.credit.files ?? []);
 const open = ref<number | null>(null);
 
-/** The mockups the run wrote (I-19, D-184, O1): each with its isolated preview under the list. */
-const mockups = computed(() =>
-  props.credit.delegationId === null ? [] : files.value.flatMap((file, index) => (file.change !== 'deleted' && isMockupPath(file.path) ? [{ path: file.path, index }] : [])),
-);
+/** The mockups the run wrote (I-19, D-184, O1): each with a link to the Studio under the list (the user's choice: no preview in the chat). */
+const mockups = computed(() => (props.credit.delegationId === null ? [] : files.value.filter((file) => file.change !== 'deleted' && isMockupPath(file.path))));
 const whole = ref(false);
 const preview = ref<FilePreview | null>(null);
 const loading = ref(false);
@@ -236,13 +234,8 @@ async function showWhole(index: number): Promise<void> {
         </li>
       </ul>
     </details>
-    <MockupPreview
-      v-for="mockup in mockups"
-      :key="mockup.path"
-      :delegation-id="credit.delegationId ?? ''"
-      :index="mockup.index"
-      :path="mockup.path"
-      :project="credit.repo"
-    />
+    <template v-if="credit.repo !== null">
+      <MockupLink v-for="mockup in mockups" :key="mockup.path" :path="mockup.path" :project="credit.repo" />
+    </template>
   </div>
 </template>
