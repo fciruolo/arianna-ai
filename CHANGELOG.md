@@ -4,6 +4,20 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Clienti: ogni cliente è una card con logo, contatto principale, progetti e tre numeri dell'anno (guadagno, da fatturare, in attesa con le scadute in rosso); nuovo menu «Ordina» e card «+ Nuovo cliente» (D-190).
+- Clienti: la scheda del cliente si apre sulla Dashboard e mostra il contatto principale sotto il nome (D-190).
+- Clienti, Anagrafica più stretta e a sezioni: campi corti per i valori corti e bordo ambra sui campi che la fattura elettronica chiede (D-190).
+
+### Aggiunto
+
+- Clienti: «Completa» sull'avviso della fattura elettronica porta all'Anagrafica sul primo campo da riempire (D-190).
+
+### Corretto
+
+- Clienti, Dashboard: l'asse dei valori del grafico non è più tagliato a sinistra (D-190).
+
 ## [0.82.0] - 2026-10-12
 
 ### Cambiato
