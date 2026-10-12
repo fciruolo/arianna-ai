@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { stepsAnchors } from '../lib/activity-log.ts';
 import { approvalAnchor, clearFocus, FOCUS_EVENT, HIGHLIGHT_CLASSES, HIGHLIGHT_MS, messageAnchor, parseAnchor, pendingFocus, requestFocus } from '../lib/chat-focus.ts';
 import { canSaveToInbox } from '../lib/capture.ts';
-import { sessionStart } from '../lib/commitments.ts';
+import { SESSION_LINE, sessionStart } from '../lib/commitments.ts';
 import { completion, filterCommands, menuQuery, moveSelection, resolveDraft, usage, type ChatCommand, type CommandAction } from '../lib/commands.ts';
 import { calleeOf, receiptAnchors, receiptText, type CallInfo } from '../lib/calls.ts';
 import { activityLines, liveEdits, type ChatState, type LiveEdit } from '../lib/chat-state.ts';
@@ -43,6 +43,7 @@ import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
 import GodCarryNote from './GodCarryNote.vue';
+import DesignerCarryProposal from './DesignerCarryProposal.vue';
 import GodCarryProposal from './GodCarryProposal.vue';
 import GodPlanCard from './GodPlanCard.vue';
 import { GOD_AGENT } from '../lib/god.ts';
@@ -52,6 +53,9 @@ import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PixelAgent from './PixelAgent.vue';
 import SessionLine from './SessionLine.vue';
+import { DESIGNER_AGENT, DESIGNER_SESSION_LINE } from '../lib/studio.ts';
+import { startDesignerSession } from '../lib/api.ts';
+import { errorText } from '../lib/italian.ts';
 
 const props = defineProps<{
   chat: ChatState;
@@ -75,12 +79,20 @@ const props = defineProps<{
   characters: Record<string, CharacterChoice> | undefined;
   /** Who the user may talk with directly (D-111d): where the agent of this conversation runs. */
   directAgents?: DirectAgent[] | undefined;
+  /** "Apri nello Studio" in a direct chat with the Designer on a project (I-20, D-185); off inside the Studio itself. */
+  studioLink?: boolean;
+  /** The mockup open in the Studio, for the summary of «Riparti» (D-185). */
+  studioFile?: string | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
 const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
   send: [body: string];
+  /** "Apri nello Studio": the project of this chat with the Designer (I-20, D-185). */
+  studio: [workspace: string];
+  /** «Nuova sessione» of the Designer started in this conversation (D-185): the page reads it again. */
+  restarted: [id: string];
   /** "Cosa vogliono dire le etichette?": the legend (etichette parlanti). */
   legend: [];
   chooseModel: [model: string | null];
@@ -111,7 +123,31 @@ function godPlanIn(message: { agent: string | null; body: string }): boolean {
 /** Incognito (D-136): nothing of it is saved in Arianna; "Salva in inbox", /nota and the calls when a task ends are off. */
 const incognito = computed(() => props.conversation.incognito === true);
 /** The secretary's conversation (D-146): the index of the first message of its current session, -1 elsewhere. */
-const session = computed(() => (props.conversation.secretary === true ? sessionStart(props.chat.messages, props.conversation.secretarySessionAt) : -1));
+const session = computed(() =>
+  props.conversation.secretary === true
+    ? sessionStart(props.chat.messages, props.conversation.secretarySessionAt)
+    : props.conversation.agent === DESIGNER_AGENT
+      ? sessionStart(props.chat.messages, props.conversation.directSessionAt)
+      : -1,
+);
+const sessionText = computed(() => (props.conversation.secretary === true ? SESSION_LINE : DESIGNER_SESSION_LINE));
+
+// «Nuova sessione» of the Designer at any time (I-20, D-185): the same as the proposal, asked by the user.
+const sessionBusy = ref(false);
+const sessionProblem = ref<string | null>(null);
+async function newDesignerSession(): Promise<void> {
+  const id = props.conversation.id;
+  sessionBusy.value = true;
+  sessionProblem.value = null;
+  try {
+    await startDesignerSession(id, props.studioFile);
+    emit('restarted', id);
+  } catch (cause) {
+    sessionProblem.value = `Sessione nuova non aperta. ${errorText(cause)}`;
+  } finally {
+    sessionBusy.value = false;
+  }
+}
 
 /** A task still at work can ask for a call when it ends, unless one is already waiting for it. */
 function canCallWhenDone(task: Task | undefined): boolean {
@@ -612,6 +648,22 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="min-w-0 truncate" :title="participants.length > 0 ? withText(participants) : undefined">{{ POSE_TEXT[directPose] }}<template v-if="participants.length > 0"> · {{ withText(participants) }}</template></span>
             </p>
             <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
+            <button
+              v-if="studioLink === true && direct === DESIGNER_AGENT && conversation.workspace"
+              type="button"
+              class="btn mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              title="I mockup di questo progetto nello Studio, con questa conversazione a sinistra"
+              @click="emit('studio', conversation.workspace)"
+            ><Icon name="studio" :size="13" />Apri nello Studio</button>
+            <button
+              v-if="direct === DESIGNER_AGENT && conversation.workspace && conversation.archivedAt === null"
+              type="button"
+              class="btn mt-1.5 ml-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              title="Il Designer smette di rileggere la sessione di prima e riparte da un breve riassunto; la conversazione resta qui"
+              :disabled="sessionBusy || sending"
+              @click="newDesignerSession"
+            ><Icon name="new" :size="13" />{{ sessionBusy ? 'Apro…' : 'Nuova sessione' }}</button>
+            <p v-if="sessionProblem !== null" class="mt-1 text-xs text-danger" role="alert">{{ sessionProblem }}</p>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
             <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
             <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
@@ -740,7 +792,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <template v-for="(message, index) in chat.messages" :key="message.id">
           <!-- The secretary (D-146): where the session Arianna reads begins -->
-          <SessionLine v-if="index === session" />
+          <SessionLine v-if="index === session" :text="sessionText" />
           <!-- User -->
           <div v-if="message.role === 'user'" :id="messageAnchor(message.id)" class="msg-row flex flex-col items-end gap-1">
             <div class="max-w-[90%] rounded-[17px_17px_5px_17px] bg-bubble px-[15px] py-[11px] break-words whitespace-pre-wrap text-bubble-ink md:max-w-[78%]">
@@ -860,7 +912,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
         </template>
-        <SessionLine v-if="session === chat.messages.length" />
+        <SessionLine v-if="session === chat.messages.length" :text="sessionText" />
 
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
@@ -868,6 +920,18 @@ onBeforeUnmount(() => clearInterval(clock));
           <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
+
+        <!-- The Designer (I-20, D-185): with a heavy context it proposes to restart from a summary. -->
+        <DesignerCarryProposal
+          v-if="conversation.agent === DESIGNER_AGENT && conversation.workspace !== null && conversation.archivedAt === null"
+          :conversation-id="conversation.id"
+          :context-tokens="conversation.contextTokens"
+          :last-role="chat.messages.filter((message) => message.role !== 'system').at(-1)?.role"
+          :sending="sending || chat.streaming.length > 0"
+          :name="directName"
+          :open="studioFile"
+          @restarted="(id) => emit('restarted', id)"
+        />
 
         <!-- GOD (D-127, G4): in a long chat, GOD proposes to restart from a summary. -->
         <GodCarryProposal

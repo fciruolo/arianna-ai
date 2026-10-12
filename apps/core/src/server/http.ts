@@ -100,6 +100,11 @@ import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
+import { createSampleCache } from '../style-sample.ts';
+import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
+import type { SkillTranslations } from '../skill-translations.ts';
+import { openMockup, startDesignerSession } from '../designer-session.ts';
+import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
 import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
@@ -212,6 +217,10 @@ export interface ApiServerOptions {
   skillsCatalog?: SkillsCatalog;
   /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
   studioPptx?: PptxCodec;
+  /** The examples of the styles written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  styleExamples?: StyleExamples;
+  /** The Italian descriptions of the skills written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  skillTranslations?: SkillTranslations;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
@@ -1013,11 +1022,42 @@ function huggingFaceRoutes(hub: HuggingFace | undefined): Route[] {
  * license notice at the head. A slug is checked by the catalog; no route
  * takes a path.
  */
+/**
+ * The examples of the styles and the Italian descriptions of the skills (I-20,
+ * D-185): made by Sonnet in the background when the user asks, read by the
+ * window of style and skills of the Studio.
+ */
+function exampleRoutes(examples: StyleExamples | undefined, translations: SkillTranslations | undefined): Route[] {
+  const needExamples = (): StyleExamples => {
+    if (examples === undefined) throw new HttpError(404, 'not found');
+    return examples;
+  };
+  const needTranslations = (): SkillTranslations => {
+    if (translations === undefined) throw new HttpError(404, 'not found');
+    return translations;
+  };
+  return [
+    route('GET', '/api/design-catalog/examples', () => Promise.resolve({ body: needExamples().status() })),
+    route('POST', '/api/design-catalog/examples', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['style']);
+      return { status: 202, body: body.style === undefined ? needExamples().generateMissing() : needExamples().generate(body.style) };
+    }),
+    route('GET', '/api/design-catalog/examples/:slug/:kind', (_request, _url, params) => Promise.resolve({ body: { text: needExamples().read(params.slug, params.kind) } })),
+    route('GET', '/api/skills-catalog/translations', () => Promise.resolve({ body: needTranslations().status() })),
+    route('POST', '/api/skills-catalog/translations', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: needTranslations().translateMissing() };
+    }),
+  ];
+}
+
 function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
   const need = (): DesignCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
   };
+  const samples = createSampleCache({ list: () => need().list(), styleText: (slug) => need().styleText(slug) });
   return [
     route('GET', '/api/design-catalog', () => Promise.resolve({ body: need().status() })),
     route('POST', '/api/design-catalog/update', async (request) => {
@@ -1035,6 +1075,8 @@ function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
     }),
     route('GET', '/api/design-catalog/styles', () => Promise.resolve({ body: need().list() })),
     route('GET', '/api/design-catalog/styles/:slug', (_request, _url, params) => Promise.resolve({ body: { style: need().styleText(params.slug ?? '') } })),
+    // The small page of each style in the window of the Studio (I-20, D-185): colors, fonts and corners read from its DESIGN.md.
+    route('GET', '/api/design-catalog/samples', () => Promise.resolve({ body: samples() })),
   ];
 }
 
@@ -1630,6 +1672,7 @@ function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiSe
  * D-135, which the core reads for each request.
  */
 function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks, containers: () => readonly Project[]): Route[] {
+  const fileDeps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), sql };
   const projectParam = (params: Params): string => {
     const name = params.project ?? '';
     if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
@@ -1675,6 +1718,19 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
       onlyFields(body, ['path']);
       if (typeof body.path !== 'string' || body.path === '' || body.path.length > 4096) throw new HttpError(400, 'path must be a file of the project');
       return { body: await openBrowsedFile(approvedProjects(), openLinks, name, body.path) };
+    }),
+    // The tab "File" moves and deletes after the window of the page (I-20, D-185): no link, hidden part or running agent.
+    route('POST', '/api/browse/:project/move', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['from', 'to']);
+      return { body: await moveProjectPath(fileDeps, name, { from: body.from, to: body.to }) };
+    }),
+    route('POST', '/api/browse/:project/delete', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      return { body: await deleteProjectPath(fileDeps, name, { path: body.path }) };
     }),
     route('GET', '/api/browse/:project/git', async (_request, _url, params) => ({ body: { git: await readProjectGit(sql, approvedProjects(), projectParam(params)) } })),
     route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => {
@@ -1861,6 +1917,14 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
       });
       return { status: 201, body: { conversation } };
+    }),
+
+    // «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session from a summary.
+    route('POST', '/api/conversations/:id/session', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['open']);
+      const open = openMockup(body.open);
+      return { body: { conversation: await startDesignerSession(sql, idParam(params, 'id'), open) } };
     }),
 
     route('GET', '/api/conversations/:id', async (_request, _url, params) => {
@@ -2184,8 +2248,8 @@ function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx
       guard(async (request, _url, params) => {
         const project = projectParam(params);
         const body = await readJson(request, MAX_STUDIO_BODY);
-        onlyFields(body, ['path', 'base']);
-        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base }) };
+        onlyFields(body, ['path', 'base', 'permanent']);
+        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base, permanent: body.permanent }) };
       }),
     ),
     route(
@@ -3149,6 +3213,8 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
+  if (error instanceof ProjectFileError) return { status: PROJECT_FILE_STATUS[error.code], message: error.message };
+  if (error instanceof StyleExampleError) return { status: error.code === 'invalid' ? 400 : 404, message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };
@@ -3318,6 +3384,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
   table.push(...designCatalogRoutes(options.designCatalog));
+  table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));

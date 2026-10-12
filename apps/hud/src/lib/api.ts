@@ -21,7 +21,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
-import type { Deck, MockupList, MockupText } from './studio.ts';
+import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, TranslationsStatus } from './studio.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
@@ -298,6 +298,11 @@ export async function landGod(kind: 'subtasks' | 'plans', id: string, action: La
 }
 
 /** "Riassumi e riparti" (D-127, G4): a new conversation with GOD from a summary of this one. */
+/** «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session; `open` is the mockup open in the Studio. */
+export async function startDesignerSession(conversationId: string, open?: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/session`, open === undefined ? {} : { open })).conversation;
+}
+
 export async function restartGodConversation(conversationId: string): Promise<Conversation> {
   return (await call<{ conversation: Conversation }>('POST', `/api/god/conversations/${encodeURIComponent(conversationId)}/restart`, {})).conversation;
 }
@@ -942,6 +947,16 @@ export async function deleteProjectNote(project: string, path: string): Promise<
   await call('POST', `${browse(project)}/knowledge/delete`, { path });
 }
 
+/** "Sposta" and "Ripristina" in the tab File (I-20, D-185): nothing already there is replaced. */
+export async function moveProjectPath(project: string, from: string, to: string): Promise<{ from: string; to: string; kind: 'file' | 'dir' }> {
+  return call('POST', `${browse(project)}/move`, { from, to });
+}
+
+/** "Elimina" in the tab File (I-20, D-185): for good, after the window. */
+export async function deleteProjectPath(project: string, path: string): Promise<{ path: string; kind: 'file' | 'dir'; entries: number }> {
+  return call('POST', `${browse(project)}/delete`, { path });
+}
+
 export async function listProjectDir(project: string, dir: string): Promise<{ entries: TreeEntry[]; more: number }> {
   return call('GET', `${browse(project)}/tree?${new URLSearchParams({ dir }).toString()}`);
 }
@@ -1312,8 +1327,32 @@ export async function writeMockup(project: string, path: string, text: string, b
 }
 
 /** Deletes a mockup (D-184): it moves to `<folder>/eliminati/` of the project, only if it is still the version read. */
-export async function deleteMockup(project: string, path: string, base: string): Promise<{ path: string; retired: string }> {
-  return call<{ path: string; retired: string }>('POST', `${studioBase(project)}/delete`, { path, base });
+export async function deleteMockup(project: string, path: string, base: string, permanent = false): Promise<{ path: string; retired: string | null }> {
+  return call<{ path: string; retired: string | null }>('POST', `${studioBase(project)}/delete`, { path, base, ...(permanent ? { permanent: true } : {}) });
+}
+
+/** The examples of the styles written by Sonnet (I-20, D-185). */
+export async function loadStyleExamples(): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('GET', '/api/design-catalog/examples');
+}
+
+/** Queues the example of one style, or every missing one without `style`. */
+export async function generateStyleExamples(style?: string): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('POST', '/api/design-catalog/examples', style === undefined ? {} : { style });
+}
+
+export async function readStyleExample(slug: string, kind: 'landing' | 'deck'): Promise<string> {
+  return (await call<{ text: string }>('GET', `/api/design-catalog/examples/${encodeURIComponent(slug)}/${kind}`)).text;
+}
+
+/** The Italian descriptions of the skills; `start` asks the core to translate the missing ones. */
+export async function skillTranslations(start = false): Promise<TranslationsStatus> {
+  return start ? call<TranslationsStatus>('POST', '/api/skills-catalog/translations', {}) : call<TranslationsStatus>('GET', '/api/skills-catalog/translations');
+}
+
+/** The small page of each style of the adopted catalog (I-20, D-185), by slug. */
+export async function listStyleSamples(): Promise<StyleSamples> {
+  return call<StyleSamples>('GET', '/api/design-catalog/samples');
 }
 
 /** The .pptx of a presentation, as a file to save. */

@@ -68,6 +68,8 @@ export interface Conversation {
    * Null on every other conversation, and on the secretary's before a click.
    */
   secretarySessionAt: Date | null;
+  /** Where the session in force of a direct chat begins («Nuova sessione», I-20, D-185); null before the first. */
+  directSessionAt: Date | null;
   /** 'system' for a system chat, opened by the system and not by the user (D-064). */
   origin: ConversationOrigin;
   /** Why the system opened it: 'failure', a failed task. Null for the user's conversations. */
@@ -135,7 +137,7 @@ export class ChatError extends Error {
 
 const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label AS "effectiveLabel", c.finance, c.workspace, c.model, c.agent,
   c.title, c.archived_at AS "archivedAt", c.pinned_at AS "pinnedAt",
-  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt",
+  EXISTS (SELECT FROM telegram_state t WHERE t.conversation_id = c.id) AS telegram, c.incognito, c.trial_model AS "trialModel", c.secretary, c.secretary_session_at AS "secretarySessionAt", c.direct_session_at AS "directSessionAt",
   c.origin, c.system_reason AS "systemReason", c.source_task_id::text AS "sourceTaskId",
   (SELECT s.conversation_id::text FROM tasks s WHERE s.id = c.source_task_id) AS "sourceConversationId",
   c.question_attached AS "questionAttached",
@@ -143,7 +145,8 @@ const CONVERSATION_COLUMNS = `c.id::text, c.mode, c.clearance, c.effective_label
   c.created_at AS "createdAt",
   (SELECT max(m.ts) FROM messages m WHERE m.conversation_id = c.id) AS "lastMessageAt",
   CASE WHEN c.agent IS NULL THEN NULL ELSE (SELECT d.context_tokens FROM task_delegations d JOIN tasks t ON t.id = d.task_id
-    WHERE t.conversation_id = c.id AND d.status = 'ok' ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
+    WHERE t.conversation_id = c.id AND d.status = 'ok' AND d.created_at >= coalesce(c.direct_session_at, '-infinity'::timestamptz)
+    ORDER BY d.created_at DESC, d.id DESC LIMIT 1) END AS "contextTokens"`;
 
 const MESSAGE_COLUMNS = `id::text, conversation_id::text AS "conversationId", ts, role, channel, label, body,
   task_id::text AS "taskId", agent, model`;
