@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.79.0] - 2026-10-12
+
 ### Aggiunto
 
 - «Fai uscire una volta» su una nota Privata della scheda Conoscenza: il modello locale propone una versione anonima accanto all'originale, la correggi e la approvi con la master password, ed esce solo quel testo, una volta, come messaggio Interno di una conversazione di lavoro dello stesso progetto; la nota resta Privata, le Riservate e le finanze non escono mai (I-11 P5, D-187).
