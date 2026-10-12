@@ -645,3 +645,30 @@ export function saveCarryDeclined(storage: CarryStorage | undefined, conversatio
     // Private window or storage off: the question comes back at the next answer.
   }
 }
+
+/** The examples of the styles written by Sonnet (I-20, D-185), as the core tells them. */
+export interface ExamplesStatus {
+  examples: Record<string, { sha256: string; at: string; current: boolean }>;
+  queue: string[];
+  running: string | null;
+  failed: Record<string, string>;
+  stopped: string | null;
+}
+
+/** The Italian descriptions of the skills (I-20, D-185). */
+export interface TranslationsStatus {
+  translations: Record<string, string>;
+  missing: number;
+  running: boolean;
+  stopped: string | null;
+}
+
+/** What a style card says of its example: ready, old (its DESIGN.md changed), on its way, or none. */
+export function exampleState(status: ExamplesStatus | null, slug: string): 'ready' | 'old' | 'running' | 'queued' | 'none' {
+  if (status === null) return 'none';
+  if (status.running === slug) return 'running';
+  if (status.queue.includes(slug)) return 'queued';
+  const example = status.examples[slug];
+  if (example === undefined) return 'none';
+  return example.current ? 'ready' : 'old';
+}

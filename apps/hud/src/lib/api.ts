@@ -20,7 +20,7 @@ import type { ModelEval } from './model-evals.ts';
 import type { ModelsOverview } from './models-page.ts';
 import type { KnowledgeSource } from './route.ts';
 import type { SearchResult } from './search.ts';
-import type { Deck, MockupList, MockupText, StyleSamples } from './studio.ts';
+import type { Deck, ExamplesStatus, MockupList, MockupText, StyleSamples, TranslationsStatus } from './studio.ts';
 import type { ModelRole, PrivacyProposal, PrivacySection, SettingsBody, SettingsValues, SettingsView } from './settings.ts';
 import type { BrowsableContainer, BrowsableProject, CommitDiff, OpenedNote, ProjectFile, ProjectGit, ProjectKnowledge, ServiceLog, ServiceState, TreeEntry } from './projects.ts';
 import type { Note, NoteListing } from './thoughts.ts';
@@ -1318,6 +1318,25 @@ export async function writeMockup(project: string, path: string, text: string, b
 /** Deletes a mockup (D-184): it moves to `<folder>/eliminati/` of the project, only if it is still the version read. */
 export async function deleteMockup(project: string, path: string, base: string, permanent = false): Promise<{ path: string; retired: string | null }> {
   return call<{ path: string; retired: string | null }>('POST', `${studioBase(project)}/delete`, { path, base, ...(permanent ? { permanent: true } : {}) });
+}
+
+/** The examples of the styles written by Sonnet (I-20, D-185). */
+export async function loadStyleExamples(): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('GET', '/api/design-catalog/examples');
+}
+
+/** Queues the example of one style, or every missing one without `style`. */
+export async function generateStyleExamples(style?: string): Promise<ExamplesStatus> {
+  return call<ExamplesStatus>('POST', '/api/design-catalog/examples', style === undefined ? {} : { style });
+}
+
+export async function readStyleExample(slug: string, kind: 'landing' | 'deck'): Promise<string> {
+  return (await call<{ text: string }>('GET', `/api/design-catalog/examples/${encodeURIComponent(slug)}/${kind}`)).text;
+}
+
+/** The Italian descriptions of the skills; `start` asks the core to translate the missing ones. */
+export async function skillTranslations(start = false): Promise<TranslationsStatus> {
+  return start ? call<TranslationsStatus>('POST', '/api/skills-catalog/translations', {}) : call<TranslationsStatus>('GET', '/api/skills-catalog/translations');
 }
 
 /** The small page of each style of the adopted catalog (I-20, D-185), by slug. */

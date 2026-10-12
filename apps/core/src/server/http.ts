@@ -100,6 +100,8 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
+import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
+import type { SkillTranslations } from '../skill-translations.ts';
 import { openMockup, startDesignerSession } from '../designer-session.ts';
 import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
@@ -214,6 +216,10 @@ export interface ApiServerOptions {
   skillsCatalog?: SkillsCatalog;
   /** How the Studio checks and writes a deck (D-184): `@arianna/pptx` when absent, a fake in the tests. */
   studioPptx?: PptxCodec;
+  /** The examples of the styles written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  styleExamples?: StyleExamples;
+  /** The Italian descriptions of the skills written by Sonnet (I-20, D-185); without it the routes answer 404. */
+  skillTranslations?: SkillTranslations;
   /** GOD (D-127): its clone, its conversations; without it the routes answer 404. */
   god?: GodApi;
   /** What this installation is (D-089), read at each request: mode, folder name, commit. */
@@ -1015,6 +1021,36 @@ function huggingFaceRoutes(hub: HuggingFace | undefined): Route[] {
  * license notice at the head. A slug is checked by the catalog; no route
  * takes a path.
  */
+/**
+ * The examples of the styles and the Italian descriptions of the skills (I-20,
+ * D-185): made by Sonnet in the background when the user asks, read by the
+ * window of style and skills of the Studio.
+ */
+function exampleRoutes(examples: StyleExamples | undefined, translations: SkillTranslations | undefined): Route[] {
+  const needExamples = (): StyleExamples => {
+    if (examples === undefined) throw new HttpError(404, 'not found');
+    return examples;
+  };
+  const needTranslations = (): SkillTranslations => {
+    if (translations === undefined) throw new HttpError(404, 'not found');
+    return translations;
+  };
+  return [
+    route('GET', '/api/design-catalog/examples', () => Promise.resolve({ body: needExamples().status() })),
+    route('POST', '/api/design-catalog/examples', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['style']);
+      return { status: 202, body: body.style === undefined ? needExamples().generateMissing() : needExamples().generate(body.style) };
+    }),
+    route('GET', '/api/design-catalog/examples/:slug/:kind', (_request, _url, params) => Promise.resolve({ body: { text: needExamples().read(params.slug, params.kind) } })),
+    route('GET', '/api/skills-catalog/translations', () => Promise.resolve({ body: needTranslations().status() })),
+    route('POST', '/api/skills-catalog/translations', async (request) => {
+      onlyFields(await readJson(request), []);
+      return { status: 202, body: needTranslations().translateMissing() };
+    }),
+  ];
+}
+
 function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
   const need = (): DesignCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
@@ -3127,6 +3163,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
   }
   if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
   if (error instanceof ProjectFileError) return { status: PROJECT_FILE_STATUS[error.code], message: error.message };
+  if (error instanceof StyleExampleError) return { status: error.code === 'invalid' ? 400 : 404, message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };
@@ -3296,6 +3333,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...huggingFaceRoutes(options.huggingface));
   table.push(...modelActionRoutes(options.modelActions));
   table.push(...designCatalogRoutes(options.designCatalog));
+  table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
   table.push(...skillsCatalogRoutes(options.skillsCatalog));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));

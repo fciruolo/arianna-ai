@@ -51,6 +51,9 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
+import { createCloudText } from './cloud-text.ts';
+import { createStyleExamples } from './style-examples.ts';
+import { createSkillTranslations } from './skill-translations.ts';
 import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
@@ -613,6 +616,19 @@ const designCatalog = createDesignCatalog({
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
   },
 });
+// The examples of the styles and the Italian descriptions of the skills (I-20, D-185): public text, written by Sonnet
+// without tools through the gateway, only when the user asks; kept in data/catalogs and never made again for the same text.
+const askCloudText = createCloudText({ sql, claude, data: config.paths.data });
+const catalogEvent = (kind: string, payload: Record<string, string | number>): void => {
+  appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
+};
+const styleExamples = createStyleExamples({
+  dir: join(config.paths.data, 'catalogs'),
+  source: { list: () => designCatalog.list(), styleText: (slug) => designCatalog.styleText(slug) },
+  ask: askCloudText,
+  onEvent: catalogEvent,
+});
+const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
 const notices = createNoticeBoard();
@@ -737,6 +753,8 @@ const server = await startApiServer({
   services,
   designCatalog,
   skillsCatalog,
+  styleExamples,
+  skillTranslations,
   // Without the adapter no delegation runs: the selector offers nothing.
   models: () => selectableModels(settings.current(), adapters),
   defaultModel: () => agentDefaultModel(settings.current(), WORK_AGENT, agents.get(WORK_AGENT)?.card, adapters),

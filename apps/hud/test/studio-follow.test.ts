@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DESIGNER_CARRY_AGAIN, DESIGNER_CARRY_AT, fontStack, loadCarryDeclined, proposeDesignerCarry, restoredPath, saveCarryDeclined, variantDesignText } from '../src/lib/studio.ts';
+import { DESIGNER_CARRY_AGAIN, DESIGNER_CARRY_AT, exampleState, fontStack, loadCarryDeclined, proposeDesignerCarry, restoredPath, saveCarryDeclined, variantDesignText } from '../src/lib/studio.ts';
 
 test('a font stack quotes the names and keeps the generic family bare', () => {
   assert.equal(fontStack(['Lumen Display', 'Helvetica Neue', 'sans-serif']), '"Lumen Display", "Helvetica Neue", sans-serif');
@@ -60,4 +60,14 @@ test('the «No» is remembered per conversation, read back defensively', () => {
   const broken = { getItem: () => { throw new Error('off'); }, setItem: () => { throw new Error('off'); } };
   assert.equal(loadCarryDeclined(broken, 'a'), null);
   saveCarryDeclined(broken, 'a', 60);
+});
+
+test('what a style card says of its example', () => {
+  const status = { examples: { alfa: { sha256: 'a', at: 't', current: true }, beta: { sha256: 'b', at: 't', current: false } }, queue: ['gamma'], running: 'delta', failed: {}, stopped: null };
+  assert.equal(exampleState(status, 'alfa'), 'ready');
+  assert.equal(exampleState(status, 'beta'), 'old');
+  assert.equal(exampleState(status, 'gamma'), 'queued');
+  assert.equal(exampleState(status, 'delta'), 'running');
+  assert.equal(exampleState(status, 'epsilon'), 'none');
+  assert.equal(exampleState(null, 'alfa'), 'none');
 });
