@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { cancelImInvoice, createImInvoice, readImOverview, removeFromImInvoice, saveImBilling, saveImCalendar, saveImEnd, saveImPrice, updateImInvoice } from '../lib/api.ts';
 import { ApiError } from '../lib/api.ts';
@@ -42,7 +42,7 @@ import LabelBadge from './LabelBadge.vue';
  * Prices and invoices are Privati (L2): in the database on this computer,
  * never in the files IM, which the Coder reads.
  */
-const props = defineProps<{ container: BrowsableContainer }>();
+const props = defineProps<{ container: BrowsableContainer; amend?: string | null }>();
 
 const overview = ref<ImOverview | null>(null);
 const problem = ref<string | null>(null);
@@ -57,9 +57,21 @@ async function load(): Promise<void> {
     overview.value = found;
     problem.value = null;
     fillForms(found);
+    openAmend(found);
   } catch (cause) {
     if (props.container.name === name) problem.value = billingErrorText(cause);
   }
+}
+
+/** Once, the invoice the address names (from the dashboard of the client, D-190): its "Totale e scadenza…" open and in view. */
+let amendDone = false;
+function openAmend(found: ImOverview): void {
+  if (amendDone || props.amend === undefined || props.amend === null) return;
+  amendDone = true;
+  const invoice = found.invoices.find((item) => item.id === props.amend);
+  if (invoice === undefined) return;
+  startAmending(invoice);
+  void nextTick(() => document.getElementById(`im-invoice-${invoice.id}`)?.scrollIntoView({ block: 'center' }));
 }
 
 /** Every change: the new overview from the core, or the error in words (a stale calendar is read again). */
@@ -418,7 +430,7 @@ watch(
         </header>
         <p v-if="overview.invoices.length === 0" class="p-4 text-sm text-muted">Nessuna fattura registrata: scegli gli IM da fatturare qui sopra e premi “Fattura”.</p>
         <ul v-else class="divide-y divide-line">
-          <li v-for="invoice in overview.invoices" :key="invoice.id" class="flex flex-col gap-2 px-4 py-3">
+          <li v-for="invoice in overview.invoices" :id="`im-invoice-${invoice.id}`" :key="invoice.id" class="flex flex-col gap-2 px-4 py-3">
             <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span class="font-semibold">Fattura {{ invoice.number }}</span>
               <span class="text-muted">del {{ dayText(invoice.issuedOn) }}</span>

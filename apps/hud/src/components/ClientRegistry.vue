@@ -44,8 +44,6 @@ const emit = defineEmits<{ saved: [id: string]; cancel: [] }>();
 
 const form = ref<ClientForm>(formOf(props.client));
 const office = ref<Address>(emptyAddress('IT'));
-/** The fields the electronic invoice still needs, marked in amber (D-190), with the address as typed; none on a new client. */
-const gapIds = computed(() => (props.client === null ? [] : gapFields({ ...form.value, registeredAddress: office.value })));
 const billing = ref<Address>(emptyAddress('IT'));
 const shipping = ref<Address>(emptyAddress('IT'));
 const billingOn = ref(false);
@@ -96,6 +94,8 @@ const current = computed<ClientForm>(() =>
     shippingAddress: shippingOn.value ? shipping.value : null,
   }),
 );
+/** The fields the electronic invoice still needs, marked in amber (D-190), on what is typed (address and VAT rate included); none on a new client. */
+const gapIds = computed(() => (props.client === null ? [] : gapFields(current.value)));
 const issues = computed(() => clientIssues(current.value));
 const shown = computed(() => shownFields(form.value.kind, form.value.country));
 const area = computed(() => areaOf(form.value.country));
@@ -180,12 +180,12 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
       <!-- IDENTITÀ -->
       <section :class="sectionClass" aria-labelledby="cl-identity">
         <h3 id="cl-identity" class="hud-title sm:col-span-6">Identità</h3>
-        <FormField id="cl-kind" label="Tipo" :span="2" :missing="gapIds.includes('kind')">
+        <FormField id="cl-kind" label="Tipo" :span="3">
           <select id="cl-kind" v-model="form.kind" :class="input">
             <option v-for="[value, text] in kinds" :key="value" :value="value">{{ text }}</option>
           </select>
         </FormField>
-        <FormField id="cl-status" label="Stato" hint="Potenziale: un cliente con cui non lavori ancora." :span="2" :missing="gapIds.includes('status')">
+        <FormField id="cl-status" label="Stato" hint="Potenziale: un cliente con cui non lavori ancora." :span="3">
           <select id="cl-status" v-model="form.status" :class="input">
             <option value="active">Attivo</option>
             <option value="prospect">Potenziale</option>
@@ -202,25 +202,25 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
         <FormField v-else id="cl-legalName" label="Ragione sociale" :problem="problemOf('legalName')" hint="Come va scritta in fattura." :span="4" :missing="gapIds.includes('legalName')">
           <input id="cl-legalName" v-model="form.legalName" :class="input" maxlength="300" autocomplete="off" :placeholder="pa ? 'Comune di …' : 'Rossi Srl'" />
         </FormField>
-        <FormField id="cl-displayName" label="Nome nella lista" :problem="problemOf('displayName')" hint="Vuoto: si usa la ragione sociale o nome e cognome." :span="2" :missing="gapIds.includes('displayName')">
+        <FormField id="cl-displayName" label="Nome nella lista" :problem="problemOf('displayName')" hint="Vuoto: si usa la ragione sociale o nome e cognome." :span="2">
           <input id="cl-displayName" v-model="form.displayName" :class="input" maxlength="200" autocomplete="off" :placeholder="displayPlaceholder" />
         </FormField>
-        <FormField id="cl-sector" label="Settore" :problem="problemOf('sector')" :span="2" :missing="gapIds.includes('sector')">
+        <FormField id="cl-sector" label="Settore" :problem="problemOf('sector')" :span="2">
           <input id="cl-sector" v-model="form.sector" :class="input" maxlength="100" placeholder="Ristorazione, e-commerce…" />
         </FormField>
-        <FormField id="cl-website" label="Sito" :problem="problemOf('website')" :span="2" :missing="gapIds.includes('website')">
+        <FormField id="cl-website" label="Sito" :problem="problemOf('website')" :span="2">
           <input id="cl-website" v-model="form.website" :class="input" maxlength="300" inputmode="url" placeholder="rossi.example" />
         </FormField>
-        <FormField id="cl-email" label="Email" :problem="problemOf('email')" :span="2" :missing="gapIds.includes('email')">
+        <FormField id="cl-email" label="Email" :problem="problemOf('email')" :span="2">
           <input id="cl-email" v-model="form.email" type="email" :class="input" maxlength="254" />
         </FormField>
-        <FormField id="cl-phone" label="Telefono" :problem="problemOf('phone')" :span="2" :missing="gapIds.includes('phone')">
+        <FormField id="cl-phone" label="Telefono" :problem="problemOf('phone')" :span="2">
           <input id="cl-phone" v-model="form.phone" type="tel" :class="input" maxlength="30" />
         </FormField>
-        <FormField id="cl-mobile" label="Cellulare" :problem="problemOf('mobile')" :span="2" :missing="gapIds.includes('mobile')">
+        <FormField id="cl-mobile" label="Cellulare" :problem="problemOf('mobile')" :span="2">
           <input id="cl-mobile" v-model="form.mobile" type="tel" :class="input" maxlength="30" />
         </FormField>
-        <FormField id="cl-tags" label="Etichette" :problem="problemOf('tags')" hint="Separate da virgole: web, grafica." :span="2" :missing="gapIds.includes('tags')">
+        <FormField id="cl-tags" label="Etichette" :problem="problemOf('tags')" hint="Separate da virgole: web, grafica." :span="2">
           <input id="cl-tags" v-model="tagsText" :class="input" />
         </FormField>
       </section>
@@ -228,7 +228,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
       <!-- FISCALE -->
       <section :class="sectionClass" aria-labelledby="cl-tax">
         <h3 id="cl-tax" class="hud-title flex items-center gap-2 sm:col-span-6">Fiscale <span class="chip normal-case">{{ AREA_TEXT[area] }}</span></h3>
-        <FormField id="cl-country" label="Paese" :problem="problemOf('country')" :span="2" :missing="gapIds.includes('country')">
+        <FormField id="cl-country" label="Paese" :problem="problemOf('country')" :span="2">
           <select id="cl-country" :value="form.country" :class="input" @change="chooseCountry">
             <option v-if="countryMissing" :value="form.country">{{ form.country }}</option>
             <option v-for="country in COUNTRIES" :key="country.code" :value="country.code">{{ country.name }}</option>
@@ -240,13 +240,13 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
         <FormField v-if="shown.taxCode" id="cl-taxCode" label="Codice fiscale" :problem="problemOf('taxCode')" :hint="person ? '16 caratteri.' : 'Di solito uguale alla partita IVA.'" :span="2" :missing="gapIds.includes('taxCode')">
           <input id="cl-taxCode" v-model="form.taxCode" :class="input" maxlength="20" autocomplete="off" class="uppercase" />
         </FormField>
-        <FormField v-if="shown.euVatNumber" id="cl-euVatNumber" label="Partita IVA UE (VIES)" :problem="problemOf('euVatNumber')" :hint="`Con il prefisso ${euVatPrefix(form.country) ?? ''}. Non viene verificata in rete.`" :span="3" :missing="gapIds.includes('euVatNumber')">
+        <FormField v-if="shown.euVatNumber" id="cl-euVatNumber" label="Partita IVA UE (VIES)" :problem="problemOf('euVatNumber')" :hint="`Con il prefisso ${euVatPrefix(form.country) ?? ''}. Non viene verificata in rete.`" :span="4" :missing="gapIds.includes('euVatNumber')">
           <input id="cl-euVatNumber" v-model="form.euVatNumber" :class="input" maxlength="20" autocomplete="off" class="uppercase" :placeholder="`${euVatPrefix(form.country) ?? ''}…`" />
         </FormField>
-        <FormField v-if="shown.foreignTaxId" id="cl-foreignTaxId" label="Identificativo fiscale estero" :problem="problemOf('foreignTaxId')" :hint="`Il numero fiscale del cliente in ${countryName(form.country)}.`" :span="3" :missing="gapIds.includes('foreignTaxId')">
+        <FormField v-if="shown.foreignTaxId" id="cl-foreignTaxId" label="Identificativo fiscale estero" :problem="problemOf('foreignTaxId')" :hint="`Il numero fiscale del cliente in ${countryName(form.country)}.`" :span="4">
           <input id="cl-foreignTaxId" v-model="form.foreignTaxId" :class="input" maxlength="30" autocomplete="off" />
         </FormField>
-        <FormField id="cl-vatRate" label="Aliquota IVA (%)" :problem="problemOf('vatRate')" hint="Vuoto: quella ordinaria (22)." :span="2" :missing="gapIds.includes('vatRate')">
+        <FormField id="cl-vatRate" label="Aliquota IVA (%)" :problem="problemOf('vatRate')" hint="Vuoto: quella ordinaria (22)." :span="2">
           <input id="cl-vatRate" v-model="vatRateText" :class="input" inputmode="decimal" placeholder="22" />
         </FormField>
         <FormField id="cl-vatNature" label="Natura IVA (operazioni senza IVA)" :problem="problemOf('vatNature')" hint="Per esempio N2.2 per un forfettario, N6.x per il reverse charge." :span="4" :missing="gapIds.includes('vatNature')">
@@ -283,10 +283,10 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
           <input id="cl-pec" v-model="form.pec" type="email" :class="input" maxlength="254" />
         </FormField>
         <template v-if="shown.cig">
-          <FormField id="cl-cig" label="CIG" :problem="problemOf('cig')" hint="Facoltativo: 10 caratteri." :span="3" :missing="gapIds.includes('cig')">
+          <FormField id="cl-cig" label="CIG" :problem="problemOf('cig')" hint="Facoltativo: 10 caratteri." :span="3">
             <input id="cl-cig" v-model="form.cig" :class="input" maxlength="10" autocomplete="off" class="uppercase" />
           </FormField>
-          <FormField id="cl-cup" label="CUP" :problem="problemOf('cup')" hint="Facoltativo: 15 caratteri." :span="3" :missing="gapIds.includes('cup')">
+          <FormField id="cl-cup" label="CUP" :problem="problemOf('cup')" hint="Facoltativo: 15 caratteri." :span="3">
             <input id="cl-cup" v-model="form.cup" :class="input" maxlength="15" autocomplete="off" class="uppercase" />
           </FormField>
         </template>
@@ -299,7 +299,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
         <FormField id="cl-registeredAddress.street" label="Via" :problem="problemOf('registeredAddress.street')" :span="4" :missing="gapIds.includes('registeredAddress.street')">
           <input id="cl-registeredAddress.street" v-model="office.street" :class="input" maxlength="200" />
         </FormField>
-        <FormField id="cl-registeredAddress.number" label="Civico" :problem="problemOf('registeredAddress.number')" :span="2" :missing="gapIds.includes('registeredAddress.number')">
+        <FormField id="cl-registeredAddress.number" label="Civico" :problem="problemOf('registeredAddress.number')" :span="2">
           <input id="cl-registeredAddress.number" v-model="office.number" :class="input" maxlength="20" />
         </FormField>
         <FormField id="cl-registeredAddress.postalCode" :label="italian ? 'CAP' : 'Codice postale'" :problem="problemOf('registeredAddress.postalCode')" :span="2" :missing="gapIds.includes('registeredAddress.postalCode')">
@@ -323,22 +323,22 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
             {{ other.text }}
           </label>
           <template v-if="other.on">
-            <FormField :id="`cl-${other.key}.street`" label="Via" :problem="problemOf(`${other.key}.street`)" :span="4" :missing="false">
+            <FormField :id="`cl-${other.key}.street`" label="Via" :problem="problemOf(`${other.key}.street`)" :span="4" >
               <input :id="`cl-${other.key}.street`" v-model="other.address.street" :class="input" maxlength="200" />
             </FormField>
-            <FormField :id="`cl-${other.key}.number`" label="Civico" :problem="problemOf(`${other.key}.number`)" :span="2" :missing="false">
+            <FormField :id="`cl-${other.key}.number`" label="Civico" :problem="problemOf(`${other.key}.number`)" :span="2" >
               <input :id="`cl-${other.key}.number`" v-model="other.address.number" :class="input" maxlength="20" />
             </FormField>
-            <FormField :id="`cl-${other.key}.postalCode`" :label="other.address.country === 'IT' ? 'CAP' : 'Codice postale'" :problem="problemOf(`${other.key}.postalCode`)" :span="2" :missing="false">
+            <FormField :id="`cl-${other.key}.postalCode`" :label="other.address.country === 'IT' ? 'CAP' : 'Codice postale'" :problem="problemOf(`${other.key}.postalCode`)" :span="2" >
               <input :id="`cl-${other.key}.postalCode`" v-model="other.address.postalCode" :class="input" maxlength="12" />
             </FormField>
-            <FormField :id="`cl-${other.key}.city`" label="Città" :problem="problemOf(`${other.key}.city`)" :span="2" :missing="false">
+            <FormField :id="`cl-${other.key}.city`" label="Città" :problem="problemOf(`${other.key}.city`)" :span="2" >
               <input :id="`cl-${other.key}.city`" v-model="other.address.city" :class="input" maxlength="100" />
             </FormField>
-            <FormField :id="`cl-${other.key}.province`" :label="other.address.country === 'IT' ? 'Provincia (sigla)' : 'Regione o stato'" :problem="problemOf(`${other.key}.province`)" :span="2" :missing="false">
+            <FormField :id="`cl-${other.key}.province`" :label="other.address.country === 'IT' ? 'Provincia (sigla)' : 'Regione o stato'" :problem="problemOf(`${other.key}.province`)" :span="2" >
               <input :id="`cl-${other.key}.province`" v-model="other.address.province" :class="input" maxlength="60" />
             </FormField>
-            <FormField :id="`cl-${other.key}.country`" label="Paese" :problem="problemOf(`${other.key}.country`)" :span="2" :missing="false">
+            <FormField :id="`cl-${other.key}.country`" label="Paese" :problem="problemOf(`${other.key}.country`)" :span="2" >
               <select :id="`cl-${other.key}.country`" v-model="other.address.country" :class="input">
                 <option v-for="country in COUNTRIES" :key="country.code" :value="country.code">{{ country.name }}</option>
               </select>
@@ -350,31 +350,31 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
       <!-- PAGAMENTI -->
       <section :class="sectionClass" aria-labelledby="cl-payment">
         <h3 id="cl-payment" class="hud-title sm:col-span-6">Pagamenti</h3>
-        <FormField id="cl-paymentMethod" label="Metodo" :problem="problemOf('paymentMethod')" :span="2" :missing="gapIds.includes('paymentMethod')">
+        <FormField id="cl-paymentMethod" label="Metodo" :problem="problemOf('paymentMethod')" :span="2">
           <select id="cl-paymentMethod" v-model="form.paymentMethod" :class="input">
             <option :value="null">Non detto</option>
             <option v-for="[value, text] in payments" :key="value" :value="value">{{ text }}</option>
           </select>
         </FormField>
-        <FormField id="cl-paymentDays" label="Giorni" :problem="problemOf('paymentDays')" hint="0 = a vista; di solito 30, 60 o 90." :span="2" :missing="gapIds.includes('paymentDays')">
+        <FormField id="cl-paymentDays" label="Giorni" :problem="problemOf('paymentDays')" hint="0 = a vista; di solito 30, 60 o 90." :span="2">
           <div class="flex items-center gap-3">
             <input id="cl-paymentDays" v-model="daysText" :class="input" inputmode="numeric" placeholder="30" />
             <label class="flex shrink-0 items-center gap-2 text-[14px]"><input v-model="form.paymentEndOfMonth" type="checkbox" class="switch" />Fine mese</label>
           </div>
         </FormField>
-        <FormField id="cl-currency" label="Valuta" :problem="problemOf('currency')" :span="2" :missing="gapIds.includes('currency')">
+        <FormField id="cl-currency" label="Valuta" :problem="problemOf('currency')" :span="2">
           <input id="cl-currency" v-model="form.currency" :class="input" maxlength="3" class="uppercase" placeholder="EUR" />
         </FormField>
-        <FormField id="cl-invoiceLanguage" label="Lingua delle fatture" :problem="problemOf('invoiceLanguage')" hint="Due lettere: it, en, de…" :span="2" :missing="gapIds.includes('invoiceLanguage')">
+        <FormField id="cl-invoiceLanguage" label="Lingua delle fatture" :problem="problemOf('invoiceLanguage')" hint="Due lettere: it, en, de…" :span="2">
           <input id="cl-invoiceLanguage" v-model="form.invoiceLanguage" :class="input" maxlength="2" placeholder="it" />
         </FormField>
-        <FormField id="cl-billingEmail" label="Email per le fatture" :problem="problemOf('billingEmail')" :span="4" :missing="gapIds.includes('billingEmail')">
+        <FormField id="cl-billingEmail" label="Email per le fatture" :problem="problemOf('billingEmail')" :span="4">
           <input id="cl-billingEmail" v-model="form.billingEmail" type="email" :class="input" maxlength="254" />
         </FormField>
-        <FormField id="cl-purchaseOrder" label="Ordine o riferimento" :problem="problemOf('purchaseOrder')" hint="Da riportare in fattura, se il cliente lo chiede." :span="3" :missing="gapIds.includes('purchaseOrder')">
+        <FormField id="cl-purchaseOrder" label="Ordine o riferimento" :problem="problemOf('purchaseOrder')" hint="Da riportare in fattura, se il cliente lo chiede." :span="3">
           <input id="cl-purchaseOrder" v-model="form.purchaseOrder" :class="input" maxlength="500" />
         </FormField>
-        <FormField id="cl-iban" label="IBAN del cliente" :problem="problemOf('iban')" hint="Facoltativo: serve per la RiBa o un addebito. Resta privato su questo computer." :span="6" :missing="gapIds.includes('iban')">
+        <FormField id="cl-iban" label="IBAN del cliente" :problem="problemOf('iban')" hint="Facoltativo: serve per la RiBa o un addebito. Resta privato su questo computer." :span="6">
           <input id="cl-iban" v-model="form.iban" :class="input" maxlength="42" autocomplete="off" class="font-mono uppercase" />
         </FormField>
       </section>

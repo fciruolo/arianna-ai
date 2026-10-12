@@ -19,9 +19,19 @@ export function isProjectsPath(pathname: string): boolean {
  * `/progetti?progetto=<name>`; from the Studio (I-20, D-185) also the folder
  * of the mockups opened in File: `&cartella=<folder>`.
  */
-export function projectsPathFor(name?: string, folder?: string): string {
+export function projectsPathFor(name?: string, folder?: string, invoice?: string): string {
   if (name === undefined || name === '') return PROJECTS_PATH;
-  return `${PROJECTS_PATH}?${new URLSearchParams({ progetto: name, ...(folder === undefined || folder === '' ? {} : { cartella: folder }) }).toString()}`;
+  return `${PROJECTS_PATH}?${new URLSearchParams({
+    progetto: name,
+    ...(folder === undefined || folder === '' ? {} : { cartella: folder }),
+    ...(invoice === undefined || invoice === '' ? {} : { fattura: invoice }),
+  }).toString()}`;
+}
+
+/** The invoice whose "Totale e scadenza…" the address opens in the IM tab (D-190): an id, or undefined. */
+export function invoiceFromSearch(search: string): string | undefined {
+  const id = new URLSearchParams(search).get('fattura')?.trim();
+  return id === undefined || !/^[0-9a-f-]{8,64}$/i.test(id) ? undefined : id;
 }
 
 /** The project the address chooses, or undefined. */

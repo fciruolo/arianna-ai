@@ -431,8 +431,8 @@ function openOffice(): void {
 }
 
 /** An approved project, read only (D-134); `name` opens that one (from a client's page, D-168). */
-function openProjects(name?: string, folder?: string): void {
-  openPage('projects', projectsPathFor(name, folder), 'Progetti');
+function openProjects(name?: string, folder?: string, invoice?: string): void {
+  openPage('projects', projectsPathFor(name, folder, invoice), 'Progetti');
 }
 
 /** The client open in "Clienti" (D-168), from the address `/clienti/<id>`; null is the list. */
@@ -998,7 +998,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />
       <GodPage v-else-if="page === 'god'" :character="characters?.agents[GOD_AGENT]" @chat="openGodChat" @open="openConversation" />
       <ProjectsPage v-else-if="page === 'projects'" @client="openClients" @studio="(name) => openStudio({ project: name })" @conversation="openConversation" />
-      <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="openProjects" />
+      <ClientsPage v-else-if="page === 'clients'" :client="clientShown" @open="openClients" @project="(name, invoice) => openProjects(name, undefined, invoice)" />
       <FinancePage v-else-if="page === 'finance'" :tab="financeTab" @tab="openFinance" />
       <StudioPage
         v-else-if="page === 'studio'"

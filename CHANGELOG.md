@@ -13,6 +13,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Aggiunto
 
 - Clienti: «Completa» sull'avviso della fattura elettronica porta all'Anagrafica sul primo campo da riempire (D-190).
+- Clienti, Dashboard: l'avviso di una fattura senza totale con IVA dice quale fattura e quanto conta adesso, con «Scrivi il totale» che apre la scheda IM del progetto su quella fattura (D-190).
 
 ### Corretto
 

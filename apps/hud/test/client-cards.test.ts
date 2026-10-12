@@ -68,6 +68,19 @@ test('gapFields marks the fields behind each gap of the electronic invoice', () 
 });
 
 test('gapFields and billingGaps agree on whether something is missing', () => {
-  const cases = [form({ displayName: 'Rossi' }), form({ kind: 'individual' }), form({ kind: 'public_administration', legalName: 'Comune di Finta' }), form({ legalName: 'X', country: 'DE' }), form({ legalName: 'X', country: 'US', registeredAddress: { street: 'Main St', number: '1', postalCode: null, city: 'Boston', province: null, country: 'US' } })];
+  const office = { street: 'Via Finta', number: '1', postalCode: '20100', city: 'Milano', province: 'MI', country: 'IT' };
+  const abroad = { street: 'Main St', number: '1', postalCode: null, city: 'Boston', province: null, country: 'US' };
+  const cases = [
+    form({ displayName: 'Rossi' }),
+    form({ kind: 'individual' }),
+    form({ kind: 'public_administration', legalName: 'Comune di Finta' }),
+    form({ kind: 'public_administration', legalName: 'Comune di Finta', ipaCode: 'ABC123', registeredAddress: office }),
+    form({ kind: 'freelancer', firstName: 'Mario', vatNumber: '01234567897', pec: 'mario@pec.example.it', registeredAddress: office }),
+    form({ kind: 'individual', country: 'DE', registeredAddress: { ...abroad, country: 'DE' } }),
+    form({ kind: 'individual', country: 'US', registeredAddress: abroad }),
+    form({ legalName: 'X', country: 'DE' }),
+    form({ legalName: 'X', country: 'US', vatRate: 0, registeredAddress: abroad }),
+    form({ legalName: 'X', country: 'US', registeredAddress: abroad }),
+  ];
   for (const item of cases) assert.equal(gapFields(item).length === 0, billingGaps(item).length === 0, JSON.stringify(item.kind + item.country));
 });

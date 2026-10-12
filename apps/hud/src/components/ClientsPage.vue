@@ -41,7 +41,7 @@ import Icon from './Icon.vue';
  * `client` comes from the address (`/clienti/<id>`); "new" writes a new one.
  */
 const props = defineProps<{ client: string | null }>();
-const emit = defineEmits<{ open: [id: string | null]; project: [name: string] }>();
+const emit = defineEmits<{ open: [id: string | null]; project: [name: string, invoice?: string] }>();
 
 const clients = ref<ClientSummary[] | null>(null);
 const approved = ref<string[]>([]);
@@ -72,29 +72,41 @@ const orders = Object.entries(CARD_ORDER_TEXT) as [CardOrder, string][];
 
 /** The three numbers of each card, read from its dashboard after the list; missing while not read. */
 const money = ref(new Map<string, CardMoney>());
+/** The cards whose dashboard could not be read: "Numeri non disponibili", not "not read yet". */
+const moneyFailed = ref(new Set<string>());
 const thisYear = new Date().getFullYear();
 let moneyRead = 0;
 async function loadMoney(list: readonly ClientSummary[]): Promise<void> {
   const request = ++moneyRead;
+  // Every client, archived too: changing the filter later finds its numbers already read.
   const found = await Promise.all(
-    list
-      .filter((item) => item.status !== 'archived' || status.value !== 'current')
-      .map(async (item) => {
-        try {
-          const dashboard = await readClientDashboard(item.id);
-          return [item.id, cardMoney(summarize(dashboard, { year: thisYear, project: 'all', basis: 'accrual' }), dashboard.currency)] as const;
-        } catch {
-          return null;
-        }
-      }),
+    list.map(async (item) => {
+      try {
+        const dashboard = await readClientDashboard(item.id);
+        return [item.id, cardMoney(summarize(dashboard, { year: thisYear, project: 'all', basis: 'accrual' }), dashboard.currency)] as const;
+      } catch {
+        return [item.id, null] as const;
+      }
+    }),
   );
-  if (request === moneyRead) money.value = new Map(found.filter((entry) => entry !== null));
+  if (request !== moneyRead) return;
+  money.value = new Map(found.flatMap(([id, value]) => (value === null ? [] : [[id, value] as const])));
+  moneyFailed.value = new Set(found.flatMap(([id, value]) => (value === null ? [id] : [])));
 }
 
 const shown = computed(() => sortCards(filterClients(clients.value ?? [], status.value, query.value), order.value, money.value));
 
 function euros(cents: number, currency: string): string {
   return roundMoneyText(cents, currency);
+}
+
+/** What the bottom of a card shows: still reading, not readable, nothing yet, or the three numbers. */
+type CardFoot = { kind: 'reading' } | { kind: 'failed' } | { kind: 'empty' } | { kind: 'money'; value: CardMoney };
+function footOf(id: string): CardFoot {
+  const value = money.value.get(id);
+  if (value === undefined) return moneyFailed.value.has(id) ? { kind: 'failed' } : { kind: 'reading' };
+  if (value.closed === 0 && value.awaiting === 0 && value.toInvoice === 0) return { kind: 'empty' };
+  return { kind: 'money', value };
 }
 
 async function loadList(): Promise<void> {
@@ -344,16 +356,17 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
               <span v-if="item.projects.length > 4" class="chip">+{{ item.projects.length - 4 }}</span>
               <span v-if="item.projects.length === 0" class="text-[13px] text-muted">Nessun progetto</span>
             </span>
-            <span class="mt-auto border-t border-line pt-3">
-              <span v-if="money.get(item.id) === undefined" class="text-[13px] text-muted">Numeri del {{ thisYear }} non ancora letti.</span>
-              <span v-else-if="money.get(item.id)!.closed === 0 && money.get(item.id)!.awaiting === 0 && money.get(item.id)!.toInvoice === 0" class="text-[13px] text-muted">Nessun IM chiuso nel {{ thisYear }}: i numeri compaiono con il primo lavoro chiuso.</span>
+            <span v-for="foot in [footOf(item.id)]" :key="foot.kind" class="mt-auto border-t border-line pt-3">
+              <span v-if="foot.kind === 'reading'" class="text-[13px] text-muted">Leggo i numeri del {{ thisYear }}…</span>
+              <span v-else-if="foot.kind === 'failed'" class="text-[13px] text-warn">Numeri non disponibili: apri il cliente per vederli.</span>
+              <span v-else-if="foot.kind === 'empty'" class="text-[13px] text-muted">Nessun IM chiuso nel {{ thisYear }}: i numeri compaiono con il primo lavoro chiuso.</span>
               <span v-else class="grid grid-cols-3 gap-2">
-                <span class="flex flex-col"><span class="text-xs text-muted">Guadagno {{ thisYear }}</span><b class="text-[18px] tabular-nums">{{ euros(money.get(item.id)!.earned, money.get(item.id)!.currency) }}</b></span>
-                <span class="flex flex-col"><span class="text-xs text-muted">Da fatturare</span><b class="text-[18px] tabular-nums">{{ euros(money.get(item.id)!.toInvoice, money.get(item.id)!.currency) }}</b></span>
+                <span class="flex flex-col"><span class="text-xs text-muted">Guadagno {{ thisYear }}</span><b class="text-[18px] tabular-nums">{{ euros(foot.value.earned, foot.value.currency) }}</b></span>
+                <span class="flex flex-col"><span class="text-xs text-muted">Da fatturare</span><b class="text-[18px] tabular-nums">{{ euros(foot.value.toInvoice, foot.value.currency) }}</b></span>
                 <span class="flex flex-col">
                   <span class="text-xs text-muted">In attesa</span>
-                  <b class="text-[18px] tabular-nums" :class="money.get(item.id)!.overdue > 0 ? 'text-danger' : ''">{{ euros(money.get(item.id)!.awaiting, money.get(item.id)!.currency) }}</b>
-                  <span v-if="money.get(item.id)!.overdue > 0" class="text-xs text-danger">{{ money.get(item.id)!.overdue === 1 ? '1 scaduta' : `${String(money.get(item.id)!.overdue)} scadute` }}</span>
+                  <b class="text-[18px] tabular-nums" :class="foot.value.overdue > 0 ? 'text-danger' : ''">{{ euros(foot.value.awaiting, foot.value.currency) }}</b>
+                  <span v-if="foot.value.overdue > 0" class="text-xs text-danger">{{ foot.value.overdue === 1 ? '1 scaduta' : `${String(foot.value.overdue)} scadute` }}</span>
                 </span>
               </span>
             </span>
@@ -426,7 +439,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </button>
         </nav>
 
-        <ClientDashboard v-if="tab === 'dashboard'" :client-id="detail.id" @project="emit('project', $event)" />
+        <ClientDashboard v-if="tab === 'dashboard'" :client-id="detail.id" @project="emit('project', $event)" @invoice="(name, invoice) => emit('project', name, invoice)" />
         <ClientRegistry v-else-if="tab === 'registry'" :client="detail" @saved="saved" />
         <ClientContacts v-else-if="tab === 'contacts'" :client="detail" @changed="refresh" />
 

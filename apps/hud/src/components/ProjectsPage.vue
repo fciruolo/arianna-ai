@@ -21,6 +21,7 @@ import {
   vscodeUrl,
   partTitle,
   folderFromSearch,
+  invoiceFromSearch,
   projectFromSearch,
   type BrowsableContainer,
   type BrowsableProject,
@@ -448,6 +449,9 @@ function chooseContainer(name: string): void {
   }
 }
 
+/** The invoice to open in the IM tab, from the address (D-190); null after it. */
+const amendInvoice = ref<string | null>(null);
+
 onMounted(async () => {
   try {
     const found = await listBrowsableProjects();
@@ -459,6 +463,12 @@ onMounted(async () => {
     const first = found.containers.find((item) => item.name === (part?.project ?? named)) ?? found.containers[0];
     if (first !== undefined) chooseContainer(first.name);
     if (part !== undefined && chosen.value !== part.name && first?.name === part.project) choosePart(part.name);
+    // An invoice from the dashboard of its client (D-190): the IM tab, its "Totale e scadenza…" open.
+    const invoice = invoiceFromSearch(window.location.search);
+    if (invoice !== undefined && first !== undefined) {
+      amendInvoice.value = invoice;
+      tab.value = 'im';
+    }
     const folder = folderFromSearch(window.location.search);
     if (folder !== undefined && part !== undefined && chosen.value === part.name) {
       tab.value = 'file';
@@ -648,7 +658,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- CONOSCENZA (D-145): the management folders of the container and their notes -->
       <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" @conversation="(id) => emit('conversation', id)" />
       <!-- IM (D-167, P4d): calendar, price, every IM with its money, the invoices -->
-      <ProjectImTab v-else-if="tab === 'im'" :container="container" />
+      <ProjectImTab v-else-if="tab === 'im'" :container="container" :amend="amendInvoice" />
       <!-- REGOLE (I-14, D-174): the rules at the head of every delegation on the project -->
       <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" @exported="refreshTree" />
 
