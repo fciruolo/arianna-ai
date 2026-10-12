@@ -4,6 +4,15 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Studio: «Elimina» chiede in una finestra che spiega lo spostamento in `eliminati/`, con la spunta «Elimina definitivamente» spenta di base (I-20, D-185).
+- Studio: stile e skill si scelgono in una finestra: ogni stile è la stessa pagina di prova disegnata con i suoi colori, caratteri e angoli presi dal `DESIGN.md`, con categoria, descrizione e «Leggi tutto»; le skill con la loro descrizione (I-20, D-185).
+- Studio: sotto la barra, con che stile e skill è stata fatta la variante mostrata (e quella a confronto), dal registro `varianti.json` che il core scrive accanto ai mockup alla fine di ogni lavoro del Designer (I-20, D-185).
+- Studio: «Apri in Progetti» apre il progetto con la cartella dei mockup aperta nella scheda File; in Progetti «Apri nello Studio»; nella chat col Designer su un progetto il pulsante «Apri nello Studio» (I-20, D-185).
+- Chat col Designer: quando la sessione supera metà del contesto, dopo una risposta il Designer propone «Riparti»: una conversazione nuova sullo stesso progetto da un riassunto scritto dal codice (ultime richieste, ultima risposta, variante aperta nello Studio); «No» la ripropone più avanti (I-20, D-185).
+- Progetti → File: «Sposta o rinomina», «Elimina» (per sempre) e, nei file di `eliminati/`, «Ripristina», ognuno con una finestra di conferma; niente su collegamenti, file nascosti, `node_modules` né mentre un agente lavora sul progetto (I-20, D-185).
+
 ## [0.76.0] - 2026-10-12
 
 ### Aggiunto

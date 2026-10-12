@@ -14,15 +14,27 @@ export function isProjectsPath(pathname: string): boolean {
   return pathname === PROJECTS_PATH || pathname === `${PROJECTS_PATH}/`;
 }
 
-/** The page with a project chosen (from the page of its client, D-168): `/progetti?progetto=<name>`. */
-export function projectsPathFor(name?: string): string {
-  return name === undefined || name === '' ? PROJECTS_PATH : `${PROJECTS_PATH}?${new URLSearchParams({ progetto: name }).toString()}`;
+/**
+ * The page with a project chosen (from the page of its client, D-168):
+ * `/progetti?progetto=<name>`; from the Studio (I-20, D-185) also the folder
+ * of the mockups opened in File: `&cartella=<folder>`.
+ */
+export function projectsPathFor(name?: string, folder?: string): string {
+  if (name === undefined || name === '') return PROJECTS_PATH;
+  return `${PROJECTS_PATH}?${new URLSearchParams({ progetto: name, ...(folder === undefined || folder === '' ? {} : { cartella: folder }) }).toString()}`;
 }
 
 /** The project the address chooses, or undefined. */
 export function projectFromSearch(search: string): string | undefined {
   const name = new URLSearchParams(search).get('progetto')?.trim();
   return name === undefined || name === '' ? undefined : name;
+}
+
+/** The folder the address opens in File (I-20): relative, no empty, `.` or `..` part; undefined otherwise. */
+export function folderFromSearch(search: string): string | undefined {
+  const folder = new URLSearchParams(search).get('cartella')?.trim();
+  if (folder === undefined || folder === '' || folder.length > 1024 || folder.startsWith('/') || folder.includes('\\')) return undefined;
+  return folder.split('/').some((part) => part === '' || part === '.' || part === '..') ? undefined : folder;
 }
 
 /** A part of a project (D-145): `name` is `<project>` or `<project>:<part>`; File, Git and Servizi read it. */

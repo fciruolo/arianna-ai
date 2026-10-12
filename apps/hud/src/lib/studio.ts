@@ -52,6 +52,29 @@ export interface Mockup {
   bytes: number;
   modified: string;
   sha256: string;
+  /** Style and skills of the Designer's run that wrote it (register next to the mockups, D-185); absent: not known. */
+  design?: { style: string | null; skills: string[]; at: string };
+}
+
+/** The small page of a style (I-20, D-185): colors `#rrggbb`, font names and numbers checked by the core. */
+export interface StyleSample {
+  palette: { name: string; hex: string }[];
+  hero: string;
+  heroText: string;
+  heroAction: string;
+  background: string;
+  text: string;
+  accent: string;
+  accentText: string;
+  displayFont: string[];
+  bodyFont: string[];
+  titleWeight: number;
+  radius: number;
+}
+
+export interface StyleSamples {
+  commit: string | null;
+  samples: Record<string, StyleSample>;
 }
 
 export interface MockupList {
@@ -548,4 +571,74 @@ export function exportName(path: string, extension: 'html' | 'pptx'): string {
   const name = path.split('/').at(-1) ?? 'mockup.html';
   const base = name.replace(/\.html?$/i, '') || 'mockup';
   return `${base}.${extension}`;
+}
+
+const SAMPLE_FONT = /^[A-Za-z0-9][A-Za-z0-9 .-]{0,47}$/;
+const SAMPLE_GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'cursive']);
+
+/** A CSS font stack from the names of a sample: names quoted, checked again here; the generic family last. */
+export function fontStack(names: readonly string[]): string {
+  const parts = names.filter((name) => SAMPLE_GENERIC.has(name) || SAMPLE_FONT.test(name)).map((name) => (SAMPLE_GENERIC.has(name) ? name : `"${name}"`));
+  return parts.length === 0 ? 'sans-serif' : parts.join(', ');
+}
+
+/**
+ * How the page says the style and skills of a variant (D-185): from the
+ * register, by name when the catalogs know them; "not known" without an entry.
+ */
+export function variantDesignText(design: Mockup['design'], styleName: (slug: string) => string | undefined, skillName: (id: string) => string | undefined): string {
+  if (design === undefined) return 'Stile e skill non noti (variante fatta prima del registro o a mano)';
+  const style = design.style === null ? 'nessuno stile' : `stile ${styleName(design.style) ?? design.style}`;
+  const skills = design.skills.length === 0 ? 'nessuna skill' : `skill: ${design.skills.map((id) => skillName(id) ?? id).join(', ')}`;
+  return `Fatta con ${style} · ${skills}`;
+}
+
+/**
+ * Where "Ripristina" puts a file of `eliminati/` (D-184, D-185): the folder
+ * above, with the suffix of a second deletion (`~1a2b3c4d`) taken off; undefined
+ * for a path that is not directly inside an `eliminati` folder.
+ */
+export function restoredPath(path: string): string | undefined {
+  const parts = path.split('/');
+  const name = parts.at(-1);
+  if (parts.length < 2 || parts.at(-2) !== 'eliminati' || name === undefined || name === '') return undefined;
+  return [...parts.slice(0, -2), name.replace(/~[0-9a-f]{8}(\.[^.]+)$/i, '$1')].join('/');
+}
+
+/**
+ * «Riparti» of the Designer (I-20, D-185): the chat proposes it when the
+ * session's context passes CARRY_AT percent of the window and the Designer
+ * has just answered; after «No» it comes back only CARRY_AGAIN points later.
+ */
+export const DESIGNER_CARRY_AT = 50;
+export const DESIGNER_CARRY_AGAIN = 15;
+
+export function proposeDesignerCarry(percent: number, lastRole: string | undefined, declinedAt: number | null): boolean {
+  if (!Number.isFinite(percent) || percent < DESIGNER_CARRY_AT || lastRole !== 'assistant') return false;
+  return declinedAt === null || percent >= declinedAt + DESIGNER_CARRY_AGAIN;
+}
+
+const CARRY_DECLINED_KEY = 'arianna.designer.carry.declined.';
+
+interface CarryStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** The percent of the context at the last «No» in this conversation, remembered in this browser; null without one. */
+export function loadCarryDeclined(storage: CarryStorage | undefined, conversationId: string): number | null {
+  try {
+    const value = storage?.getItem(CARRY_DECLINED_KEY + conversationId) ?? null;
+    return value !== null && /^\d{1,3}$/.test(value) ? Number(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCarryDeclined(storage: CarryStorage | undefined, conversationId: string, percent: number): void {
+  try {
+    storage?.setItem(CARRY_DECLINED_KEY + conversationId, String(Math.max(0, Math.min(100, Math.round(percent)))));
+  } catch {
+    // Private window or storage off: the question comes back at the next answer.
+  }
 }

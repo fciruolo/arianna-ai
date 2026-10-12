@@ -43,6 +43,7 @@ import Icon from './Icon.vue';
 import LiveEdits from './LiveEdits.vue';
 import MarkdownText from './MarkdownText.vue';
 import GodCarryNote from './GodCarryNote.vue';
+import DesignerCarryProposal from './DesignerCarryProposal.vue';
 import GodCarryProposal from './GodCarryProposal.vue';
 import GodPlanCard from './GodPlanCard.vue';
 import { GOD_AGENT } from '../lib/god.ts';
@@ -52,6 +53,7 @@ import MessageTime from './MessageTime.vue';
 import ParticipantStack from './ParticipantStack.vue';
 import PixelAgent from './PixelAgent.vue';
 import SessionLine from './SessionLine.vue';
+import { DESIGNER_AGENT } from '../lib/studio.ts';
 
 const props = defineProps<{
   chat: ChatState;
@@ -75,12 +77,20 @@ const props = defineProps<{
   characters: Record<string, CharacterChoice> | undefined;
   /** Who the user may talk with directly (D-111d): where the agent of this conversation runs. */
   directAgents?: DirectAgent[] | undefined;
+  /** "Apri nello Studio" in a direct chat with the Designer on a project (I-20, D-185); off inside the Studio itself. */
+  studioLink?: boolean;
+  /** The mockup open in the Studio, for the summary of «Riparti» (D-185). */
+  studioFile?: string | undefined;
 }>();
 
 const receipts = computed(() => receiptAnchors(props.chat.messages, props.calls));
 const steps = computed(() => stepsAnchors(props.chat.messages, props.tasks, props.activityCounts));
 const emit = defineEmits<{
   send: [body: string];
+  /** "Apri nello Studio": the project of this chat with the Designer (I-20, D-185). */
+  studio: [workspace: string];
+  /** «Riparti» of the Designer: the new conversation (D-185). */
+  restarted: [id: string];
   /** "Cosa vogliono dire le etichette?": the legend (etichette parlanti). */
   legend: [];
   chooseModel: [model: string | null];
@@ -612,6 +622,13 @@ onBeforeUnmount(() => clearInterval(clock));
               <span class="min-w-0 truncate" :title="participants.length > 0 ? withText(participants) : undefined">{{ POSE_TEXT[directPose] }}<template v-if="participants.length > 0"> · {{ withText(participants) }}</template></span>
             </p>
             <p v-if="cloud" class="mt-1 text-xs text-muted">{{ answers }}</p>
+            <button
+              v-if="studioLink === true && direct === DESIGNER_AGENT && conversation.workspace"
+              type="button"
+              class="btn mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              title="I mockup di questo progetto nello Studio, con questa conversazione a sinistra"
+              @click="emit('studio', conversation.workspace)"
+            ><Icon name="studio" :size="13" />Apri nello Studio</button>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
             <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
             <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
@@ -868,6 +885,18 @@ onBeforeUnmount(() => clearInterval(clock));
           <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
+
+        <!-- The Designer (I-20, D-185): with a heavy context it proposes to restart from a summary. -->
+        <DesignerCarryProposal
+          v-if="conversation.agent === DESIGNER_AGENT && conversation.workspace !== null && conversation.archivedAt === null"
+          :conversation-id="conversation.id"
+          :context-tokens="conversation.contextTokens"
+          :last-role="chat.messages.filter((message) => message.role !== 'system').at(-1)?.role"
+          :sending="sending || chat.streaming.length > 0"
+          :name="directName"
+          :open="studioFile"
+          @restarted="(id) => emit('restarted', id)"
+        />
 
         <!-- GOD (D-127, G4): in a long chat, GOD proposes to restart from a summary. -->
         <GodCarryProposal

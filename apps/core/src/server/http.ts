@@ -18,7 +18,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, DESIGNER_AGENT, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -99,6 +99,9 @@ import { UserAgentError, type ConfirmedNewUserAgent, type UserAgents } from '../
 import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
+import { createSampleCache } from '../style-sample.ts';
+import { createDesignerCarry, openMockup } from '../designer-carry.ts';
+import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
 import { changelogRefOf } from '../god/changelog-carry.ts';
 import { GodCloneError } from '../god/clone.ts';
@@ -1017,6 +1020,7 @@ function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
   };
+  const samples = createSampleCache({ list: () => need().list(), styleText: (slug) => need().styleText(slug) });
   return [
     route('GET', '/api/design-catalog', () => Promise.resolve({ body: need().status() })),
     route('POST', '/api/design-catalog/update', async (request) => {
@@ -1034,6 +1038,8 @@ function designCatalogRoutes(catalog: DesignCatalog | undefined): Route[] {
     }),
     route('GET', '/api/design-catalog/styles', () => Promise.resolve({ body: need().list() })),
     route('GET', '/api/design-catalog/styles/:slug', (_request, _url, params) => Promise.resolve({ body: { style: need().styleText(params.slug ?? '') } })),
+    // The small page of each style in the window of the Studio (I-20, D-185): colors, fonts and corners read from its DESIGN.md.
+    route('GET', '/api/design-catalog/samples', () => Promise.resolve({ body: samples() })),
   ];
 }
 
@@ -1629,6 +1635,7 @@ function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiSe
  * D-135, which the core reads for each request.
  */
 function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks, containers: () => readonly Project[]): Route[] {
+  const fileDeps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), sql };
   const projectParam = (params: Params): string => {
     const name = params.project ?? '';
     if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
@@ -1674,6 +1681,19 @@ function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project
       onlyFields(body, ['path']);
       if (typeof body.path !== 'string' || body.path === '' || body.path.length > 4096) throw new HttpError(400, 'path must be a file of the project');
       return { body: await openBrowsedFile(approvedProjects(), openLinks, name, body.path) };
+    }),
+    // The tab "File" moves and deletes after the window of the page (I-20, D-185): no link, hidden part or running agent.
+    route('POST', '/api/browse/:project/move', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['from', 'to']);
+      return { body: await moveProjectPath(fileDeps, name, { from: body.from, to: body.to }) };
+    }),
+    route('POST', '/api/browse/:project/delete', async (request, _url, params) => {
+      const name = projectParam(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      return { body: await deleteProjectPath(fileDeps, name, { path: body.path }) };
     }),
     route('GET', '/api/browse/:project/git', async (_request, _url, params) => ({ body: { git: await readProjectGit(sql, approvedProjects(), projectParam(params)) } })),
     route('GET', '/api/browse/:project/commits/:commit', async (_request, _url, params) => {
@@ -1858,6 +1878,21 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
         ...(typeof trialModel === 'string' ? { trialModel } : {}),
         projects: projects().map((project) => project.name),
         ...(model !== undefined && models().some((entry) => entry.model === model) ? { model } : {}),
+      });
+      return { status: 201, body: { conversation } };
+    }),
+
+    // «Riparti» of the Designer (I-20, D-185): a new conversation on the same project from a summary of this one.
+    route('POST', '/api/conversations/:id/designer-restart', async (request, _url, params) => {
+      const body = await readJson(request);
+      onlyFields(body, ['open']);
+      const policy = (directAgents?.() ?? []).find((item) => item.agent === DESIGNER_AGENT);
+      if (policy === undefined) throw new HttpError(409, 'il Designer non può rispondere ora: accendi Claude o Codex');
+      const conversation = await createDesignerCarry(sql, {
+        from: idParam(params, 'id'),
+        ...(body.open === undefined ? {} : { open: openMockup(body.open) ?? '' }),
+        projects: projects().map((project) => project.name),
+        agent: { name: policy.agent, modes: policy.modes, project: policy.project },
       });
       return { status: 201, body: { conversation } };
     }),
@@ -2183,8 +2218,8 @@ function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx
       guard(async (request, _url, params) => {
         const project = projectParam(params);
         const body = await readJson(request, MAX_STUDIO_BODY);
-        onlyFields(body, ['path', 'base']);
-        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base }) };
+        onlyFields(body, ['path', 'base', 'permanent']);
+        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base, permanent: body.permanent }) };
       }),
     ),
     route(
@@ -3098,6 +3133,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ServiceError) return { status: error.code === 'unknown' ? 404 : 409, message: error.message };
+  if (error instanceof ProjectFileError) return { status: PROJECT_FILE_STATUS[error.code], message: error.message };
   if (error instanceof DelegationFileError) {
     const status = { 'not-found': 404, deleted: 410, 'not-approved': 403, refused: 403, 'too-large': 413, binary: 415, archived: 409, busy: 409 }[error.code];
     return { status, message: error.message };

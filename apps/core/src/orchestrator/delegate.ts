@@ -35,6 +35,7 @@ import { contextOf, outputSource, type Marked } from '../finance-mark.ts';
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
 import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } from '../god/clone.ts';
 import { carryParts } from '../god/carry.ts';
+import { designerCarryParts } from '../designer-carry.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
@@ -54,6 +55,7 @@ import { writeWorkDiary, type WorkOutcome } from '../work-diary.ts';
 import { writeWeekSummary } from '../work-diary-week.ts';
 import { updateDelegation, type Delegation } from './delegations.ts';
 import { budgetOf, routerConfigOf } from './routing.ts';
+import { recordVariantDesign } from '../studio.ts';
 
 /**
  * A step delegated to the Coder on Claude Code (task 1.10, second part,
@@ -1028,6 +1030,8 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const tools = await toolConfigFiles(path);
   // The commit the folder starts from: a run that commits moves it (the diary names the new one, I-15).
   const headBefore = await repositoryHead(path).catch(() => undefined);
+  // The mockups the Designer writes from now on go in the register of the variants with their style (D-185).
+  const startedAt = new Date();
   await updateDelegation(sql, delegation.id, { status: 'running', executor, model: plan.model, runId });
   await show(sql, task, step, 'delegate', `${delegation.agent} · ${executor}/${plan.model}`);
   // From here on the work is the agent's: however it ends, it goes in the diary of the project (I-15, D-147).
@@ -1058,7 +1062,13 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   const dossier = godDossierPart(container, path, folder.label);
   // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
-  const restarted = container === GOD_PROJECT && direct ? await carryParts(sql, task.conversationId) : [];
+  // A conversation with the Designer restarted the same way (I-20, D-185): its own summary and intro.
+  const restarted =
+    container === GOD_PROJECT && direct
+      ? await carryParts(sql, task.conversationId)
+      : delegation.agent === DESIGNER_AGENT && direct
+        ? await designerCarryParts(sql, task.conversationId)
+        : [];
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),
     ...(skills === undefined ? [] : [skills]),
@@ -1174,6 +1184,16 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
         const changed = listed ?? [];
         // Saved before the report (D-082): the chat lists them under it as soon as it appears.
         if (listed !== undefined) await updateDelegation(sql, delegation.id, { files: storableFiles(changed), ...(typeof head === 'string' ? { baseCommit: head } : {}) });
+        // Only on its own task (card or Studio) the style and skills are known; a delegation of Arianna's may follow a style
+        // named in the brief, so its mockups stay "not known" (D-185). The register is an extra: it never fails the work.
+        if (delegation.agent === DESIGNER_AGENT && task.assignee === DESIGNER_AGENT && changed.length > 0) {
+          try {
+            const design = (await cardDesignOf(sql, task, delegation.agent)) ?? { style: null, skills: [] };
+            await recordVariantDesign(path, changed.map((item) => item.path), design, startedAt);
+          } catch {
+            // Without the entry the Studio says "not known".
+          }
+        }
         const commit = typeof head === 'string' && head !== headBefore ? { commit: head } : {};
         const files = listed === undefined ? {} : { files: storableFiles(changed) };
         const report = result.result.text.trim() === '' ? '(the Coder gave no report)' : result.result.text;

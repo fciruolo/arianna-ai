@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { clientOfProject, listBrowsableProjects, listProjectDir, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
+import { clientOfProject, deleteProjectPath, listBrowsableProjects, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
 import {
   agoText,
@@ -20,6 +20,7 @@ import {
   sizeText,
   vscodeUrl,
   partTitle,
+  folderFromSearch,
   projectFromSearch,
   type BrowsableContainer,
   type BrowsableProject,
@@ -31,6 +32,8 @@ import {
   type TreeEntry,
 } from '../lib/projects.ts';
 import { initialsOf, logoUrl, type ClientLogo } from '../lib/clients.ts';
+import { restoredPath } from '../lib/studio.ts';
+import ConfirmDialog from './ConfirmDialog.vue';
 import Icon from './Icon.vue';
 import ProjectImTab from './ProjectImTab.vue';
 import ProjectRulesTab from './ProjectRulesTab.vue';
@@ -48,7 +51,7 @@ import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
  * management folders and notes.
  */
 
-const emit = defineEmits<{ client: [id: string] }>();
+const emit = defineEmits<{ client: [id: string]; studio: [project: string] }>();
 
 const projects = ref<BrowsableProject[] | null>(null);
 const containers = ref<BrowsableContainer[] | null>(null);
@@ -82,6 +85,67 @@ const fileProblem = ref<string | null>(null);
 const fileLoading = ref(false);
 const openProblem = ref<string | null>(null);
 const query = ref('');
+
+// Move, restore and delete (I-20, D-185): a window asks first; the core refuses links, hidden parts and a running agent.
+interface FileAction {
+  kind: 'delete' | 'move' | 'restore';
+  path: string;
+  entry: 'file' | 'dir';
+  to: string;
+}
+const fileAction = ref<FileAction | null>(null);
+const actionBusy = ref(false);
+const actionProblem = ref<string | null>(null);
+const actionNotice = ref<string | null>(null);
+
+function askAction(kind: FileAction['kind'], path: string, entry: FileAction['entry']): void {
+  fileAction.value = { kind, path, entry, to: kind === 'restore' ? (restoredPath(path) ?? path) : path };
+  actionProblem.value = null;
+}
+
+async function runAction(): Promise<void> {
+  const action = fileAction.value;
+  if (project.value === null || action === null || actionBusy.value) return;
+  const name = project.value.name;
+  actionBusy.value = true;
+  actionProblem.value = null;
+  try {
+    if (action.kind === 'delete') {
+      const done = await deleteProjectPath(name, action.path);
+      actionNotice.value = done.kind === 'dir' ? `Cartella ${action.path} eliminata per sempre (${String(done.entries)} elementi).` : `${action.path} eliminato per sempre.`;
+    } else {
+      const to = action.to.trim();
+      await moveProjectPath(name, action.path, to);
+      actionNotice.value = action.kind === 'restore' ? `${action.path} rimesso in ${to}.` : `${action.path} spostato in ${to}.`;
+    }
+    const gone = action.path;
+    if (selected.value !== null && (selected.value === gone || selected.value.startsWith(`${gone}/`))) {
+      selected.value = null;
+      file.value = null;
+    }
+    fileAction.value = null;
+    refreshTree();
+  } catch (cause) {
+    actionProblem.value = browseErrorText(cause);
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+/** Hidden parts and node_modules are never moved or deleted from the page (the core refuses them too). */
+const changeable = (path: string): boolean => !path.split('/').some((part) => part.startsWith('.') || part === 'node_modules');
+
+/** A folder opened from the address (the Studio's "Apri in Progetti"): every folder on the way. */
+function openPath(folder: string): void {
+  const next = new Set(openFolders.value);
+  const parts = folder.split('/');
+  for (let at = 1; at <= parts.length; at += 1) {
+    const dir = parts.slice(0, at).join('/');
+    next.add(dir);
+    if (folders.value[dir] === undefined) void loadFolder(dir);
+  }
+  openFolders.value = next;
+}
 
 // Hidden entries (D-135): the consent is the core's, asked here each time it is turned on.
 const hiddenOn = computed(() => project.value?.hidden === true);
@@ -389,10 +453,17 @@ onMounted(async () => {
     const found = await listBrowsableProjects();
     projects.value = found.projects;
     containers.value = found.containers;
-    // The address may name a project (from the page of its client, D-168).
+    // The address may name a project (from the page of its client, D-168) or a part of one, with a folder (from the Studio, D-185).
     const named = projectFromSearch(window.location.search);
-    const first = found.containers.find((item) => item.name === named) ?? found.containers[0];
+    const part = found.projects.find((item) => item.name === named);
+    const first = found.containers.find((item) => item.name === (part?.project ?? named)) ?? found.containers[0];
     if (first !== undefined) chooseContainer(first.name);
+    if (part !== undefined && chosen.value !== part.name && first?.name === part.project) choosePart(part.name);
+    const folder = folderFromSearch(window.location.search);
+    if (folder !== undefined && part !== undefined && chosen.value === part.name) {
+      tab.value = 'file';
+      openPath(folder);
+    }
   } catch (cause) {
     problem.value = browseErrorText(cause);
   }
@@ -513,6 +584,9 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
               <Icon name="code" :size="13" />Apri in VS Code
             </a>
+            <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
+              <Icon name="studio" :size="13" />Apri nello Studio
+            </button>
           </p>
         </div>
         <div v-if="project" class="ml-auto flex overflow-hidden rounded-xl border border-line bg-surface">
@@ -582,6 +656,10 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- FILE: the tree and the file, one split pane -->
       <div v-if="tab === 'file'" class="grid min-h-[460px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface md:grid-cols-[264px_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col border-b border-line md:border-r md:border-b-0">
+          <p v-if="actionNotice !== null" class="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs" role="status">
+            <span class="min-w-0 flex-1 break-words">{{ actionNotice }}</span>
+            <button type="button" class="rounded p-0.5 text-muted hover:text-ink" aria-label="Chiudi" @click="actionNotice = null"><Icon name="close" :size="12" /></button>
+          </p>
           <label class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-muted">
             <Icon name="search" :size="14" />
             <input v-model="query" type="search" placeholder="Cerca fra le cartelle aperte" aria-label="Cerca un file" class="w-full bg-transparent text-[13px] text-ink" />
@@ -599,8 +677,8 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               >
                 <span class="w-3"></span>{{ row.entry.name }}<span class="ml-auto"><Icon name="private" :size="11" /></span>
               </div>
+              <div v-else class="group relative">
               <button
-                v-else
                 type="button"
                 class="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left whitespace-nowrap hover:bg-surface-2"
                 :class="row.path === selected ? 'bg-accent/15 shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
@@ -625,6 +703,13 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                   changeMark(changes, row.path, row.entry.kind)
                 }}</span>
               </button>
+              <!-- Move, restore and delete (D-185): on hover or keyboard focus, each one asks in a window. -->
+              <span v-if="changeable(row.path)" class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-surface-2 pl-1 group-focus-within:flex group-hover:flex">
+                <button v-if="restoredPath(row.path)" type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink" :aria-label="`Ripristina ${row.path}`" title="Ripristina: lo rimette nella cartella sopra eliminati/" @click="askAction('restore', row.path, row.entry.kind)"><Icon name="restore" :size="12" /></button>
+                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-ink" :aria-label="`Sposta o rinomina ${row.path}`" title="Sposta o rinomina" @click="askAction('move', row.path, row.entry.kind)"><Icon name="rename" :size="12" /></button>
+                <button type="button" class="grid size-6 place-items-center rounded text-muted hover:text-danger" :aria-label="`Elimina ${row.path}`" title="Elimina per sempre" @click="askAction('delete', row.path, row.entry.kind)"><Icon name="delete" :size="12" /></button>
+              </span>
+              </div>
               <p v-if="row.entry.kind === 'dir' && openFolders.has(row.path) && folders[row.path] === 'loading'" class="px-2 text-muted" :style="{ paddingLeft: `${String(30 + row.depth * 14)}px` }">…</p>
             </template>
           </div>
@@ -876,4 +961,28 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       </div>
     </div>
   </section>
+  <ConfirmDialog
+    v-if="fileAction !== null"
+    :title="fileAction.kind === 'delete' ? 'Eliminare per sempre?' : fileAction.kind === 'restore' ? 'Ripristinare?' : 'Spostare o rinominare?'"
+    :confirm-text="fileAction.kind === 'delete' ? 'Elimina per sempre' : fileAction.kind === 'restore' ? 'Ripristina' : 'Sposta'"
+    :danger="fileAction.kind === 'delete'"
+    :busy="actionBusy"
+    :problem="actionProblem"
+    :disabled="fileAction.kind !== 'delete' && (fileAction.to.trim() === '' || fileAction.to.trim() === fileAction.path)"
+    @confirm="runAction"
+    @cancel="fileAction = null"
+  >
+    <template v-if="fileAction.kind === 'delete'">
+      <p>
+        <b class="break-all font-mono">{{ fileAction.path }}</b><template v-if="fileAction.entry === 'dir'"> e tutto quello che contiene</template> sparisce dal progetto.
+      </p>
+      <p class="text-xs text-muted">Non c'è un cestino: da Arianna non si recupera. Se il file era in un commit di git, si recupera da lì.</p>
+    </template>
+    <template v-else>
+      <p v-if="fileAction.kind === 'restore'">Rimetto <b class="break-all font-mono">{{ fileAction.path }}</b> fuori da <code class="font-mono">eliminati/</code>, qui:</p>
+      <p v-else>Nuovo percorso di <b class="break-all font-mono">{{ fileAction.path }}</b>, dentro il progetto:</p>
+      <input v-model="fileAction.to" type="text" class="field w-full px-2 py-1.5 font-mono text-[12.5px]" aria-label="Nuovo percorso" @keydown.enter="fileAction.to.trim() !== '' && fileAction.to.trim() !== fileAction.path && runAction()" />
+      <p class="text-xs text-muted">Se c'è già un file con quel nome non viene toccato: scegli un altro nome.</p>
+    </template>
+  </ConfirmDialog>
 </template>
