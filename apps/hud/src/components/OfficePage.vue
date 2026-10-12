@@ -296,7 +296,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
 
 <style scoped>
 .kbd {
-  font: 600 11px ui-monospace, Menlo, monospace;
+  font: 600 12px ui-monospace, Menlo, monospace;
   border: 1px solid var(--line-strong);
   border-bottom-width: 2px;
   border-radius: 4px;

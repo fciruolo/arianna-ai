@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 
 import type { IconName } from '../icons.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
-import { NAV_GROUPS, NAV_STORAGE_KEY, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
+import { NAV_GROUPS, NAV_STORAGE_KEY, groupOf, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
 import type { LiveState } from '../lib/live.ts';
 import type { Conversation, StatusSnapshot } from '../lib/types.ts';
 import ConversationList from './ConversationList.vue';
@@ -171,12 +171,13 @@ function itemClass(on: boolean): string {
           type="button"
           class="flex items-center gap-1.5 rounded-md px-2 pt-1 pb-0.5 text-left text-[12px] font-semibold tracking-[0.08em] text-muted uppercase hover:text-ink"
           :aria-expanded="isOpen(group.id, openGroups, current)"
+          :title="groupOf(current) === group.id ? 'Resta aperto finché sei in una sua pagina' : undefined"
           @click="fold(group.id)"
         >
           <span class="transition-transform" :class="isOpen(group.id, openGroups, current) ? 'rotate-90' : ''"><Icon name="expand" :size="12" /></span>
           {{ group.title }}
           <!-- Questions of "Sviluppo di Arianna" still visible with "Sistema" folded. -->
-          <span v-if="group.id === 'system' && devDot !== null && !isOpen(group.id, openGroups, current)" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? undefined" />
+          <span v-if="group.id === 'system' && devDot !== null && !isOpen(group.id, openGroups, current)" role="img" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? undefined" :aria-label="devLabel ?? undefined" />
         </button>
         <template v-if="isOpen(group.id, openGroups, current)">
           <button

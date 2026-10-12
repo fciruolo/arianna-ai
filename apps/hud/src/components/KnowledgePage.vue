@@ -1954,7 +1954,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   backdrop-filter: blur(4px);
@@ -1986,7 +1986,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border-radius: 7px;
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   transition:
     color 0.15s,

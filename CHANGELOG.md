@@ -6,10 +6,10 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Cambiato
 
-- Chat più leggibile: testi di base a 15 px e mai sotto 12 px, grigio secondario più scuro, niente griglia di fondo (ritocco grafico, variante A di `docs/mockups/chat-ritocco.html`).
-- Barra sinistra: pulsante «Nuova conversazione» in evidenza e le aree in tre gruppi richiudibili (Lavoro, Personale, Sistema); il gruppo della pagina aperta resta aperto e la scelta si ricorda nel browser.
-- Pannello Agenti: solo gli agenti al lavoro o in attesa restano schede grandi; gli altri sono righe basse con la testa e «libero», così Instradamento e Deleghe salgono.
-- Barre laterali un po' più larghe (288 e 320 px) per i testi più grandi.
+- Chat più leggibile: testi di base a 15 px e mai sotto 12 px salvo le miniature, grigio secondario più scuro, niente griglia di fondo (D-188).
+- Barra sinistra: pulsante «Nuova conversazione» in evidenza e le aree in tre gruppi richiudibili (Lavoro, Personale, Sistema); il gruppo della pagina aperta resta aperto e la scelta si ricorda nel browser (D-188).
+- Pannello Agenti: solo gli agenti al lavoro o in attesa restano schede grandi; gli altri sono righe basse con la testa e «libero», così Instradamento e Deleghe salgono (D-188).
+- Barre laterali un po' più larghe (288 e 320 px) per i testi più grandi (D-188).
 
 ## [0.80.0] - 2026-10-12
 
