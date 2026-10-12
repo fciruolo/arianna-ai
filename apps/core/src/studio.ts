@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Project } from '@arianna/config';
@@ -158,11 +158,43 @@ async function readMockupBytes(root: string, path: string): Promise<Buffer> {
   return bytes;
 }
 
-export async function listMockups(deps: StudioDeps, project: string): Promise<{ folder: string; files: Mockup[] }> {
+/** Where a deleted mockup goes (D-184, choice of the user): a folder inside the mockups, which the list does not show. */
+export const RETIRED_FOLDER = 'eliminati';
+
+/** `landing-3.html` and `landing-3~1a2b3c4d.html` (a second deletion of the same name) → `landing`, 3. */
+export function retiredGroupOf(name: string): { group: string; variant: number | null } {
+  return groupOf(name.replace(/~[0-9a-f]{8}(\.html)$/i, '$1'));
+}
+
+/**
+ * The highest number each group has ever had, deleted mockups included: a
+ * number is never used twice (choice of the user), so a link to
+ * `landing-3.html` in an old message never opens a newer page.
+ */
+async function highestVariants(root: string, folder: string, files: readonly Mockup[]): Promise<Record<string, number>> {
+  const highest: Record<string, number> = {};
+  const note = (group: string, variant: number | null): void => {
+    if (variant !== null && variant > (highest[group] ?? 0)) highest[group] = variant;
+  };
+  for (const file of files) note(file.group, file.variant);
+  const retired = join(root, folder, RETIRED_FOLDER);
+  if ((await lstat(retired).catch(() => undefined))?.isDirectory() === true) {
+    const entries = await readdir(retired, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries.slice(0, 5000)) {
+      if (entry.isFile() && mockupName(entry.name)) {
+        const { group, variant } = retiredGroupOf(entry.name);
+        note(group, variant);
+      }
+    }
+  }
+  return highest;
+}
+
+export async function listMockups(deps: StudioDeps, project: string): Promise<{ folder: string; files: Mockup[]; highest: Record<string, number> }> {
   return studied(async () => {
     const { root } = await projectRoot(deps, project);
     const folder = await mockupFolder(root);
-    if ((await folderState(root, folder)) === 'missing') return { folder, files: [] };
+    if ((await folderState(root, folder)) === 'missing') return { folder, files: [], highest: {} };
     const entries = await readdir(join(root, folder), { withFileTypes: true });
     const names = entries
       .filter((entry) => entry.isFile() && mockupName(entry.name))
@@ -184,7 +216,7 @@ export async function listMockups(deps: StudioDeps, project: string): Promise<{ 
       files.push({ path, name, ...groupOf(name), bytes: bytes.length, modified: stats.mtime.toISOString(), sha256: sha256Of(bytes) });
     }
     files.sort((a, b) => (a.group === b.group ? (a.variant ?? -1) - (b.variant ?? -1) || a.name.localeCompare(b.name) : a.group.localeCompare(b.group)));
-    return { folder, files };
+    return { folder, files, highest: await highestVariants(root, folder, files) };
   });
 }
 
@@ -259,6 +291,61 @@ export async function writeMockup(deps: StudioDeps, project: string, body: { pat
       const sha256 = sha256Of(next);
       await deps.record({ kind: 'studio.edit', label: found.label, payload: { project: found.name, path, before: old, after: sha256, bytes: next.length } });
       return { path, sha256 };
+    });
+  });
+}
+
+/**
+ * Deletes a mockup from the Studio (D-184, choice of the user) when its
+ * sha256 is still `base`: the file moves to `<folder>/eliminati/` (same
+ * name; a name already there gets `~<hex>`), out of the list and of the
+ * variants, and can be put back by hand. Event `studio.delete`.
+ */
+export async function deleteMockup(deps: StudioDeps, project: string, body: { path: unknown; base: unknown }): Promise<{ path: string; retired: string }> {
+  if (typeof body.base !== 'string' || !/^[0-9a-f]{64}$/.test(body.base)) throw new StudioError('invalid', 'base must be the sha256 read');
+  const base = body.base;
+  return studied(async () => {
+    const { root } = await projectRoot(deps, project);
+    const folder = await mockupFolder(root);
+    const target = join(root, checkedPath(folder, body.path).path);
+    return oneAtATime(target, async () => {
+      // The file whose bytes are checked is the one moved: same inode before the read and at the move.
+      const first = await lstat(target).catch(() => undefined);
+      const { project: found, path, name, bytes } = await loadMockup(deps, project, body.path);
+      const old = sha256Of(bytes);
+      if (old !== base) throw new StudioError('changed', 'the mockup changed since it was read', old);
+      const retiredFolder = `${folder}/${RETIRED_FOLDER}`;
+      await mkdir(join(root, retiredFolder), { mode: 0o755 }).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      });
+      // A link in place of the folder would move the file out of the project.
+      if ((await folderState(root, retiredFolder)) !== 'ok') throw new StudioError('refused', 'the folder of the deleted mockups is not a plain folder');
+      const absolute = join(root, path);
+      const now = await lstat(absolute).catch(() => undefined);
+      if (first === undefined || now === undefined || !now.isFile() || now.ino !== first.ino || now.dev !== first.dev) {
+        throw new StudioError('changed', 'the mockup changed while it was deleted', old);
+      }
+      // A hard link never replaces a file: a name already there gets a suffix, and the folder is checked after the link.
+      let retired = `${retiredFolder}/${name}`;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await link(absolute, join(root, retired));
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 5) throw error;
+          retired = `${retiredFolder}/${name.replace(/\.html$/i, '')}~${randomBytes(4).toString('hex')}.html`;
+        }
+      }
+      const placed = await lstat(join(root, retired)).catch(() => undefined);
+      const realFolder = await realpath(join(root, retiredFolder)).catch(() => undefined);
+      if (realFolder !== join(root, retiredFolder) || placed === undefined || placed.ino !== now.ino || placed.dev !== now.dev) {
+        // The folder was swapped for a link meanwhile: the new name goes, the mockup stays where it was.
+        if (realFolder === join(root, retiredFolder)) await unlink(join(root, retired)).catch(() => undefined);
+        throw new StudioError('refused', 'the folder of the deleted mockups is not a plain folder');
+      }
+      await unlink(absolute);
+      await deps.record({ kind: 'studio.delete', label: found.label, payload: { project: found.name, path, retired, sha256: old } });
+      return { path, retired };
     });
   });
 }

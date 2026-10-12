@@ -14,6 +14,7 @@ import {
   isStudioSelector,
   looksMessage,
   modeMessage,
+  scrollToMessage,
   nthSelector,
   parseFrameMessage,
   pickedExcerpt,
@@ -33,6 +34,7 @@ import {
   isMockupPath,
   isStudioPath,
   nextVariantName,
+  afterDeletion,
   pickMockup,
   pointsFrom,
   respace,
@@ -164,6 +166,14 @@ test('messages of another shape are refused', () => {
 
 const look = { width: 960, background: '#f4f1ea', color: '#222222', accent: '#8a3b12', titleFont: 'Georgia, serif', bodyFont: 'system-ui, sans-serif', titlePx: 40, bodyPx: 16 };
 
+test('a scroll message of the right shape is accepted, others refused', () => {
+  assert.deepEqual(scrollToMessage(0, 640), { source: STUDIO_SOURCE, type: 'scrollTo', x: 0, y: 640 });
+  assert.deepEqual(parseFrameMessage({ source: STUDIO_SOURCE, type: 'scroll', x: 0, y: 640 }), { type: 'scroll', x: 0, y: 640 });
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'scroll', x: 0, y: '640' }), undefined);
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'scroll', x: 0, y: Number.NaN }), undefined);
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'scroll', x: 0, y: 1, extra: 1 }), undefined);
+});
+
 test('a looks message of the right shape is accepted', () => {
   assert.deepEqual(looksMessage(), { source: STUDIO_SOURCE, type: 'looks' });
   assert.deepEqual(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [look, { ...look, accent: null, titleFont: null, titlePx: null }] }), {
@@ -267,6 +277,12 @@ test('variants are grouped, without number first, and the next name follows the 
   );
   assert.equal(nextVariantName('landing', files), 'landing-4.html');
   assert.equal(nextVariantName('about', files), 'about-2.html');
+  // A deleted number is never used again.
+  assert.equal(nextVariantName('landing', files, { landing: 7 }), 'landing-8.html');
+  assert.equal(nextVariantName('landing', files, { landing: 2 }), 'landing-4.html');
+  assert.equal(afterDeletion(files, 'mockups/landing-3.html'), 'mockups/landing-2.html');
+  assert.equal(afterDeletion(files, 'mockups/about.html'), 'mockups/landing-2.html', 'another group: the first left');
+  assert.equal(afterDeletion([mockup('solo.html', 'solo', null)], 'mockups/solo.html'), undefined);
   assert.equal(variantLabel(mockup('about.html', 'about', null)), 'base');
   assert.equal(variantLabel(mockup('landing-2.html', 'landing', 2)), 'v2');
 });

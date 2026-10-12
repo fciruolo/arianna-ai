@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, exportMockupPptx, listDesignStyles, listMockups, listSkills, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
+import { ApiError, deleteMockup, exportMockupPptx, listDesignStyles, listMockups, listSkills, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
 import { buildSrcdoc, type FrameRect } from '../lib/studio-frame.ts';
 import { deckFromDocument, editSource, hasSlides, parseMockup } from '../lib/studio-dom.ts';
 import {
+  afterDeletion,
   COMMENTS_MAX,
   exportName,
   groupMockups,
@@ -177,6 +178,17 @@ onBeforeUnmount(() => {
 
 // Views and comparison (O4)
 const view = ref<StudioView>('desktop');
+/** "Schermo intero" (request of the user): the frames over the whole window, one or the two compared; Esc leaves. */
+const fullscreen = ref(false);
+function onKey(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && fullscreen.value) fullscreen.value = false;
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKey);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey);
+});
 const VIEWS: StudioView[] = ['desktop', 'tablet', 'mobile'];
 const VIEW_ICON: Record<StudioView, IconName> = { desktop: 'view-desktop', tablet: 'view-tablet', mobile: 'view-mobile' };
 const frameStyle = computed(() => {
@@ -189,6 +201,49 @@ watch([comparing, otherPath], ([on, path]) => {
   if (!on) return;
   void loadFile(path, 'other');
 });
+/** "Scorri insieme" (choice of the user): off by default, one frame's scroll moves the other. */
+const scrollTogether = ref(false);
+const otherFrame = ref<InstanceType<typeof StudioFrame> | null>(null);
+function followScroll(from: 'shown' | 'other', x: number, y: number): void {
+  if (!comparing.value || !scrollTogether.value) return;
+  (from === 'shown' ? otherFrame.value : shownFrame.value)?.scrollTo(x, y);
+}
+
+// Delete (D-184, choice of the user): the file moves to eliminati/, its number is never used again.
+const confirmingDelete = ref(false);
+const deleting = ref(false);
+watch(
+  () => props.address.file,
+  () => {
+    confirmingDelete.value = false;
+  },
+);
+async function deleteShown(): Promise<void> {
+  const name = project.value;
+  const file = shown.value;
+  if (name === undefined || file === null || deleting.value) return;
+  deleting.value = true;
+  try {
+    await deleteMockup(name, file.path, file.sha256);
+    const next = afterDeletion(list.value?.files ?? [], file.path);
+    confirmingDelete.value = false;
+    notice.value = `${file.path.split('/').at(-1) ?? file.path} eliminato: è in ${list.value?.folder ?? 'mockups'}/eliminati/ del progetto, il suo numero non verrà più usato.`;
+    await loadList();
+    // The variant compared was the one deleted: another one, not the one shown next.
+    if (otherPath.value === file.path || otherPath.value === next) {
+      const left = list.value?.files.filter((entry) => entry.path !== next) ?? [];
+      otherPath.value = left.at(-1)?.path;
+      if (otherPath.value === undefined) comparing.value = false;
+    }
+    choose(next);
+  } catch (cause) {
+    exportProblem.value = studioErrorText(cause);
+    if (cause instanceof ApiError && cause.status === 409) await loadFile(file.path, 'shown');
+  } finally {
+    deleting.value = false;
+  }
+}
+
 function toggleCompare(): void {
   comparing.value = !comparing.value;
   if (comparing.value && otherPath.value === undefined) {
@@ -216,7 +271,8 @@ function useDesign(next: StudioDesign, save: boolean): void {
   // A choice gone from the catalogs would be refused by the core: dropped once they are read.
   const kept = catalogsLoaded.value ? keepKnown(next, styleCatalog.value.map((style) => style.id), skillCatalog.value.map((skill) => skill.id)) : next;
   design.value = kept;
-  emit('design', kept);
+  // Before the catalogs are read nothing leaves: a choice gone from them would make the message fail.
+  emit('design', catalogsLoaded.value ? kept : NO_DESIGN);
   const name = project.value;
   if (!save || name === undefined) return;
   try {
@@ -298,7 +354,7 @@ async function sendComments(): Promise<void> {
   if (comments.value.length === 0 || sending.value || props.chatBlocked !== undefined) return;
   sending.value = true;
   try {
-    const sent = await props.send(reviewMessage(comments.value, list.value?.files ?? []));
+    const sent = await props.send(reviewMessage(comments.value, list.value?.files ?? [], list.value?.highest ?? {}));
     if (sent) {
       comments.value = [];
       pickMode.value = 'none';
@@ -555,6 +611,14 @@ const side = ref<'chat' | 'canvas'>('canvas');
             <button type="button" class="btn px-2.5 py-1 text-xs" :class="{ 'btn-primary': comparing }" :aria-pressed="comparing" :disabled="list.files.length < 2" @click="toggleCompare">
               <Icon name="compare" :size="13" />Confronta
             </button>
+            <template v-if="comparing">
+              <select v-model="otherPath" class="field px-2 py-1 text-[12px]" aria-label="Variante a confronto">
+                <option v-for="file in list.files" :key="file.path" :value="file.path">{{ file.name }}</option>
+              </select>
+              <label class="flex items-center gap-1.5 text-xs text-muted" title="Quando scorri una delle due pagine, l’altra la segue">
+                <input v-model="scrollTogether" type="checkbox" class="accent-[var(--accent)]" />Scorri insieme
+              </label>
+            </template>
             <span class="mx-1 h-4 w-px bg-line" aria-hidden="true" />
             <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="shown === null" title="Scarica il file HTML del mockup" @click="exportHtml"><Icon name="download" :size="13" />HTML</button>
             <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="shown === null" title="Stampa del browser: scegli «Salva come PDF»" @click="exportPdf"><Icon name="print" :size="13" />PDF</button>
@@ -566,7 +630,24 @@ const side = ref<'chat' | 'canvas'>('canvas');
               title="Presentazione PowerPoint dalle diapositive del mockup"
               @click="exportPptx"
             ><Icon name="download" :size="13" />{{ exporting ? 'Preparo…' : 'PPTX' }}</button>
-            <button type="button" class="btn ml-auto px-2.5 py-1 text-xs" title="Rileggi l’elenco dei mockup" @click="loadList(); loadFile(address.file, 'shown')"><Icon name="retry" :size="13" />Ricarica</button>
+            <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="shown === null" title="La variante, o le due a confronto, su tutta la finestra (Esc per uscire)" @click="fullscreen = true">
+              <Icon name="fullscreen" :size="13" />Schermo intero
+            </button>
+            <span class="ml-auto" />
+            <template v-if="confirmingDelete && shown !== null">
+              <span class="text-xs">Eliminare <b class="font-mono">{{ shown.path.split('/').at(-1) }}</b>? Va in <code class="font-mono">{{ list.folder }}/eliminati/</code>.</span>
+              <button type="button" class="btn px-2.5 py-1 text-xs text-danger" :disabled="deleting" @click="deleteShown">{{ deleting ? 'Elimino…' : 'Elimina' }}</button>
+              <button type="button" class="btn px-2.5 py-1 text-xs" @click="confirmingDelete = false">Annulla</button>
+            </template>
+            <button
+              v-else
+              type="button"
+              class="btn px-2.5 py-1 text-xs"
+              :disabled="shown === null"
+              title="Toglie questa variante: il file va nella cartella eliminati del progetto"
+              @click="confirmingDelete = true"
+            ><Icon name="delete" :size="13" />Elimina</button>
+            <button type="button" class="btn px-2.5 py-1 text-xs" title="Rileggi l’elenco dei mockup" @click="loadList(); loadFile(address.file, 'shown')"><Icon name="retry" :size="13" />Ricarica</button>
           </div>
           <p v-if="pickMode === 'comment'" class="text-[11.5px] text-muted">Fai clic su un elemento della pagina per commentarlo; i link e i pulsanti non scattano.</p>
           <p v-else-if="pickMode === 'edit'" class="text-[11.5px] text-muted">Fai clic su un elemento per cambiarne testo, colori e spaziature.</p>
@@ -576,8 +657,17 @@ const side = ref<'chat' | 'canvas'>('canvas');
             <button type="button" class="rounded p-0.5 hover:bg-surface-2" aria-label="Chiudi" @click="notice = null"><Icon name="close" :size="12" /></button>
           </p>
 
-          <!-- The frames. -->
-          <div class="flex min-h-[480px] flex-1 gap-2">
+          <!-- The frames; on the whole window with "Schermo intero". -->
+          <div class="flex min-h-[480px] flex-1 gap-2" :class="{ 'fixed inset-0 z-50 bg-[var(--bg)] p-3 pt-11': fullscreen }">
+            <div v-if="fullscreen" class="fixed inset-x-3 top-2 z-50 flex items-center gap-2 text-xs text-muted">
+              <span class="font-mono">{{ shown?.path.split('/').at(-1) }}<template v-if="comparing && other !== null"> · {{ other.path.split('/').at(-1) }}</template></span>
+              <label v-if="comparing" class="flex items-center gap-1.5">
+                <input v-model="scrollTogether" type="checkbox" class="accent-[var(--accent)]" />Scorri insieme
+              </label>
+              <button type="button" class="btn ml-auto px-2.5 py-1 text-xs" title="Esci dallo schermo intero (Esc)" @click="fullscreen = false">
+                <Icon name="fullscreen-exit" :size="13" />Esci
+              </button>
+            </div>
             <div class="flex min-w-0 flex-1 flex-col items-center overflow-auto rounded-lg border border-line bg-surface-2 p-2">
               <p v-if="shownProblem !== null" class="text-sm text-warn" role="alert">{{ shownProblem }}</p>
               <p v-else-if="shown === null" class="text-sm text-muted">Leggo il mockup…</p>
@@ -591,16 +681,21 @@ const side = ref<'chat' | 'canvas'>('canvas');
                   :comment="pickMode !== 'none'"
                   :highlight="highlight"
                   @pick="onPick"
+                  @scroll="(x: number, y: number) => followScroll('shown', x, y)"
                 />
               </div>
             </div>
             <div v-if="comparing" class="flex min-w-0 flex-1 flex-col items-center gap-2 overflow-auto rounded-lg border border-line bg-surface-2 p-2">
-              <select v-model="otherPath" class="field self-stretch px-2 py-1 text-[12px]" aria-label="Variante a confronto">
-                <option v-for="file in list.files" :key="file.path" :value="file.path">{{ file.name }}</option>
-              </select>
               <p v-if="otherProblem !== null" class="text-sm text-warn" role="alert">{{ otherProblem }}</p>
               <div v-else-if="other !== null" class="h-full min-h-[420px] overflow-hidden rounded border border-line" :style="frameStyle">
-                <StudioFrame :key="other.sha256" :source="other.text" :title="`Confronto ${other.path}`" />
+                <StudioFrame
+                  ref="otherFrame"
+                  :key="other.sha256"
+                  :source="other.text"
+                  :title="`Confronto ${other.path}`"
+                  mode="studio"
+                  @scroll="(x: number, y: number) => followScroll('other', x, y)"
+                />
               </div>
             </div>
             <!-- Comments and edit in a window the user moves (choice after the first trial). -->

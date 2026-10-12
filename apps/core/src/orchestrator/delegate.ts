@@ -1136,7 +1136,9 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const carried = earlier.length === 0 ? [] : [{ text: DIRECT_HISTORY_TEXT, label: 'L0' as const, source: 'arianna:direct-history' }, ...earlier];
   // The notes of the project the agent may read (D-166): told in every brief, a resumed session included (the copy is new at each run).
   const projectNotes = await projectNotesFor(env, { task, step, runId }, delegation.agent, container, executor);
-  const asked: BriefFragment[] = projectNotes === undefined ? [message] : [projectNotes.fragment, message];
+  // A style or skills chosen with this message (the Studio, D-184): a resumed session never saw the opening, so they go with the message.
+  const chosen = session !== undefined && skills !== undefined && (await cardDesignOf(sql, task, delegation.agent)) !== undefined ? [skills] : [];
+  const asked: BriefFragment[] = [...chosen, ...(projectNotes === undefined ? [] : [projectNotes.fragment]), message];
   // The copy of the notes lives as long as this attempt: removed however it ends.
   try {
     let result: CloudStepResult;

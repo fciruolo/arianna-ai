@@ -12,7 +12,7 @@ import { Secret } from '@arianna/vault';
 
 import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
-import { groupOf, mockupFolder, PPTX_TYPE, type PptxCodec } from '../src/studio.ts';
+import { groupOf, mockupFolder, PPTX_TYPE, retiredGroupOf, type PptxCodec } from '../src/studio.ts';
 import { startApiServer } from '../src/server/http.ts';
 import { FRAME_TTL_MS, FrameStore, frameHeaders, MAX_FRAME_BYTES, MAX_FRAMES, PRINT_SCRIPT } from '../src/studio-frames.ts';
 
@@ -152,7 +152,8 @@ test('the list: only visible .html files directly in the folder, regular, at mos
   assert.deepEqual((casa.json.files as { path: string }[]).map((file) => file.path), ['docs/mockups/studio.html']);
 
   const vuoto = await call(port, 'GET', '/api/studio/vuoto/mockups');
-  assert.deepEqual(vuoto.json, { folder: 'mockups', files: [] }, 'a missing folder is an empty list');
+  assert.deepEqual(vuoto.json, { folder: 'mockups', files: [], highest: {} }, 'a missing folder is an empty list');
+  assert.deepEqual(answer.json.highest, { about: 1, landing: 10 }, 'the highest number of each group');
 
   // A folder of mockups that is a link is not read, nor its files.
   assert.equal((await call(port, 'GET', '/api/studio/giro/mockups')).status, 403);
@@ -231,6 +232,77 @@ test('writing: only with the sha256 read, atomic, the event without the text', a
   assert.ok(!JSON.stringify(events).includes('About, nuovo'), 'never the text');
   // The same base again: the file has changed.
   assert.equal((await put({ path, text: 'y', base: sha('x') })).status, 409);
+});
+
+test('deleting: the mockup moves to eliminati/, only with the sha256 read; its number is never used again', async (t) => {
+  const { port, events } = await server(t);
+  const mockups = join(SITO, 'mockups');
+  writeFileSync(join(mockups, 'prova-1.html'), '<h1>Prova 1</h1>\n');
+  writeFileSync(join(mockups, 'prova-2.html'), '<h1>Prova 2</h1>\n');
+  writeFileSync(join(mockups, 'prova-3.html'), '<h1>Prova 3</h1>\n');
+  const del = (body: unknown) => call(port, 'POST', '/api/studio/sito/delete', body);
+
+  const stale = await del({ path: 'mockups/prova-3.html', base: sha('other') });
+  assert.equal(stale.status, 409);
+  assert.deepEqual(stale.json, { error: 'changed', sha256: sha('<h1>Prova 3</h1>\n') });
+  assert.equal(readFileSync(join(mockups, 'prova-3.html'), 'utf8'), '<h1>Prova 3</h1>\n', 'nothing moved on a 409');
+  assert.equal((await del({ path: 'mockups/prova-3.html' })).status, 400, 'no base');
+  assert.equal((await del({ path: 'mockups/prova-3.html', base: sha('x'), extra: 1 })).status, 400);
+  assert.equal((await del({ path: 'mockups/link.html', base: sha('<h1>Index</h1>\n') })).status, 403, 'never through a link');
+  assert.equal((await del({ path: 'mockups/vecchi/old.html', base: sha('<h1>Old</h1>\n') })).status, 403, 'only the files of the folder');
+  assert.equal((await del({ path: 'index.html', base: sha('<h1>Index</h1>\n') })).status, 403);
+  assert.equal((await del({ path: 'mockups/manca.html', base: sha('') })).status, 404);
+  assert.equal(readFileSync(join(SITO, 'index.html'), 'utf8'), '<h1>Index</h1>\n');
+  assert.equal(events.length, 0);
+
+  const ok = await del({ path: 'mockups/prova-3.html', base: sha('<h1>Prova 3</h1>\n') });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.json, { path: 'mockups/prova-3.html', retired: 'mockups/eliminati/prova-3.html' });
+  assert.equal(readFileSync(join(mockups, 'eliminati', 'prova-3.html'), 'utf8'), '<h1>Prova 3</h1>\n');
+  assert.deepEqual(events.at(-1), { kind: 'studio.delete', label: 'L1', payload: { project: 'sito', path: 'mockups/prova-3.html', retired: 'mockups/eliminati/prova-3.html', sha256: sha('<h1>Prova 3</h1>\n') } });
+
+  // The same name deleted again keeps both files.
+  writeFileSync(join(mockups, 'prova-3.html'), '<h1>Prova 3 bis</h1>\n');
+  const again = await del({ path: 'mockups/prova-3.html', base: sha('<h1>Prova 3 bis</h1>\n') });
+  assert.match(String(again.json.retired), /^mockups\/eliminati\/prova-3~[0-9a-f]{8}\.html$/);
+  assert.equal(readFileSync(join(mockups, 'eliminati', 'prova-3.html'), 'utf8'), '<h1>Prova 3</h1>\n');
+
+  const list = await call(port, 'GET', '/api/studio/sito/mockups');
+  const names = (list.json.files as { name: string }[]).map((file) => file.name);
+  assert.ok(!names.includes('prova-3.html'), 'out of the list');
+  assert.ok(names.includes('prova-2.html'));
+  assert.equal((list.json.highest as Record<string, number>).prova, 3, 'the deleted number still counts');
+  assert.deepEqual(retiredGroupOf('prova-3~1a2b3c4d.html'), { group: 'prova', variant: 3 });
+  assert.deepEqual(retiredGroupOf('prova~xyz.html'), { group: 'prova~xyz', variant: null }, 'not a suffix of ours');
+  assert.deepEqual(retiredGroupOf('foo~abcdef.html'), { group: 'foo~abcdef', variant: null });
+});
+
+test('deleting never leaves the project: eliminati as a link or a file is refused, nothing moves', async (t) => {
+  const { port, events } = await server(t);
+  const outside = join(HOME, 'fuori-eliminati');
+  mkdirSync(outside, { recursive: true });
+  const giro = join(HOME, 'repos', 'altro-sito');
+  const mockups = join(giro, 'mockups');
+  mkdirSync(mockups, { recursive: true });
+  writeFileSync(join(mockups, 'pagina-1.html'), '<h1>Pagina</h1>\n');
+  writeFileSync(join(outside, 'pagina-7.html'), '<h1>Fuori</h1>\n');
+  symlinkSync(outside, join(mockups, 'eliminati'));
+  PROJECTS.push({ name: 'altro-sito', path: 'repos/altro-sito', absolute: giro, label: 'L1' });
+  t.after(() => {
+    PROJECTS.pop();
+  });
+  const del = (body: unknown) => call(port, 'POST', '/api/studio/altro-sito/delete', body);
+  const linked = await del({ path: 'mockups/pagina-1.html', base: sha('<h1>Pagina</h1>\n') });
+  assert.equal(linked.status, 403);
+  assert.equal(readFileSync(join(mockups, 'pagina-1.html'), 'utf8'), '<h1>Pagina</h1>\n', 'the mockup stays');
+  assert.deepEqual(readdirSync(outside), ['pagina-7.html'], 'nothing reaches the target of the link');
+  const list = await call(port, 'GET', '/api/studio/altro-sito/mockups');
+  assert.deepEqual(list.json.highest, { pagina: 1 }, 'a linked eliminati is not read');
+  rmSync(join(mockups, 'eliminati'));
+  writeFileSync(join(mockups, 'eliminati'), 'a file\n');
+  assert.equal((await del({ path: 'mockups/pagina-1.html', base: sha('<h1>Pagina</h1>\n') })).status, 403);
+  assert.equal(readFileSync(join(mockups, 'pagina-1.html'), 'utf8'), '<h1>Pagina</h1>\n');
+  assert.equal(events.length, 0);
 });
 
 test('export: a valid deck of an existing mockup is a .pptx download; an invalid deck is 400', async (t) => {

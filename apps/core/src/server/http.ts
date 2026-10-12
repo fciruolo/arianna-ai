@@ -125,7 +125,7 @@ import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncogn
 import { loadStatus } from '../status.ts';
 import { appendEvent, type NewEvent } from '../events.ts';
 import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
-import { exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
+import { deleteMockup, exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
 import { dismissWaitingTask, listWaitingTasks } from '../waiting.ts';
@@ -2175,6 +2175,16 @@ function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx
         const body = await readJson(request, MAX_STUDIO_BODY);
         onlyFields(body, ['path', 'text', 'base']);
         return { body: await writeMockup(deps, project, { path: body.path, text: body.text, base: body.base }) };
+      }),
+    ),
+    route(
+      'POST',
+      '/api/studio/:project/delete',
+      guard(async (request, _url, params) => {
+        const project = projectParam(params);
+        const body = await readJson(request, MAX_STUDIO_BODY);
+        onlyFields(body, ['path', 'base']);
+        return { body: await deleteMockup(deps, project, { path: body.path, base: body.base }) };
       }),
     ),
     route(

@@ -327,6 +327,15 @@ test('the Studio: style and skills sent with a message of the direct chat with t
     const plain = fakeSkills();
     await drain([next.task.id], orchestrator(scripted([]), plain.skills, ['claude']));
     assert.deepEqual(plain.asked, [['designer', 128 * 1024, undefined]]);
+    const resumed = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(!resumed.prompt.includes(BLOCK), 'a resumed session without a choice: only the new message');
+    // A choice on a later message of the same session: it goes with the message (the session never saw the opening).
+    const third = await postUserMessage(sql, direct.id, 'Ora con lo stile.', { design: { style: 'sabbia', skills: [] } });
+    const styled = fakeSkills();
+    await drain([third.task.id], orchestrator(scripted([]), styled.skills, ['claude']));
+    const later = JSON.parse(readFileSync(join(REPO, '.fake-claude.json'), 'utf8')) as { prompt: string };
+    assert.ok(later.prompt.includes(BLOCK), 'the style reaches a resumed session');
+    assert.ok(later.prompt.indexOf(BLOCK) < later.prompt.indexOf('Ora con lo stile.'), 'before the message');
   } finally {
     execFileSync('git', ['-C', REPO, 'clean', '--quiet', '-fd']);
   }

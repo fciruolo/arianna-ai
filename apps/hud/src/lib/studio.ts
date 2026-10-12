@@ -57,6 +57,8 @@ export interface Mockup {
 export interface MockupList {
   folder: string;
   files: Mockup[];
+  /** The highest number each group has ever had, deleted mockups included (a number is never used twice). */
+  highest?: Record<string, number>;
 }
 
 export interface MockupText {
@@ -173,9 +175,9 @@ export function variantLabel(file: Mockup): string {
 }
 
 /** The name of the variant after the last one of a group: `landing-3.html`. */
-export function nextVariantName(group: string, files: readonly Mockup[]): string {
+export function nextVariantName(group: string, files: readonly Mockup[], highest: Readonly<Record<string, number>> = {}): string {
   const numbers = files.filter((file) => file.group === group).map((file) => file.variant ?? 1);
-  return `${group}-${String(Math.max(1, ...numbers) + 1)}.html`;
+  return `${group}-${String(Math.max(1, highest[group] ?? 1, ...numbers) + 1)}.html`;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +209,7 @@ export function commentProblem(text: string): string | undefined {
  * file, each with the element (selector, tag, excerpt) and what the user
  * wants. The Designer writes the next variant of each file.
  */
-export function reviewMessage(comments: readonly StudioComment[], files: readonly Mockup[]): string {
+export function reviewMessage(comments: readonly StudioComment[], files: readonly Mockup[], highest: Readonly<Record<string, number>> = {}): string {
   const byFile = new Map<string, StudioComment[]>();
   for (const comment of comments) byFile.set(comment.file, [...(byFile.get(comment.file) ?? []), comment]);
   const lines: string[] = ['Revisione dallo Studio: applica questi commenti in una variante nuova, senza toccare il file di partenza e senza cambiare il resto della pagina.'];
@@ -215,7 +217,7 @@ export function reviewMessage(comments: readonly StudioComment[], files: readonl
   for (const [file, list] of byFile) {
     const known = files.find((entry) => entry.path === file);
     const folder = file.includes('/') ? file.slice(0, file.lastIndexOf('/') + 1) : '';
-    const next = known === undefined ? undefined : `${folder}${nextVariantName(known.group, files)}`;
+    const next = known === undefined ? undefined : `${folder}${nextVariantName(known.group, files, highest)}`;
     lines.push('', `File: ${file}${next === undefined ? '' : ` → scrivi ${next}`}`);
     for (const comment of list) {
       number += 1;
@@ -321,6 +323,17 @@ export function respace(old: string, piece: string): string {
   const lead = /^\s*/.exec(old)?.[0] ?? '';
   const trail = /\s*$/.exec(old)?.[0] ?? '';
   return lead + piece.trim() + trail;
+}
+
+/**
+ * The mockup to show after one is deleted: the highest variant left in its
+ * group, else the first mockup left; undefined when none is left.
+ */
+export function afterDeletion(files: readonly Mockup[], deleted: string): string | undefined {
+  const gone = files.find((file) => file.path === deleted);
+  const left = files.filter((file) => file.path !== deleted);
+  const sameGroup = gone === undefined ? [] : left.filter((file) => file.group === gone.group).sort((a, b) => (a.variant ?? 0) - (b.variant ?? 0));
+  return sameGroup.at(-1)?.path ?? left.at(0)?.path;
 }
 
 /** The most text pieces of one element the edit panel shows. */

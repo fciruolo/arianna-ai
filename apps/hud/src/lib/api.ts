@@ -1300,6 +1300,11 @@ export async function writeMockup(project: string, path: string, text: string, b
   return call<{ path: string; sha256: string }>('PUT', `${studioBase(project)}/file`, { path, text, base });
 }
 
+/** Deletes a mockup (D-184): it moves to `<folder>/eliminati/` of the project, only if it is still the version read. */
+export async function deleteMockup(project: string, path: string, base: string): Promise<{ path: string; retired: string }> {
+  return call<{ path: string; retired: string }>('POST', `${studioBase(project)}/delete`, { path, base });
+}
+
 /** The .pptx of a presentation, as a file to save. */
 export async function exportMockupPptx(project: string, path: string, deck: Deck): Promise<Blob> {
   const response = await fetch(`${studioBase(project)}/pptx`, {

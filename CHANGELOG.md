@@ -14,7 +14,14 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Studio: select «Stile» e «Skill» nella barra in alto, dai cataloghi di Open Design e delle skill e ricordate per progetto; ogni messaggio dello Studio al Designer (chat e commenti) le porta e il Designer le legge come testo di riferimento con la loro licenza, come su una card (migrazione 0058) (I-19, D-184).
 - Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]`, con colori, caratteri e dimensioni misurati sulla pagina com'è a schermo (I-19, D-184).
 - Studio: la conversazione col Designer del progetto si ritrova anche a pagina appena aperta e dopo il primo messaggio (il core tiene il progetto per nome) (I-19, D-184).
+- Studio: «Elimina» sulla variante mostrata, con conferma nella pagina: il file va in `mockups/eliminati/` del progetto e il suo numero non viene più usato (I-19, D-184).
+- Studio: con «Confronta» la variante a confronto si sceglie nella barra degli strumenti e la spunta facoltativa «Scorri insieme» fa scorrere le due pagine insieme (I-19, D-184).
+- Studio: «Schermo intero» per la variante mostrata o per le due a confronto, con «Scorri insieme» e uscita con Esc (I-19, D-184).
 - Chat: sotto «File modificati» di una delega, i mockup HTML scritti con il collegamento «Apri nello Studio» (I-19, D-184).
+
+### Corretto
+
+- Studio: lo stile e le skill scelti arrivano al Designer anche quando la conversazione continua una sessione già aperta (prima arrivavano solo al primo messaggio) (I-19, D-184).
 
 ### Sicurezza
 

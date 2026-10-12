@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { studioFrame } from '../lib/api.ts';
 
-import { buildSrcdoc, highlightMessage, looksMessage, modeMessage, parseFrameMessage, type FrameRect, type SlideLook } from '../lib/studio-frame.ts';
+import { buildSrcdoc, highlightMessage, looksMessage, modeMessage, parseFrameMessage, scrollToMessage, type FrameRect, type SlideLook } from '../lib/studio-frame.ts';
 
 /**
  * A mockup in an isolated frame (I-19, D-184): the document built with the
@@ -25,7 +25,7 @@ const props = withDefaults(
   }>(),
   { mode: 'plain', comment: false, highlight: null },
 );
-const emit = defineEmits<{ pick: [pick: { selector: string; rect: FrameRect; tag: string; excerpt: string }] }>();
+const emit = defineEmits<{ pick: [pick: { selector: string; rect: FrameRect; tag: string; excerpt: string }]; scroll: [x: number, y: number] }>();
 
 const frame = ref<HTMLIFrameElement | null>(null);
 const src = ref<string | undefined>(undefined);
@@ -110,6 +110,8 @@ function onMessage(event: MessageEvent): void {
     rebuilds = 0;
     window.clearTimeout(watchdog);
     sync();
+  } else if (message.type === 'scroll') {
+    emit('scroll', message.x, message.y);
   } else if (message.type === 'looks') {
     const waiting = looksWaiting;
     looksWaiting = undefined;
@@ -143,7 +145,12 @@ function measureLooks(): Promise<SlideLook[] | undefined> {
   });
 }
 
-defineExpose({ measureLooks });
+/** Scrolls the mockup to a place (compare, "Scorri insieme"); nothing until the frame is ready. */
+function scrollTo(x: number, y: number): void {
+  if (props.mode === 'studio' && readyFor !== undefined && readyFor === src.value) send(scrollToMessage(x, y));
+}
+
+defineExpose({ measureLooks, scrollTo });
 
 onMounted(() => {
   window.addEventListener('message', onMessage);

@@ -183,6 +183,23 @@ export function studioAgent(win: Window): void {
     true,
   );
   win.addEventListener('scroll', remark, true);
+  // The page scrolls the frames together when asked (compare, "Scorri insieme"):
+  // the frame says where it is; a position set by the page is not said back.
+  let placed: { x: number; y: number } | null = null;
+  win.addEventListener(
+    'scroll',
+    () => {
+      const x = Math.round(win.scrollX);
+      const y = Math.round(win.scrollY);
+      if (placed !== null && Math.abs(placed.x - x) <= 1 && Math.abs(placed.y - y) <= 1) {
+        placed = null;
+        return;
+      }
+      placed = null;
+      post({ type: 'scroll', x, y });
+    },
+    { passive: true },
+  );
   win.addEventListener('resize', remark);
   win.addEventListener('message', (event) => {
     if (event.source !== win.parent) return;
@@ -199,6 +216,13 @@ export function studioAgent(win: Window): void {
       remark();
     } else if (message.type === 'looks') {
       post({ type: 'looks', slides: looks() });
+    } else if (message.type === 'scrollTo' && typeof message.x === 'number' && typeof message.y === 'number' && Number.isFinite(message.x) && Number.isFinite(message.y)) {
+      // A shorter page stops at its end: what it reached is what it must not say back, and nothing when it did not move.
+      const fromX = Math.round(win.scrollX);
+      const fromY = Math.round(win.scrollY);
+      win.scrollTo({ left: Math.round(message.x), top: Math.round(message.y), behavior: 'instant' });
+      const reached = { x: Math.round(win.scrollX), y: Math.round(win.scrollY) };
+      placed = reached.x === fromX && reached.y === fromY ? null : reached;
     }
   });
 
@@ -310,7 +334,8 @@ export interface SlideLook {
 export type FrameMessage =
   | { type: 'ready' }
   | { type: 'pick'; selector: string; rect: FrameRect; tag: string; excerpt: string }
-  | { type: 'looks'; slides: SlideLook[] };
+  | { type: 'looks'; slides: SlideLook[] }
+  | { type: 'scroll'; x: number; y: number };
 
 const LOOK_KEYS = ['width', 'background', 'color', 'accent', 'titleFont', 'bodyFont', 'titlePx', 'bodyPx'] as const;
 
@@ -367,6 +392,11 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
   const message = data as Record<string, unknown>;
   if (message.source !== STUDIO_SOURCE) return undefined;
   if (message.type === 'ready') return Object.keys(message).length === 2 ? { type: 'ready' } : undefined;
+  if (message.type === 'scroll') {
+    const { x, y } = message;
+    if (Object.keys(message).length !== 4 || !isCoordinate(x) || !isCoordinate(y)) return undefined;
+    return { type: 'scroll', x, y };
+  }
   if (message.type === 'looks') {
     if (Object.keys(message).length !== 3 || !Array.isArray(message.slides) || message.slides.length > 200) return undefined;
     const slides = (message.slides as unknown[]).map(parseLook);
@@ -414,6 +444,10 @@ export function excerptMatches(sourceText: string, picked: string): boolean {
 /** The messages the page sends to the frame. */
 export function modeMessage(comment: boolean): { source: string; type: 'mode'; comment: boolean } {
   return { source: STUDIO_SOURCE, type: 'mode', comment };
+}
+
+export function scrollToMessage(x: number, y: number): { source: string; type: 'scrollTo'; x: number; y: number } {
+  return { source: STUDIO_SOURCE, type: 'scrollTo', x, y };
 }
 
 export function looksMessage(): { source: string; type: 'looks' } {
