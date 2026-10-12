@@ -127,6 +127,24 @@ test('slides carry title, subtitle, paragraphs, bullets and colours', () => {
   assert.match(third, /<a:buChar char="&#8226;"\/><\/a:pPr><a:r>.*<a:t>Only bullets<\/a:t>/);
 });
 
+test('fonts and sizes from the screen go on the runs', () => {
+  const entries = unzip(
+    writePptx({ title: 'Fonts', slides: [{ title: 'Tit', subtitle: 'Sub', paragraphs: ['Body'], titleFont: 'Georgia', bodyFont: "Gill Sans", titleSize: 54, bodySize: 18 }] }),
+  );
+  const xml = text(entries, 'ppt/slides/slide1.xml');
+  assert.match(xml, /<a:rPr lang="it-IT" sz="5400" b="1" dirty="0"><a:latin typeface="Georgia"\/><a:cs typeface="Georgia"\/><\/a:rPr><a:t>Tit<\/a:t>/);
+  assert.match(xml, /<a:rPr lang="it-IT" sz="1800" dirty="0"><a:latin typeface="Gill Sans"\/><a:cs typeface="Gill Sans"\/><\/a:rPr><a:t>Body<\/a:t>/);
+  // The subtitle keeps its proportion to the body (24 to 20).
+  assert.match(xml, /sz="2160" dirty="0"><a:latin typeface="Gill Sans"\/><a:cs typeface="Gill Sans"\/><\/a:rPr><a:t>Sub<\/a:t>/);
+  const quoted = text(unzip(writePptx({ title: 'Q', slides: [{ title: 'Tit', titleFont: "O'Neil Sans" }] })), 'ppt/slides/slide1.xml');
+  assert.match(quoted, /<a:latin typeface="O&apos;Neil Sans"\/>/);
+  const bodyOnly = text(unzip(writePptx({ title: 'B', slides: [{ subtitle: 'Sub', bodySize: 10 }] })), 'ppt/slides/slide1.xml');
+  assert.match(bodyOnly, /sz="1200" dirty="0"><\/a:rPr><a:t>Sub<\/a:t>/);
+  const plain = text(unzip(writePptx({ title: 'Plain', slides: [{ title: 'Tit' }] })), 'ppt/slides/slide1.xml');
+  assert.equal(plain.includes('<a:latin'), false, 'no font: the theme one');
+  assert.match(plain, /sz="4000" b="1"/);
+});
+
 test('notes are written to the notes slide of their slide', () => {
   const entries = unzip(writePptx(deck));
   const notes = text(entries, 'ppt/notesSlides/notesSlide1.xml');

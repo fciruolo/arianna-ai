@@ -6,12 +6,13 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Pacchetto `@arianna/pptx`: `parseDeck` controlla il deck dello Studio con i limiti del contratto e `writePptx` scrive un file .pptx 16:9 (titolo, sottotitolo, paragrafi, punti elenco, colori e note del relatore) con codice nostro e `node:zlib`, senza dipendenze, in modo deterministico (I-19, D-184).
+- Pacchetto `@arianna/pptx`: `parseDeck` controlla il deck dello Studio con i limiti del contratto e `writePptx` scrive un file .pptx 16:9 (titolo, sottotitolo, paragrafi, punti elenco, colori, caratteri e dimensioni del testo, note del relatore) con codice nostro e `node:zlib`, senza dipendenze, in modo deterministico (I-19, D-184).
 - Rotte dello Studio nel core (`/api/studio/:project/...`, contratto in `docs/STUDIO-API.md`): elenco, lettura e scrittura dei mockup con impronta, esportazione PPTX; eventi `studio.edit` e `studio.export` senza testo (I-19, D-184).
 - Studio: nuova pagina «Studio» nella barra laterale (indirizzo `/studio`) con la scelta del progetto, a sinistra la conversazione diretta col Designer e a destra i mockup in una cornice isolata, varianti per gruppo, viste desktop, tablet e mobile, confronto di due varianti affiancate e lettura automatica dei file nuovi (I-19, D-184).
-- Studio: commenti sugli elementi del mockup (clic con «Commenta», elenco modificabile) inviati insieme al Designer come un solo messaggio di revisione (I-19, D-184).
-- Studio: modifica diretta di testo, colori, dimensioni, spaziature e allineamento di un elemento, scritta nel file del progetto solo se non è cambiato nel frattempo (I-19, D-184).
-- Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]` (I-19, D-184).
+- Studio: commenti sugli elementi del mockup (clic con «Commenta», finestra spostabile con il campo già pronto, elenco modificabile) inviati insieme al Designer come un solo messaggio di revisione (I-19, D-184).
+- Studio: modifica diretta di testo (anche i pezzi di testo di un titolo con un corsivo o un grassetto dentro), colori, dimensioni, spaziature e allineamento di un elemento, nella finestra spostabile, scritta nel file del progetto solo se non è cambiato nel frattempo (I-19, D-184).
+- Studio: esportazione in HTML, in PDF con la stampa del browser e in PPTX per i mockup con diapositive `section[data-slide]`, con colori, caratteri e dimensioni misurati sulla pagina com'è a schermo (I-19, D-184).
+- Studio: la conversazione col Designer del progetto si ritrova anche a pagina appena aperta e dopo il primo messaggio (il core tiene il progetto per nome) (I-19, D-184).
 - Chat: sotto «File modificati» di una delega, anteprima isolata dei mockup HTML con il collegamento «Apri nello Studio» (I-19, D-184).
 
 ### Sicurezza

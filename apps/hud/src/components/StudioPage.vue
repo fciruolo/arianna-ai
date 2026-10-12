@@ -28,6 +28,7 @@ import type { IconName } from '../icons.ts';
 import Icon from './Icon.vue';
 import StudioComments from './StudioComments.vue';
 import StudioEdit from './StudioEdit.vue';
+import StudioFloat from './StudioFloat.vue';
 import StudioFrame from './StudioFrame.vue';
 
 /**
@@ -278,6 +279,8 @@ async function saveEdit(edit: EditRequest): Promise<void> {
 // Exports (O5)
 const isDeck = computed(() => (shown.value === null ? false : hasSlides(parseMockup(shown.value.text))));
 const exporting = ref(false);
+/** The frame of the mockup shown: it measures how the slides look (PPTX). */
+const shownFrame = ref<InstanceType<typeof StudioFrame> | null>(null);
 const exportProblem = ref<string | null>(null);
 
 function download(blob: Blob, name: string): void {
@@ -332,13 +335,16 @@ async function exportPptx(): Promise<void> {
   const file = shown.value;
   if (name === undefined || file === null || exporting.value) return;
   exportProblem.value = null;
-  const deck = deckFromDocument(parseMockup(file.text), exportName(file.path, 'html').replace(/\.html$/, ''));
-  if (deck === undefined) {
-    exportProblem.value = 'Questo mockup non ha diapositive (section[data-slide]).';
-    return;
-  }
   exporting.value = true;
   try {
+    // Colours, fonts and sizes as the screen shows them; the attributes alone without an answer.
+    const looks = await shownFrame.value?.measureLooks();
+    if (shown.value !== file) return;
+    const deck = deckFromDocument(parseMockup(file.text), exportName(file.path, 'html').replace(/\.html$/, ''), looks);
+    if (deck === undefined) {
+      exportProblem.value = 'Questo mockup non ha diapositive (section[data-slide]).';
+      return;
+    }
     download(await exportMockupPptx(name, file.path, deck), exportName(file.path, 'pptx'));
   } catch (cause) {
     exportProblem.value = studioErrorText(cause);
@@ -474,6 +480,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
               <p v-else-if="shown === null" class="text-sm text-muted">Leggo il mockup…</p>
               <div v-else class="h-full min-h-[460px] overflow-hidden rounded border border-line" :style="frameStyle">
                 <StudioFrame
+                  ref="shownFrame"
                   :key="shown.sha256"
                   :source="shown.text"
                   :title="`Mockup ${shown.path}`"
@@ -493,26 +500,29 @@ const side = ref<'chat' | 'canvas'>('canvas');
                 <StudioFrame :key="other.sha256" :source="other.text" :title="`Confronto ${other.path}`" />
               </div>
             </div>
-          </div>
-
-          <div class="grid grid-cols-1 gap-2 xl:grid-cols-2">
-            <StudioComments
-              v-if="pickMode === 'comment' || comments.length > 0"
-              :comments="comments"
-              :pending="pending"
-              :sending="sending"
-              :blocked="chatBlocked"
-              @add="addComment"
-              @cancel="pending = null; highlight = null"
-              @update="updateComment"
-              @remove="removeComment"
-              @focus="focusComment"
-              @send="sendComments"
-            />
-            <div v-if="editing !== null && shown !== null" class="flex flex-col gap-1">
-              <StudioEdit :source="shown.text" :selector="editing.selector" :tag="editing.tag" :excerpt="editing.excerpt" :saving="saving" @save="saveEdit" @close="editing = null; highlight = null" />
-              <p v-if="editProblem !== null" class="text-xs text-warn" role="alert">{{ editProblem }}</p>
-            </div>
+            <!-- Comments and edit in a window the user moves (choice after the first trial). -->
+            <StudioFloat
+              v-if="pickMode === 'comment' || comments.length > 0 || (editing !== null && shown !== null)"
+              :title="editing !== null ? 'Modifica diretta' : 'Commenti al Designer'"
+            >
+              <StudioComments
+                v-if="pickMode === 'comment' || comments.length > 0"
+                :comments="comments"
+                :pending="pending"
+                :sending="sending"
+                :blocked="chatBlocked"
+                @add="addComment"
+                @cancel="pending = null; highlight = null"
+                @update="updateComment"
+                @remove="removeComment"
+                @focus="focusComment"
+                @send="sendComments"
+              />
+              <div v-if="editing !== null && shown !== null" class="flex flex-col gap-1">
+                <StudioEdit :source="shown.text" :selector="editing.selector" :tag="editing.tag" :excerpt="editing.excerpt" :saving="saving" @save="saveEdit" @close="editing = null; highlight = null" />
+                <p v-if="editProblem !== null" class="text-xs text-warn" role="alert">{{ editProblem }}</p>
+              </div>
+            </StudioFloat>
           </div>
         </template>
       </div>

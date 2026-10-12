@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 
 import { COMMENT_MAX, COMMENTS_MAX, commentProblem, type StudioComment } from '../lib/studio.ts';
 import Icon from './Icon.vue';
@@ -28,11 +28,16 @@ const emit = defineEmits<{
 
 const draft = ref('');
 const problem = ref<string | undefined>(undefined);
+const field = ref<HTMLTextAreaElement | null>(null);
 watch(
-  () => props.pending?.selector,
-  () => {
+  () => props.pending,
+  async (pending) => {
     draft.value = '';
     problem.value = undefined;
+    // The field of the element just picked (the same one again too), ready to write in.
+    if (pending === null) return;
+    await nextTick();
+    field.value?.focus();
   },
 );
 
@@ -68,6 +73,7 @@ function saveEdit(id: number): void {
         Su <code class="font-mono">&lt;{{ pending.tag }}&gt;</code><template v-if="pending.excerpt !== ''"> «{{ pending.excerpt }}»</template>
       </p>
       <textarea
+        ref="field"
         v-model="draft"
         class="field min-h-[60px] resize-y px-2.5 py-1.5"
         :maxlength="COMMENT_MAX"

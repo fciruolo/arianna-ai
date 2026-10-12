@@ -69,7 +69,8 @@ export function excerptOf(text: string, max: number): string {
  * its selector, its box, its tag and an excerpt of its text, and does
  * nothing else (no link followed, no button pressed). From the page:
  * `mode` turns comment mode on or off, `highlight` outlines the element of
- * a selector (or none).
+ * a selector (or none), `looks` asks how each `section[data-slide]` looks
+ * on screen (colours, fonts and sizes, for the PPTX export).
  */
 export function studioAgent(win: Window): void {
   const doc = win.document;
@@ -196,8 +197,55 @@ export function studioAgent(win: Window): void {
     } else if (message.type === 'highlight') {
       markedSelector = typeof message.selector === 'string' && message.selector.length <= 2000 ? message.selector : null;
       remark();
+    } else if (message.type === 'looks') {
+      post({ type: 'looks', slides: looks() });
     }
   });
+
+  /** `#rrggbb` of a computed colour; null when transparent or not rgb. */
+  function hexOf(value: string): string | null {
+    const match = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/.exec(value);
+    if (match === null) return null;
+    // Only a solid colour: a tint lets the colour below show, which this cannot tell.
+    if (match[4] !== undefined && (match[5] === '%' ? Number(match[4]) < 100 : Number(match[4]) < 1)) return null;
+    return '#' + [match[1], match[2], match[3]].map((part) => Math.min(255, Number(part)).toString(16).padStart(2, '0')).join('');
+  }
+  function backgroundOf(element: Element): string | null {
+    let node: Element | null = element;
+    while (node !== null) {
+      const color = hexOf(win.getComputedStyle(node).backgroundColor);
+      if (color !== null) return color;
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function firstOutsideNotes(section: Element, selector: string): Element | null {
+    for (const element of Array.from(section.querySelectorAll(selector))) if (element.closest('aside[data-notes]') === null) return element;
+    return null;
+  }
+  /** How every slide looks: the page checks every field again. */
+  function looks(): Record<string, unknown>[] {
+    return Array.from(doc.querySelectorAll('section[data-slide]'))
+      .slice(0, 200)
+      .map((section) => {
+        const style = win.getComputedStyle(section);
+        const title = firstOutsideNotes(section, 'h1, h2');
+        const body = firstOutsideNotes(section, 'p, li') ?? section;
+        const titleStyle = title === null ? null : win.getComputedStyle(title);
+        const bodyStyle = win.getComputedStyle(body);
+        return {
+          // A slide hidden (one at a time on screen) has no width: the page's.
+          width: Math.round(section.getBoundingClientRect().width) || doc.documentElement.clientWidth || 1,
+          background: backgroundOf(section),
+          color: hexOf(bodyStyle.color) ?? hexOf(style.color),
+          accent: titleStyle === null ? null : hexOf(titleStyle.color),
+          titleFont: titleStyle === null ? null : titleStyle.fontFamily.slice(0, 300),
+          bodyFont: bodyStyle.fontFamily.slice(0, 300),
+          titlePx: titleStyle === null ? null : parseFloat(titleStyle.fontSize),
+          bodyPx: parseFloat(bodyStyle.fontSize),
+        };
+      });
+  }
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', () => {
       post({ type: 'ready' });
     });
@@ -241,10 +289,63 @@ export interface FrameRect {
   height: number;
 }
 
-/** What the frame may send: it is ready, or the user clicked an element in comment mode. */
+/**
+ * How a slide looks on screen, as the frame measured it: colours `#rrggbb`,
+ * the `font-family` lists as computed, sizes in CSS pixels, the width of the
+ * section in CSS pixels (sizes become points against it). Null when the
+ * frame could not tell.
+ */
+export interface SlideLook {
+  width: number;
+  background: string | null;
+  color: string | null;
+  accent: string | null;
+  titleFont: string | null;
+  bodyFont: string | null;
+  titlePx: number | null;
+  bodyPx: number | null;
+}
+
+/** What the frame may send: it is ready, the user clicked an element in comment mode, or how the slides look. */
 export type FrameMessage =
   | { type: 'ready' }
-  | { type: 'pick'; selector: string; rect: FrameRect; tag: string; excerpt: string };
+  | { type: 'pick'; selector: string; rect: FrameRect; tag: string; excerpt: string }
+  | { type: 'looks'; slides: SlideLook[] };
+
+const LOOK_KEYS = ['width', 'background', 'color', 'accent', 'titleFont', 'bodyFont', 'titlePx', 'bodyPx'] as const;
+
+function lookColor(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value) ? value : undefined;
+}
+
+function lookFont(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' && value.length <= 300 ? value : undefined;
+}
+
+function lookPx(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 2000 ? value : undefined;
+}
+
+/** One slide of a `looks` message, every field checked; undefined when any is wrong. */
+function parseLook(raw: unknown): SlideLook | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const look = raw as Record<string, unknown>;
+  if (Object.keys(look).length !== LOOK_KEYS.length || LOOK_KEYS.some((key) => !(key in look))) return undefined;
+  const width = typeof look.width === 'number' && Number.isFinite(look.width) && look.width > 0 && look.width <= 20_000 ? look.width : undefined;
+  const background = lookColor(look.background);
+  const color = lookColor(look.color);
+  const accent = lookColor(look.accent);
+  const titleFont = lookFont(look.titleFont);
+  const bodyFont = lookFont(look.bodyFont);
+  const titlePx = lookPx(look.titlePx);
+  const bodyPx = lookPx(look.bodyPx);
+  if (width === undefined || background === undefined || color === undefined || accent === undefined) return undefined;
+  if (titleFont === undefined || bodyFont === undefined || titlePx === undefined || bodyPx === undefined) return undefined;
+  return { width, background, color, accent, titleFont, bodyFont, titlePx, bodyPx };
+}
 
 /** A selector as the frame writes it: `body`, then `> tag:nth-of-type(n)` steps. */
 const SELECTOR = /^body(?: > [a-z][a-z0-9-]{0,63}:nth-of-type\([1-9][0-9]{0,4}\))*$/;
@@ -266,6 +367,11 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
   const message = data as Record<string, unknown>;
   if (message.source !== STUDIO_SOURCE) return undefined;
   if (message.type === 'ready') return Object.keys(message).length === 2 ? { type: 'ready' } : undefined;
+  if (message.type === 'looks') {
+    if (Object.keys(message).length !== 3 || !Array.isArray(message.slides) || message.slides.length > 200) return undefined;
+    const slides = (message.slides as unknown[]).map(parseLook);
+    return slides.every((look): look is SlideLook => look !== undefined) ? { type: 'looks', slides } : undefined;
+  }
   if (message.type !== 'pick') return undefined;
   const { selector, rect, tag, excerpt } = message;
   if (Object.keys(message).length !== 6) return undefined;
@@ -308,6 +414,10 @@ export function excerptMatches(sourceText: string, picked: string): boolean {
 /** The messages the page sends to the frame. */
 export function modeMessage(comment: boolean): { source: string; type: 'mode'; comment: boolean } {
   return { source: STUDIO_SOURCE, type: 'mode', comment };
+}
+
+export function looksMessage(): { source: string; type: 'looks' } {
+  return { source: STUDIO_SOURCE, type: 'looks' };
 }
 
 export function highlightMessage(selector: string | null): { source: string; type: 'highlight'; selector: string | null } {

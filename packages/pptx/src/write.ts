@@ -70,9 +70,17 @@ const GROUP_HEADER =
   '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
   '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>';
 
-function runProps(size: number, color: string | undefined, bold = false): string {
-  const fill = color === undefined ? '' : `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`;
-  return `<a:rPr lang="${LANG}" sz="${String(size)}"${bold ? ' b="1"' : ''} dirty="0">${fill}</a:rPr>`;
+/** How a run looks: size in hundredths of a point, colour, font family. */
+interface Look {
+  size: number;
+  color: string | undefined;
+  font?: string | undefined;
+}
+
+function runProps(look: Look, bold = false): string {
+  const fill = look.color === undefined ? '' : `<a:solidFill><a:srgbClr val="${look.color}"/></a:solidFill>`;
+  const font = look.font === undefined ? '' : `<a:latin typeface="${escapeXml(look.font)}"/><a:cs typeface="${escapeXml(look.font)}"/>`;
+  return `<a:rPr lang="${LANG}" sz="${String(look.size)}"${bold ? ' b="1"' : ''} dirty="0">${fill}${font}</a:rPr>`;
 }
 
 function endProps(size: number): string {
@@ -80,9 +88,9 @@ function endProps(size: number): string {
 }
 
 /** One paragraph; empty text gives an empty paragraph. */
-function paragraph(text: string, size: number, color: string | undefined, pPr: string, bold = false): string {
-  const run = text === '' ? '' : `<a:r>${runProps(size, color, bold)}<a:t>${escapeXml(text)}</a:t></a:r>`;
-  return `<a:p>${pPr}${run}${endProps(size)}</a:p>`;
+function paragraph(text: string, look: Look, pPr: string, bold = false): string {
+  const run = text === '' ? '' : `<a:r>${runProps(look, bold)}<a:t>${escapeXml(text)}</a:t></a:r>`;
+  return `<a:p>${pPr}${run}${endProps(look.size)}</a:p>`;
 }
 
 const NO_BULLET = '<a:pPr marL="0" indent="0"><a:buNone/></a:pPr>';
@@ -94,15 +102,15 @@ function lines(text: string): string[] {
   return stripForbidden(text).split('\n');
 }
 
-function plainParagraphs(text: string, size: number, color: string | undefined, bold = false): string {
+function plainParagraphs(text: string, look: Look, bold = false): string {
   return lines(text)
-    .map((line) => paragraph(line, size, color, NO_BULLET, bold))
+    .map((line) => paragraph(line, look, NO_BULLET, bold))
     .join('');
 }
 
-function bulletParagraphs(text: string, size: number, color: string | undefined): string {
+function bulletParagraphs(text: string, look: Look): string {
   return lines(text)
-    .map((line, i) => paragraph(line, size, color, i === 0 ? BULLET : BULLET_CONTINUED))
+    .map((line, i) => paragraph(line, look, i === 0 ? BULLET : BULLET_CONTINUED))
     .join('');
 }
 
@@ -121,22 +129,26 @@ function slideXml(slide: Slide): string {
   const text = hex(slide.color);
   const accent = hex(slide.accent) ?? text;
   const background = hex(slide.background);
+  // Points from the screen; the subtitle keeps its proportion to the body.
+  const titleLook: Look = { size: slide.titleSize === undefined ? TITLE_SIZE : slide.titleSize * 100, color: accent, font: slide.titleFont };
+  const bodyLook: Look = { size: slide.bodySize === undefined ? BODY_SIZE : slide.bodySize * 100, color: text, font: slide.bodyFont };
+  const subtitleLook: Look = { ...bodyLook, size: Math.round((bodyLook.size * SUBTITLE_SIZE) / BODY_SIZE) };
   const shapes: string[] = [];
   let id = 2;
   let y = 457200;
   if (slide.title !== undefined && slide.title !== '') {
     const box = { x: MARGIN_X, y, w: CONTENT_W, h: 1143000 };
-    shapes.push(textShape(id++, 'Title', box, plainParagraphs(slide.title, TITLE_SIZE, accent, true), 'b', '<p:ph type="title"/>'));
+    shapes.push(textShape(id++, 'Title', box, plainParagraphs(slide.title, titleLook, true), 'b', '<p:ph type="title"/>'));
   }
   y += 1143000 + 76200;
   if (slide.subtitle !== undefined && slide.subtitle !== '') {
     const box = { x: MARGIN_X, y, w: CONTENT_W, h: 685800 };
-    shapes.push(textShape(id++, 'Subtitle', box, plainParagraphs(slide.subtitle, SUBTITLE_SIZE, text), 't'));
+    shapes.push(textShape(id++, 'Subtitle', box, plainParagraphs(slide.subtitle, subtitleLook), 't'));
     y += 685800 + 76200;
   }
   const body = [
-    ...(slide.paragraphs ?? []).map((p) => plainParagraphs(p, BODY_SIZE, text)),
-    ...(slide.bullets ?? []).map((b) => bulletParagraphs(b, BODY_SIZE, text)),
+    ...(slide.paragraphs ?? []).map((p) => plainParagraphs(p, bodyLook)),
+    ...(slide.bullets ?? []).map((b) => bulletParagraphs(b, bodyLook)),
   ];
   if (body.length > 0) {
     const box = { x: MARGIN_X, y, w: CONTENT_W, h: SLIDE_H - 457200 - y };
@@ -157,7 +169,7 @@ function notesSlideXml(notes: string): string {
     `${XML_DECL}<p:notes ${NAMESPACES}><p:cSld><p:spTree>${GROUP_HEADER}` +
     '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Slide Image"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>' +
     '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/>' +
-    `<p:txBody><a:bodyPr/><a:lstStyle/>${plainParagraphs(notes, NOTES_SIZE, undefined)}</p:txBody></p:sp>` +
+    `<p:txBody><a:bodyPr/><a:lstStyle/>${plainParagraphs(notes, { size: NOTES_SIZE, color: undefined })}</p:txBody></p:sp>` +
     '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>'
   );
 }

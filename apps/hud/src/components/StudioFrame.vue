@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { studioFrame } from '../lib/api.ts';
 
-import { buildSrcdoc, highlightMessage, modeMessage, parseFrameMessage, type FrameRect } from '../lib/studio-frame.ts';
+import { buildSrcdoc, highlightMessage, looksMessage, modeMessage, parseFrameMessage, type FrameRect, type SlideLook } from '../lib/studio-frame.ts';
 
 /**
  * A mockup in an isolated frame (I-19, D-184): the document built with the
@@ -110,11 +110,40 @@ function onMessage(event: MessageEvent): void {
     rebuilds = 0;
     window.clearTimeout(watchdog);
     sync();
-  }
-  else if (props.comment) emit('pick', { selector: message.selector, rect: message.rect, tag: message.tag, excerpt: message.excerpt });
+  } else if (message.type === 'looks') {
+    const waiting = looksWaiting;
+    looksWaiting = undefined;
+    waiting?.(message.slides);
+  } else if (props.comment) emit('pick', { selector: message.selector, rect: message.rect, tag: message.tag, excerpt: message.excerpt });
 }
 
 watch(() => [props.comment, props.highlight] as const, sync);
+
+let looksWaiting: ((looks: SlideLook[] | undefined) => void) | undefined;
+
+/**
+ * How the slides look on screen (PPTX export, D-184): asked to the frame's
+ * script; undefined when the frame is not ready or does not answer within
+ * a second (the export then uses the attributes of the slides).
+ */
+function measureLooks(): Promise<SlideLook[] | undefined> {
+  looksWaiting?.(undefined);
+  if (props.mode !== 'studio' || readyFor === undefined || readyFor !== src.value) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const done = (looks: SlideLook[] | undefined): void => {
+      window.clearTimeout(timer);
+      resolve(looks);
+    };
+    const timer = window.setTimeout(() => {
+      if (looksWaiting === done) looksWaiting = undefined;
+      resolve(undefined);
+    }, 1_000);
+    looksWaiting = done;
+    send(looksMessage());
+  });
+}
+
+defineExpose({ measureLooks });
 
 onMounted(() => {
   window.addEventListener('message', onMessage);

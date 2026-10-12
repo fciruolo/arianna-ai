@@ -115,6 +115,27 @@ test('colours: #rrggbb only', () => {
   }
 });
 
+test('fonts: a family name of at most 64 characters', () => {
+  for (const key of ['titleFont', 'bodyFont']) {
+    for (const good of ['Georgia', 'Helvetica Neue', 'Font Awesome 6', "Bodoni 72 Oldstyle", 'Noto Sans JP', 'Söhne']) {
+      assert.equal(parseDeck(slide({ [key]: good })).slides[0]?.[key as 'titleFont'], good);
+    }
+    for (const bad of ['', ' Georgia', 'a'.repeat(65), 'Ga<x>', 'Ga"ra', 'serif, Georgia', 12]) {
+      rejects(slide({ [key]: bad }), new RegExp(`\\.${key}: expected a font family name`));
+    }
+  }
+});
+
+test('font sizes: whole points from 8 to 120', () => {
+  for (const key of ['titleSize', 'bodySize']) {
+    assert.equal(parseDeck(slide({ [key]: 8 })).slides[0]?.[key as 'titleSize'], 8);
+    assert.equal(parseDeck(slide({ [key]: 120 })).slides[0]?.[key as 'titleSize'], 120);
+    for (const bad of [7, 121, 12.5, '12', Number.NaN]) {
+      rejects(slide({ [key]: bad }), new RegExp(`\\.${key}: expected whole points`));
+    }
+  }
+});
+
 test('control characters are refused, except newline and tab', () => {
   assert.equal(parseDeck(slide({ notes: 'a\nb\tc' })).slides[0]?.notes, 'a\nb\tc');
   for (const bad of ['\u0000', '\u0007', '\r', '\u000B', '\u001F', '\u007F', '\u0085', '\uD800', 'a\uDC00b']) {

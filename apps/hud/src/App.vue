@@ -485,7 +485,8 @@ const studioChatOpen = computed(() => {
   const info = projects.value.find((entry) => entry.name === name);
   if (name === undefined || info === undefined) return false;
   if (draft.value !== null) return draft.value.agent === DESIGNER_AGENT && draft.value.project === name;
-  return current.value?.agent === DESIGNER_AGENT && current.value.workspace === info.path;
+  // The core keeps the project by name (older conversations by folder): either one.
+  return current.value?.agent === DESIGNER_AGENT && (current.value.workspace === info.name || current.value.workspace === info.path);
 });
 
 /** Why the comments of the Studio cannot leave now, or undefined. */

@@ -242,14 +242,32 @@ export function validStyle(name: EditStyle, value: string): boolean {
   }
 }
 
-/** An edit of one element: a new text (only for an element with text alone) and the styles to set or (empty) remove. */
+/**
+ * An edit of one element: a new text (only for an element with text alone),
+ * or, for an element with text and other elements mixed, the new texts of
+ * its own text pieces in order (`segments`, the inner elements stay as they
+ * are), and the styles to set or (empty) remove.
+ */
 export interface StudioEdit {
   selector: string;
   text?: string;
+  segments?: string[];
   styles: Partial<Record<EditStyle, string>>;
 }
 
 export const EDIT_TEXT_MAX = 5000;
+/**
+ * A text piece of an element rewritten: the blanks around the old one stay,
+ * so the words keep apart from the inner elements; the new text is trimmed.
+ */
+export function respace(old: string, piece: string): string {
+  const lead = /^\s*/.exec(old)?.[0] ?? '';
+  const trail = /\s*$/.exec(old)?.[0] ?? '';
+  return lead + piece.trim() + trail;
+}
+
+/** The most text pieces of one element the edit panel shows. */
+export const SEGMENTS_MAX = 20;
 
 /** Why a direct edit is refused when the element in the file is not the one picked in the frame. */
 export const STUDIO_EDIT_CHANGED = 'L’elemento nel file è diverso da quello scelto (il mockup lo cambia con uno script): chiedi la modifica al Designer.';
@@ -261,7 +279,8 @@ export function editProblems(edit: StudioEdit): string[] {
     if (!isEditStyle(name)) problems.push(name);
     else if (!validStyle(name, value)) problems.push(STYLE_LABEL[name]);
   }
-  if (edit.text !== undefined && edit.text.length > EDIT_TEXT_MAX) problems.push('Testo');
+  const texts = [...(edit.text === undefined ? [] : [edit.text]), ...(edit.segments ?? [])];
+  if (texts.reduce((total, text) => total + text.length, 0) > EDIT_TEXT_MAX || (edit.segments?.length ?? 0) > SEGMENTS_MAX) problems.push('Testo');
   return problems;
 }
 
@@ -278,6 +297,10 @@ export interface Slide {
   background?: string;
   color?: string;
   accent?: string;
+  titleFont?: string;
+  bodyFont?: string;
+  titleSize?: number;
+  bodySize?: number;
 }
 
 export interface Deck {
@@ -295,6 +318,12 @@ export interface SlideParts {
   background?: string | null | undefined;
   color?: string | null | undefined;
   accent?: string | null | undefined;
+  /** `font-family` lists as the screen computes them. */
+  titleFont?: string | null | undefined;
+  bodyFont?: string | null | undefined;
+  /** Sizes in points already. */
+  titleSize?: number | undefined;
+  bodySize?: number | undefined;
 }
 
 export const DECK_LIMITS = { slides: 200, title: 200, slideTitle: 300, subtitle: 300, items: 30, paragraph: 2000, bullet: 500, notes: 5000 } as const;
@@ -353,6 +382,52 @@ export function hexColor(value: string | null | undefined): string | undefined {
   return short === null ? undefined : `#${short[1] ?? ''}${short[1] ?? ''}${short[2] ?? ''}${short[2] ?? ''}${short[3] ?? ''}${short[3] ?? ''}`;
 }
 
+/** Generic CSS families: the system sans-serif is the theme's own font, the others a common Office one. */
+const GENERIC_FONTS: Record<string, string | undefined> = {
+  serif: 'Times New Roman',
+  'ui-serif': 'Times New Roman',
+  monospace: 'Courier New',
+  'ui-monospace': 'Courier New',
+  'sans-serif': undefined,
+  'ui-sans-serif': undefined,
+  'system-ui': undefined,
+  '-apple-system': undefined,
+  blinkmacsystemfont: undefined,
+  cursive: undefined,
+  fantasy: undefined,
+};
+
+/** Whole points from 8 to 120, as `parseDeck` wants them. */
+function wholePoints(value: number | undefined): number | undefined {
+  return value === undefined || !Number.isFinite(value) ? undefined : Math.min(120, Math.max(8, Math.round(value)));
+}
+
+/** A family name as `parseDeck` of `@arianna/pptx` accepts it (keep it equal to `FONT` in packages/pptx/src/deck.ts). */
+const FONT_NAME = /^[\p{L}\p{N}][\p{L}\p{N} .'-]{0,63}$/u;
+
+/**
+ * The font of a computed `font-family` list for PowerPoint: the first named
+ * family, or the Office equivalent of a generic one; undefined for the
+ * system sans-serif (the theme font) and for names PowerPoint cannot take.
+ */
+export function fontName(family: string | null | undefined): string | undefined {
+  if (family === null || family === undefined) return undefined;
+  for (const raw of family.split(',')) {
+    const name = raw.trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+    if (name === '') continue;
+    const generic = name.toLowerCase();
+    if (generic in GENERIC_FONTS) return GENERIC_FONTS[generic];
+    return FONT_NAME.test(name) ? name : undefined;
+  }
+  return undefined;
+}
+
+/** A 16:9 slide is 960 points wide: a size in CSS pixels on a section `width` pixels wide, as whole points from 8 to 120. */
+export function pointsFrom(px: number | null | undefined, width: number): number | undefined {
+  if (px === null || px === undefined || !Number.isFinite(px) || px <= 0 || !Number.isFinite(width) || width <= 0) return undefined;
+  return Math.min(120, Math.max(8, Math.round((px * 960) / width)));
+}
+
 /** The deck within the limits of the contract; undefined without any slide. */
 export function deckFromParts(title: string, parts: readonly SlideParts[]): Deck | undefined {
   if (parts.length === 0) return undefined;
@@ -374,6 +449,14 @@ export function deckFromParts(title: string, parts: readonly SlideParts[]): Deck
     if (color !== undefined) slide.color = color;
     const accent = hexColor(part.accent);
     if (accent !== undefined) slide.accent = accent;
+    const titleFont = fontName(part.titleFont);
+    if (titleFont !== undefined) slide.titleFont = titleFont;
+    const bodyFont = fontName(part.bodyFont);
+    if (bodyFont !== undefined) slide.bodyFont = bodyFont;
+    const titleSize = wholePoints(part.titleSize);
+    if (titleSize !== undefined) slide.titleSize = titleSize;
+    const bodySize = wholePoints(part.bodySize);
+    if (bodySize !== undefined) slide.bodySize = bodySize;
     return slide;
   });
   return { title: clean(title, DECK_LIMITS.title) ?? 'Presentazione', slides };

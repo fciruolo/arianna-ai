@@ -16,22 +16,25 @@ const emit = defineEmits<{ save: [edit: StudioEdit]; close: [] }>();
 
 const editable = computed(() => readEditable(parseMockup(props.source), props.selector, props.excerpt));
 const text = ref('');
+const segments = ref<string[]>([]);
 const styles = ref<Record<EditStyle, string>>(Object.fromEntries(EDIT_STYLES.map((name) => [name, ''])) as Record<EditStyle, string>);
 
 watch(
   editable,
   (value) => {
     text.value = value?.text ?? '';
+    segments.value = [...(value?.segments ?? [])];
     styles.value = { ...(value?.styles ?? (Object.fromEntries(EDIT_STYLES.map((name) => [name, ''])) as Record<EditStyle, string>)) };
   },
   { immediate: true },
 );
 
+const segmentsChanged = computed(() => segments.value.some((piece, at) => piece.trim() !== (editable.value?.segments[at] ?? '')));
 const invalid = computed(() => EDIT_STYLES.filter((name) => !validStyle(name, styles.value[name])));
 const changed = computed(() => {
   const value = editable.value;
   if (value === undefined) return false;
-  return (value.textEditable && text.value !== value.text) || EDIT_STYLES.some((name) => styles.value[name].trim() !== value.styles[name]);
+  return (value.textEditable && text.value !== value.text) || segmentsChanged.value || EDIT_STYLES.some((name) => styles.value[name].trim() !== value.styles[name]);
 });
 
 function save(): void {
@@ -39,7 +42,12 @@ function save(): void {
   if (value === undefined || !value.matches || invalid.value.length > 0 || text.value.length > EDIT_TEXT_MAX) return;
   const changedStyles: StudioEdit['styles'] = {};
   for (const name of EDIT_STYLES) if (styles.value[name].trim() !== value.styles[name]) changedStyles[name] = styles.value[name].trim();
-  emit('save', { selector: props.selector, ...(value.textEditable && text.value !== value.text ? { text: text.value } : {}), styles: changedStyles });
+  emit('save', {
+    selector: props.selector,
+    ...(value.textEditable && text.value !== value.text ? { text: text.value } : {}),
+    ...(segmentsChanged.value ? { segments: segments.value.map((piece) => piece.trim()) } : {}),
+    styles: changedStyles,
+  });
 }
 </script>
 
@@ -60,7 +68,14 @@ function save(): void {
         <span class="text-xs text-muted">Testo</span>
         <textarea v-model="text" class="field min-h-[64px] resize-y px-2.5 py-1.5" :maxlength="EDIT_TEXT_MAX" />
       </label>
-      <p v-else class="text-xs text-muted">Il testo di questo elemento contiene altri elementi: cambialo scegliendo l’elemento più interno.</p>
+      <template v-else-if="editable.segments.length > 0">
+        <p class="text-xs text-muted">Il testo di questo elemento è diviso da altri elementi (per esempio un corsivo): qui cambi i suoi pezzi; quelli negli elementi interni li cambi scegliendo l’elemento.</p>
+        <label v-for="(_, at) in segments" :key="at" class="flex flex-col gap-1">
+          <span class="text-xs text-muted">Testo, pezzo {{ at + 1 }} di {{ segments.length }}</span>
+          <textarea v-model="segments[at]" class="field min-h-[44px] resize-y px-2.5 py-1.5" :maxlength="EDIT_TEXT_MAX" />
+        </label>
+      </template>
+      <p v-else class="text-xs text-muted">Il testo di questo elemento sta negli elementi interni: cambialo scegliendo l’elemento più interno.</p>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label v-for="name in EDIT_STYLES" :key="name" class="flex flex-col gap-1">
           <span class="text-xs text-muted">{{ STYLE_LABEL[name] }}</span>

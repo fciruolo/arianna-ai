@@ -11,6 +11,14 @@ export interface Slide {
   color?: string;
   /** `#rrggbb`, the title colour */
   accent?: string;
+  /** Font of the title, as the screen shows it (a family name) */
+  titleFont?: string;
+  /** Font of subtitle, paragraphs and bullets */
+  bodyFont?: string;
+  /** Size of the title, in points */
+  titleSize?: number;
+  /** Size of subtitle, paragraphs and bullets, in points */
+  bodySize?: number;
 }
 
 export interface Deck {
@@ -30,6 +38,11 @@ export const MAX_ITEMS = 30;
 export const MAX_PARAGRAPH = 2000;
 export const MAX_BULLET = 500;
 export const MAX_NOTES = 5000;
+export const MIN_FONT_SIZE = 8;
+export const MAX_FONT_SIZE = 120;
+
+/** A font family name: letters, digits, spaces, dots, apostrophes and hyphens, at most 64 characters. */
+const FONT = /^[\p{L}\p{N}][\p{L}\p{N} .'-]{0,63}$/u;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 // C0 controls except \t and \n, DEL and C1 controls and the two XML 1.0
@@ -39,7 +52,7 @@ const COLOR = /^#[0-9a-fA-F]{6}$/;
 const FORBIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u{fffe}\u{ffff}]/u;
 const FORBIDDEN_GLOBAL = new RegExp(FORBIDDEN.source, 'gu');
 
-const SLIDE_KEYS = new Set(['title', 'subtitle', 'paragraphs', 'bullets', 'notes', 'background', 'color', 'accent']);
+const SLIDE_KEYS = new Set(['title', 'subtitle', 'paragraphs', 'bullets', 'notes', 'background', 'color', 'accent', 'titleFont', 'bodyFont', 'titleSize', 'bodySize']);
 const DECK_KEYS = new Set(['title', 'slides']);
 
 /** Removes the characters a slide cannot hold (the writer's last line of defence). */
@@ -78,6 +91,18 @@ function color(value: unknown, where: string): string {
   return value.toLowerCase();
 }
 
+function font(value: unknown, where: string): string {
+  if (typeof value !== 'string' || !FONT.test(value)) throw new DeckError(`${where}: expected a font family name`);
+  return value;
+}
+
+function size(value: unknown, where: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_FONT_SIZE || value > MAX_FONT_SIZE) {
+    throw new DeckError(`${where}: expected whole points from ${String(MIN_FONT_SIZE)} to ${String(MAX_FONT_SIZE)}`);
+  }
+  return value;
+}
+
 function parseSlide(raw: unknown, where: string): Slide {
   if (!isRecord(raw)) throw new DeckError(`${where}: expected an object`);
   checkKeys(raw, SLIDE_KEYS, where);
@@ -90,6 +115,10 @@ function parseSlide(raw: unknown, where: string): Slide {
   if (raw.background !== undefined) slide.background = color(raw.background, `${where}.background`);
   if (raw.color !== undefined) slide.color = color(raw.color, `${where}.color`);
   if (raw.accent !== undefined) slide.accent = color(raw.accent, `${where}.accent`);
+  if (raw.titleFont !== undefined) slide.titleFont = font(raw.titleFont, `${where}.titleFont`);
+  if (raw.bodyFont !== undefined) slide.bodyFont = font(raw.bodyFont, `${where}.bodyFont`);
+  if (raw.titleSize !== undefined) slide.titleSize = size(raw.titleSize, `${where}.titleSize`);
+  if (raw.bodySize !== undefined) slide.bodySize = size(raw.bodySize, `${where}.bodySize`);
   return slide;
 }
 

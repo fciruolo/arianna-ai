@@ -751,8 +751,15 @@ export function createChatStore() {
       close();
       return;
     }
-    const found = conversations.value.find(
-      (conversation) => conversation.agent === STUDIO_AGENT && conversation.workspace === info.path && conversation.archivedAt === null && conversation.incognito !== true,
+    // Read from the core: on a page opened at /studio the list may not be loaded yet.
+    const listed = await api.listConversations().catch(() => conversations.value);
+    if (token !== studioChatToken) return;
+    const found = listed.find(
+      (conversation) =>
+        conversation.agent === STUDIO_AGENT &&
+        (conversation.workspace === info.name || conversation.workspace === info.path) &&
+        conversation.archivedAt === null &&
+        conversation.incognito !== true,
     );
     if (found !== undefined) {
       if (chat.value?.conversationId !== found.id) await open(found.id);

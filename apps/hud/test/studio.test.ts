@@ -12,6 +12,7 @@ import {
   excerptOf,
   highlightMessage,
   isStudioSelector,
+  looksMessage,
   modeMessage,
   nthSelector,
   parseFrameMessage,
@@ -26,12 +27,15 @@ import {
   deckFromParts,
   editProblems,
   exportName,
+  fontName,
   groupMockups,
   hexColor,
   isMockupPath,
   isStudioPath,
   nextVariantName,
   pickMockup,
+  pointsFrom,
+  respace,
   reviewMessage,
   slideText,
   studioErrorText,
@@ -156,6 +160,79 @@ test('messages of another shape are refused', () => {
   assert.equal(parseFrameMessage({ ...pick, rect: { x: Number.NaN, y: 2, width: 3, height: 4 } }), undefined);
   assert.equal(parseFrameMessage({ ...pick, rect: { x: 1, y: 2, width: 3, height: 4, z: 5 } }), undefined);
   assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'ready', more: true }), undefined);
+});
+
+const look = { width: 960, background: '#f4f1ea', color: '#222222', accent: '#8a3b12', titleFont: 'Georgia, serif', bodyFont: 'system-ui, sans-serif', titlePx: 40, bodyPx: 16 };
+
+test('a looks message of the right shape is accepted', () => {
+  assert.deepEqual(looksMessage(), { source: STUDIO_SOURCE, type: 'looks' });
+  assert.deepEqual(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [look, { ...look, accent: null, titleFont: null, titlePx: null }] }), {
+    type: 'looks',
+    slides: [look, { ...look, accent: null, titleFont: null, titlePx: null }],
+  });
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [{ ...look, width: 2560, background: null }] })?.type, 'looks');
+  assert.deepEqual(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [] }), { type: 'looks', slides: [] });
+});
+
+test('looks of another shape are refused', () => {
+  const bad = (slide: Record<string, unknown>): void => {
+    assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [look, slide] }), undefined);
+  };
+  bad({ ...look, background: 'red' });
+  bad({ ...look, color: '#FFF' });
+  bad({ ...look, width: 0 });
+  bad({ ...look, width: null });
+  bad({ ...look, width: 20_001 });
+  bad({ ...look, titlePx: -1 });
+  bad({ ...look, bodyPx: Number.POSITIVE_INFINITY });
+  bad({ ...look, bodyFont: 'x'.repeat(301) });
+  bad({ ...look, extra: 1 });
+  bad(Object.fromEntries(Object.entries(look).filter(([key]) => key !== 'accent')));
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: Array.from({ length: 201 }, () => look) }), undefined);
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: look }), undefined);
+  assert.equal(parseFrameMessage({ source: STUDIO_SOURCE, type: 'looks', slides: [], more: 1 }), undefined);
+});
+
+test('the font of a computed font-family for PowerPoint', () => {
+  assert.equal(fontName('"Playfair Display", Georgia, serif'), 'Playfair Display');
+  assert.equal(fontName("'Gill Sans', sans-serif"), 'Gill Sans');
+  assert.equal(fontName('serif'), 'Times New Roman');
+  assert.equal(fontName('ui-monospace, monospace'), 'Courier New');
+  assert.equal(fontName('system-ui, sans-serif'), undefined);
+  assert.equal(fontName('-apple-system, BlinkMacSystemFont, Helvetica'), undefined);
+  assert.equal(fontName('"Font<x>", serif'), undefined);
+  assert.equal(fontName(''), undefined);
+  assert.equal(fontName(null), undefined);
+});
+
+test('sizes on screen become points of a 960-point slide', () => {
+  assert.equal(pointsFrom(40, 960), 40);
+  assert.equal(pointsFrom(40, 1920), 20);
+  assert.equal(pointsFrom(16, 390), 39);
+  assert.equal(pointsFrom(2, 960), 8);
+  assert.equal(pointsFrom(400, 960), 120);
+  assert.equal(pointsFrom(null, 960), undefined);
+  assert.equal(pointsFrom(16, 0), undefined);
+});
+
+test('an edit of the text pieces counts toward the limits', () => {
+  assert.deepEqual(editProblems({ selector: 'body', segments: ['Un solo interlocutore.', ' che lavora per te.'], styles: {} }), []);
+  assert.deepEqual(editProblems({ selector: 'body', segments: ['x'.repeat(3000), 'y'.repeat(2001)], styles: {} }), ['Testo']);
+  assert.deepEqual(editProblems({ selector: 'body', segments: Array.from({ length: 21 }, () => 'z'), styles: {} }), ['Testo']);
+});
+
+test('a text piece keeps the blanks around it', () => {
+  assert.equal(respace('Un solo interlocutore. ', 'Uno unico.'), 'Uno unico. ');
+  assert.equal(respace('\n  che lavora per te.\n', '  per te  '), '\n  per te\n');
+  assert.equal(respace(' x ', ''), '  ');
+  assert.equal(respace('x', 'riga uno\nriga due'), 'riga uno\nriga due');
+});
+
+test('the deck carries fonts and sizes', () => {
+  const slide = deckFromParts('T', [{ title: 'Titolo', paragraphs: ['Testo'], bullets: [], titleFont: 'Georgia, serif', bodyFont: 'system-ui', titleSize: 40, bodySize: 16 }])?.slides.at(0);
+  assert.deepEqual(slide, { title: 'Titolo', paragraphs: ['Testo'], titleFont: 'Georgia', titleSize: 40, bodySize: 16 });
+  const clamped = deckFromParts('T', [{ paragraphs: [], bullets: [], titleSize: 300.4, bodySize: 3.2 }])?.slides.at(0);
+  assert.deepEqual(clamped, { titleSize: 120, bodySize: 8 });
 });
 
 test('control characters of an excerpt become spaces', () => {
