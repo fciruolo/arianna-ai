@@ -69,6 +69,12 @@ describe('github client', () => {
     assert.equal(headers.cookie, undefined);
   });
 
+  it('asks a comparison of two commits: the three dots of compare/<from>...<to> are not a path part', async () => {
+    // The fake server knows no comparison (404): what counts is that the request reached it.
+    await assert.rejects(client()(`/repos/a/b/compare/${'a'.repeat(40)}...${'b'.repeat(40)}?per_page=250`, 1024), code('not-found'));
+    assert.equal(seen.at(-1)?.url, `/repos/a/b/compare/${'a'.repeat(40)}...${'b'.repeat(40)}?per_page=250`);
+  });
+
   it('follows a redirect on the same host only', async () => {
     assert.deepEqual(await client()('/repos/a/renamed/releases', 1024), [{ tag_name: 'v1' }]);
     await assert.rejects(client()('/repos/a/away/releases', 1024), code('upstream'));
@@ -86,6 +92,7 @@ describe('github client', () => {
     await assert.rejects(client(200)('/repos/a/slow/releases', 1024), code('upstream'));
     await assert.rejects(client()('https://evil.example/x', 1024), /invalid path/);
     await assert.rejects(client()('/repos/a/../b', 1024), /invalid path/);
+    await assert.rejects(client()('/repos/./b/releases', 1024), /invalid path/);
     await assert.rejects(client()('/repos/a b', 1024), /invalid path/);
     await assert.rejects(createGithubClient({ host })('/repos/a/b/releases', 1024), code('upstream'));
   });

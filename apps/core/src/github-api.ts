@@ -117,7 +117,9 @@ export function createGithubClient(options: GithubClientOptions = {}): GithubGet
   };
 
   return async (path, maxBytes, signal) => {
-    if (!API_PATH.test(path) || path.includes('..')) throw new GithubError('upstream', 'invalid path of the API');
+    // A dot-dot part is refused, not dots inside a part: a comparison is `compare/<from>...<to>`.
+    const parts = (path.split('?')[0] ?? '').split('/');
+    if (!API_PATH.test(path) || parts.some((part) => part === '..' || part === '.')) throw new GithubError('upstream', 'invalid path of the API');
     const bounded = signal === undefined ? AbortSignal.timeout(deadline) : AbortSignal.any([signal, AbortSignal.timeout(deadline)]);
     const body = await get(new URL(`${scheme}//${host}${path}`), maxBytes, 0, bounded);
     try {
