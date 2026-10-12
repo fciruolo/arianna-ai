@@ -62,6 +62,22 @@ const READY: TrialModel[] = [
 ];
 const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n';
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Polls until `check` holds (at most 5 s). The ring timer closes a call in its
+ * own transactions after `ringSeconds`, then writes the note: a fixed wait races
+ * with them when the database is busy.
+ */
+async function until(what: string, check: () => Promise<boolean>): Promise<void> {
+  for (let tries = 0; tries < 250; tries += 1) {
+    if (await check()) return;
+    await wait(20);
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+/** The notes of a conversation with this text. */
+async function notesWith(conversationId: string, body: string): Promise<number> {
+  return (await listMessages(db().sql, conversationId, { limit: 10 })).filter((message) => message.body === body).length;
+}
 
 before(async () => {
   database = await createTestDatabase();
@@ -142,7 +158,8 @@ test('a task waiting for 30 minutes rings once; unanswered, Arianna writes and d
   assert.equal(call.reason, 'waiting');
   assert.equal(call.taskId, taskId);
   assert.equal(pushes, 0, 'a chat is open: no push');
-  await wait(400);
+  // The ring timer closes the call, then writes the note.
+  await until('the note of the missed call', async () => (await notesWith(conversationId, OUTGOING_TEXT.waiting.missed)) > 0);
   assert.equal((await loadCall(db().sql, call.id))?.status, 'missed');
   const notes = (await listMessages(db().sql, conversationId, { limit: 10 })).filter((message) => message.role === 'assistant');
   assert.deepEqual(notes.map(({ body, label }) => [body, label]), [[OUTGOING_TEXT.waiting.missed, 'L0']]);
@@ -243,11 +260,12 @@ test('the daily maximum counts calls by when they rang, also one scheduled days 
   clock = new Date(clock.getTime() + 120_000);
   const rang = await ringer.tick();
   assert.equal(rang?.id, old.id);
-  await wait(300);
-  // The ring timer closed it: a late Rifiuta changes nothing and writes no second note.
+  // The ring timer closes it, then writes the note: wait for both, not for a fixed time.
+  await until('the note of the missed call', async () => (await notesWith(conversation.id, OUTGOING_TEXT.scheduled.missed)) > 0);
+  assert.equal((await loadCall(db().sql, old.id))?.status, 'missed');
+  // A late Rifiuta changes nothing and writes no second note.
   await assert.rejects(calls.decline(old.id), { code: 'ended' });
-  const notes = (await listMessages(db().sql, conversation.id, { limit: 10 })).filter((message) => message.body === OUTGOING_TEXT.scheduled.missed);
-  assert.equal(notes.length, 1);
+  assert.equal(await notesWith(conversation.id, OUTGOING_TEXT.scheduled.missed), 1);
   // It rang today, though created two days ago: the maximum of one is reached.
   await waitingTask(40);
   assert.equal((await ringer.tick())?.endReason, 'daily-limit');
