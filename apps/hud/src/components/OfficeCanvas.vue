@@ -558,7 +558,7 @@ defineExpose({ goTo, focus });
         role="application"
         aria-roledescription="ufficio"
         aria-label="Ufficio: frecce o W A S D per camminare, E o Invio vicino a un agente per parlarci, vicino alla scrivania Decisioni per aprirle, vicino al cardwall per aprirlo, Esc per uscire"
-        aria-describedby="office-help"
+        aria-describedby="office-help office-keys"
         class="office-canvas pixelated block cursor-pointer"
         :style="{ width: `${String(W * scale)}px`, height: `${String(H * scale)}px` }"
         @keydown="onKeydown"

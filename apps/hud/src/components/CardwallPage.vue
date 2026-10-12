@@ -309,7 +309,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           <Icon name="calendar" :size="14" />IM
         </button>
       </div>
-      <div v-if="state.view !== 'im'" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
+      <div v-if="state.view !== 'im'" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" role="group" aria-label="Filtri">
         <FilterMenu v-model="state.filters.project" label="Progetto" icon="project" :options="projectOptions" />
         <FilterMenu v-model="state.filters.kind" label="Tipo" icon="card-body" :options="KIND_OPTIONS" />
         <FilterMenu v-model="state.filters.assignee" label="Chi la fa" icon="coder" :options="assigneeOptions" />
@@ -333,7 +333,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           <div class="flex w-[220px] flex-col gap-1.5 text-[14px]">
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
-            <p class="hud-title mt-2 mb-0.5">Mostra</p>
+            <p class="mt-2 mb-0.5 text-[13px] font-semibold text-muted">Mostra</p>
             <label v-for="column in allColumns" :key="column.id" class="flex items-center gap-2">
               <input type="checkbox" class="accent-[var(--accent)]" :checked="!state.prefs.hidden.includes(column.id)" @change="toggleHidden(column.id)" />{{ column.title }}
             </label>
@@ -393,8 +393,8 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
         @drop="onDrop($event, column)"
       >
         <header class="flex items-center gap-2 border-b border-line px-3 py-2">
-          <h2 class="hud-title flex-1" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</h2>
-          <span class="font-mono text-[12.5px] text-muted">{{ groups.get(column.id)?.length ?? 0 }}</span>
+          <h2 class="flex-1 text-[14.5px] font-semibold" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</h2>
+          <span class="text-[13px] text-muted tabular-nums">{{ groups.get(column.id)?.length ?? 0 }}</span>
         </header>
         <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <li v-if="(groups.get(column.id)?.length ?? 0) === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">

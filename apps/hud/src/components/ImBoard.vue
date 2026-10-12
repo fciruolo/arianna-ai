@@ -559,8 +559,8 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
           @drop="onDrop($event, state)"
         >
           <header class="flex items-center gap-2 border-b border-line px-3 py-2">
-            <h3 class="hud-title flex-1">{{ IM_STATE_TEXT[state] }}</h3>
-            <span class="font-mono text-[12.5px] text-muted">{{ groups[state].length }}</span>
+            <h3 class="flex-1 text-[14.5px] font-semibold">{{ IM_STATE_TEXT[state] }}</h3>
+            <span class="text-[13px] text-muted tabular-nums">{{ groups[state].length }}</span>
           </header>
           <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <li v-if="state === 'todo'">

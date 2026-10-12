@@ -163,6 +163,8 @@ function reach(target: string): void {
 const showPending = ref(false);
 const showCardwall = ref(false);
 const showArchive = ref(false);
+/** The list of the keys under the map, behind «? Comandi» (D-194). */
+const showKeys = ref(false);
 const archiveHeading = ref<HTMLElement | null>(null);
 async function openArchive(): Promise<void> {
   showArchive.value = true;
@@ -208,12 +210,24 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           @cardwall="showCardwall = true"
           @escape="leaveCanvas"
         />
-        <p id="office-help" class="mt-3 text-[13.5px] leading-relaxed text-muted">
-          Clicca nell'ufficio o raggiungilo con <kbd class="kbd">Tab</kbd>, poi <kbd class="kbd">←</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">→</kbd><kbd class="kbd">↓</kbd>
-          o <kbd class="kbd">W</kbd><kbd class="kbd">A</kbd><kbd class="kbd">S</kbd><kbd class="kbd">D</kbd> per camminare, oppure clicca un punto del pavimento o un
-          agente. Vicino a un agente <kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd> apre nella chat la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le
-          decisioni in attesa, al cardwall sul muro le card, sopra l'ufficio. <kbd class="kbd">Esc</kbd> esce dall'ufficio. L'ufficio mostra solo stati, etichette e nomi dei progetti, mai il testo delle conversazioni.
-        </p>
+        <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13.5px] text-muted">
+          <p id="office-help" class="min-w-0 flex-1">
+            Clicca nell'ufficio o premi <kbd class="kbd">Tab</kbd>, poi cammina con le frecce. Vicino a un agente, <kbd class="kbd">E</kbd> apre la sua chat.
+          </p>
+          <button type="button" class="btn ml-auto px-2.5 py-1 text-[13px]" aria-controls="office-keys" :aria-expanded="showKeys" @click="showKeys = !showKeys">? Comandi</button>
+        </div>
+        <!-- Shown on request (D-194); still read as the description of the office when hidden. -->
+        <div v-show="showKeys" id="office-keys" class="mt-2 rounded-xl border border-line bg-surface-2 p-3.5 text-[14px]">
+          <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+            <dt><kbd class="kbd">←</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">→</kbd><kbd class="kbd">↓</kbd> o <kbd class="kbd">W</kbd><kbd class="kbd">A</kbd><kbd class="kbd">S</kbd><kbd class="kbd">D</kbd></dt>
+            <dd>cammina; oppure clicca un punto del pavimento o un agente</dd>
+            <dt><kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd></dt>
+            <dd>vicino a un agente apre nella chat la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le decisioni in attesa; al cardwall sul muro, le card sopra l'ufficio</dd>
+            <dt><kbd class="kbd">Esc</kbd></dt>
+            <dd>esce dall'ufficio</dd>
+          </dl>
+          <p class="mt-2.5 text-[13px] text-muted">L'ufficio mostra solo stati, etichette e nomi dei progetti, mai il testo delle conversazioni.</p>
+        </div>
       </section>
 
       <aside class="flex flex-col gap-4" aria-label="Nell'ufficio">

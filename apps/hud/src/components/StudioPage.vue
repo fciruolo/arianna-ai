@@ -44,6 +44,7 @@ import DesignTextDialog from './DesignTextDialog.vue';
 import StudioEdit from './StudioEdit.vue';
 import StudioFloat from './StudioFloat.vue';
 import StudioFrame from './StudioFrame.vue';
+import StudioOverview from './StudioOverview.vue';
 
 /**
  * The page «Studio» (I-19, D-184): on the left the direct chat with the
@@ -516,7 +517,10 @@ const side = ref<'chat' | 'canvas'>('canvas');
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col" aria-label="Studio">
-    <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2 md:px-6">
+    <!-- Without a project: the cards of the projects (D-194). -->
+    <StudioOverview v-if="project === undefined" :projects="projects" @choose="chooseProject" />
+
+    <div v-else class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2 md:px-6">
       <label class="flex items-center gap-2 text-[13.5px] text-muted">
         <Icon name="project" :size="14" />
         <span class="sr-only">Progetto</span>
@@ -553,17 +557,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
       </div>
     </div>
 
-    <div v-if="project === undefined" class="flex flex-1 items-center justify-center p-8 text-center">
-      <div class="flex max-w-md flex-col items-center gap-3">
-        <Icon name="studio" :size="28" />
-        <p class="font-hud text-lg font-semibold tracking-[0.05em]">Studio di design</p>
-        <p class="text-sm text-muted">
-          Scegli un progetto: a sinistra parli col Designer, a destra vedi i suoi mockup, lasci commenti sugli elementi e li esporti.
-        </p>
-      </div>
-    </div>
-
-    <div v-else class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(340px,2fr)_3fr]">
+    <div v-if="project !== undefined" class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(340px,2fr)_3fr]">
       <!-- Left: the direct chat with the Designer of this project. -->
       <div class="min-h-0 flex-col border-line lg:flex lg:border-r" :class="side === 'chat' ? 'flex' : 'hidden'">
         <slot name="chat" />

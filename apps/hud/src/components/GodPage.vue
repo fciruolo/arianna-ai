@@ -23,6 +23,7 @@ import {
 import { errorText } from '../lib/italian.ts';
 import type { CharacterChoice } from '../lib/types.ts';
 import Icon from './Icon.vue';
+import PageHeader from './PageHeader.vue';
 import PixelAgent from './PixelAgent.vue';
 
 /**
@@ -175,6 +176,10 @@ async function act(subtask: GodSubtask, action: SubtaskAction): Promise<void> {
   }
 }
 
+function newChat(): void {
+  if (status.value !== null) emit('chat', status.value.workspace);
+}
+
 function when(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -195,70 +200,64 @@ onBeforeUnmount(() => window.clearInterval(timer));
 
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto">
-    <div class="mx-auto flex max-w-[960px] flex-col gap-5 px-4 pt-5 pb-10 md:px-6">
-      <section class="hud-card p-4" aria-labelledby="god-title">
-        <div class="flex flex-wrap items-center gap-2">
-          <PixelAgent v-if="props.character !== undefined" :choice="props.character" pose="idle" :scale="1" label="GOD" />
-          <Icon v-else name="god" :size="16" />
-          <h1 id="god-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">GOD</h1>
-          <span class="font-mono text-[12px] tracking-[0.06em] text-muted">Arianna sviluppata da dentro Arianna</span>
-          <button type="button" class="ml-auto rounded-md p-1.5 text-muted hover:text-ink" title="Rileggi" aria-label="Rileggi" @click="refresh">
-            <Icon name="retry" :size="15" />
+    <div class="mx-auto flex max-w-[1120px] flex-col gap-4 px-4 pt-5 pb-10 md:px-6">
+      <PageHeader title="GOD" title-id="god-title">
+        <template #icon>
+          <PixelAgent v-if="props.character !== undefined" :choice="props.character" pose="idle" :scale="1" />
+          <Icon v-else name="god" :size="18" />
+        </template>
+        Arianna sviluppata da dentro Arianna: GOD propone un piano, ogni sottocompito lavora in un clone con soli dati finti con il Coder e poi il Reviewer, poi «Prova» e «Approva funzionalità».
+        <template #actions>
+          <button type="button" class="btn px-2.5 py-1 text-[13.5px]" @click="refresh"><Icon name="retry" :size="14" />Rileggi</button>
+          <button
+            type="button"
+            class="btn btn-primary px-3 py-1.5 text-[14px]"
+            :disabled="status === null || blocker !== null"
+            :title="blocker ?? 'Ogni messaggio va al cloud (Claude o Codex, a scelta nel selettore del modello) con il fascicolo di sviluppo del clone.'"
+            @click="newChat"
+          >
+            <Icon name="new" :size="15" />Nuova conversazione con GOD
+          </button>
+        </template>
+      </PageHeader>
+
+      <p v-if="loadError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ loadError }}</p>
+      <p v-else-if="loading" class="py-4 text-center text-[14px] text-muted">Leggo lo stato…</p>
+
+      <section v-if="status !== null" class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="god-clone">
+        <h2 id="god-clone" class="mb-2 text-[16px] font-semibold">Clone</h2>
+        <div class="flex flex-wrap items-center gap-2 text-[14px]">
+          <Icon name="branch" :size="14" />
+          <span class="min-w-0 flex-1 font-mono text-[13px] break-words">{{ cloneText(status.main) }}</span>
+          <button type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="syncing || status.project === 'wrong-path'" @click="sync">
+            {{ syncing ? 'Aggiorno…' : status.main.exists ? 'Aggiorna il clone' : 'Crea il clone' }}
           </button>
         </div>
-        <p class="mt-2 text-[14.5px] text-muted">
-          GOD lavora in cloni del codice di Arianna con soli dati finti: non vede mai il database, la cassaforte né le tue conversazioni. Propone un piano; approvato, ogni sottocompito lavora in un clone suo con il Coder e poi il Reviewer. Poi «Prova» riavvia questa Arianna con il lavoro, e «Approva funzionalità» lo porta in main.
+        <p class="mt-2 text-[13.5px] text-muted">
+          <template v-if="status.quota !== undefined">{{ quotaText(status.quota) }}. </template>GOD non vede mai il database, la cassaforte né le tue conversazioni. «Prova» riavvia questa Arianna con il lavoro su un ramo di prova; «Approva funzionalità» lo porta in main. Ogni messaggio a GOD va al cloud (Claude o Codex, a scelta nel selettore del modello) con il fascicolo di sviluppo del clone.
         </p>
-        <p v-if="loadError !== null" role="alert" class="mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ loadError }}</p>
-        <p v-else-if="loading" class="py-4 text-center font-mono text-xs tracking-[0.12em] text-muted">LEGGO LO STATO…</p>
-        <template v-if="status !== null">
-          <div class="mt-3 flex flex-wrap items-center gap-2 text-[14px]">
-            <Icon name="branch" :size="14" />
-            <span class="min-w-0 flex-1 font-mono text-[13px] break-words">{{ cloneText(status.main) }}</span>
-            <button
-              type="button"
-              class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong disabled:opacity-50"
-              :disabled="syncing || status.project === 'wrong-path'"
-              @click="sync"
-            >
-              {{ syncing ? 'Aggiorno…' : status.main.exists ? 'Aggiorna il clone' : 'Crea il clone' }}
-            </button>
-          </div>
-          <p v-if="status.quota !== undefined" class="mt-2 font-mono text-[12.5px] text-muted">{{ quotaText(status.quota) }}</p>
-          <div v-if="landing !== null && (landing.landing !== null || landing.installation.trial !== null || coreGone)" class="mt-3 rounded-lg border border-info/50 bg-info/10 px-3 py-2 text-sm" role="status">
-            <p v-if="coreGone">Arianna si sta riavviando: la pagina si ricarica da sola appena torna.</p>
-            <p v-else-if="landing.landing !== null">{{ LAND_TEXT[landing.landing.action] }}: {{ landing.landing.phase }}…</p>
-            <p v-else>Arianna è in prova sul ramo <span class="font-mono text-[13px]">{{ landing.installation.trial }}</span>: provala, poi «Approva funzionalità» o «Non funziona» sul lavoro qui sotto.</p>
-          </div>
-          <p
-            v-if="landing !== null && landing.outcome !== null && landing.landing === null && !coreGone"
-            class="mt-3 rounded-lg border px-3 py-2 text-sm"
-            :class="landing.outcome.ok ? 'border-ok/50 bg-ok/10' : 'border-danger/50 bg-danger/10 text-danger'"
-          >
-            {{ landing.outcome.text }} <span class="font-mono text-[12.5px] text-muted">{{ when(landing.outcome.at) }}</span>
-          </p>
-          <p v-if="blocker !== null" class="mt-3 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ blocker }}</p>
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-accent-ink disabled:opacity-50"
-              :disabled="blocker !== null"
-              @click="emit('chat', status.workspace)"
-            >
-              <Icon name="new" :size="15" />Nuova conversazione con GOD
-            </button>
-            <span class="text-xs text-muted">Ogni messaggio va al cloud (Claude o Codex, a scelta nel selettore del modello) con il fascicolo di sviluppo del clone.</span>
-          </div>
-        </template>
+        <div v-if="landing !== null && (landing.landing !== null || landing.installation.trial !== null || coreGone)" class="mt-3 rounded-lg border border-info/50 bg-info/10 px-3 py-2 text-sm" role="status">
+          <p v-if="coreGone">Arianna si sta riavviando: la pagina si ricarica da sola appena torna.</p>
+          <p v-else-if="landing.landing !== null">{{ LAND_TEXT[landing.landing.action] }}: {{ landing.landing.phase }}…</p>
+          <p v-else>Arianna è in prova sul ramo <span class="font-mono text-[13px]">{{ landing.installation.trial }}</span>: provala, poi «Approva funzionalità» o «Non funziona» sul lavoro qui sotto.</p>
+        </div>
+        <p
+          v-if="landing !== null && landing.outcome !== null && landing.landing === null && !coreGone"
+          class="mt-3 rounded-lg border px-3 py-2 text-sm"
+          :class="landing.outcome.ok ? 'border-ok/50 bg-ok/10' : 'border-danger/50 bg-danger/10 text-danger'"
+        >
+          {{ landing.outcome.text }} <span class="text-[13px] text-muted">{{ when(landing.outcome.at) }}</span>
+        </p>
+        <p v-if="blocker !== null" class="mt-3 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ blocker }}</p>
       </section>
 
-      <section v-if="status !== null && status.conversations.length > 0" class="hud-card p-4" aria-labelledby="god-chats">
-        <h2 id="god-chats" class="mb-2 font-hud text-[14px] font-semibold tracking-[0.12em] uppercase">Conversazioni con GOD</h2>
+      <section v-if="status !== null && status.conversations.length > 0" class="rounded-xl border border-line bg-surface-2 p-4" aria-labelledby="god-chats">
+        <h2 id="god-chats" class="mb-2 text-[16px] font-semibold">Conversazioni con GOD</h2>
         <ul class="flex flex-col">
-          <li v-for="conversation in status.conversations" :key="conversation.id">
-            <button type="button" class="flex w-full items-baseline gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2" @click="emit('open', conversation.id)">
+          <li v-for="conversation in status.conversations" :key="conversation.id" class="border-b border-line last:border-b-0">
+            <button type="button" class="flex w-full items-baseline gap-3 rounded-lg px-2 py-2 text-left hover:bg-surface" @click="emit('open', conversation.id)">
               <span class="min-w-0 flex-1 truncate text-[14.5px]">{{ conversation.title ?? 'Conversazione senza titolo' }}</span>
-              <span class="shrink-0 font-mono text-[12.5px] text-muted">{{ when(conversation.lastAt) }}</span>
+              <span class="shrink-0 text-[13px] text-muted tabular-nums">{{ when(conversation.lastAt) }}</span>
             </button>
           </li>
         </ul>
@@ -269,7 +268,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
 
       <article v-for="plan in plans" :key="plan.id" class="hud-card p-4" :aria-label="`Piano ${plan.title}`">
         <header class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 class="font-hud text-[15px] font-semibold">{{ plan.title }}</h2>
+          <h2 class="text-[16px] font-semibold">{{ plan.title }}</h2>
           <span class="font-mono text-[12.5px] text-muted">{{ when(plan.createdAt) }}</span>
           <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[13.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
           <div v-if="planLandActionsOf(plan.subtasks).length > 0" class="flex w-full flex-wrap gap-2">

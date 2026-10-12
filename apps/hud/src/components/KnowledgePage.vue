@@ -144,6 +144,8 @@ const DARK_KEY = 'arianna.knowledge.dark';
 /** "2d" or "3d" (D-104): a convenience of this browser (localStorage). */
 const VIEW_KEY = 'arianna.knowledge.view';
 const view3d = ref(false);
+/** The instructions of the 3D behind «?» (D-194): closed when the page opens. */
+const helpOpen = ref(false);
 /** The slow drift of the 3D camera when the graph is left alone. */
 const drifting = ref(true);
 
@@ -1679,7 +1681,7 @@ onBeforeUnmount(() => {
       <div class="hud-card pointer-events-auto bg-surface/85 p-3 backdrop-blur-sm">
         <div class="flex items-center gap-2">
           <Icon name="knowledge" :size="16" />
-          <h1 class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Conoscenza</h1>
+          <h1 class="text-[17px] font-semibold">Conoscenza</h1>
           <button type="button" class="ml-auto rounded-md p-1 text-muted hover:text-ink" title="Ricentra" aria-label="Ricentra il grafo" @click="fit">
             <Icon name="focus" :size="15" />
           </button>
@@ -1687,8 +1689,8 @@ onBeforeUnmount(() => {
             <Icon name="retry" :size="15" />
           </button>
         </div>
-        <div class="kp-seg mt-2" role="group" aria-label="Fonte della conoscenza">
-          <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">LE TUE NOTE</button>
+        <div class="kp-seg plain mt-2" role="group" aria-label="Fonte della conoscenza">
+          <button type="button" :class="{ on: source === 'kb' }" :aria-pressed="source === 'kb'" title="Le tue note e pagine di kb/" @click="emit('source', 'kb')">Le tue note</button>
           <button
             type="button"
             :class="{ on: source === 'arianna' }"
@@ -1696,17 +1698,32 @@ onBeforeUnmount(() => {
             title="I documenti di sviluppo di Arianna: decisioni, proposte, specifiche, novità (sola lettura)"
             @click="emit('source', 'arianna')"
           >
-            ARIANNA
+            Arianna
           </button>
         </div>
         <p v-if="texts.note !== ''" class="mt-1.5 text-[13px] leading-snug text-muted">{{ texts.note }}</p>
-        <p class="mt-1.5 font-mono text-[12.5px] tracking-[0.04em] text-muted" aria-live="polite">
-          <span class="text-ink">{{ counts.notes }}</span> {{ texts.pages }} · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
+        <p class="mt-1.5 text-[13px] text-muted" aria-live="polite">
+          <b class="font-semibold text-ink">{{ counts.notes }}</b> {{ texts.pages }} · <b class="font-semibold text-ink">{{ counts.links }}</b> collegamenti ·
           <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
-        <p v-if="view3d" class="mt-1 font-mono text-[12px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
-        <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 focus-within:border-accent">
+        <div v-if="view3d" class="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
+          <button
+            type="button"
+            class="grid size-6 shrink-0 place-items-center rounded-full border border-line-strong text-[13px] hover:text-ink"
+            aria-label="Come si muove il grafo"
+            aria-controls="kp-help"
+            :aria-expanded="helpOpen"
+            @click="helpOpen = !helpOpen"
+          >
+            ?
+          </button>
+          Come si muove il grafo
+        </div>
+        <p v-if="view3d" v-show="helpOpen" id="kp-help" class="mt-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px]">
+          Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo.
+        </p>
+        <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5">
           <Icon name="search" :size="14" />
           <input
             v-model="filter"
@@ -1734,8 +1751,8 @@ onBeforeUnmount(() => {
 
     <!-- Legend -->
     <div v-if="legend.length > 0" class="hud-card pointer-events-auto absolute bottom-3 left-3 max-w-[calc(100%-24px)] bg-surface/85 px-3 py-2.5 backdrop-blur-sm">
-      <h2 class="hud-title mb-1.5">Legenda</h2>
-      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12.5px]">
+      <h2 class="mb-1 text-[13px] font-semibold">Legenda</h2>
+      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 text-[13px]">
         <li v-for="item in legend" :key="item.folder" class="flex items-center gap-1.5">
           <span
             v-if="item.folder === '#'"
@@ -1747,7 +1764,7 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
-      <p class="mt-1.5 flex flex-wrap gap-x-3.5 font-mono text-[12px] text-muted">
+      <p class="mt-1.5 flex flex-wrap gap-x-3.5 text-[13px] text-muted">
         <span class="flex items-center gap-1.5"><span class="inline-block h-px w-5 bg-accent" />collegamento</span>
         <span class="flex items-center gap-1.5"><span class="inline-block w-5 border-t border-dashed border-muted" />tag in comune</span>
       </p>
@@ -1997,6 +2014,13 @@ onBeforeUnmount(() => {
 .kp-seg button:hover,
 .kp-seg button:focus-visible {
   color: var(--ink);
+}
+
+/* The switch of the source (D-194): in the normal font, not the HUD's capitals. */
+.kp-seg.plain button {
+  padding: 0 10px;
+  font: 600 13.5px/1 var(--font-sans);
+  letter-spacing: normal;
 }
 
 .kp-seg button.on {
