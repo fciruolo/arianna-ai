@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.85.1] - 2026-10-13
+
 ### Cambiato
 
 - Progetti, Regole: la scheda prende la larghezza della pagina, con l'elenco delle regole a sinistra e a destra una colonna ferma con «Quali regole», «Bozza» ed «Esporta» (D-193).
