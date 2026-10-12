@@ -1,18 +1,46 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { readFinanceSummary } from '../lib/api.ts';
+import { listFinanceBudgets, listFinanceTransactions, readFinanceAlerts, readFinanceSummary } from '../lib/api.ts';
 import { balanceLine, categoryBars, monthBars, sampleLabels, ticks, type Frame } from '../lib/finance-charts.ts';
-import { changeText, dayOf, financeErrorText, formatCents, formatCompact, formatDay, formatMonth, nameLookup, type Account, type Category, type FinanceTab, type Summary } from '../lib/finance.ts';
+import { balanceText, budgetRows, latestMonths, monthChangeText, readableDescription, type BudgetRow } from '../lib/finance-dashboard.ts';
+import {
+  alertFilter,
+  alertText,
+  amountClass,
+  changeText,
+  dayOf,
+  EMPTY_FILTER,
+  filterQuery,
+  financeErrorText,
+  formatCents,
+  formatCompact,
+  formatDay,
+  formatMonth,
+  lastDayOf,
+  nameLookup,
+  type Account,
+  type Budget,
+  type Category,
+  type CategoryTotal,
+  type FinanceAlert,
+  type FinanceTab,
+  type Summary,
+  type Tx,
+  type TxFilter,
+} from '../lib/finance.ts';
 
 /**
- * "Riepilogo" of the finances (I-18, D-183): income and expenses per month,
- * expenses per category, the balance of one account and the same month of the
- * year before. Charts drawn here in SVG, without a library; every number is
+ * "Riepilogo" of the finances (I-18, D-183) as a dashboard (D-189): on top the
+ * balance of the accounts, expenses and income of the newest month against the
+ * month before and the budgets past their limit; then income and expenses per
+ * month, expenses per category with their budget, the latest movements, the
+ * same month of the year before, the checks of the month and the balance of
+ * one account. Charts drawn here in SVG, without a library; every number is
  * also written as text beside or below them.
  */
 const props = defineProps<{ accounts: Account[]; categories: Category[] }>();
-const emit = defineEmits<{ tab: [tab: FinanceTab] }>();
+const emit = defineEmits<{ tab: [tab: FinanceTab]; open: [filter: TxFilter] }>();
 
 type Period = 'last12' | 'thisYear' | 'lastYear';
 const period = ref<Period>('last12');
@@ -42,6 +70,83 @@ async function load(): Promise<void> {
 watch([period, account], load, { immediate: true });
 
 const names = computed(() => nameLookup(props.accounts, props.categories));
+
+// --- The numbers at the top and the cards around the charts (D-189) --------------
+
+/** The last balance of every open account, read one by one: the summary gives the balance of one account only. */
+const balances = ref<{ balance: number; currency: string }[] | null>(null);
+async function loadBalances(): Promise<void> {
+  const open = props.accounts.filter((item) => !item.archived && (account.value === '' || item.id === account.value));
+  try {
+    const read = await Promise.all(
+      open.map(async (item) => {
+        const one = await readFinanceSummary({ account: item.id });
+        const last = one.balance[one.balance.length - 1];
+        return last === undefined ? null : { balance: last.balance, currency: item.currency };
+      }),
+    );
+    balances.value = read.filter((item): item is { balance: number; currency: string } => item !== null);
+  } catch {
+    balances.value = null;
+  }
+}
+
+const recent = ref<Tx[]>([]);
+async function loadRecent(): Promise<void> {
+  try {
+    recent.value = (await listFinanceTransactions(filterQuery({ ...EMPTY_FILTER, account: account.value }, 5, 0))).transactions;
+  } catch {
+    recent.value = [];
+  }
+}
+
+const alerts = ref<FinanceAlert[]>([]);
+const budgets = ref<Budget[]>([]);
+async function loadAlertsAndBudgets(): Promise<void> {
+  try {
+    [alerts.value, budgets.value] = await Promise.all([readFinanceAlerts(), listFinanceBudgets()]);
+  } catch {
+    alerts.value = [];
+  }
+}
+
+watch(
+  account,
+  () => {
+    void loadBalances();
+    void loadRecent();
+  },
+  { immediate: true },
+);
+void loadAlertsAndBudgets();
+
+const pair = computed(() => (summary.value === null ? null : latestMonths(summary.value.months)));
+const monthName = computed(() => (pair.value === null ? '' : (formatMonth(pair.value.current.month, true).split(' ')[0] ?? '')));
+
+/** What each category spent in the newest month, for the budgets. */
+const monthCategories = ref<CategoryTotal[]>([]);
+watch(
+  () => pair.value?.current.month,
+  async (month) => {
+    if (month === undefined) {
+      monthCategories.value = [];
+      return;
+    }
+    try {
+      monthCategories.value = (await readFinanceSummary({ from: `${month}-01`, to: lastDayOf(month), ...(account.value === '' ? {} : { account: account.value }) })).categories;
+    } catch {
+      monthCategories.value = [];
+    }
+  },
+  { immediate: true },
+);
+const budgetList = computed<BudgetRow[]>(() => budgetRows(budgets.value, monthCategories.value));
+const overBudgets = computed(() => budgetList.value.filter((row) => row.over));
+function budgetOf(category: string | null): BudgetRow | undefined {
+  return category === null ? undefined : budgetList.value.find((row) => row.category === category);
+}
+
+const shownAlerts = computed(() => alerts.value.slice(0, 3).map((alert) => ({ alert, text: alertText(alert, names.value) })));
 
 const MONTHS_FRAME: Frame = { width: 640, height: 220, left: 56, right: 8, top: 12, bottom: 28 };
 const months = computed(() => (summary.value === null ? null : monthBars(summary.value.months, MONTHS_FRAME)));
@@ -73,7 +178,7 @@ function width(cents: number): string {
 </script>
 
 <template>
-  <div class="flex max-w-5xl flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <div v-if="accounts.length === 0" class="rounded-xl border border-line bg-surface p-4 text-sm">
       Ancora nessun conto. Crea un conto, poi importa un estratto conto CSV o Excel della tua banca: qui compariranno entrate, uscite, categorie e saldo.
       <button type="button" class="btn ml-2 px-2.5 py-1 text-xs" @click="emit('tab', 'conti')">Crea un conto</button>
@@ -101,67 +206,120 @@ function width(cents: number): string {
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
 
     <template v-if="summary">
-      <!-- INCOME AND EXPENSES PER MONTH -->
-      <section class="hud-card flex flex-col gap-2 p-4" aria-label="Entrate e uscite per mese">
-        <header class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h3 class="hud-title">Entrate e uscite per mese</h3>
-          <span class="flex items-center gap-1.5 text-xs"><span class="inline-block size-2.5 rounded-sm bg-ok" aria-hidden="true" />Entrate <b class="tabular-nums">{{ formatCents(totals.income) }}</b></span>
-          <span class="flex items-center gap-1.5 text-xs"><span class="inline-block size-2.5 rounded-sm" style="background: var(--graph-3)" aria-hidden="true" />Uscite <b class="tabular-nums">{{ formatCents(totals.expenses) }}</b></span>
-        </header>
-        <p v-if="summary.months.length === 0" class="text-sm text-muted">Nessun movimento nel periodo.</p>
-        <template v-else-if="months">
-          <svg :viewBox="`0 0 ${MONTHS_FRAME.width} ${MONTHS_FRAME.height}`" class="h-auto w-full" role="img" aria-label="Grafico a barre di entrate e uscite per mese; i numeri sono nella tabella sotto">
-            <g v-for="tick in monthTicks" :key="tick">
-              <line :x1="MONTHS_FRAME.left" :x2="MONTHS_FRAME.width - MONTHS_FRAME.right" :y1="months.y(tick)" :y2="months.y(tick)" stroke="var(--line)" stroke-width="1" />
-              <text :x="MONTHS_FRAME.left - 6" :y="months.y(tick) + 3" text-anchor="end" font-size="10" fill="var(--muted)">{{ formatCompact(tick) }}</text>
-            </g>
-            <g v-for="bar in months.bars" :key="bar.month">
-              <rect :x="bar.income.x" :y="bar.income.y" :width="bar.income.width" :height="bar.income.height" rx="2" fill="var(--ok)"><title>{{ formatMonth(bar.month) }} · entrate {{ formatCents(summary.months.find((m) => m.month === bar.month)?.income ?? 0) }}</title></rect>
-              <rect :x="bar.expenses.x" :y="bar.expenses.y" :width="bar.expenses.width" :height="bar.expenses.height" rx="2" fill="var(--graph-3)"><title>{{ formatMonth(bar.month) }} · uscite {{ formatCents(summary.months.find((m) => m.month === bar.month)?.expenses ?? 0) }}</title></rect>
-              <text :x="bar.center" :y="MONTHS_FRAME.height - 10" text-anchor="middle" font-size="10" fill="var(--muted)">{{ formatMonth(bar.month).split(' ')[0] }}</text>
-            </g>
-          </svg>
-          <details class="text-xs">
-            <summary class="cursor-pointer text-muted">I numeri mese per mese</summary>
-            <table class="mt-2 w-full text-left tabular-nums">
-              <thead class="text-muted">
-                <tr><th class="py-1 font-medium">Mese</th><th class="py-1 text-right font-medium">Entrate</th><th class="py-1 text-right font-medium">Uscite</th><th class="py-1 text-right font-medium">Differenza</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="month in summary.months" :key="month.month" class="border-t border-line">
-                  <td class="py-1">{{ formatMonth(month.month, true) }}</td>
-                  <td class="py-1 text-right text-ok">{{ formatCents(month.income) }}</td>
-                  <td class="py-1 text-right">{{ formatCents(month.expenses) }}</td>
-                  <td class="py-1 text-right" :class="month.net > 0 ? 'text-ok' : ''">{{ formatCents(month.net, { sign: true }) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </details>
-        </template>
-      </section>
+      <!-- THE NUMBERS AT THE TOP (D-189) -->
+      <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <section class="hud-card flex flex-col gap-1 p-4" aria-label="Saldo dei conti">
+          <h3 class="hud-title">{{ account === '' ? 'Saldo dei conti' : 'Saldo del conto' }}</h3>
+          <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ balances === null || balances.length === 0 ? '—' : balanceText(balances) }}</p>
+          <p class="text-xs text-muted">
+            <template v-if="balances === null">Saldo non letto.</template>
+            <template v-else-if="balances.length === 0">Nessun saldo: importa un estratto conto.</template>
+            <template v-else>{{ balances.length === 1 ? '1 conto' : `${String(balances.length)} conti` }} · ultimo saldo noto</template>
+          </p>
+        </section>
+        <section v-for="kind in (['expenses', 'income'] as const)" :key="kind" class="hud-card flex flex-col gap-1 p-4" :aria-label="kind === 'expenses' ? 'Uscite del mese' : 'Entrate del mese'">
+          <h3 class="hud-title">{{ kind === 'expenses' ? 'Uscite' : 'Entrate' }}{{ pair ? ` di ${monthName}` : '' }}</h3>
+          <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ pair ? formatCents(pair.current[kind]) : '—' }}</p>
+          <p class="text-xs text-muted">{{ pair ? monthChangeText(pair.current[kind], pair.previous[kind], pair.previous.month) : 'Nessun movimento nel periodo.' }}</p>
+        </section>
+        <section class="hud-card flex flex-col gap-1 p-4" aria-label="Budget del mese">
+          <h3 class="hud-title">Budget{{ pair ? ` di ${monthName}` : '' }}</h3>
+          <template v-if="budgetList.length > 0">
+            <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ overBudgets.length === 0 ? 'Nei limiti' : `${String(overBudgets.length)} su ${String(budgetList.length)}` }}</p>
+            <p class="text-xs" :class="overBudgets.length > 0 ? 'text-danger' : 'text-muted'">
+              {{ overBudgets.length === 0 ? `${String(budgetList.length)} budget, nessuno superato` : `superati: ${overBudgets.map((row) => names.category(row.category)).join(', ')}` }}
+            </p>
+          </template>
+          <template v-else>
+            <p class="text-[26px] leading-tight font-semibold">—</p>
+            <button type="button" class="self-start text-xs text-accent hover:underline" @click="emit('tab', 'categorie')">Imposta un budget</button>
+          </template>
+        </section>
+      </div>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <!-- EXPENSES PER CATEGORY -->
-        <section class="hud-card flex flex-col gap-2 p-4" aria-label="Spese per categoria">
+      <div class="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <!-- INCOME AND EXPENSES PER MONTH -->
+        <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Entrate e uscite per mese">
+          <header class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h3 class="hud-title flex-1">Entrate e uscite per mese</h3>
+            <span class="flex items-center gap-1.5 text-xs"><span class="inline-block size-2.5 rounded-sm bg-ok" aria-hidden="true" />Entrate <b class="tabular-nums">{{ formatCents(totals.income) }}</b></span>
+            <span class="flex items-center gap-1.5 text-xs"><span class="inline-block size-2.5 rounded-sm" style="background: var(--graph-3)" aria-hidden="true" />Uscite <b class="tabular-nums">{{ formatCents(totals.expenses) }}</b></span>
+          </header>
+          <p v-if="summary.months.length === 0" class="text-sm text-muted">Nessun movimento nel periodo.</p>
+          <template v-else-if="months">
+            <svg :viewBox="`0 0 ${MONTHS_FRAME.width} ${MONTHS_FRAME.height}`" class="h-auto w-full" role="img" aria-label="Grafico a barre di entrate e uscite per mese; i numeri sono nella tabella sotto">
+              <g v-for="tick in monthTicks" :key="tick">
+                <line :x1="MONTHS_FRAME.left" :x2="MONTHS_FRAME.width - MONTHS_FRAME.right" :y1="months.y(tick)" :y2="months.y(tick)" stroke="var(--line)" stroke-width="1" />
+                <text :x="MONTHS_FRAME.left - 6" :y="months.y(tick) + 3" text-anchor="end" font-size="11" fill="var(--muted)">{{ formatCompact(tick) }}</text>
+              </g>
+              <g v-for="bar in months.bars" :key="bar.month">
+                <rect :x="bar.income.x" :y="bar.income.y" :width="bar.income.width" :height="bar.income.height" rx="2" fill="var(--ok)"><title>{{ formatMonth(bar.month) }} · entrate {{ formatCents(summary.months.find((m) => m.month === bar.month)?.income ?? 0) }}</title></rect>
+                <rect :x="bar.expenses.x" :y="bar.expenses.y" :width="bar.expenses.width" :height="bar.expenses.height" rx="2" fill="var(--graph-3)"><title>{{ formatMonth(bar.month) }} · uscite {{ formatCents(summary.months.find((m) => m.month === bar.month)?.expenses ?? 0) }}</title></rect>
+                <text :x="bar.center" :y="MONTHS_FRAME.height - 10" text-anchor="middle" font-size="11" fill="var(--muted)">{{ formatMonth(bar.month).split(' ')[0] }}</text>
+              </g>
+            </svg>
+            <details class="text-xs">
+              <summary class="cursor-pointer text-muted">I numeri mese per mese</summary>
+              <table class="mt-2 w-full text-left tabular-nums">
+                <thead class="text-muted">
+                  <tr><th class="py-1 font-medium">Mese</th><th class="py-1 text-right font-medium">Entrate</th><th class="py-1 text-right font-medium">Uscite</th><th class="py-1 text-right font-medium">Differenza</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="month in summary.months" :key="month.month" class="border-t border-line">
+                    <td class="py-1">{{ formatMonth(month.month, true) }}</td>
+                    <td class="py-1 text-right text-ok">{{ formatCents(month.income) }}</td>
+                    <td class="py-1 text-right">{{ formatCents(month.expenses) }}</td>
+                    <td class="py-1 text-right" :class="month.net > 0 ? 'text-ok' : ''">{{ formatCents(month.net, { sign: true }) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </template>
+        </section>
+
+        <!-- EXPENSES PER CATEGORY, WITH THE BUDGET OF THE MONTH -->
+        <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Spese per categoria">
           <h3 class="hud-title">Spese per categoria</h3>
           <p v-if="bars.length === 0" class="text-sm text-muted">Nessuna spesa nel periodo.</p>
-          <ul v-else class="flex flex-col gap-2">
+          <ul v-else class="flex flex-col gap-2.5">
             <li v-for="bar in bars" :key="bar.category ?? 'none'" class="flex flex-col gap-1">
               <span class="flex items-baseline gap-2 text-[14px]">
                 <span class="min-w-0 flex-1 truncate" :class="bar.category === null ? 'text-muted italic' : ''">{{ categoryName(bar.category) }}</span>
-                <b class="tabular-nums">{{ formatCents(bar.expenses) }}</b>
-                <span class="w-9 text-right text-xs text-muted tabular-nums">{{ bar.share }}%</span>
+                <b class="tabular-nums whitespace-nowrap">{{ formatCents(bar.expenses) }}</b>
+                <span class="w-10 text-right text-xs text-muted tabular-nums">{{ bar.share }}%</span>
               </span>
               <svg viewBox="0 0 100 6" preserveAspectRatio="none" class="h-1.5 w-full" aria-hidden="true">
-                <rect x="0" y="0" width="100" height="6" rx="3" fill="var(--surface-2)" />
-                <rect x="0" y="0" :width="Math.max(1, bar.percent)" height="6" rx="3" fill="var(--graph-1)" />
+                <rect x="0" y="0" width="100" height="6" rx="3" fill="var(--bg)" />
+                <rect x="0" y="0" :width="Math.max(1, bar.percent)" height="6" rx="3" :fill="bar.category === null ? 'var(--muted)' : budgetOf(bar.category)?.over ? 'var(--danger)' : 'var(--graph-1)'" />
               </svg>
+              <span v-if="budgetOf(bar.category)" class="text-xs" :class="budgetOf(bar.category)?.over ? 'text-danger' : 'text-muted'">
+                Budget di {{ monthName }}: {{ formatCents(budgetOf(bar.category)?.spent ?? 0) }} su {{ formatCents(budgetOf(bar.category)?.limit ?? 0) }}{{ budgetOf(bar.category)?.over ? ', superato' : '' }}
+              </span>
+              <button v-if="bar.category === null" type="button" class="self-start text-xs text-accent hover:underline" @click="emit('open', { ...EMPTY_FILTER, uncategorized: true })">Assegnale in Movimenti</button>
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="grid gap-3 lg:grid-cols-3">
+        <!-- THE LATEST MOVEMENTS -->
+        <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Ultimi movimenti">
+          <header class="flex items-baseline justify-between gap-2">
+            <h3 class="hud-title">Ultimi movimenti</h3>
+            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'movimenti')">Tutti</button>
+          </header>
+          <p v-if="recent.length === 0" class="text-sm text-muted">Nessun movimento.</p>
+          <ul v-else class="flex flex-col">
+            <li v-for="row in recent" :key="row.id" class="grid grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-2 border-t border-line py-1.5 text-[14px] first:border-t-0">
+              <span class="text-xs text-muted tabular-nums">{{ formatDay(row.booked).slice(0, 5) }}</span>
+              <span class="truncate" :title="row.description">{{ readableDescription(row.description).title }}</span>
+              <span class="whitespace-nowrap tabular-nums" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency, sign: row.amount > 0 }) }}</span>
             </li>
           </ul>
         </section>
 
         <!-- THE SAME MONTH A YEAR EARLIER -->
-        <section class="hud-card flex flex-col gap-3 p-4" aria-label="Confronto con l'anno prima">
+        <section class="hud-card flex min-w-0 flex-col gap-3 p-4" aria-label="Confronto con l'anno prima">
           <h3 class="hud-title">Rispetto all’anno prima</h3>
           <p v-if="yoy === null" class="text-sm text-muted">Il confronto compare quando ci sono movimenti nel periodo.</p>
           <template v-else>
@@ -171,18 +329,35 @@ function width(cents: number): string {
                 <span class="flex-1">{{ kind === 'expenses' ? 'Uscite' : 'Entrate' }}</span>
                 <span class="text-xs text-muted">{{ changeText(kind === 'expenses' ? yoy.expensesChange : yoy.incomeChange, yoy.previous[kind]) }}</span>
               </span>
-              <span class="flex items-center gap-2 text-xs">
-                <span class="w-16 shrink-0 text-muted">{{ formatMonth(yoy.current.month) }}</span>
+              <span class="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-xs">
+                <span class="text-muted">{{ formatMonth(yoy.current.month) }}</span>
                 <span class="h-2 rounded-full" :style="{ width: width(yoy.current[kind]), background: kind === 'income' ? 'var(--ok)' : 'var(--graph-3)' }" />
-                <b class="tabular-nums">{{ formatCents(yoy.current[kind]) }}</b>
+                <b class="whitespace-nowrap tabular-nums">{{ formatCents(yoy.current[kind]) }}</b>
               </span>
-              <span class="flex items-center gap-2 text-xs">
-                <span class="w-16 shrink-0 text-muted">{{ formatMonth(yoy.previous.month) }}</span>
+              <span class="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-xs">
+                <span class="text-muted">{{ formatMonth(yoy.previous.month) }}</span>
                 <span class="h-2 rounded-full opacity-45" :style="{ width: width(yoy.previous[kind]), background: kind === 'income' ? 'var(--ok)' : 'var(--graph-3)' }" />
-                <span class="tabular-nums">{{ formatCents(yoy.previous[kind]) }}</span>
+                <span class="whitespace-nowrap tabular-nums">{{ formatCents(yoy.previous[kind]) }}</span>
               </span>
             </div>
           </template>
+        </section>
+
+        <!-- THE CHECKS OF THE MONTH -->
+        <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Avvisi del mese">
+          <header class="flex items-baseline justify-between gap-2">
+            <h3 class="hud-title">Avvisi del mese</h3>
+            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'avvisi')">Tutti{{ alerts.length > 3 ? ` (${String(alerts.length)})` : '' }}</button>
+          </header>
+          <p v-if="alerts.length === 0" class="text-sm text-muted">Nessun avviso: niente addebiti cambiati, spese insolite, doppi addebiti o budget superati.</p>
+          <ul v-else class="flex flex-col">
+            <li v-for="item in shownAlerts" :key="item.text.title" class="border-t border-line py-1.5 first:border-t-0">
+              <button type="button" class="flex w-full items-start gap-2 text-left text-[14px] hover:text-accent" @click="emit('open', alertFilter(item.alert))">
+                <span class="mt-1.5 size-2 shrink-0 rounded-full" :class="item.text.tone === 'danger' ? 'bg-danger' : 'bg-warn'" aria-hidden="true" />
+                <span>{{ item.text.title }}</span>
+              </button>
+            </li>
+          </ul>
         </section>
       </div>
 
@@ -198,14 +373,14 @@ function width(cents: number): string {
           <svg :viewBox="`0 0 ${LINE_FRAME.width} ${LINE_FRAME.height}`" class="h-auto w-full" role="img" :aria-label="`Linea del saldo; ultimo saldo ${lastBalance ? formatCents(lastBalance.balance) : ''}`">
             <g v-for="tick in lineTicks" :key="tick">
               <line :x1="LINE_FRAME.left" :x2="LINE_FRAME.width - LINE_FRAME.right" :y1="line.y(tick)" :y2="line.y(tick)" :stroke="tick === 0 ? 'var(--line-strong)' : 'var(--line)'" stroke-width="1" />
-              <text :x="LINE_FRAME.left - 6" :y="line.y(tick) + 3" text-anchor="end" font-size="10" fill="var(--muted)">{{ formatCompact(tick) }}</text>
+              <text :x="LINE_FRAME.left - 6" :y="line.y(tick) + 3" text-anchor="end" font-size="11" fill="var(--muted)">{{ formatCompact(tick) }}</text>
             </g>
             <path :d="line.path" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
             <circle v-for="point in line.points" :key="point.day" :cx="point.x" :cy="point.y" r="6" fill="transparent">
               <title>{{ formatDay(point.day) }} · {{ formatCents(point.balance) }}</title>
             </circle>
             <!-- The first and last labels anchored inside the frame, so they are never cut at the edges. -->
-            <text v-for="(point, index) in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="LINE_FRAME.height - 10" :text-anchor="index === 0 ? 'start' : index === lineLabels.length - 1 ? 'end' : 'middle'" font-size="10" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
+            <text v-for="(point, index) in lineLabels" :key="`l-${point.day}`" :x="point.x" :y="LINE_FRAME.height - 10" :text-anchor="index === 0 ? 'start' : index === lineLabels.length - 1 ? 'end' : 'middle'" font-size="11" fill="var(--muted)">{{ formatDay(point.day).slice(0, 5) }}</text>
           </svg>
           <p class="text-xs text-muted">
             Dal {{ formatDay(line.points[0]?.day ?? null) }}: {{ formatCents(line.points[0]?.balance ?? 0) }} · al {{ formatDay(lastBalance?.day ?? null) }}: {{ formatCents(lastBalance?.balance ?? 0) }}. Passa sul grafico per i singoli giorni.

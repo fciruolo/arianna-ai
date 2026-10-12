@@ -4,6 +4,17 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Finanze, Riepilogo come cruscotto: in alto saldo dei conti, uscite ed entrate dell'ultimo mese contro il mese prima e budget superati; grafico largo accanto alle spese per categoria con il budget, poi ultimi movimenti, confronto con l'anno prima e avvisi del mese (D-189).
+- Finanze, Movimenti a righe basse: nome dell'esercente leggibile con tipo di pagamento, carta e conto sotto; la categoria è un pulsante a pillola con un menu che contiene anche «crea una regola» (D-189).
+- Finanze, Categorie e budget su due colonne: un solo «Salva» per tutti i budget, con quanto speso nel mese accanto a ciascuno; categorie a pillola (D-189).
+- Finanze: tutte le schede hanno la stessa larghezza (D-189).
+
+### Corretto
+
+- Pannello Agenti: l'intestazione «Deleghe recenti» non si accavalla più alla scritta accanto (D-188).
+
 ## [0.81.0] - 2026-10-12
 
 ### Cambiato

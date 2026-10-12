@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import { listFinanceTransactions, setTransactionCategory } from '../lib/api.ts';
+import { readableDescription } from '../lib/finance-dashboard.ts';
 import { amountClass, EMPTY_FILTER, filterQuery, financeErrorText, formatCents, formatDay, nameLookup, type Account, type Category, type Tx, type TxFilter } from '../lib/finance.ts';
 import Icon from './Icon.vue';
 
@@ -9,6 +10,9 @@ import Icon from './Icon.vue';
  * "Movimenti" of the finances (I-18, D-183): the table with its filters, the
  * newest first, and the category of each row, chosen by hand; with "crea una
  * regola" the core also makes the rule for the next rows of the same merchant.
+ * Low rows (D-189): the description of the bank made readable, the account in
+ * its second line, the category as a pill that opens a menu whose last item is
+ * the rule.
  */
 const props = defineProps<{ accounts: Account[]; categories: Category[]; filter: TxFilter }>();
 
@@ -58,6 +62,22 @@ void load();
 
 function clearFilters(): void {
   Object.assign(filter, { ...EMPTY_FILTER });
+}
+
+/** The row whose category menu is open. */
+const openFor = ref<string | null>(null);
+function closeMenu(event: PointerEvent): void {
+  if (openFor.value === null) return;
+  const target = event.target as Element | null;
+  if (target?.closest('[data-category-picker]') == null) openFor.value = null;
+}
+onMounted(() => document.addEventListener('pointerdown', closeMenu));
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenu));
+
+async function pick(row: Tx, value: string): Promise<void> {
+  openFor.value = null;
+  if (value === (row.category ?? '')) return;
+  await choose(row, value);
 }
 
 async function choose(row: Tx, value: string): Promise<void> {
@@ -131,47 +151,73 @@ async function choose(row: Tx, value: string): Promise<void> {
 
     <template v-if="rows !== null && rows.length > 0">
       <p class="text-xs text-muted">{{ total === 1 ? '1 movimento' : `${total.toLocaleString('it-IT')} movimenti` }}, dal più recente</p>
-      <div class="overflow-x-auto rounded-xl border border-line">
-        <table class="w-full min-w-[720px] text-left text-[14px]">
-          <thead class="bg-surface-2 text-xs text-muted">
-            <tr>
-              <th class="px-3 py-2 font-medium">Data</th>
-              <th v-if="showAccount" class="px-3 py-2 font-medium">Conto</th>
+      <!-- Scrolls sideways only on a phone: on a wider screen the menu of a category must not be cut by the box. -->
+      <div class="rounded-xl border border-line bg-surface-2 max-md:overflow-x-auto">
+        <table class="w-full min-w-[640px] text-left text-[14px]">
+          <thead class="text-xs text-muted">
+            <tr class="border-b border-line-strong">
+              <th class="w-[108px] px-3 py-2 font-medium">Data</th>
               <th class="px-3 py-2 font-medium">Descrizione</th>
-              <th class="px-3 py-2 font-medium">Categoria</th>
-              <th class="px-3 py-2 text-right font-medium">Importo</th>
+              <th class="w-[220px] px-3 py-2 font-medium">Categoria</th>
+              <th class="w-[130px] px-3 py-2 text-right font-medium">Importo</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in rows" :key="row.id" class="border-t border-line align-top">
-              <td class="px-3 py-2 whitespace-nowrap">
+            <tr v-for="row in rows" :key="row.id" class="border-t border-line align-middle first:border-t-0 hover:bg-surface">
+              <td class="px-3 py-1.5 whitespace-nowrap text-muted tabular-nums">
                 {{ formatDay(row.booked) }}
-                <span v-if="row.value && row.value !== row.booked" class="block text-[12.5px] text-muted">valuta {{ formatDay(row.value) }}</span>
+                <span v-if="row.value && row.value !== row.booked" class="block text-xs">valuta {{ formatDay(row.value) }}</span>
               </td>
-              <td v-if="showAccount" class="px-3 py-2 text-muted">{{ names.account(row.account) }}</td>
-              <td class="px-3 py-2 break-words">{{ row.description }}</td>
-              <td class="px-3 py-2">
-                <div class="flex flex-col gap-1">
-                  <select class="field max-w-[200px] px-2 py-1 text-[13.5px]" :value="row.category ?? ''" :disabled="saving === row.id" :aria-label="`Categoria del movimento del ${formatDay(row.booked)}`" @change="choose(row, ($event.target as HTMLSelectElement).value)">
-                    <option value="">Senza categoria</option>
-                    <optgroup v-if="outCategories.length > 0" label="Uscite">
-                      <option v-for="category in outCategories" :key="category.id" :value="category.id">{{ category.name }}</option>
-                    </optgroup>
-                    <optgroup v-if="inCategories.length > 0" label="Entrate">
-                      <option v-for="category in inCategories" :key="category.id" :value="category.id">{{ category.name }}</option>
-                    </optgroup>
-                  </select>
-                  <span class="flex items-center gap-2 text-[12.5px] text-muted">
-                    <label class="flex items-center gap-1" title="Con la prossima scelta, crea anche una regola per gli altri movimenti dello stesso esercente">
-                      <input v-model="ruleFor[row.id]" type="checkbox" />
-                      crea una regola
-                    </label>
-                    <span v-if="row.by === 'rule'">· da una regola</span>
-                    <span v-else-if="row.by === 'user'">· scelta a mano</span>
-                  </span>
+              <td class="px-3 py-1.5" :title="row.description">
+                <span class="block font-medium break-words">{{ readableDescription(row.description).title }}</span>
+                <span v-if="readableDescription(row.description).detail !== '' || showAccount" class="block text-xs text-muted">
+                  {{ [readableDescription(row.description).detail, showAccount ? names.account(row.account) : ''].filter((part) => part !== '').join(' · ') }}
+                </span>
+              </td>
+              <td class="relative px-3 py-1.5" data-category-picker>
+                <button
+                  type="button"
+                  class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13.5px] whitespace-nowrap hover:border-accent"
+                  :class="row.category === null ? 'border-dashed border-line-strong text-muted' : 'border-line-strong bg-surface'"
+                  :disabled="saving === row.id"
+                  aria-haspopup="true"
+                  :aria-expanded="openFor === row.id"
+                  :aria-label="`Categoria del movimento del ${formatDay(row.booked)}: ${names.category(row.category)}`"
+                  @click="openFor = openFor === row.id ? null : row.id"
+                  @keydown.esc="openFor = null"
+                >
+                  <span class="truncate">{{ names.category(row.category) }}</span>
+                  <span v-if="row.by === 'rule'" class="text-xs text-muted" title="Messa da una regola">regola</span>
+                  <Icon name="sort-down" :size="12" />
+                </button>
+                <div
+                  v-if="openFor === row.id"
+                  class="absolute top-full left-3 z-20 mt-1 flex w-64 flex-col rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-lg"
+                  role="group"
+                  :aria-label="`Scegli la categoria del movimento del ${formatDay(row.booked)}`"
+                  @keydown.esc="openFor = null"
+                >
+                  <div class="flex max-h-64 flex-col overflow-y-auto">
+                    <button type="button" class="rounded-md px-2 py-1 text-left text-[14px] text-muted hover:bg-bg" :class="row.category === null ? 'font-semibold' : ''" @click="pick(row, '')">Senza categoria</button>
+                    <template v-for="group in ([['Uscite', outCategories], ['Entrate', inCategories]] as const)" :key="group[0]">
+                      <p v-if="group[1].length > 0" class="px-2 pt-1.5 pb-0.5 text-xs text-muted">{{ group[0] }}</p>
+                      <button
+                        v-for="category in group[1]"
+                        :key="category.id"
+                        type="button"
+                        class="rounded-md px-2 py-1 text-left text-[14px] hover:bg-bg"
+                        :class="row.category === category.id ? 'font-semibold text-accent' : ''"
+                        @click="pick(row, category.id)"
+                      >{{ category.name }}</button>
+                    </template>
+                  </div>
+                  <label class="mt-1 flex items-start gap-2 border-t border-line px-2 pt-2 pb-1 text-[13px] text-muted" title="Con la scelta, crea anche una regola per gli altri movimenti dello stesso esercente">
+                    <input v-model="ruleFor[row.id]" type="checkbox" class="mt-0.5" />
+                    <span>Anche per i prossimi «{{ readableDescription(row.description).title }}» (crea una regola)</span>
+                  </label>
                 </div>
               </td>
-              <td class="px-3 py-2 text-right whitespace-nowrap tabular-nums" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency }) }}</td>
+              <td class="px-3 py-1.5 text-right whitespace-nowrap tabular-nums" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency, sign: row.amount > 0 }) }}</td>
             </tr>
           </tbody>
         </table>
