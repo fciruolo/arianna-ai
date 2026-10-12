@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.81.0] - 2026-10-12
+
 ### Cambiato
 
 - Chat più leggibile: testi di base a 15 px e mai sotto 12 px salvo le miniature, grigio secondario più scuro, niente griglia di fondo (D-188).
