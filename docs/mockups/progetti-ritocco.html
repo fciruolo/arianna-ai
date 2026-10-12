@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Progetti, ritocco</title>
+<!--
+  Anteprima della revisione della pagina Progetti (stesso giro di D-188, D-189
+  e D-190). Stessi token della chat dopo D-188 e la larghezza di Finanze e
+  Clienti (1440 px). File autonomo, niente rete; font letti da node_modules di
+  apps/hud con percorsi relativi. Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 500; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    --code-bg: #f1f0ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    --code-bg: #0b171a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .mono, code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .note { padding: 12px 16px 0; max-width: 1100px; font-size: 14px; }
+  .note p { margin: 0 0 6px; } .note ul { margin: 0; padding-left: 20px; }
+  .note a { color: var(--accent); cursor: pointer; }
+  .page { max-width: 1440px; margin: 0 auto; padding: 16px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 14px 16px; min-width: 0; }
+  .hud { position: relative; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); padding: 12px 16px; min-width: 0; }
+  .hud::before, .hud::after { content: ""; position: absolute; width: 12px; height: 12px; border: 2px solid var(--corner, var(--accent)); pointer-events: none; }
+  .hud::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: 14px; }
+  .hud::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: 14px; }
+  .hud.warn { --corner: var(--warn); } .hud.danger { --corner: var(--danger); }
+  button.hud { text-align: left; cursor: pointer; } button.hud:hover { border-color: var(--accent); }
+  h3 { margin: 0 0 6px; font: 600 12px/1.2 "Chakra Petch", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  h3 small { font: 13px Figtree, sans-serif; letter-spacing: 0; text-transform: none; }
+  h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; white-space: nowrap; text-decoration: none; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.s { padding: 3px 9px; font-size: 13px; }
+  .btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+  .btn.ghost:hover { color: var(--ink); }
+  .btn.danger { color: var(--danger); }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; outline: none; }
+  .field.changed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--surface-2)); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 12.5px; white-space: nowrap; line-height: 1.5; }
+  .chip.ok { color: var(--ok); border-color: currentColor; }
+  .chip.warn, .chip.l2 { color: var(--warn); border-color: currentColor; }
+  .chip.danger { color: var(--danger); border-color: currentColor; }
+  .chip.info, .chip.l1 { color: var(--info); border-color: currentColor; }
+  .chip.acc { color: var(--accent); border-color: currentColor; }
+  .chip.fill-acc { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); border-color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .view { display: none; } .view.on { display: block; }
+  .alert { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; font-size: 14px; border: 1px solid; }
+  .alert.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .alert.danger { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: color-mix(in srgb, var(--danger) 9%, transparent); }
+  .alert.info { border-color: color-mix(in srgb, var(--info) 45%, transparent); background: color-mix(in srgb, var(--info) 9%, transparent); }
+  .alert.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 9%, transparent); }
+  .alert .grow { flex: 1; min-width: 0; }
+  .ic { flex: none; font-weight: 600; }
+
+  /* masthead */
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 14px; }
+  .avatar { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; font-weight: 600; font-size: 16px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); flex: none; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; font-size: 22px; font-weight: 600; line-height: 1.25; }
+  .switch span { font-size: 14px; color: var(--muted); }
+  .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+  .client { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); text-decoration: none; font-weight: 500; }
+  .client:hover { color: var(--accent); }
+  .logo { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: #fff; font: 600 12px/1 Figtree; background: #b0204d; }
+  .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .kpi .v { font-size: 22px; font-weight: 600; line-height: 1.25; display: flex; align-items: center; gap: 8px; }
+  .kpi .d { font-size: 13px; color: var(--muted); }
+  .tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs .grp { font-size: 12.5px; color: var(--muted); padding: 0 6px 10px 2px; }
+  .tabs .sep { width: 1px; height: 22px; background: var(--line-strong); margin: 0 10px 8px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; font-size: 14.5px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+  .tabs .priv { margin-left: auto; padding-bottom: 10px; font-size: 13px; color: var(--muted); }
+  .parts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 12px; }
+  .parts .lab { font-size: 13px; color: var(--muted); margin-right: 4px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-2); font-size: 14px; cursor: pointer; }
+  .pill.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
+  .pill small { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+  /* file */
+  .split { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 520px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); overflow: hidden; }
+  .tree { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-height: 0; }
+  .search { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .search input { border: 0; background: none; outline: none; flex: 1; min-width: 0; font-size: 14px; }
+  .rows { flex: 1; padding: 6px; font-size: 14px; overflow: auto; }
+  .r { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+  .r:hover { background: var(--bg); }
+  .r.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+  .r .tw { width: 12px; color: var(--muted); font-size: 12px; }
+  .r .m { margin-left: auto; font-size: 12px; font-weight: 600; }
+  .r .m.M { color: var(--warn); } .r .m.A { color: var(--ok); }
+  .r.M .nm { color: var(--warn); } .r.A .nm { color: var(--ok); }
+  .r.shut { color: var(--muted); cursor: default; }
+  .sq { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .tree-foot { border-top: 1px solid var(--line); padding: 10px 12px; font-size: 13px; color: var(--muted); display: grid; gap: 8px; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+  .toggle i { width: 32px; height: 18px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--bg); position: relative; }
+  .toggle i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .viewer { display: flex; flex-direction: column; min-width: 0; }
+  .vhead { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); min-height: 46px; }
+  .crumb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb .mono { font-size: 13.5px; }
+  pre.code { margin: 0; padding: 12px 0; font: 13.5px/1.7 "JetBrains Mono", monospace; overflow: auto; flex: 1; }
+  pre.code .ln { display: inline-block; width: 48px; padding-right: 14px; margin-right: 14px; text-align: right; color: color-mix(in srgb, var(--muted) 70%, transparent); border-right: 2px solid transparent; user-select: none; }
+  pre.code .ln.add { border-color: var(--ok); }
+  .k { color: #8a4fc4; } :root[data-theme="dark"] .k { color: #c49cf0; }
+  .s { color: var(--ok); } .n { color: var(--warn); } .c { color: var(--muted); font-style: italic; }
+
+  /* IM */
+  .im-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .settings { margin-bottom: 14px; padding: 0; }
+  .settings .shead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .settings .shead .sum { font-size: 14px; color: var(--muted); }
+  .settings .sbody { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .settings .col { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .settings .col + .col { border-left: 1px solid var(--line); }
+  .settings .ctitle { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px; }
+  .fgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 12px; }
+  .f { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+  .f .hint { font-size: 12px; }
+  .f .with { display: flex; gap: 6px; align-items: center; }
+  .s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; }
+  .savebar { display: none; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line-strong); background: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); font-size: 14px; border-radius: 0 0 12px 12px; }
+  .savebar.on { display: flex; }
+  .savebar .what { flex: 1; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 500; font-size: 13px; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  th.r, td.r { display: table-cell; height: auto; padding: 8px 12px; border-radius: 0; cursor: auto; text-align: right; white-space: normal; }
+  td.r:hover { background: none; }
+  .tcard { padding: 0; margin-bottom: 14px; }
+  .tcard .thead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .tcard .thead h2 { margin-right: 6px; }
+  .tcard .scroll { overflow-x: auto; }
+  .imcell b { font-weight: 600; }
+  .imcell span { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .bar5 { display: inline-block; width: 56px; height: 5px; border-radius: 3px; background: var(--bg); overflow: hidden; vertical-align: middle; margin-left: 8px; }
+  .bar5 i { display: block; height: 100%; background: var(--accent); }
+  .price { display: inline-flex; flex-direction: column; align-items: flex-end; }
+  .price .amt { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px dashed transparent; border-radius: 7px; cursor: text; font-weight: 600; }
+  .price .amt:hover { border-color: var(--line-strong); background: var(--surface); }
+  .price .amt.lock { cursor: default; font-weight: 500; }
+  .price .amt.lock:hover { border-color: transparent; background: none; }
+  .price .src { font-size: 12px; color: var(--muted); }
+  .price input { width: 96px; text-align: right; padding: 3px 8px; }
+  .price .reset { font-size: 12px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+  tr.changed td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .menu-btn { background: none; border: 1px solid transparent; border-radius: 7px; width: 28px; height: 28px; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; }
+  .menu-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+  .invform { display: none; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .invform.on { display: block; }
+  .invform .fgrid { grid-template-columns: 150px 160px 170px 170px minmax(0, 1fr); }
+  .cb { width: 16px; height: 16px; accent-color: var(--accent); }
+  .imchips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  /* rules */
+  .narrow { max-width: 980px; display: flex; flex-direction: column; gap: 12px; }
+  .segc { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+  .segc button { background: var(--surface-2); border: 0; padding: 6px 14px; font-size: 14px; cursor: pointer; color: var(--muted); }
+  .segc button + button { border-left: 1px solid var(--line-strong); }
+  .segc button.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); color: var(--ink); font-weight: 600; }
+  .rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .rule:last-child { border-bottom: 0; }
+  .rule.head { font-weight: 600; padding-top: 14px; color: var(--muted); font-size: 13px; }
+  .who { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; font-size: 13px; }
+  .who button { background: none; border: 0; padding: 2px 10px; cursor: pointer; color: var(--muted); }
+  .who button + button { border-left: 1px solid var(--line-strong); }
+  .who button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); font-weight: 600; }
+  .facts-list { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--muted); display: grid; gap: 4px; }
+
+  /* knowledge */
+  .kgrid { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .folder { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .folder:last-child { border-bottom: 0; }
+  .folder .nm { flex: 1; min-width: 0; }
+  .folder .nm b { font-weight: 600; display: block; }
+  .folder .nm span { font-size: 12.5px; color: var(--muted); }
+  .notes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .ncard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+  .ncard:hover { border-color: var(--accent); }
+  .ncard .t { font-weight: 600; }
+  .ncard .ex { font-size: 13.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ncard .ft { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); margin-top: auto; }
+  .fgroup { margin-bottom: 16px; }
+  .fgroup > .gh { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 600; }
+  .fgroup > .gh span { font-weight: 400; font-size: 13px; color: var(--muted); }
+
+  /* empty & errors */
+  .egrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+  .empty { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .empty .where { font-size: 12.5px; color: var(--muted); text-transform: none; }
+  .empty p { margin: 0; font-size: 14.5px; }
+  .empty .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .empty .before { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line-strong); padding-left: 8px; }
+
+  @media (max-width: 960px) {
+    .kpis, .im-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split { grid-template-columns: 1fr; } .tree { border-right: 0; border-bottom: 1px solid var(--line); max-height: 360px; }
+    .settings .sbody { grid-template-columns: 1fr; } .settings .col + .col { border-left: 0; border-top: 1px solid var(--line); }
+    .kgrid { grid-template-columns: 1fr; }
+    .invform .fgrid { grid-template-columns: 1fr 1fr; }
+    .tabs .priv { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Progetti, ritocco</b>
+  <span>Vista</span>
+  <span class="seg" id="vseg">
+    <button data-v="file" aria-pressed="true">Testata e File</button>
+    <button data-v="im">IM</button>
+    <button data-v="regole">Regole</button>
+    <button data-v="conoscenza">Conoscenza</button>
+    <button data-v="vuoti">Errori e stati vuoti</button>
+  </span>
+  <span>Tema</span>
+  <span class="seg" id="tseg"><button data-t="light" aria-pressed="true">Chiaro</button><button data-t="dark">Scuro</button></span>
+</div>
+<div class="note" id="note"></div>
+
+<div class="page">
+  <section class="view" id="project">
+    <!-- MASTHEAD -->
+    <div class="top">
+      <div class="avatar" aria-hidden="true">PT</div>
+      <div style="min-width:0">
+        <button class="switch" title="Cambia progetto">progetto-test <span>▾</span></button>
+        <div class="facts">
+          <a class="client" href="#" title="Apri la scheda del cliente"><span class="logo">R</span>Pasticceria Finta Rossi Srl ›</a>
+          <span>2 parti</span>
+          <span>IM ogni giovedì alle 10:00</span>
+          <span class="mono muted" title="Cartella sul computer">repos/progetto-test</span>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="#">⌘ Apri in VS Code</a>
+        <button class="btn">◇ Apri nello Studio</button>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <button class="hud kpi" data-go="file"><h3>Branch <small>admin</small></h3><div class="v"><span class="mono" style="font-size:18px">main</span></div><div class="kpi d">ultimo commit 2 ore fa</div></button>
+      <button class="hud kpi warn" data-go="file"><h3>Modifiche <small>admin</small></h3><div class="v" style="color:var(--warn)">3 file</div><div class="kpi d">non ancora in un commit · Git ›</div></button>
+      <button class="hud kpi" data-go="file"><h3>Servizi <small>admin</small></h3><div class="v"><span class="dot" style="background:var(--ok)"></span>1 acceso su 4</div><div class="kpi d">dev su :5180 · Servizi ›</div></button>
+      <button class="hud kpi danger" data-go="im"><h3>Prossimo IM</h3><div class="v">gio 15/10</div><div class="kpi d">IM-34 · <span style="color:var(--danger)">1 fattura scaduta</span> · IM ›</div></button>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <span class="grp">Parte</span>
+      <button data-tab="file" class="on">File</button><button data-tab="file">Git</button><button data-tab="file">Servizi</button>
+      <span class="sep"></span>
+      <span class="grp">Progetto</span>
+      <button data-tab="conoscenza">Conoscenza</button><button data-tab="im">IM</button><button data-tab="regole">Regole</button>
+      <span class="priv" id="priv"></span>
+    </nav>
+
+    <!-- FILE -->
+    <div id="v-file" class="sub">
+      <div class="parts" role="group" aria-label="Parti del progetto">
+        <span class="lab">Parte</span>
+        <button class="pill on">progetto-test-admin <small>main · 3 modifiche</small></button>
+        <button class="pill">progetto-test-client <small>main · pulito</small></button>
+      </div>
+      <div class="alert ok" style="margin-bottom:10px"><span class="ic">✓</span><span class="grow"><span class="mono">src/vecchio-login.ts</span> spostato in <span class="mono">eliminati/src/vecchio-login.ts</span>.</span><button class="btn s ghost">Chiudi</button></div>
+      <div class="split">
+        <div class="tree">
+          <label class="search"><span class="muted">⌕</span><input placeholder="Cerca fra le cartelle aperte"><button class="btn s ghost">↻ Aggiorna</button></label>
+          <div class="rows">
+            <div class="r"><span class="tw">▾</span><span class="nm">src</span></div>
+            <div class="r" style="padding-left:22px"><span class="tw">▸</span><span class="nm">components</span><span class="m M">M</span></div>
+            <div class="r M sel" style="padding-left:22px"><span class="tw"></span><span class="sq" style="background:#6aa0e0"></span><span class="nm">ordini.ts</span><span class="m M">M</span></div>
+            <div class="r A" style="padding-left:22px"><span class="tw"></span><span class="sq" style="background:#6aa0e0"></span><span class="nm">listino.ts</span><span class="m A">A</span></div>
+            <div class="r" style="padding-left:22px"><span class="tw"></span><span class="sq" style="background:#5fbf8f"></span><span class="nm">App.vue</span></div>
+            <div class="r"><span class="tw">▸</span><span class="nm">public</span></div>
+            <div class="r shut" title="Cartella nascosta: accendi «Mostra nascosti»"><span class="tw"></span><span class="nm">.env</span><span class="m" style="color:var(--warn)">🔒</span></div>
+            <div class="r"><span class="tw"></span><span class="sq" style="background:#d8b45a"></span><span class="nm">package.json</span></div>
+            <div class="r M"><span class="tw"></span><span class="sq" style="background:#9aa8a6"></span><span class="nm">README.md</span><span class="m M">M</span></div>
+            <div class="r"><span class="tw"></span><span class="sq" style="background:#d8b45a"></span><span class="nm">tsconfig.json</span></div>
+          </div>
+          <div class="tree-foot">
+            <span class="toggle"><i></i>Mostra nascosti</span>
+            <span class="legend"><span><b style="color:var(--warn)">M</b> modificato</span><span><b style="color:var(--ok)">A</b> nuovo</span><span>🔒 segreto o chiuso</span></span>
+          </div>
+        </div>
+        <div class="viewer">
+          <div class="vhead">
+            <span class="crumb"><span class="mono muted">progetto-test-admin / </span><span class="mono">src/ordini.ts</span></span>
+            <span class="small muted num">2,1 kB · 18 righe</span>
+            <a class="btn s" href="#">VS Code</a>
+          </div>
+          <pre class="code"><span class="ln">1</span><span class="k">import</span> { listino } <span class="k">from</span> <span class="s">'./listino.ts'</span>;
+<span class="ln">2</span>
+<span class="ln">3</span><span class="c">// Un ordine della pasticceria: prodotti, quantità, ritiro.</span>
+<span class="ln">4</span><span class="k">export interface</span> Ordine {
+<span class="ln">5</span>  cliente: <span class="k">string</span>;
+<span class="ln">6</span>  righe: { prodotto: <span class="k">string</span>; quantita: <span class="k">number</span> }[];
+<span class="ln">7</span>  ritiro: <span class="k">string</span>;
+<span class="ln">8</span>}
+<span class="ln">9</span>
+<span class="ln">10</span><span class="k">export function</span> totale(ordine: Ordine): <span class="k">number</span> {
+<span class="ln">11</span>  <span class="k">return</span> ordine.righe.reduce((somma, riga) =&gt; {
+<span class="ln">12</span>    <span class="k">const</span> prezzo = listino[riga.prodotto] ?? <span class="n">0</span>;
+<span class="ln">13</span>    <span class="k">return</span> somma + prezzo * riga.quantita;
+<span class="ln">14</span>  }, <span class="n">0</span>);
+<span class="ln">15</span>}
+<span class="ln">16</span>
+<span class="ln">17</span><span class="k">export const</span> MINIMO_TORTA = <span class="n">12</span>;
+<span class="ln">18</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- IM -->
+    <div id="v-im" class="sub">
+      <div class="im-kpis">
+        <div class="hud kpi"><h3>Da fatturare</h3><div class="v num">750 €</div><div class="kpi d">IM-33 e IM-32, IVA esclusa</div></div>
+        <div class="hud kpi danger"><h3>In attesa</h3><div class="v num">549 €</div><div class="kpi d"><span style="color:var(--danger)">T-2/2026 scaduta il 09/10</span></div></div>
+        <div class="hud kpi"><h3>Incassato 2026</h3><div class="v num">549 €</div><div class="kpi d">T-1/2026, pagata il 30/09</div></div>
+        <div class="hud kpi"><h3>Prossimo IM</h3><div class="v">gio 15/10 · 10:00</div><div class="kpi d">IM-34 · 4 voci da fare</div></div>
+      </div>
+
+      <div class="card settings" id="settings">
+        <div class="shead">
+          <h2>Calendario e prezzo</h2>
+          <span class="sum" id="ssum">IM ogni giovedì alle 10:00, senza data di fine · 450 € a IM, IVA esclusa</span>
+        </div>
+        <div class="sbody">
+          <div class="col">
+            <div class="ctitle">Calendario <span class="chip l1">Interno</span><span class="mono muted" style="font-weight:400;margin-left:auto">IM/calendario.md</span></div>
+            <div class="fgrid">
+              <label class="f s2">Giorno<select class="field" data-k="giorno"><option>lunedì</option><option>martedì</option><option>mercoledì</option><option selected>giovedì</option><option>venerdì</option></select></label>
+              <label class="f s2">Ora<input class="field" type="time" value="10:00" data-k="ora"></label>
+              <label class="f s2">Ogni<span class="with"><input class="field" type="number" min="1" max="8" value="1" data-k="ogni" style="width:70px"> settimane</span></label>
+              <label class="f s3">Fine degli IM <span class="hint">(facoltativa)</span><input class="field" type="date" data-k="fine"><span class="hint">Dopo questa data non nasce nessun IM.</span></label>
+            </div>
+            <span class="small muted">Il file è la fonte: lo puoi cambiare anche in Obsidian. Il prezzo non ci va mai.</span>
+          </div>
+          <div class="col">
+            <div class="ctitle">Prezzo per IM <span class="chip l2">Privato</span></div>
+            <div class="fgrid">
+              <label class="f s4">Imponibile, IVA esclusa<input class="field num" inputmode="decimal" value="450" data-k="prezzo"></label>
+              <label class="f s2">Valuta<select class="field" data-k="valuta"><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label>
+            </div>
+            <span class="small muted">Si fissa su ogni IM quando si chiude: un cambio vale da IM-34 in poi. Resta su questo computer.</span>
+          </div>
+        </div>
+        <div class="savebar" id="sbar"><span class="what" id="swhat"></span><button class="btn" id="sundo">Annulla</button><button class="btn p">Salva</button></div>
+      </div>
+
+      <div class="card tcard">
+        <div class="thead">
+          <h2>IM</h2>
+          <span class="chip fill-acc">Tutti · 6</span><span class="chip">Da fatturare · 2</span><span class="chip">In fattura · 1</span><span class="chip">Pagati · 1</span>
+          <span style="margin-left:auto" class="small muted" id="chosen">2 scelti · 750 €</span>
+          <button class="btn p" id="invbtn">+ Fattura con 2 IM</button>
+        </div>
+        <form class="invform" id="invform" onsubmit="return false">
+          <p style="margin:0 0 10px;font-size:14px">Registri la fattura fatta col tuo programma, con <b>IM-33 e IM-32</b>, imponibile <b>750 €</b>.</p>
+          <div class="fgrid">
+            <label class="f">Numero<input class="field" placeholder="T-3/2026" value="T-3/2026"></label>
+            <label class="f">Data<input class="field" type="date" value="2026-10-12"></label>
+            <label class="f">Totale documento<input class="field num" placeholder="915,00"><span class="hint">Con IVA, ritenuta, bollo.</span></label>
+            <label class="f">Scadenza<input class="field" type="date"><span class="hint">Vuota: 30 giorni del cliente.</span></label>
+            <label class="f">Nota<input class="field" placeholder="IM di ottobre"></label>
+          </div>
+          <div class="tools" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="invx">Annulla</button><button class="btn p">Registra la fattura</button></div>
+        </form>
+        <div class="scroll">
+          <table id="imtable">
+            <thead><tr><th style="width:36px"><input type="checkbox" class="cb" checked aria-label="Tutti i da fatturare"></th><th>IM</th><th>Stato</th><th>Voci</th><th class="r">Prezzo</th><th>Fatturazione</th><th style="width:40px"></th></tr></thead>
+            <tbody>
+              <tr><td></td><td class="imcell"><b>IM-34</b><span>gio 15/10</span></td><td><span class="chip acc">Previsto</span></td><td class="muted">0/4 fatte<span class="bar5"><i style="width:0"></i></span></td>
+                <td class="r"><span class="price"><span class="amt" data-base="450" data-src="prezzo di oggi, si fissa alla chiusura">450 €</span><span class="src">prezzo di oggi, si fissa alla chiusura</span></span></td>
+                <td class="muted">Aperto</td><td><button class="menu-btn" title="Altro: non si fattura, apri nel cardwall">⋯</button></td></tr>
+              <tr><td><input type="checkbox" class="cb" checked aria-label="Scegli IM-33"></td><td class="imcell"><b>IM-33</b><span>gio 08/10</span></td><td><span class="chip">Chiuso</span></td><td class="muted">5/6 fatte<span class="bar5"><i style="width:83%"></i></span></td>
+                <td class="r"><span class="price"><span class="amt" data-base="450" data-src="fissato alla chiusura">450 €</span><span class="src">fissato alla chiusura</span></span></td>
+                <td><span class="chip acc">Da fatturare</span></td><td><button class="menu-btn" title="Altro">⋯</button></td></tr>
+              <tr><td><input type="checkbox" class="cb" checked aria-label="Scegli IM-32"></td><td class="imcell"><b>IM-32</b><span>gio 01/10</span></td><td><span class="chip">Chiuso</span></td><td class="muted">3/3 fatte<span class="bar5"><i style="width:100%"></i></span></td>
+                <td class="r"><span class="price"><span class="amt" data-base="300" data-src="prezzo di questo IM">300 €</span><span class="src">prezzo di questo IM · <button class="reset" title="Torna al prezzo del progetto">usa 450 €</button></span></span></td>
+                <td><span class="chip acc">Da fatturare</span></td><td><button class="menu-btn" title="Altro">⋯</button></td></tr>
+              <tr><td></td><td class="imcell"><b>IM-31</b><span>gio 24/09</span></td><td><span class="chip">Chiuso</span></td><td class="muted">2/2 fatte<span class="bar5"><i style="width:100%"></i></span></td>
+                <td class="r"><span class="price"><span class="amt" style="color:var(--muted)">—</span><span class="src">non si fattura</span></span></td>
+                <td><span class="chip">Non fatturato</span></td><td><button class="menu-btn" title="Altro: torna da fatturare">⋯</button></td></tr>
+              <tr><td></td><td class="imcell"><b>IM-30</b><span>gio 17/09</span></td><td><span class="chip">Chiuso</span></td><td class="muted">4/5 fatte<span class="bar5"><i style="width:80%"></i></span></td>
+                <td class="r"><span class="price"><span class="amt lock" title="È nella fattura T-2/2026: per cambiarlo annulla la fattura">🔒 450 €</span><span class="src">fissato alla chiusura</span></span></td>
+                <td><span class="chip danger">In fattura T-2/2026</span></td><td><button class="menu-btn" title="Altro">⋯</button></td></tr>
+              <tr><td></td><td class="imcell"><b>IM-29</b><span>gio 10/09</span></td><td><span class="chip">Chiuso</span></td><td class="muted">6/6 fatte<span class="bar5"><i style="width:100%"></i></span></td>
+                <td class="r"><span class="price"><span class="amt lock" title="È nella fattura T-1/2026">🔒 450 €</span><span class="src">fissato alla chiusura</span></span></td>
+                <td><span class="chip ok">Pagato · T-1/2026</span></td><td><button class="menu-btn" title="Altro">⋯</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="savebar" id="tbar"><span class="what" id="twhat"></span><button class="btn" id="tundo">Annulla</button><button class="btn p">Salva</button></div>
+      </div>
+
+      <div class="card tcard">
+        <div class="thead"><h2>Fatture</h2><span class="chip l2">Privato</span><span class="small muted" style="margin-left:auto">2 fatture · al totale documento</span></div>
+        <div class="alert warn" style="margin:12px 16px 0"><span class="ic">!</span><span class="grow"><b>T-2/2026 è scaduta il 09/10</b>: 549 € da Pasticceria Finta Rossi Srl. Quando arriva il pagamento segnala pagata.</span><button class="btn s">Segna pagata…</button></div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Numero</th><th>Data</th><th>IM</th><th class="r">Imponibile</th><th class="r">Totale documento</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><b>T-2/2026</b></td><td>20/09/2026</td><td><span class="imchips"><span class="chip">IM-30</span></span></td><td class="r num">450,00 €</td><td class="r num"><b>549,00 €</b></td><td>09/10/2026</td><td><span class="chip danger">Scaduta</span></td>
+                <td class="r" style="white-space:nowrap"><button class="btn s">Pagata…</button> <button class="menu-btn" title="Totale e scadenza, togli un IM, annulla la fattura">⋯</button></td></tr>
+              <tr><td><b>T-1/2026</b></td><td>12/09/2026</td><td><span class="imchips"><span class="chip">IM-29</span></span></td><td class="r num">450,00 €</td><td class="r num"><b>549,00 €</b></td><td>30/09/2026</td><td><span class="chip ok">Pagata il 30/09</span></td>
+                <td class="r" style="white-space:nowrap"><button class="btn s ghost">Non ancora pagata</button> <button class="menu-btn" title="Altro">⋯</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="small muted">🔒 Privato: prezzi e fatture restano su questo computer, mai nei file IM che legge il Coder. Le voci di ogni IM si spostano nel <a href="#" style="color:var(--accent)">Cardwall › IM</a>.</p>
+    </div>
+
+    <!-- REGOLE -->
+    <div id="v-regole" class="sub">
+      <div class="narrow">
+        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+          <div class="tools">
+            <h2 style="margin-right:auto">Regole per Claude Code e Codex</h2>
+            <button class="btn">Esporta in CLAUDE.md e AGENTS.md…</button>
+          </div>
+          <p style="margin:0;font-size:14.5px">Arianna le mette in testa a ogni lavoro del Coder su <b>progetto-test</b>. Esempio: «Usa pnpm, mai npm» evita che Codex crei un <span class="mono">package-lock.json</span>.</p>
+          <div class="tools">
+            <span class="segc"><button>Modello comune</button><button class="on">Regole proprie</button></span>
+            <span class="small muted">Partono da una copia del modello comune.</span>
+            <button class="btn s" style="margin-left:auto">✎ Modifica come testo</button>
+          </div>
+          <div class="alert info"><span class="ic">i</span><span class="grow">Arianna può proporre regole adatte guardando linguaggi, gestore di pacchetti e file di stile delle due parti.</span><button class="btn s">Proponi bozza</button></div>
+          <div id="rules">
+            <div class="rule head"><span>Stile</span><span></span></div>
+            <div class="rule"><span>Usa pnpm, mai npm né yarn.</span><span class="who"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+            <div class="rule"><span>TypeScript strict; niente <span class="mono">any</span>.</span><span class="who"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+            <div class="rule"><span>Componenti Vue con <span class="mono">&lt;script setup lang="ts"&gt;</span>.</span><span class="who"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+            <div class="rule head"><span>Lavoro</span><span></span></div>
+            <div class="rule"><span>Prima di finire esegui <span class="mono">pnpm test</span> nella parte che hai toccato.</span><span class="who"><button class="on">Entrambi</button><button>Solo Claude Code</button><button>Solo Codex</button></span></div>
+            <div class="rule" style="background:color-mix(in srgb, var(--accent) 5%, transparent)"><span>Non toccare <span class="mono">progetto-test-client/public/</span>: lo gestisce il grafico.</span><span class="who"><button>Entrambi</button><button>Solo Claude Code</button><button class="on">Solo Codex</button></span></div>
+          </div>
+          <ul class="facts-list">
+            <li>Il testo va al cloud come <b>Interno</b>, dal gateway: niente nomi di clienti, importi o password (il salvataggio li rifiuta).</li>
+            <li>Valgono dalla prossima conversazione con il Coder; gli agenti non fanno mai commit.</li>
+          </ul>
+        </div>
+        <div class="card savebar on" style="position:sticky;bottom:12px;border-radius:12px;border:1px solid var(--line-strong)"><span class="what">1 modifica non salvata: «Non toccare progetto-test-client/public/» ora solo per Codex.</span><button class="btn">Annulla</button><button class="btn p">Salva</button></div>
+      </div>
+    </div>
+
+    <!-- CONOSCENZA -->
+    <div id="v-conoscenza" class="sub">
+      <div class="kgrid">
+        <div class="card">
+          <div class="tools" style="margin-bottom:6px"><h2 style="margin-right:auto">Cartelle di gestione</h2></div>
+          <p class="small muted" style="margin:0 0 6px">In <span class="mono">repos/progetto-test</span>, accanto alle parti di codice: il Coder non le vede.</p>
+          <div class="folder"><span class="nm"><b>Workplan</b><span>2 note · etichetta per nome</span></span><select class="field" style="width:auto"><option>Interno</option><option>Privato</option></select></div>
+          <div class="folder"><span class="nm"><b>IM</b><span>5 note · etichetta per nome</span></span><select class="field" style="width:auto"><option>Interno</option></select></div>
+          <div class="folder"><span class="nm"><b>Verbali</b><span>1 nota · scelta tua (per nome: Interno)</span></span><select class="field" style="width:auto"><option>Privato</option></select></div>
+          <div class="folder"><span class="nm"><b>documenti</b><span>2 note · etichetta per nome</span></span><select class="field" style="width:auto"><option>Privato</option></select></div>
+          <p class="small muted" style="margin:8px 0 0">Una nota resta almeno al livello della sua cartella; la sua intestazione può alzarlo, mai abbassarlo.</p>
+        </div>
+        <div>
+          <div class="tools" style="margin-bottom:12px"><h2 style="margin-right:auto">Note</h2><input class="field" style="max-width:260px" placeholder="Cerca fra le note"><button class="btn p">+ Nota</button></div>
+          <div class="fgroup"><div class="gh">Workplan <span class="chip l1">Interno</span><span>2</span></div>
+            <div class="notes">
+              <div class="ncard"><span class="t">Piano di lavoro</span><span class="ex">Tre milestone: catalogo torte online entro novembre, ordini con ritiro a dicembre, pannello per il laboratorio.</span><span class="ft"><span class="chip l1">Interno</span>modificata 2 giorni fa</span></div>
+              <div class="ncard"><span class="t">Compensi</span><span class="ex">Quanto vale ogni IM e come si fattura: la cifra vera sta nella scheda IM, qui solo l'accordo.</span><span class="ft"><span class="chip l2">Privato</span>alzata a Privato</span></div>
+            </div></div>
+          <div class="fgroup"><div class="gh">IM <span class="chip l1">Interno</span><span>5</span></div>
+            <div class="notes">
+              <div class="ncard"><span class="t">IM-34</span><span class="ex">Previsto giovedì 15/10 alle 10:00 · 4 voci da fare.</span><span class="ft"><span class="chip l1">Interno</span>ieri</span></div>
+              <div class="ncard"><span class="t">IM-33</span><span class="ex">Chiuso · 5 voci fatte su 6; il report per il cliente è pronto.</span><span class="ft"><span class="chip l1">Interno</span>08/10</span></div>
+              <div class="ncard"><span class="t">Riunione di avvio</span><span class="ex">Obiettivi, persone, tempi. Il signor Rossi preferisce le call il giovedì mattina.</span><span class="ft"><span class="chip l1">Interno</span>03/09</span></div>
+            </div></div>
+          <div class="fgroup"><div class="gh">documenti <span class="chip l2">Privato</span><span>2</span></div>
+            <div class="notes">
+              <div class="ncard"><span class="t">Preventivo firmato</span><span class="ex">Riassunto del preventivo di agosto, firmato il 28/08.</span><span class="ft"><span class="chip l2">Privato</span>28/08</span></div>
+            </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EMPTY STATES & ERRORS -->
+  <section class="view" id="vuoti">
+    <div class="egrid">
+      <div class="card empty"><h3>Il core non risponde <small class="where">tutta la pagina</small></h3>
+        <div class="alert danger" style="align-self:stretch"><span class="ic">!</span><span class="grow">Non riesco a leggere i progetti: Arianna sul Mac non risponde. Controlla che sia avviata, poi riprova.</span><button class="btn s">Riprova</button></div>
+        <span class="before">Oggi: «fetch failed» in rosso, senza pulsante (ProjectsPage.vue:549).</span></div>
+      <div class="card empty"><h3>Nessun progetto <small class="where">tutta la pagina</small></h3>
+        <p>Nessun progetto approvato. Un progetto è una cartella sul Mac che Arianna e il Coder possono leggere, per esempio <span class="mono">repos/progetto-test</span>.</p>
+        <div class="acts"><button class="btn p">Aggiungi un progetto</button><span class="small muted">apre Impostazioni → Progetti</span></div>
+        <span class="before">Oggi: solo il testo, senza pulsante (ProjectsPage.vue:551).</span></div>
+      <div class="card empty"><h3>Una parte senza git <small class="where">scheda Git</small></h3>
+        <p>Questa cartella non è un repository git: non ci sono branch né commit da mostrare. Se vuoi che il Coder ci lavori, apri un terminale nella cartella e scrivi <span class="mono">git init</span>.</p>
+        <div class="acts"><a class="btn" href="#">Apri in VS Code</a></div></div>
+      <div class="card empty"><h3>Nessun servizio <small class="where">scheda Servizi</small></h3>
+        <p>Questa parte non dichiara servizi. Arianna avvia solo comandi scritti nei file: aggiungi uno script a <span class="mono">package.json</span> (per esempio <span class="mono">"dev": "vite"</span>), un <span class="mono">docker-compose.yml</span> o un <span class="mono">Makefile</span>.</p>
+        <div class="acts"><button class="btn">↻ Rileggi</button></div></div>
+      <div class="card empty"><h3>File che non si apre <small class="where">scheda File</small></h3>
+        <p>Il file è cambiato o è stato tolto mentre lo leggevo.</p>
+        <div class="acts"><button class="btn">Riprova</button><button class="btn ghost">↻ Aggiorna l'elenco</button></div>
+        <span class="before">Oggi: un lucchetto e il testo, senza pulsante (ProjectsPage.vue:761).</span></div>
+      <div class="card empty"><h3>Nessun IM <small class="where">scheda IM</small></h3>
+        <p>Questo progetto non ha ancora IM. Scegli giorno e ora qui sopra in «Calendario e prezzo» e salva: il primo IM nasce dal calendario. Oppure crealo a mano dal cardwall.</p>
+        <div class="acts"><a class="btn" href="#">Apri il cardwall</a></div></div>
+      <div class="card empty"><h3>Calendario che non vale <small class="where">scheda IM</small></h3>
+        <div class="alert warn" style="align-self:stretch"><span class="ic">!</span><span class="grow"><span class="mono">IM/calendario.md</span> non vale: l'ora non è nella forma 10:00. Finché non lo correggi, ogni IM arriva sette giorni dopo l'ultimo.</span></div>
+        <div class="acts"><button class="btn p">Correggi qui</button><button class="btn ghost">↻ Rileggi il file</button></div></div>
+      <div class="card empty"><h3>Il file è cambiato fuori <small class="where">scheda IM</small></h3>
+        <div class="alert info" style="align-self:stretch"><span class="ic">i</span><span class="grow">Il calendario è stato cambiato in Obsidian mentre lo modificavi: ho riletto il file. Le tue modifiche sono ancora nei campi; controlla e salva di nuovo.</span></div></div>
+      <div class="card empty"><h3>Bozza delle regole non riuscita <small class="where">scheda Regole</small></h3>
+        <div class="alert danger" style="align-self:stretch"><span class="ic">!</span><span class="grow">Il modello locale non risponde: controlla oMLX.</span><button class="btn s">Riprova</button><button class="btn s ghost">Server locali</button></div></div>
+      <div class="card empty"><h3>Nessuna nota <small class="where">scheda Conoscenza</small></h3>
+        <p>Nessuna nota ancora. Le note dicono ad Arianna cose del progetto che non stanno nel codice, per esempio «il signor Rossi vuole le call il giovedì».</p>
+        <div class="acts"><button class="btn p">+ Nota</button></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const notes = {
+    file: `<p><b>Testata più leggibile e scheda File.</b></p><ul>
+      <li><b>Testata</b>: nome del progetto nel carattere normale (oggi Chakra Petch a spaziatura larga), cliente con il suo logo subito sotto e una «›» che dice che si apre; poi quante parti e quando sono gli IM. Il percorso resta in carattere fisso ma è uno solo, piccolo.</li>
+      <li><b>Quattro riquadri</b> come i numeri delle Finanze, cliccabili: Branch, Modifiche (ambra se ci sono), Servizi, e <b>Prossimo IM</b> con l'avviso della fattura scaduta. Esempio: entri e vedi subito che la T-2/2026 è scaduta senza aprire la scheda IM.</li>
+      <li><b>Schede in due gruppi</b>: «Parte» (File, Git, Servizi: leggono la parte scelta) e «Progetto» (Conoscenza, IM, Regole: valgono per tutto il contenitore). Il selettore delle parti compare solo nel primo gruppo, con branch e modifiche di ogni parte.</li>
+      <li><b>Albero dei file</b> nel carattere normale (il percorso del file aperto e il codice restano a spaziatura fissa); il riquadrino col tipo del file scritto a 7,5 px diventa un quadratino colorato. Nomi modificati in ambra con «M», nuovi in verde con «A».</li></ul>`,
+    im: `<p><b>La scheda IM, con un solo «Salva» per modulo.</b> Prova: cambia un campo di «Calendario e prezzo» o clicca un prezzo nella tabella.</p><ul>
+      <li><b>In alto quattro numeri</b>: da fatturare, in attesa (rosso se c'è una scaduta), incassato nell'anno, prossimo IM.</li>
+      <li><b>Calendario e prezzo in un solo modulo</b> (oggi tre riquadri con «Salva nel file», «Salva la fine», «Salva il prezzo»). La barra con «Annulla» e «Salva» compare solo quando cambi qualcosa e dice cosa cambia. Esempio: porti il prezzo a 500 € e l'ora alle 11:00, la barra dice «2 modifiche: ora 10:00 → 11:00, prezzo 450 € → 500 €» e un solo Salva scrive il file e il prezzo.</li>
+      <li><b>Prezzo del singolo IM nella cella</b>: clic sull'importo, scrivi, Invio. La riga si colora e la barra della tabella raccoglie i cambi; «usa 450 €» torna al prezzo del progetto. «Non si fattura» passa nel menu ⋯ della riga. Gli IM già in fattura hanno il lucchetto.</li>
+      <li><b>Fatture come tabella</b>, con imponibile, totale documento, scadenza e stato a pillola; «Totale e scadenza», «Togli un IM» e «Annulla fattura» nel menu ⋯. L'avviso della scaduta sta in cima con l'azione.</li>
+      <li>«+ Fattura con 2 IM» apre il modulo di registrazione sotto il titolo, come oggi.</li></ul>`,
+    regole: `<p><b>Regole come elenco, non come testo grezzo.</b></p><ul>
+      <li>Oggi la scheda mostra il testo in carattere fisso e sotto, di nuovo, ogni regola con una select «Entrambi / Solo Claude Code / Solo Codex». Qui le regole sono un elenco nel carattere normale con il selettore a pillola accanto; «Modifica come testo» apre il testo grezzo (in carattere fisso) per chi lo preferisce.</li>
+      <li>«Modello comune / Regole proprie» come interruttore a due posizioni invece dei due pulsanti radio.</li>
+      <li>Le cinque note piccole in fondo diventano due righe; «Esporta in CLAUDE.md e AGENTS.md…» va in alto a destra e apre l'anteprima in una finestra.</li>
+      <li>Barra di salvataggio in basso solo con modifiche, che dice cosa cambia. Esempio: passi «Non toccare public/» a «Solo Codex» e la barra lo scrive.</li></ul>`,
+    conoscenza: `<p><b>Conoscenza a card.</b></p><ul>
+      <li>A sinistra le cartelle di gestione con nome nel carattere normale, quante note hanno e l'etichetta da scegliere; a destra le note raggruppate per cartella, ognuna una card con titolo, prime righe, etichetta e data.</li>
+      <li>Nuova ricerca fra le note e «+ Nota» al posto di «+ Conoscenza». Esempio: cerchi «Rossi» e trovi la riunione di avvio.</li>
+      <li>Il resto (finestra che chiede conferma quando l'etichetta di una cartella scende, nota aperta sopra l'elenco) resta com'è.</li></ul>`,
+    vuoti: `<p><b>Errori e stati vuoti che dicono cosa fare.</b></p><ul>
+      <li>Ogni messaggio dice cosa è successo, cosa fare e, dove ha senso, ha un pulsante: «Riprova», «Aggiungi un progetto», «Correggi qui», «Server locali».</li>
+      <li>Gli errori sono avvisi rossi con bordo come in Finanze e Clienti, gli avvisi ambra, le informazioni blu; mai più un testo rosso da solo.</li>
+      <li>Sotto alcuni esempi, in grigio, come appare oggi.</li></ul>`
+  };
+  const priv = {
+    file: '🔒 Sola lettura: niente checkout né commit da qui',
+    im: '🔒 Prezzi e fatture restano su questo computer',
+    regole: '↗ Vanno a Claude e Codex come Interno',
+    conoscenza: '🔒 Solo su questo computer: il Coder non vede queste cartelle'
+  };
+  const root = document.documentElement;
+  function setV(v) {
+    document.querySelectorAll('#vseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.getElementById('project').classList.toggle('on', v !== 'vuoti');
+    document.getElementById('vuoti').classList.toggle('on', v === 'vuoti');
+    ['file', 'im', 'regole', 'conoscenza'].forEach(k => { document.getElementById('v-' + k).style.display = k === v ? '' : 'none'; });
+    document.querySelectorAll('.tabs button').forEach((b, i) => b.classList.toggle('on', b.dataset.tab === v && (v !== 'file' || i === 0)));
+    if (priv[v]) document.getElementById('priv').textContent = priv[v];
+    document.getElementById('note').innerHTML = notes[v];
+  }
+  function setT(t) { root.dataset.theme = t; document.querySelectorAll('#tseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t)); }
+  document.getElementById('vseg').onclick = e => e.target.dataset.v && setV(e.target.dataset.v);
+  document.getElementById('tseg').onclick = e => e.target.dataset.t && setT(e.target.dataset.t);
+  document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => setV(b.dataset.go));
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setV(b.dataset.tab));
+
+  // Calendar and price: one save bar, only with changes.
+  const names = { giorno: 'giorno', ora: 'ora', ogni: 'ogni quante settimane', fine: 'fine degli IM', prezzo: 'prezzo', valuta: 'valuta' };
+  const fields = [...document.querySelectorAll('#settings [data-k]')];
+  const start = new Map(fields.map(f => [f, f.value]));
+  function showLabel(f, v) { return f.dataset.k === 'prezzo' ? v + ' €' : (v === '' ? 'nessuna' : v); }
+  function refreshSettings() {
+    const changed = fields.filter(f => f.value !== start.get(f));
+    fields.forEach(f => f.classList.toggle('changed', changed.includes(f)));
+    document.getElementById('sbar').classList.toggle('on', changed.length > 0);
+    document.getElementById('swhat').textContent = changed.length === 0 ? '' :
+      (changed.length === 1 ? '1 modifica: ' : changed.length + ' modifiche: ') +
+      changed.map(f => names[f.dataset.k] + ' ' + showLabel(f, start.get(f)) + ' → ' + showLabel(f, f.value)).join(', ') +
+      (changed.some(f => f.dataset.k === 'prezzo') ? '. Il prezzo nuovo vale da IM-34 in poi.' : '.');
+  }
+  fields.forEach(f => f.addEventListener('input', refreshSettings));
+  document.getElementById('sundo').onclick = () => { fields.forEach(f => { f.value = start.get(f); }); refreshSettings(); };
+
+  // The price of one IM, edited in its cell; the table's bar collects the changes.
+  const edits = new Map();
+  function refreshTable() {
+    const bar = document.getElementById('tbar');
+    bar.classList.toggle('on', edits.size > 0);
+    document.getElementById('twhat').textContent = edits.size === 0 ? '' :
+      (edits.size === 1 ? '1 prezzo cambiato: ' : edits.size + ' prezzi cambiati: ') +
+      [...edits.entries()].map(([im, v]) => im + ' ' + v.from + ' € → ' + v.to + ' €').join(', ') + '.';
+  }
+  document.querySelectorAll('#imtable .amt[data-base]').forEach(amt => {
+    amt.title = 'Clic per cambiare il prezzo di questo IM';
+    amt.onclick = () => {
+      if (amt.querySelector('input')) return;
+      const row = amt.closest('tr'), im = row.querySelector('.imcell b').textContent;
+      const current = amt.textContent.replace(' €', '');
+      amt.innerHTML = '<input class="field num" inputmode="decimal" value="' + current + '">';
+      const input = amt.querySelector('input'); input.focus(); input.select();
+      const done = keep => {
+        const v = keep ? input.value.trim() : current;
+        amt.textContent = v + ' €';
+        if (v !== amt.dataset.base) { edits.set(im, { from: amt.dataset.base, to: v }); row.classList.add('changed'); }
+        else { edits.delete(im); row.classList.remove('changed'); }
+        refreshTable();
+      };
+      input.onkeydown = e => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+      input.onblur = () => done(true);
+    };
+  });
+  document.getElementById('tundo').onclick = () => {
+    document.querySelectorAll('#imtable .amt[data-base]').forEach(a => { a.textContent = a.dataset.base + ' €'; a.closest('tr').classList.remove('changed'); });
+    edits.clear(); refreshTable();
+  };
+  document.getElementById('invbtn').onclick = () => document.getElementById('invform').classList.toggle('on');
+  document.getElementById('invx').onclick = () => document.getElementById('invform').classList.remove('on');
+
+  setV('file'); setT('light');
+</script>
+</body>
+</html>
