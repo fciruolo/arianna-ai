@@ -62,7 +62,7 @@ export interface ExampleSource {
 
 export interface StyleExamples {
   status(): ExamplesStatus;
-  /** Queues one style (again only if its DESIGN.md changed, or with `force`). */
+  /** Queues one style, unless its example is current (same DESIGN.md, same model). */
   generate(slug: unknown): ExamplesStatus;
   /** Queues every style without a current example. */
   generateMissing(): ExamplesStatus;
@@ -223,7 +223,9 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
   return {
     status,
     generate(raw) {
-      enqueue([known(raw)]);
+      const slug = known(raw);
+      // An example already made by the same model from the same DESIGN.md is never made again.
+      if (!isCurrent(slug)) enqueue([slug]);
       return status();
     },
     generateMissing() {

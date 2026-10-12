@@ -672,3 +672,18 @@ export function exampleState(status: ExamplesStatus | null, slug: string): 'read
   if (example === undefined) return 'none';
   return example.current ? 'ready' : 'old';
 }
+
+/**
+ * What an example by Opus costs, as measured on 2026-10-12 with the quota bar
+ * of the user (D-185): about one point of the 5-hour session each, a little
+ * less. Said in the window so that «Genera i mancanti» is a choice.
+ */
+export const EXAMPLE_SESSION_PERCENT = 1;
+
+/** The cost of making `count` examples, in words. */
+export function examplesCost(count: number): string {
+  const points = Math.max(0, Math.round(count * EXAMPLE_SESSION_PERCENT));
+  if (points <= 100) return `circa il ${String(points)}% della sessione di 5 ore`;
+  const sessions = (points / 100).toFixed(1).replace('.', ',');
+  return `circa ${String(points)} punti di sessione (${sessions} sessioni di 5 ore), che pesano anche sulla settimana`;
+}

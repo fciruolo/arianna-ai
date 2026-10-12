@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DESIGNER_CARRY_AGAIN, DESIGNER_CARRY_AT, exampleState, fontStack, loadCarryDeclined, proposeDesignerCarry, restoredPath, saveCarryDeclined, variantDesignText } from '../src/lib/studio.ts';
+import { DESIGNER_CARRY_AGAIN, DESIGNER_CARRY_AT, examplesCost, exampleState, fontStack, loadCarryDeclined, proposeDesignerCarry, restoredPath, saveCarryDeclined, variantDesignText } from '../src/lib/studio.ts';
 
 test('a font stack quotes the names and keeps the generic family bare', () => {
   assert.equal(fontStack(['Lumen Display', 'Helvetica Neue', 'sans-serif']), '"Lumen Display", "Helvetica Neue", sans-serif');
@@ -70,4 +70,11 @@ test('what a style card says of its example', () => {
   assert.equal(exampleState(status, 'delta'), 'running');
   assert.equal(exampleState(status, 'epsilon'), 'none');
   assert.equal(exampleState(null, 'alfa'), 'none');
+});
+
+test('the cost of the examples in words: within a session, or more sessions', () => {
+  assert.equal(examplesCost(1), 'circa il 1% della sessione di 5 ore');
+  assert.equal(examplesCost(40), 'circa il 40% della sessione di 5 ore');
+  assert.equal(examplesCost(152), 'circa 152 punti di sessione (1,5 sessioni di 5 ore), che pesano anche sulla settimana');
+  assert.equal(examplesCost(0), 'circa il 0% della sessione di 5 ore');
 });

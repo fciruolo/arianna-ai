@@ -72,6 +72,9 @@ test('examples are made once per DESIGN.md: the missing ones only, again when it
   assert.match(examples.read('alfa', 'landing'), /Ciao/);
   assert.match(examples.read('alfa', 'deck'), /data-slide/);
   assert.equal(examples.status().examples.alfa?.current, true);
+  examples.generate('alfa');
+  await examples.idle();
+  assert.equal(asked.length, 1, 'asked again for a current example: nothing made');
   examples.generateMissing();
   await examples.idle();
   assert.equal(asked.length, 2, 'only beta was missing');

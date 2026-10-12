@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { generateStyleExamples, loadDesignStyle, loadSkill, loadStyleExamples, readStyleExample, skillTranslations } from '../lib/api.ts';
 import type { StyleSummary } from '../lib/design-catalog.ts';
 import type { SkillSummary } from '../lib/skills-catalog.ts';
-import { exampleState, STUDIO_SKILLS_MAX, studioErrorText, type ExamplesStatus, type StudioDesign, type StyleSample, type TranslationsStatus } from '../lib/studio.ts';
+import { examplesCost, exampleState, STUDIO_SKILLS_MAX, studioErrorText, type ExamplesStatus, type StudioDesign, type StyleSample, type TranslationsStatus } from '../lib/studio.ts';
 import Icon from './Icon.vue';
 import StudioFrame from './StudioFrame.vue';
 import StyleMiniPage from './StyleMiniPage.vue';
@@ -146,15 +146,16 @@ onBeforeUnmount(() => {
           <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
             <p class="min-w-0 flex-1">
               Ogni stile ha una pagina di prova coi suoi colori e caratteri; con «Genera esempio» Claude Opus scrive per quello stile una landing e una presentazione vere, che restano salvate e non si rifanno finché lo stile non cambia.
+              Ogni esempio costa {{ examplesCost(1) }} (misurato, poco meno di così) e dura un paio di minuti.
             </p>
             <button
               v-if="missingExamples > 0"
               type="button"
               class="btn shrink-0 px-2.5 py-1 text-xs"
               :disabled="examplesBusy"
-              title="Claude Opus scrive gli esempi mancanti uno dopo l'altro, in background; consuma quota di Claude"
+              :title="`Claude Opus scrive gli esempi mancanti uno dopo l'altro, in background: ${examplesCost(missingExamples)}`"
               @click="generate()"
-            >Genera i mancanti ({{ missingExamples }})</button>
+            >Genera i mancanti ({{ missingExamples }} · {{ examplesCost(missingExamples) }})</button>
           </div>
           <p v-if="examples?.running" class="mb-2 text-xs text-muted" role="status">
             Opus scrive l'esempio di {{ styles.find((entry) => entry.slug === examples?.running)?.name ?? examples.running }}<template v-if="examples.queue.length > 0">, poi altri {{ examples.queue.length }}</template>…
