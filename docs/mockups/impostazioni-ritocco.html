@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impostazioni, ritocco</title>
+<!--
+  Anteprima della revisione della pagina Impostazioni (richiesta dell'utente
+  del 2026-10-12: «rifai anche la pagina impostazioni per bene rivedi OGNI
+  menu»). Stessi token della chat dopo D-188, griglia a sei colonne
+  dell'Anagrafica dei Clienti (D-190), un solo «Salva» per sezione come i
+  budget delle Finanze (D-189). File autonomo, niente rete; font letti da
+  node_modules di apps/hud con percorsi relativi. Dati inventati.
+-->
+<style>
+  @font-face { font-family: Figtree; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 500; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/figtree/files/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("../../apps/hud/node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../apps/hud/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #f5f4f0; --surface: #fbfaf7; --surface-2: #ffffff; --line: #e3e4df; --line-strong: #cfd5d0;
+    --ink: #24302e; --muted: #56635f; --accent: #23887c; --accent-ink: #fff; --ok: #4e9466; --warn: #b9801c; --danger: #c24a35; --info: #3f6fa8;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1316; --surface: #0e1b1f; --surface-2: #132429; --line: #1e363c; --line-strong: #2b4c53;
+    --ink: #dcebe8; --muted: #93aeaa; --accent: #4fd1c1; --accent-ink: #062a26; --ok: #7cc796; --warn: #f2b34b; --danger: #e2614b; --info: #7fb4f0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Figtree, -apple-system, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .bar { position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #1b2422; color: #e8efed; font: 13px/1.4 -apple-system, system-ui, sans-serif; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid #3a4744; border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 5px 9px; cursor: pointer; color: #c9d4d1; }
+  .seg button[aria-pressed="true"] { background: #2f8f83; color: #fff; }
+  .note { padding: 12px 16px 0; max-width: 1100px; font-size: 14px; }
+  .note p { margin: 0 0 6px; } .note ul { margin: 0; padding-left: 20px; }
+
+  /* shell: index + one width for every section */
+  .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); max-width: 1400px; margin: 12px auto 0; border-top: 1px solid var(--line); }
+  nav.index { padding: 16px 10px; border-right: 1px solid var(--line); min-height: 80vh; }
+  nav.index .g { margin: 16px 10px 4px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  nav.index .g:first-child { margin-top: 0; }
+  nav.index a { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14.5px; cursor: pointer; }
+  nav.index a:hover { background: var(--surface-2); color: var(--ink); }
+  nav.index a.on { background: var(--surface-2); color: var(--ink); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+  nav.index a span.t { flex: 1; }
+  nav.index .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  nav.index .badge { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; text-align: center; line-height: 20px; }
+  nav.index .ver { margin: 20px 10px 0; font-size: 13px; color: var(--muted); }
+  .lock { width: 14px; height: 14px; color: var(--warn); flex: none; }
+  main { min-width: 0; padding: 20px 24px 120px; }
+  .content { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  .view { display: none; flex-direction: column; gap: 14px; }
+  .view.on { display: flex; }
+  .sh { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .sh h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line-strong); color: var(--muted); }
+  .pill.now { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+  .pill.conf { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+  .lead { margin: 0; max-width: 78ch; color: var(--muted); }
+  .lead b { color: var(--ink); font-weight: 600; }
+  .ex { display: block; margin-top: 4px; font-size: 14px; }
+  .ex::before { content: "Esempio: "; font-weight: 600; color: var(--ink); }
+
+  .card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 16px; min-width: 0; }
+  .card > h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .card > h2 .r { margin-left: auto; font-size: 14px; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .card > p.d { margin: 0 0 12px; font-size: 14px; color: var(--muted); max-width: 80ch; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.w { background: var(--warn); color: #1d1405; border-color: var(--warn); font-weight: 600; }
+  .btn.dz { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+  .btn.sm { padding: 3px 9px; font-size: 13px; }
+  .btn:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .field { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); width: 100%; min-width: 0; outline: none; }
+  textarea.field { resize: vertical; line-height: 1.5; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 13px; white-space: nowrap; }
+  .chip.ok { color: var(--ok); border-color: currentColor; } .chip.wa { color: var(--warn); border-color: currentColor; } .chip.ac { color: var(--accent); border-color: currentColor; } .chip.in { color: var(--info); border-color: currentColor; } .chip.dg { color: var(--danger); border-color: currentColor; }
+  .chip button { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 0 0 2px; }
+
+  /* six-column grid as in the Anagrafica of Clienti (D-190) */
+  .fgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 14px; }
+  .f { display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; color: var(--muted); }
+  .f > span.l { color: var(--ink); font-weight: 500; font-size: 14px; }
+  .f .hint { font-size: 12.5px; }
+  .s1 { grid-column: span 1; } .s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; }
+  .unit { display: flex; align-items: center; gap: 6px; } .unit .field { flex: 1; } .unit span { font-size: 13px; color: var(--muted); }
+  .sw { display: flex; align-items: center; gap: 10px; font-size: 14.5px; cursor: pointer; }
+  .sw input { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line-strong); position: relative; cursor: pointer; flex: none; margin: 0; transition: background .15s; }
+  .sw input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .sw input:checked { background: var(--accent); } .sw input:checked::after { left: 16px; }
+  .sw input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sw small { display: block; font-size: 13px; color: var(--muted); }
+  .rows { display: flex; flex-direction: column; }
+  .rows > .r { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .rows > .r:first-child { border-top: 0; padding-top: 0; }
+  details.adv { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+  details.adv summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+  details.adv[open] summary { margin-bottom: 12px; }
+  .info { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid color-mix(in srgb, var(--info) 45%, transparent); background: color-mix(in srgb, var(--info) 8%, transparent); }
+  .warnbox { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .errbox { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); background: color-mix(in srgb, var(--danger) 9%, transparent); }
+  .errbox .grow, .warnbox .grow { flex: 1; min-width: 220px; }
+  .empty { padding: 14px; border: 1px dashed var(--line-strong); border-radius: 10px; font-size: 14px; color: var(--muted); }
+  .empty b { color: var(--ink); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; }
+  .tabs span { padding: 8px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; }
+  .tabs span.on { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stat .v { font-size: 22px; font-weight: 600; line-height: 1.25; }
+  .stat .k { font-size: 13.5px; color: var(--muted); }
+  .track { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; margin: 6px 0 4px; border: 1px solid var(--line); }
+  .track i { display: block; height: 100%; background: var(--accent); }
+  .pair { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .list { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow: hidden; }
+  .list .it { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+  .list .it:first-child { border-top: 0; }
+  .list .it.on { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+  .list .it .n { font-weight: 600; font-size: 14.5px; }
+  .list .it .s { font-size: 13px; color: var(--muted); }
+  .av { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 600; font-size: 12px; color: #fff; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 12px 0; }
+  .facts div { background: var(--surface); padding: 8px 12px; font-size: 14.5px; }
+  .facts div span { display: block; font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line-strong); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pills label { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 14px; cursor: pointer; }
+  .pills label:has(input:checked) { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .pills input { margin: 0; accent-color: var(--accent); }
+  .agents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ag { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 2px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); cursor: pointer; }
+  .ag .av { grid-row: span 2; }
+  .ag b { font-size: 14.5px; } .ag span { font-size: 13px; color: var(--muted); }
+  .ag.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .ag.off { opacity: .6; }
+  .ag.add { display: grid; place-items: center; grid-template-columns: 1fr; border-style: dashed; color: var(--muted); font-weight: 600; min-height: 56px; background: none; }
+  .server { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+  .server .h { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .led { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  pre.log { margin: 8px 0 0; max-height: 160px; overflow: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: 12.5px/1.55 "JetBrains Mono", monospace; color: var(--muted); white-space: pre-wrap; }
+  .q { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+  .opt { display: block; width: 100%; text-align: left; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  .opt b { font-weight: 600; } .opt span { display: block; font-size: 13.5px; color: var(--muted); }
+  .opt.rec { border-color: var(--ok); }
+  .ver h2 .chip { font-weight: 400; }
+  .cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .cl li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 14.5px; }
+  .cl li .god { margin-left: auto; visibility: hidden; }
+  .cl li:hover .god, .cl li:focus-within .god { visibility: visible; }
+  .kind { font-size: 13px; font-weight: 600; margin: 12px 0 2px; }
+  .kind.a { color: var(--ok); } .kind.c { color: var(--info); } .kind.x { color: var(--warn); }
+  .seg2 { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+  .seg2 button { border: 0; background: none; padding: 5px 12px; cursor: pointer; color: var(--muted); font-size: 14px; }
+  .seg2 button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .prog { display: flex; height: 12px; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+  .lab { display: grid; grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 2fr); gap: 0; font-size: 14px; }
+  .lab > div { padding: 7px 8px; border-top: 1px solid var(--line); }
+  .lab > div.h { border-top: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+  /* the one save bar */
+  .savebar { position: sticky; bottom: 12px; z-index: 4; display: none; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); font-size: 14px; box-shadow: 0 10px 30px #0003; max-width: 1120px; margin: 0 auto; }
+  .savebar.on { display: flex; }
+  .savebar.conf { border-color: var(--warn); }
+  .savebar .sp { flex: 1; }
+  dialog { border: 1px solid var(--warn); border-radius: 14px; background: var(--surface-2); color: var(--ink); padding: 0; max-width: 580px; width: calc(100% - 32px); }
+  dialog::backdrop { background: #0008; }
+  dialog header { padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 16px; display: flex; gap: 8px; align-items: center; }
+  dialog .b { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; font-size: 14.5px; }
+  dialog .b h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+  dialog .b ul { margin: 0; padding-left: 20px; }
+  dialog .out { border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent); border-radius: 10px; padding: 10px 12px; }
+  dialog .never { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  dialog footer { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    nav.index { border-right: 0; border-bottom: 1px solid var(--line); min-height: 0; display: flex; overflow-x: auto; gap: 4px; padding: 8px 16px; }
+    nav.index .g, nav.index .ver { display: none; }
+    nav.index a { white-space: nowrap; }
+    main { padding: 16px 16px 120px; }
+    .fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .s3, .s4, .s6 { grid-column: span 2; }
+    .pair, .stats { grid-template-columns: 1fr; }
+    .facts { grid-template-columns: 1fr 1fr; }
+    .lab { grid-template-columns: 1fr 100px; } .lab > div:nth-child(3n) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Impostazioni, ritocco</b>
+  <span>Vista</span>
+  <span class="seg" id="vseg">
+    <button type="button" data-v="modelli" aria-pressed="true">Modelli</button>
+    <button type="button" data-v="agenti">Agenti</button>
+    <button type="button" data-v="skill">Skill e stili</button>
+    <button type="button" data-v="voce">Voce</button>
+    <button type="button" data-v="notifiche">Notifiche</button>
+    <button type="button" data-v="segretaria">Segretaria</button>
+    <button type="button" data-v="progetti">Progetti</button>
+    <button type="button" data-v="regole">Regole</button>
+    <button type="button" data-v="cloud">Cloud e privacy</button>
+    <button type="button" data-v="siti">Link</button>
+    <button type="button" data-v="server">Server</button>
+    <button type="button" data-v="sistema">Sistema</button>
+    <button type="button" data-v="novita">Novità</button>
+    <button type="button" data-v="sviluppo">Sviluppo</button>
+  </span>
+  <span>Tema</span>
+  <span class="seg" id="tseg"><button type="button" data-t="light" aria-pressed="true">Chiaro</button><button type="button" data-t="dark">Scuro</button></span>
+</div>
+<div class="note" id="note"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="lk" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+</svg>
+
+<div class="shell">
+  <nav class="index" id="index" aria-label="Indice delle impostazioni">
+    <div class="g">Intelligenza</div>
+    <a href="#" data-v="modelli"><span class="t">Modelli</span></a>
+    <a href="#" data-v="agenti"><span class="t">Agenti</span><span class="dot" title="Modifiche non salvate"></span></a>
+    <a href="#" data-v="skill"><span class="t">Skill e stili</span></a>
+    <div class="g">Comunicazione</div>
+    <a href="#" data-v="voce"><span class="t">Voce e chiamate</span></a>
+    <a href="#" data-v="notifiche"><span class="t">Notifiche</span></a>
+    <a href="#" data-v="segretaria"><span class="t">Segretaria</span></a>
+    <div class="g">Lavoro</div>
+    <a href="#" data-v="progetti"><span class="t">Progetti</span><svg class="lock"><use href="#lk"/></svg></a>
+    <a href="#" data-v="regole"><span class="t">Regole dei progetti</span></a>
+    <div class="g">Privacy e uscite</div>
+    <a href="#" data-v="cloud"><span class="t">Claude e Codex</span><svg class="lock"><use href="#lk"/></svg></a>
+    <a href="#" data-v="siti"><span class="t">Link da riassumere</span><svg class="lock"><use href="#lk"/></svg></a>
+    <div class="g">Sistema</div>
+    <a href="#" data-v="server"><span class="t">Server dei modelli</span><svg class="lock"><use href="#lk"/></svg></a>
+    <a href="#" data-v="sistema"><span class="t">Aspetto e installazione</span></a>
+    <div class="g">Informazioni</div>
+    <a href="#" data-v="novita"><span class="t">Novità</span></a>
+    <a href="#" data-v="sviluppo"><span class="t">Sviluppo di Arianna</span><span class="badge" title="3 domande senza risposta">3</span></a>
+    <p class="ver">Arianna 0.83.0 · installazione di sviluppo</p>
+  </nav>
+
+  <main>
+    <div class="content">
+
+      <!-- MODELLI -->
+      <section class="view" id="modelli" data-kind="now">
+        <div class="sh"><h1>Modelli</h1><span class="pill now">Vale subito</span></div>
+        <p class="lead">Quali modelli usa Arianna e per fare cosa. Quelli <b>sul Mac</b> sono gratis e vedono tutto; quelli <b>cloud</b> (Claude, Codex) consumano l'abbonamento e ricevono solo dati di lavoro.
+          <span class="ex">scegli Qwen3 30B per «Ragiona e risponde»: da domani Arianna risponde in chat con quello, senza uscire dal Mac.</span></p>
+
+        <div class="stats">
+          <div class="card stat"><div class="k">Memoria del Mac per i modelli</div><div class="v num">22 di 32 GB</div><div class="track"><i style="width:46%"></i></div><div class="k">Qwen3 30B e Nomic Embed caricati</div></div>
+          <div class="card stat"><div class="k">Modelli sul Mac</div><div class="v">6 di 7 scaricati</div><div class="k">Manca Whisper Large: si scarica dalla sua scheda</div></div>
+          <div class="card stat"><div class="k">Modelli cloud</div><div class="v">3 di 4 accesi</div><div class="k">Codex è spento in <a href="#" data-go="cloud" style="color:var(--accent)">Claude e Codex</a></div></div>
+        </div>
+
+        <div class="errbox"><span class="grow">Non riesco a sapere quali modelli sono in memoria: il server dei modelli non risponde.</span><button type="button" class="btn sm">Riprova</button><button type="button" class="btn sm" data-go="server">Apri Server dei modelli</button></div>
+
+        <div class="card">
+          <h2>Chi fa cosa</h2>
+          <p class="d">Un compito ha un solo modello. Cambiarlo qui lo toglie a quello di prima.</p>
+          <div class="fgrid">
+            <label class="f s3"><span class="l">Ragiona e risponde in chat</span><select class="field"><option>Qwen3 30B A3B · 4 bit</option><option>Gemma 3 27B · 4 bit</option></select><span class="hint">È la mente di Arianna. Solo modelli sul Mac.</span></label>
+            <label class="f s3"><span class="l">Legge i documenti</span><select class="field"><option>Qwen3 8B · 4 bit</option></select><span class="hint">Tira fuori date, importi e nomi da fatture e note.</span></label>
+            <label class="f s3"><span class="l">Cerca nell'archivio</span><select class="field"><option>Nomic Embed v2</option></select><span class="hint">Trova le note simili a quello che chiedi.</span></label>
+            <label class="f s3"><span class="l">Risponde al telefono</span><select class="field"><option>Qwen3 8B · 4 bit</option></select><span class="hint">Più piccolo e veloce, per le chiamate.</span></label>
+            <label class="f s3"><span class="l">Capisce quello che dici</span><select class="field"><option>Whisper Large v3 Turbo (da scaricare)</option></select><span class="hint">Trasforma la tua voce in testo.</span></label>
+            <label class="f s3"><span class="l">Parla con la sua voce</span><select class="field"><option>Kokoro 82M</option></select><span class="hint">Trasforma le risposte in voce.</span></label>
+            <label class="f s3"><span class="l">Disegna i personaggi</span><select class="field"><option>Claude Opus (consigliato)</option><option>Claude Sonnet</option><option>Il modello sul Mac</option></select><span class="hint">Con Claude escono nome e descrizione dell'agente, non i tuoi dati.</span></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Tutti i modelli <span class="r"><span class="seg2"><button type="button" aria-pressed="true">Tutti</button><button type="button">Sul Mac</button><button type="button">Cloud</button></span><input class="field" style="width:200px" placeholder="Cerca un modello"></span></h2>
+          <div class="pair" style="margin-top:12px">
+            <div class="list">
+              <div class="it on"><span class="av" style="background:#23887c">Q</span><div><div class="n">Qwen3 30B A3B · 4 bit</div><div class="s">Sul Mac · in memoria · ragiona e risponde</div></div><span class="chip ok">ok</span></div>
+              <div class="it"><span class="av" style="background:#3f6fa8">Q</span><div><div class="n">Qwen3 8B · 4 bit</div><div class="s">Sul Mac · legge i documenti, telefono</div></div><span></span></div>
+              <div class="it"><span class="av" style="background:#8a8f8c">W</span><div><div class="n">Whisper Large v3 Turbo</div><div class="s">Da scaricare · 1,6 GB</div></div><span class="chip wa">manca</span></div>
+              <div class="it"><span class="av" style="background:#b0204d">C</span><div><div class="n">Claude Opus</div><div class="s">Cloud · abbonamento Claude</div></div><label class="sw" title="Acceso"><input type="checkbox" checked aria-label="Claude Opus acceso"></label></div>
+              <div class="it"><span class="av" style="background:#b0204d">C</span><div><div class="n">Claude Sonnet</div><div class="s">Cloud · abbonamento Claude</div></div><label class="sw"><input type="checkbox" checked aria-label="Claude Sonnet acceso"></label></div>
+              <div class="it"><span class="av" style="background:#555">X</span><div><div class="n">GPT-5 Codex</div><div class="s">Cloud · Codex è spento</div></div><label class="sw"><input type="checkbox" aria-label="GPT-5 Codex acceso"></label></div>
+            </div>
+            <div>
+              <div style="display:flex;gap:12px;align-items:center"><span class="av" style="background:#23887c;width:44px;height:44px">Q</span><div><div style="font-size:18px;font-weight:600">Qwen3 30B A3B · 4 bit</div><div class="small muted">Alibaba · sul Mac · <span class="mono">qwen3-30b-a3b-4bit</span></div></div></div>
+              <div class="facts">
+                <div><span>Spazio su disco</span>17,2 GB</div>
+                <div><span>Memoria che occupa</span>circa 20 GB</div>
+                <div><span>Quanto testo ricorda</span>circa 100 pagine</div>
+                <div><span>Affidabilità</span>provato e consigliato</div>
+                <div><span>Licenza</span>Apache 2.0, uso libero</div>
+                <div><span>Costo</span>nessuno, gira sul Mac</div>
+              </div>
+              <div class="acts"><button type="button" class="btn p">Prova in chat</button><button type="button" class="btn">Togli dalla memoria</button><button type="button" class="btn dz">Elimina i file…</button></div>
+              <p class="small muted" style="margin:6px 0 12px">«Prova in chat» apre una conversazione in incognito dove risponde solo questo modello.</p>
+              <h3 style="margin:10px 0 4px;font-size:15px;font-weight:600">Prove</h3>
+              <p class="small muted" style="margin:0 0 8px">Una prova fa rispondere il modello a 40 domande finte e conta quante ne azzecca. Non cambia il modello in uso.</p>
+              <table><thead><tr><th>Data</th><th>Esito</th><th>Risposte giuste</th><th>Tempo medio</th></tr></thead>
+                <tbody><tr><td>10/10/2026</td><td style="color:var(--ok)">Superata</td><td class="num">37 su 40</td><td class="num">1,8 s</td></tr><tr><td>02/10/2026</td><td style="color:var(--danger)">Non superata</td><td class="num">29 su 40</td><td class="num">2,4 s</td></tr></tbody></table>
+              <p class="acts" style="margin-top:10px"><button type="button" class="btn">Nuova prova</button></p>
+            </div>
+          </div>
+        </div>
+        <details class="card"><summary style="cursor:pointer;font-weight:600">Cerca nuovi modelli su Hugging Face</summary><p class="small muted">Esce solo quello che scrivi nel campo di ricerca, verso huggingface.co. Un modello aggiunto entra in prova, senza compiti.</p><div class="fgrid"><input class="field s4" placeholder="Per esempio: qwen3 4bit"><button type="button" class="btn p s1">Cerca</button></div></details>
+      </section>
+
+      <!-- AGENTI -->
+      <section class="view" id="agenti" data-kind="now">
+        <div class="sh"><h1>Agenti</h1><span class="pill now">Vale subito</span><span style="margin-left:auto"><button type="button" class="btn p">+ Nuovo agente</button></span></div>
+        <p class="lead">Chi lavora con Arianna: come si chiama, come parla, che aspetto ha, con quale modello lavora e cosa può fare.
+          <span class="ex">dai al Coder un tono «diretto» e dagli del «tu»: da ora le sue risposte in chat sono più asciutte.</span></p>
+        <div class="pair">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input class="field" placeholder="Cerca un agente">
+            <div class="small" style="font-weight:600">Ufficiali</div>
+            <div class="agents">
+              <div class="ag"><span class="av" style="background:#23887c">A</span><b>Arianna</b><span>sul Mac</span></div>
+              <div class="ag on"><span class="av" style="background:#3f6fa8">C</span><b>Coder</b><span>con Claude</span></div>
+              <div class="ag"><span class="av" style="background:#b9801c">F</span><b>Finanze</b><span>sul Mac</span></div>
+              <div class="ag"><span class="av" style="background:#b0204d">D</span><b>Designer</b><span>con Claude</span></div>
+            </div>
+            <div class="small" style="font-weight:600">I miei</div>
+            <div class="agents">
+              <div class="ag off"><span class="av" style="background:#8a8f8c">R</span><b>Revisore</b><span>spento · con Claude</span></div>
+              <div class="ag add">+ Nuovo agente</div>
+            </div>
+            <div class="card" style="padding:12px">
+              <div style="font-weight:600;font-size:14.5px;margin-bottom:6px">Per tutti gli agenti</div>
+              <label class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">Esce da una conversazione dopo <input class="field" type="number" value="6" style="width:64px"> tuoi messaggi senza lavoro per lui</label>
+              <p class="small muted" style="margin:6px 0 0">0 = resta sempre. Il Coder non esce da solo.</p>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="card" style="display:flex;gap:16px;align-items:center">
+              <span class="av" style="background:#3f6fa8;width:96px;height:110px;border-radius:12px;font-size:28px">C</span>
+              <div style="flex:1;min-width:0">
+                <div class="acts"><span class="chip">Ufficiale</span><span class="chip in">Lavora con Claude (cloud)</span><span class="chip">Vede: dati di lavoro</span><span class="chip">Può: modificare file in una copia protetta</span><label class="sw" style="margin-left:auto">Attivo <input type="checkbox" checked disabled></label></div>
+                <div style="font-size:22px;font-weight:600;margin-top:6px">Coder</div>
+                <p class="muted" style="margin:2px 0 8px">Scrive e corregge codice nei progetti, poi ti lascia le modifiche da rivedere.</p>
+                <div class="acts"><button type="button" class="btn sm">Apri una chat</button></div>
+              </div>
+            </div>
+            <div>
+              <div class="tabs"><span class="on">Personalità</span><span>Aspetto</span><span>Modello</span><span>Skill · 2</span><span>Permessi</span></div>
+              <div class="card">
+                <div class="fgrid">
+                  <div class="f s6"><span class="l">Tono</span><div class="pills"><label><input type="radio" name="tono"> Cordiale</label><label><input type="radio" name="tono" checked> Diretto</label><label><input type="radio" name="tono"> Formale</label><label><input type="radio" name="tono"> Ironico</label></div><span class="hint">Così risponde: «Fatto. Ho cambiato due file, i test passano.»</span></div>
+                  <label class="f s1"><span class="l">Ti dà del</span><select class="field"><option>tu</option><option>lei</option></select></label>
+                  <label class="f s2"><span class="l">Nome in chat</span><input class="field" value="Coder"></label>
+                  <div class="s3"></div>
+                  <label class="f s6"><span class="l">Specializzazione</span><textarea class="field" rows="2">Sviluppatore senior TypeScript, attento ai test e alla leggibilità.</textarea><span class="hint">Si aggiunge al suo ruolo. 68 di 400 caratteri.</span></label>
+                  <label class="f s6"><span class="l">Come parla</span><textarea class="field" rows="2">Preciso e calmo, frasi brevi.</textarea></label>
+                </div>
+                <p class="small" style="margin:12px 0 0;color:var(--warn)">Questi testi possono arrivare a Claude: non scriverci nomi di clienti, importi o password.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SKILL E STILI -->
+      <section class="view" id="skill" data-kind="action">
+        <div class="sh"><h1>Skill e stili</h1><span class="pill">Cambia solo quando premi «Usa questa versione»</span></div>
+        <p class="lead">Testi pronti, scritti da altri, che gli agenti possono consultare: gli <b>stili</b> per il Designer e le <b>skill</b> (istruzioni per un lavoro preciso). Si scarica solo il testo; niente programmi.
+          <span class="ex">segui la raccolta «anthropics/skills», poi nella scheda Skill del Coder assegna «Revisione del codice».</span></p>
+        <div class="card">
+          <h2>Stili per il Designer <span class="r">da Open Design, testo di terzi</span></h2>
+          <p class="d">In uso la versione del 2 ottobre 2026: 142 stili e 31 skill.</p>
+          <div class="acts"><button type="button" class="btn">Cerca aggiornamenti</button><button type="button" class="btn">Sfoglia gli stili</button></div>
+          <div class="warnbox" style="margin-top:12px;border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)">
+            <div class="grow"><b>Versione nuova del 10 ottobre</b><br><span class="small">3 stili nuovi, 5 cambiati, nessuno tolto. Novità del programma: anteprima più veloce, nuovo stile «Editoriale caldo».</span></div>
+            <button type="button" class="btn">Scarta</button><button type="button" class="btn p">Usa questa versione</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Skill da GitHub</h2>
+          <p class="d">Segui una raccolta: le sue skill compaiono nella scheda Skill di ogni agente.</p>
+          <div class="rows">
+            <div class="r"><div style="flex:1"><b>anthropics/skills</b><div class="small muted">17 skill · licenza Apache 2.0 · aggiornata il 6 ottobre</div></div><button type="button" class="btn sm">Cerca aggiornamenti</button><button type="button" class="btn sm">Togli…</button></div>
+            <div class="r"><div style="flex:1"><b>esempio/skill-scrittura</b><div class="small muted">non ancora scaricata</div></div><button type="button" class="btn sm p">Scarica</button><button type="button" class="btn sm">Togli…</button></div>
+          </div>
+          <div class="errbox" style="margin-top:10px"><span class="grow">Non riesco a scaricare «esempio/skill-scrittura»: GitHub non risponde. Riprova fra qualche minuto.</span><button type="button" class="btn sm">Riprova</button></div>
+          <div class="fgrid" style="margin-top:12px"><input class="field s4" placeholder="Indirizzo di una raccolta, per esempio github.com/anthropics/skills"><button type="button" class="btn s1">Segui</button></div>
+        </div>
+      </section>
+
+      <!-- VOCE -->
+      <section class="view" id="voce" data-kind="now">
+        <div class="sh"><h1>Voce e chiamate</h1><span class="pill now">Vale subito</span><label class="sw" style="margin-left:auto">Chiamate accese <input type="checkbox" checked></label></div>
+        <p class="lead">Parlare con Arianna a voce dal browser o dal telefono, e quando può chiamarti lei. Tutto resta sul Mac.
+          <span class="ex">metti «Silenzio dalle 21:00 alle 08:00»: un promemoria delle 22 arriva come messaggio, senza squillo.</span></p>
+        <div class="card">
+          <h2>La sua voce</h2>
+          <div class="fgrid">
+            <label class="f s2"><span class="l">Voce di Arianna</span><select class="field"><option>Sara (italiano)</option><option>Marco (italiano)</option><option>La mia voce copiata</option></select></label>
+            <div class="f s4" style="justify-content:flex-end"><div class="acts"><button type="button" class="btn">Ascolta</button><button type="button" class="btn">Provino della voce ›</button></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Durante una chiamata</h2>
+          <div class="fgrid">
+            <label class="f s1"><span class="l">Durata massima</span><span class="unit"><input class="field" type="number" value="20"><span>min</span></span></label>
+            <label class="f s1"><span class="l">Avviso prima</span><span class="unit"><input class="field" type="number" value="60"><span>s</span></span></label>
+            <label class="f s2"><span class="l">Lavori che può passare agli agenti</span><span class="unit"><input class="field" type="number" value="3"><span>per chiamata</span></span></label>
+            <label class="f s2"><span class="l">Attesa massima di un lavoro</span><span class="unit"><input class="field" type="number" value="90"><span>s</span></span></label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Quando ti chiama Arianna</h2>
+          <div class="fgrid">
+            <label class="f s1"><span class="l">Al giorno</span><span class="unit"><input class="field" type="number" value="3"><span>max</span></span></label>
+            <label class="f s1"><span class="l">Silenzio dalle</span><input class="field" type="time" value="21:00"></label>
+            <label class="f s1"><span class="l">alle</span><input class="field" type="time" value="08:00"></label>
+            <label class="f s1"><span class="l">Squilla per</span><span class="unit"><input class="field" type="number" value="30"><span>s</span></span></label>
+            <label class="f s2"><span class="l">Ti chiama se aspetta una risposta da</span><span class="unit"><input class="field" type="number" value="60"><span>min</span></span></label>
+            <label class="sw s6"><input type="checkbox" checked> Mai nel fine settimana</label>
+          </div>
+          <details class="adv"><summary>Avanzate</summary>
+            <div class="fgrid"><label class="f s1"><span class="l">Porta</span><input class="field" type="number" value="7430"></label><p class="s5 small muted" style="grid-column:span 5;margin:auto 0 6px">Il numero con cui la chat trova il servizio della voce sul Mac. Cambialo solo se un altro programma usa già 7430.</p></div>
+          </details>
+        </div>
+      </section>
+
+      <!-- NOTIFICHE -->
+      <section class="view" id="notifiche" data-kind="now">
+        <div class="sh"><h1>Notifiche</h1><span class="pill now">Vale subito</span></div>
+        <p class="lead">Quando Arianna ti avvisa se non stai guardando la chat. La notifica dice solo che c'è qualcosa, mai il testo.
+          <span class="ex">spegni «Risposte nelle chat» e lascia «Approvazioni in attesa»: ti avvisa solo quando deve chiederti un sì.</span></p>
+        <div class="card">
+          <h2>Cosa ti avvisa</h2>
+          <div class="rows">
+            <div class="r"><label class="sw"><input type="checkbox" checked><span>Risposte nelle chat<small>«Arianna ha risposto»</small></span></label></div>
+            <div class="r"><label class="sw"><input type="checkbox" checked><span>Approvazioni in attesa<small>«Arianna aspetta una tua decisione»</small></span></label></div>
+            <div class="r"><label class="sw"><input type="checkbox" checked><span>Lavori falliti<small>«Un lavoro è fallito»</small></span></label></div>
+          </div>
+          <div class="fgrid" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+            <label class="sw s2"><input type="checkbox" checked> Ore di silenzio</label>
+            <label class="f s1"><span class="l">dalle</span><input class="field" type="time" value="22:00"></label>
+            <label class="f s1"><span class="l">alle</span><input class="field" type="time" value="07:00"></label>
+            <p class="small muted s2" style="margin:auto 0 6px">Le chiamate hanno i loro orari, in Voce.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Questo browser <span class="r"><span class="pill now">Vale subito, solo qui</span></span></h2>
+          <p class="d">Queste scelte valgono solo per il browser che stai usando ora e non hanno bisogno di «Salva».</p>
+          <div class="rows">
+            <div class="r"><div style="flex:1"><b>Con la chat aperta in un'altra scheda</b><div class="small" style="color:var(--ok)">Consentite</div></div><button type="button" class="btn sm">Prova una notifica</button></div>
+            <div class="r"><div style="flex:1"><b>Con la chat chiusa, anche sul telefono</b><div class="small muted">Spente: manca la chiave del Mac (vedi Avanzate).</div></div><button type="button" class="btn sm" disabled>Iscrivi questo dispositivo</button></div>
+          </div>
+          <details class="adv"><summary>Avanzate: chiave per le notifiche a chat chiusa</summary>
+            <p class="small muted" style="margin:0 0 10px">Serve una coppia di chiavi creata una volta sola: chiedi a Claude Code di prepararla. Qui va la parte pubblica; quella segreta resta nella cassaforte delle password e non compare mai.</p>
+            <div class="fgrid"><label class="f s4"><span class="l">Chiave pubblica</span><input class="field mono" placeholder="BMx3…"></label><label class="f s2"><span class="l">Email di contatto</span><input class="field" placeholder="tu@esempio.it"></label></div>
+          </details>
+        </div>
+      </section>
+
+      <!-- SEGRETARIA -->
+      <section class="view" id="segretaria" data-kind="now">
+        <div class="sh"><h1>Segretaria</h1><span class="pill now">Vale subito</span><label class="sw" style="margin-left:auto">Promemoria accesi <input type="checkbox" checked></label></div>
+        <p class="lead">Arianna ti ricorda gli impegni che le hai detto con il pulsante «Segretaria». Qui scegli quando.
+          <span class="ex">alle 08:30 scrive «Oggi: chiamare Studio Verdi, consegna logo Gelateria»; se non c'è niente, non scrive.</span></p>
+        <div class="card">
+          <div class="fgrid">
+            <label class="f s1"><span class="l">Mattina</span><input class="field" type="time" value="08:30"><span class="hint">gli impegni del giorno</span></label>
+            <label class="f s1"><span class="l">Dopo pranzo</span><input class="field" type="time" value="14:30"><span class="hint">quelli ancora aperti</span></label>
+            <label class="f s1"><span class="l">Sera</span><input class="field" type="time" value="18:30"><span class="hint">cosa non è fatto</span></label>
+            <div class="s3"></div>
+            <div class="f s6"><span class="l">Giorni</span><div class="pills"><label><input type="checkbox" checked> lun</label><label><input type="checkbox" checked> mar</label><label><input type="checkbox" checked> mer</label><label><input type="checkbox" checked> gio</label><label><input type="checkbox" checked> ven</label><label><input type="checkbox"> sab</label><label><input type="checkbox"> dom</label></div></div>
+          </div>
+          <p class="small muted" style="margin:12px 0 0">Se il Mac era spento, il promemoria perso arriva all'accensione. Il testo degli impegni resta sul Mac: non va al cloud né nelle notifiche.</p>
+        </div>
+      </section>
+
+      <!-- PROGETTI -->
+      <section class="view" id="progetti" data-kind="conf">
+        <div class="sh"><h1>Progetti</h1><span class="pill conf"><svg class="lock"><use href="#lk"/></svg>Chiede conferma</span></div>
+        <p class="lead">Le cartelle su cui Claude e Codex possono lavorare. Per ognuna dici quanto è riservata: <b>Pubblico</b> (codice che potresti mostrare a chiunque) o <b>Interno</b> (lavoro tuo o di un cliente, non personale).
+          <span class="ex">aggiungi «sito-verdi», Interno: il Coder può correggerne i file, ma non vede mai finanze o note private.</span></p>
+        <div class="card">
+          <div class="rows">
+            <div class="r"><div style="flex:1;min-width:0"><b>demo</b><div class="small muted mono">repos/demo</div></div><select class="field" style="width:140px"><option>Pubblico</option><option>Interno</option></select><button type="button" class="btn sm">Togli</button></div>
+            <div class="r"><div style="flex:1;min-width:0"><b>progetto-test</b><div class="small muted mono">repos/progetto-test</div></div><select class="field" style="width:140px"><option>Interno</option><option>Pubblico</option></select><button type="button" class="btn sm">Togli</button></div>
+            <div class="r"><div style="flex:1;min-width:0"><b>arianna</b><div class="small muted mono">repos/arianna</div></div><select class="field" style="width:140px"><option>Interno</option><option>Pubblico</option></select><button type="button" class="btn sm">Togli</button></div>
+          </div>
+          <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+            <div style="font-weight:600;font-size:14.5px;margin-bottom:8px">Aggiungi un progetto</div>
+            <div class="fgrid">
+              <label class="f s2"><span class="l">Nome</span><input class="field" placeholder="sito-verdi"></label>
+              <label class="f s2"><span class="l">Cartella</span><input class="field mono" placeholder="repos/sito-verdi"></label>
+              <label class="f s1"><span class="l">Riservatezza</span><select class="field"><option>Interno</option><option>Pubblico</option></select></label>
+              <div class="f s1" style="justify-content:flex-end"><button type="button" class="btn">Aggiungi</button></div>
+            </div>
+          </div>
+        </div>
+        <p class="small muted">Con nessun progetto l'elenco dice: «Nessun progetto. Aggiungine uno qui sotto, per esempio la cartella del sito di un cliente: Claude e Codex lavorano solo nelle cartelle elencate qui.»</p>
+      </section>
+
+      <!-- REGOLE -->
+      <section class="view" id="regole" data-kind="now">
+        <div class="sh"><h1>Regole dei progetti</h1><span class="pill now">Vale subito</span></div>
+        <p class="lead">Le regole che Arianna dà a Claude e Codex all'inizio di ogni lavoro su un progetto. Un progetto può averne di sue, nella pagina Progetti.
+          <span class="ex">«Commenti in inglese. Niente firme tipo “generato da”.» Una riga che inizia con [solo Codex] vale solo per Codex.</span></p>
+        <div class="card">
+          <label class="f"><span class="l">Regole per tutti i progetti</span><textarea class="field" rows="8">Commenti in inglese.
+Niente firme o commenti tipo «generato da».
+Nomi e formattazione come il codice che c'è già.
+[solo Codex] Esegui i test prima di finire.</textarea><span class="hint">4 righe · 182 di 4.000 caratteri. Valgono per tutti tranne demo, che ha regole sue.</span></label>
+          <p class="small" style="margin:10px 0 0;color:var(--warn)">Questo testo va a Claude e Codex: niente nomi di clienti, importi o password (Arianna rifiuta il salvataggio se ne trova).</p>
+          <p class="small muted" style="margin:4px 0 0">Qualunque cosa dicano le regole, gli agenti non salvano mai una versione nel progetto (commit): le modifiche restano da rivedere a te.</p>
+        </div>
+      </section>
+
+      <!-- CLOUD E PRIVACY -->
+      <section class="view" id="cloud" data-kind="conf">
+        <div class="sh"><h1>Claude e Codex</h1><span class="pill conf"><svg class="lock"><use href="#lk"/></svg>Chiede conferma</span></div>
+        <p class="lead">Gli unici aiutanti che lavorano fuori da questo Mac, con i tuoi abbonamenti. Ricevono solo il testo del lavoro e i file dei progetti, mai dati privati.
+          <span class="ex">accendi Codex: quando chiedi «correggi il modulo contatti di sito-verdi», Arianna può passarlo a Codex, che riceve la richiesta e i file di sito-verdi.</span></p>
+        <div class="stats" style="grid-template-columns:1fr 1fr">
+          <div class="card">
+            <h2><label class="sw"><input type="checkbox" checked> Claude Code</label><span class="r">abbonamento Claude</span></h2>
+            <p class="small" style="margin:8px 0 0"><b>Riceve:</b> la richiesta, i file dei progetti Pubblici e Interni, le regole dei progetti.</p>
+            <p class="small muted" style="margin:4px 0 0"><b style="color:var(--ink)">Modelli:</b> Opus, Sonnet. Si scelgono in Modelli.</p>
+          </div>
+          <div class="card">
+            <h2><label class="sw"><input type="checkbox"> Codex</label><span class="r">abbonamento ChatGPT</span></h2>
+            <p class="small" style="margin:8px 0 0"><b>Riceverebbe:</b> la richiesta, i file dei progetti Pubblici e Interni, le regole dei progetti.</p>
+            <p class="small muted" style="margin:4px 0 0">Spento: nessun lavoro va a OpenAI.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Cosa resta sempre sul Mac <span class="r">sola lettura</span></h2>
+          <p class="d">Ogni dato ha un grado di riservatezza. Solo Pubblico e Interno possono uscire, e solo verso Claude o Codex accesi.</p>
+          <div class="lab">
+            <div class="h">Dati</div><div class="h">Riservatezza</div><div class="h">Cosa vuol dire</div>
+            <div>Finanze, clienti, note private, password</div><div><span class="chip dg">Privato</span></div><div class="muted">Non escono mai, neanche se lo chiedi in chat.</div>
+            <div>Progetti marcati Interno, regole, agenti</div><div><span class="chip wa">Interno</span></div><div class="muted">Possono andare a Claude e Codex per un lavoro.</div>
+            <div>Progetti Pubblici, ricerche su Hugging Face</div><div><span class="chip ok">Pubblico</span></div><div class="muted">Possono uscire.</div>
+            <div>Tutto ciò che non ha un grado</div><div><span class="chip dg">Privato</span></div><div class="muted">Nel dubbio, resta sul Mac.</div>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">Queste regole si cambiano solo a mano, con Claude Code, perché decidono cosa esce dal Mac.</p>
+        </div>
+      </section>
+
+      <!-- SITI -->
+      <section class="view" id="siti" data-kind="conf">
+        <div class="sh"><h1>Link da riassumere</h1><span class="pill conf"><svg class="lock"><use href="#lk"/></svg>Chiede conferma</span></div>
+        <p class="lead">Quando salvi un link di questi siti in Pensieri, Arianna scarica la pagina e il modello del Mac la riassume. Il sito riceve solo l'indirizzo del link.
+          <span class="ex">con x.com nell'elenco, un post salvato diventa «Mario annuncia la nuova versione del suo tema, uscita il 3 novembre».</span></p>
+        <div class="card">
+          <div class="pills" style="margin-bottom:12px"><span class="chip">x.com <button type="button" aria-label="Togli x.com">×</button></span><span class="chip">github.com <button type="button" aria-label="Togli github.com">×</button></span><span class="chip">medium.com <button type="button" aria-label="Togli medium.com">×</button></span></div>
+          <div class="fgrid"><label class="f s2"><span class="l">Aggiungi un sito</span><input class="field" placeholder="per esempio youtube.com"></label><div class="f s1" style="justify-content:flex-end"><button type="button" class="btn">Aggiungi</button></div></div>
+          <p class="small muted" style="margin:12px 0 0">Vale anche per i sottodomini (mobile.x.com). I link degli altri siti restano link: nel pensiero c'è «Scarica e riassumi».</p>
+        </div>
+        <div class="empty">Come appare vuoto: <b>Nessun sito.</b> Aggiungi per esempio x.com: i link che salvi da lì verranno riassunti da soli.</div>
+      </section>
+
+      <!-- SERVER -->
+      <section class="view" id="server" data-kind="conf">
+        <div class="sh"><h1>Server dei modelli</h1><span class="pill conf"><svg class="lock"><use href="#lk"/></svg>Chiede conferma</span></div>
+        <p class="lead">I programmi sul Mac che fanno girare i modelli e la voce. Vedono i dati privati, perciò un cambio chiede conferma.
+          <span class="ex">se la chat smette di rispondere e qui oMLX è «non risponde», premi Riavvia.</span></p>
+        <div class="server">
+          <div class="h"><span class="led" style="background:var(--ok)"></span><b>oMLX · modelli sul Mac</b><span class="chip ok">Acceso</span><span class="small muted">avviato da Arianna · 2 modelli in memoria</span><span style="flex:1"></span><button type="button" class="btn sm">Riavvia</button></div>
+          <details><summary class="small muted" style="cursor:pointer">Ultime righe del registro (possono contenere testi privati: restano qui)</summary><pre class="log">12:04:11 caricato qwen3-30b-a3b-4bit in 8,2 s
+12:04:13 richiesta completata in 1,7 s</pre></details>
+        </div>
+        <div class="server">
+          <div class="h"><span class="led" style="background:var(--danger)"></span><b>Voce</b><span class="chip dg">Non risponde</span><span class="small muted">da 2 minuti</span><span style="flex:1"></span><button type="button" class="btn sm p">Riavvia</button></div>
+          <div class="errbox"><span class="grow">Il servizio della voce non risponde: le chiamate non partono. Riavvialo; se torna a fermarsi, guarda le ultime righe del registro.</span><button type="button" class="btn sm">Vedi il registro</button></div>
+        </div>
+        <div class="server">
+          <div class="h"><span class="led" style="background:var(--muted)"></span><b>Ollama</b><span class="chip">Solo controllato</span><span class="small muted">acceso a mano fuori da Arianna: si riavvia da dove l'hai aperto</span></div>
+        </div>
+        <details class="card adv" style="margin-top:0"><summary>Avanzate: indirizzo e comando di avvio</summary>
+          <div class="fgrid">
+            <label class="f s1"><span class="l">Nome</span><input class="field" value="omlx"></label>
+            <label class="f s3"><span class="l">Indirizzo</span><input class="field mono" value="http://127.0.0.1:7001/v1"></label>
+            <div class="s2"></div>
+            <label class="f s6"><span class="l">Comando di avvio</span><textarea class="field mono" rows="3">omlx
+serve
+--port 7001</textarea><span class="hint">Un pezzo per riga. Vuoto: Arianna lo controlla ma non lo avvia. Non scriverci password: è mostrato qui.</span></label>
+          </div>
+          <p class="acts" style="margin-top:10px"><button type="button" class="btn sm">+ Aggiungi un server</button></p>
+        </details>
+      </section>
+
+      <!-- SISTEMA -->
+      <section class="view" id="sistema" data-kind="browser">
+        <div class="sh"><h1>Aspetto e installazione</h1></div>
+        <p class="lead">Il tema di questo browser e cosa è questa installazione di Arianna.</p>
+        <div class="card">
+          <h2>Tema <span class="r"><span class="pill now">Vale subito, solo in questo browser</span></span></h2>
+          <div class="seg2" style="margin-top:8px"><button type="button">Chiaro</button><button type="button">Scuro</button><button type="button" aria-pressed="true">Automatico</button></div>
+          <p class="small muted" style="margin:8px 0 0">Automatico segue il Mac. Lo cambi anche dal pulsante in alto a destra.</p>
+        </div>
+        <div class="card">
+          <h2>Installazione <span class="r">sola lettura</span></h2>
+          <div class="facts" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            <div><span>Tipo</span><span class="chip wa" style="display:inline-flex;color:var(--warn)">Sviluppo</span></div>
+            <div><span>Versione</span>0.83.0</div>
+            <div><span>Pronta per i dati veri</span>No</div>
+          </div>
+          <p class="small muted" style="margin:0 0 4px"><b style="color:var(--ink)">Sviluppo</b> vuol dire: solo dati finti e password di prova. Diventa pronta quando le password vere sono nella cassaforte.</p>
+          <p class="small muted" style="margin:0">Cartella: <span class="mono">Sites/arianna-ai</span></p>
+        </div>
+        <div class="info"><span>Le impostazioni stanno in un file sul Mac. Se lo modifichi a mano e poi salvi da qui, le tue note dentro il file si perdono.</span></div>
+      </section>
+
+      <!-- NOVITÀ -->
+      <section class="view" id="novita" data-kind="read">
+        <div class="sh"><h1>Novità</h1><span class="pill">Arianna 0.83.0</span><span style="margin-left:auto"></span></div>
+        <p class="lead">Cosa è cambiato a ogni versione. Passa sopra una riga per chiederne a GOD.</p>
+        <article class="card ver">
+          <h2>0.83.0 <span class="chip ac">attuale</span><span class="r">12 ottobre 2026</span></h2>
+          <div class="kind a">Aggiunto</div>
+          <ul class="cl"><li>Ogni cliente è una card con guadagno, da fatturare e in attesa. <button type="button" class="btn sm god">Parlane con GOD</button></li>
+            <li>«Completa» porta all'Anagrafica sul primo campo mancante. <button type="button" class="btn sm god">Parlane con GOD</button></li></ul>
+          <div class="kind c">Cambiato</div>
+          <ul class="cl"><li>La scheda del cliente si apre sulla Dashboard. <button type="button" class="btn sm god">Parlane con GOD</button></li></ul>
+        </article>
+        <article class="card ver">
+          <h2>0.82.0<span class="r">12 ottobre 2026</span></h2>
+          <div class="kind a">Aggiunto</div>
+          <ul class="cl"><li>Finanze come cruscotto: quattro numeri in alto, grafico e categorie. <button type="button" class="btn sm god">Parlane con GOD</button></li></ul>
+          <div class="kind x">Corretto</div>
+          <ul class="cl"><li>Un solo «Salva» per tutti i budget. <button type="button" class="btn sm god">Parlane con GOD</button></li></ul>
+        </article>
+        <div class="errbox"><span class="grow">Così appare un errore: non riesco a leggere l'elenco delle novità.</span><button type="button" class="btn sm">Riprova</button></div>
+      </section>
+
+      <!-- SVILUPPO -->
+      <section class="view" id="sviluppo" data-kind="read">
+        <div class="sh"><h1>Sviluppo di Arianna</h1><span style="margin-left:auto" class="acts"><button type="button" class="btn sm">Leggi i documenti</button><button type="button" class="btn sm">Aggiorna</button></span></div>
+        <p class="lead">A che punto è Arianna e le domande che Claude Code ti fa. Rispondi qui: Claude Code legge la risposta alla prossima sessione e aggiorna i documenti.</p>
+        <div class="card">
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:26px;font-weight:600">64%</span><span class="muted">fatto, su 212 voci</span></div>
+          <div class="prog" style="margin:8px 0"><i style="width:64%;background:var(--ok)"></i><i style="width:9%;background:var(--info)"></i><i style="width:6%;background:var(--warn)"></i><i style="width:21%;background:var(--line-strong)"></i></div>
+          <div class="acts small"><span><span class="led" style="background:var(--ok)"></span> Fatte 136</span><span><span class="led" style="background:var(--info)"></span> In corso 19</span><span><span class="led" style="background:var(--warn)"></span> Da decidere 13</span><span><span class="led" style="background:var(--line-strong)"></span> Da fare 44</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-size:17px;font-weight:600">Domande aperte</h2><span class="badge" style="background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-size:12px;font-weight:600">3</span><span style="margin-left:auto" class="seg2"><button type="button" aria-pressed="true">Senza risposta 3</button><button type="button">Tutte 9</button></span></div>
+        <div class="q">
+          <b style="font-size:15px">Le notifiche a chat chiusa devono partire anche nelle ore di silenzio per le approvazioni urgenti?</b>
+          <p class="small" style="margin:0"><b>Cosa si decide:</b> se un'approvazione che scade entro un'ora può suonare anche di notte.</p>
+          <button type="button" class="opt rec"><b>No, mai di notte</b> <span class="chip ok" style="margin-left:6px">consigliata</span><span>Il silenzio resta silenzio; la trovi al mattino.</span></button>
+          <button type="button" class="opt"><b>Sì, solo se scade</b><span>Ti sveglia al massimo una volta per notte.</span></button>
+          <p class="small" style="margin:0;padding:8px 10px;background:var(--surface);border-radius:8px"><b>Esempio:</b> alle 23:40 il Coder chiede di approvare l'invio di una mail che scade alle 00:30.</p>
+          <textarea class="field" rows="2" placeholder="Scegli un'opzione sopra o scrivi la tua risposta…"></textarea>
+          <div class="acts"><span class="small muted" style="flex:1">⌘ + Invio per inviare · non scrivere dati personali: la risposta va al cloud</span><button type="button" class="btn p sm">Invia</button></div>
+        </div>
+        <div class="card">
+          <h2>Tutte le voci <span class="r"><input class="field" style="width:200px" placeholder="Cerca"><select class="field" style="width:150px"><option>Ogni stato</option></select></span></h2>
+          <div class="rows small" style="margin-top:10px">
+            <div class="r"><span class="led" style="background:var(--ok)"></span><span style="flex:1">Clienti a card e scheda del cliente rivista</span><span class="muted">decisione D-190</span></div>
+            <div class="r"><span class="led" style="background:var(--info)"></span><span style="flex:1">Impostazioni rivedute</span><span class="muted">in corso</span></div>
+            <div class="r"><span class="led" style="background:var(--line-strong)"></span><span style="flex:1">Quota dell'abbonamento in Modelli</span><span class="muted">da fare</span></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="savebar" id="savebar" role="status"><span id="sbtext">1 modifica non salvata</span><span class="sp"></span><button type="button" class="btn" id="sbcancel">Annulla</button><button type="button" class="btn p" id="sbsave">Salva</button></div>
+    </div>
+  </main>
+</div>
+
+<dialog id="confirm" aria-labelledby="cf-title">
+  <header id="cf-title"><svg class="lock"><use href="#lk"/></svg>Conferma cosa può uscire dal Mac</header>
+  <div class="b">
+    <div><h3>Cosa cambia</h3><ul id="cf-change"><li>Codex si accende.</li></ul></div>
+    <div class="out"><h3>Dopo la modifica potrà uscire</h3><p style="margin:0" id="cf-out">Verso OpenAI (Codex): il testo dei lavori che Arianna gli passa e i file dei progetti Pubblici e Interni (demo, progetto-test, arianna).</p></div>
+    <div class="never"><h3>Non esce mai</h3><p style="margin:0" class="muted">Finanze, clienti, note private, password, la voce delle chiamate.</p></div>
+  </div>
+  <footer><span class="small muted" style="flex:1">Vale 5 minuti. Si applica solo con «Conferma e salva».</span><button type="button" class="btn" id="cf-no">Annulla</button><button type="button" class="btn w" id="cf-yes">Conferma e salva</button></footer>
+</dialog>
+
+<script>
+  const notes = {
+    modelli: `<p><b>Modelli</b>: oggi una pagina larga 1240 px con tre riquadri in cima, la ricerca su Hugging Face aperta prima dell'elenco, filtri, elenco con scheda, poi ruoli e interruttori dei modelli cloud in fondo.</p><ul>
+      <li><b>«Chi fa cosa» in alto</b>: è la scelta che conta di più. I ruoli hanno nomi che dicono il compito («Capisce quello che dici» invece di «Trascrizione · stt», «Cerca nell'archivio» invece di «Embedder»).</li>
+      <li><b>Un solo interruttore per i modelli cloud</b>, nella riga dell'elenco: oggi c'è due volte (nella scheda e nel riquadro «Modelli cloud accesi»).</li>
+      <li><b>Scheda in parole semplici</b>: «Quanto testo ricorda: circa 100 pagine» invece di «Contesto 131.072 token»; spariti «runtime mlx», «Nome passato a --model», «alias», «Pesi» con lo sha.</li>
+      <li>Errori con <b>«Riprova»</b> e il collegamento alla sezione che risolve; Hugging Face chiuso in fondo; tolta la promessa «la quota si misurerà qui più avanti».</li></ul>`,
+    agenti: `<p><b>Agenti</b>: oggi la pagina contiene anche i cataloghi «Stili di Open Design» e «Skill» sotto l'agente, così diventa lunghissima.</p><ul>
+      <li>I due cataloghi vanno nella <b>nuova voce «Skill e stili»</b>; nella scheda Skill dell'agente resta solo cosa ha assegnato.</li>
+      <li>Schede (Personalità, Aspetto…) in carattere normale, non maiuscolo spaziato; i permessi detti a parole: «Vede: dati di lavoro · Può: modificare file in una copia protetta» invece di «Interno · A1».</li>
+      <li>Campi su sei colonne: «Ti dà del» stretto, «Nome in chat» medio, i testi lunghi a tutta riga con il conteggio dei caratteri sotto, non sopra in mono.</li>
+      <li>Spariti dal testo i percorsi (<i>data/characters/miei</i>, <i>agents/coder.yaml</i>, <i>[agents.coder] skills</i>); la barra «Salva» in basso resta, come oggi.</li></ul>`,
+    skill: `<p><b>Skill e stili</b> è una voce nuova: raccoglie i due cataloghi che oggi stanno in fondo ad Agenti e le «Novità di Open Design» che oggi stanno in Sviluppo di Arianna.</p><ul>
+      <li>Niente «SKILL.md», «DESIGN.md», «data/catalogs», «commit 3f2a9c1»: la versione si dice con la data.</li>
+      <li>Il badge «TESTO DI TERZI» in mono maiuscolo diventa una scritta normale accanto al titolo.</li>
+      <li>«Non ancora scaricata» ha accanto il pulsante «Scarica»; un errore di rete ha «Riprova».</li></ul>`,
+    voce: `<p><b>Voce e chiamate</b>: oggi «Porta del servizio della voce» sta accanto alla voce, largo mezza pagina, e le chiavi VAPID per le notifiche push sono qui.</p><ul>
+      <li>Campi corti per valori corti: minuti, secondi e orari occupano una colonna su sei, con l'unità accanto («20 min») invece che nell'etichetta.</li>
+      <li>La porta va in <b>Avanzate</b>, chiusa, con la spiegazione di quando cambiarla.</li>
+      <li>Le chiavi delle notifiche a chat chiusa passano in <b>Notifiche</b>, dove servono; sparisce «pnpm vault:edit, chiave vapid-private-key».</li>
+      <li>Etichette più chiare: «Deleghe per chiamata» diventa «Lavori che può passare agli agenti».</li></ul>`,
+    notifiche: `<p><b>Notifiche</b>: oggi due riquadri, il primo con il suo «Salva», il secondo («Questo dispositivo») senza, e il titolo «Web Push».</p><ul>
+      <li>Ogni interruttore dice il testo esatto della notifica («Arianna ha risposto»).</li>
+      <li>Il riquadro del browser dice esplicitamente che <b>non serve Salva</b>: vale subito, solo qui.</li>
+      <li>«Con la chat chiusa (Web Push)» diventa «Con la chat chiusa, anche sul telefono»; se è spenta dice perché e dove si risolve (Avanzate, con la chiave spostata da Voce).</li></ul>`,
+    segretaria: `<p><b>Segretaria</b>: oggi tre orari larghi un terzo della pagina con etichette lunghe («Dopo pranzo: quelli ancora aperti») e due paragrafi di spiegazione.</p><ul>
+      <li>Orari stretti (una colonna su sei) con etichetta breve e la spiegazione sotto in piccolo.</li>
+      <li>L'interruttore dei promemoria accanto al titolo, come in Voce; il testo si riduce a due frasi con un esempio.</li></ul>`,
+    progetti: `<p><b>Progetti</b>: oggi l'etichetta Pubblico/Interno è una tendina piccola in mono, il campo per la cartella suggerisce «~/Progetti/sito», e c'è la frase «non crea il link repos/&lt;nome&gt; del wizard: conta la cartella».</p><ul>
+      <li>Ogni riga: nome, cartella in piccolo, tendina «Riservatezza» leggibile, «Togli». Sopra, la spiegazione di Pubblico e Interno con un esempio.</li>
+      <li>Aggiunta su sei colonne con etichette; tolta la frase sul wizard.</li>
+      <li>Elenco vuoto con una frase che dice cosa fare (oggi non c'è niente). Il salvataggio passa dalla barra «Rivedi cosa esce…».</li></ul>`,
+    regole: `<p><b>Regole dei progetti</b>: oggi il titolo del riquadro è «Modello comune», il testo è in mono e c'è la frase «la cartella .git del progetto è in sola lettura».</p><ul>
+      <li>Titolo uguale alla voce dell'indice; testo nel carattere normale; sotto, righe e caratteri usati e quali progetti hanno regole loro.</li>
+      <li>«.git in sola lettura» diventa «gli agenti non salvano mai una versione nel progetto (commit)».</li></ul>`,
+    cloud: `<p><b>Claude e Codex</b> (oggi «Esecutori cloud» e, a parte, «Etichette», che mostra il file <i>config/labels.toml</i> grezzo).</p><ul>
+      <li>Due riquadri con l'interruttore, l'abbonamento usato e <b>cosa riceve</b> ciascuno, invece di due caselle e la frase «testi Pubblici o Interni passati dal gateway».</li>
+      <li>Le regole di riservatezza diventano una tabella leggibile «Cosa resta sempre sul Mac» (Privato, Interno, Pubblico con il loro significato); la voce «Etichette» sparisce dall'indice.</li>
+      <li>Cambia un interruttore: compare la barra ambra «Rivedi cosa esce…» e la conferma dice cosa cambia, cosa potrà uscire e verso chi, e cosa non esce mai.</li></ul>`,
+    siti: `<p><b>Link da riassumere</b> (oggi «Domini approvati», nomi dei siti in mono, «Nessun sito.» come stato vuoto).</p><ul>
+      <li>Titolo che dice cosa fa; esempio concreto di riassunto; siti in carattere normale.</li>
+      <li>Stato vuoto che dice cosa aggiungere e cosa succede. Tolto il dettaglio tecnico su publish.twitter.com (resta nella conferma, dove conta).</li></ul>`,
+    server: `<p><b>Server dei modelli</b> (oggi «Server locali»): id in mono, stato in mono maiuscolo, «solo osservato», «acceso prima del nucleo», «data/omlx.log», e i campi di indirizzo e comando sempre aperti.</p><ul>
+      <li>Nome leggibile («oMLX · modelli sul Mac»), stato a pillola colorata, una frase su cosa vuol dire.</li>
+      <li>Un server che non risponde ha il riquadro rosso con «Riavvia» e «Vedi il registro»; uno che non si può riavviare dice da dove farlo.</li>
+      <li>Indirizzo e comando in <b>Avanzate</b>, chiusi. La parola «nucleo» sparisce: si dice «Arianna».</li></ul>`,
+    sistema: `<p><b>Aspetto e installazione</b>: oggi «Aspetto», «Installazione» ed «Etichette» sono tre voci, e ogni sezione salvabile mostra in cima «Salvare da qui riscrive config/arianna.toml… come con pnpm arianna:init --reconfigure».</p><ul>
+      <li>Tema e installazione in una voce; l'installazione dice tipo, versione e se è <b>pronta per i dati veri</b>, con cosa vuol dire «Sviluppo».</li>
+      <li>L'avviso sul file delle impostazioni compare una volta sola qui, in parole semplici, invece che in cima a ogni sezione.</li></ul>`,
+    novita: `<p><b>Novità</b>: oggi larga 860 px, titolo in maiuscolo spaziato, «da CHANGELOG.md», le sezioni come etichette mono maiuscole e «Parlane con GOD» su ogni riga.</p><ul>
+      <li>Stessa larghezza e stessa intestazione delle altre sezioni, dentro le Impostazioni con l'indice a sinistra (oggi esce dalla pagina).</li>
+      <li>«Aggiunto», «Cambiato», «Corretto» come titoletti colorati normali; «Parlane con GOD» compare passando sopra la riga.</li>
+      <li>Un errore di lettura ha «Riprova» accanto al messaggio, non un'icona in alto.</li></ul>`,
+    sviluppo: `<p><b>Sviluppo di Arianna</b>: oggi larga 920 px, molto mono maiuscolo («LEGGO I DOCUMENTI…», «COSA SI DECIDE ·», filtri), chiavi come «conf-D-0NN · docs/OPEN-QUESTIONS.md» sotto ogni domanda e la spiegazione «la risposta va in data/dev/RISPOSTE.md… Etichetta L1 dichiarata da te».</p><ul>
+      <li>Stessa larghezza e intestazione delle altre sezioni; il numero di domande aperte resta come pallino nell'indice.</li>
+      <li>Domanda con «Cosa si decide», opzioni (la consigliata con il bordo verde), esempio e risposta; la chiave e il file in piccolo solo al passaggio del mouse.</li>
+      <li>La spiegazione si riduce a «Claude Code legge la risposta alla prossima sessione» e «non scrivere dati personali: la risposta va al cloud». Le «Novità di Open Design» passano in Skill e stili.</li></ul>`
+  };
+  const confirmTexts = {
+    cloud: ['Codex si accende.', 'Verso OpenAI (Codex): il testo dei lavori che Arianna gli passa e i file dei progetti Pubblici e Interni (demo, progetto-test, arianna).'],
+    progetti: ['progetto-test passa da Interno a Pubblico.', 'Verso Claude: i file di progetto-test come Pubblici, cioè anche in lavori che non riguardano un cliente.'],
+    siti: ['Si aggiunge youtube.com.', 'Verso youtube.com: solo l\'indirizzo dei link che salvi da lì, per scaricarne la pagina.'],
+    server: ['L\'indirizzo di oMLX cambia in http://127.0.0.1:7002/v1.', 'Nessun dato esce dal Mac, ma il nuovo server vedrà i dati privati: Arianna lo riavvia con il nuovo indirizzo.']
+  };
+  const root = document.documentElement;
+  const bar = document.getElementById('savebar'), sbtext = document.getElementById('sbtext'), sbsave = document.getElementById('sbsave');
+  let current = 'modelli';
+  const changed = new Map();
+  function kindOf(v) { return document.getElementById(v).dataset.kind; }
+  function refreshBar() {
+    const n = changed.size, k = kindOf(current);
+    const show = n > 0 && (k === 'now' || k === 'conf');
+    bar.classList.toggle('on', show);
+    bar.classList.toggle('conf', k === 'conf');
+    sbtext.textContent = n === 1 ? '1 modifica non salvata' : n + ' modifiche non salvate';
+    sbsave.textContent = k === 'conf' ? 'Rivedi cosa esce…' : 'Salva';
+    sbsave.className = k === 'conf' ? 'btn w' : 'btn p';
+  }
+  function setV(v) {
+    if (!notes[v]) return;
+    changed.forEach((init, el) => restore(el, init)); changed.clear();
+    current = v;
+    document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === v));
+    document.querySelectorAll('#vseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    document.querySelectorAll('#index a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+    document.getElementById('note').innerHTML = notes[v] + '<p class="muted" style="margin-top:6px">Prova a cambiare un campo: compare la barra in basso.</p>';
+    refreshBar();
+  }
+  function value(el) { return el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value; }
+  function restore(el, init) { if (el.type === 'checkbox' || el.type === 'radio') el.checked = init; else el.value = init; }
+  document.querySelectorAll('.view input, .view select, .view textarea').forEach(el => { el.dataset.init = JSON.stringify(value(el)); });
+  document.querySelector('.content').addEventListener('change', onEdit);
+  document.querySelector('.content').addEventListener('input', onEdit);
+  function onEdit(e) {
+    const el = e.target; if (!el.dataset || el.dataset.init === undefined) return;
+    // Search boxes and "add" fields are not settings: they never light the bar.
+    if (/^(Cerca|Per esempio|Indirizzo di)/.test(el.placeholder || '')) return;
+    const view = el.closest('.view'); if (!view || view.id === 'sistema') return;
+    const init = JSON.parse(el.dataset.init);
+    if (value(el) === init) changed.delete(el); else changed.set(el, init);
+    if (el.type === 'radio') document.querySelectorAll('input[name="' + el.name + '"]').forEach(r => { if (r !== el) changed.delete(r); });
+    refreshBar();
+  }
+  document.getElementById('sbcancel').onclick = () => { changed.forEach((init, el) => restore(el, init)); changed.clear(); refreshBar(); };
+  const dlg = document.getElementById('confirm');
+  sbsave.onclick = () => {
+    if (kindOf(current) === 'conf') {
+      const t = confirmTexts[current] || confirmTexts.cloud;
+      document.getElementById('cf-change').innerHTML = '<li>' + t[0] + '</li>';
+      document.getElementById('cf-out').textContent = t[1];
+      if (dlg.showModal) dlg.showModal();
+      return;
+    }
+    done();
+  };
+  function done() {
+    changed.forEach((init, el) => { el.dataset.init = JSON.stringify(value(el)); }); changed.clear();
+    bar.classList.add('on'); sbtext.textContent = 'Salvato'; sbsave.style.display = 'none'; document.getElementById('sbcancel').style.display = 'none';
+    setTimeout(() => { sbsave.style.display = ''; document.getElementById('sbcancel').style.display = ''; refreshBar(); }, 1600);
+  }
+  document.getElementById('cf-no').onclick = () => dlg.close();
+  document.getElementById('cf-yes').onclick = () => { dlg.close(); done(); };
+  function setT(t) { root.dataset.theme = t; document.querySelectorAll('#tseg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t)); }
+  document.getElementById('vseg').onclick = e => e.target.dataset.v && setV(e.target.dataset.v);
+  document.getElementById('tseg').onclick = e => e.target.dataset.t && setT(e.target.dataset.t);
+  document.getElementById('index').onclick = e => { const a = e.target.closest('a'); if (a) { e.preventDefault(); setV(a.dataset.v); } };
+  document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); setV(b.dataset.go); }));
+  document.querySelectorAll('.list .it').forEach(it => it.addEventListener('click', () => { document.querySelectorAll('.list .it').forEach(x => x.classList.toggle('on', x === it)); }));
+  setV('modelli'); setT('light');
+</script>
+</body>
+</html>
