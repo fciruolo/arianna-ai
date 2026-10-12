@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ApiError } from '../src/lib/api.ts';
-import { proposalErrorText, releaseErrorText, targetText, warningText } from '../src/lib/note-release.ts';
+import { proposalErrorText, releaseErrorText, releaseProject, targetText, warningText } from '../src/lib/note-release.ts';
 
 test('releaseErrorText: the refusals of the core in Italian, never its words (D-187)', () => {
   assert.match(releaseErrorText(new ApiError(403, 'wrong-password: wrong master password')), /^Master password sbagliata/);
@@ -33,4 +33,15 @@ test('targetText: the title of the conversation, the project when it has none', 
   assert.equal(targetText({ title: 'Login con Google', workspace: 'progetto', agent: null }), 'Login con Google');
   assert.equal(targetText({ title: null, workspace: 'progetto:admin', agent: null }), 'Senza titolo (progetto:admin)');
   assert.equal(targetText({ title: ' ', workspace: 'p', agent: 'coder' }), 'Senza titolo (p) · chat diretta');
+});
+
+test('releaseProject: only a work chat on a project offers its Private notes', () => {
+  assert.equal(releaseProject({ mode: 'work', workspace: 'progetto-test' }), 'progetto-test');
+  assert.equal(releaseProject({ mode: 'work', workspace: 'progetto-test:progetto-test-admin' }), 'progetto-test');
+  assert.equal(releaseProject({ mode: 'work', workspace: null }), null);
+  assert.equal(releaseProject({ mode: 'private', workspace: 'progetto-test' }), null);
+  assert.equal(releaseProject({ mode: 'work', workspace: 'progetto-test', incognito: true }), null);
+  assert.equal(releaseProject({ mode: 'work', workspace: 'progetto-test', finance: true }), null);
+  assert.equal(releaseProject({ mode: 'work', workspace: 'progetto-test', archivedAt: '2026-10-12T10:00:00Z' }), null);
+  assert.equal(releaseProject({ mode: 'work', workspace: 'repos/demo' }), null);
 });
