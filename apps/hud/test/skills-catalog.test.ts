@@ -14,6 +14,7 @@ import {
   sourceBlocked,
   sourceButtonText,
   sourceLicenseText,
+  sourceSummaryText,
   sourceUrlProblem,
   withoutSkill,
   withSkill,
@@ -39,7 +40,7 @@ describe('sources', () => {
 
   it('names the button and says why it waits', () => {
     assert.equal(sourceButtonText(source()), 'Scarica');
-    assert.equal(sourceButtonText(source({ adopted: { ...version, adoptedAt: null } })), 'Aggiorna');
+    assert.equal(sourceButtonText(source({ adopted: { ...version, adoptedAt: null } })), 'Cerca aggiornamenti');
     assert.equal(sourceButtonText(source({ job: { status: 'running', phase: 'download', startedAt: '', finishedAt: null, outcome: null, error: null } })), 'Scarico…');
     assert.equal(sourceBlocked(source()), undefined);
     assert.match(sourceBlocked(source({ pending: { ...version, diff: none } })) ?? '', /usa o scarta/);
@@ -87,6 +88,17 @@ describe('skills', () => {
   it('turns the refusals of the core into Italian', () => {
     assert.equal(skillsErrorText(new ApiError(409, 'this source is already followed')), 'Questa sorgente c’è già.');
     assert.match(skillsErrorText(new ApiError(400, 'the address must be https://github.com/<owner>/<repo>')), /^Solo https/);
-    assert.match(skillsErrorText(new ApiError(404, 'not found')), /riavvialo/);
+    assert.match(skillsErrorText(new ApiError(404, 'not found')), /riavviala/);
+  });
+});
+
+describe('the line under a source (D-192)', () => {
+  it('says skills, license and the day of the version, never the commit', () => {
+    const text = sourceSummaryText(source({ adopted: { ...version, adoptedAt: null }, license: { name: 'Apache-2.0', file: 'LICENSE' } }));
+    assert.equal(text, '20 skill · licenza Apache-2.0 · versione del 1 ottobre 2026');
+    assert.doesNotMatch(text, /aaaaaaa/);
+  });
+  it('says when nothing was downloaded yet', () => {
+    assert.equal(sourceSummaryText(source()), 'non ancora scaricata');
   });
 });

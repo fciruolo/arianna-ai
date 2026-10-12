@@ -14,13 +14,13 @@ const emit = defineEmits<{ 'update:modelValue': [UserPermissions] }>();
 
 const EXECUTORS = {
   local: { title: 'Modello locale', text: 'Risponde soltanto, senza strumenti. Niente esce dal Mac.' },
-  claude: { title: 'Claude Code', text: 'Lavora nella cartella del progetto della conversazione. Il prompt e l’incarico vanno al cloud dal gateway, al massimo Interno.' },
+  claude: { title: 'Claude Code', text: 'Lavora nella cartella del progetto della conversazione. Il prompt e l’incarico vanno a Claude: al massimo dati di lavoro.' },
 } as const;
 
 const TOOLS: Record<string, { title: string; text: string }> = {
   'repo.read': { title: 'Legge il codice', text: 'apre e cerca i file del progetto' },
   'repo.write': { title: 'Modifica il codice', text: 'crea e cambia file nel progetto' },
-  'repo.test': { title: 'Esegue i test', text: 'lancia comandi nel progetto, in una sandbox senza rete; su Claude solo insieme a «Modifica il codice»' },
+  'repo.test': { title: 'Esegue i test', text: 'lancia comandi nel progetto, in una copia protetta senza rete; con Claude solo insieme a «Modifica il codice»' },
 };
 
 const set = (change: Partial<UserPermissions>): void => {
@@ -37,7 +37,7 @@ const number = (event: Event): number => Number((event.target as HTMLInputElemen
 <template>
   <div class="flex flex-col gap-3.5">
     <fieldset class="flex flex-col gap-1.5">
-      <legend class="mb-1 text-xs text-muted">Dove lavora</legend>
+      <legend class="mb-1 text-[13px] font-medium text-muted">Dove lavora</legend>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label
           v-for="executor in sources.allowed.executors"
@@ -47,14 +47,14 @@ const number = (event: Event): number => Number((event.target as HTMLInputElemen
         >
           <input type="radio" class="sr-only" :name="`${idPrefix}-executor`" :value="executor" :checked="modelValue.executor === executor" @change="set({ executor: executor as UserPermissions['executor'] })" />
           <span class="font-semibold">{{ EXECUTORS[executor as keyof typeof EXECUTORS]?.title ?? executor }}</span>
-          <span class="text-xs text-muted">{{ EXECUTORS[executor as keyof typeof EXECUTORS]?.text }}</span>
+          <span class="text-[13px] text-muted">{{ EXECUTORS[executor as keyof typeof EXECUTORS]?.text }}</span>
         </label>
       </div>
     </fieldset>
 
     <fieldset class="flex flex-col gap-1.5">
-      <legend class="mb-1 text-xs text-muted">Strumenti</legend>
-      <p v-if="offered.length === 0" class="text-xs text-muted">Sul modello locale nessuno strumento: l’agente risponde con quello che sa.</p>
+      <legend class="mb-1 text-[13px] font-medium text-muted">Strumenti</legend>
+      <p v-if="offered.length === 0" class="text-[13px] text-muted">Sul modello locale nessuno strumento: l’agente risponde con quello che sa.</p>
       <label v-for="tool in offered" :key="tool" class="flex items-start gap-2 text-[14px]" :class="modelValue.autonomy === 'A0' && acting(tool) ? 'opacity-50' : ''">
         <input
           type="checkbox"
@@ -64,36 +64,36 @@ const number = (event: Event): number => Number((event.target as HTMLInputElemen
           @change="toggle(tool, ($event.target as HTMLInputElement).checked)"
         />
         <span>
-          {{ TOOLS[tool]?.title ?? tool }} <span class="text-xs text-muted">· {{ TOOLS[tool]?.text }}</span>
+          {{ TOOLS[tool]?.title ?? tool }} <span class="text-[13px] text-muted">· {{ TOOLS[tool]?.text }}</span>
           <span v-if="sources.claudeTools[tool]" class="font-mono text-[12.5px] text-muted"> ({{ sources.claudeTools[tool]?.join(', ') }})</span>
         </span>
       </label>
-      <p v-if="modelValue.autonomy === 'A0' && offered.some(acting)" class="text-xs text-muted">Con A0 l’agente propone soltanto: modificare il codice ed eseguire i test richiedono A1.</p>
-      <p class="text-xs text-muted">Altri strumenti (base di conoscenza, web, domande in chat) arriveranno quando le deleghe sapranno usarli.</p>
+      <p v-if="modelValue.autonomy === 'A0' && offered.some(acting)" class="text-[13px] text-muted">Se propone soltanto, non può modificare il codice né eseguire i test: serve «Modifica in una copia protetta».</p>
+      <p class="text-[13px] text-muted">Altri strumenti (base di conoscenza, web, domande in chat) arriveranno quando le deleghe sapranno usarli.</p>
     </fieldset>
 
     <fieldset class="flex flex-col gap-1.5">
-      <legend class="mb-1 text-xs text-muted">Autonomia</legend>
+      <legend class="mb-1 text-[13px] font-medium text-muted">Autonomia</legend>
       <div class="flex flex-wrap gap-4 text-[14px]">
         <label class="flex items-center gap-2">
           <input type="radio" class="accent-[var(--accent)]" :name="`${idPrefix}-autonomy`" value="A0" :checked="modelValue.autonomy === 'A0'" @change="set({ autonomy: 'A0' })" />
-          A0 · propone soltanto
+          Propone soltanto
         </label>
         <label class="flex items-center gap-2">
           <input type="radio" class="accent-[var(--accent)]" :name="`${idPrefix}-autonomy`" value="A1" :checked="modelValue.autonomy === 'A1'" @change="set({ autonomy: 'A1' })" />
-          A1 · agisce nella sandbox
+          Modifica in una copia protetta
         </label>
       </div>
     </fieldset>
 
     <div class="grid grid-cols-2 gap-3 sm:max-w-sm">
-      <label class="flex flex-col gap-1 text-xs text-muted">
+      <label class="flex flex-col gap-1 text-[13px] font-medium text-muted">
         Passi per lavoro (1–{{ sources.allowed.limits.maxSteps }})
-        <input type="number" min="1" :max="sources.allowed.limits.maxSteps" step="1" class="field px-2 py-1.5 font-mono text-[14px] text-ink" :value="modelValue.maxSteps" @change="set({ maxSteps: number($event) })" />
+        <input type="number" min="1" :max="sources.allowed.limits.maxSteps" step="1" class="field px-2 py-1.5 text-[14px] text-ink" :value="modelValue.maxSteps" @change="set({ maxSteps: number($event) })" />
       </label>
-      <label class="flex flex-col gap-1 text-xs text-muted">
+      <label class="flex flex-col gap-1 text-[13px] font-medium text-muted">
         Minuti per lavoro (1–{{ sources.allowed.limits.maxMinutes }})
-        <input type="number" min="1" :max="sources.allowed.limits.maxMinutes" step="1" class="field px-2 py-1.5 font-mono text-[14px] text-ink" :value="modelValue.maxMinutes" @change="set({ maxMinutes: number($event) })" />
+        <input type="number" min="1" :max="sources.allowed.limits.maxMinutes" step="1" class="field px-2 py-1.5 text-[14px] text-ink" :value="modelValue.maxMinutes" @change="set({ maxMinutes: number($event) })" />
       </label>
     </div>
   </div>

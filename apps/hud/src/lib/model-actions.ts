@@ -145,7 +145,7 @@ export function confirmationOf(kind: ButtonKind, view: LocalModelView): Confirma
         modelId: id,
         title: `Scaricare ${id} dalla memoria?`,
         lines: [
-          `Il server locale (${where}) lo toglie dalla memoria${gib > 0 ? `: si liberano circa ${gib.toLocaleString('it-IT', { maximumFractionDigits: 1 })} GiB` : ''}. I file restano sul disco.`,
+          `Il server dei modelli (${where}) lo toglie dalla memoria${gib > 0 ? `: si liberano circa ${gib.toLocaleString('it-IT', { maximumFractionDigits: 1 })} GiB` : ''}. I file restano sul disco.`,
           view.roles.length > 0 ? `Ha il ruolo ${roleNames(view)}: la prossima richiesta lo ricarica, e la prima risposta arriva più lenta.` : 'Nessun ruolo lo usa: resta fuori dalla memoria finché non serve.',
         ],
         button: 'Scarica dalla memoria',
@@ -221,7 +221,7 @@ export function outcomeText(action: ModelAction | null): { text: string; tone: '
   if (action.kind === 'download') {
     if (action.status === 'done') return { text: 'Scaricato: tutti i file corrispondono al catalogo.', tone: 'ok' };
     if (action.status === 'cancelled') return { text: 'Scaricamento fermato: quello già scaricato resta sul disco.', tone: 'muted' };
-    return { text: `Scaricamento non riuscito: ${FAILURE_TEXT[action.error ?? ''] ?? 'errore del nucleo'}.`, tone: 'danger' };
+    return { text: `Scaricamento non riuscito: ${FAILURE_TEXT[action.error ?? ''] ?? 'errore di Arianna'}.`, tone: 'danger' };
   }
   if (action.status === 'done') {
     return action.bad.length === 0
@@ -229,7 +229,7 @@ export function outcomeText(action: ModelAction | null): { text: string; tone: '
       : { text: `Verifica: ${action.bad.length === 1 ? 'un file non corrisponde' : `${String(action.bad.length)} file non corrispondono`} al catalogo (${action.bad.join(', ')}). Riscaricali.`, tone: 'warn' };
   }
   if (action.status === 'cancelled') return { text: 'Verifica fermata.', tone: 'muted' };
-  return { text: `Verifica non riuscita: ${FAILURE_TEXT[action.error ?? ''] ?? 'il nucleo non ha potuto leggere i file'}.`, tone: 'danger' };
+  return { text: `Verifica non riuscita: ${FAILURE_TEXT[action.error ?? ''] ?? 'Arianna non ha potuto leggere i file'}.`, tone: 'danger' };
 }
 
 /** The refusals of the core (model-actions.ts, in English), in Italian; anything else as errorText says it. */

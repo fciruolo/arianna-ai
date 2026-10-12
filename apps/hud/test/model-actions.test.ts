@@ -82,7 +82,7 @@ describe('actionButtons', () => {
 
   it('a model with a role or in memory cannot be removed, and says why', () => {
     const assigned = actionButtons(local('fake-a', { roles: ['orchestrator'] })).find((button) => button.kind === 'remove');
-    assert.match(assigned?.blocked ?? '', /ruolo Orchestratore/);
+    assert.match(assigned?.blocked ?? '', /ruolo Mente di Arianna/);
     const loaded = local('fake-a', { state: 'loaded', loaded: [{ endpoint: 'omlx', gib: 18, busy: false }] });
     assert.deepEqual(kinds(loaded), ['verify', 'unload', 'remove']);
     assert.match(actionButtons(loaded).find((button) => button.kind === 'remove')?.blocked ?? '', /scaricalo dalla memoria/);
@@ -153,7 +153,7 @@ describe('progress and outcomes', () => {
     assert.equal(outcomeText(null), undefined);
     assert.equal(outcomeText(action({ status: 'done' }))?.tone, 'ok');
     assert.match(outcomeText(action({ status: 'failed', error: 'network' }))?.text ?? '', /si riprende da lì/);
-    assert.match(outcomeText(action({ status: 'failed', error: 'TypeError' }))?.text ?? '', /errore del nucleo/);
+    assert.match(outcomeText(action({ status: 'failed', error: 'TypeError' }))?.text ?? '', /errore di Arianna/);
     assert.match(outcomeText(action({ kind: 'verify', status: 'done', bad: ['a.bin', 'b.bin'] }))?.text ?? '', /2 file non corrispondono .*a\.bin, b\.bin/);
     assert.equal(outcomeText(action({ kind: 'verify', status: 'done' }))?.tone, 'ok');
   });
@@ -166,7 +166,7 @@ describe('progress and outcomes', () => {
 
 describe('actionErrorText', () => {
   it('translates the refusals of the core, roles included', () => {
-    assert.equal(actionErrorText(new ApiError(409, 'the model has the role orchestrator, extractor: give the role to another model first')), 'Il modello ha il ruolo Orchestratore, Estrattore: prima assegna il ruolo a un altro modello e salva.');
+    assert.equal(actionErrorText(new ApiError(409, 'the model has the role orchestrator, extractor: give the role to another model first')), 'Il modello ha il ruolo Mente di Arianna, Lettura dei documenti: prima assegna il ruolo a un altro modello e salva.');
     assert.equal(actionErrorText(new ApiError(409, 'a download of fake-b is running: wait for it or stop it')), 'Aspetta la fine: sto scaricando fake-b.');
     assert.match(actionErrorText(new ApiError(409, 'not enough free space: 123 bytes to download')), /spazio libero/);
     assert.match(actionErrorText(new ApiError(409, 'a trial of the model is queued or running: cancel it first')), /prova/);

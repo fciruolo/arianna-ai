@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { agentEntries, changedAgents, filterEntries, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
+import { agentEntries, changedAgents, filterEntries, lengthText, permissionWords, tabLabel, tabsOf, unsavedNames, whereOf, type AgentParts } from '../src/lib/agents-page.ts';
 import { DEFAULT_PERSONA_FORM } from '../src/lib/persona.ts';
 import type { CardSummary, UserAgentListing, UserAgentView } from '../src/lib/user-agents.ts';
 
@@ -143,5 +143,27 @@ describe('unsavedNames', () => {
   });
   it('counts the others', () => {
     assert.equal(unsavedNames(['a', 'b', 'c', 'd', 'e']), 'a, b, c e altri 2');
+  });
+});
+
+describe('permissionWords (D-192)', () => {
+  it('says the grade and the autonomy in words', () => {
+    assert.deepEqual(permissionWords({ maxLabel: 'L1', autonomy: 'A1' }), { sees: 'Vede: dati di lavoro', can: 'Può: modificare file in una copia protetta' });
+    assert.deepEqual(permissionWords({ maxLabel: 'L0', autonomy: 'A0' }), { sees: 'Vede: solo dati pubblici', can: 'Può: solo proporre' });
+  });
+  it('shows an unknown code as it is', () => {
+    assert.deepEqual(permissionWords({ maxLabel: 'L9', autonomy: 'A9' }), { sees: 'Vede: L9', can: 'Può: A9' });
+  });
+});
+
+describe('tabLabel and lengthText (D-192)', () => {
+  it('counts the skills only on their tab, only when there are some', () => {
+    assert.equal(tabLabel('skills', 2), 'Skill · 2');
+    assert.equal(tabLabel('skills', 0), 'Skill');
+    assert.equal(tabLabel('persona', 3), 'Personalità');
+  });
+  it('says the characters used of the maximum', () => {
+    assert.equal(lengthText(68, 400), '68 di 400 caratteri');
+    assert.equal(lengthText(0, 4000), '0 di 4.000 caratteri');
   });
 });

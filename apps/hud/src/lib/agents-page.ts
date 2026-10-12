@@ -4,12 +4,12 @@
  * not saved. Pure functions; the page is `AgentsSettings.vue`.
  */
 import { personasBody, type PersonaForm } from './persona.ts';
-import type { UserAgentListing, UserAgentView } from './user-agents.ts';
+import type { CardSummary, UserAgentListing, UserAgentView } from './user-agents.ts';
 
 /** One card of the list. */
 export interface AgentEntry {
   id: string;
-  /** In `agents/`, in git; otherwise one of the user's, in `data/agents`. */
+  /** One of the repository (official, in git); otherwise one of the user's. */
   official: boolean;
   on: boolean;
   /** `cloud`: what it receives can go to Claude; `local`: it stays on the computer. */
@@ -85,4 +85,35 @@ export function changedAgents(form: AgentParts, base: AgentParts): string[] {
 export function unsavedNames(names: readonly string[]): string {
   if (names.length <= 3) return names.join(', ');
   return `${names.slice(0, 3).join(', ')} e altri ${String(names.length - 3)}`;
+}
+
+/** What the data grade of a card lets the agent see, in plain words (D-192). */
+const SEES_TEXT: Record<string, string> = { L0: 'solo dati pubblici', L1: 'dati di lavoro', L2: 'anche dati privati', L3: 'anche dati riservati' };
+/** What the autonomy of a card lets the agent do, in plain words (D-192). */
+const CAN_TEXT: Record<string, string> = {
+  A0: 'solo proporre',
+  A1: 'modificare file in una copia protetta',
+  A2: 'azioni reversibili anche fuori dalla copia protetta',
+  A3: 'anche azioni verso l’esterno',
+};
+
+/**
+ * The permissions of a card said in words, for the head of an agent (D-192):
+ * «Vede: dati di lavoro» and «Può: modificare file in una copia protetta»
+ * instead of «Interno · A1». An unknown code is shown as it is.
+ */
+export function permissionWords(card: Pick<CardSummary, 'maxLabel' | 'autonomy'>): { sees: string; can: string } {
+  return { sees: `Vede: ${SEES_TEXT[card.maxLabel] ?? card.maxLabel}`, can: `Può: ${CAN_TEXT[card.autonomy] ?? card.autonomy}` };
+}
+
+/** The name of a tab; Skill carries how many are assigned (D-192): «Skill · 2». */
+export function tabLabel(tab: AgentTab, skills: number): string {
+  return tab === 'skills' && skills > 0 ? `${TAB_TEXT.skills} · ${String(skills)}` : TAB_TEXT[tab];
+}
+
+/** The count under a long text (D-192): «68 di 400 caratteri». */
+export function lengthText(used: number, max: number): string {
+  // Thousands with a dot even for four digits: the Italian locale leaves 4000 ungrouped.
+  const group = (value: number): string => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${group(used)} di ${group(max)} caratteri`;
 }

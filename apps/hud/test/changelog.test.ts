@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { compareVersions, currentText, italianDate, orderVersions, sectionTone, skippedText, versionDate, versionTitle } from '../src/lib/changelog.ts';
 import { CHANGELOG_PATH, isChangelogPath, isSettingsPath } from '../src/lib/route.ts';
-import { hrefOf, resolveSection, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
+import { hrefOf, legacySection, resolveSection, SETTINGS_INDEX } from '../src/lib/settings-index.ts';
 import type { ChangelogVersion } from '../src/lib/types.ts';
 
 function version(number: string | null, date: string | null = null): ChangelogVersion {
@@ -49,14 +49,16 @@ test('skipped lines are told only when there are some', () => {
   assert.match(skippedText(3) ?? '', /^3 righe/);
 });
 
-test('the page has its own address, reached from the settings index', () => {
+test('«Novità» is a section of the settings (D-192); its old address still leads there', () => {
   assert.equal(isChangelogPath(CHANGELOG_PATH), true);
   assert.equal(isChangelogPath(`${CHANGELOG_PATH}/`), true);
   assert.equal(isChangelogPath('/novita/altro'), false);
   assert.equal(isSettingsPath(CHANGELOG_PATH), false);
   const item = SETTINGS_INDEX.flatMap((group) => group.items).find((entry) => entry.id === 'changelog');
   assert.ok(item !== undefined);
-  assert.equal(hrefOf(item), CHANGELOG_PATH);
-  // A page of its own is not a section of the settings.
-  assert.equal(resolveSection('novita').explicit, false);
+  assert.equal(hrefOf(item), '/impostazioni/novita');
+  assert.deepEqual(resolveSection('novita'), { item, explicit: true });
+  assert.equal(legacySection(CHANGELOG_PATH), 'novita');
+  assert.equal(legacySection(`${CHANGELOG_PATH}/`), 'novita');
+  assert.equal(legacySection('/novita/altro'), undefined);
 });
