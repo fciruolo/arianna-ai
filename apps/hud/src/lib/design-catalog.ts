@@ -1,5 +1,5 @@
 /**
- * "Stili di Open Design" in Impostazioni → Agenti (D-160): the shapes the
+ * "Stili per il Designer" in Impostazioni → Skill e stili (D-160, D-192): the shapes the
  * core gives (design-catalog.ts) and the texts of the section. The catalog is
  * public text of a third party: the page shows it, never as an instruction.
  */
@@ -70,7 +70,7 @@ export interface StyleText {
 /** The button: "Scarica catalogo" the first time, then "Aggiorna catalogo". */
 export function updateButtonText(status: CatalogStatus | null): string {
   if (status?.job?.status === 'running') return status.job.phase === 'index' ? 'Leggo il catalogo…' : 'Scarico…';
-  return status?.adopted === null || status === null ? 'Scarica catalogo' : 'Aggiorna catalogo';
+  return status?.adopted === null || status === null ? 'Scarica gli stili' : 'Cerca aggiornamenti';
 }
 
 /** Why the button cannot be pressed now; undefined: it can. */
@@ -102,6 +102,20 @@ export function dateText(iso: string | null): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'data sconosciuta';
   return date.toLocaleString('it-IT', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/** A date of the core as a day, for a version: «2 ottobre 2026»; null when unknown. */
+export function dayText(iso: string | null): string | null {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** The version as the page says it (D-192): by its date, never by its commit. */
+export function versionText(iso: string | null): string {
+  const day = dayText(iso);
+  return day === null ? 'la versione scaricata' : `la versione del ${day}`;
 }
 
 /** The credit line under the section: where the text comes from and its license. */
@@ -147,7 +161,7 @@ export function jobErrorText(error: string | null): string {
 export function catalogErrorText(cause: unknown): string {
   if (cause instanceof ApiError) {
     for (const [pattern, text] of REFUSALS) if (pattern.test(cause.message)) return text;
-    if (cause.status === 404 && cause.message === 'not found') return 'Il nucleo non ha il catalogo di Open Design: riavvialo dopo l’aggiornamento.';
+    if (cause.status === 404 && cause.message === 'not found') return 'Questa versione di Arianna non ha il catalogo di Open Design: riavviala dopo l’aggiornamento.';
   }
   return errorText(cause);
 }

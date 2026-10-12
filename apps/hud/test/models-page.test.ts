@@ -28,6 +28,9 @@ import {
   type ModelEntry,
   type ModelFilter,
   type ModelsOverview,
+  pagesText,
+  reliabilityText,
+  unsavedCount,
 } from '../src/lib/models-page.ts';
 import type { CloudModelsForm } from '../src/lib/settings.ts';
 
@@ -229,7 +232,7 @@ describe('usage', () => {
     const [qwen, kokoro] = overview.local;
     assert.ok(qwen !== undefined && kokoro !== undefined);
     const lines = usageLines(qwen);
-    assert.equal(lines[0], 'Ruolo Orchestratore (alias local-large)');
+    assert.equal(lines[0], 'Ruolo Mente di Arianna (alias local-large)');
     assert.equal(lines[1], 'Pianificazione: sempre');
     assert.equal(lines.at(-1), 'Agenti che partono con questo modello: Arianna');
     assert.deepEqual(usageLines(kokoro), []);
@@ -255,7 +258,7 @@ describe('numbers', () => {
     assert.deepEqual(memorySummary({ memoryGib: 32, budgets: [], estimatedGib: 40, swap: null }, []), {
       value: '40 di 32 GiB',
       ratio: 1,
-      detail: 'Nessun modello caricato da Arianna',
+      detail: 'Nessun modello in memoria',
     });
     assert.equal(memorySummary(null, overview.local), null);
   });
@@ -272,9 +275,9 @@ describe('cloud card', () => {
 
   it('says why a model is out, nothing when it is on', () => {
     assert.equal(cloudNotice(sonnet), undefined);
-    assert.match(cloudNotice(cloud('sol', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Codex/);
-    assert.match(cloudNotice(cloud('opus', { state: 'not-connected', adapter: false })) ?? '', /adattatore di Claude/);
-    assert.match(cloudNotice(cloud('opus', { state: 'executor-off' })) ?? '', /Claude Code è spento in Esecutori cloud/);
+    assert.match(cloudNotice(cloud('sol', { state: 'not-connected', adapter: false })) ?? '', /non può usare Codex/);
+    assert.match(cloudNotice(cloud('opus', { state: 'not-connected', adapter: false })) ?? '', /non può usare Claude/);
+    assert.match(cloudNotice(cloud('opus', { state: 'executor-off' })) ?? '', /Claude Code è spento in Claude e Codex/);
     assert.match(cloudNotice(cloud('opus', { state: 'off' })) ?? '', /^Spento/);
   });
 
@@ -293,7 +296,7 @@ describe('cloud card', () => {
   });
 
   it('states the rule of privacy by where it runs', () => {
-    assert.match(privacyText(sonnet), /solo dati Pubblici e Interni/);
+    assert.match(privacyText(sonnet), /solo dati di lavoro \(Pubblici e Interni\)/);
     assert.match(privacyText(local('x')), /niente esce/);
   });
 });
@@ -338,6 +341,30 @@ describe('roles and unsaved edits', () => {
     // Spaces count, as for the rest of the settings page: the bar and the page agree on what is an edit.
     assert.deepEqual(unsavedKeys({ roles: { orchestrator: 'a' }, cloudModels: rows({ enabled: true, name: '  ' }) }, base), new Set(['cloud:opus']));
     assert.deepEqual(unsavedKeys({ roles: { orchestrator: 'a' }, cloudModels: rows({ enabled: true, name: 'opus[1m]' }) }, base), new Set(['cloud:opus']));
+  });
+
+  it('counts the changes for the save bar: a role that changed hands is one (D-192)', () => {
+    const base = { roles: { orchestrator: 'a', extractor: 'b' }, cloudModels: rows({ enabled: true, name: '' }), sprites: 'opus' };
+    assert.equal(unsavedCount(base, base), 0);
+    assert.equal(unsavedCount({ ...base, roles: { orchestrator: 'b', extractor: 'b' } }, base), 1);
+    assert.equal(unsavedCount({ ...base, cloudModels: rows({ enabled: false, name: '' }), sprites: 'local' }, base), 2);
+  });
+});
+
+describe('the card in plain words (D-192)', () => {
+  it('says the context in pages, about 1300 tokens each, rounded', () => {
+    assert.equal(pagesText(131_072), 'circa 100 pagine');
+    assert.equal(pagesText(32_768), 'circa 30 pagine');
+    assert.equal(pagesText(8192), 'circa 6 pagine');
+    assert.equal(pagesText(1300), 'circa una pagina');
+    assert.equal(pagesText(500), 'meno di una pagina');
+    assert.equal(pagesText(null), 'non indicato');
+    assert.equal(pagesText(undefined), 'non indicato');
+  });
+
+  it('says the reliability without the words of the catalog', () => {
+    assert.equal(reliabilityText('verified'), 'provato e consigliato');
+    assert.equal(reliabilityText('experimental'), 'in prova');
   });
 });
 

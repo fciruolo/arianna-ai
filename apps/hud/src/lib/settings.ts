@@ -211,13 +211,18 @@ export type SettingsBody = Partial<Pick<SettingsValues, Exclude<OrdinarySection,
 export type PrivacySection = 'executors' | 'telegram' | 'projects' | 'endpoints' | 'fetchSites';
 export type Section = OrdinarySection | PrivacySection;
 
-export const ROLE_TEXT: Record<ModelRole, { title: string; hint: string }> = {
-  orchestrator: { title: 'Orchestratore', hint: 'Arianna che ragiona' },
-  extractor: { title: 'Estrattore', hint: 'schede e fatti dai documenti' },
-  embedder: { title: 'Embedder', hint: 'ricerca nell’archivio' },
-  voice: { title: 'Voce', hint: 'risponde in chiamata' },
-  stt: { title: 'Trascrizione', hint: 'stt' },
-  tts: { title: 'Sintesi', hint: 'tts' },
+/**
+ * The roles of the local models in plain words (D-192): `task` says what the
+ * model does («Chi fa cosa»), `name` is the short name in sentences and
+ * filters, `hint` explains it under the menu.
+ */
+export const ROLE_TEXT: Record<ModelRole, { task: string; name: string; hint: string }> = {
+  orchestrator: { task: 'Ragiona e risponde in chat', name: 'Mente di Arianna', hint: 'È la mente di Arianna. Solo modelli sul Mac.' },
+  extractor: { task: 'Legge i documenti', name: 'Lettura dei documenti', hint: 'Tira fuori date, importi e nomi da fatture e note.' },
+  embedder: { task: 'Cerca nell’archivio', name: 'Ricerca nell’archivio', hint: 'Trova le note simili a quello che chiedi.' },
+  voice: { task: 'Risponde al telefono', name: 'Telefono', hint: 'Più piccolo e veloce, per le chiamate.' },
+  stt: { task: 'Capisce quello che dici', name: 'Ascolto', hint: 'Trasforma la tua voce in testo.' },
+  tts: { task: 'Parla con la sua voce', name: 'Voce', hint: 'Trasforma le risposte in voce.' },
 };
 
 export const STATE_TEXT: Record<WatchdogState, string> = {
@@ -537,7 +542,7 @@ function endpointChange(before: EndpointValues, after: EndpointValues): string {
   const parts: string[] = [];
   if (before.url !== after.url) parts.push(`indirizzo ${before.url} → ${after.url}`);
   if (!sameValue(before.command ?? null, after.command ?? null)) {
-    parts.push(after.command === undefined ? 'senza comando: il nucleo lo osserva soltanto' : `comando: ${commandText(after.command)}`);
+    parts.push(after.command === undefined ? 'senza comando: Arianna lo controlla soltanto' : `comando: ${commandText(after.command)}`);
   }
   if (!sameValue(before.models ?? null, after.models ?? null)) parts.push(`nomi dei modelli: ${modelsText(after.models)}`);
   return `Server ${after.id}: ${parts.join('; ')}`;
@@ -548,8 +553,8 @@ export function changeLines(changes: PrivacyChanges): ChangeLine[] {
   const lines: ChangeLine[] = [];
   if (changes.executors !== undefined) {
     const { before, after } = changes.executors;
-    for (const executor of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `Esecutore ${EXECUTOR_TEXT[executor] ?? executor} acceso` });
-    for (const executor of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `Esecutore ${EXECUTOR_TEXT[executor] ?? executor} spento` });
+    for (const executor of after.filter((item) => !before.includes(item))) lines.push({ kind: 'add', text: `${EXECUTOR_TEXT[executor] ?? executor} acceso` });
+    for (const executor of before.filter((item) => !after.includes(item))) lines.push({ kind: 'remove', text: `${EXECUTOR_TEXT[executor] ?? executor} spento` });
   }
   if (changes.telegram !== undefined) {
     const { before, after } = changes.telegram;
@@ -589,22 +594,22 @@ export function exitLines(exits: PrivacyExits): string[] {
   const projects = exits.projects.map((project) => `${project.name} (${labelWord(project.label)})`).join(', ');
   for (const executor of exits.executors) {
     const name = EXECUTOR_TEXT[executor] ?? executor;
-    lines.push(projects === '' ? `${name} potrà ricevere testi Pubblici o Interni dal gateway; nessun progetto.` : `${name} potrà ricevere testi Pubblici o Interni dal gateway e lavorare in: ${projects}.`);
+    lines.push(projects === '' ? `Verso ${name}: il testo dei lavori che Arianna gli passa, solo Pubblico o Interno; nessun progetto.` : `Verso ${name}: il testo dei lavori che Arianna gli passa, solo Pubblico o Interno, e i file dei progetti ${projects}.`);
   }
-  if (exits.executors.length === 0) lines.push('Nessun esecutore cloud: niente esce verso Claude Code o Codex.');
+  if (exits.executors.length === 0) lines.push('Claude e Codex spenti: nessun lavoro esce verso il cloud.');
   lines.push(exits.telegram === null ? 'Telegram spento.' : `Telegram: ${chatsText(exits.telegram.chats)}, al massimo Interno.`);
   for (const endpoint of exits.endpoints) {
     lines.push(
       endpoint.command === null
-        ? `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro.`
-        : `${endpoint.id} (${endpoint.url}) vede i dati Privati in chiaro; il nucleo esegue: ${commandText(endpoint.command)}`,
+        ? `${endpoint.id} (${endpoint.url}) vede i dati privati.`
+        : `${endpoint.id} (${endpoint.url}) vede i dati privati; Arianna lo avvia con: ${commandText(endpoint.command)}`,
     );
   }
   const sites = exits.fetchSites ?? [];
   lines.push(
     sites.length === 0
       ? 'Nessun sito scaricato da solo: un link si scarica solo con «Scarica e riassumi».'
-      : `Al riordino il nucleo scarica i link di: ${sites.join(', ')} (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.`,
+      : `Arianna scarica da sola i link di: ${sites.join(', ')} (anche i sottodomini); ogni sito riceve solo l’indirizzo dei suoi link, i post di X vanno a publish.twitter.com.`,
   );
   return lines;
 }
@@ -622,7 +627,7 @@ export function writeError(status: number, message: string): { text: string; rel
     return { text: `Le impostazioni non si leggono: ${message}`, reload: true };
   }
   if (status === 404 || status === 410) return { text: 'La conferma è scaduta o è già stata usata: rivedi di nuovo le uscite.', reload: false };
-  if (status === 400) return { text: `Il nucleo ha rifiutato la modifica: ${message}`, reload: false };
+  if (status === 400) return { text: `Arianna ha rifiutato la modifica: ${message}`, reload: false };
   return { text: `Non riuscito: ${message}`, reload: false };
 }
 
@@ -659,7 +664,58 @@ export function voiceProblem(form: VoiceForm): string | undefined {
   const { port, limits, outgoing } = form.values;
   const numbers = [port, limits.callMinutes, limits.warnSeconds, limits.delegations, limits.delegationSeconds, outgoing.maxPerDay, outgoing.ringSeconds, outgoing.waitingMinutes];
   if (numbers.some((value) => typeof value !== 'number' || !Number.isInteger(value))) return 'Un numero è vuoto o non intero.';
-  if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche push servono chiave pubblica e contatto.';
+  return undefined;
+}
+
+/**
+ * The keys of the notifications with the chat closed (D-066): stored in
+ * `[voice.push]`, shown and saved from Notifiche since D-192. The rest of
+ * `[voice]` is the part of Voce e chiamate: each section changes and saves
+ * only its part, the other one as read.
+ */
+export interface PushPart {
+  push: boolean;
+  publicKey: string;
+  subject: string;
+}
+
+export function pushPart(form: VoiceForm): PushPart {
+  return { push: form.push, publicKey: form.publicKey, subject: form.subject };
+}
+
+/** `target` with the push part of `source`. */
+export function withPush(target: VoiceForm, source: VoiceForm): VoiceForm {
+  return { ...copy(target), ...pushPart(source) };
+}
+
+/** The push part differs (Notifiche). */
+export function pushChanged(form: VoiceForm, base: VoiceForm): boolean {
+  return !sameValue(pushPart(form), pushPart(base));
+}
+
+/** Calls, limits and the voice differ (Voce e chiamate), whatever the push part. */
+export function callsChanged(form: VoiceForm, base: VoiceForm): boolean {
+  return !sameValue(withPush(form, base), base);
+}
+
+/** The [voice] a section sends: its own part as edited, the other part as read. */
+export function voiceSent(part: 'calls' | 'push', current: VoiceForm, read: VoiceForm): VoiceValues | null {
+  return voiceBody(part === 'push' ? withPush(read, current) : withPush(current, read));
+}
+
+/**
+ * The [voice] of the page after a save of `part`: what the core answered,
+ * with the edits of the other part kept only when there were edits (a voice
+ * turned off drops its keys, and keys not touched follow the file).
+ */
+export function voiceAfterSave(part: 'calls' | 'push', before: VoiceForm, read: VoiceForm, fresh: VoiceForm): VoiceForm {
+  if (part === 'calls') return pushChanged(before, read) ? withPush(fresh, before) : fresh;
+  return callsChanged(before, read) ? withPush(before, fresh) : fresh;
+}
+
+/** Why the push part cannot be saved: on, with the key or the contact empty. */
+export function pushProblem(form: VoiceForm): string | undefined {
+  if (form.push && (form.publicKey.trim() === '' || form.subject.trim() === '')) return 'Per le notifiche a chat chiusa servono la chiave pubblica e l’email di contatto.';
   return undefined;
 }
 

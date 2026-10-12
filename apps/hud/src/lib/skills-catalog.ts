@@ -5,7 +5,7 @@
  * shows them, an agent reads them as data, never as an instruction.
  */
 import { ApiError } from './api.ts';
-import { jobErrorText as designJobErrorText, type CatalogJob, type KindChanges } from './design-catalog.ts';
+import { dayText, jobErrorText as designJobErrorText, type CatalogJob, type KindChanges } from './design-catalog.ts';
 import { errorText } from './italian.ts';
 
 export interface SkillVersion {
@@ -75,12 +75,12 @@ export function sourceUrlProblem(value: string): string | undefined {
 /** The button of a source: "Scarica" the first time, then "Aggiorna". */
 export function sourceButtonText(source: SkillSource): string {
   if (source.job?.status === 'running') return source.job.phase === 'index' ? 'Leggo le skill…' : 'Scarico…';
-  return source.adopted === null ? 'Scarica' : 'Aggiorna';
+  return source.adopted === null ? 'Scarica' : 'Cerca aggiornamenti';
 }
 
 /** Why the button of a source cannot be pressed now; undefined: it can. */
 export function sourceBlocked(source: SkillSource): string | undefined {
-  if (source.readOnly) return 'Si aggiorna dalla sezione Stili di Open Design';
+  if (source.readOnly) return 'Si aggiorna con gli stili di Open Design, in «Stili per il Designer»';
   if (source.job?.status === 'running') return 'Un download è già in corso';
   if (source.pending !== null) return 'Prima usa o scarta la versione scaricata';
   return undefined;
@@ -106,6 +106,13 @@ export function sourceLicenseText(source: SkillSource): string {
   if (source.license.name !== null) return `licenza ${source.license.name}`;
   if (source.license.file !== null) return `licenza in ${source.license.file}`;
   return 'nessuna licenza alla radice: vale quella di ciascuna skill';
+}
+
+/** One line under a source (D-192): how many skills, the license and the date of the version in use; never a commit. */
+export function sourceSummaryText(source: SkillSource): string {
+  if (source.adopted === null) return 'non ancora scaricata';
+  const day = dayText(source.adopted.committedAt);
+  return `${plural(source.adopted.skills, 'skill', 'skill')} · ${sourceLicenseText(source)}${day === null ? '' : ` · versione del ${day}`}`;
 }
 
 /** The license of one skill as the page says it: "see X" of the core in Italian. */
@@ -142,7 +149,7 @@ export function withoutSkill(list: readonly string[], id: string): string[] {
 /** Why an agent takes no skills, from the core's reason (D-161); undefined when it may. */
 export function skillRefusalText(reason: string | null | undefined): string | undefined {
   if (reason === null) return undefined;
-  if (reason === undefined) return 'Il nucleo non conosce questo agente: le skill non si possono assegnare.';
+  if (reason === undefined) return 'Arianna non conosce questo agente: le skill non si possono assegnare.';
   if (/^Arianna/.test(reason)) return 'Arianna non riceve skill: il testo di terzi non diventa mai un’istruzione per lei. Assegnale agli agenti a cui delega.';
   if (/untrusted_content/.test(reason)) return 'La scheda di questo agente non legge testo non fidato (untrusted_content chiuso): non riceve skill.';
   return `Questo agente non riceve skill: ${reason}`;
@@ -152,7 +159,7 @@ const REFUSALS: [RegExp, string][] = [
   [/^the address must be/, 'Solo https://github.com/<proprietario>/<repository>.'],
   [/^this source is already followed/, 'Questa sorgente c’è già.'],
   [/^Open Design is already a source/, 'Open Design è già una sorgente: le sue skill arrivano con il catalogo degli stili.'],
-  [/^the skills of Open Design are updated/, 'Le skill di Open Design si aggiornano dalla sezione Stili di Open Design.'],
+  [/^the skills of Open Design are updated/, 'Le skill di Open Design si aggiornano da «Stili per il Designer».'],
   [/^at most \d+ sources/, 'Hai raggiunto il numero massimo di sorgenti.'],
   [/^no such source of skills/, 'Questa sorgente non è più seguita: ricarica la pagina.'],
   [/^the list of sources is being changed/, 'L’elenco delle sorgenti è occupato da un altro processo (per esempio pnpm skills:catalog): riprova.'],
@@ -177,7 +184,7 @@ export function skillJobErrorText(error: string | null): string {
 export function skillsErrorText(cause: unknown): string {
   if (cause instanceof ApiError) {
     for (const [pattern, text] of REFUSALS) if (pattern.test(cause.message)) return text;
-    if (cause.status === 404 && cause.message === 'not found') return 'Il nucleo non ha il catalogo di skill: riavvialo dopo l’aggiornamento.';
+    if (cause.status === 404 && cause.message === 'not found') return 'Questa versione di Arianna non ha il catalogo di skill: riavviala dopo l’aggiornamento.';
   }
   return errorText(cause);
 }

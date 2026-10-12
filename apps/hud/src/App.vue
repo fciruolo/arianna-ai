@@ -22,9 +22,7 @@ import ClientsPage from './components/ClientsPage.vue';
 import FinancePage from './components/FinancePage.vue';
 import PixelAgent from './components/PixelAgent.vue';
 import SearchDialog from './components/SearchDialog.vue';
-import ChangelogPage from './components/ChangelogPage.vue';
 import NewAgentPage from './components/NewAgentPage.vue';
-import DevProgressPage from './components/DevProgressPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import SideBar from './components/SideBar.vue';
 import StatusPanel from './components/StatusPanel.vue';
@@ -50,12 +48,8 @@ import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
 import { DESIGNER_AGENT, isStudioPath, messageDesign, NO_DESIGN, studioFromSearch, studioPathFor, type StudioAddress, type StudioDesign } from './lib/studio.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
-  CHANGELOG_PATH,
   conversationFromPath,
-  DEV_PATH,
   documentTitle,
-  isChangelogPath,
-  isDevPath,
   isKnowledgePath,
   isNewAgentPath,
   isOfficePath,
@@ -77,6 +71,7 @@ import {
   VOICE_TRIAL_PATH,
   type KnowledgeSource,
 } from './lib/route.ts';
+import { legacySection } from './lib/settings-index.ts';
 import { conversationState, poseOf, type Pose } from './lib/sprites.ts';
 import { loadTheme, nextTheme, saveTheme, THEME_ICON, themeAttribute, themeLabel, type Theme } from './lib/theme.ts';
 import type { Activity, Approval, CharacterChoice } from './lib/types.ts';
@@ -338,9 +333,9 @@ const clockText = computed(() => {
 });
 
 // The voice trial page (D-066) and the settings page (D-071) have an address of their own and replace the chat.
-const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio'>('chat');
+const page = ref<'chat' | 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio'>('chat');
 
-function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'dev' | 'changelog' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio', path: string, title: string): void {
+function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 'god' | 'office' | 'new-agent' | 'projects' | 'clients' | 'finance' | 'cardwall' | 'studio', path: string, title: string): void {
   showSidebar.value = false;
   page.value = name;
   if (chat.value !== null || draft.value !== null || incognitoEnd.value !== null) store.close();
@@ -350,11 +345,6 @@ function openPage(name: 'voice-trial' | 'settings' | 'knowledge' | 'thoughts' | 
 
 function openVoiceTrial(): void {
   openPage('voice-trial', VOICE_TRIAL_PATH, 'Provino della voce');
-}
-
-/** "Sviluppo di Arianna" (D-102), reached from the settings. */
-function openDevProgress(): void {
-  openPage('dev', DEV_PATH, 'Sviluppo di Arianna');
 }
 
 /**
@@ -381,11 +371,6 @@ watch(live, (state) => {
 /** "Nuovo agente" (D-119, tappa T3), reached from the Agents section of the settings. */
 function openNewAgent(): void {
   openPage('new-agent', NEW_AGENT_PATH, 'Nuovo agente');
-}
-
-/** "Novità": the register of the versions, reached from the settings. */
-function openChangelog(): void {
-  openPage('changelog', CHANGELOG_PATH, 'Novità');
 }
 
 /** The section of the settings in the address (D-105): `/impostazioni/<slug>`; undefined is the first one. */
@@ -584,12 +569,11 @@ function followAddress(): void {
     openKnowledge(knowledgeFocus(window.location.search), knowledgeSource(window.location.search));
     return;
   }
-  if (isDevPath(window.location.pathname)) {
-    openDevProgress();
-    return;
-  }
-  if (isChangelogPath(window.location.pathname)) {
-    openChangelog();
+  // «Novità» and «Sviluppo di Arianna» are sections of the settings (D-192): their old addresses open them.
+  const legacy = legacySection(window.location.pathname);
+  if (legacy !== undefined) {
+    window.history.replaceState(window.history.state, '', settingsPathFor(legacy));
+    openSettings(legacy);
     return;
   }
   if (isThoughtsPath(window.location.pathname)) {
@@ -799,7 +783,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       :class="[showSidebar ? 'translate-x-0' : '-translate-x-full', { 'md:hidden': layout.sidebar }]"
       :inert="!showSidebar && !wideSidebar"
       :live="live"
-      :page="page === 'dev' || page === 'changelog' || page === 'new-agent' ? 'settings' : page"
+      :page="page === 'new-agent' ? 'settings' : page"
       :conversations="conversations"
       :archived="archived"
       :system-chats="systemChats"
@@ -871,8 +855,6 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           </template>
           <template v-else-if="page === 'voice-trial'">Impostazioni / Voce / <b class="font-medium text-ink">Provino della voce</b></template>
           <template v-else-if="page === 'settings'">Arianna / <b class="font-medium text-ink">Impostazioni</b></template>
-          <template v-else-if="page === 'dev'">Impostazioni / <b class="font-medium text-ink">Sviluppo di Arianna</b></template>
-          <template v-else-if="page === 'changelog'">Impostazioni / <b class="font-medium text-ink">Novità</b></template>
           <template v-else-if="page === 'new-agent'">Impostazioni / Agenti / <b class="font-medium text-ink">Nuovo agente</b></template>
           <template v-else-if="page === 'knowledge'">Arianna / <b class="font-medium text-ink">Conoscenza</b></template>
           <template v-else-if="page === 'thoughts'">Arianna / <b class="font-medium text-ink">Pensieri</b></template>
@@ -990,9 +972,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
       </p>
 
       <VoiceTrial v-if="page === 'voice-trial'" @back="openSettings('voce')" />
-      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-progress="openDevProgress" @changelog="openChangelog" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
-      <DevProgressPage v-else-if="page === 'dev'" @pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" />
-      <ChangelogPage v-else-if="page === 'changelog'" @open="openConversation" />
+      <SettingsPage v-else-if="page === 'settings'" :installation="installation" :direct-agents="directAgents" :section="settingsSection" :dev-pending="devPending" :theme="theme" @theme="(value) => (theme = value)" @section="openSettings" @dirty="settingsDirty = $event" @changed="settingsChanged" @voice-trial="openVoiceTrial" @dev-pending="devPending = $event" @knowledge="openKnowledge(undefined, 'arianna')" @open="openConversation" @new-agent="openNewAgent" @chat="openNew" @chat-trial="openTrialChat" />
       <NewAgentPage v-else-if="page === 'new-agent'" @done="openSettings('agenti')" @changed="settingsChanged(['userAgents', 'characters'])" />
       <KnowledgePage v-else-if="page === 'knowledge'" :focus="knowledgeNode" :source="knowledgeFrom" @source="openKnowledge(undefined, $event)" />
       <ThoughtsPage v-else-if="page === 'thoughts'" @open-graph="openKnowledge" />

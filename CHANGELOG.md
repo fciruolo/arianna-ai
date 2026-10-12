@@ -4,6 +4,23 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Impostazioni: ogni sezione larga uguale, con titolo normale, una pillola («Vale subito», «Con conferma»), una frase con un esempio e i campi su sei colonne (D-192).
+- Impostazioni: indice in sei gruppi (Intelligenza, Comunicazione, Lavoro, Privacy e uscite, Sistema, Informazioni) con i nomi nuovi «Claude e Codex», «Link da riassumere», «Server dei modelli», «Aspetto e installazione»; i vecchi indirizzi portano alla sezione nuova (D-192).
+- Impostazioni: Novità e Sviluppo di Arianna sono sezioni con l'indice a sinistra; `/novita` e `/sviluppo` portano lì (D-192).
+- Impostazioni: una sola barra di salvataggio per sezione, che compare solo con modifiche; ambra con «Rivedi cosa esce…» dove i dati possono uscire dal Mac (D-192).
+- Impostazioni, Modelli: «Chi fa cosa» in alto con i ruoli detti per compito, un solo interruttore per i modelli cloud, scheda in parole semplici, Hugging Face chiuso in fondo (D-192).
+- Impostazioni, Agenti: schede in carattere normale, permessi detti a parole, campi su sei colonne; i cataloghi passano in «Skill e stili» (D-192).
+- Impostazioni: la chiave delle notifiche a chat chiusa passa da Voce a Notifiche, in Avanzate; anche porta della voce e indirizzo e comando dei server stanno in Avanzate chiuse (D-192).
+- Impostazioni: la conferma delle uscite dice anche cosa non esce mai e si applica con «Conferma e salva» (D-192).
+
+### Aggiunto
+
+- Impostazioni: voce «Skill e stili» con gli stili per il Designer, le Novità di Open Design e le skill da GitHub (D-192).
+- Impostazioni, Claude e Codex: cosa riceve ciascuno e la tabella «Cosa resta sempre sul Mac» al posto della voce Etichette (D-192).
+- Impostazioni: errori con «Riprova» e il collegamento alla sezione che risolve, stati vuoti che dicono cosa fare (D-192).
+
 ## [0.83.0] - 2026-10-12
 
 ### Cambiato

@@ -164,7 +164,7 @@ export const LOCAL_STATE_TEXT: Record<LocalState, { text: string; tone: Tone }> 
 export const CLOUD_STATE_TEXT: Record<CloudState, { text: string; tone: Tone }> = {
   on: { text: 'acceso', tone: 'ok' },
   off: { text: 'spento', tone: 'muted' },
-  'executor-off': { text: 'esecutore spento', tone: 'warn' },
+  'executor-off': { text: 'spento in Claude e Codex', tone: 'warn' },
   'not-connected': { text: 'non collegato', tone: 'warn' },
 };
 
@@ -179,7 +179,7 @@ export const STEP_TEXT: Record<StepKind, string> = {
 };
 
 /** The roles of the local models, as the filter and the card call them. */
-export const ROLE_NAME = Object.fromEntries(MODEL_ROLES.map((role) => [role, ROLE_TEXT[role].title])) as Record<ModelRole, string>;
+export const ROLE_NAME = Object.fromEntries(MODEL_ROLES.map((role) => [role, ROLE_TEXT[role].name])) as Record<ModelRole, string>;
 
 /**
  * The reasons the core gives when a catalog or the trials cannot be read
@@ -362,6 +362,18 @@ export function contextText(tokens: number | null | undefined): string {
   return `${String(tokens)} token`;
 }
 
+/**
+ * How much text a model keeps in mind, in pages (D-192): about 1300 tokens a
+ * page, rounded to tens from 20 pages up. Null: not stated by any source.
+ */
+export function pagesText(tokens: number | null | undefined): string {
+  if (tokens === null || tokens === undefined || tokens <= 0) return 'non indicato';
+  const pages = tokens / 1300;
+  if (pages < 1) return 'meno di una pagina';
+  const rounded = pages >= 20 ? Math.round(pages / 10) * 10 : Math.round(pages);
+  return rounded === 1 ? 'circa una pagina' : `circa ${rounded.toLocaleString('it-IT')} pagine`;
+}
+
 /** The memory strip: what the core made the local servers load, on their ceiling. */
 export function memorySummary(memory: MemoryView | null, local: readonly LocalModelView[]): { value: string; ratio: number; detail: string } | null {
   if (memory === null) return null;
@@ -372,7 +384,7 @@ export function memorySummary(memory: MemoryView | null, local: readonly LocalMo
   return {
     value: `${round(memory.estimatedGib)} di ${round(ceiling)} GiB`,
     ratio: ceiling > 0 ? Math.min(1, memory.estimatedGib / ceiling) : 0,
-    detail: loaded.length === 0 ? 'Nessun modello caricato da Arianna' : `In memoria: ${loaded.join(', ')}`,
+    detail: loaded.length === 0 ? 'Nessun modello in memoria' : `In memoria: ${loaded.join(', ')}`,
   };
 }
 
@@ -380,10 +392,10 @@ export function memorySummary(memory: MemoryView | null, local: readonly LocalMo
 export function cloudNotice(view: CloudModelView): string | undefined {
   if (view.state === 'not-connected') {
     return view.executor === 'codex'
-      ? 'Non collegato: il nucleo non ha l’adattatore di Codex su questa installazione (la sua sandbox è stata rifiutata: lo dice il registro del nucleo all’avvio).'
-      : 'Non collegato: il nucleo non ha l’adattatore di Claude su questa installazione.';
+      ? 'Non collegato: Arianna non può usare Codex su questa installazione (la sua protezione è stata rifiutata: lo dice il registro di Arianna all’avvio).'
+      : 'Non collegato: Arianna non può usare Claude su questa installazione.';
   }
-  if (view.state === 'executor-off') return `L’esecutore ${view.executor === 'claude' ? 'Claude Code' : view.executor} è spento in Esecutori cloud: finché resta spento il modello non riceve lavori.`;
+  if (view.state === 'executor-off') return `L’esecutore ${view.executor === 'claude' ? 'Claude Code' : view.executor} è spento in Claude e Codex: finché resta spento il modello non riceve lavori.`;
   if (view.state === 'off') return 'Spento: fuori dal router e dal selettore delle conversazioni.';
   return undefined;
 }
@@ -391,8 +403,8 @@ export function cloudNotice(view: CloudModelView): string | undefined {
 /** The fixed rule of privacy for where a model runs. */
 export function privacyText(view: ModelView): string {
   return view.locality === 'local'
-    ? 'Gira sul Mac: può leggere dati Privati e Riservati; niente esce.'
-    : 'Esce verso il cloud: riceve solo dati Pubblici e Interni, sempre attraverso il gateway.';
+    ? 'Gira sul Mac: può leggere anche i dati privati, e niente esce.'
+    : 'Lavora nel cloud: riceve solo dati di lavoro (Pubblici e Interni), sempre attraverso il controllo di Arianna.';
 }
 
 /** The source of a cloud fact, for the line "letta il …". */
@@ -449,4 +461,24 @@ export function unsavedKeys(
     if (old === undefined || old.enabled !== row.enabled || old.name !== row.name) keys.add(`cloud:${row.alias}`);
   }
   return keys;
+}
+
+/** How many settings of the page changed: each role that changed hands, each cloud row, the model of the characters. For the save bar. */
+export function unsavedCount(
+  form: { roles: Partial<Record<ModelRole, string | undefined>>; cloudModels: CloudModelsForm; sprites?: string },
+  base: { roles: Partial<Record<ModelRole, string | undefined>>; cloudModels: CloudModelsForm; sprites?: string },
+): number {
+  const roles = new Set([...Object.keys(form.roles), ...Object.keys(base.roles)]) as Set<ModelRole>;
+  let count = [...roles].filter((role) => (form.roles[role] ?? undefined) !== (base.roles[role] ?? undefined)).length;
+  for (const row of form.cloudModels.rows) {
+    const old = base.cloudModels.rows.find((item) => item.alias === row.alias);
+    if (old === undefined || old.enabled !== row.enabled || old.name !== row.name) count += 1;
+  }
+  if (form.sprites !== base.sprites) count += 1;
+  return count;
+}
+
+/** The reliability of a local model in plain words: verified in the catalog, or still on trial. */
+export function reliabilityText(status: string): string {
+  return status === 'verified' ? 'provato e consigliato' : 'in prova';
 }

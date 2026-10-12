@@ -108,5 +108,5 @@ test('what cannot be saved, in Italian: names, Arianna, the limits', () => {
 });
 
 test('the notice under the fields says where the text goes', () => {
-  assert.equal(PERSONA_NOTICE, 'Questo testo va anche a Claude e Codex: non scriverci dati personali.');
+  assert.equal(PERSONA_NOTICE, 'Questi testi possono arrivare a Claude e Codex: non scriverci nomi di clienti, importi o password.');
 });

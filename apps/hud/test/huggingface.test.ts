@@ -89,12 +89,12 @@ describe('Hugging Face on the Modelli page', () => {
     assert.match(lines, /Esce solo l’id fake-org\/Fake-4bit/);
     assert.match(lines, /i 1 file piccoli/);
     assert.match(addLines(card({ files: [] })).join(' '), /non ci sono file piccoli/);
-    assert.match(promoteLines(local(), ['orchestrator', 'voice']).join(' '), /i ruoli Orchestratore, Voce/);
+    assert.match(promoteLines(local(), ['orchestrator', 'voice']).join(' '), /i ruoli Mente di Arianna, Telefono/);
   });
 
   it('taking it out of the catalog waits for roles, actions and files', () => {
     assert.equal(forgetBlocked(local(), []), undefined);
-    assert.match(forgetBlocked(local(), ['orchestrator']) ?? '', /Orchestratore/);
+    assert.match(forgetBlocked(local(), ['orchestrator']) ?? '', /Mente di Arianna/);
     assert.match(forgetBlocked(local({ hasFiles: true }), []) ?? '', /Togli dal disco/);
     assert.match(forgetBlocked(local({ action: { modelId: 'fake-4bit', kind: 'download', status: 'running', bytesDone: 0, bytesTotal: 1, startedAt: '', finishedAt: null, error: null, bad: [] } }), []) ?? '', /ferma/);
     assert.deepEqual(lockedRoles(local({ suitedRoles: ['orchestrator', 'voice'] }), ['voice']), ['voice']);
@@ -107,9 +107,9 @@ describe('Hugging Face on the Modelli page', () => {
     assert.match(hubErrorText(new ApiError(502, 'huggingface.co cannot be reached')), /non risponde/);
     assert.match(hubErrorText(new ApiError(404, 'huggingface.co answered 401')), /privato/);
     assert.match(hubErrorText(new ApiError(502, 'huggingface.co answered 503')), /\(503\)/);
-    assert.equal(hubErrorText(new ApiError(409, 'the model cannot be added: gated, not-mlx')), 'È ad accesso controllato: serve un account Hugging Face, e Arianna non fa login. Non è in formato MLX: il server locale (oMLX) non lo può usare.');
+    assert.equal(hubErrorText(new ApiError(409, 'the model cannot be added: gated, not-mlx')), 'È ad accesso controllato: serve un account Hugging Face, e Arianna non fa login. Non è in formato MLX: il server dei modelli (oMLX) non lo può usare.');
     assert.equal(hubErrorText(new ApiError(409, 'the model is already in the catalog as fake-4bit')), 'È già nel catalogo come fake-4bit.');
-    assert.match(hubErrorText(new ApiError(409, 'the model has the role orchestrator, voice: give it to another model first')), /Orchestratore, Voce/);
-    assert.match(hubErrorText(new ApiError(404, 'not found')), /riavvialo/);
+    assert.match(hubErrorText(new ApiError(409, 'the model has the role orchestrator, voice: give it to another model first')), /Mente di Arianna, Telefono/);
+    assert.match(hubErrorText(new ApiError(404, 'not found')), /riavviala/);
   });
 });

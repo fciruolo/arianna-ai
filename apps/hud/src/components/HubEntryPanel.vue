@@ -82,9 +82,9 @@ async function forget(): Promise<void> {
 
 <template>
   <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Modello aggiunto da Hugging Face">
-    <h3 class="hud-title text-[12px]">Aggiunto da Hugging Face</h3>
+    <h3 class="text-[14px] font-semibold">Aggiunto da Hugging Face</h3>
     <p v-if="view.suitedRoles.length === 0" class="text-xs text-muted">
-      È nel catalogo come sperimentale e senza ruoli: finché non lo promuovi non compare nei menu dei ruoli. Puoi già scaricarlo e verificarlo.
+      È in prova e senza compiti: finché non lo promuovi non compare in «Chi fa cosa». Puoi già scaricarlo e verificarlo.
     </p>
     <p v-else class="text-xs text-muted">Promosso: può avere {{ view.suitedRoles.map((role) => ROLE_NAME[role]).join(', ') }}. Resta sperimentale finché non passa le prove.</p>
     <div class="flex flex-wrap gap-1.5" role="group" aria-label="Ruoli che può avere">
