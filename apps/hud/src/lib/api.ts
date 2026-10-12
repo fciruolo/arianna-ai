@@ -947,6 +947,29 @@ export async function deleteProjectNote(project: string, path: string): Promise<
   await call('POST', `${browse(project)}/knowledge/delete`, { path });
 }
 
+/** A work conversation of the project a released note may go to (I-11 P5, D-187). */
+export interface ReleaseTarget {
+  id: string;
+  title: string | null;
+  workspace: string;
+  agent: string | null;
+}
+
+/** "Fai uscire una volta" (D-187): the work conversations of the project. */
+export async function noteReleaseTargets(project: string): Promise<ReleaseTarget[]> {
+  return (await call<{ targets: ReleaseTarget[] }>('GET', `${browse(project)}/knowledge/release`)).targets;
+}
+
+/** The anonymous version of a Private note by the local model, never saved; `warnings` are what the scanner still finds. */
+export async function anonymizeProjectNote(project: string, path: string): Promise<{ text: string; model: string; version: string; warnings: string[] }> {
+  return call('POST', `${browse(project)}/knowledge/anonymize`, { path });
+}
+
+/** The approved text leaves once, as a message of the chosen work conversation; the password is never kept. */
+export async function releaseProjectNote(project: string, input: { path: string; version: string; text: string; conversationId: string; password: string }): Promise<{ conversationId: string; messageId: string }> {
+  return call('POST', `${browse(project)}/knowledge/release`, input);
+}
+
 /** "Sposta" and "Ripristina" in the tab File (I-20, D-185): nothing already there is replaced. */
 export async function moveProjectPath(project: string, from: string, to: string): Promise<{ from: string; to: string; kind: 'file' | 'dir' }> {
   return call('POST', `${browse(project)}/move`, { from, to });

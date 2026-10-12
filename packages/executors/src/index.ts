@@ -55,6 +55,16 @@ export {
   type LocalModelOptions,
 } from './local/model.ts';
 export {
+  anonymize,
+  anonymizeInput,
+  ANONYMIZE_MODEL,
+  ANONYMIZE_PROMPT,
+  MAX_ANONYMIZE_TEXT,
+  readAnonymized,
+  type AnonymizeFailure,
+  type AnonymizeOutcome,
+} from './local/anonymize.ts';
+export {
   Watchdog,
   type RestartReason,
   type WatchdogEvent,

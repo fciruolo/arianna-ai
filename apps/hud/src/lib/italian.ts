@@ -18,6 +18,11 @@ const SCANNER_KIND_TEXT: Record<string, string> = {
   token: 'token o chiave di accesso',
 };
 
+/** A kind the scanner found (`iban`, `tax-code`…), in Italian. */
+export function scannerKindText(kind: string): string {
+  return SCANNER_KIND_TEXT[kind] ?? 'dati riservati';
+}
+
 const LIMIT_UNIT_TEXT: Record<string, string> = { steps: 'passi', minutes: 'minuti', euro: 'euro' };
 
 const REASONS: Record<string, string> = {

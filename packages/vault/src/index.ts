@@ -11,3 +11,4 @@ export {
   type VaultErrorCode,
   type VaultOptions,
 } from './vault.ts';
+export { hashMasterPassword, isMasterPasswordHash, MASTER_PASSWORD_REF, MAX_MASTER_PASSWORD, MIN_MASTER_PASSWORD, verifyMasterPassword } from './master.ts';

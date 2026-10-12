@@ -84,6 +84,7 @@ import {
 import { dayParam, FinanceError, MAX_IMPORT_BODY, monthParam } from '../finance-format.ts';
 import { cancelInvoice, createInvoice, CURRENCY, ImBillingError, readImOverview, removeFromInvoice, setImBilling, setImPrice, updateInvoice, type InvoiceChange } from '../im-billing.ts';
 import { IM_STATES } from '../im-format.ts';
+import { RELEASE_STATUS, ReleaseError, type NoteReleaser, type ProposalOutcome } from '../note-release.ts';
 import { deleteProjectNote, editProjectNote, KnowledgeError, readProjectKnowledge, readProjectNote, writeProjectNote, type KnowledgeEnv } from '../project-knowledge.ts';
 import { type DraftFailure, type DraftOutcome } from '../rules-draft.ts';
 import type { ExportOutcome, ExportPlan } from '../rules-export.ts';
@@ -241,6 +242,8 @@ export interface ApiServerOptions {
   knowledge?: KnowledgeEnv;
   /** "Proponi bozza" of the tab "Regole" (I-14 R2, D-175): the local model drafts a container's rules; without it the route answers 503. */
   rulesDraft?: (container: string) => Promise<DraftOutcome | undefined>;
+  /** "Fai uscire una volta" of a Private note (I-11 P5, D-187): anonymous proposal, master password, one message; without it the routes answer 503. */
+  noteRelease?: NoteReleaser;
   /**
    * "Esporta in CLAUDE.md e AGENTS.md" of the tab "Regole" (I-14 R3, D-176):
    * the preview (null: the container has no rules) and the writing of the
@@ -461,6 +464,7 @@ interface RouteOptions {
   knowledge?: KnowledgeEnv | undefined;
   rulesDraft?: ApiServerOptions['rulesDraft'];
   rulesExport?: ApiServerOptions['rulesExport'];
+  noteRelease?: NoteReleaser | undefined;
   installation: ApiServerOptions['installation'];
   directAgents?: (() => readonly DirectPolicy[]) | undefined;
   trialRefusal?: ((modelId: string) => string | undefined) | undefined;
@@ -1625,6 +1629,65 @@ function rulesDraftRoutes(containers: () => readonly Project[], draft: ApiServer
   ];
 }
 
+/** Why the anonymous version was not written, for the page: a closed list (D-187). */
+const PROPOSAL_FAILURE_STATUS: Record<Exclude<ProposalOutcome, { ok: true }>['reason'], number> = {
+  blocked: 403,
+  unavailable: 503,
+  timeout: 504,
+  truncated: 502,
+  'bad-response': 502,
+  'model-error': 502,
+  'too-large': 413,
+};
+
+/**
+ * "Fai uscire una volta" of a Private note (I-11 P5, D-187): the work
+ * conversations of the project it may go to, the anonymous version by the
+ * local model (one at a time: the local model is one; never saved), and the
+ * release with the master password. The password is read from the body and
+ * never logged nor kept.
+ */
+function noteReleaseRoutes(containers: () => readonly Project[], releaser: NoteReleaser | undefined): Route[] {
+  let proposing = false;
+  const container = (params: Params): { name: string; found: NoteReleaser } => {
+    if (releaser === undefined) throw new HttpError(503, 'the release of a note is not available');
+    const name = params.project ?? '';
+    if (!PROJECT_PARAM.test(name) || !containers().some((project) => project.name === name)) throw new HttpError(404, 'not found');
+    return { name, found: releaser };
+  };
+  return [
+    route('GET', '/api/browse/:project/knowledge/release', async (_request, _url, params) => {
+      const { name, found } = container(params);
+      return { body: { targets: await found.targets(name) } };
+    }),
+    route('POST', '/api/browse/:project/knowledge/anonymize', async (request, _url, params) => {
+      const { name, found } = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path']);
+      if (typeof body.path !== 'string') throw new HttpError(400, 'path is required');
+      if (proposing) throw new HttpError(409, 'an anonymous version is already being written');
+      proposing = true;
+      try {
+        const outcome = await found.propose(name, body.path);
+        if (!outcome.ok) throw new HttpError(PROPOSAL_FAILURE_STATUS[outcome.reason], `anonymous version not written: ${outcome.reason}`);
+        return { body: { text: outcome.text, model: outcome.model, version: outcome.version, warnings: outcome.warnings } };
+      } finally {
+        proposing = false;
+      }
+    }),
+    route('POST', '/api/browse/:project/knowledge/release', async (request, _url, params) => {
+      const { name, found } = container(params);
+      const body = await readJson(request);
+      onlyFields(body, ['path', 'version', 'text', 'conversationId', 'password']);
+      const { path, version, text, conversationId, password } = body;
+      if (typeof path !== 'string' || typeof version !== 'string' || typeof text !== 'string' || typeof conversationId !== 'string' || typeof password !== 'string') {
+        throw new HttpError(400, 'path, version, text, conversationId and password are required');
+      }
+      return { status: 201, body: await found.release(name, { path, version, text, conversationId, password }) };
+    }),
+  ];
+}
+
 /**
  * "Esporta in CLAUDE.md e AGENTS.md" (I-14 R3, D-176): GET is the preview,
  * POST writes the files of the text the preview showed, and only the new ones
@@ -1796,7 +1859,7 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
   ];
 }
 
-function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
+function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agents, financeAgents, characters, voice, calls, pusher, settings, local, capture, modelEvals, approvedProjects, projectContainers, knowledge, rulesDraft, rulesExport, noteRelease, installation, onError, directAgents, trialRefusal, leaveRule, services, incognito, erase, designCatalog, skillsCatalog }: RouteOptions): Route[] {
   // The links of "Apri" (D-117, tappa 3; D-134): in memory, gone with a restart.
   const openLinks = createOpenLinks();
   // Who may take a card or an IM item: not Arianna (she hands them out), not an agent of the Finances (D-183).
@@ -1809,6 +1872,7 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     ...projectBrowserRoutes(sql, approvedProjects, openLinks, projectContainers),
     ...rulesDraftRoutes(projectContainers, rulesDraft),
     ...rulesExportRoutes(projectContainers, rulesExport),
+    ...noteReleaseRoutes(projectContainers, noteRelease),
     ...projectKnowledgeRoutes(sql, projectContainers, knowledge, onError),
     ...projectServiceRoutes(sql, approvedProjects, services),
     ...secretaryRoutes(sql),
@@ -3224,6 +3288,7 @@ function errorStatus(error: unknown): { status: number; message: string } | unde
     return { status, message: error.message };
   }
   if (error instanceof ImBillingError) return { status: { invalid: 400, 'not-found': 404, conflict: 409 }[error.code], message: error.message };
+  if (error instanceof ReleaseError) return { status: RELEASE_STATUS[error.code], message: `${error.code}: ${error.message}` };
   if (error instanceof KnowledgeError) {
     const status = { changed: 409, invalid: 400, 'not-found': 404, refused: 403, 'too-large': 413, unavailable: 503 }[error.code];
     return { status, message: error.message };
@@ -3325,6 +3390,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     knowledge: options.knowledge,
     rulesDraft: options.rulesDraft,
     rulesExport: options.rulesExport,
+    noteRelease: options.noteRelease,
     installation: options.installation,
     onError: options.onError ?? (() => undefined),
     directAgents: options.directAgents,

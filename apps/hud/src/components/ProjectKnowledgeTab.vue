@@ -25,6 +25,8 @@ import ProjectNoteView from './ProjectNoteView.vue';
  * A note's title opens it, to read and to edit by hand (ProjectNoteView).
  */
 const props = defineProps<{ container: BrowsableContainer }>();
+/** "Apri la conversazione" after a note left once (D-187). */
+const emit = defineEmits<{ conversation: [id: string] }>();
 
 const LABELS: readonly Label[] = ['L0', 'L1', 'L2', 'L3'];
 
@@ -194,7 +196,7 @@ watch(
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
     <p v-else-if="knowledge === null" class="text-sm text-muted">Leggo la conoscenza…</p>
     <template v-else>
-      <ProjectNoteView v-if="opened" class="lg:col-span-2" :project="container.name" :path="opened" @close="opened = null" @saved="load" />
+      <ProjectNoteView v-if="opened" class="lg:col-span-2" :project="container.name" :path="opened" @close="opened = null" @saved="load" @open="(id) => emit('conversation', id)" />
 
       <!-- The panel of the folders: one selector each (D-145) -->
       <section class="rounded-2xl border border-line bg-surface" aria-labelledby="folders-title">

@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.78.0",
+  "version": "0.79.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
@@ -25,6 +25,7 @@
     "arianna:models": "node apps/installer/src/cli.ts models",
     "vault:init": "node scripts/vault.ts init",
     "vault:edit": "node scripts/vault.ts edit",
+    "vault:master": "node scripts/vault.ts master",
     "voice:sync": "node scripts/voice.ts sync",
     "voice:lock": "node scripts/voice.ts lock",
     "test:voice": "node scripts/voice.ts test",

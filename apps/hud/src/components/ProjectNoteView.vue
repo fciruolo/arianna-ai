@@ -8,6 +8,7 @@ import type { Label } from '../lib/types.ts';
 import Icon from './Icon.vue';
 import LabelBadge from './LabelBadge.vue';
 import MarkdownText from './MarkdownText.vue';
+import NoteRelease from './NoteRelease.vue';
 
 /**
  * A note of the tab "Conoscenza" opened: its text read, and "Modifica" to
@@ -16,7 +17,10 @@ import MarkdownText from './MarkdownText.vue';
  * and the text. The core writes only over the file the user opened.
  */
 const props = defineProps<{ project: string; path: string }>();
-const emit = defineEmits<{ close: []; saved: [] }>();
+const emit = defineEmits<{ close: []; saved: []; open: [conversationId: string] }>();
+
+/** "Fai uscire una volta" (I-11 P5, D-187): only for a Private note, never while editing. */
+const releasing = ref(false);
 
 const note = ref<OpenedNote | null>(null);
 const problem = ref<string | null>(null);
@@ -92,6 +96,7 @@ watch(
     note.value = null;
     problem.value = null;
     editing.value = null;
+    releasing.value = false;
     void load();
   },
   { immediate: true },
@@ -104,13 +109,23 @@ watch(
       <Icon name="knowledge" :size="15" class="text-muted" />
       <h2 id="note-title" class="hud-title min-w-0 flex-1 truncate">{{ note?.title ?? 'Nota' }}</h2>
       <LabelBadge v-if="note" :label="note.label" class="text-xs" />
-      <button v-if="note && !editing" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" @click="startEditing"><Icon name="rename" :size="13" />Modifica</button>
+      <button
+        v-if="note && note.label === 'L2' && !editing && !releasing"
+        type="button"
+        class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+        title="Una versione anonima di questa nota esce una volta in una conversazione di lavoro, con la master password"
+        @click="releasing = true"
+      >
+        <Icon name="gateway" :size="13" />Fai uscire una volta
+      </button>
+      <button v-if="note && !editing && !releasing" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" @click="startEditing"><Icon name="rename" :size="13" />Modifica</button>
       <button type="button" class="rounded-md p-1 text-muted transition hover:text-ink" aria-label="Chiudi la nota" title="Chiudi" :disabled="editing?.busy === true" @click="emit('close')">
         <Icon name="close" :size="14" />
       </button>
     </header>
     <p v-if="problem" class="p-4 text-sm text-danger" role="alert">{{ problem }}</p>
     <p v-else-if="note === null" class="p-4 text-sm text-muted">Apro la nota…</p>
+    <NoteRelease v-else-if="releasing" :project="project" :path="note.path" :original="note.body" :version="note.version" @close="releasing = false" @open="(id) => emit('open', id)" />
     <template v-else-if="editing === null">
       <p class="border-b border-line px-4 py-2 font-mono text-[11.5px] text-muted">{{ note.path }}</p>
       <ul v-if="note.header.length > 0" class="flex flex-col gap-0.5 border-b border-line px-4 py-2 font-mono text-[11.5px] text-muted">

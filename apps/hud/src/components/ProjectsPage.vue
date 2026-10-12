@@ -51,7 +51,7 @@ import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
  * management folders and notes.
  */
 
-const emit = defineEmits<{ client: [id: string]; studio: [project: string] }>();
+const emit = defineEmits<{ client: [id: string]; studio: [project: string]; conversation: [id: string] }>();
 
 const projects = ref<BrowsableProject[] | null>(null);
 const containers = ref<BrowsableContainer[] | null>(null);
@@ -646,7 +646,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       </nav>
 
       <!-- CONOSCENZA (D-145): the management folders of the container and their notes -->
-      <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" />
+      <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" @conversation="(id) => emit('conversation', id)" />
       <!-- IM (D-167, P4d): calendar, price, every IM with its money, the invoices -->
       <ProjectImTab v-else-if="tab === 'im'" :container="container" />
       <!-- REGOLE (I-14, D-174): the rules at the head of every delegation on the project -->
