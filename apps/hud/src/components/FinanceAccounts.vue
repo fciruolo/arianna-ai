@@ -86,7 +86,7 @@ async function archive(account: Account, archived: boolean): Promise<void> {
 </script>
 
 <template>
-  <div class="flex max-w-3xl flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <form class="hud-card flex flex-wrap items-end gap-2 p-3" @submit.prevent="create">
       <label class="flex min-w-[200px] flex-1 flex-col gap-1 text-xs text-muted">
         Nuovo conto

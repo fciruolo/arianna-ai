@@ -48,9 +48,9 @@ function when(ts: string): string {
 
 <template>
   <section>
-    <h3 class="hud-title mb-2.5 flex items-center justify-between">
-      <span class="flex items-center gap-1.5 whitespace-nowrap"><Icon name="history" :size="14" />Deleghe recenti</span>
-      <small class="font-mono text-[12px] tracking-[0.06em] whitespace-nowrap normal-case">chi ha fatto cosa</small>
+    <h3 class="hud-title mb-2.5 flex items-center justify-between gap-3">
+      <span class="flex shrink-0 items-center gap-1.5 whitespace-nowrap"><Icon name="history" :size="14" />Deleghe recenti</span>
+      <small class="min-w-0 truncate font-mono text-[12px] tracking-[0.06em] normal-case">chi ha fatto cosa</small>
     </h3>
     <p v-if="problem !== null" class="text-[12.5px] text-warn">{{ problem }}</p>
     <p v-else-if="rows.length === 0" class="text-[12.5px] text-muted">Nessuna delega ancora.</p>

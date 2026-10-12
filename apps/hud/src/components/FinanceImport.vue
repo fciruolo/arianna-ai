@@ -219,7 +219,7 @@ async function undo(record: ImportRecord): Promise<void> {
 </script>
 
 <template>
-  <div class="flex max-w-5xl flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <div v-if="open.length === 0" class="rounded-xl border border-line bg-surface p-4 text-sm">
       Per importare un estratto conto serve prima un conto.
       <button type="button" class="btn ml-2 px-2.5 py-1 text-xs" @click="emit('tab', 'conti')">Crea un conto</button>
