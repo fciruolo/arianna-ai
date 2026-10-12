@@ -462,19 +462,19 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
       <FilterMenu v-if="projects.length > 0" v-model="projectChoice" label="Progetto" icon="project" :options="projectOptions" plain />
       <FilterMenu v-if="(ims?.length ?? 0) > 0" v-model="imChoice" label="IM" icon="calendar" :options="imOptions" plain />
       <form v-if="project !== null && ims !== null" class="flex flex-wrap items-center gap-2" @submit.prevent="newIm">
-        <label v-if="asksDate" class="flex items-center gap-1.5 text-[12px] text-muted"
-          >{{ isFirst ? 'Primo IM' : 'Data dell’IM' }}<input ref="firstDateInput" v-model="firstDate" type="datetime-local" class="field px-2 py-1 text-[13px] text-ink" required
+        <label v-if="asksDate" class="flex items-center gap-1.5 text-[13px] text-muted"
+          >{{ isFirst ? 'Primo IM' : 'Data dell’IM' }}<input ref="firstDateInput" v-model="firstDate" type="datetime-local" class="field px-2 py-1 text-[14px] text-ink" required
         /></label>
-        <button type="submit" class="btn px-3 py-1.5 text-[13px]" :disabled="creating || (asksDate && firstDate === '')"><Icon name="new" :size="14" />Nuovo IM</button>
+        <button type="submit" class="btn px-3 py-1.5 text-[14px]" :disabled="creating || (asksDate && firstDate === '')"><Icon name="new" :size="14" />Nuovo IM</button>
       </form>
     </div>
 
-    <p v-if="notice !== null" role="status" class="flex items-start gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[13px] text-ink">
+    <p v-if="notice !== null" role="status" class="flex items-start gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[14px] text-ink">
       <Icon name="info" :size="14" class="mt-0.5 shrink-0 text-accent" />
       <span class="flex-1">{{ notice }}</span>
       <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="notice = null"><Icon name="close" :size="14" /></button>
     </p>
-    <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[13px] text-danger">
+    <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
       <span class="flex-1">{{ problem }}</span>
       <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
     </p>
@@ -487,20 +487,20 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
 
     <template v-if="im !== null">
       <!-- The header of the IM: number, day and hour, state, the moved call. -->
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
         <h2 class="font-medium text-ink">{{ imTitleText(im) }}</h2>
         <span class="chip" :class="im.status === 'chiuso' ? 'text-muted' : 'text-accent'">{{ IM_STATUS_TEXT[im.status] }}</span>
         <LabelBadge :label="im.label" />
         <span v-if="callText(im.call) !== undefined" class="inline-flex items-center gap-1 text-warn"><Icon name="phone" :size="13" />{{ callText(im.call) }}</span>
         <span class="flex-1" />
         <span v-if="reportRunning" role="status" class="inline-flex items-center gap-1.5 text-muted"><Icon name="clock" :size="13" />{{ reportRunningText(reportJob?.language ?? 'it') }}</span>
-        <button v-else type="button" class="btn px-3 py-1 text-[12.5px]" :aria-expanded="reportMenu" aria-controls="im-report-menu" @click="toggleReportMenu">
+        <button v-else type="button" class="btn px-3 py-1 text-[13.5px]" :aria-expanded="reportMenu" aria-controls="im-report-menu" @click="toggleReportMenu">
           <Icon name="rename" :size="13" />Scrivi il report
         </button>
       </div>
 
       <!-- Who writes the report: chosen every time (D-167). -->
-      <div v-if="reportMenu && !reportRunning" id="im-report-menu" class="flex flex-col gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13px]" role="group" aria-label="Chi scrive il report">
+      <div v-if="reportMenu && !reportRunning" id="im-report-menu" class="flex flex-col gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14px]" role="group" aria-label="Chi scrive il report">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-muted">Lingua del report</span>
           <div class="flex overflow-hidden rounded-md border border-line" role="radiogroup" aria-label="Lingua del report">
@@ -510,7 +510,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
               type="button"
               role="radio"
               :aria-checked="reportLanguage === language"
-              class="px-2.5 py-0.5 text-[12px]"
+              class="px-2.5 py-0.5 text-[13px]"
               :class="reportLanguage === language ? 'bg-accent/15 text-ink' : 'text-muted hover:text-ink'"
               @click="chooseLanguage(language)"
             >
@@ -521,29 +521,29 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
         <span class="text-muted">Chi scrive il report per il cliente?</span>
         <div class="flex flex-wrap items-center gap-2">
           <button v-for="agent in REPORT_AGENTS" :key="agent" type="button" class="btn flex-col items-start px-3 py-1.5 text-left" @click="writeReport(agent)">
-            <span class="text-[13px] text-ink">{{ REPORT_AGENT_TEXT[agent] }}</span>
-            <span class="text-[11.5px] text-muted">{{ REPORT_AGENT_HINT[agent] }}</span>
+            <span class="text-[14px] text-ink">{{ REPORT_AGENT_TEXT[agent] }}</span>
+            <span class="text-[12.5px] text-muted">{{ REPORT_AGENT_HINT[agent] }}</span>
           </button>
-          <button type="button" class="px-2 py-1 text-[12px] text-muted hover:text-ink" @click="reportMenu = false">Annulla</button>
+          <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink" @click="reportMenu = false">Annulla</button>
         </div>
       </div>
-      <div v-if="replaceAsk !== null" role="alertdialog" aria-label="Sostituire il report" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[13px]">
+      <div v-if="replaceAsk !== null" role="alertdialog" aria-label="Sostituire il report" class="flex flex-wrap items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-[14px]">
         <span class="flex-1">{{ REPORT_REPLACE_TEXT }}</span>
-        <button type="button" class="btn px-3 py-1 text-[12.5px]" @click="writeReport(replaceAsk, true)">Sostituisci</button>
-        <button type="button" class="px-2 py-1 text-[12px] text-muted hover:text-ink" @click="replaceAsk = null">Annulla</button>
+        <button type="button" class="btn px-3 py-1 text-[13.5px]" @click="writeReport(replaceAsk, true)">Sostituisci</button>
+        <button type="button" class="px-2 py-1 text-[13px] text-muted hover:text-ink" @click="replaceAsk = null">Annulla</button>
       </div>
 
       <!-- The report for the client, to review and copy (the user sends it). -->
       <section v-if="im.report !== ''" class="rounded-lg border border-line bg-surface">
         <div class="flex items-center gap-2 px-3 py-1.5">
-          <button type="button" class="flex flex-1 items-center gap-1.5 text-left text-[13px] text-ink" :aria-expanded="reportOpen" aria-controls="im-report-text" @click="reportOpen = !reportOpen">
+          <button type="button" class="flex flex-1 items-center gap-1.5 text-left text-[14px] text-ink" :aria-expanded="reportOpen" aria-controls="im-report-text" @click="reportOpen = !reportOpen">
             <Icon name="expand" :size="13" class="transition-transform" :class="reportOpen ? 'rotate-90' : ''" />Report per il cliente
           </button>
-          <button type="button" class="btn px-2 py-0.5 text-[12px]" @click="copyReport">
+          <button type="button" class="btn px-2 py-0.5 text-[13px]" @click="copyReport">
             <Icon name="copy" :size="12" />{{ copyState === 'copied' ? 'Copiato' : copyState === 'unavailable' ? 'Copia non disponibile' : 'Copia' }}
           </button>
         </div>
-        <pre v-if="reportOpen" id="im-report-text" class="max-h-72 overflow-y-auto border-t border-line px-3 py-2 font-sans text-[13px] leading-relaxed break-words whitespace-pre-wrap text-ink">{{ im.report }}</pre>
+        <pre v-if="reportOpen" id="im-report-text" class="max-h-72 overflow-y-auto border-t border-line px-3 py-2 font-sans text-[14px] leading-relaxed break-words whitespace-pre-wrap text-ink">{{ im.report }}</pre>
       </section>
 
       <!-- Five columns: side by side from md, one under the other on a phone. -->
@@ -560,7 +560,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
         >
           <header class="flex items-center gap-2 border-b border-line px-3 py-2">
             <h3 class="hud-title flex-1">{{ IM_STATE_TEXT[state] }}</h3>
-            <span class="font-mono text-[11px] text-muted">{{ groups[state].length }}</span>
+            <span class="font-mono text-[12.5px] text-muted">{{ groups[state].length }}</span>
           </header>
           <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <li v-if="state === 'todo'">
@@ -568,14 +568,14 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
                 <input
                   v-model="newItem"
                   maxlength="300"
-                  class="field min-w-0 flex-1 px-2.5 py-1.5 text-[13px] text-ink"
+                  class="field min-w-0 flex-1 px-2.5 py-1.5 text-[14px] text-ink"
                   placeholder="+ Voce"
                   aria-label="Nuova voce dell’IM"
                 />
-                <button type="submit" class="btn px-2 py-1 text-[12px]" :disabled="busy || newItem.trim() === ''">Aggiungi</button>
+                <button type="submit" class="btn px-2 py-1 text-[13px]" :disabled="busy || newItem.trim() === ''">Aggiungi</button>
               </form>
             </li>
-            <li v-if="groups[state].length === 0" class="px-1.5 py-3 text-center text-[12px] text-muted">Nessuna voce: trascinane una qui</li>
+            <li v-if="groups[state].length === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">Nessuna voce: trascinane una qui</li>
             <li
               v-for="item in groups[state]"
               :key="`${item.line}:${item.title}`"
@@ -594,8 +594,8 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
                   :disabled="busy"
                   @click="openCard(item)"
                 >
-                  <span class="text-[13.5px] leading-snug break-words" :class="{ 'text-muted line-through': state === 'cancelled' }">{{ item.title }}</span>
-                  <span v-if="item.part !== null || item.card !== null" class="flex flex-wrap items-center gap-1 text-[11px]">
+                  <span class="text-[14.5px] leading-snug break-words" :class="{ 'text-muted line-through': state === 'cancelled' }">{{ item.title }}</span>
+                  <span v-if="item.part !== null || item.card !== null" class="flex flex-wrap items-center gap-1 text-[12.5px]">
                     <span v-if="item.part !== null" class="chip text-info">Parte {{ item.part }}</span>
                     <span v-if="item.card !== null" class="chip inline-flex items-center gap-1 font-mono text-muted" title="Card collegata"><Icon name="cardwall" :size="11" />#card-{{ item.card }}</span>
                   </span>
@@ -627,7 +627,7 @@ async function onDrop(event: DragEvent, state: ImItemState): Promise<void> {
                   v-for="target in IM_ITEM_STATES.filter((other) => other !== item.state)"
                   :key="target"
                   type="button"
-                  class="btn px-2 py-0.5 text-[12px]"
+                  class="btn px-2 py-0.5 text-[13px]"
                   :disabled="busy"
                   @click="moveItem(item, target)"
                 >

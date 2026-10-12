@@ -223,12 +223,12 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
     <!-- THE LIST -->
     <template v-else-if="client === null">
       <div class="flex flex-wrap items-center gap-2">
-        <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" @click="creating = true"><Icon name="new" :size="14" />Cliente</button>
+        <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" @click="creating = true"><Icon name="new" :size="14" />Cliente</button>
         <label class="flex h-[34px] min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-sm">
           <Icon name="search" :size="14" />
-          <input v-model="query" type="search" class="w-full bg-transparent text-[13px] text-ink outline-none" placeholder="Cerca per nome, partita IVA, contatto, progetto" aria-label="Cerca un cliente" />
+          <input v-model="query" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca per nome, partita IVA, contatto, progetto" aria-label="Cerca un cliente" />
         </label>
-        <select v-model="status" class="field px-2 py-1.5 text-[13px]" aria-label="Quali clienti">
+        <select v-model="status" class="field px-2 py-1.5 text-[14px]" aria-label="Quali clienti">
           <option v-for="[value, text] in filters" :key="value" :value="value">{{ text }}</option>
         </select>
         <span v-if="clients" class="ml-auto text-xs text-muted">{{ shown.length === 1 ? '1 cliente' : `${String(shown.length)} clienti` }}</span>
@@ -246,7 +246,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
             <span v-else class="grid size-11 place-items-center rounded-lg border border-accent/40 bg-accent/15 font-hud text-[15px] font-semibold text-accent" aria-hidden="true">{{ initialsOf(item.displayName) }}</span>
             <span class="min-w-0">
               <b class="block truncate text-[14px] font-semibold">{{ item.displayName }}</b>
-              <span class="block truncate text-[12px] text-muted">{{ KIND_TEXT[item.kind] }}<template v-if="item.legalName && item.legalName !== item.displayName"> · {{ item.legalName }}</template><template v-if="item.vatNumber"> · P.IVA {{ item.vatNumber }}</template></span>
+              <span class="block truncate text-[13px] text-muted">{{ KIND_TEXT[item.kind] }}<template v-if="item.legalName && item.legalName !== item.displayName"> · {{ item.legalName }}</template><template v-if="item.vatNumber"> · P.IVA {{ item.vatNumber }}</template></span>
             </span>
             <span class="col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 md:col-start-auto">
               <span class="lab" :class="areaClass[item.area]" :title="countryName(item.country)">{{ AREA_TEXT[item.area] }}</span>
@@ -254,7 +254,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
               <span v-for="name in item.projects.slice(0, 3)" :key="name" class="chip inline-flex items-center gap-1"><Icon name="project" :size="11" />{{ name }}</span>
               <span v-if="item.projects.length > 3" class="chip">+{{ item.projects.length - 3 }}</span>
             </span>
-            <span class="col-start-2 min-w-0 truncate text-[12.5px] text-muted md:col-start-auto">
+            <span class="col-start-2 min-w-0 truncate text-[13.5px] text-muted md:col-start-auto">
               <template v-if="item.primaryContact">{{ item.primaryContact.name }}<template v-if="item.primaryContact.email"> · {{ item.primaryContact.email }}</template></template>
               <template v-else-if="item.email">{{ item.email }}</template>
             </span>
@@ -278,7 +278,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </div>
           <div class="min-w-0 flex-1">
             <h2 class="truncate font-hud text-[21px] leading-tight font-semibold tracking-[0.02em]">{{ detail.displayName }}</h2>
-            <p class="mt-1 flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted">
+            <p class="mt-1 flex flex-wrap items-center gap-1.5 text-[13.5px] text-muted">
               <span>{{ KIND_TEXT[detail.kind] }}</span>
               <span class="lab" :class="areaClass[detail.area]">{{ AREA_TEXT[detail.area] }} · {{ countryName(detail.country) }}</span>
               <span class="lab" :class="statusClass[detail.status]">{{ STATUS_TEXT[detail.status] }}</span>
@@ -299,7 +299,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </div>
         </header>
         <p v-if="actionProblem" class="text-sm text-danger" role="alert">{{ actionProblem }}</p>
-        <p v-if="gaps.length > 0 && detail.status !== 'archived'" class="flex items-start gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[12.5px]">
+        <p v-if="gaps.length > 0 && detail.status !== 'archived'" class="flex items-start gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
           <span class="text-warn"><Icon name="warning" :size="14" /></span>
           <span>Per la fattura elettronica mancano: {{ gaps.join(', ') }}.</span>
         </p>
@@ -310,7 +310,7 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
             :key="item.id"
             type="button"
             :aria-current="tab === item.id ? 'true' : undefined"
-            class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pt-2 pb-2.5 text-[13.5px] font-medium whitespace-nowrap"
+            class="-mb-px flex items-center gap-1.5 border-b-2 px-3 pt-2 pb-2.5 text-[14.5px] font-medium whitespace-nowrap"
             :class="tab === item.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
             @click="tab = item.id"
           >
@@ -322,11 +322,11 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
         <ClientContacts v-else-if="tab === 'contacts'" :client="detail" @changed="refresh" />
 
         <div v-else-if="tab === 'projects'" class="grid max-w-3xl gap-3">
-          <p class="text-[13px] text-muted">I progetti di questo cliente, fra quelli approvati in Impostazioni → Progetti. Un progetto appartiene a un solo cliente.</p>
+          <p class="text-[14px] text-muted">I progetti di questo cliente, fra quelli approvati in Impostazioni → Progetti. Un progetto appartiene a un solo cliente.</p>
           <ul v-if="detail.projects.length > 0" class="grid gap-2">
             <li v-for="item in detail.projects" :key="item.id" class="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2.5">
               <Icon name="project" :size="15" />
-              <b class="font-mono text-[13px] font-medium">{{ item.project }}</b>
+              <b class="font-mono text-[14px] font-medium">{{ item.project }}</b>
               <span v-if="!item.approved" class="chip text-warn">non più approvato</span>
               <span class="ml-auto flex gap-1.5">
                 <button v-if="item.approved" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('project', item.project)"><Icon name="external" :size="12" />Apri il progetto</button>
@@ -336,11 +336,11 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </ul>
           <p v-else class="rounded-xl border border-line bg-surface p-4 text-sm text-muted">Nessun progetto collegato.</p>
           <form v-if="detail.status !== 'archived'" class="flex flex-wrap items-center gap-2" @submit.prevent="link">
-            <select v-model="toLink" class="field min-w-[220px] px-2 py-1.5 text-[13px]" aria-label="Progetto da collegare" :disabled="linkable.length === 0">
+            <select v-model="toLink" class="field min-w-[220px] px-2 py-1.5 text-[14px]" aria-label="Progetto da collegare" :disabled="linkable.length === 0">
               <option value="">{{ linkable.length === 0 ? 'Nessun progetto libero' : 'Scegli un progetto…' }}</option>
               <option v-for="name in linkable" :key="name" :value="name">{{ name }}</option>
             </select>
-            <button type="submit" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy || toLink === ''"><Icon name="link" :size="13" />Collega</button>
+            <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy || toLink === ''"><Icon name="link" :size="13" />Collega</button>
           </form>
         </div>
 

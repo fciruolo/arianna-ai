@@ -132,8 +132,8 @@ onMounted(() => field.value?.focus());
       </div>
     </div>
     <div class="shrink-0 border-t border-line px-4 pt-3 pb-4 md:px-5.5">
-      <p class="mb-1.5 min-h-4 px-1 font-mono text-[10.5px] text-muted" role="status" aria-live="polite">{{ sending ? 'Creo la conversazione…' : '' }}</p>
-      <div v-if="confirmLong" role="alert" class="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+      <p class="mb-1.5 min-h-4 px-1 font-mono text-[12px] text-muted" role="status" aria-live="polite">{{ sending ? 'Creo la conversazione…' : '' }}</p>
+      <div v-if="confirmLong" role="alert" class="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">Va davvero a Claude? Il messaggio è lungo ({{ text.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.</span>
         <button ref="confirmButton" type="button" class="btn px-2.5 py-1 text-xs" @click="submit(true)">Invia comunque</button>
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>

@@ -19,6 +19,11 @@
  */
 @theme {
   --breakpoint-3xl: 100rem;
+  /* Readability (2026-10-12): the smallest Tailwind sizes one step up, as the arbitrary ones. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
 }
 @custom-variant short (@media (min-width: 48rem) and (max-height: 56rem));
 /*
@@ -50,7 +55,7 @@
   --line: #1e363c;
   --line-strong: #2b4c53;
   --ink: #dcebe8;
-  --muted: #7f9b98;
+  --muted: #93aeaa;
   --accent: #4fd1c1;
   --accent-ink: #062a26;
   --bubble: #2a8f84;
@@ -94,7 +99,7 @@
     --line: #e3e4df;
     --line-strong: #cfd5d0;
     --ink: #24302e;
-    --muted: #687673;
+    --muted: #56635f;
     --accent: #23887c;
     --accent-ink: #ffffff;
     --bubble: #3d7e75;
@@ -132,7 +137,7 @@
   --line: #e3e4df;
   --line-strong: #cfd5d0;
   --ink: #24302e;
-  --muted: #687673;
+  --muted: #56635f;
   --accent: #23887c;
   --accent-ink: #ffffff;
   --bubble: #3d7e75;
@@ -215,10 +220,8 @@ body,
 body {
   margin: 0;
   background-color: var(--bg);
-  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 28px 28px;
   color: var(--ink);
-  font: 14px/1.55 var(--font-sans);
+  font: 15px/1.55 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -293,7 +296,7 @@ body {
 @layer components {
   /* Section titles of the HUD: small caps, wide tracking. */
   .hud-title {
-    font: 600 10.5px/1 var(--font-hud);
+    font: 600 12px/1.2 var(--font-hud);
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
@@ -301,7 +304,7 @@ body {
 
   /* Label chips L0–L3, always visible (D-060). */
   .lab {
-    font: 500 10px/1 var(--font-mono);
+    font: 500 11.5px/1 var(--font-mono);
     padding: 3px 5px;
     border-radius: 4px;
     border: 1px solid currentColor;
@@ -400,7 +403,7 @@ body {
 
   /* A small fact next to a value: RAM, state, presence (settings page). */
   .chip {
-    font: 500 10.5px/1 var(--font-mono);
+    font: 500 12px/1 var(--font-mono);
     padding: 4px 7px;
     border-radius: 5px;
     background: var(--surface-2);
@@ -508,7 +511,7 @@ body {
     align-items: center;
     gap: 8px;
     color: var(--muted);
-    font: 10px/1 var(--font-mono);
+    font: 12px/1 var(--font-mono);
   }
   .md-code-lang {
     letter-spacing: 0.06em;

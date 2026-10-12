@@ -244,7 +244,7 @@ watch(
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
     <p v-else-if="overview === null" class="text-sm text-muted">Leggo gli IM…</p>
     <template v-else>
-      <p v-if="notice" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13px]" role="status">{{ notice }}</p>
+      <p v-if="notice" class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14px]" role="status">{{ notice }}</p>
 
       <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <!-- Calendar: the file IM/calendario.md -->
@@ -255,37 +255,37 @@ watch(
             <LabelBadge label="L1" class="text-xs" />
           </header>
           <div class="flex flex-col gap-3 px-4 py-3">
-            <p v-if="overview.calendar.calendar" class="text-[13px]">IM {{ calendarText(overview.calendar.calendar) }}.</p>
-            <p v-else-if="overview.calendar.issue" class="text-[13px] text-warn">Il file c’è ma non vale: {{ CALENDAR_ISSUE_TEXT[overview.calendar.issue] }}. Ogni IM nuovo arriva sette giorni dopo l’ultimo finché non lo correggi.</p>
-            <p v-else class="text-[13px] text-muted">Nessun calendario: ogni IM nuovo arriva sette giorni dopo l’ultimo.</p>
-            <p v-if="overview.calendar.calendar && overview.calendar.issue" class="text-[13px] text-warn">Attenzione: {{ CALENDAR_ISSUE_TEXT[overview.calendar.issue] }}, quindi gli IM vanno avanti senza fine. Correggila qui sotto o in Obsidian.</p>
+            <p v-if="overview.calendar.calendar" class="text-[14px]">IM {{ calendarText(overview.calendar.calendar) }}.</p>
+            <p v-else-if="overview.calendar.issue" class="text-[14px] text-warn">Il file c’è ma non vale: {{ CALENDAR_ISSUE_TEXT[overview.calendar.issue] }}. Ogni IM nuovo arriva sette giorni dopo l’ultimo finché non lo correggi.</p>
+            <p v-else class="text-[14px] text-muted">Nessun calendario: ogni IM nuovo arriva sette giorni dopo l’ultimo.</p>
+            <p v-if="overview.calendar.calendar && overview.calendar.issue" class="text-[14px] text-warn">Attenzione: {{ CALENDAR_ISSUE_TEXT[overview.calendar.issue] }}, quindi gli IM vanno avanti senza fine. Correggila qui sotto o in Obsidian.</p>
             <form class="flex flex-col gap-2" @submit.prevent="saveCalendar">
               <div class="grid grid-cols-3 gap-2">
                 <label class="flex flex-col gap-1 text-xs text-muted">Giorno
-                  <select v-model.number="calendarForm.weekday" class="field px-2 py-1.5 text-[13px] text-ink">
+                  <select v-model.number="calendarForm.weekday" class="field px-2 py-1.5 text-[14px] text-ink">
                     <option v-for="day in WEEKDAY_ORDER" :key="day" :value="day">{{ WEEKDAY_TEXT[day] }}</option>
                   </select>
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-muted">Ora
-                  <input v-model="calendarForm.time" type="time" class="field px-2 py-1.5 text-[13px] text-ink" />
+                  <input v-model="calendarForm.time" type="time" class="field px-2 py-1.5 text-[14px] text-ink" />
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-muted">Ogni (settimane)
-                  <input v-model.number="calendarForm.every" type="number" min="1" :max="MAX_EVERY" class="field px-2 py-1.5 text-[13px] text-ink" />
+                  <input v-model.number="calendarForm.every" type="number" min="1" :max="MAX_EVERY" class="field px-2 py-1.5 text-[14px] text-ink" />
                 </label>
               </div>
               <div class="flex items-center justify-between gap-2">
-                <span class="font-mono text-[11.5px] text-muted">{{ overview.calendar.path }}</span>
-                <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || !calendarValid">Salva nel file</button>
+                <span class="font-mono text-[12.5px] text-muted">{{ overview.calendar.path }}</span>
+                <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="busy || !calendarValid">Salva nel file</button>
               </div>
             </form>
             <div class="flex flex-col gap-2 border-t border-line pt-3">
-              <p v-if="overview.calendar.end" class="text-[13px] text-warn">Gli IM finiscono il {{ dayText(overview.calendar.end) }}: dopo non ne nasce nessuno, e all’ultimo le voci non finite restano come card nel cardwall.</p>
+              <p v-if="overview.calendar.end" class="text-[14px] text-warn">Gli IM finiscono il {{ dayText(overview.calendar.end) }}: dopo non ne nasce nessuno, e all’ultimo le voci non finite restano come card nel cardwall.</p>
               <div class="flex flex-wrap items-end gap-2">
                 <label class="flex flex-col gap-1 text-xs text-muted">Fine degli IM (facoltativa)
-                  <input v-model="endText" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
+                  <input v-model="endText" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
                 </label>
-                <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy || endText === '' || endText === overview.calendar.end" @click="saveEnd(endText)">Salva la fine</button>
-                <button v-if="overview.calendar.end" type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="saveEnd(null)">Togli la fine</button>
+                <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy || endText === '' || endText === overview.calendar.end" @click="saveEnd(endText)">Salva la fine</button>
+                <button v-if="overview.calendar.end" type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="saveEnd(null)">Togli la fine</button>
               </div>
             </div>
             <p class="text-xs text-muted">Il file è la fonte: lo cambi anche in Obsidian. È Interno come gli IM; il prezzo non ci va mai.</p>
@@ -302,17 +302,17 @@ watch(
           <form class="flex flex-col gap-2 px-4 py-3" @submit.prevent="savePrice">
             <div class="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
               <label class="flex flex-col gap-1 text-xs text-muted">Imponibile, IVA esclusa
-                <input v-model="priceText" inputmode="decimal" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="450" />
+                <input v-model="priceText" inputmode="decimal" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="450" />
               </label>
               <label class="flex flex-col gap-1 text-xs text-muted">Valuta
-                <select v-model="currency" class="field px-2 py-1.5 text-[13px] text-ink">
+                <select v-model="currency" class="field px-2 py-1.5 text-[14px] text-ink">
                   <option v-for="code in currencies" :key="code" :value="code">{{ code }}</option>
                 </select>
               </label>
             </div>
             <p v-if="priceCents === undefined" class="text-xs text-danger">Scrivi un importo come 450 o 450,50.</p>
             <div class="flex justify-end">
-              <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || priceCents === undefined">Salva il prezzo</button>
+              <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="busy || priceCents === undefined">Salva il prezzo</button>
             </div>
             <p class="text-xs text-muted">Si fissa su ogni IM quando si chiude: un cambio vale per gli IM ancora aperti. Resta su questo computer, mai nei file IM né nel cloud.</p>
           </form>
@@ -325,7 +325,7 @@ watch(
             <h2 id="im-totals-title" class="hud-title flex-1">Totali</h2>
             <LabelBadge label="L2" class="text-xs" />
           </header>
-          <dl class="grid gap-2 px-4 py-3 text-[13px]">
+          <dl class="grid gap-2 px-4 py-3 text-[14px]">
             <div class="flex items-baseline justify-between gap-2"><dt class="text-muted">Da fatturare</dt><dd class="font-semibold text-accent">{{ totalsText(overview.totals.toInvoice) }}</dd></div>
             <div class="flex items-baseline justify-between gap-2"><dt class="text-muted">In attesa di pagamento</dt><dd class="font-semibold">{{ totalsText(overview.totals.invoiced) }}</dd></div>
             <div class="flex items-baseline justify-between gap-2"><dt class="text-muted">Incassato</dt><dd class="font-semibold text-ok">{{ totalsText(overview.totals.paid) }}</dd></div>
@@ -352,7 +352,7 @@ watch(
 
         <p v-if="rows.length === 0" class="p-4 text-sm text-muted">Nessun IM ancora: il primo nasce dal cardwall con “Nuovo IM”, o dal calendario.</p>
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-[13px]">
+          <table class="w-full text-[14px]">
             <thead>
               <tr class="border-b border-line text-left text-xs text-muted">
                 <th class="w-8 px-4 py-2 font-normal"><span class="sr-only">Scegli</span></th>
@@ -380,7 +380,7 @@ watch(
                   <td class="px-2 py-2 whitespace-nowrap text-muted">{{ doneText(row) }}</td>
                   <td class="px-2 py-2 text-right whitespace-nowrap">
                     <span class="block">{{ row.amountCents === null ? '—' : moneyText(row.amountCents, row.currency) }}</span>
-                    <span class="block text-[11px] text-muted">{{ priceSourceText(row) }}</span>
+                    <span class="block text-[12.5px] text-muted">{{ priceSourceText(row) }}</span>
                   </td>
                   <td class="px-2 py-2 whitespace-nowrap" :class="STATE_CLASS[row.state]">
                     {{ billingText(row) }}
@@ -393,13 +393,13 @@ watch(
                   <td colspan="7" class="bg-surface-2 px-4 py-3">
                     <form class="flex flex-wrap items-end gap-3" @submit.prevent="saveEditing">
                       <label class="flex flex-col gap-1 text-xs text-muted">Prezzo di questo IM (vuoto: quello del progetto)
-                        <input v-model="editing.text" inputmode="decimal" class="field w-40 px-2 py-1.5 text-[13px] text-ink" :disabled="editing.notBilled" placeholder="come il progetto" />
+                        <input v-model="editing.text" inputmode="decimal" class="field w-40 px-2 py-1.5 text-[14px] text-ink" :disabled="editing.notBilled" placeholder="come il progetto" />
                       </label>
-                      <label class="flex items-center gap-2 pb-1.5 text-[13px]"><input v-model="editing.notBilled" type="checkbox" />Non fatturato</label>
+                      <label class="flex items-center gap-2 pb-1.5 text-[14px]"><input v-model="editing.notBilled" type="checkbox" />Non fatturato</label>
                       <span v-if="editingCents === undefined && !editing.notBilled" class="pb-1.5 text-xs text-danger">Scrivi un importo come 450 o 450,50.</span>
                       <span class="flex-1" />
-                      <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="editing = null">Annulla</button>
-                      <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || (editingCents === undefined && !editing.notBilled)">Salva</button>
+                      <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="editing = null">Annulla</button>
+                      <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="busy || (editingCents === undefined && !editing.notBilled)">Salva</button>
                     </form>
                   </td>
                 </tr>

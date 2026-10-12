@@ -44,7 +44,7 @@ onBeforeUnmount(() => {
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
-      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[15px] py-3 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[15px] py-3 text-[14.5px]">
         <p class="truncate text-xs text-muted" :title="task.title">Task: {{ task.title }}</p>
         <p v-if="loading" class="text-muted">Leggo l’errore…</p>
         <template v-else-if="failure === null || text === undefined">
@@ -60,7 +60,7 @@ onBeforeUnmount(() => {
           </div>
           <details class="text-xs text-muted">
             <summary class="cursor-pointer">Dettagli tecnici</summary>
-            <dl class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+            <dl class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[12.5px]">
               <dt>codice</dt>
               <dd class="break-all text-ink">{{ failure.code }}</dd>
               <template v-for="[key, value] in details" :key="key">

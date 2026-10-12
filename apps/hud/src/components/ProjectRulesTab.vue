@@ -211,14 +211,14 @@ async function save(): Promise<void> {
 
 <template>
   <section class="flex max-w-[860px] flex-col gap-3.5 rounded-2xl border border-line bg-surface p-4 md:p-5" aria-label="Regole del progetto">
-    <p class="text-[13px] text-muted">
+    <p class="text-[14px] text-muted">
       Arianna mette queste regole in testa a ogni lavoro di Claude o di Codex su <span class="font-medium text-ink">{{ name }}</span>. Ogni regola va a tutti e due, oppure solo a uno: lo scegli con la select accanto alla regola, qui sotto.
     </p>
 
     <p v-if="problem !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ problem }}</p>
 
     <template v-if="rules !== undefined">
-      <div v-if="stored === undefined || drafted" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3 py-2 text-[13px]">
+      <div v-if="stored === undefined || drafted" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-info/45 bg-info/9 px-3 py-2 text-[14px]">
         <Icon name="info" :size="16" class="shrink-0 text-info" />
         <span v-if="drafted" class="min-w-0 flex-1">
           Bozza non ancora salvata: il modello comune, le regole ricavate dai file del progetto<template v-if="!partial"> e le convenzioni dei framework proposte dal modello locale</template>. Rileggila, correggila e premi Salva.
@@ -229,22 +229,22 @@ async function save(): Promise<void> {
       </div>
       <fieldset class="flex flex-wrap gap-2">
         <legend class="sr-only">Quali regole</legend>
-        <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px]">
+        <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[14px]">
           <input type="radio" name="rules-mode" :checked="!own" @change="own = false; drafted = false" />Modello comune
         </label>
-        <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px]">
+        <label class="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[14px]">
           <input type="radio" name="rules-mode" :checked="own" @change="chooseOwn" />Regole proprie
         </label>
       </fieldset>
 
       <template v-if="!own">
-        <pre v-if="template.trim() !== ''" class="max-h-[340px] overflow-auto rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ template }}</pre>
-        <p v-else class="text-[13px] text-muted">Il modello comune è vuoto: il progetto non ha regole.</p>
+        <pre v-if="template.trim() !== ''" class="max-h-[340px] overflow-auto rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[13.5px] leading-relaxed whitespace-pre-wrap">{{ template }}</pre>
+        <p v-else class="text-[14px] text-muted">Il modello comune è vuoto: il progetto non ha regole.</p>
         <p class="text-xs text-muted">Il modello comune si scrive in Impostazioni → Regole dei progetti.</p>
       </template>
       <label v-else class="flex flex-col gap-1 text-xs text-muted">
         Regole di questo progetto (partono dal modello comune; vuote = nessuna regola)
-        <textarea v-model="text" rows="12" :maxlength="MAX_PROJECT_RULES" class="field px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-ink" />
+        <textarea v-model="text" rows="12" :maxlength="MAX_PROJECT_RULES" class="field px-2.5 py-2 font-mono text-[13.5px] leading-relaxed text-ink" />
         <span v-if="tooLong" class="text-danger">Al massimo {{ MAX_PROJECT_RULES }} caratteri.</span>
       </label>
 
@@ -253,15 +253,15 @@ async function save(): Promise<void> {
           A chi va ogni regola (ogni riga è una regola; le righe rientrate sotto vanno con quella sopra, i titoli con «#» restano per tutti e due).<template v-if="!own"> Per sceglierlo per questo progetto passa a «Regole proprie».</template>
         </p>
         <ul class="flex flex-col divide-y divide-line">
-          <li v-for="item in items" :key="item.line" class="flex items-center gap-3 py-1.5 text-[13px]">
+          <li v-for="item in items" :key="item.line" class="flex items-center gap-3 py-1.5 text-[14px]">
             <span class="min-w-0 flex-1 break-words">{{ item.text }}</span>
-            <select v-if="own" class="field px-2 py-1 text-[12.5px] text-ink" :value="item.audience" :aria-label="`A chi va la regola: ${item.text}`" @change="chooseAudience(item.line, $event)">
+            <select v-if="own" class="field px-2 py-1 text-[13.5px] text-ink" :value="item.audience" :aria-label="`A chi va la regola: ${item.text}`" @change="chooseAudience(item.line, $event)">
               <option v-for="audience in AUDIENCES" :key="audience" :value="audience">{{ AUDIENCE_TEXT[audience] }}</option>
             </select>
             <span v-else class="text-xs text-muted">{{ AUDIENCE_TEXT[item.audience] }}</span>
           </li>
         </ul>
-        <p class="text-[11.5px] text-muted">La scelta si scrive nel testo come «[solo Claude Code]» o «[solo Codex]» all’inizio della riga; vale per i lavori dentro Arianna e per l’esportazione. Ricordati di premere Salva.</p>
+        <p class="text-[12.5px] text-muted">La scelta si scrive nel testo come «[solo Claude Code]» o «[solo Codex]» all’inizio della riga; vale per i lavori dentro Arianna e per l’esportazione. Ricordati di premere Salva.</p>
       </div>
 
       <p class="text-xs text-muted">Una chat diretta con il Coder già aperta continua con le regole di quando è iniziata: le nuove valgono dalla prossima conversazione.</p>
@@ -274,18 +274,18 @@ async function save(): Promise<void> {
         <span>Gli agenti non fanno mai commit: la cartella <code class="font-mono">.git</code> è in sola lettura per loro, le modifiche restano da rivedere e il commit lo fai tu.</span>
       </p>
 
-      <div v-if="exportPreview !== null" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[13px]" aria-label="Anteprima dell’esportazione">
+      <div v-if="exportPreview !== null" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[14px]" aria-label="Anteprima dell’esportazione">
         <p>
           Scrivo le regole in CLAUDE.md (per Claude Code) e in AGENTS.md (per Codex), così le vedono anche quando li lanci tu nella cartella<template v-if="exportSplit">: ognuno riceve solo le regole per lui</template>. I file restano da committare a te.
         </p>
         <template v-if="exportSplit && exportPreview.contents">
           <template v-for="file in EXPORT_NAMES" :key="file">
             <p class="font-mono text-xs text-muted">{{ file }}</p>
-            <pre v-if="exportPreview.contents[file] !== ''" class="max-h-[200px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.contents[file] }}</pre>
+            <pre v-if="exportPreview.contents[file] !== ''" class="max-h-[200px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[13.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.contents[file] }}</pre>
             <p v-else class="text-xs text-muted">Nessuna regola per lui: il file non si scrive (se l’aveva scritto Arianna, si toglie).</p>
           </template>
         </template>
-        <pre v-else class="max-h-[240px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.text }}</pre>
+        <pre v-else class="max-h-[240px] overflow-auto rounded-md border border-line bg-surface px-2.5 py-2 font-mono text-[13.5px] leading-relaxed whitespace-pre-wrap">{{ exportPreview.text }}</pre>
         <ul class="flex flex-col gap-0.5 text-xs">
           <li v-for="file in exportPreview.files" :key="file.path" class="flex gap-2">
             <code class="font-mono">{{ file.path }}</code><span :class="file.status === 'foreign' || file.status === 'stale' ? 'text-warn' : 'text-muted'">{{ EXPORT_STATUS[file.status] }}</span>
@@ -293,19 +293,19 @@ async function save(): Promise<void> {
           <li v-if="exportPreview.files.length === 0" class="text-muted">Nessuna parte del progetto è una cartella con git: non c’è dove scrivere.</li>
         </ul>
         <div class="flex items-center justify-end gap-2.5">
-          <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="exporting" @click="exportPreview = null">Annulla</button>
-          <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px] font-semibold" :disabled="exporting || changed || !exportWrites" @click="confirmExport">Conferma ed esporta</button>
+          <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="exporting" @click="exportPreview = null">Annulla</button>
+          <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px] font-semibold" :disabled="exporting || changed || !exportWrites" @click="confirmExport">Conferma ed esporta</button>
         </div>
       </div>
       <div v-if="exported !== null" role="status" class="flex flex-col gap-0.5 rounded-[10px] border border-ok/45 bg-ok/9 px-3 py-2 text-xs">
-        <span class="text-[13px]">Esportazione fatta: ricordati di committare i file nel progetto.</span>
+        <span class="text-[14px]">Esportazione fatta: ricordati di committare i file nel progetto.</span>
         <span v-for="file in exported" :key="file.path"><code class="font-mono">{{ file.path }}</code> — {{ EXPORT_STATUS[file.status] }}</span>
       </div>
 
       <div class="flex flex-wrap items-center justify-end gap-2.5">
         <button
           type="button"
-          class="btn mr-auto px-3 py-1.5 text-[13px]"
+          class="btn mr-auto px-3 py-1.5 text-[14px]"
           :disabled="changed || exporting || exportPreview !== null"
           :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md del progetto, dopo un’anteprima'"
           @click="openExport"
@@ -313,8 +313,8 @@ async function save(): Promise<void> {
           Esporta in CLAUDE.md e AGENTS.md
         </button>
         <span v-if="saved && !changed" role="status" class="text-xs text-ok">Salvato</span>
-        <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="!changed || busy" @click="fill">Annulla</button>
-        <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px] font-semibold" :disabled="!changed || busy || tooLong" @click="save">Salva</button>
+        <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="!changed || busy" @click="fill">Annulla</button>
+        <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px] font-semibold" :disabled="!changed || busy || tooLong" @click="save">Salva</button>
       </div>
     </template>
   </section>

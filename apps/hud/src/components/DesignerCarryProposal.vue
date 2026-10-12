@@ -61,7 +61,7 @@ async function restart(): Promise<void> {
   <!-- Always there, so a screen reader reads the question when it appears -->
   <div aria-live="polite">
     <div v-if="shown" class="max-w-[92%]">
-      <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ name }}</div>
+      <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ name }}</div>
       <p class="text-[14px]">
         La sessione è pesante ({{ percent }}% del contesto): ogni messaggio mi fa rileggere tutto. Apro una sessione nuova? La conversazione resta qui com'è; io riparto da un breve riassunto (le tue ultime richieste e la variante aperta) e dai mockup del progetto.
       </p>
@@ -69,7 +69,7 @@ async function restart(): Promise<void> {
         <button type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy" @click="restart">{{ busy ? 'Apro…' : 'Sì, sessione nuova' }}</button>
         <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="decline">No, continua qui</button>
       </div>
-      <p v-if="error !== null" role="alert" class="mt-2 text-[12.5px] text-danger">{{ error }}</p>
+      <p v-if="error !== null" role="alert" class="mt-2 text-[13.5px] text-danger">{{ error }}</p>
     </div>
   </div>
 </template>

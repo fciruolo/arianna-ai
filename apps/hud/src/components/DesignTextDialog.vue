@@ -61,7 +61,7 @@ onBeforeUnmount(() => {
   <div class="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" @click.self="emit('close')">
     <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="design-text-title" tabindex="-1" class="hud-card flex h-[min(820px,92vh)] w-full max-w-[1000px] flex-col bg-surface outline-none">
       <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-        <span class="hud-title text-[10px]">{{ kind === 'style' ? 'Stile' : 'Skill' }}</span>
+        <span class="hud-title text-[12px]">{{ kind === 'style' ? 'Stile' : 'Skill' }}</span>
         <h2 id="design-text-title" class="min-w-0 flex-1 truncate font-medium">{{ title }}</h2>
         <span v-if="hasExample" class="flex gap-1" role="group" aria-label="Cosa vedi">
           <button v-for="item in (['landing', 'deck', 'text'] as const)" :key="item" type="button" class="rounded-md px-2.5 py-1 text-xs" :class="view === item ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="view === item" @click="show(item)">
@@ -74,7 +74,7 @@ onBeforeUnmount(() => {
       <template v-else-if="view === 'text'">
         <p v-if="kind === 'style' && !hasExample" class="border-b border-line px-[15px] py-2 text-xs text-muted">Questo stile non ha ancora esempi: si generano dalla finestra «Stile e skill» con «Genera esempio».</p>
         <p v-if="text === null" class="p-[15px] text-sm text-muted">Leggo…</p>
-        <pre v-else class="min-h-0 flex-1 overflow-auto p-[15px] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">{{ text }}</pre>
+        <pre v-else class="min-h-0 flex-1 overflow-auto p-[15px] font-mono text-[13px] leading-relaxed whitespace-pre-wrap">{{ text }}</pre>
       </template>
       <p v-else-if="example === null" class="p-[15px] text-sm text-muted">Leggo…</p>
       <div v-else class="min-h-0 flex-1 p-2">

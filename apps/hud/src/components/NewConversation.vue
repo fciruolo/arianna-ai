@@ -124,14 +124,14 @@ function submit(): void {
         role="radio"
         :aria-checked="kind === option.id"
         :tabindex="kind === option.id ? 0 : -1"
-        class="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[13px] font-medium whitespace-nowrap transition"
+        class="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[14px] font-medium whitespace-nowrap transition"
         :class="kind === option.id ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
         @click="kind = option.id"
       >
         <Icon :name="option.icon" :size="15" />{{ option.text }}
       </button>
     </div>
-    <p class="-mt-1 px-0.5 text-[12.5px] leading-snug text-muted">{{ hint }}</p>
+    <p class="-mt-1 px-0.5 text-[13.5px] leading-snug text-muted">{{ hint }}</p>
 
     <!-- Incognito (D-136): then private or work, as for a normal conversation. -->
     <div
@@ -178,9 +178,9 @@ function submit(): void {
         >
           <span class="flex w-full items-center gap-2">
             <PixelAgent :choice="characters?.[entry.agent]" pose="idle" :scale="1" />
-            <span class="min-w-0 flex-1 truncate text-[13.5px] font-medium">{{ agentTitle(entry.agent) }}</span>
+            <span class="min-w-0 flex-1 truncate text-[14.5px] font-medium">{{ agentTitle(entry.agent) }}</span>
             <span
-              class="shrink-0 rounded-full border px-1.5 py-px font-mono text-[10px] whitespace-nowrap"
+              class="shrink-0 rounded-full border px-1.5 py-px font-mono text-[12px] whitespace-nowrap"
               :class="entry.cloud ? 'border-l1/60 text-l1' : 'border-line-strong text-muted'"
             >{{ entry.cloud ? shortTarget(entry.executors?.length ? entry.executors : ['claude']) : 'locale' }}</span>
           </span>
@@ -189,7 +189,7 @@ function submit(): void {
           }}</span>
         </button>
       </div>
-      <p v-else class="text-[12.5px] leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
+      <p v-else class="text-[13.5px] leading-snug text-muted">Nessun agente può rispondere adesso: attivane uno in Impostazioni → Agenti.</p>
       <div
         v-if="policy !== undefined && policy.modes.length > 1"
         class="grid grid-cols-2 gap-1 rounded-[10px] border border-line bg-surface-2 p-1"
@@ -214,17 +214,17 @@ function submit(): void {
       <template v-if="policy?.project === true">
         <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs font-medium text-muted">
           Progetto
-          <select :value="agentProject" class="field px-2.5 py-2 text-[13px] font-normal text-ink" @change="project = ($event.target as HTMLSelectElement).value">
+          <select :value="agentProject" class="field px-2.5 py-2 text-[14px] font-normal text-ink" @change="project = ($event.target as HTMLSelectElement).value">
             <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           </select>
         </label>
-        <p v-else class="text-[12.5px] leading-snug text-muted">
+        <p v-else class="text-[13.5px] leading-snug text-muted">
           {{ agentTitle(policy.agent) }} lavora in un progetto, e non ce n'è uno approvato: aggiungilo con
           <code class="font-mono">pnpm arianna:init --reconfigure</code>.
         </p>
       </template>
       <!-- On the cloud: a short title, one sentence, the rest behind "Dettagli" (D-158). -->
-      <div v-if="notice !== undefined" role="note" class="flex gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[12.5px] leading-snug">
+      <div v-if="notice !== undefined" role="note" class="flex gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2.5 text-[13.5px] leading-snug">
         <span class="mt-px shrink-0 text-warn"><Icon name="warning" :size="15" /></span>
         <div class="flex min-w-0 flex-col gap-1">
           <strong class="font-semibold text-warn">{{ notice.title }}</strong>
@@ -235,18 +235,18 @@ function submit(): void {
           </details>
         </div>
       </div>
-      <p v-else-if="policy !== undefined" role="note" class="rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-[12.5px] leading-snug text-muted">{{ localNote(policy.agent) }}</p>
+      <p v-else-if="policy !== undefined" role="note" class="rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-[13.5px] leading-snug text-muted">{{ localNote(policy.agent) }}</p>
     </template>
 
     <template v-else-if="kind === 'work' || (kind === 'incognito' && incognitoMode === 'work')">
       <label v-if="projects.length > 0" class="flex flex-col gap-1 text-xs font-medium text-muted">
         Progetto
-        <select v-model="project" class="field px-2.5 py-2 text-[13px] font-normal text-ink">
+        <select v-model="project" class="field px-2.5 py-2 text-[14px] font-normal text-ink">
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }} · {{ entry.path }}</option>
           <option value="">Nessun progetto</option>
         </select>
       </label>
-      <p v-else class="text-[12.5px] leading-snug text-muted">
+      <p v-else class="text-[13.5px] leading-snug text-muted">
         Nessun progetto approvato: il Coder non ha dove lavorare. Aggiungine uno con
         <code class="font-mono">pnpm arianna:init --reconfigure</code>.
       </p>
@@ -254,7 +254,7 @@ function submit(): void {
 
     <!-- The action: a primary button on the right, as Invio on a choice (D-158). -->
     <div class="mt-1 flex justify-end border-t border-line pt-3">
-      <button type="submit" :disabled="!ready" class="btn btn-primary w-full px-4 py-2 text-[13.5px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">
+      <button type="submit" :disabled="!ready" class="btn btn-primary w-full px-4 py-2 text-[14.5px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">
         <Icon :name="kind === 'agent' ? 'coder' : kind === 'incognito' ? 'incognito' : 'new'" :size="16" />{{
           kind === 'agent' && policy !== undefined ? `Parla con ${agentTitle(policy.agent)}` : kind === 'incognito' ? 'Nuova conversazione incognita' : 'Nuova conversazione'
         }}

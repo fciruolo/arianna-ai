@@ -79,14 +79,14 @@ async function makePrimary(contact: ClientContact): Promise<void> {
   }
 }
 
-const input = 'field w-full px-2.5 py-1.5 text-[13px] text-ink';
+const input = 'field w-full px-2.5 py-1.5 text-[14px] text-ink';
 </script>
 
 <template>
   <div class="grid gap-3">
     <div class="flex flex-wrap items-center gap-2">
-      <button v-if="!locked" type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy || editing !== null" @click="edit(null)"><Icon name="new" :size="14" />Contatto</button>
-      <p v-if="problem && editing === null" class="text-[13px] text-danger" role="alert">{{ problem }}</p>
+      <button v-if="!locked" type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy || editing !== null" @click="edit(null)"><Icon name="new" :size="14" />Contatto</button>
+      <p v-if="problem && editing === null" class="text-[14px] text-danger" role="alert">{{ problem }}</p>
     </div>
 
     <p v-if="client.contacts.length === 0 && editing === null" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm text-muted">
@@ -110,14 +110,14 @@ const input = 'field w-full px-2.5 py-1.5 text-[13px] text-ink';
       <FormField id="ct-mobile" label="Cellulare" :problem="problems.mobile">
         <input id="ct-mobile" v-model="form.mobile" type="tel" :class="input" maxlength="30" />
       </FormField>
-      <label class="flex items-center gap-2.5 self-end pb-2 text-[13px]"><input v-model="form.primary" type="checkbox" class="switch" />Contatto principale</label>
+      <label class="flex items-center gap-2.5 self-end pb-2 text-[14px]"><input v-model="form.primary" type="checkbox" class="switch" />Contatto principale</label>
       <FormField id="ct-notes" label="Note" :problem="problems.notes" wide>
         <textarea id="ct-notes" v-model="form.notes" rows="3" :class="input" class="resize-y" maxlength="2000" />
       </FormField>
       <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
-        <button type="submit" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy">Salva</button>
-        <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="busy" @click="editing = null">Annulla</button>
-        <p v-if="problem" class="text-[13px] text-danger" role="alert">{{ problem }}</p>
+        <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy">Salva</button>
+        <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="busy" @click="editing = null">Annulla</button>
+        <p v-if="problem" class="text-[14px] text-danger" role="alert">{{ problem }}</p>
       </div>
     </form>
 
@@ -126,20 +126,20 @@ const input = 'field w-full px-2.5 py-1.5 text-[13px] text-ink';
         <p class="flex items-start gap-2">
           <span class="min-w-0 flex-1">
             <b class="block truncate text-[14px] font-semibold">{{ contact.name }}</b>
-            <span v-if="contact.role" class="block truncate text-[12.5px] text-muted">{{ contact.role }}</span>
+            <span v-if="contact.role" class="block truncate text-[13.5px] text-muted">{{ contact.role }}</span>
           </span>
           <span v-if="contact.primary" class="chip text-accent">principale</span>
         </p>
-        <a v-if="contact.email" :href="`mailto:${contact.email}`" class="inline-flex items-center gap-1.5 truncate text-[13px] hover:text-accent"><Icon name="mail" :size="13" />{{ contact.email }}</a>
-        <a v-if="contact.phone" :href="`tel:${contact.phone.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[13px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.phone }}</a>
-        <a v-if="contact.mobile" :href="`tel:${contact.mobile.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[13px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.mobile }} <span class="text-muted">cell.</span></a>
-        <p v-if="contact.notes" class="text-[12.5px] whitespace-pre-line text-muted">{{ contact.notes }}</p>
+        <a v-if="contact.email" :href="`mailto:${contact.email}`" class="inline-flex items-center gap-1.5 truncate text-[14px] hover:text-accent"><Icon name="mail" :size="13" />{{ contact.email }}</a>
+        <a v-if="contact.phone" :href="`tel:${contact.phone.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.phone }}</a>
+        <a v-if="contact.mobile" :href="`tel:${contact.mobile.replace(/\s+/g, '')}`" class="inline-flex items-center gap-1.5 text-[14px] hover:text-accent"><Icon name="phone" :size="13" />{{ contact.mobile }} <span class="text-muted">cell.</span></a>
+        <p v-if="contact.notes" class="text-[13.5px] whitespace-pre-line text-muted">{{ contact.notes }}</p>
         <div v-if="!locked" class="mt-1 flex flex-wrap gap-1.5">
           <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy || editing !== null" @click="edit(contact)"><Icon name="rename" :size="12" />Modifica</button>
           <button v-if="!contact.primary" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="makePrimary(contact)">Rendi principale</button>
           <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="removing = contact"><Icon name="delete" :size="12" />Togli</button>
         </div>
-        <div v-if="removing?.id === contact.id" class="mt-1 grid gap-2 rounded-lg border border-danger/50 p-2.5 text-[12.5px]" role="alertdialog" aria-label="Togliere il contatto?">
+        <div v-if="removing?.id === contact.id" class="mt-1 grid gap-2 rounded-lg border border-danger/50 p-2.5 text-[13.5px]" role="alertdialog" aria-label="Togliere il contatto?">
           <p>Togliere {{ contact.name }} dai contatti? Resta nello storico, non compare più qui.</p>
           <div class="flex gap-1.5">
             <button type="button" class="btn btn-danger px-2.5 py-1 text-xs" :disabled="busy" @click="remove">Togli</button>

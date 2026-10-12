@@ -644,16 +644,16 @@ onBeforeUnmount(() => clearInterval(clock));
               {{ directName }}
               <span
                 v-if="cloud"
-                class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-l1"
+                class="inline-flex items-center gap-1 rounded-full border border-l1/60 px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-l1"
                 :title="`Ogni messaggio va così com'è a ${providerText(targets)}: Arianna non lo filtra.`"
               ><Icon name="coder" :size="11" />va a {{ targetName }}</span>
               <span
                 v-if="incognito"
-                class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[10px] font-medium tracking-normal text-incognito-ink"
+                class="inline-flex items-center gap-1 rounded-full bg-incognito px-2 py-0.5 font-mono text-[12px] font-medium tracking-normal text-incognito-ink"
                 title="Alla chiusura Arianna cancella i testi di questa conversazione"
               ><Icon name="incognito" :size="11" />incognito</span>
             </h2>
-            <p class="mt-1 flex items-center gap-2 text-[12.5px] text-muted">
+            <p class="mt-1 flex items-center gap-2 text-[13.5px] text-muted">
               <span v-if="(directPose) === 'thinking'" class="inline-flex gap-1" aria-hidden="true">
                 <i v-for="dot in 3" :key="dot" class="animate-hud-bob size-[5px] rounded-full bg-accent" :style="{ animationDelay: `${String((dot - 1) * 0.15)}s` }" />
               </span>
@@ -678,7 +678,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <p v-if="sessionProblem !== null" class="mt-1 text-xs text-danger" role="alert">{{ sessionProblem }}</p>
             <p v-if="trial !== null" class="mt-1 text-xs text-muted">Prova del modello: risponde solo lui, sul Mac, senza Arianna, strumenti né archivio.</p>
             <p v-if="trial === null" class="mt-1 text-xs text-muted sm:hidden">{{ direct === null ? MODE_HINT[conversation.mode] : cloud ? `Senza Arianna: ogni messaggio va a ${targetName}.` : 'Senza Arianna, sul modello locale.' }}</p>
-            <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[10.5px] text-muted">
+            <div v-if="cloud" class="mt-1.5 flex items-center gap-2 font-mono text-[12px] text-muted">
               <span>CONTESTO</span>
               <span
                 class="relative h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"
@@ -691,7 +691,7 @@ onBeforeUnmount(() => clearInterval(clock));
               <b class="font-medium text-ink">{{ meter.text }}</b>
             </div>
           </div>
-          <div class="ml-auto hidden text-right font-mono text-[10.5px] leading-[1.7] text-muted sm:block">
+          <div class="ml-auto hidden text-right font-mono text-[12px] leading-[1.7] text-muted sm:block">
             <div>
               CONVERSAZIONE <b class="font-medium text-ink">{{ direct === null ? MODE_TEXT[conversation.mode].toLowerCase() : `${MODE_TEXT[conversation.mode].toLowerCase()} con ${directName}` }}<template v-if="conversation.workspace"> · {{ conversation.workspace.split('/').at(-1) }}</template></b>
             </div>
@@ -699,7 +699,7 @@ onBeforeUnmount(() => clearInterval(clock));
             <div v-if="conversation.mode === 'work' && (direct === null || cloud)">
               <label class="inline-flex items-center gap-1">
                 {{ answersDirect ? 'RISPONDE →' : cloud ? 'MODELLO →' : 'CODER →' }}
-                <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[10.5px]" :aria-label="selectorName" @change="onModel">
+                <select :value="selected" class="field px-1.5 py-0.5 font-mono text-[12px]" :aria-label="selectorName" @change="onModel">
                   <option :value="AUTO">{{ autoText }}</option>
                   <option v-for="entry in selectable" :key="entry.model" :value="entry.model">{{ MODEL_TEXT[entry.model] ?? entry.model }}</option>
                   <option v-if="offModel !== null" :value="offModel" disabled>{{ MODEL_TEXT[offModel] ?? offModel }} (spento: {{ autoText }})</option>
@@ -751,7 +751,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <!-- A system chat (D-064): what it is about and what the user can do -->
         <section v-if="conversation.origin === 'system'" class="hud-card" aria-label="Chat di sistema">
-          <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[13px]">
+          <div class="flex flex-col gap-2.5 px-[15px] py-3 text-[14px]">
             <p class="flex items-center gap-2 font-medium"><Icon name="system" :size="16" />Chat di sistema</p>
             <p class="text-muted">
               L’ha aperta il sistema per un task fallito. Chi risponde vede solo l’errore; la domanda del task la vede solo se la alleghi tu.
@@ -797,7 +797,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
         <p v-if="chat.messages.length === 0" class="text-center text-sm text-muted">Scrivi il primo messaggio.</p>
 
-        <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
+        <p v-for="call in receipts.get(-1) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[12.5px] text-muted">
           <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
           <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
         </p>
@@ -811,7 +811,7 @@ onBeforeUnmount(() => clearInterval(clock));
               {{ message.body }}
             </div>
             <!-- D-150: each piece whole (never "Attende / te"); when the row is short they go under, aligned on the right. -->
-            <div class="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-0.5 px-1 font-mono text-[10.5px] whitespace-nowrap text-muted">
+            <div class="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-0.5 px-1 font-mono text-[12px] whitespace-nowrap text-muted">
               <!-- First, on the left: hidden, they still take room, and at the end they pushed time and status away from the bubble. -->
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
               <MessageTime :ts="message.ts" :now="now" />
@@ -841,17 +841,17 @@ onBeforeUnmount(() => clearInterval(clock));
           </div>
 
           <!-- A line of the system about a task: who joined, who left, a wait closed (D-125, D-109) -->
-          <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[12px] text-muted">
-            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-[12.5px] font-medium text-ink' : ''">{{ message.body }}</span>
-            <MessageTime class="font-mono text-[10.5px]" :ts="message.ts" :now="now" />
+          <p v-else-if="isEventLine(message)" :id="messageAnchor(message.id)" class="msg-row flex items-center justify-center gap-2 text-center text-[13px] text-muted">
+            <span class="break-words" :class="isAddingLine(message) ? 'rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-[13.5px] font-medium text-ink' : ''">{{ message.body }}</span>
+            <MessageTime class="font-mono text-[12px]" :ts="message.ts" :now="now" />
           </p>
 
           <!-- A report of the agent Arianna delegated to -->
           <article v-else-if="message.agent !== null" :id="messageAnchor(message.id)" class="msg-row hud-card max-w-[92%]" :aria-label="`Rapporto del ${agentName(message.agent)}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
-              <span class="font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ agentName(message.agent) }}</span>
               <span class="flex-1 truncate text-xs text-muted">rapporto del lavoro delegato</span>
-              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
+              <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
               <LabelBadge :label="message.label" />
               <MessageActions class="whitespace-normal" :message="message" :saved="saved.has(message.id)" :note="saved.get(message.id) ?? null" :can-save="!incognito && canSaveToInbox(message.label)" @saved="markSaved" @open-knowledge="emit('openKnowledge', $event)" />
             </header>
@@ -864,16 +864,16 @@ onBeforeUnmount(() => clearInterval(clock));
           <!-- Arianna (or a system note) -->
           <div v-else :id="messageAnchor(message.id)" class="msg-row max-w-[92%]">
             <div class="mb-1.5 flex items-center gap-2">
-              <span class="font-hud text-[10px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
+              <span class="font-hud text-[12px] font-semibold tracking-[0.16em] uppercase" :class="message.role === 'system' ? 'text-muted' : 'text-accent'">
                 {{ message.role === 'system' ? 'Sistema' : message.model !== null ? (MODEL_TEXT[message.model] ?? message.model) : 'Arianna' }}
               </span>
-              <span v-if="message.model !== null" class="font-mono text-[10.5px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
-              <MessageTime class="font-mono text-[10.5px] text-muted" :ts="message.ts" :now="now" />
-              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
+              <span v-if="message.model !== null" class="font-mono text-[12px] text-muted" title="Risposta scritta da Claude nel cloud: ha letto questa chat, passata dal gateway">cloud</span>
+              <MessageTime class="font-mono text-[12px] text-muted" :ts="message.ts" :now="now" />
+              <span v-if="message.channel === 'voice'" class="inline-flex items-center gap-1 font-mono text-[12px] text-info" title="Detto in una chiamata"><Icon name="phone" :size="12" />a voce</span>
               <LabelBadge :label="message.label" />
               <span
                 v-if="repliesToTelegram(message)"
-                class="inline-flex items-center gap-1 font-mono text-[10.5px] text-info"
+                class="inline-flex items-center gap-1 font-mono text-[12px] text-info"
                 title="Risposta a un messaggio da Telegram: inviata lì, oppure sostituita da un rimando a questa chat se il gateway l'ha fermata"
               ><Icon name="telegram" :size="12" />Telegram</span>
               <MessageActions
@@ -894,12 +894,12 @@ onBeforeUnmount(() => clearInterval(clock));
           <article v-if="activityOf(message).length > 0" class="hud-card" :aria-label="`Cosa sta facendo ${directName}`">
             <header class="flex items-center gap-2.5 border-b border-line px-[15px] py-2.5">
               <span class="flex-1 font-medium">{{ directName }} al lavoro</span>
-              <span class="font-mono text-[10.5px] tracking-[0.08em] text-accent uppercase">In corso</span>
+              <span class="font-mono text-[12px] tracking-[0.08em] text-accent uppercase">In corso</span>
             </header>
-            <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[13px]">
+            <ul class="flex flex-col gap-[7px] px-[15px] py-3 text-[14px]">
               <li v-for="(line, index) in activityOf(message)" :key="`${line.step}-${line.kind}-${line.detail}`" class="flex items-start gap-2.5">
                 <span
-                  class="w-4 shrink-0 text-center font-mono text-[11px]"
+                  class="w-4 shrink-0 text-center font-mono text-[12.5px]"
                   :class="
                     index === activityOf(message).length - 1
                       ? 'animate-hud-blink text-accent'
@@ -919,7 +919,7 @@ onBeforeUnmount(() => clearInterval(clock));
 
           <ApprovalCard v-for="approval in approvalsOf(message)" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
           <ImClosingCard v-if="closings.get(message.id) !== undefined" :key="`im-closing-${closings.get(message.id)!.id}`" :closing="closings.get(message.id)!" />
-          <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[11px] text-muted">
+          <p v-for="call in receipts.get(index) ?? []" :key="call.id" class="flex items-center justify-center gap-2 text-center font-mono text-[12.5px] text-muted">
             <Icon name="phone" :size="12" />{{ receiptText(call, calleeOf(conversation.agent)) }}
             <button v-if="call.status === 'scheduled'" type="button" class="text-info hover:underline" @click="emit('cancelCall', call.id)">annulla</button>
           </p>
@@ -929,7 +929,7 @@ onBeforeUnmount(() => clearInterval(clock));
         <ApprovalCard v-for="approval in unplaced" :id="approvalAnchor(approval.id)" :key="approval.id" :approval="approval" :decide="decide" />
 
         <div v-for="reply in chat.streaming" :key="reply.replyId" class="max-w-[92%]">
-          <div class="mb-1.5 font-hud text-[10px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
+          <div class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.16em] text-accent uppercase">{{ directName }}</div>
           <MarkdownText :source="reply.text" cursor />
         </div>
 
@@ -973,7 +973,7 @@ onBeforeUnmount(() => clearInterval(clock));
               :key="command.name"
               role="option"
               :aria-selected="index === activeCommand"
-              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[13px]"
+              class="flex cursor-pointer items-baseline gap-3 px-3.5 py-1.5 text-[14px]"
               :class="index === activeCommand ? 'bg-surface-2 text-ink' : 'text-muted'"
               @mousedown.prevent
               @mouseenter="activeCommand = index"
@@ -981,11 +981,11 @@ onBeforeUnmount(() => clearInterval(clock));
             >
               <span class="w-36 shrink-0 font-mono sm:w-40" :class="index === activeCommand ? 'text-accent' : 'text-ink'">{{ usage(command) }}</span>
               <span class="min-w-0 flex-1 truncate">{{ command.description }}</span>
-              <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[10.5px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
+              <span v-if="command.alias !== undefined" class="shrink-0 font-mono text-[12px] text-muted" :title="`Scorciatoia: /${command.alias}`">/{{ command.alias }}</span>
             </li>
           </ul>
-          <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[13px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
-          <p class="px-3.5 pt-1.5 font-mono text-[10px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
+          <p v-if="menuItems.length === 0" class="px-3.5 py-1.5 text-[14px] text-muted">Nessun comando corrisponde: Esc per chiudere.</p>
+          <p class="px-3.5 pt-1.5 font-mono text-[12px] text-muted">↑↓ per scegliere · Invio o Tab · Esc per chiudere</p>
         </div>
         <form
           class="flex items-end gap-2.5 rounded-[22px] border border-line-strong bg-surface py-2 pr-2 pl-4"
@@ -1030,7 +1030,7 @@ onBeforeUnmount(() => clearInterval(clock));
         </form>
       </div>
       <PrivateNoteAttach v-if="attaching && attachProject !== null" :project="attachProject" :conversation="conversation.id" @close="attaching = false" />
-      <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+      <div v-if="confirmLong" role="alert" class="mx-auto mt-2 flex max-w-[780px] flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">
         <span class="min-w-0 flex-1">
           Va davvero a {{ targetName }}? Il messaggio è lungo ({{ draft.length }} caratteri) e parte così com'è: lo scanner non riconosce i dati personali scritti in prosa.
         </span>
@@ -1038,10 +1038,10 @@ onBeforeUnmount(() => clearInterval(clock));
         <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="confirmLong = false">Annulla</button>
       </div>
       <p v-if="commandHint !== null" role="status" class="mx-auto mt-2 max-w-[780px] font-mono text-xs text-warn">{{ commandHint }}</p>
-      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-muted short:mt-1.5">
+      <p class="mx-auto mt-2 flex max-w-[780px] flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] text-muted short:mt-1.5">
         <span v-if="incognito" class="short:hidden" :title="NOTE_OFF_TEXT">Invio per inviare · Maiusc+Invio a capo · / per i comandi · incognito: /nota spento, "Copia" funziona</span>
         <span v-else class="short:hidden">Invio per inviare · Maiusc+Invio a capo · / per i comandi · /nota testo: salva in kb/inbox (Privato), {{ direct === null ? 'senza Arianna' : `senza ${directName}` }}</span>
-        <span class="inline-flex flex-wrap items-center gap-1.5">
+        <span>
           Etichetta <LabelBadge :label="conversation.clearance" />: {{ cloud ? `fino a Interno, ogni messaggio va così com'è a ${targetName}, senza Arianna. Niente dati privati.` : trial !== null ? `anche dati privati: risponde solo ${trial}, sul Mac.` : MODE_HINT[conversation.mode] }}
           <button type="button" class="underline decoration-dotted underline-offset-2 hover:text-ink" @click="emit('legend')">Cosa vogliono dire le etichette?</button>
         </span>

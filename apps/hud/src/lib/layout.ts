@@ -64,13 +64,13 @@ export function panelIsColumn(width: number): boolean {
  * because Tailwind only generates classes it finds as whole strings.
  */
 export function gridColumns(layout: Layout): string {
-  const md = layout.sidebar ? 'md:grid-cols-[minmax(0,1fr)]' : 'md:grid-cols-[264px_minmax(0,1fr)]';
+  const md = layout.sidebar ? 'md:grid-cols-[minmax(0,1fr)]' : 'md:grid-cols-[288px_minmax(0,1fr)]';
   const wide = layout.sidebar
     ? layout.panel
       ? '3xl:grid-cols-[minmax(0,1fr)]'
-      : '3xl:grid-cols-[minmax(0,1fr)_300px]'
+      : '3xl:grid-cols-[minmax(0,1fr)_320px]'
     : layout.panel
-      ? '3xl:grid-cols-[264px_minmax(0,1fr)]'
-      : '3xl:grid-cols-[264px_minmax(0,1fr)_300px]';
+      ? '3xl:grid-cols-[288px_minmax(0,1fr)]'
+      : '3xl:grid-cols-[288px_minmax(0,1fr)_320px]';
   return `${md} ${wide}`;
 }

@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
     :aria-label="props.title"
   >
     <header
-      class="flex shrink-0 cursor-move touch-none items-center gap-2 border-b border-line bg-surface-2 px-3 py-1.5 text-[12px] text-muted select-none"
+      class="flex shrink-0 cursor-move touch-none items-center gap-2 border-b border-line bg-surface-2 px-3 py-1.5 text-[13px] text-muted select-none"
       title="Trascina per spostare"
       @pointerdown="start"
       @pointermove="move"

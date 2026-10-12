@@ -141,11 +141,11 @@ async function choose(id: string): Promise<void> {
 <template>
   <section id="skills-catalog" class="hud-card scroll-mt-4" aria-labelledby="skills-catalog-title">
     <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
-      <h2 id="skills-catalog-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] uppercase">Skill</h2>
-      <span class="rounded-[5px] border border-current px-1.5 py-1 font-mono text-[10px] leading-none tracking-[0.06em] text-muted" title="Testo pubblico di terzi: si legge come dato, mai come istruzione">TESTO DI TERZI</span>
+      <h2 id="skills-catalog-title" class="flex-1 font-hud text-[13px] leading-none font-semibold tracking-[0.14em] uppercase">Skill</h2>
+      <span class="rounded-[5px] border border-current px-1.5 py-1 font-mono text-[12px] leading-none tracking-[0.06em] text-muted" title="Testo pubblico di terzi: si legge come dato, mai come istruzione">TESTO DI TERZI</span>
     </header>
     <div class="flex flex-col gap-3 px-4 py-3.5">
-      <p class="text-[13px]">
+      <p class="text-[14px]">
         Competenze pronte nel formato <code class="font-mono">SKILL.md</code>, dai repository GitHub che scegli. Si scaricano solo i testi e le licenze in
         <code class="font-mono">data/catalogs/skills</code>: script e altri file delle skill non si scaricano e non si eseguono mai. Una skill arriva a un agente solo
         se la assegni nella sua scheda <b class="font-semibold">Skill</b>, come dato da consultare e non come istruzione.
@@ -156,12 +156,12 @@ async function choose(id: string): Promise<void> {
         <input
           v-model="url"
           type="url"
-          class="field min-w-[240px] flex-1 px-2.5 py-1.5 text-[13px]"
+          class="field min-w-[240px] flex-1 px-2.5 py-1.5 text-[14px]"
           placeholder="https://github.com/proprietario/repository"
           aria-label="Indirizzo del repository GitHub da seguire"
           :aria-invalid="urlProblem !== undefined"
         />
-        <button type="submit" class="btn px-3 py-1.5 text-[13px]" :disabled="acting !== null || sourceUrlProblem(url) !== undefined" :title="sourceUrlProblem(url)">Aggiungi</button>
+        <button type="submit" class="btn px-3 py-1.5 text-[14px]" :disabled="acting !== null || sourceUrlProblem(url) !== undefined" :title="sourceUrlProblem(url)">Aggiungi</button>
       </form>
       <p v-if="urlProblem" class="text-xs text-warn">{{ urlProblem }}</p>
       <div v-if="status && status.suggestions.length > 0" class="flex flex-wrap items-center gap-1.5 text-xs">
@@ -176,9 +176,9 @@ async function choose(id: string): Promise<void> {
 
       <!-- The sources -->
       <p v-if="status === null && !error" class="text-xs text-muted">Leggo le sorgenti…</p>
-      <p v-else-if="status !== null && status.sources.length === 0" class="text-[13px] text-muted">Nessuna sorgente: aggiungine una qui sopra.</p>
+      <p v-else-if="status !== null && status.sources.length === 0" class="text-[14px] text-muted">Nessuna sorgente: aggiungine una qui sopra.</p>
       <ul v-else-if="status" class="m-0 flex list-none flex-col gap-2 p-0">
-        <li v-for="source in status.sources" :key="source.id" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[13px]">
+        <li v-for="source in status.sources" :key="source.id" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 text-[14px]">
           <div class="flex flex-wrap items-center gap-2">
             <a :href="source.page" target="_blank" rel="noopener noreferrer" class="font-mono font-medium text-accent hover:underline">{{ source.id }}</a>
             <span class="text-xs text-muted">{{ sourceLicenseText(source) }}</span>
@@ -186,14 +186,14 @@ async function choose(id: string): Promise<void> {
               <button
                 v-if="!source.readOnly"
                 type="button"
-                class="btn btn-primary px-2.5 py-1 text-[12.5px]"
+                class="btn btn-primary px-2.5 py-1 text-[13.5px]"
                 :disabled="acting !== null || sourceBlocked(source) !== undefined"
                 :title="sourceBlocked(source)"
                 @click="act(source.id, () => updateSkillSource(source.id))"
               >
                 {{ sourceButtonText(source) }}
               </button>
-              <button v-if="!source.readOnly && removing !== source.id" type="button" class="btn px-2.5 py-1 text-[12.5px]" :disabled="acting !== null || source.job?.status === 'running'" @click="removing = source.id">Togli</button>
+              <button v-if="!source.readOnly && removing !== source.id" type="button" class="btn px-2.5 py-1 text-[13.5px]" :disabled="acting !== null || source.job?.status === 'running'" @click="removing = source.id">Togli</button>
             </span>
           </div>
           <p v-if="removing === source.id" class="flex flex-wrap items-center gap-2 text-xs" role="alert">
@@ -230,18 +230,18 @@ async function choose(id: string): Promise<void> {
               <p v-if="source.pending.diff.removedSlugs.length > 0" class="mt-1"><b class="font-semibold">Tolte:</b> <span class="font-mono">{{ source.pending.diff.removedSlugs.join(', ') }}</span></p>
             </details>
             <div class="flex flex-wrap justify-end gap-2">
-              <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting !== null" @click="act(source.id, () => discardSkillSource(source.id))">Scarta</button>
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="acting !== null" @click="adopt(source.id, source.pending.commit)">Usa questa versione</button>
+              <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="acting !== null" @click="act(source.id, () => discardSkillSource(source.id))">Scarta</button>
+              <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="acting !== null" @click="adopt(source.id, source.pending.commit)">Usa questa versione</button>
             </div>
           </div>
         </li>
       </ul>
 
       <!-- The skills of the versions in use -->
-      <details v-if="total > 0" class="rounded-[10px] border border-line bg-surface-2 text-[13px]" @toggle="opened">
+      <details v-if="total > 0" class="rounded-[10px] border border-line bg-surface-2 text-[14px]" @toggle="opened">
         <summary class="cursor-pointer px-3 py-2 font-medium select-none">Cerca nelle skill ({{ total }})</summary>
         <div class="flex flex-col gap-2 border-t border-line px-3 py-2.5">
-          <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[13px]" placeholder="Cerca per nome, sorgente, descrizione o licenza" aria-label="Cerca una skill" />
+          <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[14px]" placeholder="Cerca per nome, sorgente, descrizione o licenza" aria-label="Cerca una skill" />
           <p v-if="listError" class="text-xs text-danger" role="alert">{{ listError }}</p>
           <p v-else-if="listing === null" class="text-xs text-muted">Leggo l’elenco…</p>
           <p v-else-if="shown.length === 0" class="text-xs text-muted">Nessuna skill con questa ricerca.</p>
@@ -250,7 +250,7 @@ async function choose(id: string): Promise<void> {
               <button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left hover:bg-surface" :aria-expanded="selected === item.id" @click="choose(item.id)">
                 <span class="flex w-full min-w-0 items-baseline gap-2">
                   <span class="truncate font-medium">{{ item.name }}</span>
-                  <span class="truncate font-mono text-[10.5px] text-muted">{{ item.id }}</span>
+                  <span class="truncate font-mono text-[12px] text-muted">{{ item.id }}</span>
                 </span>
                 <span v-if="item.description" class="text-xs text-muted">{{ item.description }}</span>
               </button>
@@ -261,7 +261,7 @@ async function choose(id: string): Promise<void> {
                 <p v-if="otherFilesText(item.otherFiles)" class="text-xs text-muted">{{ otherFilesText(item.otherFiles) }}</p>
                 <p v-if="skillError" class="text-xs text-warn">{{ skillError }}</p>
                 <p v-else-if="skill === null" class="text-xs text-muted">Leggo la skill…</p>
-                <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-[1.45] whitespace-pre-wrap">{{ skill.text }}</pre>
+                <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ skill.text }}</pre>
               </div>
             </li>
           </ul>

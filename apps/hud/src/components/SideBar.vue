@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
+import type { IconName } from '../icons.ts';
 import { pendingBadge, pendingText } from '../lib/dev-progress.ts';
+import { NAV_GROUPS, NAV_STORAGE_KEY, isOpen, parseOpen, toggle, type NavArea, type NavGroupId } from '../lib/nav-groups.ts';
 import type { LiveState } from '../lib/live.ts';
 import type { Conversation, StatusSnapshot } from '../lib/types.ts';
 import ConversationList from './ConversationList.vue';
@@ -9,8 +11,8 @@ import Icon from './Icon.vue';
 
 /**
  * The left bar (D-097), as in Claude Code, from the top: fold button, the
- * name with the light of the link to the core; "Cerca"; the areas (Nuovo,
- * Segretaria, GOD, Pensieri, Conoscenza, Progetti, Clienti, Finanze, Cardwall, Studio, Ufficio, Impostazioni); the
+ * name with the light of the link to the core; "Cerca"; "Nuova conversazione";
+ * the areas in three groups that fold (lib/nav-groups.ts); the
  * conversations, pinned first. The theme and the agents are in the top bar
  * (D-158).
  */
@@ -56,6 +58,64 @@ const devLabel = computed(() => pendingText(props.devPending));
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const shortcut = isMac ? '⌘K' : 'Ctrl K';
 
+const AREAS: Record<NavArea, { label: string; icon: IconName; title?: string }> = {
+  secretary: { label: 'Segretaria', icon: 'secretary', title: 'Di’ ad Arianna le cose da fare: le segna con il giorno' },
+  projects: { label: 'Progetti', icon: 'project' },
+  clients: { label: 'Clienti', icon: 'clients' },
+  cardwall: { label: 'Cardwall', icon: 'cardwall' },
+  // The Studio (I-19, D-184): the Designer's mockups, isolated, with comments and exports.
+  studio: { label: 'Studio', icon: 'studio' },
+  thoughts: { label: 'Pensieri', icon: 'thoughts' },
+  knowledge: { label: 'Conoscenza', icon: 'knowledge' },
+  // The finances (I-18, D-183): private, they never leave this Mac.
+  finance: { label: 'Finanze', icon: 'finance' },
+  // GOD (D-127): Arianna developed from inside Arianna, in a clone of its code.
+  god: { label: 'GOD', icon: 'god', title: 'Sviluppa Arianna da dentro Arianna, in un clone del suo codice' },
+  office: { label: 'Ufficio', icon: 'office' },
+  settings: { label: 'Impostazioni', icon: 'settings' },
+};
+
+/** The area in view: the secretary is a conversation, the voice trial a part of the settings. */
+const current = computed<NavArea | null>(() => {
+  if (props.secretaryOpen) return 'secretary';
+  if (props.page === 'voice-trial') return 'settings';
+  return props.page === 'chat' ? null : props.page;
+});
+
+function readOpen(): NavGroupId[] {
+  try {
+    return parseOpen(localStorage.getItem(NAV_STORAGE_KEY));
+  } catch {
+    return parseOpen(null);
+  }
+}
+const openGroups = ref<NavGroupId[]>(readOpen());
+
+function fold(group: NavGroupId): void {
+  openGroups.value = toggle(openGroups.value, group);
+  try {
+    localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(openGroups.value));
+  } catch {
+    // Without storage the choice lasts until the page reloads.
+  }
+}
+
+function go(area: NavArea): void {
+  switch (area) {
+    case 'secretary': emit('secretary'); break;
+    case 'projects': emit('projects'); break;
+    case 'clients': emit('clients'); break;
+    case 'cardwall': emit('cardwall'); break;
+    case 'studio': emit('studio'); break;
+    case 'thoughts': emit('thoughts'); break;
+    case 'knowledge': emit('knowledge'); break;
+    case 'finance': emit('finance'); break;
+    case 'god': emit('god'); break;
+    case 'office': emit('office'); break;
+    case 'settings': emit('settings'); break;
+  }
+}
+
 function itemClass(on: boolean): string {
   return on ? 'bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:bg-surface-2 hover:text-ink';
 }
@@ -77,7 +137,7 @@ function itemClass(on: boolean): string {
       <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-surface-2" title="Torna alla chat" @click="emit('home')">
         <span class="font-hud text-[17px] leading-none font-semibold tracking-[0.08em] uppercase">Arianna</span>
       </button>
-      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[10px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
+      <span class="inline-flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[12px] whitespace-nowrap text-muted" :title="live === 'open' ? 'Collegata al nucleo' : 'Riconnessione in corso'">
         <span class="size-[7px] rounded-full" :class="live === 'open' ? 'bg-ok shadow-[0_0_8px_var(--ok)]' : 'animate-hud-blink bg-warn'" />
         {{ live === 'open' ? 'IN LINEA' : 'RICONN.' }}
       </span>
@@ -86,85 +146,61 @@ function itemClass(on: boolean): string {
     <!-- Cerca: a window in the middle of the page. -->
     <button
       type="button"
-      class="field flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-muted hover:border-line-strong"
+      class="field flex items-center gap-2 px-2.5 py-1.5 text-left text-[14px] text-muted hover:border-line-strong"
       aria-haspopup="dialog"
       @click="emit('search')"
     >
       <Icon name="search" :size="15" />
       <span class="flex-1">Cerca</span>
-      <kbd class="font-mono text-[10px] tracking-[0.04em]">{{ shortcut }}</kbd>
+      <kbd class="font-mono text-[12px] tracking-[0.04em]">{{ shortcut }}</kbd>
     </button>
 
-    <!-- Areas -->
-    <nav aria-label="Aree" class="flex flex-col gap-0.5 text-[13.5px]">
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-muted hover:bg-surface-2 hover:text-ink" aria-haspopup="dialog" @click="emit('create')">
-        <span class="text-accent"><Icon name="new" :size="16" /></span>Nuovo
-      </button>
-      <!-- The secretary (I-12, D-144): always here, opens its one private conversation. -->
-      <button
-        type="button"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
-        :class="itemClass(secretaryOpen)"
-        :aria-current="secretaryOpen ? 'page' : undefined"
-        title="Di’ ad Arianna le cose da fare: le segna con il giorno"
-        @click="emit('secretary')"
-      >
-        <Icon name="secretary" :size="16" />Segretaria
-      </button>
-      <!-- GOD (D-127): Arianna developed from inside Arianna, in a clone of its code. -->
-      <button
-        type="button"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
-        :class="itemClass(page === 'god')"
-        :aria-current="page === 'god' ? 'page' : undefined"
-        title="Sviluppa Arianna da dentro Arianna, in un clone del suo codice"
-        @click="emit('god')"
-      >
-        <Icon name="god" :size="16" />GOD
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'thoughts')" :aria-current="page === 'thoughts' ? 'page' : undefined" @click="emit('thoughts')">
-        <Icon name="thoughts" :size="16" />Pensieri
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'knowledge')" :aria-current="page === 'knowledge' ? 'page' : undefined" @click="emit('knowledge')">
-        <Icon name="knowledge" :size="16" />Conoscenza
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'projects')" :aria-current="page === 'projects' ? 'page' : undefined" @click="emit('projects')">
-        <Icon name="project" :size="16" />Progetti
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'clients')" :aria-current="page === 'clients' ? 'page' : undefined" @click="emit('clients')">
-        <Icon name="clients" :size="16" />Clienti
-      </button>
-      <!-- The finances (I-18, D-183): private, they never leave this Mac. -->
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'finance')" :aria-current="page === 'finance' ? 'page' : undefined" @click="emit('finance')">
-        <Icon name="finance" :size="16" />Finanze
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'cardwall')" :aria-current="page === 'cardwall' ? 'page' : undefined" @click="emit('cardwall')">
-        <Icon name="cardwall" :size="16" />Cardwall
-      </button>
-      <!-- The Studio (I-19, D-184): the Designer's mockups, isolated, with comments and exports. -->
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'studio')" :aria-current="page === 'studio' ? 'page' : undefined" @click="emit('studio')">
-        <Icon name="studio" :size="16" />Studio
-      </button>
-      <button type="button" class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left" :class="itemClass(page === 'office')" :aria-current="page === 'office' ? 'page' : undefined" @click="emit('office')">
-        <Icon name="office" :size="16" />Ufficio
-      </button>
-      <button
-        type="button"
-        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
-        :class="itemClass(page === 'settings' || page === 'voice-trial')"
-        :aria-current="page === 'settings' || page === 'voice-trial' ? 'page' : undefined"
-        @click="emit('settings')"
-      >
-        <Icon name="settings" :size="16" />Impostazioni
-        <!-- Questions of "Sviluppo di Arianna" that wait for an answer (D-120). -->
-        <span
-          v-if="devDot !== null"
-          role="img"
-          class="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
-          :title="devLabel ?? undefined"
-          :aria-label="devLabel ?? undefined"
-        >{{ devDot }}</span>
-      </button>
+    <button
+      type="button"
+      class="flex items-center justify-center gap-2 rounded-lg bg-accent px-2 py-1.5 text-[14.5px] font-semibold text-accent-ink hover:opacity-90"
+      aria-haspopup="dialog"
+      @click="emit('create')"
+    >
+      <Icon name="new" :size="16" />Nuova conversazione
+    </button>
+
+    <!-- Areas in three groups that fold; the group of the page in view stays open. -->
+    <nav aria-label="Aree" class="flex flex-col gap-1 text-[14.5px]">
+      <div v-for="group in NAV_GROUPS" :key="group.id" class="flex flex-col gap-0.5">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md px-2 pt-1 pb-0.5 text-left text-[12px] font-semibold tracking-[0.08em] text-muted uppercase hover:text-ink"
+          :aria-expanded="isOpen(group.id, openGroups, current)"
+          @click="fold(group.id)"
+        >
+          <span class="transition-transform" :class="isOpen(group.id, openGroups, current) ? 'rotate-90' : ''"><Icon name="expand" :size="12" /></span>
+          {{ group.title }}
+          <!-- Questions of "Sviluppo di Arianna" still visible with "Sistema" folded. -->
+          <span v-if="group.id === 'system' && devDot !== null && !isOpen(group.id, openGroups, current)" class="ml-auto size-2 rounded-full bg-accent" :title="devLabel ?? undefined" />
+        </button>
+        <template v-if="isOpen(group.id, openGroups, current)">
+          <button
+            v-for="area in group.areas"
+            :key="area"
+            type="button"
+            class="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+            :class="itemClass(current === area)"
+            :aria-current="current === area ? 'page' : undefined"
+            :title="AREAS[area].title"
+            @click="go(area)"
+          >
+            <Icon :name="AREAS[area].icon" :size="16" />{{ AREAS[area].label }}
+            <!-- Questions of "Sviluppo di Arianna" that wait for an answer (D-120). -->
+            <span
+              v-if="area === 'settings' && devDot !== null"
+              role="img"
+              class="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[12px] leading-5 font-semibold text-accent-ink"
+              :title="devLabel ?? undefined"
+              :aria-label="devLabel ?? undefined"
+            >{{ devDot }}</span>
+          </button>
+        </template>
+      </div>
     </nav>
 
     <ConversationList
@@ -179,7 +215,7 @@ function itemClass(on: boolean): string {
       @erase="(id) => emit('erase', id)"
     />
 
-    <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[10px] leading-relaxed text-muted">
+    <p v-if="status !== null" class="mt-auto px-1.5 font-mono text-[12px] leading-relaxed text-muted">
       Gateway attivo ·
       <template v-if="status.gateway.privateOut === 0">nessun dato Privato o Segreto è uscito oggi</template>
       <span v-else class="text-danger">{{ status.gateway.privateOut }} uscite di dati Privati o Segreti oggi: controlla il registro</span>

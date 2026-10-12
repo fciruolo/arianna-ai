@@ -76,7 +76,7 @@ async function subscribe(): Promise<void> {
 <template>
   <section id="notifications-device" class="hud-card scroll-mt-4" aria-labelledby="notifications-device-title">
     <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
-      <h2 id="notifications-device-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] uppercase">Questo dispositivo</h2>
+      <h2 id="notifications-device-title" class="flex-1 font-hud text-[13px] leading-none font-semibold tracking-[0.14em] uppercase">Questo dispositivo</h2>
     </header>
     <div class="flex flex-col gap-3 px-4 py-3.5">
       <h3 class="hud-title">Con la chat aperta in un’altra scheda</h3>
@@ -85,13 +85,13 @@ async function subscribe(): Promise<void> {
       <p v-else-if="permission === 'granted'" class="text-sm text-ok">Consentite in questo browser.</p>
       <button v-else type="button" class="btn self-start" @click="allow"><Icon name="bell" :size="16" />Consenti le notifiche in questo browser</button>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-[13px] text-muted">Prova una notifica:</span>
+        <span class="text-[14px] text-muted">Prova una notifica:</span>
         <button v-for="item in TRIALS" :key="item.kind" type="button" class="btn" :disabled="trying" @click="trial(item.kind)"><Icon name="bell" :size="16" />{{ item.label }}</button>
       </div>
       <p v-if="sent !== null" role="status" class="text-xs text-muted">{{ sent }}</p>
 
       <h3 class="hud-title mt-1">Con la chat chiusa (Web Push)</h3>
-      <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: servono le chiavi di Impostazioni → Voce → Notifiche push (<code class="font-mono text-[12.5px]">pnpm voice:vapid</code>).</p>
+      <p v-if="push.state === 'off'" class="text-sm text-muted">Spente: servono le chiavi di Impostazioni → Voce → Notifiche push (<code class="font-mono text-[13.5px]">pnpm voice:vapid</code>).</p>
       <p v-else-if="push.state === 'unsupported'" class="text-sm text-muted">Questo browser non supporta le notifiche push (sul telefono servono HTTPS e la VPN).</p>
       <p v-else-if="push.state === 'denied'" class="text-sm text-muted">Le notifiche sono bloccate per questo sito nelle impostazioni del browser.</p>
       <p v-else-if="push.state === 'on'" class="text-sm text-ok">Questo dispositivo è iscritto.</p>

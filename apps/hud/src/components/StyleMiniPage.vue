@@ -23,10 +23,10 @@ const swatches = computed(() => props.sample.palette.slice(0, 8));
   <div class="overflow-hidden rounded-md border border-line text-left select-none" aria-hidden="true">
     <div class="flex flex-col gap-1.5 px-3 py-2.5" :style="{ backgroundColor: sample.hero, color: sample.heroText, fontFamily: display }">
       <span class="truncate text-[15px] leading-tight" :style="{ fontWeight: sample.titleWeight }">Titolo di prova</span>
-      <span class="w-fit px-2.5 py-0.5 text-[10.5px]" :style="{ backgroundColor: sample.heroAction, color: heroButtonText, borderRadius: radius, fontFamily: body }">Scopri</span>
+      <span class="w-fit px-2.5 py-0.5 text-[12px]" :style="{ backgroundColor: sample.heroAction, color: heroButtonText, borderRadius: radius, fontFamily: body }">Scopri</span>
     </div>
     <div class="flex items-stretch gap-2 px-3 py-2" :style="{ backgroundColor: sample.background, color: sample.text, fontFamily: body }">
-      <p class="min-w-0 flex-1 text-[10.5px] leading-snug">
+      <p class="min-w-0 flex-1 text-[12px] leading-snug">
         Testo della pagina con un <span :style="{ color: sample.accent, textDecoration: 'underline' }">collegamento</span>.
       </p>
       <span class="grid w-14 shrink-0 place-items-center border text-[9px]" :style="{ borderColor: sample.text, borderRadius: radius === '999px' ? '10px' : radius, opacity: 0.85 }">scheda</span>

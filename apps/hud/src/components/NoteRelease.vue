@@ -96,28 +96,28 @@ async function release(): Promise<void> {
 <template>
   <div class="flex flex-col gap-3 px-4 py-3.5">
     <template v-if="released">
-      <p class="rounded-lg border border-line bg-panel px-3 py-2 text-[13px]">
+      <p class="rounded-lg border border-line bg-panel px-3 py-2 text-[14px]">
         <b>Uscito una volta</b> in «{{ released.title }}», come messaggio Interno. La nota resta Privata; l’approvazione e il cambio di label sono registrati.
       </p>
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn px-3 py-1 text-[13px]" @click="emit('close')">Chiudi</button>
-        <button type="button" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" @click="emit('open', released.conversationId)">Apri la conversazione</button>
+        <button type="button" class="btn px-3 py-1 text-[14px]" @click="emit('close')">Chiudi</button>
+        <button type="button" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" @click="emit('open', released.conversationId)">Apri la conversazione</button>
       </div>
     </template>
     <form v-else class="flex flex-col gap-3" @submit.prevent="release">
-      <p class="text-[13px] text-muted">
+      <p class="text-[14px] text-muted">
         La nota è <b class="text-ink">Privata</b> e non esce mai da sola. Da qui ne esce <b class="text-ink">una volta</b> solo il testo del campo a destra, dopo che l’hai letto e approvato con la master password: va {{ conversation === undefined ? 'nella conversazione di lavoro che scegli' : 'in questa conversazione' }}, come messaggio Interno, e da lì Arianna e il Coder possono usarlo. La versione anonima la propone il modello locale: aiuta, ma non è una garanzia, conta quello che approvi.
       </p>
       <div class="grid gap-3 lg:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-1 text-xs text-muted">
           Originale (resta Privato)
-          <div class="field max-h-80 min-h-40 overflow-auto px-2 py-1.5 text-[13px] whitespace-pre-wrap break-words text-ink">{{ original }}</div>
+          <div class="field max-h-80 min-h-40 overflow-auto px-2 py-1.5 text-[14px] whitespace-pre-wrap break-words text-ink">{{ original }}</div>
         </div>
         <label class="flex min-w-0 flex-col gap-1 text-xs text-muted">
           <span class="flex items-center gap-2">Testo che esce
             <span v-if="proposing" class="text-muted">· il modello locale scrive la versione anonima…</span>
           </span>
-          <textarea v-model="text" rows="12" class="field min-h-40 px-2 py-1.5 text-[13px] text-ink" :disabled="proposing" placeholder="La versione anonima della nota" />
+          <textarea v-model="text" rows="12" class="field min-h-40 px-2 py-1.5 text-[14px] text-ink" :disabled="proposing" placeholder="La versione anonima della nota" />
         </label>
       </div>
       <p v-if="proposalProblem" class="text-sm text-danger" role="alert">{{ proposalProblem }}</p>
@@ -125,23 +125,23 @@ async function release(): Promise<void> {
         <button type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" :disabled="proposing || busy" @click="propose"><Icon name="retry" :size="13" />Rifai la proposta</button>
         <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="proposing || busy" title="Copia l’originale nel campo, per togliere a mano i dati" @click="useOriginal">Parti dall’originale</button>
       </div>
-      <p v-if="warning" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[13px]" role="alert">{{ warning }}</p>
+      <p v-if="warning" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[14px]" role="alert">{{ warning }}</p>
       <div class="grid gap-3" :class="conversation === undefined ? 'sm:grid-cols-2' : ''">
         <label v-if="conversation === undefined" class="flex flex-col gap-1 text-xs text-muted">Conversazione di lavoro del progetto
-          <select v-model="conversationId" class="field px-2 py-1.5 text-[13px] text-ink" :disabled="targets === null || targets.length === 0">
+          <select v-model="conversationId" class="field px-2 py-1.5 text-[14px] text-ink" :disabled="targets === null || targets.length === 0">
             <option v-for="target in targets ?? []" :key="target.id" :value="target.id">{{ targetText(target) }}</option>
           </select>
           <span v-if="targetsProblem" class="text-danger">{{ targetsProblem }}</span>
           <span v-else-if="targets !== null && targets.length === 0">Nessuna conversazione di lavoro su questo progetto: aprine una, poi torna qui.</span>
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Master password
-          <input v-model="password" type="password" autocomplete="off" maxlength="1024" class="field px-2 py-1.5 text-[13px] text-ink" />
+          <input v-model="password" type="password" autocomplete="off" maxlength="1024" class="field px-2 py-1.5 text-[14px] text-ink" />
         </label>
       </div>
       <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="emit('close')">Annulla</button>
-        <button type="submit" class="btn btn-danger px-3 py-1 text-[13px] font-semibold" :disabled="!canRelease">{{ busy ? 'Controllo…' : 'Fai uscire questo testo' }}</button>
+        <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="emit('close')">Annulla</button>
+        <button type="submit" class="btn btn-danger px-3 py-1 text-[14px] font-semibold" :disabled="!canRelease">{{ busy ? 'Controllo…' : 'Fai uscire questo testo' }}</button>
       </div>
     </form>
   </div>

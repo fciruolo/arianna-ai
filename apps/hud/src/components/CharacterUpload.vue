@@ -128,10 +128,10 @@ async function send(replace: boolean): Promise<void> {
       <SheetPreview :src="file.dataUrl" :rows="file.rows" />
       <label class="flex flex-col gap-1 text-xs text-muted sm:max-w-xs">
         Nome del personaggio
-        <input v-model="name" maxlength="40" class="field px-2 py-1.5 text-[13px] text-ink" :disabled="existing !== null" @keydown.enter.prevent="send(false)" />
+        <input v-model="name" maxlength="40" class="field px-2 py-1.5 text-[14px] text-ink" :disabled="existing !== null" @keydown.enter.prevent="send(false)" />
       </label>
       <p v-if="name.trim() !== '' && !nameValid" class="text-xs text-warn">Il nome deve avere almeno una lettera senza accenti strani o una cifra, su una riga sola.</p>
-      <div v-if="existing" class="flex flex-col gap-2 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]" role="alert">
+      <div v-if="existing" class="flex flex-col gap-2 rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[14px]" role="alert">
         <p>Fra i tuoi personaggi c’è già «{{ existing.name }}». Vuoi sostituirlo con questo foglio? Chi lo usa vedrà quello nuovo.</p>
         <div class="flex flex-wrap gap-2">
           <button type="button" class="btn btn-warn px-2.5 py-1 text-xs" :disabled="busy" @click="send(true)">Sostituisci «{{ existing.name }}»</button>

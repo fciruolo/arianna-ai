@@ -41,7 +41,9 @@ function runOf(id: string) {
   return props.status?.agents.find((agent) => agent.id === id)?.run ?? null;
 }
 
-const active = computed(() => props.agentIds.filter((id) => props.poseFor(id) !== 'idle').length);
+const busyIds = computed(() => props.agentIds.filter((id) => props.poseFor(id) !== 'idle'));
+const freeIds = computed(() => props.agentIds.filter((id) => props.poseFor(id) === 'idle'));
+const active = computed(() => busyIds.value.length);
 
 function timeOf(ts: string): string {
   return new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -93,15 +95,16 @@ function wornBy(packId: string): string[] {
     <!-- On top, as in the left bar (D-097): the agents, how many are at work, and the button that folds the bar. -->
     <div class="flex items-center gap-2">
       <h2 class="font-hud text-[15px] leading-none font-semibold tracking-[0.12em] uppercase">Agenti</h2>
-      <small class="flex-1 font-mono text-[10.5px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
+      <small class="flex-1 font-mono text-[12px] tracking-[0.06em] text-muted">{{ activeText(active) }}</small>
       <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la barra degli agenti" title="Chiudi la barra" @click="emit('close')">
         <span class="hidden 3xl:inline"><Icon name="panel-collapse" /></span><span class="3xl:hidden"><Icon name="close" /></span>
       </button>
     </div>
 
+    <!-- The agents at work (or waiting for the user) as cards; the free ones as low rows, so the rest of the panel stays in view. -->
     <section aria-label="Agenti">
       <div class="flex flex-col gap-2">
-        <div v-for="id in agentIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2.5 rounded-[12px] border border-line bg-surface-2 px-2.5 py-1 3xl:gap-3 3xl:rounded-[14px] 3xl:p-2.5">
+        <div v-for="id in busyIds" :key="id" class="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2.5 rounded-[12px] border border-line bg-surface-2 px-2.5 py-1 shadow-[inset_3px_0_0_var(--accent)] 3xl:gap-3 3xl:rounded-[14px] 3xl:p-2.5">
           <div class="grid h-16 w-14 place-items-end justify-center rounded-[10px] bg-[radial-gradient(circle_at_50%_85%,var(--glow),transparent_70%)] pb-1">
             <PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="2" bubble />
           </div>
@@ -115,7 +118,7 @@ function wornBy(packId: string): string[] {
               @click="showPending = true"
             >{{ POSE_TEXT[poseFor(id)] }}</button>
             <div v-else class="text-xs text-muted">{{ POSE_TEXT[poseFor(id)] }}</div>
-            <div class="mt-0.5 truncate font-mono text-[10.5px] text-muted">
+            <div class="mt-0.5 truncate font-mono text-[12px] text-muted">
               <template v-if="runOf(id) !== null">
                 {{ EXECUTOR_TEXT[runOf(id)!.executor] ?? runOf(id)!.executor }}<template v-if="runOf(id)!.model"> · {{ MODEL_TEXT[runOf(id)!.model!] ?? runOf(id)!.model }}</template><template v-if="runOf(id)!.repo"> · {{ runOf(id)!.repo }}</template>
               </template>
@@ -123,6 +126,13 @@ function wornBy(packId: string): string[] {
             </div>
           </div>
         </div>
+        <ul v-if="freeIds.length > 0" class="flex flex-col">
+          <li v-for="id in freeIds" :key="id" class="flex items-center gap-2.5 rounded-lg px-2 py-0.5 hover:bg-surface-2" :title="ROLE_TEXT[id] ?? 'agente'">
+            <span class="grid h-[34px] w-5 place-items-end justify-center overflow-hidden"><PixelAgent :choice="characters?.agents[id]" :pose="poseFor(id)" :scale="1" /></span>
+            <span class="min-w-0 flex-1 truncate text-[14px] font-semibold">{{ agentName(id) }}</span>
+            <span class="text-[12.5px] text-muted">libero</span>
+          </li>
+        </ul>
       </div>
     </section>
 
@@ -135,12 +145,12 @@ function wornBy(packId: string): string[] {
     >
       <span class="text-warn"><Icon name="warning" :size="16" /></span>
       <span class="min-w-0 flex-1 font-semibold">{{ PENDING_OPEN }}</span>
-      <span class="font-mono text-[10.5px] text-warn">{{ pendingCount }}</span>
+      <span class="font-mono text-[12px] text-warn">{{ pendingCount }}</span>
     </button>
 
     <section v-if="approvals.length > 0">
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
-        Attende te <small class="font-mono text-[10px] tracking-[0.06em] normal-case">{{ approvals.length }} da altre conversazioni</small>
+        Attende te <small class="font-mono text-[12px] tracking-[0.06em] normal-case">{{ approvals.length }} da altre conversazioni</small>
       </h3>
       <div class="flex flex-col gap-3">
         <ApprovalCard v-for="approval in approvals" :key="approval.id" :approval="approval" :decide="decide" />
@@ -163,9 +173,9 @@ function wornBy(packId: string): string[] {
 
     <section>
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
-        Instradamento <small class="font-mono text-[10px] tracking-[0.06em] normal-case">ultima delega</small>
+        Instradamento <small class="font-mono text-[12px] tracking-[0.06em] normal-case">ultima delega</small>
       </h3>
-      <div class="rounded-[14px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[11.5px] leading-[1.75]">
+      <div class="rounded-[14px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[12.5px] leading-[1.75]">
         <template v-if="status?.router">
           <div class="flex justify-between gap-2.5"><span class="text-muted">quando</span><span>{{ timeOf(status.router.ts) }}</span></div>
           <div class="flex justify-between gap-2.5">
@@ -181,7 +191,7 @@ function wornBy(packId: string): string[] {
             </span>
             <span v-else class="text-warn">in attesa</span>
           </div>
-          <div class="mt-1 border-t border-line pt-1 font-sans text-[11.5px] leading-snug">
+          <div class="mt-1 border-t border-line pt-1 font-sans text-[12.5px] leading-snug">
             <span class="text-muted">motivo: </span>{{ routerReasonText(status.router.reason) }}
           </div>
         </template>
@@ -193,9 +203,9 @@ function wornBy(packId: string): string[] {
 
     <section>
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
-        Gateway <small class="font-mono text-[10px] tracking-[0.06em] normal-case">oggi</small>
+        Gateway <small class="font-mono text-[12px] tracking-[0.06em] normal-case">oggi</small>
       </h3>
-      <div class="rounded-[14px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[11.5px] leading-[1.75]">
+      <div class="rounded-[14px] border border-line bg-surface-2 px-3 py-2.5 font-mono text-[12.5px] leading-[1.75]">
         <template v-if="status !== null">
           <div class="flex justify-between gap-2.5"><span class="text-muted">uscite verso il cloud</span><span>{{ status.gateway.allowedOut }}</span></div>
           <div class="flex justify-between gap-2.5">
@@ -215,7 +225,7 @@ function wornBy(packId: string): string[] {
               :title="`${String(count)}`"
             />
           </div>
-          <div class="flex justify-between text-[9.5px] text-muted"><span>−12 h</span><span>ora</span></div>
+          <div class="flex justify-between text-[12px] text-muted"><span>−12 h</span><span>ora</span></div>
         </template>
         <p v-else class="text-muted">Lettura in corso…</p>
       </div>
@@ -224,13 +234,13 @@ function wornBy(packId: string): string[] {
     <section>
       <h3 class="hud-title mb-2.5 flex items-center justify-between">
         Personaggi
-        <button type="button" class="font-mono text-[10px] tracking-[0.06em] normal-case hover:text-ink" @click="emit('refreshCharacters')">rileggi</button>
+        <button type="button" class="font-mono text-[12px] tracking-[0.06em] normal-case hover:text-ink" @click="emit('refreshCharacters')">rileggi</button>
       </h3>
       <div class="grid grid-cols-3 gap-2">
         <div
           v-for="pack in characters?.packs ?? []"
           :key="pack.id"
-          class="grid justify-items-center gap-1 rounded-[10px] border bg-surface-2 px-1 pt-2 pb-1.5 text-center text-[11px]"
+          class="grid justify-items-center gap-1 rounded-[10px] border bg-surface-2 px-1 pt-2 pb-1.5 text-center text-[12.5px]"
           :class="wornBy(pack.id).length > 0 ? 'border-accent text-ink' : 'border-line text-muted'"
           :title="[pack.source, wornBy(pack.id).length > 0 ? `in uso: ${wornBy(pack.id).join(', ')}` : ''].filter(Boolean).join(' · ')"
         >
@@ -238,10 +248,10 @@ function wornBy(packId: string): string[] {
           <span class="w-full truncate">{{ pack.name }}</span>
         </div>
       </div>
-      <ul v-if="(characters?.refused.length ?? 0) > 0" class="mt-2 flex flex-col gap-1 text-[11px] text-warn">
+      <ul v-if="(characters?.refused.length ?? 0) > 0" class="mt-2 flex flex-col gap-1 text-[12.5px] text-warn">
         <li v-for="item in characters?.refused" :key="item.pack"><span class="font-mono">{{ item.pack }}</span>: {{ item.reason }}</li>
       </ul>
-      <p class="mt-2 text-[11.5px] leading-snug text-muted">
+      <p class="mt-2 text-[12.5px] leading-snug text-muted">
         Per aggiungere un pacchetto copia la sua cartella in <span class="font-mono">data/characters</span>, fuori da git, poi scegli chi lo indossa in
         <span class="font-mono">[characters]</span> di <span class="font-mono">arianna.toml</span>.
       </p>

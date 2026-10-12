@@ -208,7 +208,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           @cardwall="showCardwall = true"
           @escape="leaveCanvas"
         />
-        <p id="office-help" class="mt-3 text-[12.5px] leading-relaxed text-muted">
+        <p id="office-help" class="mt-3 text-[13.5px] leading-relaxed text-muted">
           Clicca nell'ufficio o raggiungilo con <kbd class="kbd">Tab</kbd>, poi <kbd class="kbd">←</kbd><kbd class="kbd">↑</kbd><kbd class="kbd">→</kbd><kbd class="kbd">↓</kbd>
           o <kbd class="kbd">W</kbd><kbd class="kbd">A</kbd><kbd class="kbd">S</kbd><kbd class="kbd">D</kbd> per camminare, oppure clicca un punto del pavimento o un
           agente. Vicino a un agente <kbd class="kbd">E</kbd> o <kbd class="kbd">Invio</kbd> apre nella chat la sua conversazione, o una nuova; alla scrivania «Decisioni» apre le
@@ -265,7 +265,7 @@ const DOT: Record<Pose, string> = { idle: 'bg-muted', thinking: 'bg-info', worki
           <ul v-if="snapshot.archived.length > 0" class="flex flex-col gap-1.5 text-xs">
             <li v-for="(name, index) in snapshot.archived" :key="`${name}-${String(index)}`" class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate font-mono">{{ name }}</span>
-              <button type="button" class="btn px-2 py-0.5 text-[11px]" @click="emit('draft', 'work', name)">Nuova conversazione</button>
+              <button type="button" class="btn px-2 py-0.5 text-[12.5px]" @click="emit('draft', 'work', name)">Nuova conversazione</button>
             </li>
           </ul>
           <p v-if="snapshot.unnamed > 0" class="mt-1.5 text-xs text-muted">

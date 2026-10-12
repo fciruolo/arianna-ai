@@ -652,7 +652,7 @@ watch(active, () => {
           v-for="item in group.items"
           :key="item.id"
           :href="hrefOf(item)"
-          class="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] hover:bg-surface-2 hover:text-ink lg:py-1.5"
+          class="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[14px] hover:bg-surface-2 hover:text-ink lg:py-1.5"
           :class="active === item.id ? 'text-muted lg:bg-surface-2 lg:font-medium lg:text-ink' : 'text-muted'"
           :aria-current="active === item.id ? 'page' : undefined"
           @click.prevent="open(item)"
@@ -661,7 +661,7 @@ watch(active, () => {
           <span
             v-if="item.id === 'dev-progress' && devDot !== null"
             role="img"
-            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
+            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[12px] leading-5 font-semibold text-accent-ink"
             :title="devLabel ?? undefined"
             :aria-label="devLabel ?? undefined"
           >{{ devDot }}</span>
@@ -671,7 +671,7 @@ watch(active, () => {
         </a>
       </template>
       <!-- "Novità": the current version, in small at the bottom of the index. -->
-      <p class="mx-2.5 mt-auto pt-6 font-mono text-[11px] text-muted">
+      <p class="mx-2.5 mt-auto pt-6 font-mono text-[12.5px] text-muted">
         <span v-if="currentVersion !== null">Arianna {{ currentVersion }} · </span>
         <a :href="CHANGELOG_PATH" class="hover:text-ink hover:underline" @click.prevent="leave('changelog')">Novità</a>
       </p>
@@ -687,7 +687,7 @@ watch(active, () => {
           </p>
         </header>
 
-        <p v-if="pending.length > 0" role="status" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+        <p v-if="pending.length > 0" role="status" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[14px]">
           <Icon name="warning" :size="16" class="mt-0.5 text-warn" />
           <span>Modifiche non salvate in: {{ pending.join(', ') }}. Restano lì finché non le salvi o le annulli; uscendo dalle Impostazioni si perdono.</span>
         </p>
@@ -698,31 +698,31 @@ watch(active, () => {
         <p v-if="view === null && loadError === null" class="text-muted">Leggo le impostazioni…</p>
 
         <template v-if="view !== null">
-          <p v-if="chosen.item.behaviour === 'now' || chosen.item.behaviour === 'confirm'" class="flex items-start gap-2 rounded-[10px] border border-info/45 bg-info/9 px-3 py-1.5 text-xs 3xl:gap-2.5 3xl:px-3.5 3xl:py-2.5 3xl:text-[13px]">
+          <p v-if="chosen.item.behaviour === 'now' || chosen.item.behaviour === 'confirm'" class="flex items-start gap-2 rounded-[10px] border border-info/45 bg-info/9 px-3 py-1.5 text-xs 3xl:gap-2.5 3xl:px-3.5 3xl:py-2.5 3xl:text-[14px]">
             <Icon name="info" :size="16" class="mt-0.5 text-info" />
             <span>
               Salvare da qui riscrive <code class="font-mono text-xs">config/arianna.toml</code>: i commenti scritti a mano nel file si perdono, come con
               <code class="font-mono text-xs">pnpm arianna:init --reconfigure</code>.
             </span>
           </p>
-          <p v-if="view.restartPending.length > 0" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+          <p v-if="view.restartPending.length > 0" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[14px]">
             <Icon name="warning" :size="16" class="mt-0.5 text-warn" />
             <span>
               In attesa di riavvio del nucleo: {{ view.restartPending.map((section) => SECTION_TEXT[section] ?? section).join(', ') }}. Sono cambiati nel file e valgono al
               prossimo <code class="font-mono text-xs">pnpm start</code>.
             </span>
           </p>
-          <p v-if="notice !== null" role="alert" class="flex items-start gap-2.5 rounded-[10px] border border-danger/50 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger">
+          <p v-if="notice !== null" role="alert" class="flex items-start gap-2.5 rounded-[10px] border border-danger/50 bg-danger/10 px-3.5 py-2.5 text-[14px] text-danger">
             <Icon name="warning" :size="16" class="mt-0.5" />
             <span class="flex-1">{{ notice }}</span>
             <button type="button" class="rounded-md p-0.5 hover:bg-danger/20" aria-label="Chiudi" @click="notice = null"><Icon name="close" :size="14" /></button>
           </p>
-          <p v-if="stale" role="status" class="flex items-center gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+          <p v-if="stale" role="status" class="flex items-center gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[14px]">
             <Icon name="warning" :size="16" class="text-warn" />
             <span class="flex-1">Il file è cambiato fuori da questa pagina: salvando ora la modifica sarebbe rifiutata.</span>
             <button type="button" class="btn px-2.5 py-1 text-xs" @click="reload">Ricarica i valori</button>
           </p>
-          <p v-if="view.error !== null" role="alert" class="rounded-[10px] border border-danger/50 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger">
+          <p v-if="view.error !== null" role="alert" class="rounded-[10px] border border-danger/50 bg-danger/10 px-3.5 py-2.5 text-[14px] text-danger">
             <code class="font-mono text-xs">config/arianna.toml</code> non è valido, e finché non lo correggi a mano tutte le uscite sono chiuse: {{ view.error }}
           </p>
 
@@ -758,14 +758,14 @@ watch(active, () => {
                 <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                   <label class="flex flex-col gap-1 text-xs text-muted">
                     Voce di Arianna
-                    <input v-model.trim="forms.voice.values.voice" list="voice-choices" class="field px-2 py-1.5 text-[13px] text-ink" />
+                    <input v-model.trim="forms.voice.values.voice" list="voice-choices" class="field px-2 py-1.5 text-[14px] text-ink" />
                     <datalist id="voice-choices">
                       <option v-for="choice in voiceChoices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
                     </datalist>
                   </label>
                   <label class="flex flex-col gap-1 text-xs text-muted">
                     Porta del servizio della voce
-                    <input v-model.number="forms.voice.values.port" type="number" min="1024" max="65535" class="field px-2 py-1.5 text-[13px] text-ink" />
+                    <input v-model.number="forms.voice.values.port" type="number" min="1024" max="65535" class="field px-2 py-1.5 text-[14px] text-ink" />
                   </label>
                 </div>
                 <p class="text-xs text-muted">
@@ -775,20 +775,20 @@ watch(active, () => {
 
                 <h3 class="hud-title mt-1">Limiti di una chiamata</h3>
                 <div class="grid grid-cols-2 gap-x-3.5 gap-y-2.5 sm:grid-cols-4">
-                  <label class="flex flex-col gap-1 text-xs text-muted">Durata massima (min)<input v-model.number="forms.voice.values.limits.callMinutes" type="number" min="1" max="120" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Avviso prima della fine (s)<input v-model.number="forms.voice.values.limits.warnSeconds" type="number" min="0" max="600" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Deleghe per chiamata<input v-model.number="forms.voice.values.limits.delegations" type="number" min="0" max="50" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Attesa di una delega (s)<input v-model.number="forms.voice.values.limits.delegationSeconds" type="number" min="5" max="600" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Durata massima (min)<input v-model.number="forms.voice.values.limits.callMinutes" type="number" min="1" max="120" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Avviso prima della fine (s)<input v-model.number="forms.voice.values.limits.warnSeconds" type="number" min="0" max="600" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Deleghe per chiamata<input v-model.number="forms.voice.values.limits.delegations" type="number" min="0" max="50" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Attesa di una delega (s)<input v-model.number="forms.voice.values.limits.delegationSeconds" type="number" min="5" max="600" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
                 </div>
 
                 <h3 class="hud-title mt-1">Quando ti chiama Arianna</h3>
                 <div class="grid grid-cols-2 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
-                  <label class="flex flex-col gap-1 text-xs text-muted">Massimo al giorno<input v-model.number="forms.voice.values.outgoing.maxPerDay" type="number" min="0" max="50" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.voice.values.outgoing.quietFrom" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.voice.values.outgoing.quietTo" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Squilla per (s)<input v-model.number="forms.voice.values.outgoing.ringSeconds" type="number" min="5" max="300" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Chiama dopo un’attesa di (min)<input v-model.number="forms.voice.values.outgoing.waitingMinutes" type="number" min="1" max="1440" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                  <label class="flex items-center gap-2 self-end pb-1.5 text-[13px]"><input v-model="forms.voice.values.outgoing.quietWeekend" type="checkbox" />Silenzio nel fine settimana</label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Massimo al giorno<input v-model.number="forms.voice.values.outgoing.maxPerDay" type="number" min="0" max="50" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.voice.values.outgoing.quietFrom" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.voice.values.outgoing.quietTo" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Squilla per (s)<input v-model.number="forms.voice.values.outgoing.ringSeconds" type="number" min="5" max="300" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Chiama dopo un’attesa di (min)<input v-model.number="forms.voice.values.outgoing.waitingMinutes" type="number" min="1" max="1440" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                  <label class="flex items-center gap-2 self-end pb-1.5 text-[14px]"><input v-model="forms.voice.values.outgoing.quietWeekend" type="checkbox" />Silenzio nel fine settimana</label>
                 </div>
 
                 <h3 class="hud-title mt-1 flex items-center gap-2">
@@ -797,7 +797,7 @@ watch(active, () => {
                 </h3>
                 <div v-if="forms.voice.push" class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
                   <label class="flex flex-col gap-1 text-xs text-muted">Chiave pubblica VAPID<input v-model="forms.voice.publicKey" class="field px-2 py-1.5 font-mono text-xs text-ink" placeholder="da pnpm voice:vapid" /></label>
-                  <label class="flex flex-col gap-1 text-xs text-muted">Contatto (mailto: o https:)<input v-model="forms.voice.subject" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="mailto:tu@example.org" /></label>
+                  <label class="flex flex-col gap-1 text-xs text-muted">Contatto (mailto: o https:)<input v-model="forms.voice.subject" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="mailto:tu@example.org" /></label>
                 </div>
                 <p class="text-xs text-muted">La chiave privata sta nel vault (<code class="font-mono">pnpm vault:edit</code>, chiave <code class="font-mono">vapid-private-key</code>) e non compare qui.</p>
               </template>
@@ -808,17 +808,17 @@ watch(active, () => {
             <SettingsCard v-if="active === 'notifications'" id="notifications" title="Notifiche" kind="now" :changed="changed('notifications')" :saved="saved === 'notifications'" :invalid="notificationsProblem(forms.notifications)" :busy="busy === 'notifications'" :error="errors.notifications" @cancel="reset('notifications')" @save="save('notifications')">
               <p class="text-xs text-muted">Quando la chat risponde e non la stai guardando. Valgono per ogni browser e telefono che hai consentito qui sotto.</p>
               <div class="flex flex-col gap-2">
-                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte nelle chat</label>
-                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.approvals" type="checkbox" role="switch" class="switch" />Approvazioni in attesa</label>
-                <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.notifications.failures" type="checkbox" role="switch" class="switch" />Lavori falliti</label>
+                <label class="flex items-center gap-2 text-[14px]"><input v-model="forms.notifications.replies" type="checkbox" role="switch" class="switch" />Risposte nelle chat</label>
+                <label class="flex items-center gap-2 text-[14px]"><input v-model="forms.notifications.approvals" type="checkbox" role="switch" class="switch" />Approvazioni in attesa</label>
+                <label class="flex items-center gap-2 text-[14px]"><input v-model="forms.notifications.failures" type="checkbox" role="switch" class="switch" />Lavori falliti</label>
               </div>
               <h3 class="hud-title mt-1 flex items-center gap-2">
                 Ore di silenzio
                 <input v-model="forms.notifications.quiet" type="checkbox" role="switch" class="switch" aria-label="Ore di silenzio accese" />
               </h3>
               <div v-if="forms.notifications.quiet" class="grid grid-cols-2 gap-x-3.5 gap-y-2.5 sm:grid-cols-3">
-                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.notifications.quietFrom" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.notifications.quietTo" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio dalle<input v-model="forms.notifications.quietFrom" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Silenzio fino alle<input v-model="forms.notifications.quietTo" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
               </div>
               <p class="text-xs text-muted">{{ forms.notifications.quiet ? 'Ora locale; può passare la mezzanotte (per esempio dalle 22:00 alle 07:00).' : 'Nessuna ora di silenzio.' }} Le chiamate seguono i loro orari, in Voce.</p>
             </SettingsCard>
@@ -829,16 +829,16 @@ watch(active, () => {
               <p class="text-xs text-muted">
                 Dici ad Arianna le cose da fare con il pulsante «Segretaria» della barra a sinistra: le segna con il giorno, dopo che l’hai confermato. Qui scegli quando ricordartele.
               </p>
-              <label class="flex items-center gap-2 text-[13px]"><input v-model="forms.secretary.enabled" type="checkbox" role="switch" class="switch" />Promemoria accesi</label>
+              <label class="flex items-center gap-2 text-[14px]"><input v-model="forms.secretary.enabled" type="checkbox" role="switch" class="switch" />Promemoria accesi</label>
               <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-3" :class="{ 'opacity-55': !forms.secretary.enabled }">
-                <label class="flex flex-col gap-1 text-xs text-muted">Mattina: gli impegni del giorno<input v-model="forms.secretary.morning" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                <label class="flex flex-col gap-1 text-xs text-muted">Dopo pranzo: quelli ancora aperti<input v-model="forms.secretary.afternoon" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-                <label class="flex flex-col gap-1 text-xs text-muted">Fine giornata: cosa non è fatto<input v-model="forms.secretary.evening" type="time" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Mattina: gli impegni del giorno<input v-model="forms.secretary.morning" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Dopo pranzo: quelli ancora aperti<input v-model="forms.secretary.afternoon" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+                <label class="flex flex-col gap-1 text-xs text-muted">Fine giornata: cosa non è fatto<input v-model="forms.secretary.evening" type="time" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
               </div>
               <fieldset class="flex flex-col gap-1.5" :class="{ 'opacity-55': !forms.secretary.enabled }">
                 <legend class="mb-1 text-xs text-muted">Giorni</legend>
                 <div class="flex flex-wrap gap-1.5">
-                  <label v-for="day in WEEKDAYS" :key="day" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2 py-1 text-[12.5px]">
+                  <label v-for="day in WEEKDAYS" :key="day" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2 py-1 text-[13.5px]">
                     <input v-model="forms.secretary.days" type="checkbox" :value="day" />{{ WEEKDAY_TEXT[day] }}
                   </label>
                 </div>
@@ -877,7 +877,7 @@ watch(active, () => {
             <!-- The catalog of skills (D-161): sources from GitHub, adopted only after the summary; assigned in the tab Skill of an agent -->
             <SkillsCatalog v-if="active === 'agents'" @changed="agentsPage?.skillsCatalogChanged()" />
 
-            <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[13px]">
+            <p v-if="chosen.item.behaviour === 'confirm'" class="flex items-start gap-2.5 rounded-[10px] border border-warn/50 bg-warn/10 px-3.5 py-2.5 text-[14px]">
               <Icon name="gateway" :size="16" class="mt-0.5 text-warn" />
               <span>Questa sezione decide cosa può uscire da questo computer. Una modifica si applica solo dopo che hai visto e confermato la scheda con le uscite.</span>
             </p>
@@ -940,7 +940,7 @@ watch(active, () => {
                 <li v-for="(project, index) in forms.projects" :key="project.name" class="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2">
                   <Icon name="project" :size="16" class="text-muted" />
                   <span class="font-medium">{{ project.name }}</span>
-                  <select v-model="project.label" class="field px-1.5 py-0.5 font-mono text-[11px]" :aria-label="`Etichetta di ${project.name}`">
+                  <select v-model="project.label" class="field px-1.5 py-0.5 font-mono text-[12.5px]" :aria-label="`Etichetta di ${project.name}`">
                     <option value="L0">Pubblico</option>
                     <option value="L1">Interno</option>
                   </select>
@@ -949,7 +949,7 @@ watch(active, () => {
                 </li>
               </ul>
               <form class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.6fr_auto_auto]" @submit.prevent="addProject">
-                <input v-model="newProject.name" class="field px-2 py-1.5 text-[13px]" placeholder="nome" aria-label="Nome del progetto" />
+                <input v-model="newProject.name" class="field px-2 py-1.5 text-[14px]" placeholder="nome" aria-label="Nome del progetto" />
                 <input v-model="newProject.path" class="field px-2 py-1.5 font-mono text-xs" placeholder="~/Progetti/sito o repos/sito" aria-label="Cartella del progetto" />
                 <select v-model="newProject.label" class="field px-2 py-1.5 font-mono text-xs" aria-label="Etichetta del progetto">
                   <option value="L0">Pubblico</option>
@@ -987,7 +987,7 @@ watch(active, () => {
                   v-model="forms.projectRules.template"
                   rows="9"
                   :maxlength="MAX_PROJECT_RULES"
-                  class="field px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
+                  class="field px-2.5 py-2 font-mono text-[13.5px] leading-relaxed text-ink"
                   placeholder="Commenti in inglese.&#10;Niente firme o commenti tipo «generato da»: commenti solo dove servono, nomi e formattazione come il codice che c’è già."
                 />
               </label>
@@ -1023,8 +1023,8 @@ watch(active, () => {
             <div v-for="server in local" :key="server.id" class="flex flex-col gap-2 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
               <div class="flex flex-wrap items-center gap-2.5">
                 <Icon name="server" :size="16" class="text-muted" />
-                <b class="font-mono text-[13px]">{{ server.id }}</b>
-                <span class="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.06em] uppercase">
+                <b class="font-mono text-[14px]">{{ server.id }}</b>
+                <span class="inline-flex items-center gap-1.5 font-mono text-[12.5px] tracking-[0.06em] uppercase">
                   <span class="size-2 rounded-full" :class="STATE_CLASS[server.state]" />{{ STATE_TEXT[server.state] ?? server.state }}
                 </span>
                 <span class="chip">{{ !server.managed ? 'solo osservato' : server.adopted ? 'acceso prima del nucleo' : 'avviato dal nucleo' }}</span>
@@ -1046,7 +1046,7 @@ watch(active, () => {
                   Ultime righe del log (<code class="font-mono">data/{{ server.id }}.log</code>) · può contenere testi privati: resta in questa pagina
                 </summary>
                 <div class="mt-2 flex flex-col gap-1.5">
-                  <pre :id="`log-${server.id}`" class="max-h-[240px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap text-muted">{{ logs[server.id] ?? 'Leggo…' }}</pre>
+                  <pre :id="`log-${server.id}`" class="max-h-[240px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12.5px] leading-[1.55] whitespace-pre-wrap text-muted">{{ logs[server.id] ?? 'Leggo…' }}</pre>
                   <button type="button" class="btn self-start px-2.5 py-1 text-xs" @click="readLog(server.id)"><Icon name="retry" :size="14" />Rileggi</button>
                 </div>
               </details>
@@ -1077,7 +1077,7 @@ watch(active, () => {
           <!-- Label rules: only the file changes them. -->
           <SettingsCard v-if="active === 'labels'" id="labels" title="Regole di etichetta" kind="read">
             <p class="text-xs text-muted">Le regole di etichetta e il gateway si cambiano solo a mano, nel file <code class="font-mono">config/labels.toml</code>.</p>
-            <pre v-if="view.labels !== null" class="max-h-[320px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap">{{ view.labels }}</pre>
+            <pre v-if="view.labels !== null" class="max-h-[320px] overflow-auto rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap">{{ view.labels }}</pre>
             <p v-else class="text-sm text-danger">Il file delle etichette non si legge: senza regole tutto è Privato.</p>
           </SettingsCard>
         </template>
@@ -1090,7 +1090,7 @@ watch(active, () => {
               :key="option"
               type="button"
               :aria-pressed="(theme ?? 'system') === option"
-              class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium"
+              class="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[14px] font-medium"
               :class="(theme ?? 'system') === option ? 'bg-surface text-accent shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-muted hover:text-ink'"
               @click="emit('theme', option)"
             >
@@ -1103,11 +1103,11 @@ watch(active, () => {
         <!-- What this installation is (D-098): read from the core, even when the settings do not load. -->
         <SettingsCard v-if="active === 'installation'" id="installation" title="Installazione" kind="read">
           <template v-if="installation !== undefined">
-            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[14px]">
               <span class="text-muted">Tipo</span>
               <span class="flex flex-wrap items-center gap-2">
                 <span
-                  class="rounded-[5px] border px-1.5 py-1 font-mono text-[10px] leading-none font-semibold tracking-[0.1em]"
+                  class="rounded-[5px] border px-1.5 py-1 font-mono text-[12px] leading-none font-semibold tracking-[0.1em]"
                   :class="installation.mode === 'development' ? 'border-warn/70 bg-warn/10 text-warn' : 'border-ok/60 text-ok'"
                 >{{ MODE_BADGE[installation.mode] }}</span>
                 <span class="text-xs text-muted">{{ MODE_HINT[installation.mode] }}</span>

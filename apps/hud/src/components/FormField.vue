@@ -40,9 +40,9 @@ watch(
 
 <template>
   <div ref="root" class="grid content-start gap-1" :class="wide ? 'sm:col-span-2' : ''">
-    <label :for="id" class="text-[12px] font-medium text-muted">{{ label }}</label>
+    <label :for="id" class="text-[13px] font-medium text-muted">{{ label }}</label>
     <slot />
-    <p :id="`${id}-problem`" class="text-[11.5px] text-danger empty:hidden" aria-live="polite">{{ problem ?? '' }}</p>
-    <p v-if="hint && !problem" :id="`${id}-hint`" class="text-[11.5px] text-muted">{{ hint }}</p>
+    <p :id="`${id}-problem`" class="text-[12.5px] text-danger empty:hidden" aria-live="polite">{{ problem ?? '' }}</p>
+    <p v-if="hint && !problem" :id="`${id}-hint`" class="text-[12.5px] text-muted">{{ hint }}</p>
   </div>
 </template>

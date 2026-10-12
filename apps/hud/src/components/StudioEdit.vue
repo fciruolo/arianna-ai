@@ -52,13 +52,13 @@ function save(): void {
 </script>
 
 <template>
-  <section class="flex flex-col gap-3 rounded-xl border border-line bg-surface p-3 text-[13px]" aria-label="Modifica diretta">
+  <section class="flex flex-col gap-3 rounded-xl border border-line bg-surface p-3 text-[14px]" aria-label="Modifica diretta">
     <header class="flex items-center gap-2">
       <Icon name="rename" :size="14" />
-      <h3 class="flex-1 font-medium">Modifica <code class="font-mono text-[12px]">&lt;{{ tag }}&gt;</code></h3>
+      <h3 class="flex-1 font-medium">Modifica <code class="font-mono text-[13px]">&lt;{{ tag }}&gt;</code></h3>
       <button type="button" class="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Chiudi la modifica" @click="emit('close')"><Icon name="close" :size="14" /></button>
     </header>
-    <p class="truncate font-mono text-[10.5px] text-muted" :title="selector">{{ selector }}</p>
+    <p class="truncate font-mono text-[12px] text-muted" :title="selector">{{ selector }}</p>
     <p v-if="editable === undefined" class="text-xs text-warn">
       Questo elemento non c’è nel file: l’hanno aggiunto gli script della pagina. Scegline un altro, o chiedi la modifica al Designer con un commento.
     </p>
@@ -82,7 +82,7 @@ function save(): void {
           <input
             v-model="styles[name]"
             type="text"
-            class="field px-2.5 py-1 font-mono text-[12px]"
+            class="field px-2.5 py-1 font-mono text-[13px]"
             :class="{ 'border-danger': invalid.includes(name) }"
             :placeholder="STYLE_HINT[name]"
             :aria-invalid="invalid.includes(name) ? 'true' : undefined"
@@ -97,7 +97,7 @@ function save(): void {
         <button type="button" class="btn btn-primary px-3 py-1.5 text-xs" :disabled="!changed || invalid.length > 0 || saving" @click="save">
           <Icon name="saved" :size="13" />{{ saving ? 'Salvo…' : 'Salva' }}
         </button>
-        <span class="text-[11px] text-muted">Scrive nel file del progetto; il Designer vede la modifica al prossimo lavoro.</span>
+        <span class="text-[12.5px] text-muted">Scrive nel file del progetto; il Designer vede la modifica al prossimo lavoro.</span>
       </div>
     </template>
   </section>

@@ -21,10 +21,10 @@ onMounted(() => button.value?.focus());
       <h2 id="incognito-closed-title" class="flex items-center gap-2 font-hud text-lg font-semibold tracking-[0.05em]">
         <Icon name="incognito" :size="20" />{{ end.kind === 'ended' ? 'Conversazione incognita terminata' : 'Conversazione incognita chiusa' }}
       </h2>
-      <ul v-if="end.kind === 'ended'" class="flex list-disc flex-col gap-1.5 pl-4.5 text-[13.5px] leading-snug">
+      <ul v-if="end.kind === 'ended'" class="flex list-disc flex-col gap-1.5 pl-4.5 text-[14.5px] leading-snug">
         <li v-for="line in end.lines" :key="line" class="break-words">{{ line }}</li>
       </ul>
-      <p v-else class="text-[13.5px] leading-snug">{{ end.text }}</p>
+      <p v-else class="text-[14.5px] leading-snug">{{ end.text }}</p>
       <button ref="button" type="button" class="btn self-end px-3 py-1.5 text-sm" @click="emit('back')">Torna alla lista</button>
     </section>
   </div>

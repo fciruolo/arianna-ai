@@ -229,7 +229,7 @@ async function undo(record: ImportRecord): Promise<void> {
       <div class="flex flex-wrap items-end gap-3">
         <label class="flex flex-col gap-1 text-xs text-muted">
           Conto
-          <select v-model="accountId" class="field px-2 py-1.5 text-[13px]">
+          <select v-model="accountId" class="field px-2 py-1.5 text-[14px]">
             <option v-for="item in open" :key="item.id" :value="item.id">{{ item.name }}</option>
           </select>
         </label>
@@ -264,7 +264,7 @@ async function undo(record: ImportRecord): Promise<void> {
           <span v-if="preview.headerLine !== null" class="text-xs text-muted">intestazione alla riga {{ preview.headerLine }}</span>
           <label v-if="preview.sheets && preview.sheets.length > 1" class="ml-auto flex items-center gap-2 text-xs text-muted">
             Foglio
-            <select class="field px-2 py-1 text-[13px]" :value="sheet ?? ''" :disabled="busy" @change="changeSheet(($event.target as HTMLSelectElement).value)">
+            <select class="field px-2 py-1 text-[14px]" :value="sheet ?? ''" :disabled="busy" @change="changeSheet(($event.target as HTMLSelectElement).value)">
               <option v-for="name in preview.sheets" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
@@ -277,42 +277,42 @@ async function undo(record: ImportRecord): Promise<void> {
           <legend class="sr-only">Profilo della banca</legend>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Data (contabile)
-            <select v-model="draft.booked" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.booked" class="field px-2 py-1.5 text-[14px]">
               <option value="">—</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Data valuta
-            <select v-model="draft.value" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.value" class="field px-2 py-1.5 text-[14px]">
               <option value="">Nessuna</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Descrizione
-            <select v-model="draft.description" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.description" class="field px-2 py-1.5 text-[14px]">
               <option value="">—</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Descrizione, seconda colonna
-            <select v-model="draft.description2" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.description2" class="field px-2 py-1.5 text-[14px]">
               <option value="">Nessuna</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Importo
-            <select v-model="draft.amountKind" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.amountKind" class="field px-2 py-1.5 text-[14px]">
               <option value="single">Una colonna con il segno</option>
               <option value="split">Due colonne: dare e avere</option>
             </select>
           </label>
           <label v-if="draft.amountKind === 'single'" class="flex flex-col gap-1 text-xs text-muted">
             Colonna dell’importo
-            <select v-model="draft.amount" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.amount" class="field px-2 py-1.5 text-[14px]">
               <option value="">—</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
@@ -320,14 +320,14 @@ async function undo(record: ImportRecord): Promise<void> {
           <template v-else>
             <label class="flex flex-col gap-1 text-xs text-muted">
               Dare (uscite)
-              <select v-model="draft.debit" class="field px-2 py-1.5 text-[13px]">
+              <select v-model="draft.debit" class="field px-2 py-1.5 text-[14px]">
                 <option value="">—</option>
                 <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
               </select>
             </label>
             <label class="flex flex-col gap-1 text-xs text-muted">
               Avere (entrate)
-              <select v-model="draft.credit" class="field px-2 py-1.5 text-[13px]">
+              <select v-model="draft.credit" class="field px-2 py-1.5 text-[14px]">
                 <option value="">—</option>
                 <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
               </select>
@@ -335,20 +335,20 @@ async function undo(record: ImportRecord): Promise<void> {
           </template>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Saldo
-            <select v-model="draft.balance" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.balance" class="field px-2 py-1.5 text-[14px]">
               <option value="">Nessuno</option>
               <option v-for="name in columns" :key="name" :value="name">{{ name }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Formato della data
-            <select v-model="draft.dateFormat" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.dateFormat" class="field px-2 py-1.5 text-[14px]">
               <option v-for="[value, text] in DATE_FORMATS" :key="value" :value="value">{{ text }}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">
             Separatore dei decimali
-            <select v-model="draft.decimal" class="field px-2 py-1.5 text-[13px]">
+            <select v-model="draft.decimal" class="field px-2 py-1.5 text-[14px]">
               <option v-for="[value, text] in DECIMALS" :key="value" :value="value">{{ text }}</option>
             </select>
           </label>
@@ -357,7 +357,7 @@ async function undo(record: ImportRecord): Promise<void> {
           <li v-for="text in problems" :key="text">{{ text }}</li>
         </ul>
         <div class="flex flex-wrap items-center gap-2">
-          <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="busy || problems.length > 0" @click="again"><Icon name="retry" :size="14" />Rifai l’anteprima</button>
+          <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="busy || problems.length > 0" @click="again"><Icon name="retry" :size="14" />Rifai l’anteprima</button>
           <span v-if="stale" class="text-xs text-warn">Hai cambiato le colonne: rifai l’anteprima prima di importare.</span>
         </div>
 
@@ -378,7 +378,7 @@ async function undo(record: ImportRecord): Promise<void> {
           </details>
 
           <div v-if="preview.rows.length > 0" class="max-h-[360px] overflow-auto rounded-lg border border-line">
-            <table class="w-full text-left text-[12.5px]">
+            <table class="w-full text-left text-[13.5px]">
               <thead class="sticky top-0 bg-surface-2 text-xs text-muted">
                 <tr>
                   <th class="px-2 py-1.5 font-medium">Riga</th>
@@ -402,7 +402,7 @@ async function undo(record: ImportRecord): Promise<void> {
           <p v-if="preview.rows.length < preview.totals.count" class="text-xs text-muted">Qui le prime {{ preview.rows.length }} righe nuove; si importano tutte.</p>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="!canImport || preview.totals.count === 0" @click="confirmImport"><Icon name="approve" :size="14" />Importa</button>
+            <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="!canImport || preview.totals.count === 0" @click="confirmImport"><Icon name="approve" :size="14" />Importa</button>
             <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" :disabled="busy" @click="reset">Lascia stare</button>
             <span v-if="preview.totals.count === 0" class="text-xs text-muted">Nessun movimento nuovo da importare.</span>
           </div>
@@ -419,8 +419,8 @@ async function undo(record: ImportRecord): Promise<void> {
           <li v-for="record in imports" :key="record.id" class="flex flex-col gap-2 rounded-xl border border-line bg-surface px-3 py-2">
             <div class="flex flex-wrap items-center gap-3">
               <span class="min-w-0 flex-1">
-                <b class="block truncate text-[13px] font-medium">{{ record.name }}</b>
-                <span class="block text-[12px] text-muted">{{ formatMoment(record.at) }} · {{ importSummary(record) }}</span>
+                <b class="block truncate text-[14px] font-medium">{{ record.name }}</b>
+                <span class="block text-[13px] text-muted">{{ formatMoment(record.at) }} · {{ importSummary(record) }}</span>
               </span>
               <button v-if="undoing !== record.id" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="undoing = record.id"><Icon name="retry" :size="13" />Annulla</button>
             </div>

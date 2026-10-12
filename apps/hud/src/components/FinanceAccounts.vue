@@ -90,13 +90,13 @@ async function archive(account: Account, archived: boolean): Promise<void> {
     <form class="hud-card flex flex-wrap items-end gap-2 p-3" @submit.prevent="create">
       <label class="flex min-w-[200px] flex-1 flex-col gap-1 text-xs text-muted">
         Nuovo conto
-        <input v-model="newName" type="text" maxlength="80" class="field px-2.5 py-1.5 text-[13px]" placeholder="Per esempio: Conto corrente, Carta prepagata" />
+        <input v-model="newName" type="text" maxlength="80" class="field px-2.5 py-1.5 text-[14px]" placeholder="Per esempio: Conto corrente, Carta prepagata" />
       </label>
       <label class="flex w-24 flex-col gap-1 text-xs text-muted">
         Valuta
-        <input v-model="newCurrency" type="text" maxlength="3" class="field px-2.5 py-1.5 text-[13px] uppercase" aria-label="Valuta del conto" />
+        <input v-model="newCurrency" type="text" maxlength="3" class="field px-2.5 py-1.5 text-[14px] uppercase" aria-label="Valuta del conto" />
       </label>
-      <button type="submit" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy"><Icon name="new" :size="14" />Crea</button>
+      <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy"><Icon name="new" :size="14" />Crea</button>
     </form>
 
     <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
@@ -107,13 +107,13 @@ async function archive(account: Account, archived: boolean): Promise<void> {
     <ul v-else class="grid gap-2">
       <li v-for="account in shown" :key="account.id" class="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5" :class="account.archived ? 'opacity-60' : ''">
         <form v-if="editing === account.id" class="flex min-w-0 flex-1 items-center gap-2" @submit.prevent="rename(account)">
-          <input v-model="editName" type="text" maxlength="80" class="field min-w-0 flex-1 px-2.5 py-1 text-[13px]" aria-label="Nuovo nome del conto" />
+          <input v-model="editName" type="text" maxlength="80" class="field min-w-0 flex-1 px-2.5 py-1 text-[14px]" aria-label="Nuovo nome del conto" />
           <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy">Salva</button>
           <button type="button" class="rounded-md px-2 py-1 text-xs text-muted hover:text-ink" @click="editing = null">Annulla</button>
         </form>
         <span v-else class="min-w-0 flex-1">
           <b class="block truncate text-[14px] font-semibold">{{ account.name }}</b>
-          <span class="block text-[12px] text-muted">
+          <span class="block text-[13px] text-muted">
             {{ account.currency }} · {{ account.transactions === 1 ? '1 movimento' : `${account.transactions.toLocaleString('it-IT')} movimenti` }}
             <template v-if="account.lastBooked"> · ultimo il {{ formatDay(account.lastBooked) }}</template>
             <template v-if="account.profile"> · profilo della banca ricordato</template>

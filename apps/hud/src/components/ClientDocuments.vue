@@ -192,7 +192,7 @@ watch(selected, () => {
 
     <!-- The file: dropped or chosen -->
     <div
-      class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-3.5 text-[13px] text-muted transition-colors"
+      class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-3.5 text-[14px] text-muted transition-colors"
       :class="dragging ? 'border-accent bg-accent/10' : 'border-line-strong bg-surface'"
       @dragover.prevent="dragging = true"
       @dragleave="dragging = false"
@@ -204,35 +204,35 @@ watch(selected, () => {
         <p class="text-xs">data/clients/&lt;cliente&gt;/documenti/ · cartella Privata su questo computer</p>
       </div>
       <input ref="picker" type="file" class="sr-only" :accept="accept" @change="chosen" />
-      <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy || client.status === 'archived'" @click="picker?.click()">Scegli file…</button>
+      <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy || client.status === 'archived'" @click="picker?.click()">Scegli file…</button>
     </div>
 
     <form v-if="pending" class="flex flex-col gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3.5" @submit.prevent="upload">
-      <p class="text-[13px]">Aggiungi <b>{{ pending.file.name }}</b> ({{ sizeText(pending.file.size) }}) ai documenti di {{ client.displayName }}.</p>
+      <p class="text-[14px]">Aggiungi <b>{{ pending.file.name }}</b> ({{ sizeText(pending.file.size) }}) ai documenti di {{ client.displayName }}.</p>
       <div class="flex flex-wrap gap-1.5" role="group" aria-label="Tipo di documento">
         <button v-for="item in DOCUMENT_KINDS" :key="item" type="button" class="chip" :class="{ on: pending.form.kind === item }" :aria-pressed="pending.form.kind === item" @click="pending.form.kind = item">{{ KIND_TEXT[item] }}</button>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_150px_150px]">
         <label class="flex flex-col gap-1 text-xs text-muted">Nome
-          <input v-model="pending.form.name" maxlength="200" class="field px-2 py-1.5 text-[13px] text-ink" />
+          <input v-model="pending.form.name" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label v-if="pending.form.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo
-          <input v-model="pending.form.otherType" maxlength="60" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="brochure, materiali…" />
+          <input v-model="pending.form.otherType" maxlength="60" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="brochure, materiali…" />
         </label>
         <label v-else class="flex flex-col gap-1 text-xs text-muted">Progetto (facoltativo)
-          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[13px] text-ink">
+          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[14px] text-ink">
             <option :value="null">—</option>
             <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Data del documento
-          <input v-model="pending.form.documentOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
+          <input v-model="pending.form.documentOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Scadenza (facoltativa)
-          <input v-model="pending.form.expiresOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
+          <input v-model="pending.form.expiresOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label v-if="pending.form.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Progetto (facoltativo)
-          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[13px] text-ink">
+          <select v-model="pending.form.project" class="field px-2 py-1.5 text-[14px] text-ink">
             <option :value="null">—</option>
             <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
           </select>
@@ -240,8 +240,8 @@ watch(selected, () => {
       </div>
       <p class="text-xs text-muted">Con una scadenza, 30 giorni prima il messaggio del mattino della segretaria la ricorda, con il solo nome del cliente e il tipo.</p>
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="pending = null">Annulla</button>
-        <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || !pendingValid">Aggiungi</button>
+        <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="pending = null">Annulla</button>
+        <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="busy || !pendingValid">Aggiungi</button>
       </div>
     </form>
 
@@ -257,14 +257,14 @@ watch(selected, () => {
           <span class="flex-1" />
           <label class="flex min-w-[180px] items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 py-1">
             <Icon name="search" :size="13" class="text-muted" />
-            <input v-model="query" class="w-full bg-transparent text-[13px]" placeholder="Cerca" aria-label="Cerca fra i documenti" />
+            <input v-model="query" class="w-full bg-transparent text-[14px]" placeholder="Cerca" aria-label="Cerca fra i documenti" />
           </label>
           <button v-if="archivedCount > 0 || archived" type="button" class="chip" :class="{ on: archived }" :aria-pressed="archived" @click="archived = !archived">Archiviati · {{ archivedCount }}</button>
         </div>
         <p v-if="documents === null && problem === null" class="text-sm text-muted">Carico i documenti…</p>
         <p v-else-if="shown.length === 0" class="py-3 text-sm text-muted">{{ (documents ?? []).length === 0 ? 'Nessun documento ancora: trascina qui sopra un contratto o un preventivo firmato.' : 'Nessun documento con questi filtri.' }}</p>
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-[13px]">
+          <table class="w-full text-[14px]">
             <thead>
               <tr class="border-b border-line text-left text-xs text-muted">
                 <th class="px-2 py-1.5 font-normal">Nome</th>
@@ -278,7 +278,7 @@ watch(selected, () => {
               <tr v-for="document in shown" :key="document.id" class="cursor-pointer" :class="selected === document.id ? 'bg-accent/10' : 'hover:bg-surface-2'" @click="selected = document.id">
                 <td class="px-2 py-2">
                   <button type="button" class="flex items-center gap-2 text-left" :aria-pressed="selected === document.id">
-                    <span class="inline-grid h-[22px] w-[34px] shrink-0 place-items-center rounded border border-line-strong font-mono text-[9.5px] font-semibold text-muted uppercase">{{ document.extension }}</span>
+                    <span class="inline-grid h-[22px] w-[34px] shrink-0 place-items-center rounded border border-line-strong font-mono text-[12px] font-semibold text-muted uppercase">{{ document.extension }}</span>
                     <span class="min-w-0">
                       <span class="block truncate">{{ document.name }}</span>
                       <span v-if="expiryText(document.expiresOn, today)" class="block text-xs" :class="expiryText(document.expiresOn, today)?.past ? 'text-danger' : expiryText(document.expiresOn, today)?.soon ? 'text-warn' : 'text-muted'">{{ expiryText(document.expiresOn, today)?.text }}</span>
@@ -311,24 +311,24 @@ watch(selected, () => {
           <div class="flex flex-wrap gap-1.5" role="group" aria-label="Tipo di documento">
             <button v-for="item in DOCUMENT_KINDS" :key="item" type="button" class="chip" :class="{ on: editing.kind === item }" :aria-pressed="editing.kind === item" @click="editing.kind = item">{{ KIND_TEXT[item] }}</button>
           </div>
-          <label class="flex flex-col gap-1 text-xs text-muted">Nome<input v-model="editing.name" maxlength="200" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-          <label v-if="editing.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo<input v-model="editing.otherType" maxlength="60" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+          <label class="flex flex-col gap-1 text-xs text-muted">Nome<input v-model="editing.name" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+          <label v-if="editing.kind === 'other'" class="flex flex-col gap-1 text-xs text-muted">Tipo<input v-model="editing.otherType" maxlength="60" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
           <label class="flex flex-col gap-1 text-xs text-muted">Progetto
-            <select v-model="editing.project" class="field px-2 py-1.5 text-[13px] text-ink">
+            <select v-model="editing.project" class="field px-2 py-1.5 text-[14px] text-ink">
               <option :value="null">—</option>
               <option v-for="item in projects" :key="item" :value="item">{{ item }}</option>
             </select>
           </label>
           <div class="grid grid-cols-2 gap-2.5">
-            <label class="flex flex-col gap-1 text-xs text-muted">Data<input v-model="editing.documentOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
-            <label class="flex flex-col gap-1 text-xs text-muted">Scadenza<input v-model="editing.expiresOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+            <label class="flex flex-col gap-1 text-xs text-muted">Data<input v-model="editing.documentOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
+            <label class="flex flex-col gap-1 text-xs text-muted">Scadenza<input v-model="editing.expiresOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
           </div>
           <div class="flex justify-end gap-2">
-            <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="busy" @click="editing = null">Annulla</button>
-            <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="busy || editing.name.trim() === '' || (editing.kind === 'other' && (editing.otherType ?? '').trim() === '')">Salva</button>
+            <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="busy" @click="editing = null">Annulla</button>
+            <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="busy || editing.name.trim() === '' || (editing.kind === 'other' && (editing.otherType ?? '').trim() === '')">Salva</button>
           </div>
         </form>
-        <dl v-else class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12.5px]">
+        <dl v-else class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13.5px]">
           <dt class="text-muted">Nome</dt><dd class="min-w-0 break-words">{{ current.name }}</dd>
           <dt class="text-muted">Tipo</dt>
           <dd>{{ typeText(current) }}<span v-if="expiryText(current.expiresOn, today)" :class="expiryText(current.expiresOn, today)?.past ? 'text-danger' : 'text-muted'"> · {{ expiryText(current.expiresOn, today)?.text }}</span></dd>

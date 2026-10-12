@@ -52,12 +52,12 @@ const MARK_CLASS = { add: 'text-ok', remove: 'text-danger', change: 'text-warn' 
     >
       <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-3">
         <Icon name="gateway" :size="16" class="text-warn" />
-        <h2 id="privacy-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] text-warn uppercase">Conferma le uscite</h2>
-        <span class="font-mono text-[11px] text-muted" aria-live="off">{{ expired ? 'scaduta' : `scade fra ${left}` }}</span>
+        <h2 id="privacy-title" class="flex-1 font-hud text-[13px] leading-none font-semibold tracking-[0.14em] text-warn uppercase">Conferma le uscite</h2>
+        <span class="font-mono text-[12.5px] text-muted" aria-live="off">{{ expired ? 'scaduta' : `scade fra ${left}` }}</span>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" :disabled="busy" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
-      <div class="flex min-h-0 flex-col gap-3.5 overflow-y-auto overscroll-contain px-4 py-3.5 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-3.5 overflow-y-auto overscroll-contain px-4 py-3.5 text-[14.5px]">
         <div>
           <h3 class="hud-title mb-2">Cosa cambia</h3>
           <ul class="flex flex-col gap-1">

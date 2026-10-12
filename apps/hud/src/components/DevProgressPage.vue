@@ -184,7 +184,7 @@ onMounted(refresh);
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <Icon name="system" :size="16" />
           <h1 id="dev-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Sviluppo di Arianna</h1>
-          <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">dai documenti di docs/ · resta qui</span>
+          <span class="ml-auto font-mono text-[12px] tracking-[0.06em] text-muted">dai documenti di docs/ · resta qui</span>
           <button
             type="button"
             class="rounded-md p-1.5 text-muted hover:text-ink"
@@ -219,7 +219,7 @@ onMounted(refresh);
               :title="`${STATE_TEXT[segment.state]}: ${segment.count}`"
             />
           </div>
-          <ul class="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px]">
+          <ul class="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px]">
             <li v-for="segment in segments" :key="segment.state" class="flex items-center gap-1.5" :title="STATE_HINT[segment.state]">
               <span class="size-[8px] rounded-full" :class="DOT_CLASS[segment.state]" />
               <span :class="TEXT_CLASS[segment.state]">{{ STATE_TEXT[segment.state] }}</span>
@@ -239,7 +239,7 @@ onMounted(refresh);
           <span
             v-if="pendingDot !== null"
             aria-hidden="true"
-            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10.5px] leading-5 font-semibold text-accent-ink"
+            class="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[12px] leading-5 font-semibold text-accent-ink"
           >{{ pendingDot }}</span>
           <span v-if="pendingLabel !== null" class="text-xs text-accent">{{ pendingLabel }}</span>
           <div class="ml-auto flex rounded-lg border border-line bg-surface p-0.5" role="radiogroup" aria-label="Quali domande">
@@ -249,7 +249,7 @@ onMounted(refresh);
               type="button"
               role="radio"
               :aria-checked="questionFilter === item.value"
-              class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
+              class="rounded-md px-2.5 py-1 font-mono text-[12.5px] tracking-[0.04em]"
               :class="questionFilter === item.value ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
               @click="questionFilter = item.value"
             >
@@ -266,14 +266,14 @@ onMounted(refresh);
           <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 select-none">
             <Icon name="expand" :size="14" class="transition-transform group-open:rotate-180" />
             <span class="min-w-0 flex-1 text-[14px] font-medium">{{ group.title }}</span>
-            <span class="font-mono text-[10.5px] text-muted">{{ group.questions.length }}</span>
+            <span class="font-mono text-[12px] text-muted">{{ group.questions.length }}</span>
           </summary>
           <ul class="flex flex-col gap-3 border-t border-line px-4 py-3">
             <li v-for="question in group.questions" :key="question.key" class="flex flex-col gap-1.5">
               <p class="text-[14px] leading-snug font-medium">{{ question.text }}</p>
               <template v-if="question.explain !== null">
-                <p v-if="question.explain.context !== null" class="text-[13px] leading-relaxed">
-                  <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">Cosa si decide · </span>{{ question.explain.context }}
+                <p v-if="question.explain.context !== null" class="text-[14px] leading-relaxed">
+                  <span class="font-mono text-[12px] tracking-[0.06em] text-muted uppercase">Cosa si decide · </span>{{ question.explain.context }}
                 </p>
                 <div v-if="question.explain.options.length > 0" class="flex flex-col gap-1.5" role="group" :aria-label="`Opzioni per: ${question.text}`">
                   <button
@@ -287,15 +287,15 @@ onMounted(refresh);
                     :title="canAnswer(question) ? 'Scegli: la risposta si riempie, poi puoi aggiungere qualcosa' : 'Hai già risposto: «Aggiungi qualcosa» per scrivere ancora'"
                     @click="choose(question, option.label)"
                   >
-                    <span class="flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink">
+                    <span class="flex flex-wrap items-center gap-2 text-[14px] font-medium text-ink">
                       {{ option.label }}
-                      <span v-if="option.recommended" class="rounded-full border border-ok px-1.5 font-mono text-[10px] tracking-[0.04em] text-ink">CONSIGLIATA</span>
+                      <span v-if="option.recommended" class="rounded-full border border-ok px-1.5 font-mono text-[12px] tracking-[0.04em] text-ink">CONSIGLIATA</span>
                     </span>
                     <span v-if="option.effect !== ''" class="text-xs leading-relaxed text-muted">{{ option.effect }}</span>
                   </button>
                 </div>
                 <p v-if="question.explain.example !== null" class="rounded-lg bg-surface-2 px-3 py-2 text-xs leading-relaxed">
-                  <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">Esempio · </span>{{ question.explain.example }}
+                  <span class="font-mono text-[12px] tracking-[0.06em] text-muted uppercase">Esempio · </span>{{ question.explain.example }}
                 </p>
                 <details v-if="question.detail !== null" class="text-xs text-muted">
                   <summary class="cursor-pointer select-none">Nota del documento</summary>
@@ -303,7 +303,7 @@ onMounted(refresh);
                 </details>
               </template>
               <p v-else-if="question.detail !== null" class="text-xs leading-relaxed text-muted">{{ question.detail }}</p>
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10.5px] text-muted">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[12px] text-muted">
                 <span>{{ question.key }} · docs/{{ question.source }}</span>
                 <button
                   v-if="canAskRewrite(question)"
@@ -346,7 +346,7 @@ onMounted(refresh);
                 />
                 <div class="flex items-center gap-2">
                   <p v-if="sendErrors[question.key] !== undefined" role="alert" class="min-w-0 flex-1 text-xs text-danger">{{ sendErrors[question.key] }}</p>
-                  <span v-else class="min-w-0 flex-1 font-mono text-[10.5px] text-muted">⌘/Ctrl+Invio per inviare</span>
+                  <span v-else class="min-w-0 flex-1 font-mono text-[12px] text-muted">⌘/Ctrl+Invio per inviare</span>
                   <button type="submit" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="sending !== null || (drafts[question.key] ?? '').trim() === ''">
                     <Icon name="send" :size="14" />{{ sending === question.key ? 'Invio…' : 'Invia' }}
                   </button>
@@ -375,7 +375,7 @@ onMounted(refresh);
               type="button"
               role="radio"
               :aria-checked="stateFilter === state"
-              class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
+              class="rounded-md px-2.5 py-1 font-mono text-[12.5px] tracking-[0.04em]"
               :class="stateFilter === state ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
               @click="stateFilter = state"
             >
@@ -393,14 +393,14 @@ onMounted(refresh);
         </div>
         <p v-if="shown.length === 0" class="py-4 text-center text-sm text-muted">Nessuna voce corrisponde ai filtri.</p>
         <div v-for="group in groups" :key="group.kind">
-          <h3 class="mx-1 mb-1.5 font-mono text-[10.5px] tracking-[0.08em] text-muted uppercase">{{ group.title }} · {{ group.items.length }}</h3>
+          <h3 class="mx-1 mb-1.5 font-mono text-[12px] tracking-[0.08em] text-muted uppercase">{{ group.title }} · {{ group.items.length }}</h3>
           <ul class="flex flex-col overflow-hidden rounded-xl border border-line bg-surface">
             <li v-for="item in group.items" :key="`${item.kind}:${item.id}`" class="flex items-start gap-3 border-b border-line px-3.5 py-2 last:border-b-0">
               <span class="mt-[7px] size-[7px] shrink-0 rounded-full" :class="DOT_CLASS[item.state]" :title="STATE_TEXT[item.state]" />
-              <span class="w-[62px] shrink-0 font-mono text-[11px] leading-6 text-muted">{{ item.id }}</span>
+              <span class="w-[62px] shrink-0 font-mono text-[12.5px] leading-6 text-muted">{{ item.id }}</span>
               <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span class="text-[13.5px] leading-snug break-words">{{ item.title }}</span>
-                <span class="font-mono text-[10.5px] break-words text-muted">
+                <span class="text-[14.5px] leading-snug break-words">{{ item.title }}</span>
+                <span class="font-mono text-[12px] break-words text-muted">
                   <span :class="TEXT_CLASS[item.state]">{{ STATE_TEXT[item.state] }}</span> · {{ item.status }}<template v-if="item.phase !== null"> · {{ phaseText(item.phase) }}</template> ·
                   docs/{{ item.source }}
                 </span>

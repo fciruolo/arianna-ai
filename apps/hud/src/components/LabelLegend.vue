@@ -26,7 +26,7 @@ useModal(dialog, () => emit('close'));
         <h2 id="legend-title" class="flex-1 font-medium">Cosa vogliono dire le etichette</h2>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
-      <div class="flex flex-col gap-3 overflow-y-auto px-[15px] py-3.5 text-[13px]">
+      <div class="flex flex-col gap-3 overflow-y-auto px-[15px] py-3.5 text-[14px]">
         <p class="text-muted">Ogni messaggio, nota e documento porta un'etichetta: dice fin dove può arrivare.</p>
         <dl class="flex flex-col gap-3">
           <div v-for="entry in LABEL_LEGEND" :key="entry.label" class="flex flex-col gap-0.5">

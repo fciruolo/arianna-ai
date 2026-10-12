@@ -127,16 +127,16 @@ onBeforeUnmount(() => {
       <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <h2 id="design-title" class="font-medium">Stile e skill per il Designer</h2>
         <nav class="flex gap-1" role="tablist" aria-label="Cosa scegli">
-          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[13px]" :class="tab === 'styles' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'styles'" @click="tab = 'styles'">
+          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px]" :class="tab === 'styles' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'styles'" @click="tab = 'styles'">
             Stili <span class="text-muted">{{ styles.length }}</span>
           </button>
-          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[13px]" :class="tab === 'skills' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'skills'" @click="tab = 'skills'">
+          <button type="button" role="tab" class="rounded-md px-2.5 py-1 text-[14px]" :class="tab === 'skills' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-selected="tab === 'skills'" @click="tab = 'skills'">
             Skill <span class="text-muted">{{ chosenSkills.length }}/{{ STUDIO_SKILLS_MAX }}</span>
           </button>
         </nav>
         <label class="ml-auto flex h-8 w-[240px] max-w-full items-center gap-2 rounded-md border border-line px-2 text-muted">
           <Icon name="search" :size="14" />
-          <input v-model="query" type="search" :placeholder="tab === 'styles' ? 'Cerca uno stile' : 'Cerca una skill'" aria-label="Cerca" class="w-full bg-transparent text-[13px] text-ink" />
+          <input v-model="query" type="search" :placeholder="tab === 'styles' ? 'Cerca uno stile' : 'Cerca una skill'" aria-label="Cerca" class="w-full bg-transparent text-[14px] text-ink" />
         </label>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
               @click="style = null"
             >
               <span class="grid h-[118px] place-items-center rounded-md border border-dashed border-line text-xs text-muted">Il Designer sceglie da sé</span>
-              <span class="text-[13px] font-medium">Nessuno stile</span>
+              <span class="text-[14px] font-medium">Nessuno stile</span>
             </button>
             <div
               v-for="entry in shownStyles"
@@ -189,12 +189,12 @@ onBeforeUnmount(() => {
                 <StyleMiniPage v-if="samples[entry.slug]" :sample="samples[entry.slug]!" />
                 <span v-else class="grid h-[118px] place-items-center rounded-md border border-dashed border-line text-xs text-muted">Nessun campione</span>
                 <span class="flex items-baseline gap-1.5">
-                  <span class="min-w-0 truncate text-[13px] font-medium">{{ entry.name }}</span>
-                  <span v-if="entry.category" class="truncate text-[11px] text-muted">{{ entry.category }}</span>
+                  <span class="min-w-0 truncate text-[14px] font-medium">{{ entry.name }}</span>
+                  <span v-if="entry.category" class="truncate text-[12.5px] text-muted">{{ entry.category }}</span>
                 </span>
-                <span class="line-clamp-2 text-[11.5px] leading-snug text-muted">{{ entry.description }}</span>
+                <span class="line-clamp-2 text-[12.5px] leading-snug text-muted">{{ entry.description }}</span>
               </button>
-              <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+              <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
                 <template v-if="exampleState(examples, entry.slug) === 'ready' || exampleState(examples, entry.slug) === 'old'">
                   <button type="button" class="text-ink underline hover:text-accent" @click="showExample(entry.slug, entry.name, 'landing')">Vedi esempio</button>
                 </template>
@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
                 >{{ exampleState(examples, entry.slug) === 'old' ? 'Rigenera' : 'Genera esempio' }}</button>
                 <button type="button" class="text-muted underline hover:text-ink" @click="readAll('style', entry.slug, entry.name)">Leggi tutto</button>
               </span>
-              <span v-if="examples?.failed[entry.slug]" class="text-[11px] text-warn">{{ examples.failed[entry.slug] }}</span>
+              <span v-if="examples?.failed[entry.slug]" class="text-[12.5px] text-warn">{{ examples.failed[entry.slug] }}</span>
             </div>
           </div>
           <p v-if="shownStyles.length === 0" class="mt-3 text-sm text-muted">Nessuno stile corrisponde alla ricerca.</p>
@@ -232,10 +232,10 @@ onBeforeUnmount(() => {
                 @change="toggleSkill(entry.id)"
               />
               <label :for="`skill-${entry.id}`" class="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span class="flex items-baseline gap-1.5"><span class="text-[13px] font-medium">{{ entry.name }}</span><span class="truncate text-[11px] text-muted">{{ entry.source }}</span></span>
-                <span class="text-[12px] leading-snug text-muted">{{ skillText(entry) || 'Senza descrizione.' }}</span>
+                <span class="flex items-baseline gap-1.5"><span class="text-[14px] font-medium">{{ entry.name }}</span><span class="truncate text-[12.5px] text-muted">{{ entry.source }}</span></span>
+                <span class="text-[13px] leading-snug text-muted">{{ skillText(entry) || 'Senza descrizione.' }}</span>
               </label>
-              <button type="button" class="shrink-0 text-[11.5px] text-muted underline hover:text-ink" @click="readAll('skill', entry.id, entry.name)">Leggi tutto</button>
+              <button type="button" class="shrink-0 text-[12.5px] text-muted underline hover:text-ink" @click="readAll('skill', entry.id, entry.name)">Leggi tutto</button>
             </li>
           </ul>
           <p v-if="skills.length === 0" class="text-sm text-muted">Nessuna skill nel catalogo: si aggiungono in Impostazioni → Agenti.</p>
@@ -246,7 +246,7 @@ onBeforeUnmount(() => {
         <div v-if="preview !== null" class="absolute inset-0 z-10 flex flex-col bg-surface">
           <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-[15px] py-2">
             <button type="button" class="btn px-2.5 py-1 text-xs" @click="preview = null"><Icon name="restore" :size="13" />Torna</button>
-            <span class="truncate text-[13px] font-medium">{{ preview.name }}</span>
+            <span class="truncate text-[14px] font-medium">{{ preview.name }}</span>
             <span class="ml-auto flex gap-1" role="group" aria-label="Esempio">
               <button type="button" class="rounded-md px-2.5 py-1 text-xs" :class="preview.kind === 'landing' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'landing'" @click="showExample(preview.slug, preview.name, 'landing')">Landing</button>
               <button type="button" class="rounded-md px-2.5 py-1 text-xs" :class="preview.kind === 'deck' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="preview.kind === 'deck'" @click="showExample(preview.slug, preview.name, 'deck')">Presentazione</button>
@@ -263,18 +263,18 @@ onBeforeUnmount(() => {
         <div v-if="reading !== null" class="absolute inset-0 flex flex-col bg-surface">
           <div class="flex shrink-0 items-center gap-2 border-b border-line px-[15px] py-2">
             <button type="button" class="btn px-2.5 py-1 text-xs" @click="reading = null"><Icon name="restore" :size="13" />Torna</button>
-            <span class="truncate text-[13px] font-medium">{{ reading.title }}</span>
+            <span class="truncate text-[14px] font-medium">{{ reading.title }}</span>
           </div>
           <p v-if="reading.problem !== null" class="p-[15px] text-sm text-danger" role="alert">{{ reading.problem }}</p>
           <p v-else-if="reading.text === null" class="p-[15px] text-sm text-muted">Leggo…</p>
-          <pre v-else class="min-h-0 flex-1 overflow-auto p-[15px] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">{{ reading.text }}</pre>
+          <pre v-else class="min-h-0 flex-1 overflow-auto p-[15px] font-mono text-[13px] leading-relaxed whitespace-pre-wrap">{{ reading.text }}</pre>
         </div>
       </div>
 
       <footer class="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-[15px] py-2.5">
         <span class="min-w-0 flex-1 truncate text-xs text-muted">Stile: <b class="text-ink">{{ styleName }}</b> · {{ chosenSkills.length === 0 ? 'nessuna skill' : `${String(chosenSkills.length)} skill` }}</span>
-        <button type="button" class="rounded-md px-3 py-1 text-[13px] text-muted hover:text-ink" @click="emit('close')">Annulla</button>
-        <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" @click="emit('apply', { style, skills: chosenSkills })">Usa questa scelta</button>
+        <button type="button" class="rounded-md px-3 py-1 text-[14px] text-muted hover:text-ink" @click="emit('close')">Annulla</button>
+        <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" @click="emit('apply', { style, skills: chosenSkills })">Usa questa scelta</button>
       </footer>
     </section>
   </div>

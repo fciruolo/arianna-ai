@@ -213,11 +213,11 @@ watch(
         <ul v-else class="divide-y divide-line">
           <li v-for="folder in knowledge.folders" :key="folder.path" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
             <span class="min-w-0 flex-1">
-              <span class="block truncate font-mono text-[13px]">{{ folder.path }}</span>
-              <span class="block text-[11.5px] text-muted">{{ folder.chosen ? `scelta tua (per nome: ${LABEL_TEXT[folder.defaultLabel]})` : 'per nome' }}</span>
+              <span class="block truncate font-mono text-[14px]">{{ folder.path }}</span>
+              <span class="block text-[12.5px] text-muted">{{ folder.chosen ? `scelta tua (per nome: ${LABEL_TEXT[folder.defaultLabel]})` : 'per nome' }}</span>
             </span>
             <LabelBadge :label="folder.label" class="text-xs" />
-            <select class="field px-2 py-1 text-[13px] text-ink" :value="folder.label" :aria-label="`Etichetta della cartella ${folder.path}`" :disabled="relabel !== null" @change="chooseLabel(folder, $event)">
+            <select class="field px-2 py-1 text-[14px] text-ink" :value="folder.label" :aria-label="`Etichetta della cartella ${folder.path}`" :disabled="relabel !== null" @change="chooseLabel(folder, $event)">
               <option v-for="label in LABELS" :key="label" :value="label">{{ LABEL_TEXT[label] }}</option>
             </select>
           </li>
@@ -244,24 +244,24 @@ watch(
         <form v-if="adding" class="flex flex-col gap-3 border-b border-line px-4 py-3.5" @submit.prevent="saveNote">
           <div class="grid gap-3 sm:grid-cols-2">
             <label class="flex flex-col gap-1 text-xs text-muted">Cartella (una di queste, o un nome nuovo)
-              <input v-model="adding.folder" list="knowledge-folders" maxlength="100" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Workplan" />
+              <input v-model="adding.folder" list="knowledge-folders" maxlength="100" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Workplan" />
               <datalist id="knowledge-folders">
                 <option v-for="folder in knowledge.folders" :key="folder.path" :value="folder.path">{{ LABEL_TEXT[folder.label] }}</option>
               </datalist>
             </label>
             <label class="flex flex-col gap-1 text-xs text-muted">Etichetta
-              <select v-model="adding.label" class="field px-2 py-1.5 text-[13px] text-ink">
+              <select v-model="adding.label" class="field px-2 py-1.5 text-[14px] text-ink">
                 <option v-for="label in addingLabels" :key="label" :value="label">{{ LABEL_OPTION[label] }}</option>
               </select>
             </label>
           </div>
           <label class="flex flex-col gap-1 text-xs text-muted">Titolo
-            <input ref="titleInput" v-model="adding.title" maxlength="200" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Per esempio: Milestone di maggio" />
+            <input ref="titleInput" v-model="adding.title" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Per esempio: Milestone di maggio" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-muted">Testo
-            <textarea v-model="adding.text" rows="6" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="Quello che Arianna deve sapere di questo progetto" />
+            <textarea v-model="adding.text" rows="6" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Quello che Arianna deve sapere di questo progetto" />
           </label>
-          <p class="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13px]">
+          <p class="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14px]">
             Si salverà come <LabelBadge :label="adding.label" /> in <span class="font-mono">{{ knowledge.where }}/{{ adding.folder.trim() }}</span>.
             <span v-if="addingNew" class="text-xs text-warn">Cartella nuova: la creo, {{ LABEL_TEXT[labelOfFolder(adding.folder)] }} per il suo nome.</span>
             <span class="text-xs text-muted">L’etichetta si può alzare, non scendere sotto quella della cartella.</span>
@@ -269,8 +269,8 @@ watch(
           <p v-if="adding.folder.trim() !== '' && !isFolderName(adding.folder.trim())" class="text-xs text-danger">Il nome della cartella è uno solo: niente barre, niente punto all’inizio.</p>
           <p v-if="adding.error" class="text-sm text-danger" role="alert">{{ adding.error }}</p>
           <div class="flex justify-end gap-2">
-            <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="adding.busy" @click="adding = null">Annulla</button>
-            <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="!canSave">Salva la nota</button>
+            <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="adding.busy" @click="adding = null">Annulla</button>
+            <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="!canSave">Salva la nota</button>
           </div>
         </form>
 
@@ -280,7 +280,7 @@ watch(
             <h3 class="mb-1.5 font-mono text-xs text-muted">{{ folder }}</h3>
             <p v-if="notes.length === 0" class="text-xs text-muted">Nessuna nota.</p>
             <ul v-else class="flex flex-col gap-1">
-              <li v-for="note in notes" :key="note.path" class="group text-[13px]">
+              <li v-for="note in notes" :key="note.path" class="group text-[14px]">
                 <DeleteConfirm
                   v-if="deleting === note.path"
                   :subject="note.title"
@@ -333,25 +333,25 @@ watch(
           <span class="grid size-9 shrink-0 place-items-center rounded-lg" :class="lowers(relabel.folder.label, relabel.to) ? 'bg-danger/15 text-danger' : 'bg-warn/15 text-warn'"><Icon name="warning" :size="16" /></span>
           <div>
             <h2 id="relabel-title" class="mt-0.5 mb-1 text-[16px] font-semibold">Etichetta di {{ relabel.folder.path }}</h2>
-            <p class="flex flex-wrap items-center gap-1.5 text-[13px]"><LabelBadge :label="relabel.folder.label" /> → <LabelBadge :label="relabel.to" /></p>
+            <p class="flex flex-wrap items-center gap-1.5 text-[14px]"><LabelBadge :label="relabel.folder.label" /> → <LabelBadge :label="relabel.to" /></p>
           </div>
         </div>
-        <p v-if="lowers(relabel.folder.label, relabel.to)" class="mx-5 mt-3 rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[13px]">
+        <p v-if="lowers(relabel.folder.label, relabel.to)" class="mx-5 mt-3 rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[14px]">
           <b>L’etichetta scende.</b> Le note di questa cartella senza un’etichetta più alta nell’intestazione diventano {{ LABEL_TEXT[relabel.to] }}: le leggerà anche una conversazione che oggi non le vede.
           <template v-if="relabel.to === 'L0' || relabel.to === 'L1'"> Restano comunque su questo computer: verso il cloud esce solo ciò che passa dal gateway.</template>
         </p>
         <div class="mx-5 mt-3">
-          <p v-if="relabel.proposal === null && relabel.error === null" class="text-[13px] text-muted">Preparo la modifica…</p>
-          <ul v-else-if="relabel.proposal" class="flex flex-col gap-1 text-[13px]">
+          <p v-if="relabel.proposal === null && relabel.error === null" class="text-[14px] text-muted">Preparo la modifica…</p>
+          <ul v-else-if="relabel.proposal" class="flex flex-col gap-1 text-[14px]">
             <li v-for="line in relabelLines" :key="line.text" class="break-words">{{ line.text }}</li>
           </ul>
           <p v-if="relabel.error" class="mt-2 text-sm text-danger" role="alert">{{ relabel.error }}</p>
         </div>
         <div class="mt-4 flex justify-end gap-2 border-t border-line px-5 py-3">
-          <button ref="relabelCancel" type="button" class="btn px-3 py-1 text-[13px]" :disabled="relabel.busy" @click="relabel = null">Annulla</button>
+          <button ref="relabelCancel" type="button" class="btn px-3 py-1 text-[14px]" :disabled="relabel.busy" @click="relabel = null">Annulla</button>
           <button
             type="button"
-            class="btn px-3 py-1 text-[13px] font-semibold"
+            class="btn px-3 py-1 text-[14px] font-semibold"
             :class="lowers(relabel.folder.label, relabel.to) ? 'btn-danger' : 'btn-primary'"
             :disabled="relabel.busy || relabel.proposal === null || relabel.spent"
             @click="confirmRelabel"
