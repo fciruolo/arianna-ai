@@ -4,7 +4,8 @@
 //   pnpm design:catalog adopt       adopts the version waiting (swap of the folders, lock)
 //   pnpm design:catalog discard     deletes the version waiting
 // Only the fixed address of the repository leaves, checked by the policy of the
-// gateway; nothing of the clone runs. The core and the command share the busy file
+// gateway; nothing of the clone runs. After an update with a new version, the news
+// of Open Design (I-21, D-186) from the public API of GitHub, as the raw list by kind. The core and the command share the busy file
 // data/catalogs/open-design.busy: while one downloads, adopts or discards, the other
 // refuses; `status` only reads and repairs nothing.
 import { join } from 'node:path';
@@ -15,17 +16,46 @@ import { createContext, gatewayCheck } from '@arianna/policy';
 import { knownSecrets } from '@arianna/vault';
 
 import { createDesignCatalog, DesignCatalogError, type CatalogStatus, type KindChanges } from '../apps/core/src/design-catalog.ts';
+import type { DesignNews, NewsGroup } from '../apps/core/src/design-news.ts';
+import { createGithubClient } from '../apps/core/src/github-api.ts';
 
 const USAGE = 'Uso: pnpm design:catalog [status|update|adopt|discard]';
+
+/** Only the policy check from the command, as for the repository: the address is all that leaves. */
+function webGateway(source: string): (address: string) => Promise<void> {
+  return (address) => {
+    const decision = gatewayCheck([{ value: address, label: 'L0', source }], createContext('L0'), { kind: 'web' }, knownSecrets);
+    return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`${decision.rule}: ${decision.reason}`));
+  };
+}
 
 const catalog = createDesignCatalog({
   dir: join(resolveHome(), 'data', 'catalogs'),
   recover: false,
-  gateway: (repository) => {
-    const decision = gatewayCheck([{ value: repository, label: 'L0', source: 'cli:design-catalog' }], createContext('L0'), { kind: 'web' }, knownSecrets);
-    return decision.decision === 'allow' ? Promise.resolve() : Promise.reject(new Error(`${decision.rule}: ${decision.reason}`));
-  },
+  gateway: webGateway('cli:design-catalog'),
+  // The news of Open Design (I-21, D-186): from the public API of GitHub; the command has no
+  // local model (the core groups them with it), so it writes the raw list by kind.
+  news: { get: createGithubClient(), gateway: webGateway('cli:design-news'), noModel: 'dal terminale le novità non passano dal modello locale' },
 });
+
+const GROUP_TEXT: Record<NewsGroup, string> = { feat: 'Funzioni', fix: 'Correzioni', styles: 'Stili', skills: 'Skill', other: 'Altro' };
+
+function printNews(news: DesignNews | null): void {
+  if (news === null) return;
+  console.log(`Novità di Open Design (${news.source === 'model' ? 'raggruppate dal modello locale' : 'elenco dei commit'}):`);
+  if (news.message !== null) console.log(`  ${safe(news.message)}`);
+  for (const release of news.releases) console.log(`  Rilascio ${safe(release.name)} (${release.publishedAt ?? '?'})`);
+  let group: NewsGroup | null = null;
+  for (const item of news.items) {
+    if (item.group !== null && item.group !== group) {
+      group = item.group;
+      console.log(`  ${GROUP_TEXT[group]}:`);
+    }
+    console.log(`  - ${safe(item.title)}${item.summary === '' ? '' : `: ${safe(item.summary)}`} [${item.commits.map((commit) => commit.short).join(', ')}]`);
+  }
+  if (news.truncated) console.log(`  (${String(news.commits)} commit in tutto: elencati solo i più recenti)`);
+  if (news.items.length > 0) console.log('  Per sceglierle: Impostazioni → Sviluppo di Arianna → Novità di Open Design.');
+}
 
 function changesText(changes: KindChanges, noun: string): string {
   return `${String(changes.added)} ${noun} nuovi, ${String(changes.changed)} cambiati, ${String(changes.removed)} tolti`;
@@ -41,6 +71,7 @@ function print(status: CatalogStatus): void {
     console.log(`  ${changesText(pending.diff.styles, 'stili')}`);
     console.log(`  ${changesText(pending.diff.skills, 'skill')}`);
     console.log('  pnpm design:catalog adopt per usarla, discard per scartarla');
+    printNews(pending.news);
   }
   if (status.job?.status === 'failed') console.log(`Ultimo download non riuscito: ${safe(status.job.error ?? '')}`);
 }

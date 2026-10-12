@@ -51,6 +51,8 @@ import { createLocalServers, loggedEvent, logTail } from './local-servers.ts';
 import { createHubClient } from './hub-http.ts';
 import { createHuggingFace } from './huggingface.ts';
 import { createDesignCatalog } from './design-catalog.ts';
+import { createLocalSummarizer } from './design-news.ts';
+import { createGithubClient } from './github-api.ts';
 import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
@@ -612,6 +614,22 @@ const designCatalog = createDesignCatalog({
   onEvent: (kind, payload) => {
     appendEvent(sql, { kind, label: 'L0', payload }).catch(report);
   },
+  // The news of Open Design (I-21, D-186): releases and comparison read from the public API of
+  // GitHub (only the name of the repository leaves, L0 through the gateway), grouped by the local
+  // model; the commits pass the gateway towards it as L0 data. Never fails the update.
+  news: {
+    get: createGithubClient(),
+    gateway: catalogGateway('settings:design-news', 'api.github.com: novità di Open Design'),
+    summarize: createLocalSummarizer({
+      model: localModel,
+      pass: async (data) => {
+        const decision = await passGateway(sql, [{ value: data, label: 'L0', source: 'design-news:github' }], createContext('L0'), { kind: 'executor', id: 'local', locality: 'local' }, { summary: 'novità di Open Design' });
+        const [text] = decision.decision === 'allow' ? decision.texts : [];
+        if (text === undefined) throw new Error('the gateway did not let the news reach the local model');
+        return text;
+      },
+    }),
+  },
 });
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
@@ -798,7 +816,7 @@ const server = await startApiServer({
   modelActions,
   huggingface,
   // "Sviluppo di Arianna" (D-102): docs/ read, answers through the gateway into data/dev/RISPOSTE.md.
-  devProgress: { home: config.home },
+  devProgress: { home: config.home, news: () => designCatalog.news() },
   // "Novità": CHANGELOG.md at the root of the home, read only.
   changelog: { home: config.home },
   // Development or production (D-089): the passwords the core logged in with, or [installation] mode.
