@@ -7,6 +7,7 @@ import { DELETE_PROJECT_NOTE_TEXT } from '../lib/erase.ts';
 import { errorText } from '../lib/italian.ts';
 import { LABEL_OPTION, LABEL_TEXT } from '../lib/labels.ts';
 import { browseErrorText, folderLabelByName, isFolderName, lowers, noteLabels, withFolderLabel, type BrowsableContainer, type KnowledgeFolder, type ProjectKnowledge } from '../lib/projects.ts';
+import { folderCounts, noteGroups, notesCountText } from '../lib/projects-page.ts';
 import { changeLines, writeError, type ChangeLine, type PrivacyProposal } from '../lib/settings.ts';
 import type { Label } from '../lib/types.ts';
 import DeleteConfirm from './DeleteConfirm.vue';
@@ -19,8 +20,10 @@ import ProjectNoteView from './ProjectNoteView.vue';
  * folders of the container, each with the selector of its label, and the
  * notes with theirs. A folder's label is a privacy setting: it is written
  * with the two steps of the Settings (prepare, then this page's Conferma),
- * and a label that goes down says so before the confirmation. "+ Conoscenza"
+ * and a label that goes down says so before the confirmation. "+ Nota"
  * writes a new note; its label is shown before saving and can only go up.
+ * D-191: folders in the normal font with how many notes each, the notes as
+ * cards by folder, a search on the titles and paths already read.
  * Everything stays on this computer: the Coder does not see these folders.
  * A note's title opens it, to read and to edit by hand (ProjectNoteView).
  */
@@ -46,12 +49,12 @@ async function load(): Promise<void> {
   }
 }
 
-const notesByFolder = computed(() => {
-  const groups = new Map<string, ProjectKnowledge['notes']>();
-  for (const folder of knowledge.value?.folders ?? []) groups.set(folder.path, []);
-  for (const note of knowledge.value?.notes ?? []) groups.set(note.folder, [...(groups.get(note.folder) ?? []), note]);
-  return [...groups.entries()];
-});
+// The notes by folder as cards, with a search on the titles and paths the page has already (D-191).
+const query = ref('');
+const groups = computed(() => noteGroups(knowledge.value?.folders ?? [], knowledge.value?.notes ?? [], query.value));
+const counts = computed(() => folderCounts(knowledge.value?.notes ?? []));
+/** The name of a note's file, under its title. */
+const fileName = (path: string): string => path.split('/').pop() ?? path;
 /** An existing folder by name, ignoring case as the core does: `workplan` is the existing `Workplan`. */
 const existingFolder = (path: string): KnowledgeFolder | undefined => knowledge.value?.folders.find((folder) => folder.path.toLowerCase() === path.trim().toLowerCase());
 const folderLabel = (path: string): Label | undefined => existingFolder(path)?.label;
@@ -185,6 +188,8 @@ watch(
     relabel.value = null;
     adding.value = null;
     saved.value = null;
+    problem.value = null;
+    query.value = '';
     void load();
   },
   { immediate: true },
@@ -192,97 +197,104 @@ watch(
 </script>
 
 <template>
-  <div class="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-    <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
+  <div class="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+    <div v-if="problem" class="flex max-w-2xl flex-wrap items-center gap-3 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] lg:col-span-2" role="alert">
+      <span class="flex-1">Non riesco a leggere la conoscenza: {{ problem }}</span>
+      <button type="button" class="btn px-2.5 py-1 text-xs" @click="load"><Icon name="retry" :size="13" />Riprova</button>
+    </div>
     <p v-else-if="knowledge === null" class="text-sm text-muted">Leggo la conoscenza…</p>
     <template v-else>
       <ProjectNoteView v-if="opened" class="lg:col-span-2" :project="container.name" :path="opened" @close="opened = null" @saved="load" @open="(id) => emit('conversation', id)" />
 
-      <!-- The panel of the folders: one selector each (D-145) -->
-      <section class="rounded-2xl border border-line bg-surface" aria-labelledby="folders-title">
-        <header class="flex items-center gap-2 border-b border-line px-4 py-3">
-          <Icon name="private" :size="15" class="text-muted" />
-          <h2 id="folders-title" class="hud-title flex-1">Cartelle di gestione</h2>
-        </header>
-        <p class="border-b border-line px-4 py-2 text-xs text-muted">
-          In <span class="font-mono text-ink">{{ knowledge.where }}</span><template v-if="knowledge.inKb">: il progetto è un solo git, quindi le note stanno nella conoscenza di Arianna, fuori dal codice.</template><template v-else>, accanto alle parti di codice, mai dentro una parte.</template>
+      <!-- The management folders, in the normal font, with how many notes each (D-145, D-191) -->
+      <section class="flex flex-col gap-1 rounded-2xl border border-line bg-surface-2 px-4 py-3.5" aria-labelledby="folders-title">
+        <h2 id="folders-title" class="text-[16px] font-semibold">Cartelle di gestione</h2>
+        <p class="mb-1 text-[13px] text-muted">
+          In <span class="font-mono text-ink">{{ knowledge.where }}</span><template v-if="knowledge.inKb">: il progetto è un solo git, quindi le note stanno nella conoscenza di Arianna, fuori dal codice.</template><template v-else>, accanto alle parti di codice: il Coder non le vede.</template>
         </p>
-        <p v-if="knowledge.folders.length === 0" class="p-4 text-sm text-muted">
-          Nessuna cartella di gestione ancora. Con “+ Conoscenza” scrivi il nome di una cartella (per esempio Workplan, IM o documenti): la creo quando salvi la prima nota.
+        <p v-if="knowledge.folders.length === 0" class="py-2 text-[14px] text-muted">
+          Nessuna cartella di gestione ancora. Con «+ Nota» scrivi il nome di una cartella (per esempio Workplan, IM o documenti): la creo quando salvi la prima nota.
         </p>
-        <ul v-else class="divide-y divide-line">
-          <li v-for="folder in knowledge.folders" :key="folder.path" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+        <ul v-else class="flex flex-col">
+          <li v-for="folder in knowledge.folders" :key="folder.path" class="flex items-center gap-3 border-b border-line py-2.5 last:border-b-0">
             <span class="min-w-0 flex-1">
-              <span class="block truncate font-mono text-[14px]">{{ folder.path }}</span>
-              <span class="block text-[12.5px] text-muted">{{ folder.chosen ? `scelta tua (per nome: ${LABEL_TEXT[folder.defaultLabel]})` : 'per nome' }}</span>
+              <b class="block truncate font-semibold">{{ folder.path }}</b>
+              <span class="block text-[12.5px] text-muted">{{ notesCountText(counts.get(folder.path) ?? 0) }} · {{ folder.chosen ? `scelta tua (per nome: ${LABEL_TEXT[folder.defaultLabel]})` : 'etichetta per nome' }}</span>
             </span>
-            <LabelBadge :label="folder.label" class="text-xs" />
             <select class="field px-2 py-1 text-[14px] text-ink" :value="folder.label" :aria-label="`Etichetta della cartella ${folder.path}`" :disabled="relabel !== null" @change="chooseLabel(folder, $event)">
               <option v-for="label in LABELS" :key="label" :value="label">{{ LABEL_TEXT[label] }}</option>
             </select>
           </li>
         </ul>
-        <p class="border-t border-line px-4 py-2.5 text-xs text-muted">
-          Una nota resta almeno al livello della sua cartella; la sua intestazione può alzarla, mai abbassarla. Tutto resta su questo computer: il Coder non vede queste cartelle.
-        </p>
-        <p v-if="knowledge.repoFolders.length > 0" class="border-t border-line px-4 py-2.5 text-xs text-warn">
-          Dentro il repository ci sono anche {{ knowledge.repoFolders.map((folder) => `${folder.path} (${LABEL_TEXT[folder.label]})`).join(', ') }}: stanno nel codice, quindi con un file sopra Interno lì dentro il Coder non apre il progetto.
+        <p class="mt-1 text-[13px] text-muted">Una nota resta almeno al livello della sua cartella; la sua intestazione può alzarlo, mai abbassarlo. Tutto resta su questo computer.</p>
+        <p v-if="knowledge.repoFolders.length > 0" class="mt-1 flex gap-2 rounded-xl border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]">
+          <span class="text-warn"><Icon name="warning" :size="14" /></span>
+          <span>Dentro il repository ci sono anche {{ knowledge.repoFolders.map((folder) => `${folder.path} (${LABEL_TEXT[folder.label]})`).join(', ') }}: stanno nel codice, quindi con un file sopra Interno lì dentro il Coder non apre il progetto.</span>
         </p>
       </section>
 
-      <!-- The notes, by folder -->
-      <section class="rounded-2xl border border-line bg-surface" aria-labelledby="notes-title">
-        <header class="flex items-center gap-2 border-b border-line px-4 py-3">
-          <Icon name="knowledge" :size="15" class="text-muted" />
-          <h2 id="notes-title" class="hud-title flex-1">Note</h2>
-          <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold" :disabled="adding !== null" @click="startAdding">
-            <Icon name="new" :size="13" />Conoscenza
-          </button>
-        </header>
-        <p v-if="saved" class="border-b border-line px-4 py-2 text-xs text-ok" role="status">{{ saved }}</p>
+      <!-- The notes, as cards by folder, with a search (D-191) -->
+      <section class="flex min-w-0 flex-col gap-3" aria-labelledby="notes-title">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 id="notes-title" class="mr-auto text-[16px] font-semibold">Note</h2>
+          <label v-if="knowledge.notes.length > 0" class="flex h-[34px] w-full items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:w-[260px]">
+            <Icon name="search" :size="14" />
+            <input v-model="query" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca fra le note" aria-label="Cerca fra le note, per titolo o cartella" />
+          </label>
+          <button type="button" class="btn btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] font-semibold" :disabled="adding !== null" @click="startAdding"><Icon name="new" :size="14" />Nota</button>
+        </div>
+        <div v-if="saved" class="flex items-center gap-2.5 rounded-xl border border-ok/45 bg-ok/9 px-3 py-2 text-[14px]" role="status">
+          <span class="text-ok"><Icon name="saved" :size="15" /></span><span class="min-w-0 flex-1">{{ saved }}</span>
+          <button type="button" class="btn px-2 py-0.5 text-xs" @click="saved = null">Chiudi</button>
+        </div>
 
-        <form v-if="adding" class="flex flex-col gap-3 border-b border-line px-4 py-3.5" @submit.prevent="saveNote">
+        <form v-if="adding" class="flex flex-col gap-3 rounded-2xl border border-line bg-surface-2 px-4 py-3.5" @submit.prevent="saveNote">
           <div class="grid gap-3 sm:grid-cols-2">
-            <label class="flex flex-col gap-1 text-xs text-muted">Cartella (una di queste, o un nome nuovo)
+            <label class="flex flex-col gap-1 text-[13px] text-muted">Cartella (una di queste, o un nome nuovo)
               <input v-model="adding.folder" list="knowledge-folders" maxlength="100" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Workplan" />
               <datalist id="knowledge-folders">
                 <option v-for="folder in knowledge.folders" :key="folder.path" :value="folder.path">{{ LABEL_TEXT[folder.label] }}</option>
               </datalist>
             </label>
-            <label class="flex flex-col gap-1 text-xs text-muted">Etichetta
+            <label class="flex flex-col gap-1 text-[13px] text-muted">Etichetta
               <select v-model="adding.label" class="field px-2 py-1.5 text-[14px] text-ink">
                 <option v-for="label in addingLabels" :key="label" :value="label">{{ LABEL_OPTION[label] }}</option>
               </select>
             </label>
           </div>
-          <label class="flex flex-col gap-1 text-xs text-muted">Titolo
+          <label class="flex flex-col gap-1 text-[13px] text-muted">Titolo
             <input ref="titleInput" v-model="adding.title" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Per esempio: Milestone di maggio" />
           </label>
-          <label class="flex flex-col gap-1 text-xs text-muted">Testo
+          <label class="flex flex-col gap-1 text-[13px] text-muted">Testo
             <textarea v-model="adding.text" rows="6" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="Quello che Arianna deve sapere di questo progetto" />
           </label>
-          <p class="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[14px]">
-            Si salverà come <LabelBadge :label="adding.label" /> in <span class="font-mono">{{ knowledge.where }}/{{ adding.folder.trim() }}</span>.
-            <span v-if="addingNew" class="text-xs text-warn">Cartella nuova: la creo, {{ LABEL_TEXT[labelOfFolder(adding.folder)] }} per il suo nome.</span>
-            <span class="text-xs text-muted">L’etichetta si può alzare, non scendere sotto quella della cartella.</span>
+          <p class="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[14px]">
+            Si salverà come <LabelBadge :label="adding.label" /> in <span class="font-mono text-[13px]">{{ knowledge.where }}/{{ adding.folder.trim() }}</span>.
+            <span v-if="addingNew" class="text-[13px] text-warn">Cartella nuova: la creo, {{ LABEL_TEXT[labelOfFolder(adding.folder)] }} per il suo nome.</span>
+            <span class="text-[13px] text-muted">L’etichetta si può alzare, non scendere sotto quella della cartella.</span>
           </p>
-          <p v-if="adding.folder.trim() !== '' && !isFolderName(adding.folder.trim())" class="text-xs text-danger">Il nome della cartella è uno solo: niente barre, niente punto all’inizio.</p>
-          <p v-if="adding.error" class="text-sm text-danger" role="alert">{{ adding.error }}</p>
+          <p v-if="adding.folder.trim() !== '' && !isFolderName(adding.folder.trim())" class="text-[13px] text-danger">Il nome della cartella è uno solo: niente barre, niente punto all’inizio.</p>
+          <p v-if="adding.error" class="rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]" role="alert">{{ adding.error }}</p>
           <div class="flex justify-end gap-2">
             <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="adding.busy" @click="adding = null">Annulla</button>
             <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="!canSave">Salva la nota</button>
           </div>
         </form>
 
-        <p v-if="knowledge.notes.length === 0" class="p-4 text-sm text-muted">Nessuna nota ancora: “+ Conoscenza” ne scrive una.</p>
-        <div v-else class="divide-y divide-line">
-          <div v-for="[folder, notes] in notesByFolder" :key="folder" class="px-4 py-2.5">
-            <h3 class="mb-1.5 font-mono text-xs text-muted">{{ folder }}</h3>
-            <p v-if="notes.length === 0" class="text-xs text-muted">Nessuna nota.</p>
-            <ul v-else class="flex flex-col gap-1">
-              <li v-for="note in notes" :key="note.path" class="group text-[14px]">
+        <div v-if="knowledge.notes.length === 0 && adding === null" class="flex flex-col items-start gap-2 rounded-2xl border border-line bg-surface-2 p-4">
+          <p class="text-[14.5px]">Nessuna nota ancora. Le note dicono ad Arianna cose del progetto che non stanno nel codice, per esempio «il cliente vuole le call il giovedì».</p>
+          <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" @click="startAdding"><Icon name="new" :size="14" />Nota</button>
+        </div>
+        <p v-else-if="groups.length === 0 && query.trim() !== ''" class="text-[14px] text-muted">Nessuna nota con «{{ query.trim() }}» nel titolo o nella cartella.</p>
+        <div v-for="group in groups" :key="group.folder" class="flex flex-col gap-2">
+          <p class="flex items-center gap-2 font-semibold">
+            {{ group.folder }}<LabelBadge v-if="group.label" :label="group.label" /><span class="text-[13px] font-normal text-muted">{{ group.notes.length }}</span>
+          </p>
+          <p v-if="group.notes.length === 0" class="text-[13px] text-muted">Nessuna nota in questa cartella.</p>
+          <ul v-else class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2.5">
+            <li v-for="note in group.notes" :key="note.path" class="group relative flex">
+              <div v-if="deleting === note.path" class="w-full rounded-xl border border-danger/50 bg-surface-2 p-3">
                 <DeleteConfirm
-                  v-if="deleting === note.path"
                   :subject="note.title"
                   :text="DELETE_PROJECT_NOTE_TEXT"
                   :extra="deleteError"
@@ -293,36 +305,36 @@ watch(
                     deleteError = null;
                   "
                 />
-                <div v-else class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    class="min-w-0 flex-1 truncate text-left transition hover:text-accent hover:underline"
-                    :class="opened === note.path ? 'font-semibold text-accent' : ''"
-                    :title="note.path"
-                    :aria-current="opened === note.path ? 'true' : undefined"
-                    @click="opened = note.path"
-                  >
-                    {{ note.title }}
-                  </button>
-                  <LabelBadge :label="note.label" class="text-xs" />
-                  <button
-                    type="button"
-                    class="rounded-md p-0.5 text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
-                    :aria-label="`Elimina per sempre ${note.title}`"
-                    title="Elimina per sempre"
-                    @click="
-                      deleteError = null;
-                      deleting = note.path;
-                    "
-                  >
-                    <Icon name="delete" :size="14" />
-                  </button>
-                </div>
-              </li>
-            </ul>
-          </div>
-          <p v-if="knowledge.more > 0" class="px-4 py-2 text-xs text-muted">Altre {{ knowledge.more }} note non mostrate.</p>
+              </div>
+              <template v-else>
+                <button
+                  type="button"
+                  class="flex w-full flex-col gap-1.5 rounded-xl border bg-surface-2 px-3.5 py-3 text-left transition-colors hover:border-accent"
+                  :class="opened === note.path ? 'border-accent' : 'border-line'"
+                  :title="note.path"
+                  :aria-current="opened === note.path ? 'true' : undefined"
+                  @click="opened = note.path"
+                >
+                  <b class="pr-7 font-semibold break-words">{{ note.title }}</b>
+                  <span class="mt-auto flex items-center gap-2 text-[12.5px] text-muted"><LabelBadge :label="note.label" /><span class="min-w-0 truncate font-mono text-[12px]">{{ fileName(note.path) }}</span></span>
+                </button>
+                <button
+                  type="button"
+                  class="absolute top-2 right-2 grid size-7 place-items-center rounded-md text-muted transition hover:text-danger md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+                  :aria-label="`Elimina per sempre ${note.title}`"
+                  title="Elimina per sempre"
+                  @click="
+                    deleteError = null;
+                    deleting = note.path;
+                  "
+                >
+                  <Icon name="delete" :size="14" />
+                </button>
+              </template>
+            </li>
+          </ul>
         </div>
+        <p v-if="knowledge.more > 0" class="text-[13px] text-muted">Altre {{ knowledge.more }} note non mostrate.</p>
       </section>
     </template>
 

@@ -22,6 +22,7 @@ import {
   ContactRound,
   Copy,
   Download,
+  Ellipsis,
   ExternalLink,
   FileText,
   Flag,
@@ -185,6 +186,7 @@ export const ICONS = {
   'view-desktop': Monitor,
   'view-tablet': Tablet,
   'view-mobile': Smartphone,
+  more: Ellipsis,
 } satisfies Record<string, Component>;
 
 export type IconName = keyof typeof ICONS;

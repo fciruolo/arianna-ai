@@ -1491,6 +1491,22 @@ function imNumberParam(params: Params): number {
 const PROJECT_PARAM = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,199}$/;
 
 /**
+ * The project of an address (`/api/browse/:project/...`), decoded: the page
+ * writes a part as `progetto-test%3Aprogetto-test-admin` (encodeURIComponent),
+ * and the router hands parameters over as they are in the path. Undefined for
+ * a name that is not a project's, so the route answers 404.
+ */
+export function projectFromParam(raw: string | undefined): string | undefined {
+  let name: string;
+  try {
+    name = decodeURIComponent(raw ?? '');
+  } catch {
+    return undefined;
+  }
+  return PROJECT_PARAM.test(name) ? name : undefined;
+}
+
+/**
  * The tab "Conoscenza" of "Progetti" (D-145, tappa P2): the management folders
  * of a container with their labels and the notes in them; "+ Conoscenza"
  * writes a new note. The labels of the folders are not written here: they are
@@ -1737,8 +1753,8 @@ function rulesExportRoutes(containers: () => readonly Project[], exporter: ApiSe
 function projectBrowserRoutes(sql: Sql, approvedProjects: () => readonly Project[], openLinks: OpenLinks, containers: () => readonly Project[]): Route[] {
   const fileDeps = { projects: approvedProjects, record: (event: NewEvent) => appendEvent(sql, event), sql };
   const projectParam = (params: Params): string => {
-    const name = params.project ?? '';
-    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    const name = projectFromParam(params.project);
+    if (name === undefined) throw new HttpError(404, 'not found');
     return name;
   };
   const pathParam = (url: URL, key: string, required: boolean): string => {
@@ -1815,8 +1831,8 @@ function projectServiceRoutes(sql: Sql, approvedProjects: () => readonly Project
     return services;
   };
   const projectParam = (params: Params): string => {
-    const name = params.project ?? '';
-    if (!PROJECT_PARAM.test(name)) throw new HttpError(404, 'not found');
+    const name = projectFromParam(params.project);
+    if (name === undefined) throw new HttpError(404, 'not found');
     return name;
   };
   const serviceParam = (value: unknown): string => {
