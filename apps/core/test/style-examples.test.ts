@@ -68,6 +68,7 @@ test('examples are made once per DESIGN.md: the missing ones only, again when it
   await examples.idle();
   assert.equal(asked.length, 1);
   assert.deepEqual(asked[0]?.parts.map((part) => part.text), [EXAMPLE_PROMPT, texts.alfa]);
+  assert.ok(asked.every((request) => request.model === 'opus'));
   assert.match(examples.read('alfa', 'landing'), /Ciao/);
   assert.match(examples.read('alfa', 'deck'), /data-slide/);
   assert.equal(examples.status().examples.alfa?.current, true);

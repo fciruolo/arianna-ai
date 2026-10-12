@@ -145,19 +145,19 @@ onBeforeUnmount(() => {
         <template v-if="tab === 'styles'">
           <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
             <p class="min-w-0 flex-1">
-              Ogni stile ha una pagina di prova coi suoi colori e caratteri; con «Genera esempio» Claude Sonnet scrive per quello stile una landing e una presentazione vere, che restano salvate e non si rifanno finché lo stile non cambia.
+              Ogni stile ha una pagina di prova coi suoi colori e caratteri; con «Genera esempio» Claude Opus scrive per quello stile una landing e una presentazione vere, che restano salvate e non si rifanno finché lo stile non cambia.
             </p>
             <button
               v-if="missingExamples > 0"
               type="button"
               class="btn shrink-0 px-2.5 py-1 text-xs"
               :disabled="examplesBusy"
-              title="Claude Sonnet scrive gli esempi mancanti uno dopo l'altro, in background; consuma quota di Claude"
+              title="Claude Opus scrive gli esempi mancanti uno dopo l'altro, in background; consuma quota di Claude"
               @click="generate()"
             >Genera i mancanti ({{ missingExamples }})</button>
           </div>
           <p v-if="examples?.running" class="mb-2 text-xs text-muted" role="status">
-            Sonnet scrive l'esempio di {{ styles.find((entry) => entry.slug === examples?.running)?.name ?? examples.running }}<template v-if="examples.queue.length > 0">, poi altri {{ examples.queue.length }}</template>…
+            Opus scrive l'esempio di {{ styles.find((entry) => entry.slug === examples?.running)?.name ?? examples.running }}<template v-if="examples.queue.length > 0">, poi altri {{ examples.queue.length }}</template>…
           </p>
           <p v-if="examples?.stopped" class="mb-2 text-xs text-warn" role="alert">Esempi fermati: {{ examples.stopped }}</p>
           <p v-if="examplesProblem !== null" class="mb-2 text-xs text-danger" role="alert">{{ examplesProblem }}</p>
@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
                   v-else-if="exampleState(examples, entry.slug) !== 'ready'"
                   type="button"
                   class="text-muted underline hover:text-ink"
-                  :title="exampleState(examples, entry.slug) === 'old' ? 'Lo stile è cambiato: Sonnet riscrive l\'esempio' : 'Claude Sonnet scrive una landing e una presentazione in questo stile'"
+                  :title="exampleState(examples, entry.slug) === 'old' ? 'Lo stile è cambiato o l\'esempio è di Sonnet: Opus lo riscrive' : 'Claude Opus scrive una landing e una presentazione in questo stile'"
                   @click="generate(entry.slug)"
                 >{{ exampleState(examples, entry.slug) === 'old' ? 'Rigenera' : 'Genera esempio' }}</button>
                 <button type="button" class="text-muted underline hover:text-ink" @click="readAll('style', entry.slug, entry.name)">Leggi tutto</button>

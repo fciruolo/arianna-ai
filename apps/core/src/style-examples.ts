@@ -7,7 +7,7 @@ import { CloudTextError, type AskCloudText } from './cloud-text.ts';
 /**
  * The examples of the styles of Open Design (I-20, D-185, choice of the
  * user): for each style a landing page and a presentation of three slides,
- * written by Claude Sonnet without tools from the DESIGN.md (public text),
+ * written by Claude Opus without tools from the DESIGN.md (public text),
  * kept in data/catalogs/open-design.examples/<slug>/ with the sha256 of the
  * DESIGN.md they were made from. Made on request (one style) or for all the
  * missing ones, one at a time in the background; a style whose DESIGN.md did
@@ -16,6 +16,8 @@ import { CloudTextError, type AskCloudText } from './cloud-text.ts';
  */
 
 export const EXAMPLES_DIR = 'open-design.examples';
+/** The model that writes the examples (choice of the user, D-185: better pages than Sonnet); an example by another model is old. */
+export const EXAMPLE_MODEL = 'opus';
 /** Largest page kept: the Studio frames take 3 MiB, a page is much less. */
 export const MAX_EXAMPLE_BYTES = 400 * 1024;
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -38,6 +40,8 @@ export const EXAMPLE_PROMPT = [
 export interface ExampleMeta {
   sha256: string;
   at: string;
+  /** The model that wrote it; an example without one was written by Sonnet. */
+  model: string;
 }
 
 export interface ExamplesStatus {
@@ -122,7 +126,7 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
   function metaOf(slug: string): ExampleMeta | undefined {
     try {
       const parsed = JSON.parse(readFileSync(join(folderOf(slug), 'meta.json'), 'utf8')) as Partial<ExampleMeta>;
-      return typeof parsed.sha256 === 'string' && typeof parsed.at === 'string' ? { sha256: parsed.sha256, at: parsed.at } : undefined;
+      return typeof parsed.sha256 === 'string' && typeof parsed.at === 'string' ? { sha256: parsed.sha256, at: parsed.at, model: typeof parsed.model === 'string' ? parsed.model : 'sonnet' } : undefined;
     } catch {
       return undefined;
     }
@@ -138,14 +142,14 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
 
   function isCurrent(slug: string): boolean {
     const meta = metaOf(slug);
-    return meta !== undefined && meta.sha256 === currentSha(slug);
+    return meta !== undefined && meta.sha256 === currentSha(slug) && meta.model === EXAMPLE_MODEL;
   }
 
   function status(): ExamplesStatus {
     const examples: ExamplesStatus['examples'] = {};
     for (const { slug } of options.source.list().styles) {
       const meta = metaOf(slug);
-      if (meta !== undefined) examples[slug] = { ...meta, current: meta.sha256 === currentSha(slug) };
+      if (meta !== undefined) examples[slug] = { ...meta, current: meta.sha256 === currentSha(slug) && meta.model === EXAMPLE_MODEL };
     }
     return { examples, queue: [...queue], running, failed: Object.fromEntries(failed), stopped };
   }
@@ -164,6 +168,7 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
         { text, source: `open-design:style:${slug}` },
       ],
       purpose: `esempio dello stile ${slug} di Open Design`,
+      model: EXAMPLE_MODEL,
     });
     const pages = parseExamples(answer);
     if (pages === undefined) throw new Error('la risposta non era nel formato chiesto o chiedeva risorse dalla rete');
@@ -174,7 +179,7 @@ export function createStyleExamples(options: { dir: string; source: ExampleSourc
     try {
       writeFileSync(join(temporary, 'landing.html'), pages.landing);
       writeFileSync(join(temporary, 'deck.html'), pages.deck);
-      writeFileSync(join(temporary, 'meta.json'), `${JSON.stringify({ sha256: sha256(text), at: new Date().toISOString() })}\n`);
+      writeFileSync(join(temporary, 'meta.json'), `${JSON.stringify({ sha256: sha256(text), at: new Date().toISOString(), model: EXAMPLE_MODEL })}\n`);
       rmSync(folderOf(slug), { recursive: true, force: true });
       renameSync(temporary, folderOf(slug));
     } catch (error) {

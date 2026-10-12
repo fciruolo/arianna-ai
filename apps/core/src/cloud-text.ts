@@ -9,7 +9,7 @@ import { passGateway } from './gateway.ts';
 import { budgetOf } from './orchestrator/routing.ts';
 
 /**
- * One answer of Claude Sonnet on public text, outside any task (I-20, D-185):
+ * One answer of Claude (Sonnet, or Opus when asked) on public text, outside any task (I-20, D-185):
  * the examples of the styles of Open Design and the Italian descriptions of
  * the skills. The text is L0 (catalogs downloaded from GitHub); it passes the
  * gateway towards `claude` as everything else, the run has no tools, an empty
@@ -40,6 +40,8 @@ export interface CloudTextRequest {
   /** What it is for, in gateway_log and the events (no text of the request). */
   purpose: string;
   timeoutMs?: number;
+  /** Sonnet by default; Opus for the examples of the styles (choice of the user, D-185). */
+  model?: 'sonnet' | 'opus';
 }
 
 /** A function that answers a request with Sonnet; a fake in the tests. */
@@ -53,7 +55,7 @@ export function createCloudText(deps: CloudTextDeps): AskCloudText {
     const folder = { data: deps.data, runId: `text-${randomBytes(8).toString('hex')}` };
     const workspace = await prepareEmptyWorkspace(folder);
     try {
-      const launch = { workspace, model: 'sonnet' as const, tools: [], persistSession: false, limits: { maxTurns: 3, timeoutMs: request.timeoutMs ?? 8 * 60_000 } };
+      const launch = { workspace, model: request.model ?? 'sonnet', tools: [], persistSession: false, limits: { maxTurns: 3, timeoutMs: request.timeoutMs ?? 8 * 60_000 } };
       await claude.check(launch);
       const decision = await passGateway(
         deps.sql,
