@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.83.0] - 2026-10-12
+
 ### Cambiato
 
 - Clienti: ogni cliente è una card con logo, contatto principale, progetti e tre numeri dell'anno (guadagno, da fatturare, in attesa con le scadute in rosso); nuovo menu «Ordina» e card «+ Nuovo cliente» (D-190).
