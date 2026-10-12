@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, exportMockupPptx, listMockups, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
+import { ApiError, exportMockupPptx, listDesignStyles, listMockups, listSkills, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
 import { buildSrcdoc, type FrameRect } from '../lib/studio-frame.ts';
 import { deckFromDocument, editSource, hasSlides, parseMockup } from '../lib/studio-dom.ts';
 import {
   COMMENTS_MAX,
   exportName,
   groupMockups,
+  keepKnown,
+  NO_DESIGN,
+  parseStudioDesign,
   pickMockup,
   reviewMessage,
   STUDIO_EDIT_CHANGED,
+  STUDIO_SKILLS_MAX,
+  studioDesignKey,
   studioErrorText,
   variantLabel,
   VIEW_TEXT,
@@ -20,6 +25,7 @@ import {
   type MockupText,
   type StudioAddress,
   type StudioComment,
+  type StudioDesign,
   type StudioEdit as EditRequest,
   type StudioView,
 } from '../lib/studio.ts';
@@ -49,7 +55,11 @@ const props = defineProps<{
   /** Why a message cannot go to the Designer now, or undefined. */
   chatBlocked: string | undefined;
 }>();
-const emit = defineEmits<{ address: [address: StudioAddress] }>();
+const emit = defineEmits<{
+  address: [address: StudioAddress];
+  /** The style and skills chosen for this project: the app sends them with every message to the Designer. */
+  design: [design: StudioDesign];
+}>();
 
 const project = computed(() => props.address.project);
 const list = ref<MockupList | null>(null);
@@ -185,6 +195,67 @@ function toggleCompare(): void {
     const variants = currentGroup.value?.variants ?? [];
     otherPath.value = variants.filter((file) => file.path !== props.address.file).at(-1)?.path ?? list.value?.files.find((file) => file.path !== props.address.file)?.path;
   }
+}
+
+// Style and skills (O2): from the adopted catalogs (D-160, D-161), as on a Designer card (D-163),
+// sent with every message of the Studio to the Designer (D-184); remembered per project in this browser.
+const styleCatalog = ref<{ id: string; name: string }[]>([]);
+const skillCatalog = ref<{ id: string; name: string; source: string }[]>([]);
+const catalogsLoaded = ref(false);
+const design = ref<StudioDesign>(NO_DESIGN);
+
+function storedDesign(name: string): StudioDesign {
+  try {
+    return parseStudioDesign(window.localStorage.getItem(studioDesignKey(name)));
+  } catch {
+    return NO_DESIGN;
+  }
+}
+
+function useDesign(next: StudioDesign, save: boolean): void {
+  // A choice gone from the catalogs would be refused by the core: dropped once they are read.
+  const kept = catalogsLoaded.value ? keepKnown(next, styleCatalog.value.map((style) => style.id), skillCatalog.value.map((skill) => skill.id)) : next;
+  design.value = kept;
+  emit('design', kept);
+  const name = project.value;
+  if (!save || name === undefined) return;
+  try {
+    window.localStorage.setItem(studioDesignKey(name), JSON.stringify(kept));
+  } catch {
+    // Private window or storage off: the choice lasts while the page is open.
+  }
+}
+
+async function loadCatalogs(): Promise<void> {
+  const [styles, skills] = await Promise.allSettled([listDesignStyles(), listSkills()]);
+  styleCatalog.value = styles.status === 'fulfilled' ? styles.value.styles.map((style) => ({ id: style.slug, name: style.name })) : [];
+  skillCatalog.value = skills.status === 'fulfilled' ? skills.value.skills.map((skill) => ({ id: skill.id, name: skill.name, source: skill.source })) : [];
+  catalogsLoaded.value = true;
+  useDesign(design.value, false);
+}
+
+watch(project, (name) => {
+  useDesign(name === undefined ? NO_DESIGN : storedDesign(name), false);
+}, { immediate: true });
+onMounted(() => void loadCatalogs());
+
+const chosenSkills = computed(() => design.value.skills.map((id) => skillCatalog.value.find((skill) => skill.id === id) ?? { id, name: id, source: '' }));
+const skillOptions = computed(() => skillCatalog.value.filter((skill) => !design.value.skills.includes(skill.id)));
+
+function setStyle(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value;
+  useDesign({ ...design.value, style: value === '' ? null : value }, true);
+}
+
+function addSkill(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  const id = select.value;
+  select.value = '';
+  if (id !== '' && design.value.skills.length < STUDIO_SKILLS_MAX) useDesign({ ...design.value, skills: [...design.value.skills, id] }, true);
+}
+
+function removeSkill(id: string): void {
+  useDesign({ ...design.value, skills: design.value.skills.filter((skill) => skill !== id) }, true);
 }
 
 let nextId = 1;
@@ -368,6 +439,38 @@ const side = ref<'chat' | 'canvas'>('canvas');
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }}</option>
         </select>
       </label>
+      <template v-if="project !== undefined">
+        <!-- Style and skills for the Designer (O2): every message of the Studio carries them. -->
+        <label class="flex items-center gap-1.5 text-[12.5px] text-muted">
+          Stile
+          <select class="field max-w-[180px] px-2 py-1 text-[13px] text-ink" :value="design.style ?? ''" title="Stile di Open Design che il Designer legge con ogni messaggio dello Studio" @change="setStyle">
+            <option value="">Nessuno</option>
+            <option v-for="style in styleCatalog" :key="style.id" :value="style.id">{{ style.name }}</option>
+          </select>
+        </label>
+        <div class="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted">
+          <span id="studio-skills-label">Skill</span>
+          <ul v-if="chosenSkills.length > 0" class="flex flex-wrap gap-1" aria-labelledby="studio-skills-label">
+            <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[12px] text-ink" :title="skill.id">
+              <span class="min-w-0 truncate">{{ skill.name }}</span>
+              <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
+                <Icon name="close" :size="11" />
+              </button>
+            </li>
+          </ul>
+          <select
+            v-if="skillOptions.length > 0 && design.skills.length < STUDIO_SKILLS_MAX"
+            class="field max-w-[200px] px-2 py-1 text-[13px] text-ink"
+            aria-label="Aggiungi una skill"
+            title="Skill del catalogo che il Designer legge con ogni messaggio dello Studio"
+            @change="addSkill"
+          >
+            <option value="">{{ chosenSkills.length === 0 ? 'Nessuna' : 'Aggiungi…' }}</option>
+            <option v-for="skill in skillOptions" :key="skill.id" :value="skill.id">{{ skill.name }} · {{ skill.source }}</option>
+          </select>
+          <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[11.5px]">nessuna nel catalogo</span>
+        </div>
+      </template>
       <p class="flex items-center gap-1.5 text-[11.5px] text-muted" role="note">
         <Icon name="private" :size="12" />I mockup si vedono in una cornice isolata: niente rete, niente accesso alla chat.
       </p>

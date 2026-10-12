@@ -47,7 +47,7 @@ import { isProjectsPath, projectFromSearch, projectsPathFor } from './lib/projec
 import { clientFromPath, clientPathFor, isClientsPath } from './lib/clients.ts';
 import { financePathFor, financeTabFromPath, isFinancePath, type FinanceTab } from './lib/finance.ts';
 import { CARDWALL_PATH, isCardwallPath } from './lib/cardwall.ts';
-import { DESIGNER_AGENT, isStudioPath, studioFromSearch, studioPathFor, type StudioAddress } from './lib/studio.ts';
+import { DESIGNER_AGENT, isStudioPath, messageDesign, NO_DESIGN, studioFromSearch, studioPathFor, type StudioAddress, type StudioDesign } from './lib/studio.ts';
 import { gridColumns, loadLayout, PANEL_COLUMN_PX, saveLayout } from './lib/layout.ts';
 import {
   CHANGELOG_PATH,
@@ -497,10 +497,14 @@ const studioChatBlocked = computed(() => {
   return undefined;
 });
 
-/** One message to the Designer from the Studio (the comments, O3); the first one creates the conversation. */
+/** The style and skills chosen in the Studio for its project (O2, D-184): every message of the Studio carries them. */
+const studioDesign = ref<StudioDesign>(NO_DESIGN);
+
+/** One message to the Designer from the Studio (typed in its chat, or the comments of O3); the first one creates the conversation. */
 async function sendToDesigner(body: string): Promise<boolean> {
   if (studioChatBlocked.value !== undefined) return false;
-  return draft.value !== null ? store.sendDraft(body) : store.send(body);
+  const design = messageDesign(studioDesign.value);
+  return draft.value !== null ? store.sendDraft(body, design) : store.send(body, design);
 }
 
 /** Changes when a task of the open chat ends: the Studio reads its list of mockups again. */
@@ -997,6 +1001,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         :version="studioVersion"
         :send="sendToDesigner"
         :chat-blocked="studioChatBlocked"
+        @design="(design) => (studioDesign = design)"
         @address="(address) => openStudio(address, address.project === studioAddress.project ? 'replace' : 'push')"
       >
         <template #chat>
@@ -1007,7 +1012,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :draft="draft"
             :project-problem="draftProjectProblem(draft, projects.length > 0 ? projects.map((entry) => entry.name) : undefined)"
             :sending="sending"
-            :send="store.sendDraft"
+            :send="(text) => store.sendDraft(text, messageDesign(studioDesign))"
             :arianna="characters?.agents.arianna"
             :characters="characters?.agents"
             :agents="directAgents"
@@ -1030,7 +1035,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :participants="participants"
             :characters="characters?.agents"
             :direct-agents="directAgents"
-            @send="store.send"
+            @send="(body) => store.send(body, messageDesign(studioDesign))"
             @remove-participant="store.removeParticipant"
             @call-when-done="store.callWhenDone"
             @cancel-call="store.cancelScheduled"

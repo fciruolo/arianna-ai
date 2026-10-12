@@ -371,6 +371,26 @@ function checkDesign(assignee: string, style: string | null, skills: readonly st
   for (const id of skills) if (!kept.skills.includes(id) && !names.catalog.skill(id)) throw new CardError('invalid', 'no such skill in the catalog');
 }
 
+/** The style and skills a message of the Studio carries to the Designer (D-184). */
+export interface DesignChoice {
+  style: string | null;
+  skills: string[];
+}
+
+/**
+ * The style and skills sent with a message of the direct chat with the
+ * Designer (I-19, D-184), checked as on a card: the form, at most ten
+ * skills, and only what the adopted catalogs hold. Throws `CardError`
+ * ('invalid'); undefined when nothing is chosen.
+ */
+export function checkDesignChoice(input: { style?: unknown; skills?: unknown }, catalog: CardCatalog | undefined): DesignChoice | undefined {
+  const style = checkStyle(input.style);
+  const skills = checkSkills(input.skills);
+  if (style === null && skills.length === 0) return undefined;
+  checkDesign(DESIGNER_AGENT, style, skills, { projects: [], agents: [], ...(catalog === undefined ? {} : { catalog }) }, { style: null, skills: [] });
+  return { style, skills };
+}
+
 /** The style and skills a card holds now (D-163). */
 export async function cardDesign(sql: Queryable, id: string): Promise<{ style: string | null; skills: string[] }> {
   const [row] = await sql<{ style: string | null; skills: string[] }[]>`SELECT design_style AS style, design_skills AS skills FROM tasks WHERE id = ${id}`;

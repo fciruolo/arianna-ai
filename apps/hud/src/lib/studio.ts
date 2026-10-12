@@ -83,6 +83,63 @@ export function studioErrorText(cause: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// Style and skills (O2): sent with every message of the Studio to the Designer
+// ---------------------------------------------------------------------------
+
+/** Most skills chosen at once, as on a card (migration 0046). */
+export const STUDIO_SKILLS_MAX = 10;
+
+/** The style of Open Design and the skills of the catalog chosen in the Studio; none by default. */
+export interface StudioDesign {
+  style: string | null;
+  skills: string[];
+}
+
+/** What a message carries to the core (`POST /api/conversations/:id/messages`): only what is chosen. */
+export interface MessageDesign {
+  style?: string;
+  skills?: string[];
+}
+
+export const NO_DESIGN: StudioDesign = { style: null, skills: [] };
+
+/** The key of the choice of a project in this browser's storage. */
+export function studioDesignKey(project: string): string {
+  return `arianna.studio.design.${project}`;
+}
+
+/** The choice as stored, read back defensively: anything else is no choice. */
+export function parseStudioDesign(raw: string | null): StudioDesign {
+  if (raw === null) return NO_DESIGN;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return NO_DESIGN;
+  }
+  if (typeof value !== 'object' || value === null) return NO_DESIGN;
+  const record = value as { style?: unknown; skills?: unknown };
+  const style = typeof record.style === 'string' && record.style !== '' ? record.style : null;
+  const skills = Array.isArray(record.skills) ? [...new Set((record.skills as unknown[]).filter((item): item is string => typeof item === 'string' && item !== ''))].slice(0, STUDIO_SKILLS_MAX) : [];
+  return { style, skills };
+}
+
+/**
+ * Only what the adopted catalogs still hold: the core refuses a style or a
+ * skill it does not know (400), so a choice gone from the catalog is dropped.
+ */
+export function keepKnown(design: StudioDesign, styles: readonly string[], skills: readonly string[]): StudioDesign {
+  const style = design.style !== null && styles.includes(design.style) ? design.style : null;
+  return { style, skills: design.skills.filter((id) => skills.includes(id)) };
+}
+
+/** The fields of the message; undefined when nothing is chosen, so the message is the plain one. */
+export function messageDesign(design: StudioDesign): MessageDesign | undefined {
+  if (design.style === null && design.skills.length === 0) return undefined;
+  return { ...(design.style === null ? {} : { style: design.style }), ...(design.skills.length === 0 ? {} : { skills: [...design.skills] }) };
+}
+
+// ---------------------------------------------------------------------------
 // Variants (O4)
 // ---------------------------------------------------------------------------
 

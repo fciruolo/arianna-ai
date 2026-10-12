@@ -337,8 +337,9 @@ export async function listMessages(conversationId: string, beforeId?: string): P
   return (await call<{ messages: Message[] }>('GET', path)).messages;
 }
 
-export async function sendMessage(conversationId: string, body: string): Promise<{ message: Message; task: Task }> {
-  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body });
+/** `design`: the style and skills chosen in the Studio (I-19, D-184), only for the direct chat with the Designer. */
+export async function sendMessage(conversationId: string, body: string, design?: { style?: string; skills?: string[] }): Promise<{ message: Message; task: Task }> {
+  return call('POST', `/api/conversations/${encodeURIComponent(conversationId)}/messages`, { body, ...design });
 }
 
 /** "/nota" (D-080) and "Salva in inbox" (D-084): a new L2 note in kb/inbox; the answer holds path and label, never the text. */

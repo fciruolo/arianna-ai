@@ -868,9 +868,14 @@ export const CARD_DESIGN_SKIPPED = 'card.design-skipped';
 /** The middle word of the activity line of the card's style left out: `<agent> · style-skipped · <slug>` (D-163). */
 export const STYLE_SKIPPED = 'style-skipped';
 
-/** The style and skills chosen on the card, when the step is the Designer's work on its own card (D-163); undefined otherwise. */
+/**
+ * The style and skills chosen on the card (D-163), or with the message of the
+ * direct chat with the Designer in the Studio (D-184), when the step is the
+ * Designer's work on its own task; undefined otherwise. A delegation of
+ * Arianna's to the Designer is Arianna's task: it carries none.
+ */
 async function cardDesignOf(sql: Sql, task: Task, name: string): Promise<CardDesign | undefined> {
-  if (task.conversationId !== null || task.assignee !== DESIGNER_AGENT || name !== DESIGNER_AGENT) return undefined;
+  if (task.assignee !== DESIGNER_AGENT || name !== DESIGNER_AGENT) return undefined;
   const design = await cardDesign(sql, task.id);
   return design.style === null && design.skills.length === 0 ? undefined : design;
 }

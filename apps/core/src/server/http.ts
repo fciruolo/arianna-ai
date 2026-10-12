@@ -18,7 +18,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -1972,10 +1972,18 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
     route('POST', '/api/conversations/:id/messages', async (request, _url, params) => {
       const id = idParam(params, 'id');
       const body = await readJson(request);
-      onlyFields(body, ['body']);
+      onlyFields(body, ['body', 'style', 'skills']);
       if (typeof body.body !== 'string') throw new HttpError(400, 'body must be a string');
+      // The style and skills chosen in the Studio (I-19, D-184): checked as on a Designer card (D-163).
+      let design;
+      try {
+        design = checkDesignChoice(body, cardCatalog(designCatalog, skillsCatalog));
+      } catch (error) {
+        if (error instanceof CardError) throw new HttpError(400, error.message);
+        throw error;
+      }
       const leave = leaveRule?.();
-      const { message, task } = await postUserMessage(sql, id, body.body, leave === undefined ? {} : { leave });
+      const { message, task } = await postUserMessage(sql, id, body.body, { ...(leave === undefined ? {} : { leave }), ...(design === undefined ? {} : { design }) });
       return { status: 201, body: { message, task } };
     }),
 
