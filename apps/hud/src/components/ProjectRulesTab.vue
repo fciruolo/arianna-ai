@@ -255,104 +255,119 @@ function retry(): void {
 </script>
 
 <template>
-  <div class="flex max-w-[980px] flex-col gap-3" aria-label="Regole del progetto">
-    <section class="flex flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 md:p-5">
-      <div class="flex flex-wrap items-center gap-2">
-        <h2 class="mr-auto text-[16px] font-semibold">Regole per Claude Code e Codex</h2>
-        <button
-          v-if="rules !== undefined"
-          type="button"
-          class="btn px-3 py-1.5 text-[14px]"
-          :disabled="changed || exporting || exportPreview !== null"
-          :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md del progetto, dopo un’anteprima'"
-          @click="openExport"
-        >
-          {{ exporting && exportPreview === null ? 'Preparo l’anteprima…' : 'Esporta in CLAUDE.md e AGENTS.md…' }}
-        </button>
-      </div>
-      <p class="text-[14.5px]">
-        Arianna le mette in testa a ogni lavoro del Coder su <b class="font-semibold">{{ name }}</b>. Ogni regola va a tutti e due o solo a uno: lo scegli accanto alla regola. Esempio: «Usa pnpm, mai npm» evita che Codex crei un <span class="font-mono text-[13px]">package-lock.json</span>.
-      </p>
-
-      <div v-if="problem !== null" role="alert" class="flex flex-wrap items-center gap-2.5 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]">
-        <span class="text-danger"><Icon name="warning" :size="15" /></span>
-        <span class="min-w-0 flex-1">{{ problem.text }}</span>
-        <button v-if="problem.retry !== null" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy || drafting || exporting" @click="retry"><Icon name="retry" :size="13" />Riprova</button>
-        <button v-if="problem.localDown" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('settings', 'server-locali')"><Icon name="server" :size="13" />Server locali</button>
-      </div>
-
-      <template v-if="rules !== undefined">
-        <div class="flex flex-wrap items-center gap-2.5">
-          <span class="inline-flex overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-label="Quali regole">
-            <button type="button" class="px-3.5 py-1.5 text-[14px]" :class="!own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="!own" @click="chooseMode(false)">Modello comune</button>
-            <button type="button" class="border-l border-line-strong px-3.5 py-1.5 text-[14px]" :class="own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="own" @click="chooseMode(true)">Regole proprie</button>
-          </span>
-          <span class="text-[13px] text-muted">{{ own ? 'Partono da una copia del modello comune; vuote = nessuna regola.' : 'Le stesse di ogni progetto senza regole proprie.' }}</span>
-          <button v-if="own" type="button" class="btn ml-auto px-2.5 py-1 text-xs" :aria-pressed="asText" @click="asText = !asText">
+  <div class="flex flex-col gap-3" role="region" aria-label="Regole del progetto">
+    <!-- Wide rules on the left, a sticky column of settings on the right; below 1100 px the column goes under (D-193) -->
+    <div class="grid grid-cols-1 items-start gap-4" :class="rules !== undefined ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_340px]' : ''">
+      <section class="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 md:p-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="mr-auto text-[16px] font-semibold">Regole per Claude Code e Codex</h2>
+          <button v-if="rules !== undefined && own" type="button" class="btn px-2.5 py-1 text-xs" :aria-pressed="asText" @click="asText = !asText">
             <Icon :name="asText ? 'view-list' : 'rename'" :size="13" />{{ asText ? 'Torna all’elenco' : 'Modifica come testo' }}
           </button>
         </div>
+        <p class="text-[14.5px]">
+          Arianna le mette in testa a ogni lavoro del Coder su <b class="font-semibold">{{ name }}</b>. Ogni regola va a tutti e due o solo a uno: lo scegli accanto alla regola. Esempio: «Usa pnpm, mai npm» evita che Codex crei un <span class="font-mono text-[13px]">package-lock.json</span>.
+        </p>
 
-        <div v-if="stored === undefined || drafted" class="flex flex-wrap items-center gap-2.5 rounded-xl border border-info/45 bg-info/9 px-3 py-2 text-[14px]">
-          <span class="text-info"><Icon name="info" :size="15" /></span>
-          <span v-if="drafted" class="min-w-0 flex-1">
-            Bozza non ancora salvata: il modello comune, le regole ricavate dai file del progetto<template v-if="!partial"> e le convenzioni dei framework proposte dal modello locale</template>. Rileggila, correggila e salva.
-            <template v-if="partial"> Il modello locale non ha risposto: mancano le convenzioni dei framework.</template>
-          </span>
-          <span v-else class="min-w-0 flex-1">Arianna può proporre regole adatte guardando linguaggi, gestore di pacchetti e file di stile delle parti.</span>
-          <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : drafted ? 'Riproponi' : 'Proponi bozza' }}</button>
+        <div v-if="problem !== null" role="alert" class="flex flex-wrap items-center gap-2.5 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]">
+          <span class="text-danger"><Icon name="warning" :size="15" /></span>
+          <span class="min-w-0 flex-1">{{ problem.text }}</span>
+          <button v-if="problem.retry !== null" type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy || drafting || exporting" @click="retry"><Icon name="retry" :size="13" />Riprova</button>
+          <button v-if="problem.localDown" type="button" class="btn px-2.5 py-1 text-xs" @click="emit('settings', 'server-locali')"><Icon name="server" :size="13" />Server locali</button>
         </div>
 
-        <label v-if="own && asText" class="flex flex-col gap-1 text-[13px] text-muted">
-          Il testo delle regole: ogni riga al margine è una regola; «[solo Claude Code]» o «[solo Codex]» all’inizio la dà a uno solo; i titoli con «#» restano per tutti e due.
-          <textarea v-model="text" rows="14" :maxlength="MAX_PROJECT_RULES" class="field px-2.5 py-2 font-mono text-[13.5px] leading-relaxed text-ink" @input="saved = false" />
-        </label>
-        <template v-else>
-          <p v-if="!hasRules" class="text-[14px] text-muted">
-            <template v-if="own">Nessuna regola: il Coder lavora senza regole di progetto. Scrivile con «Modifica come testo».</template>
-            <template v-else>Il modello comune è vuoto: il progetto non ha regole.</template>
-          </p>
-          <div v-else class="flex flex-col" :aria-label="own ? 'Le regole del progetto e a chi vanno' : 'Le regole del modello comune'">
-            <template v-for="row in rows" :key="row.kind === 'head' ? `h${String(row.line)}` : `r${String(row.item.line)}`">
-              <p v-if="row.kind === 'head'" class="border-b border-line pt-3.5 pb-1.5 text-[13px] font-semibold text-muted">{{ row.text }}</p>
-              <div v-else class="grid grid-cols-1 items-center gap-x-3 gap-y-1.5 border-b border-line py-2 text-[14.5px] last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto]" :class="audienceChanged(row.item.line, row.item.text, row.item.audience) ? 'bg-accent/5' : ''">
-                <span class="min-w-0 break-words"><template v-for="(part, at) in codeParts(row.item.text)" :key="at"><code v-if="part.code" class="font-mono text-[13px]">{{ part.text }}</code><template v-else>{{ part.text }}</template></template></span>
-                <span v-if="own" class="inline-flex justify-self-start overflow-hidden rounded-full border border-line-strong text-[13px] sm:justify-self-end" role="group" :aria-label="`A chi va la regola: ${row.item.text}`">
-                  <button
-                    v-for="(audience, at) in AUDIENCES"
-                    :key="audience"
-                    type="button"
-                    class="px-2.5 py-0.5"
-                    :class="[at > 0 ? 'border-l border-line-strong' : '', row.item.audience === audience ? 'bg-accent/14 font-semibold text-ink' : 'text-muted hover:text-ink']"
-                    :aria-pressed="row.item.audience === audience"
-                    @click="chooseAudience(row.item.line, audience)"
-                  >
-                    {{ AUDIENCE_TEXT[audience] }}
-                  </button>
-                </span>
-                <span v-else class="justify-self-start rounded-full border border-line-strong px-2.5 py-0.5 text-[13px] text-muted sm:justify-self-end">{{ AUDIENCE_TEXT[row.item.audience] }}</span>
-              </div>
-            </template>
+        <template v-if="rules !== undefined">
+          <div v-if="drafted" class="flex flex-wrap items-center gap-2.5 rounded-xl border border-info/45 bg-info/9 px-3 py-2 text-[14px]">
+            <span class="text-info"><Icon name="info" :size="15" /></span>
+            <span class="min-w-0 flex-1">
+              Bozza non ancora salvata: il modello comune, le regole ricavate dai file del progetto<template v-if="!partial"> e le convenzioni dei framework proposte dal modello locale</template>. Rileggila, correggila e salva.
+              <template v-if="partial"> Il modello locale non ha risposto: mancano le convenzioni dei framework.</template>
+            </span>
+            <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : 'Riproponi' }}</button>
           </div>
-          <p v-if="!own" class="text-[13px] text-muted">
-            Il modello comune si scrive in
-            <button type="button" class="text-accent hover:underline" @click="emit('settings', 'regole-dei-progetti')">Impostazioni → Regole dei progetti</button>. Per sceglierle solo per questo progetto passa a «Regole proprie».
-          </p>
+
+          <label v-if="own && asText" class="flex flex-col gap-1 text-[13px] text-muted">
+            Il testo delle regole: ogni riga al margine è una regola; «[solo Claude Code]» o «[solo Codex]» all’inizio la dà a uno solo; i titoli con «#» restano per tutti e due.
+            <textarea v-model="text" rows="14" :maxlength="MAX_PROJECT_RULES" class="field px-2.5 py-2 font-mono text-[13.5px] leading-relaxed text-ink" @input="saved = false" />
+          </label>
+          <template v-else>
+            <p v-if="!hasRules" class="text-[14px] text-muted">
+              <template v-if="own">Nessuna regola: il Coder lavora senza regole di progetto. Scrivile con «Modifica come testo».</template>
+              <template v-else>Il modello comune è vuoto: il progetto non ha regole.</template>
+            </p>
+            <div v-else class="flex flex-col" :aria-label="own ? 'Le regole del progetto e a chi vanno' : 'Le regole del modello comune'">
+              <template v-for="row in rows" :key="row.kind === 'head' ? `h${String(row.line)}` : `r${String(row.item.line)}`">
+                <p v-if="row.kind === 'head'" class="border-b border-line pt-3.5 pb-1.5 text-[13px] font-semibold text-muted">{{ row.text }}</p>
+                <div v-else class="grid grid-cols-1 items-center gap-x-3 gap-y-1.5 border-b border-line py-2 text-[14.5px] last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto]" :class="audienceChanged(row.item.line, row.item.text, row.item.audience) ? 'bg-accent/5' : ''">
+                  <span class="min-w-0 break-words"><template v-for="(part, at) in codeParts(row.item.text)" :key="at"><code v-if="part.code" class="font-mono text-[13px]">{{ part.text }}</code><template v-else>{{ part.text }}</template></template></span>
+                  <span v-if="own" class="inline-flex justify-self-start overflow-hidden rounded-full border border-line-strong text-[13px] sm:justify-self-end" role="group" :aria-label="`A chi va la regola: ${row.item.text}`">
+                    <button
+                      v-for="(audience, at) in AUDIENCES"
+                      :key="audience"
+                      type="button"
+                      class="px-2.5 py-0.5"
+                      :class="[at > 0 ? 'border-l border-line-strong' : '', row.item.audience === audience ? 'bg-accent/14 font-semibold text-ink' : 'text-muted hover:text-ink']"
+                      :aria-pressed="row.item.audience === audience"
+                      @click="chooseAudience(row.item.line, audience)"
+                    >
+                      {{ AUDIENCE_TEXT[audience] }}
+                    </button>
+                  </span>
+                  <span v-else class="justify-self-start rounded-full border border-line-strong px-2.5 py-0.5 text-[13px] text-muted sm:justify-self-end">{{ AUDIENCE_TEXT[row.item.audience] }}</span>
+                </div>
+              </template>
+            </div>
+            <p v-if="!own" class="text-[13px] text-muted">
+              Il modello comune si scrive in
+              <button type="button" class="text-accent hover:underline" @click="emit('settings', 'regole-dei-progetti')">Impostazioni → Regole dei progetti</button>. Per sceglierle solo per questo progetto passa a «Regole proprie».
+            </p>
+          </template>
+          <p v-if="tooLong" class="text-[13px] text-danger">Al massimo {{ MAX_PROJECT_RULES }} caratteri.</p>
+
+          <div v-if="exported !== null" role="status" class="flex flex-col gap-0.5 rounded-xl border border-ok/45 bg-ok/9 px-3 py-2 text-[13px]">
+            <span class="text-[14px]">Esportazione fatta: ricordati di committare i file nel progetto.</span>
+            <span v-for="file in exported" :key="file.path"><code class="font-mono">{{ file.path }}</code> — {{ EXPORT_STATUS[file.status] }}</span>
+          </div>
+          <p v-if="saved && !changed" role="status" class="flex items-center gap-1.5 text-[13px] text-ok"><Icon name="saved" :size="14" />Regole salvate.</p>
         </template>
-        <p v-if="tooLong" class="text-[13px] text-danger">Al massimo {{ MAX_PROJECT_RULES }} caratteri.</p>
+      </section>
 
-        <ul class="grid list-disc gap-1 pl-5 text-[13.5px] text-muted">
+      <aside v-if="rules !== undefined" class="flex min-w-0 flex-col gap-3 [@media(min-width:1100px)_and_(min-height:720px)]:sticky [@media(min-width:1100px)_and_(min-height:720px)]:top-3" aria-label="Impostazioni delle regole">
+        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-mode">
+          <h3 id="rules-side-mode" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Quali regole</h3>
+          <span class="flex w-full overflow-hidden rounded-[9px] border border-line-strong" role="group" aria-labelledby="rules-side-mode">
+            <button type="button" class="flex-1 px-2 py-1.5 text-[14px]" :class="!own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="!own" @click="chooseMode(false)">Modello comune</button>
+            <button type="button" class="flex-1 border-l border-line-strong px-2 py-1.5 text-[14px]" :class="own ? 'bg-accent/14 font-semibold text-ink' : 'bg-surface-2 text-muted hover:text-ink'" :aria-pressed="own" @click="chooseMode(true)">Regole proprie</button>
+          </span>
+          <p class="mt-2 text-[13px] text-muted">{{ own ? 'Partono da una copia del modello comune; vuote = nessuna regola.' : 'Le stesse di ogni progetto senza regole proprie.' }}</p>
+        </section>
+
+        <section v-if="stored === undefined || drafted" class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-draft">
+          <h3 id="rules-side-draft" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Bozza</h3>
+          <p class="mb-2 text-[13.5px]">{{ drafted ? 'C’è una bozza da rileggere a sinistra: salvala o riproponila.' : 'Arianna può proporre regole adatte guardando linguaggi, gestore di pacchetti e file di stile delle parti.' }}</p>
+          <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="drafting" @click="propose">{{ drafting ? 'Scrivo la bozza…' : drafted ? 'Riproponi' : 'Proponi bozza' }}</button>
+        </section>
+
+        <section class="rounded-2xl border border-line bg-surface-2 px-5 py-4" aria-labelledby="rules-side-export">
+          <h3 id="rules-side-export" class="mb-1.5 font-hud text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">Esporta</h3>
+          <p class="mb-2 text-[13.5px]">Scrive le regole salvate in <code class="font-mono text-[13px]">CLAUDE.md</code> e <code class="font-mono text-[13px]">AGENTS.md</code> delle parti, dopo un’anteprima. Il commit lo fai tu.</p>
+          <button
+            type="button"
+            class="btn px-2.5 py-1 text-xs"
+            :disabled="changed || exporting || exportPreview !== null"
+            :title="changed ? 'Salva prima le regole' : 'Scrive le regole salvate in CLAUDE.md e AGENTS.md delle parti, dopo un’anteprima'"
+            @click="openExport"
+          >
+            {{ exporting && exportPreview === null ? 'Preparo l’anteprima…' : 'Esporta in CLAUDE.md e AGENTS.md…' }}
+          </button>
+        </section>
+
+        <ul class="grid list-disc gap-1 pl-5 text-[13px] text-muted">
           <li>Il testo va al cloud come <b class="font-semibold">Interno</b>, dal gateway: niente nomi di clienti, importi o password (il salvataggio li rifiuta).</li>
-          <li>Valgono dalla prossima conversazione con il Coder; gli agenti non fanno mai commit, il commit lo fai tu.</li>
+          <li>Valgono dalla prossima conversazione con il Coder.</li>
         </ul>
-
-        <div v-if="exported !== null" role="status" class="flex flex-col gap-0.5 rounded-xl border border-ok/45 bg-ok/9 px-3 py-2 text-[13px]">
-          <span class="text-[14px]">Esportazione fatta: ricordati di committare i file nel progetto.</span>
-          <span v-for="file in exported" :key="file.path"><code class="font-mono">{{ file.path }}</code> — {{ EXPORT_STATUS[file.status] }}</span>
-        </div>
-        <p v-if="saved && !changed" role="status" class="flex items-center gap-1.5 text-[13px] text-ok"><Icon name="saved" :size="14" />Regole salvate.</p>
-      </template>
-    </section>
+      </aside>
+    </div>
 
     <!-- The save bar: only with changes, sticky at the bottom (D-191) -->
     <div v-if="rules !== undefined && changed" class="sticky bottom-3 z-10 flex flex-wrap items-center gap-2.5 rounded-xl border border-line-strong bg-surface-2 px-4 py-2.5 text-[14px] shadow-[0_8px_24px_#0003]">

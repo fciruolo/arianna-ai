@@ -4,6 +4,18 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- GOD e Pensieri: testata comune come Novità e Sviluppo (titolo normale, frase sotto, azioni a destra) e larghezza 1120 px (D-194).
+- Studio: senza un progetto scelto, una card per progetto con le miniature dei mockup più recenti (D-194).
+- Conoscenza, Segretaria, Cardwall e Ufficio: titoli e testi nel carattere normale invece del maiuscolo HUD, filtri del Cardwall che vanno a capo, istruzioni del grafo e comandi dell'ufficio dietro un «?» (D-194).
+
+## [0.85.1] - 2026-10-13
+
+### Cambiato
+
+- Progetti, Regole: la scheda prende la larghezza della pagina, con l'elenco delle regole a sinistra e a destra una colonna ferma con «Quali regole», «Bozza» ed «Esporta» (D-193).
+
 ## [0.85.0] - 2026-10-12
 
 ### Cambiato
