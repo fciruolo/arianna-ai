@@ -37,10 +37,10 @@ export function latestMonths(months: readonly MonthTotal[]): MonthPair | null {
   return { current, previous: months.find((month) => month.month === before) ?? emptyMonth(before) };
 }
 
-/** `−42% rispetto ad agosto`, `uguali ad agosto`, `agosto: 0,00 €`. */
+/** `−42% rispetto ad agosto`, `uguali a ottobre`, `agosto: 0,00 €` («ad» only before an «a»). */
 export function monthChangeText(current: number, previous: number, previousMonthName: Month): string {
   const name = formatMonth(previousMonthName, true).split(' ')[0] ?? '';
-  const against = /^[aeiou]/.test(name) ? `ad ${name}` : `a ${name}`;
+  const against = name.startsWith('a') ? `ad ${name}` : `a ${name}`;
   if (previous === 0) return `${name}: ${formatCents(0)}`;
   if (current === previous) return `uguali ${against}`;
   const percent = Math.round(((current - previous) * 100) / previous);
@@ -77,8 +77,10 @@ const PAYMENT_KINDS: readonly (readonly [RegExp, string])[] = [
   [/^STIPENDIO\b/i, 'Stipendio'],
 ];
 
-/** Words kept in capitals: legal forms and acronyms. */
-const KEEP_UPPER = new Set(['SRL', 'SPA', 'SAS', 'SNC', 'SRLS', 'IVA', 'ATM', 'POS', 'SDD', 'F24', 'IBAN', 'USA', 'UK', 'EU']);
+/** Words kept in capitals: acronyms. */
+const KEEP_UPPER = new Set(['IVA', 'ATM', 'POS', 'SDD', 'F24', 'IBAN', 'USA', 'UK', 'EU']);
+/** Legal forms after the name, as they are usually written. */
+const LEGAL_FORMS: Readonly<Record<string, string>> = { SRL: 'Srl', SRLS: 'Srls', SPA: 'SpA', SAS: 'Sas', SNC: 'Snc' };
 /** Small words in lower case after the first. */
 const KEEP_LOWER = new Set(['di', 'da', 'del', 'della', 'dei', 'delle', 'e', 'a', 'al', 'alla', 'in', 'per', 'con', 'su', 'the', 'of', 'and']);
 
@@ -87,13 +89,19 @@ function titleCase(text: string): string {
     .split(/\s+/)
     .filter((word) => word !== '')
     .map((word, index) => {
-      const upper = word.toUpperCase();
-      if (KEEP_UPPER.has(upper.replace(/[.,]/g, ''))) return upper === 'SRL' ? 'Srl' : upper === 'SPA' ? 'SpA' : upper;
-      const lower = word.toLowerCase();
-      if (index > 0 && KEEP_LOWER.has(lower)) return lower;
+      // Punctuation at the end ("SRL,") stays where it is.
+      const core = word.replace(/[.,;:]+$/, '');
+      const tail = word.slice(core.length);
+      const upper = core.toUpperCase();
+      if (KEEP_UPPER.has(upper)) return upper + tail;
+      const legal = LEGAL_FORMS[upper];
+      if (index > 0 && legal !== undefined) return legal + tail;
+      const lower = core.toLowerCase();
+      if (index > 0 && KEEP_LOWER.has(lower)) return lower + tail;
       // Words with digits or symbols (codes, cards, URLs) stay as they are.
-      if (/[\d*@/]/.test(word)) return word;
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
+      if (/[\d*@/]/.test(core)) return word;
+      // A capital at the start and after an apostrophe: DELL'ORTO → Dell'Orto.
+      return lower.replace(/(^|['’])(\p{L})/gu, (_match: string, before: string, letter: string) => before + letter.toUpperCase()) + tail;
     })
     .join(' ');
 }
@@ -122,12 +130,15 @@ export function readableDescription(text: string): ReadableDescription {
       break;
     }
   }
-  const card = /\b(?:CARTA|CARD)\s+(\*{2,}\s?\d{3,4}|\d{4}\*+\d{3,4})\b/i.exec(rest);
+  // The card, with its word or right after "PAGAMENTO CARTA" has taken it.
+  const card = /(?:\b(?:CARTA|CARD)\s+)?(\*{2,}\s?\d{3,4}|\b\d{4}\*+\d{3,4})\b/i.exec(rest);
   if (card !== null) {
     details.push(`carta ${card[1] ?? ''}`);
     rest = `${rest.slice(0, card.index)} ${rest.slice(card.index + card[0].length)}`.trim().replace(/\s+/g, ' ');
   }
-  const shouting = rest === rest.toUpperCase() && /[A-Z]/.test(rest);
+  // Separators left at the start by what was taken ("PAGAMENTO POS. BAR").
+  rest = rest.replace(/^[\s.,:;·-]+/, '');
+  const shouting = rest === rest.toUpperCase() && /\p{Lu}/u.test(rest);
   const title = rest === '' ? (details[0] ?? text.trim()) : shouting ? titleCase(rest) : rest;
   return { title, detail: rest === '' ? details.slice(1).join(' · ') : details.join(' · ') };
 }

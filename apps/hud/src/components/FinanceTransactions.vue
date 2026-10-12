@@ -74,10 +74,28 @@ function closeMenu(event: PointerEvent): void {
 onMounted(() => document.addEventListener('pointerdown', closeMenu));
 onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenu));
 
+/** Back on the pill of the row after the menu closes, so the keyboard does not land on the page. */
+function focusPill(id: string): void {
+  document.querySelector<HTMLElement>(`[data-category-pill="${CSS.escape(id)}"]`)?.focus();
+}
+
+function closeWithEsc(row: Tx): void {
+  openFor.value = null;
+  focusPill(row.id);
+}
+
 async function pick(row: Tx, value: string): Promise<void> {
   openFor.value = null;
-  if (value === (row.category ?? '')) return;
+  focusPill(row.id);
+  // The same category again does nothing, unless "crea una regola" is ticked: then it makes the rule.
+  if (value === (row.category ?? '') && ruleFor[row.id] !== true) return;
   await choose(row, value);
+}
+
+/** Each description made readable once per list, not once per use in the row. */
+const readable = computed(() => new Map((rows.value ?? []).map((row) => [row.id, readableDescription(row.description)])));
+function readableOf(row: Tx): { title: string; detail: string } {
+  return readable.value.get(row.id) ?? { title: row.description, detail: '' };
 }
 
 async function choose(row: Tx, value: string): Promise<void> {
@@ -169,18 +187,20 @@ async function choose(row: Tx, value: string): Promise<void> {
                 <span v-if="row.value && row.value !== row.booked" class="block text-xs">valuta {{ formatDay(row.value) }}</span>
               </td>
               <td class="px-3 py-1.5" :title="row.description">
-                <span class="block font-medium break-words">{{ readableDescription(row.description).title }}</span>
-                <span v-if="readableDescription(row.description).detail !== '' || showAccount" class="block text-xs text-muted">
-                  {{ [readableDescription(row.description).detail, showAccount ? names.account(row.account) : ''].filter((part) => part !== '').join(' · ') }}
+                <span class="block font-medium break-words">{{ readableOf(row).title }}</span>
+                <span v-if="readableOf(row).detail !== '' || showAccount" class="block text-xs text-muted">
+                  {{ [readableOf(row).detail, showAccount ? names.account(row.account) : ''].filter((part) => part !== '').join(' · ') }}
                 </span>
               </td>
-              <td class="relative px-3 py-1.5" data-category-picker>
+              <td class="px-3 py-1.5">
+                <div class="relative" data-category-picker>
                 <button
                   type="button"
                   class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13.5px] whitespace-nowrap hover:border-accent"
                   :class="row.category === null ? 'border-dashed border-line-strong text-muted' : 'border-line-strong bg-surface'"
                   :disabled="saving === row.id"
-                  aria-haspopup="true"
+                  :data-category-pill="row.id"
+                  aria-haspopup="dialog"
                   :aria-expanded="openFor === row.id"
                   :aria-label="`Categoria del movimento del ${formatDay(row.booked)}: ${names.category(row.category)}`"
                   @click="openFor = openFor === row.id ? null : row.id"
@@ -188,17 +208,18 @@ async function choose(row: Tx, value: string): Promise<void> {
                 >
                   <span class="truncate">{{ names.category(row.category) }}</span>
                   <span v-if="row.by === 'rule'" class="text-xs text-muted" title="Messa da una regola">regola</span>
+                  <span v-else-if="row.by === 'user'" class="sr-only">scelta a mano</span>
                   <Icon name="sort-down" :size="12" />
                 </button>
                 <div
                   v-if="openFor === row.id"
-                  class="absolute top-full left-3 z-20 mt-1 flex w-64 flex-col rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-lg"
-                  role="group"
+                  class="absolute top-full left-0 z-20 mt-1 flex w-64 flex-col rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-lg"
+                  role="dialog"
                   :aria-label="`Scegli la categoria del movimento del ${formatDay(row.booked)}`"
-                  @keydown.esc="openFor = null"
+                  @keydown.esc="closeWithEsc(row)"
                 >
                   <div class="flex max-h-64 flex-col overflow-y-auto">
-                    <button type="button" class="rounded-md px-2 py-1 text-left text-[14px] text-muted hover:bg-bg" :class="row.category === null ? 'font-semibold' : ''" @click="pick(row, '')">Senza categoria</button>
+                    <button type="button" class="rounded-md px-2 py-1 text-left text-[14px] text-muted hover:bg-bg" :class="row.category === null ? 'font-semibold' : ''" :aria-current="row.category === null ? 'true' : undefined" @click="pick(row, '')">Senza categoria</button>
                     <template v-for="group in ([['Uscite', outCategories], ['Entrate', inCategories]] as const)" :key="group[0]">
                       <p v-if="group[1].length > 0" class="px-2 pt-1.5 pb-0.5 text-xs text-muted">{{ group[0] }}</p>
                       <button
@@ -207,14 +228,16 @@ async function choose(row: Tx, value: string): Promise<void> {
                         type="button"
                         class="rounded-md px-2 py-1 text-left text-[14px] hover:bg-bg"
                         :class="row.category === category.id ? 'font-semibold text-accent' : ''"
+                        :aria-current="row.category === category.id ? 'true' : undefined"
                         @click="pick(row, category.id)"
                       >{{ category.name }}</button>
                     </template>
                   </div>
                   <label class="mt-1 flex items-start gap-2 border-t border-line px-2 pt-2 pb-1 text-[13px] text-muted" title="Con la scelta, crea anche una regola per gli altri movimenti dello stesso esercente">
                     <input v-model="ruleFor[row.id]" type="checkbox" class="mt-0.5" />
-                    <span>Anche per i prossimi «{{ readableDescription(row.description).title }}» (crea una regola)</span>
+                    <span>Crea una regola: anche i prossimi movimenti di questo esercente</span>
                   </label>
+                </div>
                 </div>
               </td>
               <td class="px-3 py-1.5 text-right whitespace-nowrap tabular-nums" :class="amountClass(row.amount)">{{ formatCents(row.amount, { currency: row.currency, sign: row.amount > 0 }) }}</td>

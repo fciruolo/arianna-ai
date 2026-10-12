@@ -13,7 +13,7 @@ import {
   renameFinanceCategory,
   setFinanceBudget,
 } from '../lib/api.ts';
-import { budgetDraft, budgetRows } from '../lib/finance-dashboard.ts';
+import { budgetDraft, budgetRows, type BudgetRow } from '../lib/finance-dashboard.ts';
 import { centsInput, dayOf, financeErrorText, formatCents, formatMonth, monthOfDay, nameLookup, nameProblem, parseEuroInput, type Budget, type Category, type CategoryTotal, type Rule } from '../lib/finance.ts';
 import Icon from './Icon.vue';
 
@@ -93,19 +93,23 @@ const budgets = ref<Budget[]>([]);
 const listsProblem = ref<string | null>(null);
 const budgetText = reactive<Record<string, string>>({});
 
-async function loadLists(): Promise<void> {
+/**
+ * Reads rules and budgets again. Only `fields` rewrites the budget fields
+ * (first read, after "Salva"): a rule added or a category removed keeps the
+ * amounts still to save.
+ */
+async function loadLists(fields = false): Promise<void> {
   try {
     const [ruleList, budgetList] = await Promise.all([listFinanceRules(), listFinanceBudgets()]);
     rules.value = ruleList;
     budgets.value = budgetList;
-    for (const category of outCategories.value) budgetText[category.id] = '';
-    for (const budget of budgetList) budgetText[budget.category] = centsInput(budget.monthly);
+    if (fields) resetFields();
     listsProblem.value = null;
   } catch (cause) {
     listsProblem.value = financeErrorText(cause);
   }
 }
-void loadLists();
+void loadLists(true);
 
 const ruleMatch = ref('');
 const ruleCategory = ref('');
@@ -126,7 +130,6 @@ async function removeRule(rule: Rule): Promise<void> {
   if (await act(() => deleteFinanceRule(rule.id))) await loadLists();
 }
 
-
 /** What each category spent this month, beside its budget. */
 const thisMonth = monthOfDay(dayOf(new Date()));
 const spent = ref<CategoryTotal[]>([]);
@@ -139,7 +142,7 @@ async function loadSpent(): Promise<void> {
 }
 void loadSpent();
 const usage = computed(() => budgetRows(budgets.value, spent.value));
-function usageOf(category: string) {
+function usageOf(category: string): BudgetRow | undefined {
   return usage.value.find((row) => row.category === category);
 }
 function spentOf(category: string): number {
@@ -147,12 +150,28 @@ function spentOf(category: string): number {
 }
 
 /** One "Salva" for every budget: what changed is set, an emptied field removes the budget. */
-const draft = computed(() => budgetDraft(budgets.value, budgetText, parseEuroInput));
+/** The saved amount of a budget as the text of its field, empty for none. */
+function savedText(category: string): string {
+  const saved = budgets.value.find((budget) => budget.category === category);
+  return saved === undefined ? '' : centsInput(saved.monthly);
+}
+
+const draft = computed(() => {
+  // Only the fields of the expense categories still there: a removed one leaves no ghost change.
+  const shown = Object.fromEntries(outCategories.value.map((category) => [category.id, budgetText[category.id] ?? savedText(category.id)]));
+  return budgetDraft(budgets.value, shown, parseEuroInput);
+});
 const pending = computed(() => draft.value.changes.length + draft.value.invalid.length);
 
-function undoBudgets(): void {
+/** The fields as saved: the amount of each budget, empty for none. */
+function resetFields(): void {
+  for (const key of Object.keys(budgetText)) Reflect.deleteProperty(budgetText, key);
   for (const category of outCategories.value) budgetText[category.id] = '';
   for (const budget of budgets.value) budgetText[budget.category] = centsInput(budget.monthly);
+}
+
+function undoBudgets(): void {
+  resetFields();
 }
 
 async function saveBudgets(): Promise<void> {
@@ -170,12 +189,10 @@ async function saveBudgets(): Promise<void> {
       }
     })
   ) {
-    await loadLists();
+    await loadLists(true);
   } else {
     // Some may be saved before the error: read them again, keeping what is still to save.
-    const kept = { ...budgetText };
     await loadLists();
-    Object.assign(budgetText, kept);
   }
 }
 

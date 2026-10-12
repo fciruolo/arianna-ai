@@ -29,6 +29,7 @@ test('latestMonths gives a zero month before when it is missing, and null withou
 test('monthChangeText says the change against the month before', () => {
   assert.equal(monthChangeText(22549, 46600, '2026-08'), '−52% rispetto ad agosto');
   assert.equal(monthChangeText(180000, 180000, '2026-08'), 'uguali ad agosto');
+  assert.equal(monthChangeText(100, 100, '2026-10'), 'uguali a ottobre');
   assert.equal(monthChangeText(150, 100, '2026-09'), '+50% rispetto a settembre');
   assert.equal(monthChangeText(500, 0, '2026-07'), 'luglio: 0,00 €');
 });
@@ -44,6 +45,14 @@ test('readableDescription splits payment kind and card from the merchant', () =>
   assert.deepEqual(readableDescription('SDD STREAMING BETA ABBONAMENTO'), { title: 'Streaming Beta Abbonamento', detail: 'Addebito SDD' });
   assert.deepEqual(readableDescription('BONIFICO STIPENDIO DITTA FINTA SRL'), { title: 'Stipendio Ditta Finta Srl', detail: 'Bonifico' });
   assert.deepEqual(readableDescription('PAGAMENTO POS NEGOZIO DELTA DI ROSSI'), { title: 'Negozio Delta di Rossi', detail: 'Pagamento POS' });
+});
+
+test('readableDescription takes the card after the kind, separators, apostrophes and accents', () => {
+  assert.deepEqual(readableDescription('PAGAMENTO CARTA ****1234 BAR X'), { title: 'Bar X', detail: 'Pagamento con carta · carta ****1234' });
+  assert.deepEqual(readableDescription('PAGAMENTO POS. BAR'), { title: 'Bar', detail: 'Pagamento POS' });
+  assert.deepEqual(readableDescription("PAGAMENTO POS DELL'ORTO SRL, MILANO"), { title: "Dell'Orto Srl, Milano", detail: 'Pagamento POS' });
+  assert.deepEqual(readableDescription('SPA BENESSERE'), { title: 'Spa Benessere', detail: '' });
+  assert.deepEqual(readableDescription('CAFFÈ ÀNCORA'), { title: 'Caffè Àncora', detail: '' });
 });
 
 test('readableDescription keeps mixed case, codes and a description that is only a kind', () => {

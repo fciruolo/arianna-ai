@@ -73,41 +73,61 @@ const names = computed(() => nameLookup(props.accounts, props.categories));
 
 // --- The numbers at the top and the cards around the charts (D-189) --------------
 
-/** The last balance of every open account, read one by one: the summary gives the balance of one account only. */
+/** From the first day the balance can have: without it the summary covers only the last 12 months. */
+const SINCE_EVER = '1900-01-01';
+
+/**
+ * Every read below keeps a number: an answer for an account chosen before
+ * (a slow one) is dropped instead of overwriting the one in view.
+ */
+let balancesRead = 0;
+let recentRead = 0;
+let monthRead = 0;
+
+/** The last balance of the accounts in view, read one by one: the summary gives the balance of one account only. */
 const balances = ref<{ balance: number; currency: string }[] | null>(null);
+/** The accounts in view without any balance (never imported, or no balance column). */
+const withoutBalance = ref(0);
 async function loadBalances(): Promise<void> {
-  const open = props.accounts.filter((item) => !item.archived && (account.value === '' || item.id === account.value));
+  const request = ++balancesRead;
+  // "Tutti i conti" adds the open ones; an account chosen counts even if archived.
+  const shown = props.accounts.filter((item) => (account.value === '' ? !item.archived : item.id === account.value));
   try {
     const read = await Promise.all(
-      open.map(async (item) => {
-        const one = await readFinanceSummary({ account: item.id });
+      shown.map(async (item) => {
+        const one = await readFinanceSummary({ account: item.id, from: SINCE_EVER, to: dayOf(new Date()) });
         const last = one.balance[one.balance.length - 1];
         return last === undefined ? null : { balance: last.balance, currency: item.currency };
       }),
     );
+    if (request !== balancesRead) return;
     balances.value = read.filter((item): item is { balance: number; currency: string } => item !== null);
+    withoutBalance.value = read.length - balances.value.length;
   } catch {
-    balances.value = null;
+    if (request === balancesRead) balances.value = null;
   }
 }
 
-const recent = ref<Tx[]>([]);
+/** The five newest movements; null when they could not be read. */
+const recent = ref<Tx[] | null>([]);
 async function loadRecent(): Promise<void> {
+  const request = ++recentRead;
   try {
-    recent.value = (await listFinanceTransactions(filterQuery({ ...EMPTY_FILTER, account: account.value }, 5, 0))).transactions;
+    const rows = (await listFinanceTransactions(filterQuery({ ...EMPTY_FILTER, account: account.value }, 5, 0))).transactions;
+    if (request === recentRead) recent.value = rows;
   } catch {
-    recent.value = [];
+    if (request === recentRead) recent.value = null;
   }
 }
 
-const alerts = ref<FinanceAlert[]>([]);
-const budgets = ref<Budget[]>([]);
+/** The checks of this calendar month on every account, as the tab "Avvisi" opens; null when not read. */
+const alerts = ref<FinanceAlert[] | null>([]);
+/** The budgets are for every account together; null when not read. */
+const budgets = ref<Budget[] | null>([]);
 async function loadAlertsAndBudgets(): Promise<void> {
-  try {
-    [alerts.value, budgets.value] = await Promise.all([readFinanceAlerts(), listFinanceBudgets()]);
-  } catch {
-    alerts.value = [];
-  }
+  const [alertList, budgetList] = await Promise.allSettled([readFinanceAlerts(), listFinanceBudgets()]);
+  alerts.value = alertList.status === 'fulfilled' ? alertList.value : null;
+  budgets.value = budgetList.status === 'fulfilled' ? budgetList.value : null;
 }
 
 watch(
@@ -123,30 +143,35 @@ void loadAlertsAndBudgets();
 const pair = computed(() => (summary.value === null ? null : latestMonths(summary.value.months)));
 const monthName = computed(() => (pair.value === null ? '' : (formatMonth(pair.value.current.month, true).split(' ')[0] ?? '')));
 
-/** What each category spent in the newest month, for the budgets. */
+/**
+ * What each category spent in the newest month, on every account: a budget
+ * is for all the accounts together, so it does not follow the account chosen.
+ */
 const monthCategories = ref<CategoryTotal[]>([]);
 watch(
   () => pair.value?.current.month,
   async (month) => {
+    const request = ++monthRead;
     if (month === undefined) {
       monthCategories.value = [];
       return;
     }
     try {
-      monthCategories.value = (await readFinanceSummary({ from: `${month}-01`, to: lastDayOf(month), ...(account.value === '' ? {} : { account: account.value }) })).categories;
+      const categories = (await readFinanceSummary({ from: `${month}-01`, to: lastDayOf(month) })).categories;
+      if (request === monthRead) monthCategories.value = categories;
     } catch {
-      monthCategories.value = [];
+      if (request === monthRead) monthCategories.value = [];
     }
   },
   { immediate: true },
 );
-const budgetList = computed<BudgetRow[]>(() => budgetRows(budgets.value, monthCategories.value));
+const budgetList = computed<BudgetRow[]>(() => budgetRows(budgets.value ?? [], monthCategories.value));
 const overBudgets = computed(() => budgetList.value.filter((row) => row.over));
 function budgetOf(category: string | null): BudgetRow | undefined {
   return category === null ? undefined : budgetList.value.find((row) => row.category === category);
 }
 
-const shownAlerts = computed(() => alerts.value.slice(0, 3).map((alert) => ({ alert, text: alertText(alert, names.value) })));
+const shownAlerts = computed(() => (alerts.value ?? []).slice(0, 3).map((alert) => ({ alert, text: alertText(alert, names.value) })));
 
 const MONTHS_FRAME: Frame = { width: 640, height: 220, left: 56, right: 8, top: 12, bottom: 28 };
 const months = computed(() => (summary.value === null ? null : monthBars(summary.value.months, MONTHS_FRAME)));
@@ -213,8 +238,8 @@ function width(cents: number): string {
           <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ balances === null || balances.length === 0 ? '—' : balanceText(balances) }}</p>
           <p class="text-xs text-muted">
             <template v-if="balances === null">Saldo non letto.</template>
-            <template v-else-if="balances.length === 0">Nessun saldo: importa un estratto conto.</template>
-            <template v-else>{{ balances.length === 1 ? '1 conto' : `${String(balances.length)} conti` }} · ultimo saldo noto</template>
+            <template v-else-if="balances.length === 0">Nessun saldo negli estratti conto importati.</template>
+            <template v-else>{{ balances.length === 1 ? '1 conto' : `${String(balances.length)} conti` }} · ultimo saldo noto<template v-if="withoutBalance > 0"> · {{ withoutBalance === 1 ? '1 conto senza saldo' : `${String(withoutBalance)} conti senza saldo` }}</template></template>
           </p>
         </section>
         <section v-for="kind in (['expenses', 'income'] as const)" :key="kind" class="hud-card flex flex-col gap-1 p-4" :aria-label="kind === 'expenses' ? 'Uscite del mese' : 'Entrate del mese'">
@@ -224,10 +249,14 @@ function width(cents: number): string {
         </section>
         <section class="hud-card flex flex-col gap-1 p-4" aria-label="Budget del mese">
           <h3 class="hud-title">Budget{{ pair ? ` di ${monthName}` : '' }}</h3>
-          <template v-if="budgetList.length > 0">
+          <template v-if="budgets === null">
+            <p class="text-[26px] leading-tight font-semibold">—</p>
+            <p class="text-xs text-muted">Budget non letti.</p>
+          </template>
+          <template v-else-if="budgetList.length > 0">
             <p class="text-[26px] leading-tight font-semibold tabular-nums">{{ overBudgets.length === 0 ? 'Nei limiti' : `${String(overBudgets.length)} su ${String(budgetList.length)}` }}</p>
             <p class="text-xs" :class="overBudgets.length > 0 ? 'text-danger' : 'text-muted'">
-              {{ overBudgets.length === 0 ? `${String(budgetList.length)} budget, nessuno superato` : `superati: ${overBudgets.map((row) => names.category(row.category)).join(', ')}` }}
+              {{ overBudgets.length === 0 ? `${String(budgetList.length)} budget, nessuno superato` : `superati: ${overBudgets.map((row) => names.category(row.category)).join(', ')}` }} · tutti i conti
             </p>
           </template>
           <template v-else>
@@ -308,7 +337,8 @@ function width(cents: number): string {
             <h3 class="hud-title">Ultimi movimenti</h3>
             <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'movimenti')">Tutti</button>
           </header>
-          <p v-if="recent.length === 0" class="text-sm text-muted">Nessun movimento.</p>
+          <p v-if="recent === null" class="text-sm text-muted">Movimenti non letti.</p>
+          <p v-else-if="recent.length === 0" class="text-sm text-muted">Nessun movimento.</p>
           <ul v-else class="flex flex-col">
             <li v-for="row in recent" :key="row.id" class="grid grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-2 border-t border-line py-1.5 text-[14px] first:border-t-0">
               <span class="text-xs text-muted tabular-nums">{{ formatDay(row.booked).slice(0, 5) }}</span>
@@ -346,10 +376,11 @@ function width(cents: number): string {
         <!-- THE CHECKS OF THE MONTH -->
         <section class="hud-card flex min-w-0 flex-col gap-2 p-4" aria-label="Avvisi del mese">
           <header class="flex items-baseline justify-between gap-2">
-            <h3 class="hud-title">Avvisi del mese</h3>
-            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'avvisi')">Tutti{{ alerts.length > 3 ? ` (${String(alerts.length)})` : '' }}</button>
+            <h3 class="hud-title">Avvisi di questo mese</h3>
+            <button type="button" class="text-xs text-accent hover:underline" @click="emit('tab', 'avvisi')">Tutti{{ (alerts?.length ?? 0) > 3 ? ` (${String(alerts?.length ?? 0)})` : '' }}</button>
           </header>
-          <p v-if="alerts.length === 0" class="text-sm text-muted">Nessun avviso: niente addebiti cambiati, spese insolite, doppi addebiti o budget superati.</p>
+          <p v-if="alerts === null" class="text-sm text-muted">Avvisi non letti.</p>
+          <p v-else-if="alerts.length === 0" class="text-sm text-muted">Nessun avviso: niente addebiti cambiati, spese insolite, doppi addebiti o budget superati.</p>
           <ul v-else class="flex flex-col">
             <li v-for="item in shownAlerts" :key="item.text.title" class="border-t border-line py-1.5 first:border-t-0">
               <button type="button" class="flex w-full items-start gap-2 text-left text-[14px] hover:text-accent" @click="emit('open', alertFilter(item.alert))">
