@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.84.0] - 2026-10-12
+
 ### Cambiato
 
 - Impostazioni: ogni sezione larga uguale, con titolo normale, una pillola («Vale subito», «Con conferma»), una frase con un esempio e i campi su sei colonne (D-192).
