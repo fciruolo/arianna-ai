@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.77.0] - 2026-10-12
+
 ### Aggiunto
 
 - Studio: «Elimina» chiede in una finestra che spiega lo spostamento in `eliminati/`, con la spunta «Elimina definitivamente» spenta di base (I-20, D-185).
