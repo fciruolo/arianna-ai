@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.80.0] - 2026-10-12
+
 ### Aggiunto
 
 - «Allega nota privata» nelle chat di lavoro su un progetto: il pulsante accanto al campo di scrittura elenca le note Private del progetto e apre lo stesso pannello di «Fai uscire una volta», con il testo che arriva nella chat in cui sei (D-187).
