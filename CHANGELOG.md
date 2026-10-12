@@ -18,6 +18,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 ### Corretto
 
 - Progetti: la parte scelta non resta più evidenziata nelle schede IM e Regole (D-191).
+- Progetti: le parti di un contenitore (per esempio progetto-test-admin) aprono di nuovo file, Git e Servizi: il core non riconosceva il loro nome scritto nell'indirizzo con «%3A» al posto di «:» (D-145).
 
 ## [0.84.0] - 2026-10-12
 
