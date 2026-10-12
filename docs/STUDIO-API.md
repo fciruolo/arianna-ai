@@ -38,13 +38,20 @@ type Slide = {
 
 Diapositive 16:9 (12 192 000 × 6 858 000 EMU); titolo in alto, sottotitolo sotto, poi paragrafi e punti elenco in una casella di testo; nessuna immagine nella prima versione. Testo con caratteri di controllo tolti e caratteri XML sfuggiti.
 
+## Cornici
+
+Un `iframe` con `srcdoc` eredita la CSP della pagina che lo contiene: quella della chat servita dal core (`script-src 'self'; style-src 'self'`) bloccherebbe gli script e gli stili inline di ogni mockup, e lo script dello Studio. Per questo la pagina costruisce il documento della cornice (meta CSP, script dello Studio, mockup) e lo consegna al core, che lo serve con una CSP sua.
+
+- `POST /api/studio-frames` `{ html, print? }` → `201 { url }`: `url` è `/api/studio-frames/<gettone>` (32 caratteri esadecimali casuali). Al più 3 MiB; tenuto **solo in memoria** per 10 minuti, al più 32 cornici (la più vecchia esce per prima); un riavvio del core le cancella tutte.
+- `GET /api/studio-frames/:token` → l'HTML così com'è, `text/html`, con `content-security-policy: sandbox allow-scripts` (più `allow-modals` solo per `print: true`, la cornice della stampa), `default-src 'none'`, script, stili, immagini e font solo inline, `data:` e `blob:`, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`, `frame-ancestors 'self'` e `x-frame-options: SAMEORIGIN`. Gettone sconosciuto o scaduto: 404.
+
 ## Come la pagina trova le slide
 
 Convenzione del Designer (`agents/designer.md`): una presentazione è un mockup con un elemento `<section data-slide>` per diapositiva. Da ogni sezione la pagina prende: il primo `h1` o `h2` come `title`, il primo `h3` o un elemento `[data-subtitle]` come `subtitle`, i `p` come `paragraphs`, i `li` come `bullets`, un `aside[data-notes]` come `notes`; `background` e `color` dagli attributi `data-background` e `data-color` se ci sono. Un mockup senza `section[data-slide]` non offre «Esporta PPTX».
 
 ## Studio nella pagina (riferimento per `apps/hud`)
 
-- Canvas: `iframe` con `srcdoc` e `sandbox="allow-scripts"` (mai `allow-same-origin`), con in testa un `<meta http-equiv="Content-Security-Policy">` che vieta la rete (`default-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; stili, script e immagini solo inline, `data:` e `blob:`). Lo script dello Studio inserito nel `srcdoc` (marcato `data-arianna-studio`) scambia con la pagina solo messaggi `postMessage` di forma fissa: la pagina accetta un messaggio solo se `event.source` è la finestra del suo iframe e la forma è giusta.
+- Canvas: `iframe` con `src` a una cornice servita dal core (sezione Cornici) e `sandbox="allow-scripts"` (mai `allow-same-origin`), con in testa un `<meta http-equiv="Content-Security-Policy">` che vieta la rete (`default-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; stili, script e immagini solo inline, `data:` e `blob:`). Lo script dello Studio inserito nel `srcdoc` (marcato `data-arianna-studio`) scambia con la pagina solo messaggi `postMessage` di forma fissa: la pagina accetta un messaggio solo se `event.source` è la finestra del suo iframe e la forma è giusta.
 - Commenti (O3): selettore CSS dell'elemento, riquadro, tag e un estratto del testo (al più 120 caratteri) arrivano alla pagina; i commenti raccolti partono **insieme**, come un solo messaggio nella conversazione diretta col Designer del progetto, che scrive la variante seguente.
 - Modifica diretta (O6): la pagina applica testo e stili consentiti (`color`, `background-color`, `font-size`, `font-weight`, `padding`, `margin`, `text-align`, `border-radius`) all'elemento del **sorgente** (letto con `DOMParser`, che non esegue script), riserializza e salva con `PUT .../file` e il `base` letto. Il DOM vivo dell'iframe non si salva mai (gli script del mockup lo possono aver cambiato).
 - Versioni (O4): le varianti di un `group` in una barra; due varianti affiancate in due iframe.

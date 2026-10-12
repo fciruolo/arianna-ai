@@ -14,6 +14,7 @@ import type { Sql } from '../src/db/client.ts';
 import type { LiveFeed } from '../src/live.ts';
 import { groupOf, mockupFolder, PPTX_TYPE, type PptxCodec } from '../src/studio.ts';
 import { startApiServer } from '../src/server/http.ts';
+import { FRAME_TTL_MS, FrameStore, frameHeaders, MAX_FRAME_BYTES, MAX_FRAMES } from '../src/studio-frames.ts';
 
 const HOME = join(resolveHome({}), 'data', 'test-tmp', `studio-${randomUUID()}`);
 after(() => {
@@ -249,4 +250,55 @@ test('export: a valid deck of an existing mockup is a .pptx download; an invalid
   assert.equal((await call(port, 'POST', '/api/studio/sito/pptx', { path: 'mockups/segreto.html', deck })).status, 403);
   assert.equal((await call(port, 'POST', '/api/studio/altro/pptx', { path: 'mockups/landing.html', deck })).status, 404);
   assert.equal(events.length, 1, 'no event for a refused export');
+});
+
+test('a frame store keeps a frame until it expires, and the newest ones only', () => {
+  let now = 1_000;
+  const store = new FrameStore(() => now);
+  const token = store.put({ html: '<p>uno</p>', print: false });
+  assert.match(token, /^[0-9a-f]{32}$/);
+  assert.deepEqual(store.get(token), { html: '<p>uno</p>', print: false });
+  assert.deepEqual(store.get(token), { html: '<p>uno</p>', print: false }, 'a reload of the frame loads it again');
+  now += FRAME_TTL_MS;
+  assert.equal(store.get(token), undefined, 'expired');
+  const first = store.put({ html: 'a', print: false });
+  for (let index = 0; index < MAX_FRAMES; index += 1) store.put({ html: String(index), print: false });
+  assert.equal(store.get(first), undefined, 'the oldest goes first');
+});
+
+test('the policy of a frame: sandboxed without same origin, no network, shown only by the chat; modals only to print', () => {
+  const plain = frameHeaders(false)['content-security-policy'] ?? '';
+  assert.match(plain, /^sandbox allow-scripts;/);
+  assert.doesNotMatch(plain, /allow-same-origin|allow-modals/);
+  assert.match(plain, /connect-src 'none'/);
+  assert.match(plain, /frame-ancestors 'self'/);
+  assert.match(frameHeaders(true)['content-security-policy'] ?? '', /^sandbox allow-scripts allow-modals;/);
+  assert.equal(frameHeaders(false)['x-frame-options'], 'SAMEORIGIN');
+});
+
+test('POST /api/studio-frames hands a frame over, GET serves it with the frame policy', async (t) => {
+  const { port } = await server(t);
+  const html = '<!doctype html><style>p{color:red}</style><p>ciao</p><script>1</script>';
+  const handed = await call(port, 'POST', '/api/studio-frames', { html });
+  assert.equal(handed.status, 201);
+  const url = String(handed.json.url);
+  assert.match(url, /^\/api\/studio-frames\/[0-9a-f]{32}$/);
+  const served = await call(port, 'GET', url);
+  assert.equal(served.status, 200);
+  assert.equal(served.bytes.toString('utf8'), html);
+  assert.match(String(served.headers['content-type']), /^text\/html/);
+  assert.match(String(served.headers['content-security-policy']), /^sandbox allow-scripts;.*script-src 'unsafe-inline'/);
+  assert.equal(served.headers['x-frame-options'], 'SAMEORIGIN');
+  const printed = await call(port, 'POST', '/api/studio-frames', { html, print: true });
+  assert.match(String((await call(port, 'GET', String(printed.json.url))).headers['content-security-policy']), /allow-modals/);
+});
+
+test('a frame refused: wrong fields, too large, unknown or malformed token', async (t) => {
+  const { port } = await server(t);
+  assert.equal((await call(port, 'POST', '/api/studio-frames', { html: 3 })).status, 400);
+  assert.equal((await call(port, 'POST', '/api/studio-frames', { html: 'x', print: 'yes' })).status, 400);
+  assert.equal((await call(port, 'POST', '/api/studio-frames', { html: 'x', other: 1 })).status, 400);
+  assert.equal((await call(port, 'POST', '/api/studio-frames', { html: 'x'.repeat(MAX_FRAME_BYTES + 1) })).status, 413);
+  assert.equal((await call(port, 'GET', `/api/studio-frames/${'0'.repeat(32)}`)).status, 404);
+  assert.equal((await call(port, 'GET', '/api/studio-frames/nope')).status, 404);
 });

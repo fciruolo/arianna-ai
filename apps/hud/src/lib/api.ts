@@ -1274,6 +1274,14 @@ export async function readFinanceAlerts(month?: string): Promise<FinanceAlert[]>
 // project, read and written only on this Mac.
 // ---------------------------------------------------------------------------
 
+/**
+ * Hands a built frame document to the core, which serves it back with a policy of its own
+ * (a srcdoc frame would inherit the chat's policy and lose the mockup's inline scripts and styles).
+ */
+export async function studioFrame(html: string, print = false): Promise<string> {
+  return (await call<{ url: string }>('POST', '/api/studio-frames', { html, print })).url;
+}
+
 function studioBase(project: string): string {
   return `/api/studio/${encodeURIComponent(project)}`;
 }

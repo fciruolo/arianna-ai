@@ -124,6 +124,7 @@ import { isFinanceConversation } from '../finance-mark.ts';
 import { closeIncognito, incognitoClosedCause, isIncognitoConversation, isIncognitoTask, type IncognitoCause, type IncognitoReceipt } from '../incognito.ts';
 import { loadStatus } from '../status.ts';
 import { appendEvent, type NewEvent } from '../events.ts';
+import { FrameStore, frameHeaders, MAX_FRAME_BYTES } from '../studio-frames.ts';
 import { exportPptx, listMockups, MAX_MOCKUP_BYTES, PPTX_TYPE, readMockup, STUDIO_STATUS, StudioError, writeMockup, type PptxCodec } from '../studio.ts';
 import { attachQuestion, openFailureChat } from '../system-chats.ts';
 import { loadTask, TaskError } from '../tasks.ts';
@@ -2138,6 +2139,8 @@ function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx
         throw error;
       }
     };
+  // Frames handed over by the page (studio-frames.ts): one store per server, in memory only.
+  const frames = new FrameStore();
   const projectParam = (params: Params): string => {
     try {
       return decodeURIComponent(params.project ?? '');
@@ -2179,6 +2182,24 @@ function studioRoutes(sql: Sql, approvedProjects: () => readonly Project[], pptx
         return { raw: bytes, type: PPTX_TYPE, headers: { 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}` }, noStore: true };
       }),
     ),
+    route(
+      'POST',
+      '/api/studio-frames',
+      guard(async (request) => {
+        const body = await readJson(request, MAX_FRAME_BYTES * 6 + 1024);
+        onlyFields(body, ['html', 'print']);
+        const { html, print = false } = body;
+        if (typeof html !== 'string' || typeof print !== 'boolean') throw new HttpError(400, 'invalid frame');
+        if (Buffer.byteLength(html, 'utf8') > MAX_FRAME_BYTES) throw new HttpError(413, 'frame too large');
+        return { status: 201, body: { url: `/api/studio-frames/${frames.put({ html, print })}` } };
+      }),
+    ),
+    route('GET', '/api/studio-frames/:token', (_request, _url, params) => {
+      const token = params.token ?? '';
+      const found = /^[0-9a-f]{32}$/.test(token) ? frames.get(token) : undefined;
+      if (found === undefined) return Promise.resolve({ status: 404, body: { error: 'not-found' } });
+      return Promise.resolve({ raw: Buffer.from(found.html, 'utf8'), type: 'text/html; charset=utf-8', headers: frameHeaders(found.print), noStore: true });
+    }),
   ];
 }
 

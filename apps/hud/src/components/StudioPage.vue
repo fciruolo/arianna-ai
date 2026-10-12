@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { ApiError, exportMockupPptx, listMockups, readMockup, writeMockup } from '../lib/api.ts';
+import { ApiError, exportMockupPptx, listMockups, readMockup, studioFrame, writeMockup } from '../lib/api.ts';
 import { buildSrcdoc, type FrameRect } from '../lib/studio-frame.ts';
 import { deckFromDocument, editSource, hasSlides, parseMockup } from '../lib/studio-dom.ts';
 import {
@@ -308,10 +308,15 @@ function exportPdf(): void {
   if (file === null) return;
   clearPrint();
   // On the next tick: a new frame each time, so the print starts again.
-  window.setTimeout(() => {
-    printDoc.value = buildSrcdoc(file.text, 'print');
-    printTimer = window.setTimeout(clearPrint, 120_000);
-  }, 0);
+  studioFrame(buildSrcdoc(file.text, 'print'), true).then(
+    (url) => {
+      printDoc.value = url;
+      printTimer = window.setTimeout(clearPrint, 120_000);
+    },
+    () => {
+      printDoc.value = null;
+    },
+  );
 }
 
 async function exportPptx(): Promise<void> {
@@ -514,7 +519,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
       aria-hidden="true"
       tabindex="-1"
       title="Stampa del mockup"
-      :srcdoc="printDoc"
+      :src="printDoc"
     />
   </section>
 </template>
