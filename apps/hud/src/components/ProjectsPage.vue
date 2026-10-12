@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { clientOfProject, deleteProjectPath, listBrowsableProjects, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
+import { clientOfProject, deleteProjectPath, listBrowsableProjects, listProjectDir, moveProjectPath, listProjectServices, openProjectFile, readCommitDiff, readImOverview, readProjectFile, readProjectGit, revealProjectFile, serviceLog, setProjectHidden, startService, stopService } from '../lib/api.ts';
 import { diffRows } from '../lib/delegations.ts';
+import { calendarText, todayInput, type ImOverview } from '../lib/im-billing.ts';
+import { imDayText } from '../lib/im.ts';
+import { isPartTab, nextIm, overdueInvoices, overdueText, partPressed, PART_TABS, PROJECT_TABS, type ProjectTab } from '../lib/projects-page.ts';
 import {
   agoText,
   browseErrorText,
@@ -50,9 +53,13 @@ import ProjectKnowledgeTab from './ProjectKnowledgeTab.vue';
  * D-145: a project is a container; File, Git and Servizi read one of its
  * parts (the container itself when it is one git), "Conoscenza" its
  * management folders and notes.
+ * D-191: the name in the normal font, four numbers on top (Branch, Modifiche,
+ * Servizi, Prossimo IM), the tabs in two groups, "Parte" (File, Git,
+ * Servizi: the part chosen) and "Progetto" (Conoscenza, IM, Regole: the whole
+ * container), errors and empty states that say what to do.
  */
 
-const emit = defineEmits<{ client: [id: string]; studio: [project: string]; conversation: [id: string] }>();
+const emit = defineEmits<{ client: [id: string]; studio: [project: string]; conversation: [id: string]; settings: [slug: string]; cardwall: [] }>();
 
 const projects = ref<BrowsableProject[] | null>(null);
 const containers = ref<BrowsableContainer[] | null>(null);
@@ -62,19 +69,7 @@ const parts = computed(() => (projects.value ?? []).filter((item) => item.projec
 const chosen = ref<string | null>(null);
 const project = computed(() => parts.value.find((item) => item.name === chosen.value) ?? null);
 const switcherOpen = ref(false);
-const tab = ref<'file' | 'git' | 'svc' | 'know' | 'im' | 'rules'>('file');
-const tabs = computed(() => [
-  ...(project.value === null
-    ? []
-    : ([
-        { id: 'file', text: 'File' },
-        { id: 'git', text: 'Git' },
-        { id: 'svc', text: 'Servizi' },
-      ] as const)),
-  { id: 'know', text: 'Conoscenza' } as const,
-  { id: 'im', text: 'IM' } as const,
-  { id: 'rules', text: 'Regole' } as const,
-]);
+const tab = ref<ProjectTab>('file');
 const problem = ref<string | null>(null);
 
 // Files
@@ -424,13 +419,16 @@ function choose(name: string): void {
   services.value = null;
   chosenService.value = null;
   log.value = null;
+  servicesProblem.value = null;
   void loadFolder('');
   void loadGit();
+  // The services too: the number at the top says how many are on (D-191).
+  void loadServices();
 }
 
-/** A part of the container: from "Conoscenza" back to its files. */
+/** A part of the container: from a tab of the whole project back to its files. */
 function choosePart(name: string): void {
-  if (tab.value === 'know' || tab.value === 'im' || tab.value === 'rules') tab.value = 'file';
+  if (!isPartTab(tab.value)) tab.value = 'file';
   choose(name);
 }
 
@@ -442,7 +440,7 @@ function chooseContainer(name: string): void {
   chosen.value = null;
   const first = parts.value[0];
   if (first === undefined) {
-    if (tab.value !== 'im' && tab.value !== 'rules') tab.value = 'know';
+    if (isPartTab(tab.value)) tab.value = 'know';
   } else {
     if (tab.value === 'know') tab.value = 'file';
     choose(first.name);
@@ -452,7 +450,13 @@ function chooseContainer(name: string): void {
 /** The invoice to open in the IM tab, from the address (D-190); null after it. */
 const amendInvoice = ref<string | null>(null);
 
-onMounted(async () => {
+onMounted(() => {
+  void loadProjects();
+});
+
+/** The approved projects; "Riprova" reads them again. */
+async function loadProjects(): Promise<void> {
+  problem.value = null;
   try {
     const found = await listBrowsableProjects();
     projects.value = found.projects;
@@ -477,7 +481,7 @@ onMounted(async () => {
   } catch (cause) {
     problem.value = browseErrorText(cause);
   }
-});
+}
 
 // The client of the container (D-168): name and logo in the header, a link to its page.
 const client = ref<{ id: string; displayName: string; logo: ClientLogo | null } | null>(null);
@@ -491,6 +495,34 @@ watch(chosenContainer, async (name) => {
     // Without the client the header is as before.
   }
 });
+
+/**
+ * The IM of the container for the number "Prossimo IM" of the header (D-191):
+ * one read more when a project opens, with the route of the tab IM; the tab
+ * sends its own overview after every change. Prices stay between page and core.
+ */
+const imOverview = ref<ImOverview | null>(null);
+/** The tab sent a newer overview: the first read of the header, if slower, does not cover it. */
+let imFromTab = false;
+function tabOverview(next: ImOverview): void {
+  imFromTab = true;
+  imOverview.value = next;
+}
+watch(chosenContainer, async (name) => {
+  imOverview.value = null;
+  imFromTab = false;
+  if (name === null) return;
+  try {
+    const found = await readImOverview(name);
+    if (chosenContainer.value === name && !imFromTab) imOverview.value = found;
+  } catch {
+    // Without it the number says "—"; the tab IM tells why.
+  }
+});
+const nextMeeting = computed(() => (imOverview.value === null ? null : nextIm(imOverview.value.ims)));
+const overdueCount = computed(() => (imOverview.value === null ? 0 : overdueInvoices(imOverview.value.invoices, todayInput()).length));
+const lastCommit = computed(() => git.value?.log[0] ?? null);
+const servicesOn = computed(() => (services.value ?? []).filter((item) => item.on));
 
 watch(tab, (now) => {
   // Back on File from another tab: files written meanwhile (an export, a run) appear without a click.
@@ -545,24 +577,35 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-4 md:px-6" aria-label="Progetti">
-    <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
+  <!-- One width with Finanze and Clienti (D-189, D-190, D-191). -->
+  <section class="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-4 md:px-6" aria-label="Progetti">
+    <div class="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4">
+    <div v-if="problem" class="flex max-w-2xl flex-wrap items-center gap-3 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]" role="alert">
+      <span class="text-danger"><Icon name="warning" :size="15" /></span>
+      <span class="min-w-0 flex-1">Non riesco a leggere i progetti: {{ problem }}</span>
+      <button type="button" class="btn px-2.5 py-1 text-xs" @click="loadProjects"><Icon name="retry" :size="13" />Riprova</button>
+    </div>
     <p v-else-if="containers === null" class="text-sm text-muted">Carico i progetti…</p>
-    <div v-else-if="containers.length === 0" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm">
-      Nessun progetto approvato. Si aggiungono in <b>Impostazioni → Progetti</b>: qui si vedono solo quelli approvati.
+    <div v-else-if="containers.length === 0" class="flex max-w-xl flex-col items-start gap-2 rounded-2xl border border-line bg-surface-2 p-4">
+      <p class="text-[14.5px]">Nessun progetto approvato. Un progetto è una cartella sul Mac che Arianna e il Coder possono leggere, per esempio <span class="font-mono text-[13px]">repos/progetto-test</span>.</p>
+      <span class="flex flex-wrap items-center gap-2">
+        <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" @click="emit('settings', 'progetti')"><Icon name="new" :size="14" />Aggiungi un progetto</button>
+        <span class="text-[13px] text-muted">apre Impostazioni → Progetti</span>
+      </span>
     </div>
 
     <template v-else-if="container">
-      <!-- Masthead: which project, which part, where, how it stands -->
+      <!-- Masthead: which project, whose, where (D-191) -->
       <header class="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div class="grid size-11 place-items-center rounded-xl border border-accent/40 bg-accent/15 font-hud text-[16px] font-semibold text-accent" aria-hidden="true">{{ initials(container.name) }}</div>
+        <div class="grid size-12 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 text-[16px] font-semibold text-accent" aria-hidden="true">{{ initials(container.name) }}</div>
         <div class="min-w-0">
           <div class="relative">
             <button
               type="button"
-              class="flex items-center gap-2 font-hud text-[21px] leading-tight font-semibold tracking-[0.02em]"
+              class="flex items-center gap-2 text-[22px] leading-tight font-semibold"
               :aria-expanded="switcherOpen"
               aria-haspopup="listbox"
+              title="Cambia progetto"
               @click="switcherOpen = !switcherOpen"
             >
               {{ container.name }}<span class="rotate-90 text-muted"><Icon name="expand" :size="15" /></span>
@@ -581,135 +624,180 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
                 <span class="block text-[14.5px]">{{ item.name }}<span v-if="!item.single" class="text-muted"> · {{ item.parts.length === 1 ? '1 parte' : `${String(item.parts.length)} parti` }}</span></span>
                 <span class="block truncate font-mono text-[12.5px] text-muted">{{ item.absolute }}</span>
               </button>
-              <p class="mt-1 border-t border-line px-2.5 pt-2 pb-1 text-xs text-muted">Altri progetti si approvano in Impostazioni → Progetti.</p>
+              <p class="mt-1 border-t border-line px-2.5 pt-2 pb-1 text-[13px] text-muted">Altri progetti si approvano in Impostazioni → Progetti.</p>
             </div>
           </div>
-          <p class="flex flex-wrap items-center gap-x-2.5 font-mono text-xs text-muted">
-            <button v-if="client" type="button" class="inline-flex items-center gap-1.5 rounded-md font-sans text-[13.5px] text-ink hover:text-accent" title="Apri la scheda del cliente" @click="emit('client', client.id)">
-              <img v-if="client.logo" :src="logoUrl(client.id, client.logo) ?? ''" alt="" class="size-4 rounded-[3px] object-contain" />
-              <span v-else class="grid size-4 place-items-center rounded-[3px] bg-surface-2 text-[8px] font-semibold text-muted">{{ initialsOf(client.displayName) }}</span>
-              {{ client.displayName }}
+          <p class="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13.5px] text-muted">
+            <button v-if="client" type="button" class="inline-flex items-center gap-1.5 font-medium text-ink hover:text-accent" title="Apri la scheda del cliente" @click="emit('client', client.id)">
+              <img v-if="client.logo" :src="logoUrl(client.id, client.logo) ?? ''" alt="" class="size-6 rounded-md border border-line bg-white object-contain" />
+              <span v-else class="grid size-6 place-items-center rounded-md bg-accent/15 text-[12px] font-semibold text-accent">{{ initialsOf(client.displayName) }}</span>
+              {{ client.displayName }} ›
             </button>
-            <span class="truncate">{{ project?.absolute ?? container.absolute }}</span>
-            <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
-              <Icon name="code" :size="13" />Apri in VS Code
-            </a>
-            <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 font-sans text-xs text-ink" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
-              <Icon name="studio" :size="13" />Apri nello Studio
-            </button>
+            <span v-if="!container.single">{{ parts.length === 1 ? '1 parte' : `${String(parts.length)} parti` }}</span>
+            <span v-if="imOverview?.calendar.calendar">IM {{ calendarText(imOverview.calendar.calendar) }}</span>
+            <span class="max-w-full truncate font-mono text-[13px]" title="Cartella sul computer">{{ isPartTab(tab) && project ? project.absolute : container.absolute }}</span>
           </p>
         </div>
-        <div v-if="project" class="ml-auto flex overflow-hidden rounded-xl border border-line bg-surface">
-          <button type="button" class="grid gap-1 px-4 py-2 text-left hover:bg-surface-2" @click="tab = 'git'">
-            <span class="hud-title text-[12px]">Branch</span>
-            <span class="flex items-center gap-1.5 font-mono text-[14px]"><Icon name="branch" :size="13" />{{ currentBranch ?? (git?.repository === false ? 'niente git' : '…') }}</span>
-          </button>
-          <button type="button" class="grid gap-1 border-l border-line px-4 py-2 text-left hover:bg-surface-2" @click="tab = 'git'">
-            <span class="hud-title text-[12px]">Modifiche</span>
-            <span class="font-mono text-[14px]" :class="changes.length > 0 ? 'text-warn' : ''">{{ git === null ? '…' : changes.length === 1 ? '1 file' : `${String(changes.length)} file` }}</span>
-          </button>
-          <button type="button" class="grid gap-1 border-l border-line px-4 py-2 text-left hover:bg-surface-2" @click="tab = 'svc'">
-            <span class="hud-title text-[12px]">Servizi</span>
-            <span class="flex items-center gap-1.5 font-mono text-[14px]"
-              ><span class="size-2 rounded-full" :class="(services ?? []).some((item) => item.on) ? 'bg-ok' : 'bg-muted/50'"></span
-              >{{ services === null ? 'apri' : `${String(services.filter((item) => item.on).length)} accesi su ${String(services.length)}` }}</span
-            >
+        <div class="ml-auto flex flex-wrap gap-1.5">
+          <a :href="vscodeUrl(project?.absolute ?? container.absolute)" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px]" :title="project ? 'Apre la cartella di questa parte in Visual Studio Code' : 'Apre la cartella del progetto in Visual Studio Code'">
+            <Icon name="code" :size="14" />Apri in VS Code
+          </a>
+          <button v-if="project" type="button" class="btn inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px]" title="I mockup di questa parte nello Studio di design, con la chat del Designer" @click="emit('studio', project.name)">
+            <Icon name="studio" :size="14" />Apri nello Studio
           </button>
         </div>
       </header>
 
-      <!-- The parts of the container (D-145): File, Git and Servizi read the one chosen here -->
-      <div v-if="!container.single" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Parti del progetto">
-        <span class="hud-title mr-1 text-[12px]">Parti</span>
-        <button
-          v-for="item in parts"
-          :key="item.name"
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-xs"
-          :class="item.name === chosen && tab !== 'know' ? 'border-accent bg-accent/15 text-ink' : 'border-line text-muted hover:text-ink'"
-          :aria-pressed="item.name === chosen && tab !== 'know'"
-          @click="choosePart(item.name)"
-        >
-          <Icon name="code" :size="12" />{{ partTitle(item) }}
+      <!-- Four numbers, as in Finanze: each opens its tab (D-191) -->
+      <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <button type="button" class="hud-card flex flex-col gap-1 px-4 py-3 text-left hover:border-accent disabled:cursor-default disabled:hover:border-line-strong" :disabled="project === null" @click="tab = 'git'">
+          <span class="hud-title flex w-full justify-between gap-2">Branch<span v-if="project" class="truncate font-sans text-[13px] font-normal tracking-normal normal-case">{{ partTitle(project) }}</span></span>
+          <span class="flex items-center gap-2 font-mono text-[18px] leading-tight"><Icon name="branch" :size="16" />{{ project === null ? '—' : (currentBranch ?? (git?.repository === false ? 'niente git' : '…')) }}</span>
+          <span class="text-[13px] text-muted">{{ project === null ? 'nessuna parte con git' : lastCommit ? `ultimo commit ${agoText(lastCommit.at)}` : git?.repository === false ? 'la cartella non è un repository' : 'nessun commit' }}</span>
         </button>
-        <span v-if="parts.length === 0" class="text-xs text-muted">Nessuna sottocartella con un proprio git: il Coder non ha dove lavorare.</span>
+        <button type="button" class="hud-card flex flex-col gap-1 px-4 py-3 text-left hover:border-accent disabled:cursor-default disabled:hover:border-line-strong" :class="changes.length > 0 ? 'warn' : ''" :disabled="project === null" @click="tab = 'git'">
+          <span class="hud-title flex w-full justify-between gap-2">Modifiche<span v-if="project" class="truncate font-sans text-[13px] font-normal tracking-normal normal-case">{{ partTitle(project) }}</span></span>
+          <span class="text-[22px] leading-tight font-semibold" :class="changes.length > 0 ? 'text-warn' : ''">{{ project === null || git === null ? '—' : changes.length === 1 ? '1 file' : `${String(changes.length)} file` }}</span>
+          <span class="text-[13px] text-muted">{{ project === null ? 'nessuna parte con git' : changes.length > 0 ? 'non ancora in un commit · Git ›' : 'tutto in un commit · Git ›' }}</span>
+        </button>
+        <button type="button" class="hud-card flex flex-col gap-1 px-4 py-3 text-left hover:border-accent disabled:cursor-default disabled:hover:border-line-strong" :disabled="project === null" @click="tab = 'svc'">
+          <span class="hud-title flex w-full justify-between gap-2">Servizi<span v-if="project" class="truncate font-sans text-[13px] font-normal tracking-normal normal-case">{{ partTitle(project) }}</span></span>
+          <span class="flex items-center gap-2 text-[22px] leading-tight font-semibold">
+            <span v-if="services !== null && services.length > 0" class="size-2.5 rounded-full" :class="servicesOn.length > 0 ? 'bg-ok' : 'bg-muted/50'" aria-hidden="true"></span>
+            {{ project === null || services === null ? '—' : services.length === 0 ? 'nessuno' : `${String(servicesOn.length)} ${servicesOn.length === 1 ? 'acceso' : 'accesi'} su ${String(services.length)}` }}
+          </span>
+          <span class="text-[13px] text-muted">
+            {{ project === null ? 'nessuna parte con git' : services === null ? (servicesProblem ? 'non letti · Servizi ›' : 'leggo i servizi…') : servicesOn[0] ? `${servicesOn[0].name}${servicesOn[0].ports[0] !== undefined ? ` su :${String(servicesOn[0].ports[0])}` : ''} · Servizi ›` : services.length === 0 ? 'la parte non dichiara servizi' : 'nessuno acceso · Servizi ›' }}
+          </span>
+        </button>
+        <button type="button" class="hud-card flex flex-col gap-1 px-4 py-3 text-left hover:border-accent" :class="overdueCount > 0 ? 'danger' : ''" @click="tab = 'im'">
+          <span class="hud-title">Prossimo IM</span>
+          <span class="text-[22px] leading-tight font-semibold">{{ nextMeeting ? imDayText(nextMeeting.date) : '—' }}</span>
+          <span class="text-[13px] text-muted">
+            <template v-if="nextMeeting">IM-{{ nextMeeting.number }} · </template><template v-else-if="imOverview">nessun IM aperto · </template><span v-if="overdueCount > 0" class="text-danger">{{ overdueText(overdueCount) }} · </span>IM ›
+          </span>
+        </button>
       </div>
 
-      <nav class="flex items-end gap-1 border-b border-line" role="tablist" aria-label="Schede del progetto">
+      <!-- The tabs in two groups (D-191): "Parte" reads the part chosen, "Progetto" the whole container -->
+      <nav class="flex flex-wrap items-end gap-0.5 border-b border-line" aria-label="Schede del progetto">
+        <template v-if="project !== null">
+          <span class="pr-1.5 pb-2.5 pl-0.5 text-[12.5px] text-muted">Parte</span>
+          <button
+            v-for="item in PART_TABS"
+            :key="item.id"
+            type="button"
+            :aria-current="tab === item.id ? 'true' : undefined"
+            class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px]"
+            :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
+            @click="tab = item.id"
+          >
+            {{ item.text }}
+          </button>
+          <span class="mx-2.5 mb-2 h-[22px] w-px bg-line-strong" aria-hidden="true"></span>
+        </template>
+        <span class="pr-1.5 pb-2.5 pl-0.5 text-[12.5px] text-muted">Progetto</span>
         <button
-          v-for="item in tabs"
+          v-for="item in PROJECT_TABS"
           :key="item.id"
           type="button"
-          role="tab"
-          :aria-selected="tab === item.id"
-          class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px] font-medium"
-          :class="tab === item.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'"
+          :aria-current="tab === item.id ? 'true' : undefined"
+          class="-mb-px border-b-2 px-3 pt-2 pb-2.5 text-[14.5px]"
+          :class="tab === item.id ? 'border-accent font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'"
           @click="tab = item.id"
         >
           {{ item.text }}
         </button>
-        <span v-if="tab === 'svc'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="play" :size="13" />Avvia e ferma con la tua conferma, ogni volta</span>
-        <span v-else-if="tab === 'im'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Prezzi e fatture restano su questo computer, mai nei file IM</span>
-        <span v-else-if="tab === 'rules'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="gateway" :size="13" />Vanno a Claude e Codex come Interno</span>
-        <span v-else-if="tab === 'know'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Solo su questo computer: il Coder non vede queste cartelle</span>
-        <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-xs text-muted sm:flex"><Icon name="private" :size="13" />Sola lettura: niente modifiche, checkout né commit da qui</span>
+        <span v-if="tab === 'svc'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="play" :size="13" />Avvia e ferma con la tua conferma, ogni volta</span>
+        <span v-else-if="tab === 'im'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="private" :size="13" />Prezzi e fatture restano su questo computer</span>
+        <span v-else-if="tab === 'rules'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="gateway" :size="13" />Vanno a Claude e Codex come Interno</span>
+        <span v-else-if="tab === 'know'" class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="private" :size="13" />Solo su questo computer: il Coder non vede queste cartelle</span>
+        <span v-else class="ml-auto hidden items-center gap-1.5 pb-2.5 text-[13px] text-muted lg:flex"><Icon name="private" :size="13" />Sola lettura: niente checkout né commit da qui</span>
       </nav>
+
+      <!-- The parts of the container (D-145): only in the group "Parte" -->
+      <div v-if="!container.single && parts.length === 0" class="flex max-w-2xl items-center gap-2.5 rounded-xl border border-info/45 bg-info/9 px-3 py-2 text-[14px]">
+        <span class="text-info"><Icon name="info" :size="15" /></span>
+        <span>Nessuna sottocartella con un proprio git: il Coder non ha dove lavorare. File, Git e Servizi compaiono quando una parte ha il suo git.</span>
+      </div>
+      <div v-else-if="!container.single && isPartTab(tab)" class="-mt-1 flex flex-wrap items-center gap-1.5" role="group" aria-label="Parti del progetto">
+        <span class="mr-1 text-[13px] text-muted">Parte</span>
+        <button
+          v-for="item in parts"
+          :key="item.name"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[14px]"
+          :class="partPressed(tab, item.name, chosen) ? 'border-accent bg-accent/14 font-semibold text-ink' : 'border-line-strong bg-surface-2 text-ink hover:border-accent'"
+          :aria-pressed="partPressed(tab, item.name, chosen)"
+          @click="choosePart(item.name)"
+        >
+          {{ partTitle(item) }}
+          <span v-if="item.name === chosen && git !== null" class="text-[12px] font-normal text-muted">{{ git.repository ? `${currentBranch ?? '?'} · ${changes.length === 0 ? 'pulito' : changes.length === 1 ? '1 modifica' : `${String(changes.length)} modifiche`}` : 'niente git' }}</span>
+        </button>
+      </div>
 
       <!-- CONOSCENZA (D-145): the management folders of the container and their notes -->
       <ProjectKnowledgeTab v-if="tab === 'know'" :container="container" @conversation="(id) => emit('conversation', id)" />
       <!-- IM (D-167, P4d): calendar, price, every IM with its money, the invoices -->
-      <ProjectImTab v-else-if="tab === 'im'" :container="container" :amend="amendInvoice" />
+      <ProjectImTab v-else-if="tab === 'im'" :container="container" :amend="amendInvoice" @changed="tabOverview" @cardwall="emit('cardwall')" @amended="amendInvoice = null" />
       <!-- REGOLE (I-14, D-174): the rules at the head of every delegation on the project -->
-      <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" @exported="refreshTree" />
+      <ProjectRulesTab v-else-if="tab === 'rules'" :container="container" @exported="refreshTree" @settings="emit('settings', $event)" />
 
       <template v-else-if="project">
+      <div v-if="tab === 'file' && actionNotice !== null" class="flex flex-wrap items-center gap-2.5 rounded-xl border border-ok/45 bg-ok/9 px-3 py-2 text-[14px]" role="status">
+        <span class="text-ok"><Icon name="saved" :size="15" /></span>
+        <span class="min-w-0 flex-1 break-words">{{ actionNotice }}</span>
+        <button type="button" class="btn px-2 py-0.5 text-xs" @click="actionNotice = null">Chiudi</button>
+      </div>
       <!-- FILE: the tree and the file, one split pane -->
-      <div v-if="tab === 'file'" class="grid min-h-[460px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface md:grid-cols-[264px_minmax(0,1fr)]">
+      <div v-if="tab === 'file'" class="grid min-h-[520px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface-2 md:grid-cols-[290px_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col border-b border-line md:border-r md:border-b-0">
-          <p v-if="actionNotice !== null" class="flex items-center gap-2 border-b border-line px-3 py-1.5 text-xs" role="status">
-            <span class="min-w-0 flex-1 break-words">{{ actionNotice }}</span>
-            <button type="button" class="rounded p-0.5 text-muted hover:text-ink" aria-label="Chiudi" @click="actionNotice = null"><Icon name="close" :size="12" /></button>
-          </p>
           <label class="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-muted">
             <Icon name="search" :size="14" />
             <input v-model="query" type="search" placeholder="Cerca fra le cartelle aperte" aria-label="Cerca un file" class="w-full bg-transparent text-[14px] text-ink" />
-            <button type="button" class="shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] text-muted transition hover:text-ink" title="Rilegge l’elenco dei file" @click.prevent="refreshTree">Aggiorna</button>
+            <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-muted transition hover:text-ink" title="Rilegge l’elenco dei file" @click.prevent="refreshTree"><Icon name="retry" :size="12" />Aggiorna</button>
           </label>
-          <div class="min-h-0 flex-1 overflow-auto p-1.5 font-mono text-[13.5px] max-md:max-h-80">
+          <!-- The tree in the normal font (D-191); the path of the open file and the code stay fixed-width. -->
+          <div class="min-h-0 flex-1 overflow-auto p-1.5 text-[14px] max-md:max-h-80">
             <p v-if="folders[''] === 'loading'" class="px-2 py-1 text-muted">Carico…</p>
-            <p v-else-if="typeof folders[''] === 'string'" class="px-2 py-1 text-danger">{{ folders[''] }}</p>
+            <div v-else-if="typeof folders[''] === 'string'" class="m-1 flex flex-col items-start gap-2 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]" role="alert">
+              <span>{{ folders[''] }}</span>
+              <button type="button" class="btn px-2.5 py-1 text-xs" @click="refreshTree"><Icon name="retry" :size="13" />Riprova</button>
+            </div>
             <template v-for="row in rows" :key="row.path">
               <div
                 v-if="row.entry.shut"
-                class="flex h-7 items-center gap-1.5 rounded-md px-2 text-muted opacity-70"
+                class="flex h-[30px] items-center gap-[7px] rounded-[7px] px-2 text-muted"
                 :style="{ paddingLeft: `${String(8 + row.depth * 14)}px` }"
                 :title="SHUT_TEXT[row.entry.shut]"
               >
-                <span class="w-3"></span>{{ row.entry.name }}<span class="ml-auto"><Icon name="private" :size="11" /></span>
+                <span class="w-3"></span>{{ row.entry.name }}<span class="ml-auto"><Icon name="private" :size="12" /></span>
               </div>
               <div v-else class="group relative">
               <button
                 type="button"
-                class="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left whitespace-nowrap hover:bg-surface-2"
-                :class="row.path === selected ? 'bg-accent/15 shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
+                class="flex h-[30px] w-full items-center gap-[7px] rounded-[7px] px-2 text-left whitespace-nowrap hover:bg-bg"
+                :class="row.path === selected ? 'bg-accent/14 shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
                 :style="{ paddingLeft: `${String(8 + row.depth * 14)}px` }"
                 :aria-expanded="row.entry.kind === 'dir' ? openFolders.has(row.path) : undefined"
                 @click="row.entry.kind === 'dir' ? toggleFolder(row.path) : showFile(row.path)"
               >
-                <span class="w-3 text-[9px] text-muted">{{ row.entry.kind === 'dir' ? (openFolders.has(row.path) ? '▾' : '▸') : '' }}</span>
+                <span class="w-3 text-[12px] text-muted">{{ row.entry.kind === 'dir' ? (openFolders.has(row.path) ? '▾' : '▸') : '' }}</span>
+                <!-- A small coloured square for the kind of file (D-191), instead of a tag written at 7.5 px; the kind in the title. -->
                 <span
                   v-if="row.entry.kind === 'file' && fileBadge(row.entry.name).text"
-                  class="grid h-[15px] w-[24px] shrink-0 place-items-center rounded-[3px] text-[7.5px] font-semibold text-bg"
+                  class="size-2.5 shrink-0 rounded-[3px]"
                   :class="badgeClass[fileBadge(row.entry.name).tone] ?? 'bg-muted'"
-                  >{{ fileBadge(row.entry.name).text }}</span
-                >
+                  :title="fileBadge(row.entry.name).text"
+                  aria-hidden="true"
+                ></span>
                 <span
                   class="truncate"
                   :class="changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : changeMark(changes, row.path, row.entry.kind) === 'A' ? 'text-ok' : ''"
                   >{{ row.entry.name }}</span
                 >
-                <span v-if="row.entry.secret" class="ml-auto pl-2 text-warn" title="Può contenere un segreto: il testo arriva coperto"><Icon name="private" :size="11" /></span>
-                <span v-if="changeMark(changes, row.path, row.entry.kind)" class="pl-2 text-[12px]" :class="[row.entry.secret ? '' : 'ml-auto', changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : 'text-ok']">{{
+                <span v-if="row.entry.secret" class="ml-auto pl-2 text-warn" title="Può contenere un segreto: il testo arriva coperto"><Icon name="private" :size="12" /></span>
+                <span v-if="changeMark(changes, row.path, row.entry.kind)" class="pl-2 text-[12px] font-semibold" :class="[row.entry.secret ? '' : 'ml-auto', changeMark(changes, row.path, row.entry.kind) === 'M' ? 'text-warn' : 'text-ok']">{{
                   changeMark(changes, row.path, row.entry.kind)
                 }}</span>
               </button>
@@ -723,7 +811,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               <p v-if="row.entry.kind === 'dir' && openFolders.has(row.path) && folders[row.path] === 'loading'" class="px-2 text-muted" :style="{ paddingLeft: `${String(30 + row.depth * 14)}px` }">…</p>
             </template>
           </div>
-          <div class="shrink-0 border-t border-line px-3 py-2 text-[12.5px] text-muted">
+          <div class="shrink-0 border-t border-line px-3 py-2.5 text-[13px] text-muted">
             <button
               type="button"
               role="switch"
@@ -738,10 +826,10 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
               ></span>
               Mostra nascosti
             </button>
-            <p v-if="hiddenProblem" class="mb-1.5 text-danger" role="alert">{{ hiddenProblem }}</p>
+            <p v-if="hiddenProblem" class="mb-1.5 rounded-lg border border-danger/50 bg-danger/10 px-2 py-1 text-ink" role="alert">{{ hiddenProblem }}</p>
             <p class="flex flex-wrap gap-x-3 gap-y-1">
-              <span><b class="font-mono text-warn">M</b> modificato</span><span><b class="font-mono text-ok">A</b> nuovo</span><span class="inline-flex items-center gap-1"><Icon name="private" :size="11" />chiuso</span
-              ><span class="inline-flex items-center gap-1"><span class="text-warn"><Icon name="private" :size="11" /></span>segreto</span>
+              <span><b class="text-warn">M</b> modificato</span><span><b class="text-ok">A</b> nuovo</span><span class="inline-flex items-center gap-1"><Icon name="private" :size="12" />chiuso</span
+              ><span class="inline-flex items-center gap-1"><span class="text-warn"><Icon name="private" :size="12" /></span>segreto</span>
             </p>
           </div>
         </div>
@@ -755,11 +843,17 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
             <a v-if="selected && !fileProblem && file?.covered !== true" :href="vscodeUrl(project.absolute, selected)" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre questo file in Visual Studio Code"><Icon name="code" :size="13" />VS Code</a>
             <button v-if="file?.openable" type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" title="Apre in una scheda nuova, servita dal computer" @click="openInBrowser"><Icon name="external" :size="13" />Apri</button>
           </div>
-          <p v-if="openProblem" class="border-b border-line px-3 py-1.5 text-xs text-danger" role="alert">{{ openProblem }}</p>
+          <p v-if="openProblem" class="border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-[13px]" role="alert">{{ openProblem }}</p>
           <div class="min-h-0 flex-1 overflow-auto">
             <p v-if="fileLoading" class="p-4 text-sm text-muted">Carico…</p>
-            <div v-else-if="fileProblem" class="grid h-full place-items-center p-8 text-center text-[14px] text-muted">
-              <div class="grid max-w-sm justify-items-center gap-2"><Icon name="private" :size="26" />{{ fileProblem }}</div>
+            <div v-else-if="fileProblem" class="grid h-full place-items-center p-8 text-[14px]">
+              <div class="flex max-w-sm flex-col items-start gap-2.5 rounded-xl border border-line bg-surface p-4">
+                <p class="flex items-start gap-2"><span class="mt-0.5 text-muted"><Icon name="private" :size="16" /></span>{{ fileProblem }}</p>
+                <span class="flex flex-wrap gap-1.5">
+                  <button v-if="selected" type="button" class="btn px-2.5 py-1 text-xs" @click="showFile(selected)"><Icon name="retry" :size="13" />Riprova</button>
+                  <button type="button" class="btn px-2.5 py-1 text-xs" @click="refreshTree">Aggiorna l’elenco</button>
+                </span>
+              </div>
             </div>
             <div v-else-if="file?.covered" class="grid h-full place-items-center p-8 text-center text-[14px]">
               <div class="grid max-w-md justify-items-center gap-3">
@@ -777,11 +871,17 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- SERVIZI: the cards by file on the left, the log of the chosen one on the right -->
       <div v-else-if="tab === 'svc'" class="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]">
         <div>
-          <p v-if="servicesProblem" class="mb-3 text-sm text-danger" role="alert">{{ servicesProblem }}</p>
-          <p v-if="services === null" class="text-sm text-muted">Leggo i servizi…</p>
-          <p v-else-if="services.length === 0" class="max-w-xl rounded-xl border border-line bg-surface p-4 text-sm text-muted">
-            Questo progetto non dichiara servizi: niente script in package.json, niente docker-compose.yml, niente Makefile.
-          </p>
+          <div v-if="servicesProblem" class="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]" role="alert">
+            <span class="min-w-0 flex-1">{{ servicesProblem }}</span>
+            <button type="button" class="btn px-2.5 py-1 text-xs" @click="loadServices"><Icon name="retry" :size="13" />Riprova</button>
+          </div>
+          <p v-if="services === null && !servicesProblem" class="text-sm text-muted">Leggo i servizi…</p>
+          <div v-else-if="services !== null && services.length === 0" class="flex max-w-xl flex-col items-start gap-2 rounded-2xl border border-line bg-surface-2 p-4">
+            <p class="text-[14.5px]">
+              Questa parte non dichiara servizi. Arianna avvia solo comandi scritti nei file: aggiungi uno script a <span class="font-mono text-[13px]">package.json</span> (per esempio <span class="font-mono text-[13px]">"dev": "vite"</span>), un <span class="font-mono text-[13px]">docker-compose.yml</span> o un <span class="font-mono text-[13px]">Makefile</span>.
+            </p>
+            <button type="button" class="btn px-2.5 py-1 text-xs" @click="loadServices"><Icon name="retry" :size="13" />Rileggi</button>
+          </div>
           <div v-for="[fileName, list] in serviceGroups" :key="fileName" class="mb-5">
             <p class="mb-2 flex items-center gap-2"><span class="font-mono text-[13px] font-medium">{{ fileName }}</span><span class="hud-title text-[12px]">{{ list[0]?.source === 'package.json' ? 'script' : list[0]?.source === 'compose' ? 'servizi' : 'obiettivi' }}</span></p>
             <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
@@ -844,9 +944,15 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       <!-- GIT: branches, changes, commits on the left; the diff on the right -->
       <div v-else class="grid min-h-[460px] flex-1 grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface md:grid-cols-[340px_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col overflow-auto border-b border-line md:border-r md:border-b-0">
-          <p v-if="gitProblem" class="p-3 text-sm text-danger" role="alert">{{ gitProblem }}</p>
+          <div v-if="gitProblem" class="m-3 flex flex-col items-start gap-2 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-[14px]" role="alert">
+            <span>{{ gitProblem }}</span>
+            <button type="button" class="btn px-2.5 py-1 text-xs" @click="loadGit"><Icon name="retry" :size="13" />Riprova</button>
+          </div>
           <p v-else-if="git === null" class="p-3 text-sm text-muted">Leggo git…</p>
-          <p v-else-if="!git.repository" class="p-3 text-sm text-muted">Questa cartella non è un repository git.</p>
+          <div v-else-if="!git.repository" class="flex flex-col items-start gap-2 p-4 text-[14px]">
+            <p>Questa cartella non è un repository git: non ci sono branch né commit da mostrare. Se vuoi che il Coder ci lavori, apri un terminale nella cartella e scrivi <span class="font-mono text-[13px]">git init</span>.</p>
+            <a :href="vscodeUrl(project.absolute)" class="btn px-2.5 py-1 text-xs"><Icon name="code" :size="13" />Apri in VS Code</a>
+          </div>
           <template v-else>
             <div class="flex items-center gap-2 px-3.5 pt-3.5 pb-1.5"><span class="hud-title flex-1 text-[12px]">Branch</span></div>
             <ul class="px-2 font-mono text-[13.5px]">
@@ -921,6 +1027,7 @@ const diffTotal = (item: CommitDiff['files'][number]): string => ('hunks' in ite
       </div>
       </template>
     </template>
+    </div>
 
     <!-- The consent of D-135: in the page, never a dialog of the browser -->
     <div v-if="hiddenConfirm && project" class="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="hidden-confirm-title" @keydown.esc="hiddenConfirm = false">

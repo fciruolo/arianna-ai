@@ -4,6 +4,21 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Cambiato
+
+- Progetti, testata: nome del progetto nel carattere normale, cliente con il logo sotto, quattro numeri cliccabili (Branch, Modifiche, Servizi, Prossimo IM con l'avviso delle fatture scadute) e larghezza come Finanze e Clienti (D-191).
+- Progetti: schede in due gruppi, «Parte» (File, Git, Servizi) e «Progetto» (Conoscenza, IM, Regole); il selettore delle parti compare solo nel primo gruppo (D-191).
+- Progetti, IM: quattro numeri in alto; calendario e prezzo in un solo modulo con un solo «Salva» che compare solo con modifiche e dice cosa cambia (D-191).
+- Progetti, IM: il prezzo di un IM si cambia nella sua cella, le righe cambiate si colorano e un solo «Salva» li scrive tutti; «Non si fattura» nel menu ⋯ della riga; fatture come tabella con le azioni nel menu ⋯ e l'avviso della scaduta in cima (D-191).
+- Progetti, Regole: un solo elenco nel carattere normale con il selettore a pillola Entrambi / Solo Claude Code / Solo Codex, «Modifica come testo», interruttore Modello comune / Regole proprie, esportazione in alto con l'anteprima in una finestra e barra di salvataggio solo con modifiche (D-191).
+- Progetti, Conoscenza: cartelle con il numero di note, note come card per cartella, ricerca fra le note e «+ Nota» al posto di «+ Conoscenza» (D-191).
+- Progetti, File: albero nel carattere normale, quadratino colorato al posto della targhetta del tipo, avviso verde dopo uno spostamento (D-191).
+- Progetti: errori e stati vuoti che dicono cosa fare, con «Riprova», «Aggiungi un progetto», «Correggi qui», «Server locali», «Apri il cardwall» dove servono (D-191).
+
+### Corretto
+
+- Progetti: la parte scelta non resta più evidenziata nelle schede IM e Regole (D-191).
+
 ## [0.84.0] - 2026-10-12
 
 ### Cambiato
