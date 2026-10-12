@@ -112,7 +112,13 @@ onBeforeUnmount(() => {
               class="flex flex-col gap-1.5 rounded-lg border p-2.5"
               :class="style === entry.slug ? 'border-accent bg-accent/10' : 'border-line hover:border-line-strong'"
             >
-              <button type="button" class="flex flex-col gap-1.5 text-left" :aria-pressed="style === entry.slug" @click="style = entry.slug">
+              <button
+                type="button"
+                class="flex flex-col gap-1.5 text-left"
+                :aria-pressed="style === entry.slug"
+                :title="style === entry.slug ? 'Scelto: un altro clic lo toglie' : undefined"
+                @click="style = style === entry.slug ? null : entry.slug"
+              >
                 <StyleMiniPage v-if="samples[entry.slug]" :sample="samples[entry.slug]!" />
                 <span v-else class="grid h-[118px] place-items-center rounded-md border border-dashed border-line text-xs text-muted">Nessun campione</span>
                 <span class="flex items-baseline gap-1.5">

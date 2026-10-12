@@ -35,7 +35,7 @@ import { contextOf, outputSource, type Marked } from '../finance-mark.ts';
 import { cardDesign, DESIGNER_AGENT } from '../cardwall.ts';
 import { GOD_AGENT, GOD_CONTAINER, GOD_PROJECT, godCloneRefusal, SUBTASK_PART } from '../god/clone.ts';
 import { carryParts } from '../god/carry.ts';
-import { designerCarryParts } from '../designer-carry.ts';
+import { designerSessionParts } from '../designer-session.ts';
 import { godDossier } from '../god/dossier.ts';
 import { runClaudeStep, type BriefFragment } from '../claude-step.ts';
 import { runCodexStep } from '../codex-step.ts';
@@ -324,6 +324,8 @@ export async function directChatSession(sql: Sql, conversationId: string, delega
     SELECT d.session_ref AS "sessionRef", d.executor FROM task_delegations d JOIN tasks t ON t.id = d.task_id
       WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
         AND d.status = 'ok' AND d.id <> ${delegation.id}
+        -- «Nuova sessione» (I-20, D-185): a session from before the line is never resumed.
+        AND d.created_at >= coalesce((SELECT c.direct_session_at FROM conversations c WHERE c.id = ${conversationId}), '-infinity'::timestamptz)
       ORDER BY d.created_at DESC, d.id DESC LIMIT 1`;
   return row?.executor === executor ? (row.sessionRef ?? undefined) : undefined;
 }
@@ -341,6 +343,8 @@ export async function directChatHistory(sql: Sql, conversationId: string, delega
       FROM task_delegations d JOIN tasks t ON t.id = d.task_id LEFT JOIN messages m ON m.id = d.message_id
       WHERE t.conversation_id = ${conversationId} AND d.agent = ${delegation.agent} AND d.repo IS NOT DISTINCT FROM ${delegation.repo}
         AND d.status = 'ok' AND d.id <> ${delegation.id}
+        -- «Nuova sessione» (I-20, D-185): what came before the line is told by the summary, not repeated here.
+        AND d.created_at >= coalesce((SELECT c.direct_session_at FROM conversations c WHERE c.id = ${conversationId}), '-infinity'::timestamptz)
       ORDER BY d.created_at DESC, d.id DESC LIMIT ${DIRECT_HISTORY_EXCHANGES}`;
   const units: { at: Date; exchange: BriefFragment[] }[] = rows.map((row) => {
     const exchange: BriefFragment[] = [{ text: `${EARLIER_MESSAGE}${row.brief}`, label: row.label, source: `task:${row.taskId}` }];
@@ -1062,12 +1066,12 @@ export async function runDelegation(env: DelegateEnv, ctx: StepContext, plan: Ex
   const rules = projectRulesPart(env.settings(), container, task.clearance, executor);
   const dossier = godDossierPart(container, path, folder.label);
   // A conversation with GOD restarted from another (G4): its summary, once, when the session starts.
-  // A conversation with the Designer restarted the same way (I-20, D-185): its own summary and intro.
+  // A new session of the Designer in its conversation (I-20, D-185): the summary of what came before, once.
   const restarted =
     container === GOD_PROJECT && direct
       ? await carryParts(sql, task.conversationId)
       : delegation.agent === DESIGNER_AGENT && direct
-        ? await designerCarryParts(sql, task.conversationId)
+        ? await designerSessionParts(sql, task.conversationId, delegation.id)
         : [];
   const opening: BriefFragment[] = [
     promptPart(agent, delegation.agent),

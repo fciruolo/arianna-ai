@@ -76,6 +76,8 @@ export interface Conversation {
    * core without it sends none.
    */
   secretarySessionAt?: string | null;
+  /** «Nuova sessione» of a direct chat with the Designer (I-20, D-185): the agent reads only from here on. */
+  directSessionAt?: string | null;
 }
 
 /** A commitment of the secretary (D-144): private (L2), shown only in this local page. */

@@ -18,7 +18,7 @@ import { findConversationNote, saveConversation, type SavedLine } from '../saved
 import { ApprovalChoiceError, isExecutorChoice, listApprovals, loadApproval, type ApprovalState } from '../approvals.ts';
 import { localDay } from '../commitment-dates.ts';
 import { addChecklistItem, addFile, addLink, cardDetail, isInline, MAX_FILE_BYTES, readCardFile, removeChecklistItem, removeFile, removeLink, updateChecklistItem } from '../card-details.ts';
-import { addDependency, CardError, checkDesignChoice, createCard, DESIGNER_AGENT, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
+import { addDependency, CardError, checkDesignChoice, createCard, listCards, moveCard, removeDependency, resumeCard, retryCard, startCard, updateCard, type CardCatalog, type CardNames } from '../cardwall.ts';
 import { CommitmentError, findSecretary, listCommitments, markDone, openSecretary } from '../commitments.ts';
 import { assignCharacters, listPacks, MAX_UPLOAD_BODY, parseUpload, readSheet, UploadError, uploadSheet, type CharacterDirs } from '../characters.ts';
 import {
@@ -100,7 +100,7 @@ import type { LiveFeed, LiveMessage } from '../live.ts';
 import type { LocalServerStatus } from '../local-servers.ts';
 import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
-import { createDesignerCarry, openMockup } from '../designer-carry.ts';
+import { openMockup, startDesignerSession } from '../designer-session.ts';
 import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
 import { changelogRefOf } from '../god/changelog-carry.ts';
@@ -1882,19 +1882,12 @@ function routes(sql: Sql, { cards, clients, projects, models, defaultModel, agen
       return { status: 201, body: { conversation } };
     }),
 
-    // «Riparti» of the Designer (I-20, D-185): a new conversation on the same project from a summary of this one.
-    route('POST', '/api/conversations/:id/designer-restart', async (request, _url, params) => {
+    // «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session from a summary.
+    route('POST', '/api/conversations/:id/session', async (request, _url, params) => {
       const body = await readJson(request);
       onlyFields(body, ['open']);
-      const policy = (directAgents?.() ?? []).find((item) => item.agent === DESIGNER_AGENT);
-      if (policy === undefined) throw new HttpError(409, 'il Designer non può rispondere ora: accendi Claude o Codex');
-      const conversation = await createDesignerCarry(sql, {
-        from: idParam(params, 'id'),
-        ...(body.open === undefined ? {} : { open: openMockup(body.open) ?? '' }),
-        projects: projects().map((project) => project.name),
-        agent: { name: policy.agent, modes: policy.modes, project: policy.project },
-      });
-      return { status: 201, body: { conversation } };
+      const open = openMockup(body.open);
+      return { body: { conversation: await startDesignerSession(sql, idParam(params, 'id'), open) } };
     }),
 
     route('GET', '/api/conversations/:id', async (_request, _url, params) => {

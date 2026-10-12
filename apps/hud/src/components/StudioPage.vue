@@ -40,6 +40,7 @@ import ConfirmDialog from './ConfirmDialog.vue';
 import Icon from './Icon.vue';
 import StudioComments from './StudioComments.vue';
 import StudioDesignDialog from './StudioDesignDialog.vue';
+import DesignTextDialog from './DesignTextDialog.vue';
 import StudioEdit from './StudioEdit.vue';
 import StudioFloat from './StudioFloat.vue';
 import StudioFrame from './StudioFrame.vue';
@@ -339,8 +340,9 @@ function applyDesign(next: StudioDesign): void {
 }
 
 /** What the variant shown, and the one compared, were made with (register next to the mockups, D-185). */
-const shownDesign = computed(() => variantDesignText(current.value?.design, styleNameOf, skillNameOf));
-const otherDesign = computed(() => variantDesignText(list.value?.files.find((file) => file.path === otherPath.value)?.design, styleNameOf, skillNameOf));
+const otherFile = computed(() => list.value?.files.find((file) => file.path === otherPath.value));
+/** The whole text of a style or a skill, from the line under the toolbar. */
+const detail = ref<{ kind: 'style' | 'skill'; id: string; title: string } | null>(null);
 
 let nextId = 1;
 const sending = ref(false);
@@ -658,9 +660,28 @@ const side = ref<'chat' | 'canvas'>('canvas');
             ><Icon name="delete" :size="13" />Elimina</button>
             <button type="button" class="btn px-2.5 py-1 text-xs" title="Rileggi l’elenco dei mockup" @click="loadList(); loadFile(address.file, 'shown')"><Icon name="retry" :size="13" />Ricarica</button>
           </div>
-          <p class="flex flex-wrap gap-x-4 text-[11.5px] text-muted">
-            <span><b class="font-mono font-normal text-ink">{{ current?.name }}</b> · {{ shownDesign }}</span>
-            <span v-if="comparing && otherPath !== undefined"><b class="font-mono font-normal text-ink">{{ otherPath.split('/').at(-1) }}</b> · {{ otherDesign }}</span>
+          <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-[11.5px] text-muted">
+            <template v-for="entry in comparing && otherFile !== undefined ? [current, otherFile] : [current]" :key="entry?.path">
+              <span v-if="entry !== undefined">
+                <b class="font-mono font-normal text-ink">{{ entry.name }}</b> ·
+                <template v-if="entry.design === undefined">{{ variantDesignText(undefined, styleNameOf, skillNameOf) }}</template>
+                <template v-else>
+                  Fatta con
+                  <template v-if="entry.design.style === null">nessuno stile</template>
+                  <button v-else type="button" class="text-ink underline hover:text-accent" title="Leggi lo stile" @click="detail = { kind: 'style', id: entry.design.style, title: styleNameOf(entry.design.style) ?? entry.design.style }">
+                    stile {{ styleNameOf(entry.design.style) ?? entry.design.style }}
+                  </button>
+                  ·
+                  <template v-if="entry.design.skills.length === 0">nessuna skill</template>
+                  <template v-else>
+                    skill:
+                    <template v-for="(skill, at) in entry.design.skills" :key="skill">
+                      <button type="button" class="text-ink underline hover:text-accent" title="Leggi la skill" @click="detail = { kind: 'skill', id: skill, title: skillNameOf(skill) ?? skill }">{{ skillNameOf(skill) ?? skill }}</button><template v-if="at < entry.design.skills.length - 1">, </template>
+                    </template>
+                  </template>
+                </template>
+              </span>
+            </template>
           </p>
           <p v-if="pickMode === 'comment'" class="text-[11.5px] text-muted">Fai clic su un elemento della pagina per commentarlo; i link e i pulsanti non scattano.</p>
           <p v-else-if="pickMode === 'edit'" class="text-[11.5px] text-muted">Fai clic su un elemento per cambiarne testo, colori e spaziature.</p>
@@ -763,6 +784,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
         </span>
       </label>
     </ConfirmDialog>
+    <DesignTextDialog v-if="detail !== null" :kind="detail.kind" :id="detail.id" :title="detail.title" @close="detail = null" />
     <StudioDesignDialog
       v-if="designOpen"
       :styles="styleEntries"

@@ -21,9 +21,9 @@ Errori: `{ "error": "<codice>" }` con lo stato HTTP: 400 `invalid` (richiesta sb
 
 `Mockup = { path, name, group, variant, bytes, modified, sha256, design? }`: `name` è il nome del file; `group` il nome senza il numero finale e l'estensione (`landing-2.html` → `landing`), `variant` quel numero (`null` senza numero); `modified` ISO 8601.
 
-## «Riparti» del Designer (I-20, D-185)
+## «Nuova sessione» del Designer (I-20, D-185)
 
-- `POST /api/conversations/:id/designer-restart` `{ open? }` → `201 { conversation }`: una conversazione nuova col Designer sullo stesso progetto e modello, con un riassunto scritto dal codice (le ultime 4 richieste dell'utente, l'ultima risposta del Designer e, se la pagina lo dà, `open`: il percorso relativo `.html` del mockup aperto nello Studio, senza `..`) salvato in `god_carries` e letto una volta, dopo `DESIGNER_CARRY_INTRO`, quando parte la prima sessione. 404 per una conversazione che non è una chat diretta aperta col Designer su un progetto, 400 per una vuota o con `open` sbagliato, 409 se il Designer non può rispondere ora. Evento `designer.carry`. La conversazione vecchia resta com'è; lo Studio apre la nuova, che è la più recente del progetto.
+- `POST /api/conversations/:id/session` `{ open? }` → `{ conversation }`: nella chat diretta aperta col Designer su un progetto, scrive l'inizio di una sessione nuova (`conversations.direct_session_at`, solo in avanti; `open` è il mockup aperto nello Studio, percorso relativo `.html` senza parti `.` o `..`, in `direct_session_open`). Da lì le deleghe del Designer non riprendono la sessione di prima (`directChatSession` e `directChatHistory` leggono solo dopo la riga) e il contatore del contesto riparte; alla prima sessione dopo la riga il Designer legge, dopo `SESSION_INTRO`, un riassunto scritto dal codice dei messaggi di prima (ultime 4 richieste, ultima risposta, il mockup aperto), una volta. La conversazione resta intera; la chat mostra la riga «Nuova sessione · il Designer ricorda solo da qui». 404 fuori da una chat aperta col Designer su un progetto, 400 per `open` sbagliato. Evento `direct.session`. Codice: `apps/core/src/designer-session.ts`, migrazione `0059_direct_sessions.sql`.
 
 ## Campioni degli stili (I-20, D-185)
 

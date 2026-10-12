@@ -297,9 +297,9 @@ export async function landGod(kind: 'subtasks' | 'plans', id: string, action: La
 }
 
 /** "Riassumi e riparti" (D-127, G4): a new conversation with GOD from a summary of this one. */
-/** «Riparti» of the Designer (I-20, D-185): a new conversation on the same project from a summary; `open` is the mockup open in the Studio. */
-export async function restartDesignerConversation(conversationId: string, open?: string): Promise<Conversation> {
-  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/designer-restart`, open === undefined ? {} : { open })).conversation;
+/** «Nuova sessione» of the Designer (I-20, D-185): the same conversation, a fresh session; `open` is the mockup open in the Studio. */
+export async function startDesignerSession(conversationId: string, open?: string): Promise<Conversation> {
+  return (await call<{ conversation: Conversation }>('POST', `/api/conversations/${encodeURIComponent(conversationId)}/session`, open === undefined ? {} : { open })).conversation;
 }
 
 export async function restartGodConversation(conversationId: string): Promise<Conversation> {

@@ -605,8 +605,11 @@ export function restoredPath(path: string): string | undefined {
   return [...parts.slice(0, -2), name.replace(/~[0-9a-f]{8}(\.[^.]+)$/i, '$1')].join('/');
 }
 
+/** The line where a new session of the Designer begins (D-185). */
+export const DESIGNER_SESSION_LINE = 'Nuova sessione · il Designer ricorda solo da qui';
+
 /**
- * «Riparti» of the Designer (I-20, D-185): the chat proposes it when the
+ * «Nuova sessione» of the Designer (I-20, D-185): the chat proposes it when the
  * session's context passes CARRY_AT percent of the window and the Designer
  * has just answered; after «No» it comes back only CARRY_AGAIN points later.
  */
