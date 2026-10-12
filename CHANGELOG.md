@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.76.0] - 2026-10-12
+
 ### Aggiunto
 
 - Pacchetto `@arianna/pptx`: `parseDeck` controlla il deck dello Studio con i limiti del contratto e `writePptx` scrive un file .pptx 16:9 (titolo, sottotitolo, paragrafi, punti elenco, colori, caratteri e dimensioni del testo, note del relatore) con codice nostro e `node:zlib`, senza dipendenze, in modo deterministico (I-19, D-184).
