@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.82.0] - 2026-10-12
+
 ### Cambiato
 
 - Finanze, Riepilogo come cruscotto: in alto saldo dei conti, uscite ed entrate dell'ultimo mese contro il mese prima e budget superati; grafico largo accanto alle spese per categoria con il budget, poi ultimi movimenti, confronto con l'anno prima e avvisi del mese (D-189).
