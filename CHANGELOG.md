@@ -4,6 +4,8 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+## [0.85.0] - 2026-10-12
+
 ### Cambiato
 
 - Progetti, testata: nome del progetto nel carattere normale, cliente con il logo sotto, quattro numeri cliccabili (Branch, Modifiche, Servizi, Prossimo IM con l'avviso delle fatture scadute) e larghezza come Finanze e Clienti (D-191).
