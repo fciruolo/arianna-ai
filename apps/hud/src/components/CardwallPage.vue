@@ -297,15 +297,15 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
   <section class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 md:overflow-hidden md:px-6" aria-label="Cardwall">
     <!-- Toolbar: new card, view, filters, order, columns. -->
     <div class="flex flex-wrap items-center gap-2">
-      <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :aria-expanded="adding" @click="adding ? (adding = false) : openNew()"><Icon name="new" :size="14" />Card</button>
+      <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :aria-expanded="adding" @click="adding ? (adding = false) : openNew()"><Icon name="new" :size="14" />Card</button>
       <div class="flex overflow-hidden rounded-lg border border-line-strong" role="group" aria-label="Vista">
-        <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]" :class="state.view === 'board' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'board'" @click="state.view = 'board'">
+        <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" :class="state.view === 'board' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'board'" @click="state.view = 'board'">
           <Icon name="cardwall" :size="14" />Bacheca
         </button>
-        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[12.5px]" :class="state.view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'list'" @click="state.view = 'list'">
+        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="state.view === 'list' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'list'" @click="state.view = 'list'">
           <Icon name="view-list" :size="14" />Lista
         </button>
-        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[12.5px]" :class="state.view === 'im' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'im'" @click="state.view = 'im'">
+        <button type="button" class="flex items-center gap-1.5 border-l border-line-strong px-2.5 py-1 text-[13.5px]" :class="state.view === 'im' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="state.view === 'im'" @click="state.view = 'im'">
           <Icon name="calendar" :size="14" />IM
         </button>
       </div>
@@ -330,7 +330,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       <div v-if="state.view !== 'im'" class="ml-auto flex items-center gap-2">
         <FilterMenu v-model="sortChoice" label="Ordina per" icon="sort" :options="sortOptions" plain align-right />
         <FilterMenu v-if="state.view === 'board'" label="Colonne" icon="cardwall" icon-only align-right>
-          <div class="flex w-[220px] flex-col gap-1.5 text-[13px]">
+          <div class="flex w-[220px] flex-col gap-1.5 text-[14px]">
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitInbox" type="checkbox" class="accent-[var(--accent)]" />Inbox a parte</label>
             <label class="flex items-center gap-2"><input v-model="state.prefs.splitFailed" type="checkbox" class="accent-[var(--accent)]" />Falliti a parte</label>
             <p class="hud-title mt-2 mb-0.5">Mostra</p>
@@ -342,37 +342,37 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       </div>
     </div>
 
-    <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[13px] text-danger">
+    <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
       <span class="flex-1">{{ problem }}</span>
       <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
     </p>
 
     <!-- New card: the short form; the detail opens right after for the rest. -->
     <form v-if="adding" class="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3" @submit.prevent="saveNew" @keydown.esc.prevent="adding = false">
-      <label class="flex min-w-[220px] flex-[2] flex-col gap-1 text-[12px] text-muted"
-        >Titolo<input ref="titleInput" v-model="draft.title" maxlength="200" class="field px-2.5 py-1.5 text-[13.5px] text-ink" placeholder="Che cosa c’è da fare" required
+      <label class="flex min-w-[220px] flex-[2] flex-col gap-1 text-[13px] text-muted"
+        >Titolo<input ref="titleInput" v-model="draft.title" maxlength="200" class="field px-2.5 py-1.5 text-[14.5px] text-ink" placeholder="Che cosa c’è da fare" required
       /></label>
-      <label class="flex flex-1 flex-col gap-1 text-[12px] text-muted"
-        >Progetto<select v-model="draft.project" class="field px-2 py-1.5 text-[13px] text-ink">
+      <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted"
+        >Progetto<select v-model="draft.project" class="field px-2 py-1.5 text-[14px] text-ink">
           <option value="">Generale</option>
           <option v-for="name in wall?.projects ?? []" :key="name" :value="name">{{ name }}</option>
         </select></label
       >
-      <label class="flex flex-1 flex-col gap-1 text-[12px] text-muted"
-        >Chi la fa<select v-model="draft.assignee" class="field px-2 py-1.5 text-[13px] text-ink">
+      <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted"
+        >Chi la fa<select v-model="draft.assignee" class="field px-2 py-1.5 text-[14px] text-ink">
           <option value="user">Tu</option>
           <option v-for="agent in wall?.agents ?? []" :key="agent" :value="agent">{{ agentName(agent) }}</option>
         </select></label
       >
-      <label class="flex flex-1 flex-col gap-1 text-[12px] text-muted"
-        >Priorità<select v-model.number="draft.priority" class="field px-2 py-1.5 text-[13px] text-ink">
+      <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted"
+        >Priorità<select v-model.number="draft.priority" class="field px-2 py-1.5 text-[14px] text-ink">
           <option v-for="(name, value) in PRIORITY_TEXT" :key="value" :value="value">{{ name }}</option>
         </select></label
       >
-      <label class="flex flex-1 flex-col gap-1 text-[12px] text-muted">Scadenza<input v-model="draft.due" type="date" class="field px-2 py-1.5 text-[13px] text-ink" /></label>
+      <label class="flex flex-1 flex-col gap-1 text-[13px] text-muted">Scadenza<input v-model="draft.due" type="date" class="field px-2 py-1.5 text-[14px] text-ink" /></label>
       <div class="flex gap-1.5">
-        <button type="submit" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="saving || draft.title.trim() === ''">Aggiungi</button>
-        <button type="button" class="btn px-3 py-1.5 text-[13px]" @click="adding = false">Annulla</button>
+        <button type="submit" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="saving || draft.title.trim() === ''">Aggiungi</button>
+        <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="adding = false">Annulla</button>
       </div>
     </form>
 
@@ -394,10 +394,10 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
       >
         <header class="flex items-center gap-2 border-b border-line px-3 py-2">
           <h2 class="hud-title flex-1" :class="{ 'text-danger': column.id === 'failed' }">{{ column.title }}</h2>
-          <span class="font-mono text-[11px] text-muted">{{ groups.get(column.id)?.length ?? 0 }}</span>
+          <span class="font-mono text-[12.5px] text-muted">{{ groups.get(column.id)?.length ?? 0 }}</span>
         </header>
         <ul class="flex min-h-[64px] flex-col gap-2 p-2 md:min-h-0 md:flex-1 md:overflow-y-auto">
-          <li v-if="(groups.get(column.id)?.length ?? 0) === 0" class="px-1.5 py-3 text-center text-[12px] text-muted">
+          <li v-if="(groups.get(column.id)?.length ?? 0) === 0" class="px-1.5 py-3 text-center text-[13px] text-muted">
             {{ column.drop === null ? 'Nessuna card' : 'Nessuna card: trascinane una qui' }}
           </li>
           <li
@@ -411,10 +411,10 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
           >
             <button type="button" class="flex w-full flex-col gap-1.5 px-2.5 py-2 text-left" :aria-label="`Apri: ${card.title}`" @click="selectedId = card.id">
               <span class="flex items-start gap-2">
-                <span class="min-w-0 flex-1 text-[13.5px] leading-snug break-words" :class="{ 'text-muted line-through': card.kind === 'commitment' && card.status !== 'open' }">{{ card.title }}</span>
+                <span class="min-w-0 flex-1 text-[14.5px] leading-snug break-words" :class="{ 'text-muted line-through': card.kind === 'commitment' && card.status !== 'open' }">{{ card.title }}</span>
                 <LabelBadge :label="card.label" dot />
               </span>
-              <span class="flex flex-wrap items-center gap-1 text-[11px]">
+              <span class="flex flex-wrap items-center gap-1 text-[12.5px]">
                 <span v-if="priorityText(card.priority) !== undefined" class="chip inline-flex items-center gap-1" :class="PRIORITY_CLASS[card.priority]"><Icon name="priority" :size="11" />{{ priorityText(card.priority) }}</span>
                 <span v-if="card.kind === 'commitment'" class="chip text-accent">Impegno</span>
                 <span v-if="card.column === 'failed'" class="chip text-danger">Fallito</span>
@@ -423,11 +423,11 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
                 <span v-if="plannedText(card, today) !== undefined" class="chip inline-flex items-center gap-1 text-muted" title="Data esecuzione"><Icon name="calendar" :size="11" />{{ plannedText(card, today) }}</span>
                 <span v-if="dueText(card, today) !== undefined" class="chip" :class="card.late ? 'text-danger' : 'text-muted'" title="Scadenza">{{ dueText(card, today) }}</span>
               </span>
-              <span v-if="cardMarks(card).length > 0" class="flex flex-wrap items-center gap-2.5 text-[11.5px] text-muted">
+              <span v-if="cardMarks(card).length > 0" class="flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted">
                 <span v-for="mark in cardMarks(card)" :key="mark.icon" class="inline-flex items-center gap-1" :title="mark.title"><Icon :name="mark.icon" :size="12" />{{ mark.text }}<span class="sr-only">{{ mark.title }}</span></span>
               </span>
-              <span v-if="blockedText(card) !== undefined" class="truncate text-[12px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
-              <span v-if="card.waitingReason !== null" class="truncate text-[12px] text-muted" :title="card.waitingReason">{{ card.waitingReason }}</span>
+              <span v-if="blockedText(card) !== undefined" class="truncate text-[13px] text-warn" :title="card.blockedBy.map((item) => item.title).join(', ')">{{ blockedText(card) }}</span>
+              <span v-if="card.waitingReason !== null" class="truncate text-[13px] text-muted" :title="card.waitingReason">{{ card.waitingReason }}</span>
             </button>
           </li>
         </ul>
@@ -436,7 +436,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
 
     <!-- List: a table, sideways scroll inside its box on a narrow screen. -->
     <div v-if="wall !== null && state.view === 'list'" class="min-h-0 overflow-auto rounded-xl border border-line bg-surface md:flex-1">
-      <table class="w-full min-w-[860px] border-collapse text-left text-[13px]">
+      <table class="w-full min-w-[860px] border-collapse text-left text-[14px]">
         <thead class="sticky top-0 z-10 bg-surface">
           <tr class="border-b border-line">
             <th v-for="header in TABLE_HEADERS" :key="header.key" scope="col" class="px-3 py-2 font-normal" :class="header.class" :aria-sort="ariaSort(header.key)">
@@ -472,7 +472,7 @@ const labelOptions = [{ value: 'all', text: 'Ogni etichetta' }, ...LABEL_FILTERS
             <td class="px-3 py-2 whitespace-nowrap">{{ assigneeText(card.assignee, agentName) }}</td>
             <td class="px-3 py-2 whitespace-nowrap text-muted">{{ plannedText(card, today) ?? '' }}</td>
             <td class="px-3 py-2 whitespace-nowrap" :class="card.late ? 'text-danger' : 'text-muted'">{{ dueText(card, today) ?? '' }}</td>
-            <td class="px-3 py-2 text-right font-mono text-[12px] text-muted">{{ card.files > 0 ? card.files : '' }}</td>
+            <td class="px-3 py-2 text-right font-mono text-[13px] text-muted">{{ card.files > 0 ? card.files : '' }}</td>
           </tr>
         </tbody>
       </table>

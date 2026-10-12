@@ -62,7 +62,7 @@ function saveEdit(id: number): void {
 </script>
 
 <template>
-  <section class="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3 text-[13px]" aria-label="Commenti">
+  <section class="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3 text-[14px]" aria-label="Commenti">
     <header class="flex items-center gap-2">
       <Icon name="comment" :size="14" />
       <h3 class="flex-1 font-medium">Commenti ({{ comments.length }})</h3>
@@ -98,7 +98,7 @@ function saveEdit(id: number): void {
         @mouseenter="emit('focus', comment.selector)"
         @mouseleave="emit('focus', null)"
       >
-        <p class="flex items-center gap-2 text-[11px] text-muted">
+        <p class="flex items-center gap-2 text-[12.5px] text-muted">
           <b class="font-mono text-ink">{{ at + 1 }}</b>
           <span class="truncate font-mono" :title="`${comment.file} · ${comment.selector}`">{{ comment.file.split('/').at(-1) }} · &lt;{{ comment.tag }}&gt;</span>
           <span class="ml-auto flex shrink-0 gap-1">
@@ -106,7 +106,7 @@ function saveEdit(id: number): void {
             <button type="button" class="rounded p-0.5 hover:bg-surface-2 hover:text-danger" :aria-label="`Togli il commento ${at + 1}`" @click="emit('remove', comment.id)"><Icon name="delete" :size="12" /></button>
           </span>
         </p>
-        <p v-if="comment.excerpt !== ''" class="truncate text-[11px] text-muted">«{{ comment.excerpt }}»</p>
+        <p v-if="comment.excerpt !== ''" class="truncate text-[12.5px] text-muted">«{{ comment.excerpt }}»</p>
         <form v-if="editing === comment.id" class="flex flex-col gap-1" @submit.prevent="saveEdit(comment.id)">
           <textarea v-model="editText" class="field min-h-[52px] resize-y px-2 py-1" :maxlength="COMMENT_MAX" :aria-label="`Testo del commento ${at + 1}`" />
           <div class="flex gap-2">
@@ -122,8 +122,8 @@ function saveEdit(id: number): void {
       <button type="button" class="btn btn-primary px-3 py-1.5 text-xs" :disabled="sending || blocked !== undefined" @click="emit('send')">
         <Icon name="send" :size="13" />{{ sending ? 'Invio…' : `Invia al Designer (${comments.length})` }}
       </button>
-      <p v-if="blocked !== undefined" class="text-[11px] text-warn">{{ blocked }}</p>
-      <p v-else class="text-[11px] text-muted">Partono insieme, come un solo messaggio nella conversazione col Designer.</p>
+      <p v-if="blocked !== undefined" class="text-[12.5px] text-warn">{{ blocked }}</p>
+      <p v-else class="text-[12.5px] text-muted">Partono insieme, come un solo messaggio nella conversazione col Designer.</p>
     </div>
   </section>
 </template>

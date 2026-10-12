@@ -131,7 +131,7 @@ function emptyText(id: MiniColumnId): string {
         <h2 class="hud-title">Impegni ({{ mini.open }})</h2>
         <span v-if="late > 0" class="chip text-warn">{{ late === 1 ? '1 in ritardo' : `${String(late)} in ritardo` }}</span>
       </button>
-      <a :href="CARDWALL_PATH" class="flex shrink-0 items-center gap-1 text-[12px] text-muted hover:text-ink" @click="openCardwall">Apri il cardwall →</a>
+      <a :href="CARDWALL_PATH" class="flex shrink-0 items-center gap-1 text-[13px] text-muted hover:text-ink" @click="openCardwall">Apri il cardwall →</a>
     </header>
 
     <div v-if="!folded" class="flex min-h-0 flex-col gap-2 overflow-y-auto px-3 py-2 md:overflow-hidden short:py-1.5">
@@ -140,7 +140,7 @@ function emptyText(id: MiniColumnId): string {
         <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="12" /></button>
       </p>
       <p v-if="loadProblem !== null" role="alert" class="text-xs text-warn">{{ loadProblem }}</p>
-      <p v-else-if="wall !== null && mini.open === 0 && mini.doneToday.length === 0" class="text-[13px] text-muted">
+      <p v-else-if="wall !== null && mini.open === 0 && mini.doneToday.length === 0" class="text-[14px] text-muted">
         Nessun impegno aperto. Scrivi qui sotto, per esempio «giovedì alle 15 devo andare in banca».
       </p>
 
@@ -154,11 +154,11 @@ function emptyText(id: MiniColumnId): string {
           :aria-label="column.title"
         >
           <header class="flex items-center gap-2 px-2.5 pt-1.5 pb-1">
-            <h3 class="flex-1 text-[11px] font-semibold tracking-[0.04em] uppercase" :class="column.id === 'late' && column.items.length > 0 ? 'text-warn' : 'text-muted'">{{ column.title }}</h3>
-            <span class="font-mono text-[10.5px] text-muted">{{ column.items.length }}</span>
+            <h3 class="flex-1 text-[12.5px] font-semibold tracking-[0.04em] uppercase" :class="column.id === 'late' && column.items.length > 0 ? 'text-warn' : 'text-muted'">{{ column.title }}</h3>
+            <span class="font-mono text-[12px] text-muted">{{ column.items.length }}</span>
           </header>
           <ul class="flex min-h-0 flex-col gap-1 px-1.5 pb-1.5 md:flex-1 md:overflow-y-auto">
-            <li v-if="column.items.length === 0" class="px-1 py-1 text-[11.5px] text-muted">{{ emptyText(column.id) }}</li>
+            <li v-if="column.items.length === 0" class="px-1 py-1 text-[12.5px] text-muted">{{ emptyText(column.id) }}</li>
             <li
               v-for="card in column.items"
               :key="`${card.kind}:${card.id}`"
@@ -169,15 +169,15 @@ function emptyText(id: MiniColumnId): string {
               @dragend="onDragEnd"
             >
               <button type="button" class="flex w-full flex-col gap-1 px-2 py-1.5 text-left" :aria-label="`Apri: ${card.title}`" @click="selectedId = card.id">
-                <span class="text-[12.5px] leading-snug break-words">{{ card.title }}</span>
-                <span class="flex flex-wrap items-center gap-1 text-[10.5px]">
+                <span class="text-[13.5px] leading-snug break-words">{{ card.title }}</span>
+                <span class="flex flex-wrap items-center gap-1 text-[12px]">
                   <span v-if="card.kind === 'task'" class="chip inline-flex items-center gap-1 text-info" title="Card del cardwall"><Icon name="cardwall" :size="10" />Card</span>
                   <span v-if="miniWhen(card, column.id, today) !== undefined" class="chip" :class="column.id === 'late' ? 'text-warn' : 'text-muted'">{{ miniWhen(card, column.id, today) }}</span>
                   <span v-if="priorityText(card.priority) !== undefined" class="chip" :class="PRIORITY_CLASS[card.priority]">{{ priorityText(card.priority) }}</span>
                 </span>
               </button>
             </li>
-            <li v-if="column.id === 'next' && mini.later > 0" class="px-1 py-0.5 text-[11.5px] text-muted">+{{ mini.later }} più avanti</li>
+            <li v-if="column.id === 'next' && mini.later > 0" class="px-1 py-0.5 text-[12.5px] text-muted">+{{ mini.later }} più avanti</li>
           </ul>
         </section>
       </div>
@@ -185,7 +185,7 @@ function emptyText(id: MiniColumnId): string {
       <!-- "Fatti oggi": the closed ones of today; a drop here marks an item done. -->
       <div
         v-if="wall !== null && (mini.open > 0 || mini.doneToday.length > 0)"
-        class="flex shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-dashed px-2.5 py-1 text-[12px] transition-colors"
+        class="flex shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-dashed px-2.5 py-1 text-[13px] transition-colors"
         :class="overDone ? 'border-accent bg-accent/5' : 'border-line'"
         aria-label="Fatti oggi"
         @dragover="onDragOver"

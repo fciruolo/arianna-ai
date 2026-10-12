@@ -517,10 +517,10 @@ const side = ref<'chat' | 'canvas'>('canvas');
 <template>
   <section class="flex min-h-0 flex-1 flex-col" aria-label="Studio">
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2 md:px-6">
-      <label class="flex items-center gap-2 text-[12.5px] text-muted">
+      <label class="flex items-center gap-2 text-[13.5px] text-muted">
         <Icon name="project" :size="14" />
         <span class="sr-only">Progetto</span>
-        <select class="field px-2 py-1 text-[13px] text-ink" :value="project ?? ''" @change="chooseProject(($event.target as HTMLSelectElement).value)">
+        <select class="field px-2 py-1 text-[14px] text-ink" :value="project ?? ''" @change="chooseProject(($event.target as HTMLSelectElement).value)">
           <option value="">Scegli un progetto…</option>
           <option v-for="entry in projects" :key="entry.name" :value="entry.name">{{ entry.name }}</option>
         </select>
@@ -529,7 +529,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
         <!-- Style and skills for the Designer (O2): every message of the Studio carries them; chosen in a window (I-20, D-185). -->
         <button
           type="button"
-          class="btn inline-flex max-w-[320px] items-center gap-2 px-2.5 py-1 text-[12.5px]"
+          class="btn inline-flex max-w-[320px] items-center gap-2 px-2.5 py-1 text-[13.5px]"
           title="Scegli lo stile di Open Design e le skill che il Designer legge con ogni messaggio dello Studio"
           :disabled="!catalogsLoaded"
           @click="designOpen = true"
@@ -540,11 +540,11 @@ const side = ref<'chat' | 'canvas'>('canvas');
           <Icon v-else name="studio" :size="13" />
           <span class="min-w-0 truncate">{{ designSummary }}</span>
         </button>
-        <button type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]" title="Il progetto in Progetti, con la cartella dei mockup aperta in File" @click="emit('projects', project, list?.folder ?? 'mockups')">
+        <button type="button" class="btn inline-flex items-center gap-1.5 px-2.5 py-1 text-[13.5px]" title="Il progetto in Progetti, con la cartella dei mockup aperta in File" @click="emit('projects', project, list?.folder ?? 'mockups')">
           <Icon name="project" :size="13" />Apri in Progetti
         </button>
       </template>
-      <p class="flex items-center gap-1.5 text-[11.5px] text-muted" role="note">
+      <p class="flex items-center gap-1.5 text-[12.5px] text-muted" role="note">
         <Icon name="private" :size="12" />I mockup si vedono in una cornice isolata: niente rete, niente accesso alla chat.
       </p>
       <div class="ml-auto flex gap-1 lg:hidden" role="group" aria-label="Lato mostrato">
@@ -584,20 +584,20 @@ const side = ref<'chat' | 'canvas'>('canvas');
           <div class="flex flex-wrap items-center gap-2">
             <select
               v-if="groups.length > 1"
-              class="field px-2 py-1 text-[12.5px]"
+              class="field px-2 py-1 text-[13.5px]"
               aria-label="Mockup"
               :value="current?.group ?? ''"
               @change="choose(groups.find((group) => group.group === ($event.target as HTMLSelectElement).value)?.variants.at(-1)?.path)"
             >
               <option v-for="group in groups" :key="group.group" :value="group.group">{{ group.group }}</option>
             </select>
-            <span v-else class="font-mono text-[12px]">{{ groups[0]?.group }}</span>
+            <span v-else class="font-mono text-[13px]">{{ groups[0]?.group }}</span>
             <div class="flex gap-1" role="group" aria-label="Varianti">
               <button
                 v-for="file in currentGroup?.variants ?? []"
                 :key="file.path"
                 type="button"
-                class="rounded-md border px-2 py-0.5 font-mono text-[11px]"
+                class="rounded-md border px-2 py-0.5 font-mono text-[12.5px]"
                 :class="file.path === address.file ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong text-muted hover:text-ink'"
                 :aria-pressed="file.path === address.file"
                 :title="`${file.name} · ${new Date(file.modified).toLocaleString('it-IT')} · ${variantDesignText(file.design, styleNameOf, skillNameOf)}`"
@@ -629,7 +629,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
               <Icon name="compare" :size="13" />Confronta
             </button>
             <template v-if="comparing">
-              <select v-model="otherPath" class="field px-2 py-1 text-[12px]" aria-label="Variante a confronto">
+              <select v-model="otherPath" class="field px-2 py-1 text-[13px]" aria-label="Variante a confronto">
                 <option v-for="file in list.files" :key="file.path" :value="file.path">{{ file.name }}</option>
               </select>
               <label class="flex items-center gap-1.5 text-xs text-muted" title="Quando scorri una delle due pagine, l’altra la segue">
@@ -660,7 +660,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
             ><Icon name="delete" :size="13" />Elimina</button>
             <button type="button" class="btn px-2.5 py-1 text-xs" title="Rileggi l’elenco dei mockup" @click="loadList(); loadFile(address.file, 'shown')"><Icon name="retry" :size="13" />Ricarica</button>
           </div>
-          <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-[11.5px] text-muted">
+          <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px] text-muted">
             <template v-for="entry in comparing && otherFile !== undefined ? [current, otherFile] : [current]" :key="entry?.path">
               <span v-if="entry !== undefined">
                 <b class="font-mono font-normal text-ink">{{ entry.name }}</b> ·
@@ -683,8 +683,8 @@ const side = ref<'chat' | 'canvas'>('canvas');
               </span>
             </template>
           </p>
-          <p v-if="pickMode === 'comment'" class="text-[11.5px] text-muted">Fai clic su un elemento della pagina per commentarlo; i link e i pulsanti non scattano.</p>
-          <p v-else-if="pickMode === 'edit'" class="text-[11.5px] text-muted">Fai clic su un elemento per cambiarne testo, colori e spaziature.</p>
+          <p v-if="pickMode === 'comment'" class="text-[12.5px] text-muted">Fai clic su un elemento della pagina per commentarlo; i link e i pulsanti non scattano.</p>
+          <p v-else-if="pickMode === 'edit'" class="text-[12.5px] text-muted">Fai clic su un elemento per cambiarne testo, colori e spaziature.</p>
           <p v-if="exportProblem !== null" class="text-xs text-warn" role="alert">{{ exportProblem }}</p>
           <p v-if="notice !== null" class="flex items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs" role="status">
             <Icon name="saved" :size="13" /><span class="flex-1">{{ notice }}</span>
@@ -776,7 +776,7 @@ const side = ref<'chat' | 'canvas'>('canvas');
         <code class="font-mono">{{ list.folder }}/eliminati/</code> del progetto, da dove si rimette a posto in Progetti → File con «Ripristina».
       </p>
       <p class="text-xs text-muted">Il suo numero non verrà più usato: la prossima variante del Designer prende il numero seguente.</p>
-      <label class="flex items-start gap-2 rounded-lg border px-3 py-2 text-[13px]" :class="deletePermanent ? 'border-danger/60 bg-danger/10' : 'border-line'">
+      <label class="flex items-start gap-2 rounded-lg border px-3 py-2 text-[14px]" :class="deletePermanent ? 'border-danger/60 bg-danger/10' : 'border-line'">
         <input v-model="deletePermanent" type="checkbox" class="mt-0.5 accent-[var(--danger)]" />
         <span>
           Elimina definitivamente

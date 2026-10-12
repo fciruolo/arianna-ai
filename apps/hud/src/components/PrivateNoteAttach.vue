@@ -72,7 +72,7 @@ onBeforeUnmount(() => {
           @close="opened = null"
           @released="emit('close')"
         />
-        <div v-else class="flex flex-col gap-2 px-[15px] py-3 text-[13.5px]">
+        <div v-else class="flex flex-col gap-2 px-[15px] py-3 text-[14.5px]">
           <p class="text-muted">Le note Private di {{ project }} non arrivano mai in chat da sole. Scegline una: ne fai una versione senza nomi né importi e, con la master password, la mandi qui una volta, come messaggio Interno.</p>
           <p v-if="problem" class="text-sm text-danger" role="alert">{{ problem }}</p>
           <p v-else-if="notes === null" class="text-muted">Leggo le note del progetto…</p>
@@ -81,7 +81,7 @@ onBeforeUnmount(() => {
             <li v-for="note in privateNotes" :key="note.path">
               <button type="button" class="flex w-full items-baseline gap-3 px-3 py-2 text-left hover:bg-surface-2" :disabled="opening" @click="open(note)">
                 <span class="min-w-0 flex-1 truncate text-ink">{{ note.title }}</span>
-                <span class="shrink-0 font-mono text-[11.5px] text-muted">{{ note.path }}</span>
+                <span class="shrink-0 font-mono text-[12.5px] text-muted">{{ note.path }}</span>
               </button>
             </li>
           </ul>

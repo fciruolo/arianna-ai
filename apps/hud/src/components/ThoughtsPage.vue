@@ -356,7 +356,7 @@ onBeforeUnmount(() => {
           <div class="mb-2.5 flex items-center gap-2">
             <Icon name="thoughts" :size="16" />
             <h1 id="thoughts-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Pensieri</h1>
-            <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">kb/inbox · Privato · resta qui</span>
+            <span class="ml-auto font-mono text-[12px] tracking-[0.06em] text-muted">kb/inbox · Privato · resta qui</span>
           </div>
           <form @submit.prevent="save">
             <label for="thought" class="sr-only">Pensiero</label>
@@ -373,7 +373,7 @@ onBeforeUnmount(() => {
               @input="resize"
             />
             <div class="mt-2.5 flex flex-wrap items-center gap-2">
-              <p id="thought-help" class="min-w-0 flex-1 font-mono text-[10.5px] text-muted">
+              <p id="thought-help" class="min-w-0 flex-1 font-mono text-[12px] text-muted">
                 ⌘/Ctrl+Invio per salvare · il modello locale scrive titolo, riassunto, collegamenti e tag, il tuo testo resta in fondo
                 <span v-if="counter !== undefined" :class="tooLarge ? 'text-danger' : ''"> · {{ counter }}</span>
               </p>
@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
                 type="button"
                 role="radio"
                 :aria-checked="status === item.value"
-                class="rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em]"
+                class="rounded-md px-2.5 py-1 font-mono text-[12.5px] tracking-[0.04em]"
                 :class="status === item.value ? 'bg-surface-2 text-accent' : 'text-muted hover:text-ink'"
                 @click="status = item.value"
               >
@@ -463,9 +463,9 @@ onBeforeUnmount(() => {
                 >
                   <span class="flex items-start gap-2">
                     <span class="min-w-0 flex-1 text-[14px] leading-snug font-medium break-words">{{ displayTitle(item) }}</span>
-                    <span class="shrink-0 font-mono text-[10.5px] text-muted">{{ timeOf(item) }}</span>
+                    <span class="shrink-0 font-mono text-[12px] text-muted">{{ timeOf(item) }}</span>
                   </span>
-                  <span class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10.5px] text-muted">
+                  <span class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[12px] text-muted">
                     <span class="tracking-[0.06em] uppercase">{{ kindText(item) }}</span>
                     <span
                       class="inline-flex items-center gap-1.5"
@@ -502,7 +502,7 @@ onBeforeUnmount(() => {
               </li>
             </ul>
           </div>
-          <p v-if="hidden > 0" class="font-mono text-[10.5px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
+          <p v-if="hidden > 0" class="font-mono text-[12px] text-muted">{{ hidden }} pensieri sopra Privato non sono mostrati.</p>
         </section>
       </div>
     </div>
@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
         <div class="min-w-0 flex-1">
-          <p class="flex flex-wrap items-center gap-x-2 font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">
+          <p class="flex flex-wrap items-center gap-x-2 font-mono text-[12px] tracking-[0.06em] text-muted uppercase">
             <span>{{ selected === undefined ? 'Pensiero' : kindText(selected) }}</span>
             <span v-if="selectedState !== undefined">· {{ THOUGHT_STATE_TEXT[selectedState] }}</span>
             <span v-if="selected !== undefined && timeOf(selected) !== ''">· {{ timeOf(selected) }}</span>
@@ -573,11 +573,11 @@ onBeforeUnmount(() => {
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div v-if="fetching !== null && fetching === selectedName" class="mb-3">
-          <p class="mb-1.5 font-mono text-[11px] text-accent">Scarico il link e lo riassumo col modello locale…</p>
+          <p class="mb-1.5 font-mono text-[12.5px] text-accent">Scarico il link e lo riassumo col modello locale…</p>
           <span class="hud-scan block w-full" aria-hidden="true" />
         </div>
         <div v-if="selectedState === 'organizing'" class="mb-3">
-          <p class="mb-1.5 font-mono text-[11px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
+          <p class="mb-1.5 font-mono text-[12.5px] text-accent">{{ THOUGHT_STATE_HINT.organizing }}…</p>
           <span class="hud-scan block w-full" aria-hidden="true" />
         </div>
         <div v-if="selected !== undefined && selected.tags.length > 0" class="mb-3 flex flex-wrap gap-1.5">
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
             v-for="tag in selected.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[11px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
             :title="`Filtra #${tag}`"
             @click="query = `#${tag}`"
           >

@@ -82,7 +82,7 @@ async function forget(): Promise<void> {
 
 <template>
   <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Modello aggiunto da Hugging Face">
-    <h3 class="hud-title text-[10.5px]">Aggiunto da Hugging Face</h3>
+    <h3 class="hud-title text-[12px]">Aggiunto da Hugging Face</h3>
     <p v-if="view.suitedRoles.length === 0" class="text-xs text-muted">
       È nel catalogo come sperimentale e senza ruoli: finché non lo promuovi non compare nei menu dei ruoli. Puoi già scaricarlo e verificarlo.
     </p>
@@ -103,22 +103,22 @@ async function forget(): Promise<void> {
       </button>
     </div>
     <div v-if="step === 'idle'" class="flex flex-wrap items-center gap-2">
-      <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="busy || !changedRoles" @click="step = 'promote'">{{ view.suitedRoles.length === 0 ? 'Promuovi…' : 'Cambia i ruoli…' }}</button>
-      <button type="button" class="btn btn-danger px-3 py-1 text-[13px]" :disabled="busy || blocked !== undefined" @click="step = 'forget'; typed = ''">Togli dal catalogo…</button>
+      <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="busy || !changedRoles" @click="step = 'promote'">{{ view.suitedRoles.length === 0 ? 'Promuovi…' : 'Cambia i ruoli…' }}</button>
+      <button type="button" class="btn btn-danger px-3 py-1 text-[14px]" :disabled="busy || blocked !== undefined" @click="step = 'forget'; typed = ''">Togli dal catalogo…</button>
     </div>
     <p v-if="step === 'idle' && blocked !== undefined" class="text-xs text-muted">{{ blocked }}</p>
     <div v-if="step === 'promote'" class="flex flex-col gap-1.5">
-      <p v-for="line in promoteLines(view, chosen)" :key="line" class="text-[12.5px]">{{ line }}</p>
+      <p v-for="line in promoteLines(view, chosen)" :key="line" class="text-[13.5px]">{{ line }}</p>
       <div class="flex justify-end gap-2">
         <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="step = 'idle'">Annulla</button>
         <button type="button" class="btn btn-primary px-2.5 py-1 text-xs" :disabled="busy" @click="promote">Promuovi</button>
       </div>
     </div>
     <form v-if="step === 'forget'" class="flex flex-col gap-1.5" @submit.prevent="forget">
-      <p class="text-[12.5px]">Toglie {{ view.id }} da config/models.user-catalog.yaml. Sul disco non c’è niente da togliere; per riaverlo lo cerchi di nuovo.</p>
+      <p class="text-[13.5px]">Toglie {{ view.id }} da config/models.user-catalog.yaml. Sul disco non c’è niente da togliere; per riaverlo lo cerchi di nuovo.</p>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Per confermare scrivi l’id del modello
-        <input v-model="typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="view.id" autocomplete="off" spellcheck="false" />
+        <input v-model="typed" class="field px-2 py-1.5 font-mono text-[14px] text-ink" :placeholder="view.id" autocomplete="off" spellcheck="false" />
       </label>
       <div class="flex justify-end gap-2">
         <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="busy" @click="step = 'idle'">Annulla</button>

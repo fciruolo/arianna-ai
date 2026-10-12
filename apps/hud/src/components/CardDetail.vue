@@ -573,8 +573,8 @@ function absoluteTime(at: string): string {
       </button>
     </header>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4 text-[13.5px]">
-      <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[13px] text-danger">
+    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-4 text-[14.5px]">
+      <p v-if="problem !== null" role="alert" class="flex items-start gap-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
         <span class="flex-1">{{ problem }}</span>
         <button type="button" class="shrink-0 text-muted hover:text-ink" aria-label="Chiudi l’avviso" @click="problem = null"><Icon name="close" :size="14" /></button>
       </p>
@@ -589,54 +589,54 @@ function absoluteTime(at: string): string {
       <template v-if="isTask">
         <div class="grid grid-cols-[minmax(110px,auto)_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5">
           <label for="card-project" class="text-muted">Progetto</label>
-          <select id="card-project" class="field px-2 py-1.5 text-[13px]" :value="card.project ?? ''" :disabled="busy" @change="setProject">
+          <select id="card-project" class="field px-2 py-1.5 text-[14px]" :value="card.project ?? ''" :disabled="busy" @change="setProject">
             <option value="">Generale</option>
             <option v-for="name in projectChoices" :key="name" :value="name">{{ name }}</option>
           </select>
 
           <label for="card-assignee" class="text-muted">Chi la fa</label>
           <span class="flex flex-col gap-1">
-            <select id="card-assignee" class="field px-2 py-1.5 text-[13px]" :value="card.assignee" :disabled="busy || locked" :aria-describedby="lockedText !== undefined ? 'card-assignee-why' : undefined" @change="setAssignee">
+            <select id="card-assignee" class="field px-2 py-1.5 text-[14px]" :value="card.assignee" :disabled="busy || locked" :aria-describedby="lockedText !== undefined ? 'card-assignee-why' : undefined" @change="setAssignee">
               <option value="user">Tu</option>
               <option v-for="agent in agentChoices" :key="agent" :value="agent">{{ agentName(agent) }}</option>
             </select>
-            <span v-if="lockedText !== undefined" id="card-assignee-why" class="text-[12px] text-muted">{{ lockedText }}</span>
+            <span v-if="lockedText !== undefined" id="card-assignee-why" class="text-[13px] text-muted">{{ lockedText }}</span>
           </span>
 
           <!-- The Designer's card (D-163): a style of Open Design and skills of the catalog, read by the Designer as reference data. -->
           <template v-if="isDesigner && detail !== null">
             <label for="card-style" class="text-muted">Stile</label>
             <span class="flex flex-col gap-1">
-              <select id="card-style" class="field px-2 py-1.5 text-[13px]" :value="chosenStyle ?? ''" :disabled="busy" @change="setStyle">
+              <select id="card-style" class="field px-2 py-1.5 text-[14px]" :value="chosenStyle ?? ''" :disabled="busy" @change="setStyle">
                 <option value="">Nessuno</option>
                 <option v-if="styleGone && chosenStyle !== null" :value="chosenStyle">{{ chosenStyle }} (non più nel catalogo)</option>
                 <option v-for="style in styleCatalog" :key="style.id" :value="style.id">{{ style.name }}</option>
               </select>
-              <span v-if="styleGone" class="text-[12px] text-warn">Non è più nel catalogo: la card parte senza.</span>
-              <span v-else-if="catalogsLoaded && styleCatalog.length === 0" class="text-[12px] text-muted">Nessuno stile: scarica il catalogo di Open Design in Impostazioni → Agenti.</span>
+              <span v-if="styleGone" class="text-[13px] text-warn">Non è più nel catalogo: la card parte senza.</span>
+              <span v-else-if="catalogsLoaded && styleCatalog.length === 0" class="text-[13px] text-muted">Nessuno stile: scarica il catalogo di Open Design in Impostazioni → Agenti.</span>
             </span>
 
             <span id="card-skills-label" class="text-muted">Skill</span>
             <span class="flex min-w-0 flex-col gap-1.5">
               <ul v-if="chosenSkills.length > 0" class="flex flex-wrap gap-1.5" aria-labelledby="card-skills-label">
-                <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-full items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[12.5px]" :title="skill.id">
+                <li v-for="skill in chosenSkills" :key="skill.id" class="flex max-w-full items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[13.5px]" :title="skill.id">
                   <span class="min-w-0 truncate" :class="{ 'text-warn': skill.gone }">{{ skill.name }}<template v-if="skill.gone"> (non più nel catalogo)</template></span>
                   <button type="button" class="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-surface hover:text-ink" :disabled="busy" :aria-label="`Togli la skill: ${skill.name}`" @click="removeSkill(skill.id)">
                     <Icon name="close" :size="12" />
                   </button>
                 </li>
               </ul>
-              <select v-if="skillOptions.length > 0 && chosenSkills.length < MAX_CARD_SKILLS" class="field px-2 py-1.5 text-[13px]" aria-label="Aggiungi una skill" :disabled="busy" @change="addSkill">
+              <select v-if="skillOptions.length > 0 && chosenSkills.length < MAX_CARD_SKILLS" class="field px-2 py-1.5 text-[14px]" aria-label="Aggiungi una skill" :disabled="busy" @change="addSkill">
                 <option value="">Aggiungi una skill…</option>
                 <option v-for="skill in skillOptions" :key="skill.id" :value="skill.id">{{ skill.name }} · {{ skill.source }}</option>
               </select>
-              <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[12px] text-muted">Nessuna skill: aggiungi una sorgente in Impostazioni → Agenti.</span>
-              <span v-if="chosenStyle !== null || chosenSkills.length > 0" class="text-[12px] text-muted">Il Designer li legge come testo di riferimento, con la loro licenza.</span>
+              <span v-else-if="catalogsLoaded && skillCatalog.length === 0" class="text-[13px] text-muted">Nessuna skill: aggiungi una sorgente in Impostazioni → Agenti.</span>
+              <span v-if="chosenStyle !== null || chosenSkills.length > 0" class="text-[13px] text-muted">Il Designer li legge come testo di riferimento, con la loro licenza.</span>
             </span>
           </template>
 
           <label for="card-priority" class="text-muted">Priorità</label>
-          <select id="card-priority" class="field px-2 py-1.5 text-[13px]" :value="card.priority" :disabled="busy" @change="setPriority">
+          <select id="card-priority" class="field px-2 py-1.5 text-[14px]" :value="card.priority" :disabled="busy" @change="setPriority">
             <option v-for="(name, value) in PRIORITY_TEXT" :key="value" :value="value">{{ name }}</option>
           </select>
 
@@ -645,28 +645,28 @@ function absoluteTime(at: string): string {
 
           <label for="card-planned" class="text-muted">Data esecuzione</label>
           <span class="flex items-center gap-2">
-            <input id="card-planned" type="date" class="field min-w-0 flex-1 px-2 py-1.5 text-[13px]" :value="card.planned ?? ''" :disabled="busy" @change="setDay('planned', $event)" />
-            <button v-if="card.planned !== null" type="button" class="btn px-2.5 py-1 text-[12px]" :disabled="busy" @click="clearDay('planned')">Togli</button>
+            <input id="card-planned" type="date" class="field min-w-0 flex-1 px-2 py-1.5 text-[14px]" :value="card.planned ?? ''" :disabled="busy" @change="setDay('planned', $event)" />
+            <button v-if="card.planned !== null" type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busy" @click="clearDay('planned')">Togli</button>
           </span>
 
           <label for="card-due" class="text-muted">Scadenza</label>
           <span class="flex items-center gap-2">
-            <input id="card-due" type="date" class="field min-w-0 flex-1 px-2 py-1.5 text-[13px]" :class="{ 'text-danger': card.late }" :value="card.due ?? ''" :disabled="busy" @change="setDay('due', $event)" />
-            <button v-if="card.due !== null" type="button" class="btn px-2.5 py-1 text-[12px]" :disabled="busy" @click="clearDay('due')">Togli</button>
+            <input id="card-due" type="date" class="field min-w-0 flex-1 px-2 py-1.5 text-[14px]" :class="{ 'text-danger': card.late }" :value="card.due ?? ''" :disabled="busy" @change="setDay('due', $event)" />
+            <button v-if="card.due !== null" type="button" class="btn px-2.5 py-1 text-[13px]" :disabled="busy" @click="clearDay('due')">Togli</button>
           </span>
 
           <span class="text-muted">Etichetta</span>
           <span><LabelBadge :label="card.label" /></span>
         </div>
 
-        <p v-if="detail === null && loading" class="text-[13px] text-muted">Carico la card…</p>
+        <p v-if="detail === null && loading" class="text-[14px] text-muted">Carico la card…</p>
 
         <template v-if="detail !== null">
           <!-- Descrizione -->
           <section aria-labelledby="card-goal-title">
             <div class="mb-2 flex items-center gap-2">
               <h3 id="card-goal-title" class="hud-title flex-1">Descrizione</h3>
-              <div class="flex overflow-hidden rounded-md border border-line text-[12px]" role="group" aria-label="Descrizione">
+              <div class="flex overflow-hidden rounded-md border border-line text-[13px]" role="group" aria-label="Descrizione">
                 <button type="button" class="px-2 py-0.5" :class="goalMode === 'edit' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'edit'" @click="editGoal">Scrivi</button>
                 <button type="button" class="border-l border-line px-2 py-0.5" :class="goalMode === 'preview' ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'" :aria-pressed="goalMode === 'preview'" @click="goalMode = 'preview'">Anteprima</button>
               </div>
@@ -677,18 +677,18 @@ function absoluteTime(at: string): string {
                 v-model="texts.goal"
                 :maxlength="MAX_GOAL"
                 rows="8"
-                class="field w-full resize-y px-3 py-2 font-mono text-[13px] leading-relaxed"
+                class="field w-full resize-y px-3 py-2 font-mono text-[14px] leading-relaxed"
                 placeholder="Che cosa c’è da sapere: Markdown, elenchi, link…"
                 aria-labelledby="card-goal-title"
                 @input="onTextInput('goal')"
                 @focus="onTextFocus('goal')"
                 @blur="onTextBlur('goal')"
               />
-              <p v-if="texts.goal.length > MAX_GOAL * 0.9" class="mt-1 text-right font-mono text-[11px] text-muted">{{ texts.goal.length }}/{{ MAX_GOAL }}</p>
+              <p v-if="texts.goal.length > MAX_GOAL * 0.9" class="mt-1 text-right font-mono text-[12.5px] text-muted">{{ texts.goal.length }}/{{ MAX_GOAL }}</p>
             </template>
             <div v-else class="min-h-[40px] cursor-text rounded-lg border border-transparent px-1 py-1 hover:border-line" @dblclick="editGoal">
               <MarkdownText v-if="texts.goal.trim() !== ''" :source="texts.goal" />
-              <button v-else type="button" class="text-[13px] text-muted hover:text-ink" @click="editGoal">Nessuna descrizione: scrivila</button>
+              <button v-else type="button" class="text-[14px] text-muted hover:text-ink" @click="editGoal">Nessuna descrizione: scrivila</button>
             </div>
           </section>
 
@@ -699,7 +699,7 @@ function absoluteTime(at: string): string {
               v-model="texts.criteria"
               :maxlength="MAX_CRITERIA"
               rows="3"
-              class="field w-full resize-y px-3 py-2 text-[13px] leading-relaxed"
+              class="field w-full resize-y px-3 py-2 text-[14px] leading-relaxed"
               placeholder="Per l’agente: quando il lavoro si può dire finito"
               aria-labelledby="card-criteria-title"
               @input="onTextInput('criteria')"
@@ -712,7 +712,7 @@ function absoluteTime(at: string): string {
           <section aria-labelledby="card-checklist-title">
             <div class="mb-2 flex items-center gap-2">
               <h3 id="card-checklist-title" class="hud-title flex-1">Checklist</h3>
-              <span v-if="checklist.length > 0" class="font-mono text-[11px] text-muted">{{ doneItems }}/{{ checklist.length }}</span>
+              <span v-if="checklist.length > 0" class="font-mono text-[12.5px] text-muted">{{ doneItems }}/{{ checklist.length }}</span>
             </div>
             <div v-if="checklist.length > 0" class="mb-2 h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100" aria-label="Avanzamento della checklist">
               <div class="h-full rounded-full bg-accent transition-[width]" :style="{ width: `${progress}%` }" />
@@ -735,8 +735,8 @@ function absoluteTime(at: string): string {
               </li>
             </ul>
             <form class="flex gap-2" @submit.prevent="addItem">
-              <input v-model="newItem" :maxlength="MAX_ITEM" class="field min-w-0 flex-1 px-2.5 py-1.5 text-[13px]" placeholder="Aggiungi una voce e premi Invio" aria-label="Nuova voce della checklist" />
-              <button type="submit" class="btn px-3 py-1.5 text-[13px]" :disabled="newItem.trim() === ''">Aggiungi</button>
+              <input v-model="newItem" :maxlength="MAX_ITEM" class="field min-w-0 flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Aggiungi una voce e premi Invio" aria-label="Nuova voce della checklist" />
+              <button type="submit" class="btn px-3 py-1.5 text-[14px]" :disabled="newItem.trim() === ''">Aggiungi</button>
             </form>
           </section>
 
@@ -747,16 +747,16 @@ function absoluteTime(at: string): string {
               <li v-for="link in detail.links" :key="link.id" class="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5">
                 <Icon name="link" :size="14" class="shrink-0 text-muted" />
                 <a :href="link.url" target="_blank" rel="noopener noreferrer" class="min-w-0 flex-1 truncate text-accent hover:underline" :title="link.url">{{ linkText(link) }}</a>
-                <span v-if="link.title !== null" class="hidden shrink-0 font-mono text-[11px] text-muted sm:inline">{{ hostOf(link.url) }}</span>
+                <span v-if="link.title !== null" class="hidden shrink-0 font-mono text-[12.5px] text-muted sm:inline">{{ hostOf(link.url) }}</span>
                 <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :aria-label="`Togli il link: ${linkText(link)}`" @click="removeLink(link.id)">
                   <Icon name="close" :size="13" />
                 </button>
               </li>
             </ul>
             <form class="flex flex-wrap gap-2" @submit.prevent="addLink">
-              <input v-model="newUrl" type="url" class="field min-w-[200px] flex-[2] px-2.5 py-1.5 text-[13px]" placeholder="https://…" aria-label="Indirizzo del link" />
-              <input v-model="newLinkTitle" maxlength="200" class="field min-w-[140px] flex-1 px-2.5 py-1.5 text-[13px]" placeholder="Titolo (facoltativo)" aria-label="Titolo del link" />
-              <button type="submit" class="btn px-3 py-1.5 text-[13px]" :disabled="newUrl.trim() === ''">Aggiungi</button>
+              <input v-model="newUrl" type="url" class="field min-w-[200px] flex-[2] px-2.5 py-1.5 text-[14px]" placeholder="https://…" aria-label="Indirizzo del link" />
+              <input v-model="newLinkTitle" maxlength="200" class="field min-w-[140px] flex-1 px-2.5 py-1.5 text-[14px]" placeholder="Titolo (facoltativo)" aria-label="Titolo del link" />
+              <button type="submit" class="btn px-3 py-1.5 text-[14px]" :disabled="newUrl.trim() === ''">Aggiungi</button>
             </form>
           </section>
 
@@ -764,24 +764,24 @@ function absoluteTime(at: string): string {
           <section aria-labelledby="card-files-title">
             <div class="mb-2 flex items-center gap-2">
               <h3 id="card-files-title" class="hud-title flex-1">Allegati</h3>
-              <span v-if="uploading > 0" class="text-[12px] text-muted" aria-live="polite">Allego…</span>
-              <button type="button" class="btn px-3 py-1 text-[12.5px]" @click="fileInput?.click()"><Icon name="attach" :size="14" />Allega</button>
+              <span v-if="uploading > 0" class="text-[13px] text-muted" aria-live="polite">Allego…</span>
+              <button type="button" class="btn px-3 py-1 text-[13.5px]" @click="fileInput?.click()"><Icon name="attach" :size="14" />Allega</button>
               <input ref="fileInput" type="file" multiple class="hidden" @change="onFilesChosen" />
             </div>
             <ul v-if="detail.files.length > 0" class="mb-2 flex flex-col gap-1.5">
               <li v-for="file in detail.files" :key="file.id" class="flex items-center gap-3 rounded-lg border border-line px-2.5 py-2">
                 <img v-if="isImage(file.mediaType)" :src="cardFileUrl(card.id, file.id)" alt="" loading="lazy" class="size-11 shrink-0 rounded-md border border-line object-cover" />
-                <span v-else class="grid size-11 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-[10px] text-muted">{{ fileKindText(file) }}</span>
+                <span v-else class="grid size-11 shrink-0 place-items-center rounded-md border border-line bg-surface-2 font-mono text-[12px] text-muted">{{ fileKindText(file) }}</span>
                 <span class="flex min-w-0 flex-1 flex-col">
                   <span class="truncate" :title="file.name">{{ file.name }}</span>
-                  <span class="font-mono text-[11px] text-muted">{{ fileKindText(file) }} · {{ fileSizeText(file.size) }}</span>
+                  <span class="font-mono text-[12.5px] text-muted">{{ fileKindText(file) }} · {{ fileSizeText(file.size) }}</span>
                 </span>
                 <a
                   :href="cardFileUrl(card.id, file.id)"
                   target="_blank"
                   rel="noopener noreferrer"
                   :download="opensInline(file.mediaType) ? undefined : file.name"
-                  class="btn shrink-0 px-2.5 py-1 text-[12px]"
+                  class="btn shrink-0 px-2.5 py-1 text-[13px]"
                   >{{ opensInline(file.mediaType) ? 'Apri' : 'Scarica' }}</a
                 >
                 <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :aria-label="`Togli l’allegato: ${file.name}`" @click="removeFile(file.id)">
@@ -789,7 +789,7 @@ function absoluteTime(at: string): string {
                 </button>
               </li>
             </ul>
-            <p class="flex items-center gap-1.5 text-[12px] text-muted">
+            <p class="flex items-center gap-1.5 text-[13px] text-muted">
               <Icon name="private" :size="12" />{{ dropDepth > 0 ? 'Lascia i file qui per allegarli.' : 'Trascina qui i file, fino a 20 MB l’uno. Restano su questo Mac, privati.' }}
             </p>
           </section>
@@ -801,22 +801,22 @@ function absoluteTime(at: string): string {
           <div class="flex flex-col gap-2.5">
             <ApprovalCard v-for="approval in cardApprovals" :key="approval.id" :approval="approval" :decide="decideHere" />
             <div v-if="actions.length > 0 || chosen !== undefined" class="flex flex-wrap items-center gap-2">
-              <button v-for="action in actions" :key="action" type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy" @click="runAction(action)">
+              <button v-for="action in actions" :key="action" type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy" @click="runAction(action)">
                 {{ CARD_ACTION_TEXT[action] }}
               </button>
-              <span v-if="chosen !== undefined" class="text-[12.5px] text-muted">Ultima scelta: {{ chosen }}</span>
+              <span v-if="chosen !== undefined" class="text-[13.5px] text-muted">Ultima scelta: {{ chosen }}</span>
             </div>
-            <p v-if="actions.includes('start')" class="text-[12.5px] text-muted">
+            <p v-if="actions.includes('start')" class="text-[13.5px] text-muted">
               Con Avvia, la card parte appena non aspetta più nulla<template v-if="asks">; prima ti chiedo con chi lavora</template>.
             </p>
             <div v-if="report !== null" class="rounded-lg border border-line bg-bg px-3 py-2.5">
-              <p class="mb-1.5 flex items-center gap-2 text-[12px] text-muted">
+              <p class="mb-1.5 flex items-center gap-2 text-[13px] text-muted">
                 <span class="flex-1">Rapporto · {{ CHOICE_TEXT[report.executor ?? ''] ?? report.executor ?? '' }}{{ report.model === null ? '' : ` / ${report.model}` }}</span>
                 <LabelBadge :label="report.label" />
               </p>
-              <MarkdownText :source="report.text" class="max-h-72 overflow-y-auto text-[13px] break-words" />
+              <MarkdownText :source="report.text" class="max-h-72 overflow-y-auto text-[14px] break-words" />
               <ul v-if="report.files.length > 0" class="mt-2 flex flex-wrap gap-1.5" aria-label="File scritti nel progetto">
-                <li v-for="file in report.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
+                <li v-for="file in report.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[12.5px]">{{ file }}</li>
               </ul>
             </div>
           </div>
@@ -825,17 +825,17 @@ function absoluteTime(at: string): string {
         <!-- Aspetta -->
         <section aria-labelledby="card-deps">
           <h3 id="card-deps" class="hud-title mb-2">Aspetta</h3>
-          <p v-if="card.dependsOn.length === 0" class="mb-2 text-[13px] text-muted">Non aspetta altre card.</p>
+          <p v-if="card.dependsOn.length === 0" class="mb-2 text-[14px] text-muted">Non aspetta altre card.</p>
           <ul v-else class="mb-2 flex flex-col gap-1">
             <li v-for="dep in card.dependsOn" :key="dep.id" class="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5">
               <span class="min-w-0 flex-1 break-words" :class="{ 'text-muted line-through': dep.status === 'done' }">{{ dep.title }}</span>
-              <span class="shrink-0 font-mono text-[11px]" :class="dep.status === 'done' ? 'text-ok' : dep.status === 'failed' ? 'text-danger' : 'text-muted'" :title="dep.status === 'failed' ? 'Fallita: finché non la togli o non riparte, questa card aspetta' : undefined">{{ STATUS_COLUMN_TEXT[dep.status] }}</span>
+              <span class="shrink-0 font-mono text-[12.5px]" :class="dep.status === 'done' ? 'text-ok' : dep.status === 'failed' ? 'text-danger' : 'text-muted'" :title="dep.status === 'failed' ? 'Fallita: finché non la togli o non riparte, questa card aspetta' : undefined">{{ STATUS_COLUMN_TEXT[dep.status] }}</span>
               <button type="button" class="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" :disabled="busy" :aria-label="`Non aspettare più: ${dep.title}`" @click="removeDependency(dep.id)">
                 <Icon name="close" :size="13" />
               </button>
             </li>
           </ul>
-          <select v-if="(card.status === 'inbox' || card.status === 'ready') && choices.length > 0" class="field w-full px-2 py-1.5 text-[13px]" aria-label="Aspetta anche…" :disabled="busy" @change="addDependency">
+          <select v-if="(card.status === 'inbox' || card.status === 'ready') && choices.length > 0" class="field w-full px-2 py-1.5 text-[14px]" aria-label="Aspetta anche…" :disabled="busy" @change="addDependency">
             <option value="">Aspetta anche…</option>
             <option v-for="other in choices" :key="other.id" :value="other.id">{{ other.title }}</option>
           </select>
@@ -844,7 +844,7 @@ function absoluteTime(at: string): string {
         <section v-if="moves.length > 0" aria-labelledby="card-moves">
           <h3 id="card-moves" class="hud-title mb-2">Sposta in</h3>
           <div class="flex flex-wrap gap-1.5">
-            <button v-for="item in moves" :key="item.to" type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="busy" @click="move(item.to)">{{ item.text }}</button>
+            <button v-for="item in moves" :key="item.to" type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="busy" @click="move(item.to)">{{ item.text }}</button>
           </div>
         </section>
 
@@ -858,9 +858,9 @@ function absoluteTime(at: string): string {
         <section v-if="history.length > 0" aria-labelledby="card-history">
           <h3 id="card-history" class="hud-title mb-2">Cronologia</h3>
           <ol class="flex flex-col gap-1.5 border-l border-line pl-3">
-            <li v-for="(line, index) in history" :key="`${line.at}:${index}`" class="flex items-baseline gap-2 text-[12.5px]">
+            <li v-for="(line, index) in history" :key="`${line.at}:${index}`" class="flex items-baseline gap-2 text-[13.5px]">
               <span class="min-w-0 flex-1">{{ line.text }}</span>
-              <time class="shrink-0 font-mono text-[11px] text-muted" :datetime="line.at" :title="absoluteTime(line.at)">{{ line.when }}</time>
+              <time class="shrink-0 font-mono text-[12.5px] text-muted" :datetime="line.at" :title="absoluteTime(line.at)">{{ line.when }}</time>
             </li>
           </ol>
         </section>
@@ -881,9 +881,9 @@ function absoluteTime(at: string): string {
           </template>
         </dl>
         <div v-if="card.status === 'open'">
-          <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="busy" @click="commitmentDone"><Icon name="approve" :size="14" />Fatto</button>
+          <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy" @click="commitmentDone"><Icon name="approve" :size="14" />Fatto</button>
         </div>
-        <p class="text-[12.5px] text-muted">Per rinviarlo o dire perché non è fatto, scrivilo alla Segretaria in chat.</p>
+        <p class="text-[13.5px] text-muted">Per rinviarlo o dire perché non è fatto, scrivilo alla Segretaria in chat.</p>
       </template>
     </div>
   </aside>

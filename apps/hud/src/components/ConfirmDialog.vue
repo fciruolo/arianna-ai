@@ -39,13 +39,13 @@ onBeforeUnmount(() => {
         <h2 id="confirm-title" class="min-w-0 flex-1 truncate font-medium">{{ title }}</h2>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" :disabled="busy" @click="cancel"><Icon name="close" :size="16" /></button>
       </header>
-      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[15px] py-3 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[15px] py-3 text-[14.5px]">
         <slot />
         <p v-if="problem !== null" class="text-xs text-danger" role="alert">{{ problem }}</p>
       </div>
       <footer class="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-[15px] py-2.5">
-        <button type="button" class="rounded-md px-3 py-1 text-[13px] text-muted hover:text-ink" :disabled="busy" @click="cancel">Annulla</button>
-        <button type="button" class="btn px-3 py-1 text-[13px]" :class="danger ? 'btn-danger' : 'btn-primary'" :disabled="busy || disabled" @click="emit('confirm')">{{ confirmText }}</button>
+        <button type="button" class="rounded-md px-3 py-1 text-[14px] text-muted hover:text-ink" :disabled="busy" @click="cancel">Annulla</button>
+        <button type="button" class="btn px-3 py-1 text-[14px]" :class="danger ? 'btn-danger' : 'btn-primary'" :disabled="busy || disabled" @click="emit('confirm')">{{ confirmText }}</button>
       </footer>
     </section>
   </div>

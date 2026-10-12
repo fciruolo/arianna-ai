@@ -858,12 +858,12 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <span v-if="devPendingText !== null" class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-accent" aria-hidden="true" />
         </button>
         <!-- Incognito (D-136): the mask and the word, never a title. -->
-        <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[12.5px]">
+        <p v-if="incognitoHeader" class="flex min-w-0 flex-1 items-center gap-2 truncate text-[13.5px]">
           <Icon name="incognito" :size="18" />
-          <b class="font-hud text-[13px] font-semibold tracking-[0.08em]">Incognito</b>
+          <b class="font-hud text-[14px] font-semibold tracking-[0.08em]">Incognito</b>
           <span v-if="incognitoMode !== undefined" class="truncate opacity-80">· {{ MODE_TEXT[incognitoMode] }}<template v-if="incognitoProject"> · {{ incognitoProject }}</template></span>
         </p>
-        <p v-else class="min-w-0 flex-1 truncate text-[12.5px] text-muted">
+        <p v-else class="min-w-0 flex-1 truncate text-[13.5px] text-muted">
           <template v-if="page === 'studio'">Arianna / <b class="font-medium text-ink">Studio</b><template v-if="studioAddress.project"> / {{ studioAddress.project }}</template></template>
           <template v-else-if="current !== undefined">
             <span v-for="part in crumb" :key="part">{{ part }} / </span>
@@ -900,7 +900,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         <button
           v-if="incognitoOpen && page === 'chat'"
           type="button"
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-incognito-line px-2.5 py-1 text-[12.5px] font-medium text-incognito-ink hover:bg-white/10 disabled:opacity-60"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-incognito-line px-2.5 py-1 text-[13.5px] font-medium text-incognito-ink hover:bg-white/10 disabled:opacity-60"
           :disabled="ending"
           title="Termina: Arianna ferma il lavoro in corso e cancella testi, riassunti e attività"
           aria-haspopup="dialog"
@@ -926,7 +926,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         </button>
         <span v-if="callee !== undefined && callBlocked !== undefined" id="call-why" class="sr-only">{{ callBlocked }}</span>
         <InstallationBadge v-if="installation !== undefined" :info="installation" />
-        <span class="hidden font-mono text-[11px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
+        <span class="hidden font-mono text-[12.5px] tracking-[0.08em] whitespace-nowrap text-muted sm:inline">{{ clockText }}</span>
         <!-- The theme (D-158): one button, each click Chiaro → Scuro → Auto; the icon is the active theme. Also in Impostazioni → Aspetto. -->
         <button
           type="button"
@@ -946,7 +946,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <Icon name="panel" />
           <span
             v-if="elsewhere.length > 0"
-            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+            class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[12px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
         <!-- Right bar folded (D-097): only its icon, with what waits elsewhere as a badge. -->
@@ -961,7 +961,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
           <Icon name="panel-expand" />
           <span
             v-if="elsewhere.length > 0"
-            class="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[10px] leading-4 font-semibold text-accent-ink"
+            class="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-warn px-1 font-mono text-[12px] leading-4 font-semibold text-accent-ink"
           >{{ elsewhere.length }}</span>
         </button>
       </header>

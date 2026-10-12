@@ -40,7 +40,7 @@ const shown = computed(() => (alerts.value ?? []).map((alert) => ({ alert, text:
     <div class="flex flex-wrap items-end gap-3">
       <label class="flex flex-col gap-1 text-xs text-muted">
         Mese
-        <input v-model="month" type="month" class="field px-2 py-1 text-[13px]" />
+        <input v-model="month" type="month" class="field px-2 py-1 text-[14px]" />
       </label>
       <p class="pb-1.5 text-xs text-muted">Controlli fatti dal codice su questo computer, mai da un modello cloud.</p>
     </div>
@@ -58,8 +58,8 @@ const shown = computed(() => (alerts.value ?? []).map((alert) => ({ alert, text:
         >
           <span class="mt-0.5" :class="item.text.tone === 'danger' ? 'text-danger' : 'text-warn'"><Icon name="warning" :size="16" /></span>
           <span class="min-w-0 flex-1">
-            <b class="block text-[13.5px] font-medium">{{ item.text.title }}</b>
-            <span class="block text-[12px] text-muted">{{ item.text.detail }}</span>
+            <b class="block text-[14.5px] font-medium">{{ item.text.title }}</b>
+            <span class="block text-[13px] text-muted">{{ item.text.detail }}</span>
           </span>
           <span class="shrink-0 self-center text-xs text-muted">Vedi i movimenti</span>
         </button>

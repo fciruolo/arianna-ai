@@ -220,7 +220,7 @@ watch(
       </div>
 
       <!-- Warnings -->
-      <div v-if="noPrice.length > 0 || notBilled.length > 0 || dashboard.missing.length > 0 || summary.others.length > 0 || summary.othersWaiting.length > 0 || withoutDocument > 0" class="flex flex-col gap-1.5 rounded-xl border border-warn/50 bg-warn/10 px-3 py-2 text-[12.5px]">
+      <div v-if="noPrice.length > 0 || notBilled.length > 0 || dashboard.missing.length > 0 || summary.others.length > 0 || summary.othersWaiting.length > 0 || withoutDocument > 0" class="flex flex-col gap-1.5 rounded-xl border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
         <p v-if="noPrice.length > 0" class="flex flex-wrap items-center gap-1.5">
           <Icon name="warning" :size="14" class="text-warn" />
           {{ noPrice.length }} IM chius{{ noPrice.length === 1 ? 'o' : 'i' }} senza prezzo ({{ noPrice.map((im) => `${im.project} IM-${String(im.number)}${im.date ? ` del ${imDay(im.date)}` : ''}`).join(', ') }}): non entrano nei totali finché non gli dai un prezzo.
@@ -243,12 +243,12 @@ watch(
           <svg :viewBox="`0 0 ${String(CHART.width)} ${String(CHART.height)}`" class="block h-auto w-full" role="img" :aria-label="`Grafico dei guadagni ${periodText}`">
             <g v-for="tick in ticks" :key="tick.y">
               <line :x1="CHART.left" :x2="CHART.width" :y1="tick.y" :y2="tick.y" class="stroke-line" stroke-dasharray="2 4" />
-              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted font-mono text-[10px]">{{ tick.text }}</text>
+              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted font-mono text-[12px]">{{ tick.text }}</text>
             </g>
             <g v-for="(bar, index) in summary.chart" :key="bar.key">
               <title>{{ bar.label }}: {{ money(bar.paid + bar.invoiced + bar.toInvoice) }}</title>
               <rect v-for="segment in segments(bar)" :key="segment.kind" :x="CHART.left + slot * index + slot * 0.2" :width="slot * 0.6" :y="segment.y" :height="segment.h" rx="2" :class="SEGMENT_CLASS[segment.kind]" />
-              <text :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted font-mono text-[10px]">{{ bar.label }}</text>
+              <text :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted font-mono text-[12px]">{{ bar.label }}</text>
             </g>
           </svg>
           <div class="mt-1.5 flex flex-wrap gap-3 text-xs text-muted">
@@ -266,7 +266,7 @@ watch(
             <h2 id="dash-projects-title" class="hud-title mb-3">Per progetto · {{ periodText }}</h2>
             <ul class="grid gap-3">
               <li v-for="item in summary.projects" :key="item.name" class="grid gap-1">
-                <div class="flex justify-between gap-2 text-[13px]">
+                <div class="flex justify-between gap-2 text-[14px]">
                   <button type="button" class="truncate text-left hover:text-accent" @click="emit('project', item.name)">
                     {{ item.name }}<span class="text-muted"> · {{ priceText(item.name) }}</span>
                   </button>
@@ -282,7 +282,7 @@ watch(
           <!-- By year -->
           <section v-if="summary.years.length > 0" class="rounded-2xl border border-line bg-surface px-4 py-3.5" aria-labelledby="dash-years-title">
             <h2 id="dash-years-title" class="hud-title mb-2">Per anno</h2>
-            <table class="w-full text-[13px]">
+            <table class="w-full text-[14px]">
               <thead>
                 <tr class="border-b border-line text-left text-xs text-muted">
                   <th class="py-1.5 font-normal">Anno</th>
@@ -315,7 +315,7 @@ watch(
         <template v-if="invoicing">
           <div class="flex flex-col gap-2 border-b border-line bg-surface-2 px-4 pt-3.5">
             <label class="flex items-center gap-2 text-xs text-muted">Progetto
-              <select class="field px-2 py-1 text-[13px] text-ink" :value="invoicing.project" @change="pickProject(($event.target as HTMLSelectElement).value)">
+              <select class="field px-2 py-1 text-[14px] text-ink" :value="invoicing.project" @change="pickProject(($event.target as HTMLSelectElement).value)">
                 <option v-for="item in invoiceProjects" :key="item.name" :value="item.name">{{ item.name }}</option>
               </select>
             </label>
@@ -338,7 +338,7 @@ watch(
 
         <p v-if="invoices.length === 0" class="p-4 text-sm text-muted">Nessuna fattura registrata per {{ project === 'all' ? 'questo cliente' : project }}.</p>
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-[13px]">
+          <table class="w-full text-[14px]">
             <thead>
               <tr class="border-b border-line text-left text-xs text-muted">
                 <th class="px-4 py-2 font-normal">Numero</th>

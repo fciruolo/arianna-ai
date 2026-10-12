@@ -1699,13 +1699,13 @@ onBeforeUnmount(() => {
             ARIANNA
           </button>
         </div>
-        <p v-if="texts.note !== ''" class="mt-1.5 text-[12px] leading-snug text-muted">{{ texts.note }}</p>
-        <p class="mt-1.5 font-mono text-[11px] tracking-[0.04em] text-muted" aria-live="polite">
+        <p v-if="texts.note !== ''" class="mt-1.5 text-[13px] leading-snug text-muted">{{ texts.note }}</p>
+        <p class="mt-1.5 font-mono text-[12.5px] tracking-[0.04em] text-muted" aria-live="polite">
           <span class="text-ink">{{ counts.notes }}</span> {{ texts.pages }} · <span class="text-ink">{{ counts.links }}</span> collegamenti ·
           <span :class="counts.hidden > 0 ? 'text-l3' : ''">{{ counts.hidden }}</span> nascoste (Segreto)
           <template v-if="graph?.truncated"> · troppe pagine, mostrate le prime</template>
         </p>
-        <p v-if="view3d" class="mt-1 font-mono text-[10.5px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
+        <p v-if="view3d" class="mt-1 font-mono text-[12px] text-muted">Trascina per ruotare · rotella o pizzico per lo zoom · clic su un nodo per volarci · frecce e +/− dopo un clic sul grafo</p>
         <label class="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 focus-within:border-accent">
           <Icon name="search" :size="14" />
           <input
@@ -1719,13 +1719,13 @@ onBeforeUnmount(() => {
         </label>
         <ul v-if="filtering" class="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
           <li v-for="{ node, index } in results" :key="node.id">
-            <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] hover:bg-surface-2" @click="focusOn(index)">
+            <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(index)">
               <span class="size-2 shrink-0 rounded-full" :style="{ background: folderVar(node.folder) }" />
               <span class="min-w-0 flex-1 truncate">{{ node.title }}</span>
-              <span class="font-mono text-[10px] text-muted">{{ folderName(node.folder) }}</span>
+              <span class="font-mono text-[12px] text-muted">{{ folderName(node.folder) }}</span>
             </button>
           </li>
-          <li v-if="results.length === 0" class="px-2 py-1 text-[13px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
+          <li v-if="results.length === 0" class="px-2 py-1 text-[14px] text-muted">Nessuna {{ source === 'arianna' ? 'pagina' : 'nota' }} corrisponde.</li>
         </ul>
       </div>
       <p v-if="focusNotice !== null" role="status" class="pointer-events-auto rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ focusNotice }}</p>
@@ -1735,7 +1735,7 @@ onBeforeUnmount(() => {
     <!-- Legend -->
     <div v-if="legend.length > 0" class="hud-card pointer-events-auto absolute bottom-3 left-3 max-w-[calc(100%-24px)] bg-surface/85 px-3 py-2.5 backdrop-blur-sm">
       <h2 class="hud-title mb-1.5">Legenda</h2>
-      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[11px]">
+      <ul class="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12.5px]">
         <li v-for="item in legend" :key="item.folder" class="flex items-center gap-1.5">
           <span
             v-if="item.folder === '#'"
@@ -1747,7 +1747,7 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
-      <p class="mt-1.5 flex flex-wrap gap-x-3.5 font-mono text-[10.5px] text-muted">
+      <p class="mt-1.5 flex flex-wrap gap-x-3.5 font-mono text-[12px] text-muted">
         <span class="flex items-center gap-1.5"><span class="inline-block h-px w-5 bg-accent" />collegamento</span>
         <span class="flex items-center gap-1.5"><span class="inline-block w-5 border-t border-dashed border-muted" />tag in comune</span>
       </p>
@@ -1770,7 +1770,7 @@ onBeforeUnmount(() => {
     >
       <header class="flex items-start gap-2 border-b border-line px-4 pt-3.5 pb-3">
         <div class="min-w-0 flex-1">
-          <p class="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.06em] text-muted uppercase">
+          <p class="flex items-center gap-2 font-mono text-[12px] tracking-[0.06em] text-muted uppercase">
             <span class="inline-block size-2 rounded-full" :style="{ background: folderVar(selectedNode.folder) }" />
             {{ folderName(selectedNode.folder) }}
             <template v-if="selectedNode.kind !== null && selectedNode.kind !== 'tag'"> · {{ selectedNode.kind }}</template>
@@ -1783,13 +1783,13 @@ onBeforeUnmount(() => {
         </button>
       </header>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <p v-if="selectedNode.updatedAt !== null" class="font-mono text-[10.5px] text-muted">Aggiornata {{ formatDate(selectedNode.updatedAt) }}</p>
+        <p v-if="selectedNode.updatedAt !== null" class="font-mono text-[12px] text-muted">Aggiornata {{ formatDate(selectedNode.updatedAt) }}</p>
         <div v-if="selectedNode.tags.length > 0" class="mt-2 flex flex-wrap gap-1.5">
           <button
             v-for="tag in selectedNode.tags"
             :key="tag"
             type="button"
-            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[11px] text-muted hover:border-accent hover:text-accent"
+            class="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[12.5px] text-muted hover:border-accent hover:text-accent"
             :title="`Filtra #${tag}`"
             @click="filter = `#${tag}`"
           >
@@ -1822,7 +1822,7 @@ onBeforeUnmount(() => {
           <h3 class="hud-title mb-1.5">{{ selectedNode.kind === 'tag' ? 'Note con questo tag' : 'Collegata a' }} · {{ selectedNeighbours.length }}</h3>
           <ul class="flex flex-col gap-0.5">
             <li v-for="item in selectedNeighbours" :key="item.node?.id">
-              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] hover:bg-surface-2" @click="focusOn(item.index)">
+              <button type="button" class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[14px] hover:bg-surface-2" @click="focusOn(item.index)">
                 <span class="size-2 shrink-0 rounded-full" :style="{ background: item.node?.kind === 'tag' ? 'var(--muted)' : folderVar(item.node?.folder ?? '') }" />
                 <span class="min-w-0 flex-1 truncate">{{ item.node?.title }}</span>
               </button>
@@ -1954,7 +1954,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   backdrop-filter: blur(4px);
@@ -1986,7 +1986,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border-radius: 7px;
   color: var(--muted);
-  font: 600 10.5px/1 var(--font-hud);
+  font: 600 12px/1 var(--font-hud);
   letter-spacing: 0.14em;
   transition:
     color 0.15s,

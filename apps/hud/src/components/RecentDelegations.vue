@@ -49,25 +49,25 @@ function when(ts: string): string {
 <template>
   <section>
     <h3 class="hud-title mb-2.5 flex items-center justify-between">
-      <span class="flex items-center gap-1.5"><Icon name="history" :size="14" />Deleghe recenti</span>
-      <small class="font-mono text-[10px] tracking-[0.06em] normal-case">chi ha fatto cosa</small>
+      <span class="flex items-center gap-1.5 whitespace-nowrap"><Icon name="history" :size="14" />Deleghe recenti</span>
+      <small class="font-mono text-[12px] tracking-[0.06em] whitespace-nowrap normal-case">chi ha fatto cosa</small>
     </h3>
-    <p v-if="problem !== null" class="text-[11.5px] text-warn">{{ problem }}</p>
-    <p v-else-if="rows.length === 0" class="text-[11.5px] text-muted">Nessuna delega ancora.</p>
+    <p v-if="problem !== null" class="text-[12.5px] text-warn">{{ problem }}</p>
+    <p v-else-if="rows.length === 0" class="text-[12.5px] text-muted">Nessuna delega ancora.</p>
     <ul v-else class="flex flex-col gap-1.5">
       <li v-for="row in rows" :key="row.id" class="rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
           <b class="font-semibold">{{ agentName(row.agent) }}</b>
           <span :class="statusClass[row.status]">{{ DELEGATION_STATUS_TEXT[row.status] }}</span>
-          <span class="ml-auto font-mono text-[10.5px] text-muted">{{ when(row.createdAt) }}</span>
+          <span class="ml-auto font-mono text-[12px] text-muted">{{ when(row.createdAt) }}</span>
         </div>
-        <div class="mt-0.5 truncate font-mono text-[10.5px] text-muted" :title="runnerText(row)">
+        <div class="mt-0.5 truncate font-mono text-[12px] text-muted" :title="runnerText(row)">
           {{ row.executor === null && row.alias === null ? 'non avviata' : runnerText(row) }}<template v-if="durationText(row.durationMs) !== undefined"> · {{ durationText(row.durationMs) }}</template><template v-if="row.files !== null && row.files > 0"> · {{ row.files }} file</template>
         </div>
         <button
           v-if="row.conversationId !== null"
           type="button"
-          class="mt-0.5 block max-w-full truncate text-left text-[11px] text-info hover:underline"
+          class="mt-0.5 block max-w-full truncate text-left text-[12.5px] text-info hover:underline"
           @click="emit('open', row.conversationId)"
         >
           {{ row.conversationTitle ?? 'Conversazione' }}<template v-if="row.repo !== null"> · {{ row.repo }}</template>

@@ -112,7 +112,7 @@ function onPanelFocusOut(event: FocusEvent): void {
 <template>
   <div ref="root" class="relative">
     <div
-      class="flex h-[30px] items-center rounded-full border text-[12.5px] transition-colors"
+      class="flex h-[30px] items-center rounded-full border text-[13.5px] transition-colors"
       :class="filtering ? 'border-accent/60 bg-accent/10 text-ink' : 'border-line-strong text-muted hover:border-accent/60 hover:text-ink'"
     >
       <button
@@ -147,7 +147,7 @@ function onPanelFocusOut(event: FocusEvent): void {
       ref="list"
       :role="options === undefined ? 'dialog' : 'menu'"
       :aria-label="label"
-      class="absolute top-full z-30 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-line-strong bg-surface p-1 text-[13px] shadow-[0_14px_40px_#0005]"
+      class="absolute top-full z-30 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-line-strong bg-surface p-1 text-[14px] shadow-[0_14px_40px_#0005]"
       :class="alignRight ? 'right-0' : 'left-0'"
       @keydown="onMenuKey"
       @focusout="onPanelFocusOut"

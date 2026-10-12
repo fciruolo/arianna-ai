@@ -183,11 +183,11 @@ onBeforeUnmount(() => {
       <header class="flex shrink-0 items-center gap-2.5 border-b border-line px-[15px] py-2.5">
         <span class="text-warn"><Icon name="warning" :size="18" /></span>
         <h2 id="pending-title" ref="title" tabindex="-1" class="min-w-0 flex-1 truncate font-medium outline-none">{{ PENDING_TITLE }}</h2>
-        <small v-if="total > 0" class="font-mono text-[10.5px] text-muted">{{ total }}</small>
+        <small v-if="total > 0" class="font-mono text-[12px] text-muted">{{ total }}</small>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi la finestra" title="Chiudi la finestra" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
-      <div class="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain px-[15px] py-3 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain px-[15px] py-3 text-[14.5px]">
         <p v-if="problem !== null" class="text-warn">{{ problem }}</p>
         <p v-if="dismissProblem !== null" class="text-warn" role="alert">{{ dismissProblem }}</p>
         <p class="sr-only" aria-live="polite">{{ announcement }}</p>
@@ -203,12 +203,12 @@ onBeforeUnmount(() => {
               @click="choose(item)"
             >
               <span class="flex items-center gap-2 text-xs">
-                <span class="font-mono text-[10.5px] tracking-[0.06em] text-warn uppercase">{{ item.kindText }}</span>
-                <span class="ml-auto shrink-0 font-mono text-[10.5px] text-muted">{{ waitingSinceText(item.since, now) }}</span>
+                <span class="font-mono text-[12px] tracking-[0.06em] text-warn uppercase">{{ item.kindText }}</span>
+                <span class="ml-auto shrink-0 font-mono text-[12px] text-muted">{{ waitingSinceText(item.since, now) }}</span>
               </span>
               <span class="flex min-w-0 items-center gap-2">
                 <span class="truncate font-semibold">{{ item.conversationTitle }}</span>
-                <span v-if="item.archived" class="shrink-0 font-mono text-[10px] text-muted">archiviata</span>
+                <span v-if="item.archived" class="shrink-0 font-mono text-[12px] text-muted">archiviata</span>
               </span>
               <span class="text-xs break-words text-muted">{{ item.ask }}</span>
             </button>

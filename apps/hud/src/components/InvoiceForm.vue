@@ -27,26 +27,26 @@ function submit(): void {
 
 <template>
   <form class="flex flex-col gap-3 border-b border-line bg-surface-2 px-4 py-3.5" @submit.prevent="submit">
-    <p v-if="props.blocked" class="text-[13px] text-warn">{{ props.blocked }}</p>
-    <p v-else class="text-[13px]">
+    <p v-if="props.blocked" class="text-[14px] text-warn">{{ props.blocked }}</p>
+    <p v-else class="text-[14px]">
       Registri la fattura che hai fatto col tuo programma, con {{ props.ims.map((n) => `IM-${String(n)}`).join(', ') }}<template v-if="props.taxable">, imponibile {{ moneyText(props.taxable.cents, props.taxable.currency) }}</template>.
     </p>
     <div class="grid gap-3 sm:grid-cols-[150px_150px_170px_150px]">
       <label class="flex flex-col gap-1 text-xs text-muted">Numero
-        <input v-model="form.number" maxlength="40" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="12/2026" />
+        <input v-model="form.number" maxlength="40" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="12/2026" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">Data
-        <input v-model="form.issuedOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
+        <input v-model="form.issuedOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">Totale documento
-        <input v-model="form.document" inputmode="decimal" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="549,00" :aria-invalid="form.document !== '' && typeof documentCents !== 'number'" />
+        <input v-model="form.document" inputmode="decimal" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="549,00" :aria-invalid="form.document !== '' && typeof documentCents !== 'number'" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">Scadenza (facoltativa)
-        <input v-model="form.dueOn" type="date" class="field px-2 py-1.5 text-[13px] text-ink" />
+        <input v-model="form.dueOn" type="date" class="field px-2 py-1.5 text-[14px] text-ink" />
       </label>
     </div>
     <label class="flex flex-col gap-1 text-xs text-muted">Nota (facoltativa)
-      <input v-model="form.note" maxlength="2000" class="field px-2 py-1.5 text-[13px] text-ink" placeholder="IM di ottobre" />
+      <input v-model="form.note" maxlength="2000" class="field px-2 py-1.5 text-[14px] text-ink" placeholder="IM di ottobre" />
     </label>
     <p class="text-xs text-muted">
       Il totale documento è quello scritto sulla fattura, con IVA, ritenuta e bollo: è la cifra che conta nella dashboard del cliente.
@@ -54,8 +54,8 @@ function submit(): void {
       Senza scadenza vale quella calcolata dai giorni di pagamento del cliente.
     </p>
     <div class="flex justify-end gap-2">
-      <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="props.busy" @click="emit('cancel')">Annulla</button>
-      <button type="submit" class="btn btn-primary px-3 py-1 text-[13px] font-semibold" :disabled="props.busy || !valid || (props.blocked ?? null) !== null">Registra la fattura</button>
+      <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="props.busy" @click="emit('cancel')">Annulla</button>
+      <button type="submit" class="btn btn-primary px-3 py-1 text-[14px] font-semibold" :disabled="props.busy || !valid || (props.blocked ?? null) !== null">Registra la fattura</button>
     </div>
   </form>
 </template>

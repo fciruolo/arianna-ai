@@ -127,8 +127,8 @@ watch(
     <p v-else-if="note === null" class="p-4 text-sm text-muted">Apro la nota…</p>
     <NoteRelease v-else-if="releasing" :project="project" :path="note.path" :original="note.body" :version="note.version" @close="releasing = false" @open="(id) => emit('open', id)" />
     <template v-else-if="editing === null">
-      <p class="border-b border-line px-4 py-2 font-mono text-[11.5px] text-muted">{{ note.path }}</p>
-      <ul v-if="note.header.length > 0" class="flex flex-col gap-0.5 border-b border-line px-4 py-2 font-mono text-[11.5px] text-muted">
+      <p class="border-b border-line px-4 py-2 font-mono text-[12.5px] text-muted">{{ note.path }}</p>
+      <ul v-if="note.header.length > 0" class="flex flex-col gap-0.5 border-b border-line px-4 py-2 font-mono text-[12.5px] text-muted">
         <li v-for="line in note.header" :key="line" class="break-words">{{ line }}</li>
       </ul>
       <MarkdownText v-if="note.body.trim() !== ''" class="px-4 py-3" :source="note.body" />
@@ -137,29 +137,29 @@ watch(
     <form v-else class="flex flex-col gap-3 px-4 py-3.5" @submit.prevent="save">
       <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
         <label class="flex flex-col gap-1 text-xs text-muted">Titolo
-          <input ref="titleInput" v-model="editing.title" maxlength="200" class="field px-2 py-1.5 text-[13px] text-ink" />
+          <input ref="titleInput" v-model="editing.title" maxlength="200" class="field px-2 py-1.5 text-[14px] text-ink" />
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted">Etichetta di privacy (label)
-          <select v-model="editing.label" class="field px-2 py-1.5 text-[13px] text-ink">
+          <select v-model="editing.label" class="field px-2 py-1.5 text-[14px] text-ink">
             <option v-for="label in labels" :key="label" :value="label">{{ LABEL_OPTION[label] }}</option>
           </select>
         </label>
       </div>
       <label class="flex flex-col gap-1 text-xs text-muted">Altre righe dell’intestazione (una per riga, «chiave: valore»)
-        <textarea v-model="editing.header" rows="3" class="field px-2 py-1.5 font-mono text-[12px] text-ink" placeholder="source: capture:hud:…" />
+        <textarea v-model="editing.header" rows="3" class="field px-2 py-1.5 font-mono text-[13px] text-ink" placeholder="source: capture:hud:…" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">Testo
-        <textarea v-model="editing.text" rows="14" class="field px-2 py-1.5 text-[13px] text-ink" />
+        <textarea v-model="editing.text" rows="14" class="field px-2 py-1.5 text-[14px] text-ink" />
       </label>
       <p class="text-xs text-muted">Nella select la protezione cresce dall’alto in basso. Alzarla è sempre permesso; abbassarla chiede conferma, e mai sotto quella della cartella ({{ LABEL_TEXT[note.floor] }}). Titolo e label hanno i loro campi, non vanno fra le altre righe dell’intestazione.</p>
-      <p v-if="goesDown" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[13px]">
+      <p v-if="goesDown" class="rounded-lg border border-danger/40 bg-danger/8 px-3 py-2 text-[14px]">
         <b>La protezione scende</b> da {{ LABEL_TEXT[note.label] }} a {{ LABEL_TEXT[editing.label] }}: la leggerà anche una conversazione che oggi non la vede.
         <template v-if="editing.confirmLower"> Premi di nuovo per confermare.</template>
       </p>
       <p v-if="editing.error" class="text-sm text-danger" role="alert">{{ editing.error }}</p>
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="editing.busy" @click="editing = null">Annulla</button>
-        <button type="submit" class="btn px-3 py-1 text-[13px] font-semibold" :class="goesDown ? 'btn-danger' : 'btn-primary'" :disabled="!canSave">
+        <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="editing.busy" @click="editing = null">Annulla</button>
+        <button type="submit" class="btn px-3 py-1 text-[14px] font-semibold" :class="goesDown ? 'btn-danger' : 'btn-primary'" :disabled="!canSave">
           {{ goesDown ? (editing.confirmLower ? `Sì, abbassa a ${LABEL_TEXT[editing.label]}` : 'Salva') : 'Salva' }}
         </button>
       </div>

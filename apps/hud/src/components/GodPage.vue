@@ -201,47 +201,47 @@ onBeforeUnmount(() => window.clearInterval(timer));
           <PixelAgent v-if="props.character !== undefined" :choice="props.character" pose="idle" :scale="1" label="GOD" />
           <Icon v-else name="god" :size="16" />
           <h1 id="god-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">GOD</h1>
-          <span class="font-mono text-[10.5px] tracking-[0.06em] text-muted">Arianna sviluppata da dentro Arianna</span>
+          <span class="font-mono text-[12px] tracking-[0.06em] text-muted">Arianna sviluppata da dentro Arianna</span>
           <button type="button" class="ml-auto rounded-md p-1.5 text-muted hover:text-ink" title="Rileggi" aria-label="Rileggi" @click="refresh">
             <Icon name="retry" :size="15" />
           </button>
         </div>
-        <p class="mt-2 text-[13.5px] text-muted">
+        <p class="mt-2 text-[14.5px] text-muted">
           GOD lavora in cloni del codice di Arianna con soli dati finti: non vede mai il database, la cassaforte né le tue conversazioni. Propone un piano; approvato, ogni sottocompito lavora in un clone suo con il Coder e poi il Reviewer. Poi «Prova» riavvia questa Arianna con il lavoro, e «Approva funzionalità» lo porta in main.
         </p>
         <p v-if="loadError !== null" role="alert" class="mt-3 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">{{ loadError }}</p>
         <p v-else-if="loading" class="py-4 text-center font-mono text-xs tracking-[0.12em] text-muted">LEGGO LO STATO…</p>
         <template v-if="status !== null">
-          <div class="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-[14px]">
             <Icon name="branch" :size="14" />
-            <span class="min-w-0 flex-1 font-mono text-[12px] break-words">{{ cloneText(status.main) }}</span>
+            <span class="min-w-0 flex-1 font-mono text-[13px] break-words">{{ cloneText(status.main) }}</span>
             <button
               type="button"
-              class="rounded-lg border border-line px-2.5 py-1 text-[12.5px] hover:border-line-strong disabled:opacity-50"
+              class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong disabled:opacity-50"
               :disabled="syncing || status.project === 'wrong-path'"
               @click="sync"
             >
               {{ syncing ? 'Aggiorno…' : status.main.exists ? 'Aggiorna il clone' : 'Crea il clone' }}
             </button>
           </div>
-          <p v-if="status.quota !== undefined" class="mt-2 font-mono text-[11px] text-muted">{{ quotaText(status.quota) }}</p>
+          <p v-if="status.quota !== undefined" class="mt-2 font-mono text-[12.5px] text-muted">{{ quotaText(status.quota) }}</p>
           <div v-if="landing !== null && (landing.landing !== null || landing.installation.trial !== null || coreGone)" class="mt-3 rounded-lg border border-info/50 bg-info/10 px-3 py-2 text-sm" role="status">
             <p v-if="coreGone">Arianna si sta riavviando: la pagina si ricarica da sola appena torna.</p>
             <p v-else-if="landing.landing !== null">{{ LAND_TEXT[landing.landing.action] }}: {{ landing.landing.phase }}…</p>
-            <p v-else>Arianna è in prova sul ramo <span class="font-mono text-[12px]">{{ landing.installation.trial }}</span>: provala, poi «Approva funzionalità» o «Non funziona» sul lavoro qui sotto.</p>
+            <p v-else>Arianna è in prova sul ramo <span class="font-mono text-[13px]">{{ landing.installation.trial }}</span>: provala, poi «Approva funzionalità» o «Non funziona» sul lavoro qui sotto.</p>
           </div>
           <p
             v-if="landing !== null && landing.outcome !== null && landing.landing === null && !coreGone"
             class="mt-3 rounded-lg border px-3 py-2 text-sm"
             :class="landing.outcome.ok ? 'border-ok/50 bg-ok/10' : 'border-danger/50 bg-danger/10 text-danger'"
           >
-            {{ landing.outcome.text }} <span class="font-mono text-[11px] text-muted">{{ when(landing.outcome.at) }}</span>
+            {{ landing.outcome.text }} <span class="font-mono text-[12.5px] text-muted">{{ when(landing.outcome.at) }}</span>
           </p>
           <p v-if="blocker !== null" class="mt-3 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-sm">{{ blocker }}</p>
           <div class="mt-4 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-50"
+              class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-accent-ink disabled:opacity-50"
               :disabled="blocker !== null"
               @click="emit('chat', status.workspace)"
             >
@@ -253,12 +253,12 @@ onBeforeUnmount(() => window.clearInterval(timer));
       </section>
 
       <section v-if="status !== null && status.conversations.length > 0" class="hud-card p-4" aria-labelledby="god-chats">
-        <h2 id="god-chats" class="mb-2 font-hud text-[13px] font-semibold tracking-[0.12em] uppercase">Conversazioni con GOD</h2>
+        <h2 id="god-chats" class="mb-2 font-hud text-[14px] font-semibold tracking-[0.12em] uppercase">Conversazioni con GOD</h2>
         <ul class="flex flex-col">
           <li v-for="conversation in status.conversations" :key="conversation.id">
             <button type="button" class="flex w-full items-baseline gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2" @click="emit('open', conversation.id)">
-              <span class="min-w-0 flex-1 truncate text-[13.5px]">{{ conversation.title ?? 'Conversazione senza titolo' }}</span>
-              <span class="shrink-0 font-mono text-[11px] text-muted">{{ when(conversation.lastAt) }}</span>
+              <span class="min-w-0 flex-1 truncate text-[14.5px]">{{ conversation.title ?? 'Conversazione senza titolo' }}</span>
+              <span class="shrink-0 font-mono text-[12.5px] text-muted">{{ when(conversation.lastAt) }}</span>
             </button>
           </li>
         </ul>
@@ -270,14 +270,14 @@ onBeforeUnmount(() => window.clearInterval(timer));
       <article v-for="plan in plans" :key="plan.id" class="hud-card p-4" :aria-label="`Piano ${plan.title}`">
         <header class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 class="font-hud text-[15px] font-semibold">{{ plan.title }}</h2>
-          <span class="font-mono text-[11px] text-muted">{{ when(plan.createdAt) }}</span>
-          <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[12.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
+          <span class="font-mono text-[12.5px] text-muted">{{ when(plan.createdAt) }}</span>
+          <button v-if="plan.conversationId !== null" type="button" class="ml-auto text-[13.5px] text-muted underline-offset-2 hover:text-ink hover:underline" @click="emit('open', plan.conversationId)">chat con GOD</button>
           <div v-if="planLandActionsOf(plan.subtasks).length > 0" class="flex w-full flex-wrap gap-2">
             <button
               v-for="action in planLandActionsOf(plan.subtasks)"
               :key="action"
               type="button"
-              class="rounded-lg px-2.5 py-1 text-[12.5px] font-medium disabled:opacity-50"
+              class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50"
               :class="LAND_CLASS[action]"
               :disabled="acting !== null || busyLanding || blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) !== null"
               :title="blockOf(plan.subtasks.some((subtask) => subtask.trial === true)) ?? undefined"
@@ -288,49 +288,49 @@ onBeforeUnmount(() => window.clearInterval(timer));
             </button>
           </div>
           <div v-if="rejecting !== null && rejecting.kind === 'plans' && rejecting.id === plan.id" class="w-full">
-            <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[13px]" placeholder="Cosa non va? Lo leggono i Coder del piano, nel cloud: niente dati personali." />
+            <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[14px]" placeholder="Cosa non va? Lo leggono i Coder del piano, nel cloud: niente dati personali." />
             <div class="mt-1 flex gap-2">
-              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
-              <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px]" @click="rejecting = null">Annulla</button>
+              <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('plans', plan.id, 'reject', rejecting.text)">Torna a main e manda</button>
+              <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px]" @click="rejecting = null">Annulla</button>
             </div>
           </div>
         </header>
         <ol class="flex flex-col gap-3">
           <li v-for="subtask in plan.subtasks" :key="subtask.id" class="rounded-lg border border-line px-3 py-2.5">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-[11px] text-muted">{{ subtask.position }}</span>
-              <span class="min-w-0 flex-1 text-[13.5px] font-medium">{{ subtask.title }}</span>
-              <span class="rounded-[5px] border px-1.5 py-0.5 font-mono text-[10.5px] tracking-[0.06em] uppercase" :class="TONE_CLASS[badgeOf(subtask).tone]">{{ badgeOf(subtask).text }}</span>
+              <span class="font-mono text-[12.5px] text-muted">{{ subtask.position }}</span>
+              <span class="min-w-0 flex-1 text-[14.5px] font-medium">{{ subtask.title }}</span>
+              <span class="rounded-[5px] border px-1.5 py-0.5 font-mono text-[12px] tracking-[0.06em] uppercase" :class="TONE_CLASS[badgeOf(subtask).tone]">{{ badgeOf(subtask).text }}</span>
             </div>
-            <p class="mt-1 font-mono text-[11px] text-muted">
+            <p class="mt-1 font-mono text-[12.5px] text-muted">
               {{ subtask.branch }} · {{ subtask.path }}<template v-if="waitsText(subtask.blockedBy) !== null"> · {{ waitsText(subtask.blockedBy) }}</template>
             </p>
-            <p v-if="subtask.reason !== null" class="mt-1 text-[12.5px]">{{ subtask.reason }}</p>
-            <p v-if="verdictText(subtask.review) !== null" class="mt-1 text-[12.5px]" :class="subtask.review === 'ok' ? 'text-ok' : subtask.review === 'changes' ? 'text-warn' : 'text-muted'">{{ verdictText(subtask.review) }}</p>
-            <p v-if="subtask.changed.length > 0" class="mt-1 font-mono text-[11px] break-words text-muted">Cambiati: {{ subtask.changed.join(' · ') }}</p>
-            <p v-if="subtask.outside.length > 0" class="mt-1 text-[12.5px] text-warn">Fuori dai suoi file: {{ subtask.outside.join(', ') }}</p>
-            <p v-if="subtask.sensitive.length > 0" class="mt-1 rounded-lg border border-warn/50 bg-warn/10 px-2 py-1 text-[12.5px]">
+            <p v-if="subtask.reason !== null" class="mt-1 text-[13.5px]">{{ subtask.reason }}</p>
+            <p v-if="verdictText(subtask.review) !== null" class="mt-1 text-[13.5px]" :class="subtask.review === 'ok' ? 'text-ok' : subtask.review === 'changes' ? 'text-warn' : 'text-muted'">{{ verdictText(subtask.review) }}</p>
+            <p v-if="subtask.changed.length > 0" class="mt-1 font-mono text-[12.5px] break-words text-muted">Cambiati: {{ subtask.changed.join(' · ') }}</p>
+            <p v-if="subtask.outside.length > 0" class="mt-1 text-[13.5px] text-warn">Fuori dai suoi file: {{ subtask.outside.join(', ') }}</p>
+            <p v-if="subtask.sensitive.length > 0" class="mt-1 rounded-lg border border-warn/50 bg-warn/10 px-2 py-1 text-[13.5px]">
               Da guardare prima di provare, eseguono codice sul tuo computer: {{ subtask.sensitive.join(', ') }}
             </p>
             <details v-if="subtask.mergeCommands !== undefined && subtask.merged !== true && subtask.trial !== true" class="mt-2 rounded-lg border border-line bg-surface-2 px-3 py-2">
-              <summary class="cursor-pointer text-[12.5px] text-muted">Unire a mano, dalla cartella dell’installazione</summary>
-              <pre class="mt-1 font-mono text-[11.5px] whitespace-pre-wrap">{{ subtask.mergeCommands.join('\n') }}</pre>
+              <summary class="cursor-pointer text-[13.5px] text-muted">Unire a mano, dalla cartella dell’installazione</summary>
+              <pre class="mt-1 font-mono text-[12.5px] whitespace-pre-wrap">{{ subtask.mergeCommands.join('\n') }}</pre>
             </details>
             <div v-if="rejecting !== null && rejecting.kind === 'subtasks' && rejecting.id === subtask.id" class="mt-2">
-              <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[13px]" placeholder="Cosa non va? Lo legge il Coder, nel cloud: niente dati personali." />
+              <textarea v-model="rejecting.text" rows="3" maxlength="4000" class="field w-full px-2 py-1.5 text-[14px]" placeholder="Cosa non va? Lo legge il Coder, nel cloud: niente dati personali." />
               <div class="mt-1 flex gap-2">
-                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[12.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
-                <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px]" @click="rejecting = null">Annulla</button>
+                <button type="button" class="rounded-lg border border-danger/50 px-2.5 py-1 text-[13.5px] text-danger disabled:opacity-50" :disabled="rejecting.text.trim() === '' || acting !== null || landBlock !== null" :title="landBlock ?? undefined" @click="land('subtasks', subtask.id, 'reject', rejecting.text)">Torna a main e manda</button>
+                <button type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px]" @click="rejecting = null">Annulla</button>
               </div>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
-              <button v-if="subtask.conversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px] hover:border-line-strong" @click="emit('open', subtask.conversationId)">Chat del Coder</button>
-              <button v-if="subtask.reviewConversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[12.5px] hover:border-line-strong" @click="emit('open', subtask.reviewConversationId)">Chat del Reviewer</button>
+              <button v-if="subtask.conversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong" @click="emit('open', subtask.conversationId)">Chat del Coder</button>
+              <button v-if="subtask.reviewConversationId !== null" type="button" class="rounded-lg border border-line px-2.5 py-1 text-[13.5px] hover:border-line-strong" @click="emit('open', subtask.reviewConversationId)">Chat del Reviewer</button>
               <button
                 v-for="action in landActionsOf(subtask)"
                 :key="`land-${action}`"
                 type="button"
-                class="rounded-lg px-2.5 py-1 text-[12.5px] font-medium disabled:opacity-50"
+                class="rounded-lg px-2.5 py-1 text-[13.5px] font-medium disabled:opacity-50"
                 :class="LAND_CLASS[action]"
                 :disabled="acting !== null || busyLanding || blockOf(subtask.trial === true) !== null"
                 :title="blockOf(subtask.trial === true) ?? undefined"
@@ -343,7 +343,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
                 v-for="action in actionsOf(subtask)"
                 :key="action"
                 type="button"
-                class="rounded-lg border px-2.5 py-1 text-[12.5px] disabled:opacity-50"
+                class="rounded-lg border px-2.5 py-1 text-[13.5px] disabled:opacity-50"
                 :class="action === 'discard' ? 'border-danger/50 text-danger hover:bg-danger/10' : 'border-line hover:border-line-strong'"
                 :disabled="acting !== null"
                 @click="act(subtask, action)"

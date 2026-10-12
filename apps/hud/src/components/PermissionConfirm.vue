@@ -46,11 +46,11 @@ const isNew = computed(() => props.proposal.before === null);
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="permission-confirm-title">
     <div class="hud-card flex max-h-[90vh] w-full max-w-xl flex-col gap-3 p-4">
-      <h2 id="permission-confirm-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase">
+      <h2 id="permission-confirm-title" class="font-hud text-[13px] font-semibold tracking-[0.14em] uppercase">
         {{ isNew ? `Creare ${proposal.name} con questi permessi?` : `Cambiare i permessi di ${proposal.name}?` }}
       </h2>
       <div class="flex min-h-0 flex-col gap-3 overflow-y-auto">
-        <table class="w-full text-left text-[13px]">
+        <table class="w-full text-left text-[14px]">
           <caption class="sr-only">Cosa cambia</caption>
           <thead class="text-xs text-muted">
             <tr>
@@ -70,7 +70,7 @@ const isNew = computed(() => props.proposal.before === null);
 
         <div class="flex flex-col gap-1.5">
           <p class="text-xs text-muted">Trifecta letale: i tre lati non sono mai aperti insieme</p>
-          <ul class="flex flex-col gap-1 text-[13px]">
+          <ul class="flex flex-col gap-1 text-[14px]">
             <li v-for="side in sides" :key="side.side" class="flex gap-2">
               <span class="chip shrink-0" :class="side.open ? 'text-warn' : 'text-ok'">{{ side.open ? 'aperto' : 'chiuso' }}</span>
               <span><span class="font-semibold">{{ side.side }}</span> · {{ side.why }}</span>
@@ -80,7 +80,7 @@ const isNew = computed(() => props.proposal.before === null);
 
         <div class="flex flex-col gap-1.5">
           <p class="text-xs text-muted">Cosa esce verso il cloud</p>
-          <p v-for="line in exits" :key="line" class="text-[13px]">{{ line }}</p>
+          <p v-for="line in exits" :key="line" class="text-[14px]">{{ line }}</p>
         </div>
         <p class="text-xs text-muted">Finché resta in <code class="font-mono">data/agents</code> vale comunque il tetto: al massimo Interno e A1, niente deleghe, canali né approvazioni.</p>
       </div>

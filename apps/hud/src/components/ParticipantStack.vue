@@ -115,7 +115,7 @@ function remove(agent: string): void {
       v-if="stack.hidden.length > 0"
       type="button"
       :data-key="MORE"
-      class="relative -ml-2.5 grid size-8 place-items-center rounded-full border-2 border-bg bg-surface-2 font-mono text-[11px] font-medium text-muted hover:text-ink"
+      class="relative -ml-2.5 grid size-8 place-items-center rounded-full border-2 border-bg bg-surface-2 font-mono text-[12.5px] font-medium text-muted hover:text-ink"
       :class="open === MORE ? 'ring-1 ring-accent' : ''"
       :title="stack.hidden.map((participant) => agentName(participant.agent)).join(', ')"
       :aria-label="`Altri ${String(stack.hidden.length)} partecipanti`"
@@ -129,13 +129,13 @@ function remove(agent: string): void {
       ref="menu"
       role="menu"
       :aria-label="open === MORE ? 'Altri partecipanti' : agentName(open)"
-      class="absolute top-full left-0 z-30 mt-1.5 w-max max-w-[min(260px,calc(100vw-2rem))] min-w-[200px] rounded-xl border border-line-strong bg-surface p-1 text-[13px] shadow-[0_14px_40px_#0005]"
+      class="absolute top-full left-0 z-30 mt-1.5 w-max max-w-[min(260px,calc(100vw-2rem))] min-w-[200px] rounded-xl border border-line-strong bg-surface p-1 text-[14px] shadow-[0_14px_40px_#0005]"
     >
       <div v-for="participant in inMenu" :key="participant.agent" class="flex items-center gap-2 rounded-lg px-2 py-1.5">
         <PixelAgent :choice="characters?.[participant.agent]" :pose="participantPose(participant.agent, agents)" :scale="1" />
         <div class="min-w-0 flex-1 leading-tight">
           <div class="truncate font-medium text-ink">{{ agentName(participant.agent) }}</div>
-          <div class="truncate font-mono text-[10.5px] text-muted">{{ executorText(participant) }}</div>
+          <div class="truncate font-mono text-[12px] text-muted">{{ executorText(participant) }}</div>
         </div>
         <button
           v-if="open === MORE"

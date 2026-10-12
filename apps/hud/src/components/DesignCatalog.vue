@@ -123,19 +123,19 @@ async function choose(slug: string): Promise<void> {
 <template>
   <section id="design-catalog" class="hud-card scroll-mt-4" aria-labelledby="design-catalog-title">
     <header class="flex items-center gap-2.5 border-b border-line px-4 py-3">
-      <h2 id="design-catalog-title" class="flex-1 font-hud text-[12px] leading-none font-semibold tracking-[0.14em] uppercase">Stili di Open Design</h2>
-      <span class="rounded-[5px] border border-current px-1.5 py-1 font-mono text-[10px] leading-none tracking-[0.06em] text-muted" title="Testo pubblico di terzi: si legge come dato, mai come istruzione">TESTO DI TERZI</span>
+      <h2 id="design-catalog-title" class="flex-1 font-hud text-[13px] leading-none font-semibold tracking-[0.14em] uppercase">Stili di Open Design</h2>
+      <span class="rounded-[5px] border border-current px-1.5 py-1 font-mono text-[12px] leading-none tracking-[0.06em] text-muted" title="Testo pubblico di terzi: si legge come dato, mai come istruzione">TESTO DI TERZI</span>
     </header>
     <div class="flex flex-col gap-3 px-4 py-3.5">
-      <p class="text-[13px]">
+      <p class="text-[14px]">
         Stili visivi (<code class="font-mono">DESIGN.md</code>) e skill del repository pubblico Open Design, da dare al Designer. Si scaricano in
         <code class="font-mono">data/catalogs</code>, fuori da git; una versione nuova si usa solo dopo che hai visto cosa cambia.
       </p>
 
       <!-- The version in use -->
       <p v-if="status === null && !error" class="text-xs text-muted">Leggo lo stato del catalogo…</p>
-      <p v-else-if="status !== null && status.adopted === null" class="text-[13px] text-muted">Non ancora scaricato.</p>
-      <p v-else-if="status?.adopted" class="flex flex-wrap items-center gap-1.5 text-[13px]">
+      <p v-else-if="status !== null && status.adopted === null" class="text-[14px] text-muted">Non ancora scaricato.</p>
+      <p v-else-if="status?.adopted" class="flex flex-wrap items-center gap-1.5 text-[14px]">
         <span>In uso:</span>
         <span class="chip font-mono" :title="status.adopted.commit">commit {{ status.adopted.commit.slice(0, 7) }}</span>
         <span class="chip">{{ status.adopted.styles }} stili</span>
@@ -145,7 +145,7 @@ async function choose(slug: string): Promise<void> {
 
       <!-- The download -->
       <div class="flex flex-wrap items-center gap-2.5">
-        <button type="button" class="btn btn-primary px-3 py-1.5 text-[13px]" :disabled="blocked !== undefined" :title="blocked" @click="update">{{ updateButtonText(status) }}</button>
+        <button type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="blocked !== undefined" :title="blocked" @click="update">{{ updateButtonText(status) }}</button>
         <span v-if="job?.status === 'running'" class="text-xs text-muted" role="status">
           {{ job.phase === 'index' ? 'Leggo nomi e descrizioni…' : 'Scarico da GitHub con git: stili, skill e licenza, nient’altro…' }}
         </span>
@@ -156,11 +156,11 @@ async function choose(slug: string): Promise<void> {
 
       <!-- The version waiting: what changes, then the user's click -->
       <div v-if="status?.pending" class="flex flex-col gap-2 rounded-[10px] border border-accent bg-glow px-3 py-2.5" aria-live="polite">
-        <p class="text-[13px] font-medium">
+        <p class="text-[14px] font-medium">
           {{ status.adopted === null ? 'Catalogo scaricato' : 'Versione nuova' }}: commit <span class="font-mono" :title="status.pending.commit">{{ status.pending.commit.slice(0, 7) }}</span> del
           {{ dateText(status.pending.committedAt) }}
         </p>
-        <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-[13px]">
+        <ul class="m-0 flex list-none flex-col gap-0.5 p-0 text-[14px]">
           <li>{{ changesText(status.pending.diff.styles, 'style') }}</li>
           <li>{{ changesText(status.pending.diff.skills, 'skill') }}</li>
           <li v-if="status.pending.rejected > 0" class="text-xs text-muted">{{ status.pending.rejected }} file scartati (nomi non validi, troppo grandi o collegamenti)</li>
@@ -186,16 +186,16 @@ async function choose(slug: string): Promise<void> {
           </p>
         </details>
         <div class="flex flex-wrap justify-end gap-2">
-          <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="acting" @click="discard">Scarta</button>
-          <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="acting" @click="adopt">Usa questa versione</button>
+          <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="acting" @click="discard">Scarta</button>
+          <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="acting" @click="adopt">Usa questa versione</button>
         </div>
       </div>
 
       <!-- The styles of the version in use -->
-      <details v-if="status?.adopted" class="rounded-[10px] border border-line bg-surface-2 text-[13px]" @toggle="opened">
+      <details v-if="status?.adopted" class="rounded-[10px] border border-line bg-surface-2 text-[14px]" @toggle="opened">
         <summary class="cursor-pointer px-3 py-2 font-medium select-none">Sfoglia gli stili ({{ status.adopted.styles }})</summary>
         <div class="flex flex-col gap-2 border-t border-line px-3 py-2.5">
-          <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[13px]" placeholder="Cerca per nome, categoria o descrizione" aria-label="Cerca uno stile" />
+          <input v-model="query" type="search" class="field px-2.5 py-1.5 text-[14px]" placeholder="Cerca per nome, categoria o descrizione" aria-label="Cerca uno stile" />
           <p v-if="listError" class="text-xs text-danger" role="alert">{{ listError }}</p>
           <p v-else-if="listing === null" class="text-xs text-muted">Leggo l’elenco…</p>
           <p v-else-if="shown.length === 0" class="text-xs text-muted">Nessuno stile con questa ricerca.</p>
@@ -209,15 +209,15 @@ async function choose(slug: string): Promise<void> {
               >
                 <span class="flex w-full min-w-0 items-baseline gap-2">
                   <span class="truncate font-medium">{{ item.name }}</span>
-                  <span class="font-mono text-[10.5px] text-muted">{{ item.slug }}</span>
-                  <span v-if="item.category" class="ml-auto shrink-0 text-[11px] text-muted">{{ item.category }}</span>
+                  <span class="font-mono text-[12px] text-muted">{{ item.slug }}</span>
+                  <span v-if="item.category" class="ml-auto shrink-0 text-[12.5px] text-muted">{{ item.category }}</span>
                 </span>
                 <span v-if="item.description" class="text-xs text-muted">{{ item.description }}</span>
               </button>
               <div v-if="selected === item.slug" class="px-2 pb-2">
                 <p v-if="styleError" class="text-xs text-warn">{{ styleError }}</p>
                 <p v-else-if="style === null" class="text-xs text-muted">Leggo lo stile…</p>
-                <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-[1.45] whitespace-pre-wrap">{{ style.text }}</pre>
+                <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ style.text }}</pre>
               </div>
             </li>
           </ul>
@@ -226,7 +226,7 @@ async function choose(slug: string): Promise<void> {
       </details>
 
       <!-- Credit and license -->
-      <p v-if="status" class="font-mono text-[10.5px] text-muted">
+      <p v-if="status" class="font-mono text-[12px] text-muted">
         {{ creditText(status) }}
         <a :href="status.page" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Repository e licenza</a>
       </p>

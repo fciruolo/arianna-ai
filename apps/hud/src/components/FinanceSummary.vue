@@ -82,7 +82,7 @@ function width(cents: number): string {
     <div class="flex flex-wrap items-end gap-2">
       <label class="flex flex-col gap-1 text-xs text-muted">
         Periodo
-        <select v-model="period" class="field px-2 py-1.5 text-[13px]">
+        <select v-model="period" class="field px-2 py-1.5 text-[14px]">
           <option value="last12">Ultimi 12 mesi</option>
           <option value="thisYear">Quest’anno</option>
           <option value="lastYear">L’anno scorso</option>
@@ -90,7 +90,7 @@ function width(cents: number): string {
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Conto
-        <select v-model="account" class="field px-2 py-1.5 text-[13px]">
+        <select v-model="account" class="field px-2 py-1.5 text-[14px]">
           <option value="">Tutti i conti</option>
           <option v-for="item in accounts" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
@@ -147,7 +147,7 @@ function width(cents: number): string {
           <p v-if="bars.length === 0" class="text-sm text-muted">Nessuna spesa nel periodo.</p>
           <ul v-else class="flex flex-col gap-2">
             <li v-for="bar in bars" :key="bar.category ?? 'none'" class="flex flex-col gap-1">
-              <span class="flex items-baseline gap-2 text-[13px]">
+              <span class="flex items-baseline gap-2 text-[14px]">
                 <span class="min-w-0 flex-1 truncate" :class="bar.category === null ? 'text-muted italic' : ''">{{ categoryName(bar.category) }}</span>
                 <b class="tabular-nums">{{ formatCents(bar.expenses) }}</b>
                 <span class="w-9 text-right text-xs text-muted tabular-nums">{{ bar.share }}%</span>
@@ -165,9 +165,9 @@ function width(cents: number): string {
           <h3 class="hud-title">Rispetto all’anno prima</h3>
           <p v-if="yoy === null" class="text-sm text-muted">Il confronto compare quando ci sono movimenti nel periodo.</p>
           <template v-else>
-            <p class="text-[13px]">{{ formatMonth(yoy.current.month, true) }} contro {{ formatMonth(yoy.previous.month, true) }}</p>
+            <p class="text-[14px]">{{ formatMonth(yoy.current.month, true) }} contro {{ formatMonth(yoy.previous.month, true) }}</p>
             <div v-for="kind in (['expenses', 'income'] as const)" :key="kind" class="flex flex-col gap-1.5">
-              <span class="flex items-baseline gap-2 text-[13px]">
+              <span class="flex items-baseline gap-2 text-[14px]">
                 <span class="flex-1">{{ kind === 'expenses' ? 'Uscite' : 'Entrate' }}</span>
                 <span class="text-xs text-muted">{{ changeText(kind === 'expenses' ? yoy.expensesChange : yoy.incomeChange, yoy.previous[kind]) }}</span>
               </span>

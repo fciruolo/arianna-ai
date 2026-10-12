@@ -166,7 +166,7 @@ async function save(): Promise<void> {
 
 const kinds = Object.entries(KIND_TEXT) as [ClientKind, string][];
 const payments = Object.entries(PAYMENT_TEXT) as [PaymentMethod, string][];
-const input = 'field w-full px-2.5 py-1.5 text-[13px] text-ink disabled:opacity-60';
+const input = 'field w-full px-2.5 py-1.5 text-[14px] text-ink disabled:opacity-60';
 const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm:grid-cols-2';
 </script>
 
@@ -251,11 +251,11 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
             <option v-for="nature in VAT_NATURES" :key="nature" :value="nature">{{ nature }} · {{ VAT_NATURE_TEXT[nature] }}</option>
           </select>
         </FormField>
-        <label v-if="shown.splitPayment" class="flex items-center gap-2.5 text-[13px]">
+        <label v-if="shown.splitPayment" class="flex items-center gap-2.5 text-[14px]">
           <input id="cl-splitPayment" v-model="form.splitPayment" type="checkbox" class="switch" />
           Split payment (scissione dei pagamenti)
         </label>
-        <label v-if="shown.withholdingAgent" class="flex items-center gap-2.5 text-[13px]">
+        <label v-if="shown.withholdingAgent" class="flex items-center gap-2.5 text-[14px]">
           <input id="cl-withholdingAgent" v-model="form.withholdingAgent" type="checkbox" class="switch" />
           Applica la ritenuta d’acconto (sostituto d’imposta)
         </label>
@@ -264,7 +264,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
       <!-- FATTURAZIONE ELETTRONICA -->
       <section :class="sectionClass" aria-labelledby="cl-einvoice">
         <h3 id="cl-einvoice" class="hud-title sm:col-span-2">Fatturazione elettronica</h3>
-        <p class="text-[12.5px] text-muted sm:col-span-2">
+        <p class="text-[13.5px] text-muted sm:col-span-2">
           Codice destinatario in fattura: <b class="font-mono text-ink">{{ sdiShown }}</b>
           <template v-if="!italian"> · per un cliente estero la fattura va allo SDI come transfrontaliera.</template>
           <template v-else-if="pa"> · per una pubblica amministrazione è il codice univoco ufficio (IPA).</template>
@@ -291,7 +291,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
       <!-- INDIRIZZI -->
       <section :class="sectionClass" aria-labelledby="cl-addresses">
         <h3 id="cl-addresses" class="hud-title sm:col-span-2">Indirizzi</h3>
-        <p class="text-[13px] font-medium sm:col-span-2">Sede legale</p>
+        <p class="text-[14px] font-medium sm:col-span-2">Sede legale</p>
         <FormField id="cl-registeredAddress.street" label="Via" :problem="problemOf('registeredAddress.street')">
           <input id="cl-registeredAddress.street" v-model="office.street" :class="input" maxlength="200" />
         </FormField>
@@ -309,7 +309,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
         </FormField>
 
         <template v-for="other in [{ key: 'billingAddress', text: 'Indirizzo di fatturazione diverso', on: billingOn, address: billing }, { key: 'shippingAddress', text: 'Indirizzo operativo o di spedizione', on: shippingOn, address: shipping }]" :key="other.key">
-          <label class="mt-1 flex items-center gap-2.5 text-[13px] sm:col-span-2">
+          <label class="mt-1 flex items-center gap-2.5 text-[14px] sm:col-span-2">
             <input
               type="checkbox"
               class="switch"
@@ -355,7 +355,7 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
         <FormField id="cl-paymentDays" label="Giorni" :problem="problemOf('paymentDays')" hint="0 = a vista; di solito 30, 60 o 90.">
           <div class="flex items-center gap-3">
             <input id="cl-paymentDays" v-model="daysText" :class="input" inputmode="numeric" placeholder="30" />
-            <label class="flex shrink-0 items-center gap-2 text-[13px]"><input v-model="form.paymentEndOfMonth" type="checkbox" class="switch" />Fine mese</label>
+            <label class="flex shrink-0 items-center gap-2 text-[14px]"><input v-model="form.paymentEndOfMonth" type="checkbox" class="switch" />Fine mese</label>
           </div>
         </FormField>
         <FormField id="cl-currency" label="Valuta" :problem="problemOf('currency')">
@@ -385,11 +385,11 @@ const sectionClass = 'grid gap-3 rounded-xl border border-line bg-surface p-4 sm
     </fieldset>
 
     <div class="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-line bg-bg/90 py-3 backdrop-blur-sm">
-      <p v-if="readOnly" class="text-[13px] text-muted">Il cliente è archiviato: ripristinalo per cambiarlo.</p>
+      <p v-if="readOnly" class="text-[14px] text-muted">Il cliente è archiviato: ripristinalo per cambiarlo.</p>
       <template v-else>
-        <button type="submit" class="btn btn-primary px-3.5 py-1.5 text-[13px]" :disabled="saving"><Icon name="saved" :size="14" />{{ client === null ? 'Crea il cliente' : 'Salva' }}</button>
-        <button type="button" class="btn px-3 py-1.5 text-[13px]" :disabled="saving" @click="client === null ? emit('cancel') : load(client)">{{ client === null ? 'Annulla' : 'Annulla le modifiche' }}</button>
-        <p v-if="problem" class="text-[13px] text-danger" role="alert">{{ problem }}</p>
+        <button type="submit" class="btn btn-primary px-3.5 py-1.5 text-[14px]" :disabled="saving"><Icon name="saved" :size="14" />{{ client === null ? 'Crea il cliente' : 'Salva' }}</button>
+        <button type="button" class="btn px-3 py-1.5 text-[14px]" :disabled="saving" @click="client === null ? emit('cancel') : load(client)">{{ client === null ? 'Annulla' : 'Annulla le modifiche' }}</button>
+        <p v-if="problem" class="text-[14px] text-danger" role="alert">{{ problem }}</p>
       </template>
       <span class="ml-auto inline-flex items-center gap-1.5 text-xs text-muted"><Icon name="private" :size="13" />Privato: resta su questo computer, Claude e Codex non lo vedono</span>
     </div>

@@ -25,9 +25,9 @@ function openStudio(event: MouseEvent): void {
 </script>
 
 <template>
-  <p class="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[12.5px]">
+  <p class="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[13.5px]">
     <Icon name="studio" :size="14" />
-    <span class="truncate font-mono text-[11.5px]">{{ name }}</span>
+    <span class="truncate font-mono text-[12.5px]">{{ name }}</span>
     <a class="ml-auto shrink-0 font-medium text-accent hover:underline" :href="href" @click="openStudio">Apri nello Studio</a>
   </p>
 </template>

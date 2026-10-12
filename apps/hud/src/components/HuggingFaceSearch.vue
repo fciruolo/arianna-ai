@@ -96,14 +96,14 @@ const blockers = computed(() => (card.value === null ? [] : cardBlockers(card.va
         <input
           v-model="query"
           type="search"
-          class="field min-w-[180px] flex-1 px-2.5 py-1 text-[13px]"
+          class="field min-w-[180px] flex-1 px-2.5 py-1 text-[14px]"
           :maxlength="MAX_QUERY_LENGTH"
           placeholder="es. qwen3 4bit"
           aria-label="Cerca su Hugging Face"
           autocomplete="off"
           spellcheck="false"
         />
-        <button type="submit" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="!canSearch">{{ searching ? 'Cerco…' : 'Cerca' }}</button>
+        <button type="submit" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="!canSearch">{{ searching ? 'Cerco…' : 'Cerca' }}</button>
       </form>
       <p v-if="searchError !== null" role="alert" class="text-xs text-danger">{{ searchError }}</p>
 
@@ -120,7 +120,7 @@ const blockers = computed(() => (card.value === null ? [] : cardBlockers(card.va
             :aria-current="result.repo === cardFor ? 'true' : undefined"
             @click="choose(result.repo)"
           >
-            <span class="font-mono text-[12.5px] [overflow-wrap:anywhere]">{{ result.repo }}</span>
+            <span class="font-mono text-[13.5px] [overflow-wrap:anywhere]">{{ result.repo }}</span>
             <span class="text-xs text-muted">{{ resultLine(result) }}</span>
             <span v-if="result.inCatalog !== null" class="chip self-start text-ok">nel catalogo: {{ result.inCatalog }}</span>
           </button>
@@ -140,9 +140,9 @@ const blockers = computed(() => (card.value === null ? [] : cardBlockers(card.va
               </p>
             </div>
             <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-3">
-              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Peso</dt><dd class="text-[13px]">{{ sizeText(Math.max(card.sizeBytes, 1)) }}</dd></div>
-              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">RAM stimata</dt><dd class="text-[13px]">{{ card.ramMinGib }} GiB</dd></div>
-              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Licenza</dt><dd class="text-[13px]" :class="{ 'text-muted': card.license === null }">{{ card.license ?? 'non indicata' }}</dd></div>
+              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Peso</dt><dd class="text-[14px]">{{ sizeText(Math.max(card.sizeBytes, 1)) }}</dd></div>
+              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">RAM stimata</dt><dd class="text-[14px]">{{ card.ramMinGib }} GiB</dd></div>
+              <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Licenza</dt><dd class="text-[14px]" :class="{ 'text-muted': card.license === null }">{{ card.license ?? 'non indicata' }}</dd></div>
             </dl>
             <details class="text-xs">
               <summary class="cursor-pointer text-muted hover:text-ink">{{ keptFiles(card).length }} file nel catalogo<template v-if="excludedFiles(card).length > 0">, {{ excludedFiles(card).length }} esclusi</template></summary>
@@ -161,12 +161,12 @@ const blockers = computed(() => (card.value === null ? [] : cardBlockers(card.va
               <li v-for="reason in blockers" :key="reason">{{ reason }}</li>
             </ul>
             <div v-if="!confirming" class="flex flex-wrap items-center gap-2">
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="blockers.length > 0" @click="confirming = true">Aggiungi al catalogo…</button>
+              <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="blockers.length > 0" @click="confirming = true">Aggiungi al catalogo…</button>
               <a :href="`https://huggingface.co/${card.repo}`" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs text-muted hover:text-ink hover:underline">Pagina del modello<Icon name="external" :size="11" /></a>
             </div>
             <div v-else class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5">
-              <h4 class="hud-title text-[10.5px]">Aggiungere {{ card.suggestedId }} al catalogo?</h4>
-              <p v-for="line in addLines(card)" :key="line" class="text-[12.5px]">{{ line }}</p>
+              <h4 class="hud-title text-[12px]">Aggiungere {{ card.suggestedId }} al catalogo?</h4>
+              <p v-for="line in addLines(card)" :key="line" class="text-[13.5px]">{{ line }}</p>
               <p v-if="addError !== null" role="alert" class="text-xs text-danger">{{ addError }}</p>
               <div class="flex justify-end gap-2">
                 <button type="button" class="btn px-2.5 py-1 text-xs" :disabled="adding" @click="confirming = false">Annulla</button>

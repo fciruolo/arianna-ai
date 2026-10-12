@@ -347,12 +347,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <p class="text-[13px] text-muted">Locali e cloud in un posto solo: cosa sono, chi li usa e come sono andati alle prove. Tutto ciò che vedi qui è Pubblico: numeri e nomi, nessun testo.</p>
+    <p class="text-[14px] text-muted">Locali e cloud in un posto solo: cosa sono, chi li usa e come sono andati alle prove. Tutto ciò che vedi qui è Pubblico: numeri e nomi, nessun testo.</p>
 
     <!-- Summary -->
     <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Memoria dei modelli locali</span>
+        <span class="hud-title text-[12px]">Memoria dei modelli locali</span>
         <template v-if="memory !== null">
           <span class="font-hud text-lg leading-tight font-medium">{{ memory.value }}</span>
           <div class="h-1.5 overflow-hidden rounded-[3px] border border-line bg-surface-2">
@@ -363,7 +363,7 @@ onBeforeUnmount(() => {
         <span v-else class="text-xs text-muted">Il nucleo non tiene il conto della memoria dei server locali.</span>
       </div>
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Modelli locali</span>
+        <span class="hud-title text-[12px]">Modelli locali</span>
         <span class="font-hud text-lg leading-tight font-medium">{{ localCount.present }} di {{ localCount.total }} sul disco</span>
         <span class="text-xs text-muted">{{ localCount.loaded === 1 ? '1 in memoria' : `${localCount.loaded} in memoria` }} · i mancanti si scaricano dalla loro scheda</span>
         <span v-if="trash !== null" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -372,7 +372,7 @@ onBeforeUnmount(() => {
         </span>
       </div>
       <div class="hud-card flex flex-col gap-1.5 px-3.5 py-3">
-        <span class="hud-title text-[10px]">Modelli cloud</span>
+        <span class="hud-title text-[12px]">Modelli cloud</span>
         <span class="font-hud text-lg leading-tight font-medium">{{ cloudCount.on }} di {{ cloudCount.total }} accesi</span>
         <span class="text-xs text-muted">
           <template v-if="cloudCount.missing.length > 0">Non collegato: {{ cloudCount.missing.join(', ') }}. </template>La quota dell’abbonamento si misurerà qui più avanti.
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="loadError !== null" role="alert" class="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">Non riesco a leggere i modelli: {{ loadError }}</p>
-    <p v-for="problem in catalogErrors" :key="problem" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]">
+    <p v-for="problem in catalogErrors" :key="problem" role="alert" class="rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[14px]">
       <span class="font-mono text-xs">{{ problem }}</span>
     </p>
 
@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
           v-for="item in WHERE"
           :key="item.id"
           type="button"
-          class="border-line-strong px-3 py-1 text-[13px] not-first:border-l"
+          class="border-line-strong px-3 py-1 text-[14px] not-first:border-l"
           :class="filter.where === item.id ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink'"
           :aria-pressed="filter.where === item.id"
           @click="filter.where = item.id"
@@ -402,16 +402,16 @@ onBeforeUnmount(() => {
           {{ item.text }}
         </button>
       </div>
-      <select v-model="filter.provider" class="field px-2 py-1 text-[13px]" aria-label="Fornitore">
+      <select v-model="filter.provider" class="field px-2 py-1 text-[14px]" aria-label="Fornitore">
         <option value="">Tutti i fornitori</option>
         <option v-for="provider in providers" :key="provider" :value="provider">{{ provider }}</option>
       </select>
-      <select v-model="filter.use" class="field px-2 py-1 text-[13px]" aria-label="Ruolo o passo">
+      <select v-model="filter.use" class="field px-2 py-1 text-[14px]" aria-label="Ruolo o passo">
         <option value="">Tutti i ruoli e i passi</option>
         <option v-for="choice in USE_CHOICES" :key="choice.value" :value="choice.value">{{ choice.text }}</option>
       </select>
-      <label class="inline-flex items-center gap-1.5 text-[13px] text-muted"><input v-model="filter.inUse" type="checkbox" />solo in uso</label>
-      <input v-model="filter.query" type="search" class="field min-w-[160px] flex-1 px-2.5 py-1 text-[13px]" placeholder="Cerca un modello" aria-label="Cerca un modello" />
+      <label class="inline-flex items-center gap-1.5 text-[14px] text-muted"><input v-model="filter.inUse" type="checkbox" />solo in uso</label>
+      <input v-model="filter.query" type="search" class="field min-w-[160px] flex-1 px-2.5 py-1 text-[14px]" placeholder="Cerca un modello" aria-label="Cerca un modello" />
     </div>
 
     <div ref="pair" class="grid grid-cols-1 items-start gap-4 @4xl:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] @5xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
           <span class="grid size-[34px] place-items-center rounded-[9px] border border-line-strong bg-surface-2 font-hud text-xs font-semibold" :class="badgeClass(entry.view)">{{ entry.badge }}</span>
           <span class="min-w-0">
             <!-- The whole id, wrapped: the chips sit on their own line below, so a long id is never cut or squeezed out. -->
-            <span class="block font-medium [overflow-wrap:anywhere]" :class="entry.view.locality === 'local' ? 'font-mono text-[12.5px]' : ''">
+            <span class="block font-medium [overflow-wrap:anywhere]" :class="entry.view.locality === 'local' ? 'font-mono text-[13.5px]' : ''">
               {{ entry.name }}<span v-if="unsaved.has(entry.key)" class="text-warn" title="Modifiche non salvate">&nbsp;<span aria-hidden="true">•</span><span class="sr-only">modifiche non salvate</span></span>
             </span>
             <span class="block truncate text-xs text-muted">{{ entry.sub }}</span>
@@ -458,28 +458,28 @@ onBeforeUnmount(() => {
             <span class="grid size-[42px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface-2 font-hud text-sm font-semibold text-ok">{{ current.badge }}</span>
             <div class="min-w-0">
               <h2 class="font-mono text-[15px] font-semibold break-all">{{ current.view.id }}</h2>
-              <p class="text-[12.5px] text-muted">
+              <p class="text-[13.5px] text-muted">
                 {{ current.view.provider ?? 'Fornitore non indicato' }} · famiglia {{ current.view.family }} · runtime {{ current.view.runtime }}<template v-if="current.view.origin === 'huggingface'"> · <span class="chip text-info">da Hugging Face</span></template>
               </p>
             </div>
           </div>
           <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-2">
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Peso su disco</dt><dd class="text-[13px]">{{ sizeText(current.view.sizeBytes) }}</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">RAM minima</dt><dd class="text-[13px]">{{ current.view.ramMinGib }} GiB</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Contesto</dt><dd class="text-[13px]" :class="{ 'text-muted': current.view.contextTokens === null }">{{ contextText(current.view.contextTokens) }}</dd></div>
+            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Peso su disco</dt><dd class="text-[14px]">{{ sizeText(current.view.sizeBytes) }}</dd></div>
+            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">RAM minima</dt><dd class="text-[14px]">{{ current.view.ramMinGib }} GiB</dd></div>
+            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Contesto</dt><dd class="text-[14px]" :class="{ 'text-muted': current.view.contextTokens === null }">{{ contextText(current.view.contextTokens) }}</dd></div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Stato del catalogo</dt>
+              <dt class="hud-title text-[12px]">Stato del catalogo</dt>
               <dd><span class="chip" :class="current.view.status === 'verified' ? 'text-ok' : 'text-warn'">{{ current.view.status === 'verified' ? 'verificato' : 'sperimentale' }}</span></dd>
             </div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">File</dt>
-              <dd class="text-[13px]">
+              <dt class="hud-title text-[12px]">File</dt>
+              <dd class="text-[14px]">
                 <span class="chip" :class="current.view.present ? 'text-ok' : 'text-warn'">{{ current.view.present ? 'presenti' : 'da scaricare' }}</span>
               </dd>
             </div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">In memoria</dt>
-              <dd class="text-[13px]">
+              <dt class="hud-title text-[12px]">In memoria</dt>
+              <dd class="text-[14px]">
                 <template v-if="current.view.loaded.length > 0">
                   <span v-for="place in current.view.loaded" :key="place.endpoint" class="block">
                     <span class="chip text-ok">caricato da Arianna</span>
@@ -489,12 +489,12 @@ onBeforeUnmount(() => {
                 <span v-else class="text-muted">non caricato</span>
               </dd>
             </div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Licenza</dt><dd class="text-[13px]" :class="{ 'text-muted': current.view.license === null }">{{ current.view.license ?? 'non indicata' }}</dd></div>
-            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[9.5px]">Costo</dt><dd class="text-[13px]">nessuna quota: gira sul Mac</dd></div>
+            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Licenza</dt><dd class="text-[14px]" :class="{ 'text-muted': current.view.license === null }">{{ current.view.license ?? 'non indicata' }}</dd></div>
+            <div class="flex flex-col gap-0.5 bg-surface px-3 py-2"><dt class="hud-title text-[12px]">Costo</dt><dd class="text-[14px]">nessuna quota: gira sul Mac</dd></div>
           </dl>
           <!-- Actions on the files and the memory (stage M4) -->
           <div class="flex flex-col gap-2 rounded-[10px] border border-line px-3 py-2.5" aria-label="Azioni sul modello">
-            <h3 class="hud-title text-[10.5px]">File e memoria</h3>
+            <h3 class="hud-title text-[12px]">File e memoria</h3>
             <p v-if="!current.view.present && current.view.action?.status !== 'running'" class="text-xs text-muted">
               I file mancano in <code class="font-mono">data/models/{{ current.view.id }}</code>: «Scarica» li prende dagli indirizzi del catalogo.<template v-if="current.view.suitedRoles.length > 0"> Si può già assegnare a un ruolo.</template>
             </p>
@@ -510,7 +510,7 @@ onBeforeUnmount(() => {
                 v-for="button in actionButtons(current.view, running)"
                 :key="button.kind"
                 type="button"
-                class="btn px-3 py-1 text-[13px]"
+                class="btn px-3 py-1 text-[14px]"
                 :class="button.danger ? 'btn-danger' : ''"
                 :disabled="button.blocked !== undefined || actionBusy"
                 @click="ask(button.kind, current.view)"
@@ -522,25 +522,25 @@ onBeforeUnmount(() => {
             <p v-if="actionNotice !== null" class="text-xs text-ok" role="status">{{ actionNotice }}</p>
             <!-- "Prova in chat" (D-142): an incognito conversation where only this model answers -->
             <div v-if="canChatTrial(current.view)" class="flex flex-wrap items-center gap-2 border-t border-line pt-2">
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="current.view.action?.status === 'running'" @click="emit('chatTrial', current.view.id)">Prova in chat</button>
+              <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="current.view.action?.status === 'running'" @click="emit('chatTrial', current.view.id)">Prova in chat</button>
               <span class="text-xs text-muted">Apre una conversazione incognita dove risponde solo questo modello, sul Mac. Si carica al primo messaggio.</span>
             </div>
           </div>
           <HubEntryPanel v-if="current.view.origin === 'huggingface'" :view="current.view" :assigned="savedRoles(current.view.id)" @changed="catalogChanged()" @forgotten="catalogChanged()" />
 
           <template v-if="current.view.strengths.length > 0">
-            <h3 class="hud-title text-[10.5px]">Punti di forza</h3>
-            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
+            <h3 class="hud-title text-[12px]">Punti di forza</h3>
+            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
               <li v-for="line in current.view.strengths" :key="line">{{ line }}</li>
             </ul>
           </template>
-          <p v-if="current.view.notes !== null" class="text-[13px] text-muted">{{ current.view.notes }}</p>
+          <p v-if="current.view.notes !== null" class="text-[14px] text-muted">{{ current.view.notes }}</p>
 
-          <h3 class="hud-title text-[10.5px]">Ruoli e uso in Arianna</h3>
-          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
+          <h3 class="hud-title text-[12px]">Ruoli e uso in Arianna</h3>
+          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
             <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
           </ul>
-          <p v-else class="text-[13px] text-muted">Nessun ruolo: oggi Arianna non lo usa.</p>
+          <p v-else class="text-[14px] text-muted">Nessun ruolo: oggi Arianna non lo usa.</p>
           <p class="text-xs text-muted">Dopo il salvataggio l’uso si aggiorna con i ruoli nuovi.</p>
           <div v-if="current.view.suitedRoles.length > 0" class="flex flex-col gap-1.5">
             <span class="text-xs text-muted">Adatto a questi ruoli (un ruolo ha un solo modello: sceglierlo qui lo toglie a quello di prima):</span>
@@ -562,20 +562,20 @@ onBeforeUnmount(() => {
 
           <!-- Trials (D-081) -->
           <template v-if="triable !== undefined">
-            <h3 class="hud-title text-[10.5px]">Prove dell’orchestratore</h3>
+            <h3 class="hud-title text-[12px]">Prove dell’orchestratore</h3>
             <p class="text-xs text-muted">
               Una prova fa girare i casi dell’orchestratore (<code class="font-mono">evals/orchestrator</code>, dati finti) su questo modello, senza cambiare quello in uso. Chiamate e task
               hanno la precedenza. Il catalogo non viene mai modificato.
             </p>
             <div class="flex flex-wrap items-center gap-2">
-              <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="!canTry(trials, triable) || trialBusy" @click="tryModel(triable.id)">Prova</button>
+              <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="!canTry(trials, triable) || trialBusy" @click="tryModel(triable.id)">Prova</button>
               <span v-if="!triable.present" class="text-xs text-muted">Serve avere i file sul disco.</span>
               <span v-else-if="trials.some(isOpen)" class="text-xs text-muted">Una prova è già in corso.</span>
             </div>
             <p v-if="promotionHint(trials, triable.id, triable.status)" class="text-xs text-ok">{{ promotionHint(trials, triable.id, triable.status) }}</p>
             <p v-if="trialError !== null" role="alert" class="text-xs text-danger">{{ trialError }}</p>
             <div v-if="trials.length > 0" class="overflow-x-auto">
-              <table class="w-full border-collapse text-[12.5px]">
+              <table class="w-full border-collapse text-[13.5px]">
                 <thead>
                   <tr class="hud-title text-left">
                     <th class="pr-2 pb-1.5 font-semibold">Data</th>
@@ -591,7 +591,7 @@ onBeforeUnmount(() => {
                     <td class="py-1.5 pr-2 whitespace-nowrap">{{ dateText(trial.requestedAt) }}</td>
                     <td class="px-2 py-1.5">
                       <span :class="TRIAL_CLASS[trial.status]">{{ MODEL_EVAL_STATUS_TEXT[trial.status] }}</span>
-                      <small v-if="modelEvalErrorText(trial.error) !== undefined" class="block text-[11.5px] text-muted">{{ modelEvalErrorText(trial.error) }}</small>
+                      <small v-if="modelEvalErrorText(trial.error) !== undefined" class="block text-[12.5px] text-muted">{{ modelEvalErrorText(trial.error) }}</small>
                     </td>
                     <td class="px-2 py-1.5 whitespace-nowrap">{{ scoreText(trial) }}</td>
                     <td class="px-2 py-1.5 whitespace-nowrap">{{ latencyText(trial.latencyMedianMs) }}</td>
@@ -607,8 +607,8 @@ onBeforeUnmount(() => {
             <p v-if="current.view.lastEval !== null && !current.view.lastEval.sameWeights" class="text-xs text-warn">L’ultima prova è stata fatta su pesi diversi da quelli che il catalogo indica ora.</p>
           </template>
 
-          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[12.5px]">{{ privacyText(current.view) }}</p>
-          <p v-if="current.view.source !== null" class="text-[11.5px] text-muted">
+          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[13.5px]">{{ privacyText(current.view) }}</p>
+          <p v-if="current.view.source !== null" class="text-[12.5px] text-muted">
             Pagina del modello:
             <a :href="current.view.source" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 hover:text-ink hover:underline">{{ current.view.source }}<Icon name="external" :size="11" /></a>
           </p>
@@ -620,70 +620,70 @@ onBeforeUnmount(() => {
             <span class="grid size-[42px] shrink-0 place-items-center rounded-[10px] border border-line-strong bg-surface-2 font-hud text-sm font-semibold" :class="badgeClass(current.view)">{{ current.badge }}</span>
             <div class="min-w-0">
               <h2 class="font-hud text-[17px] font-semibold tracking-[0.03em]">{{ current.name }}</h2>
-              <p class="text-[12.5px] text-muted">
+              <p class="text-[13.5px] text-muted">
                 {{ current.provider }}<template v-if="current.view.card !== null"> · {{ current.view.card.family }}</template> · esecutore <span class="font-mono">{{ current.view.executor }}</span> · alias
                 <span class="font-mono">{{ current.view.alias }}</span>
               </p>
             </div>
           </div>
-          <p v-if="cloudNotice(current.view) !== undefined" class="rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[12.5px]">
+          <p v-if="cloudNotice(current.view) !== undefined" class="rounded-[10px] border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
             {{ cloudNotice(current.view) }}
             <a v-if="current.view.state === 'executor-off'" href="/impostazioni/esecutori-cloud" class="text-accent hover:underline" @click.prevent="emit('section', 'esecutori-cloud')">Apri Esecutori cloud</a>
           </p>
-          <p v-if="current.view.card === null" class="text-[13px] text-muted">Nessuna scheda per questo modello in <code class="font-mono">config/cloud-models.catalog.yaml</code>.</p>
+          <p v-if="current.view.card === null" class="text-[14px] text-muted">Nessuna scheda per questo modello in <code class="font-mono">config/cloud-models.catalog.yaml</code>.</p>
           <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:grid-cols-2">
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Nome passato a --model</dt>
-              <dd class="text-[13px]" :class="current.view.name === null ? 'text-muted' : 'font-mono text-xs'">{{ current.view.name ?? 'il più recente (alias)' }}</dd>
+              <dt class="hud-title text-[12px]">Nome passato a --model</dt>
+              <dd class="text-[14px]" :class="current.view.name === null ? 'text-muted' : 'font-mono text-xs'">{{ current.view.name ?? 'il più recente (alias)' }}</dd>
             </div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Contesto · uscita massima</dt>
-              <dd class="text-[13px]">
+              <dt class="hud-title text-[12px]">Contesto · uscita massima</dt>
+              <dd class="text-[14px]">
                 {{ contextText(currentName?.contextTokens) }}<template v-if="currentName?.maxOutputTokens !== undefined"> · {{ contextText(currentName.maxOutputTokens) }}</template>
               </dd>
             </div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Approvazione di budget</dt>
-              <dd class="text-[13px]">{{ current.view.budgetApproval ? 'sì: ogni passo aspetta il tuo sì' : 'no' }}</dd>
+              <dt class="hud-title text-[12px]">Approvazione di budget</dt>
+              <dd class="text-[14px]">{{ current.view.budgetApproval ? 'sì: ogni passo aspetta il tuo sì' : 'no' }}</dd>
             </div>
             <div class="flex flex-col gap-0.5 bg-surface px-3 py-2">
-              <dt class="hud-title text-[9.5px]">Costo in quota</dt>
-              <dd class="text-[13px] text-muted">non ancora misurato</dd>
+              <dt class="hud-title text-[12px]">Costo in quota</dt>
+              <dd class="text-[14px] text-muted">non ancora misurato</dd>
             </div>
             <div v-if="priceText(current.view.card?.apiPrice) !== undefined" class="flex flex-col gap-0.5 bg-surface px-3 py-2 sm:col-span-2">
-              <dt class="hud-title text-[9.5px]">Prezzo dell’API (solo per confronto)</dt>
-              <dd class="text-[13px]">{{ priceText(current.view.card?.apiPrice) }}<small class="block text-[11.5px] text-muted">L’abbonamento non si paga a richiesta: dice solo quanto pesa un modello rispetto a un altro.</small></dd>
+              <dt class="hud-title text-[12px]">Prezzo dell’API (solo per confronto)</dt>
+              <dd class="text-[14px]">{{ priceText(current.view.card?.apiPrice) }}<small class="block text-[12.5px] text-muted">L’abbonamento non si paga a richiesta: dice solo quanto pesa un modello rispetto a un altro.</small></dd>
             </div>
             <div v-if="current.view.card?.quotaRatio !== undefined" class="flex flex-col gap-0.5 bg-surface px-3 py-2 sm:col-span-2">
-              <dt class="hud-title text-[9.5px]">Quota rispetto a {{ current.view.card.quotaRatio.relativeTo }}</dt>
-              <dd class="text-[13px]">circa {{ current.view.card.quotaRatio.times }} volte</dd>
+              <dt class="hud-title text-[12px]">Quota rispetto a {{ current.view.card.quotaRatio.relativeTo }}</dt>
+              <dd class="text-[14px]">circa {{ current.view.card.quotaRatio.times }} volte</dd>
             </div>
           </dl>
 
           <template v-if="current.view.card !== null && current.view.card.names.length > 0">
-            <h3 class="hud-title text-[10.5px]">Nomi esatti</h3>
-            <ul class="flex flex-col gap-1 text-[13px]">
+            <h3 class="hud-title text-[12px]">Nomi esatti</h3>
+            <ul class="flex flex-col gap-1 text-[14px]">
               <li v-for="item in current.view.card.names" :key="item.name">
                 <span class="font-mono text-xs">{{ item.name }}</span><span v-if="item.description" class="text-muted"> — {{ item.description }}</span>
               </li>
             </ul>
           </template>
           <template v-if="current.view.card !== null && current.view.card.strengths.length > 0">
-            <h3 class="hud-title text-[10.5px]">Punti di forza</h3>
-            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
+            <h3 class="hud-title text-[12px]">Punti di forza</h3>
+            <ul class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
               <li v-for="line in current.view.card.strengths" :key="line.text">{{ line.text }}</li>
             </ul>
           </template>
-          <p v-if="current.view.card?.notes" class="text-[13px] text-muted">{{ current.view.card.notes }}</p>
+          <p v-if="current.view.card?.notes" class="text-[14px] text-muted">{{ current.view.card.notes }}</p>
 
-          <h3 class="hud-title text-[10.5px]">Uso tipico in Arianna</h3>
-          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[13px]">
+          <h3 class="hud-title text-[12px]">Uso tipico in Arianna</h3>
+          <ul v-if="usageLines(current.view).length > 0" class="flex list-disc flex-col gap-0.5 pl-5 text-[14px]">
             <li v-for="line in usageLines(current.view)" :key="line">{{ line }}</li>
           </ul>
-          <p v-else class="text-[13px] text-muted">Nessun passo del router lo usa.</p>
+          <p v-else class="text-[14px] text-muted">Nessun passo del router lo usa.</p>
 
-          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[12.5px]">{{ privacyText(current.view) }}</p>
-          <p v-if="cardSources(current.view.card, overview?.sources ?? []).length > 0" class="text-[11.5px] text-muted">
+          <p class="rounded-[9px] border border-dashed border-line-strong px-3 py-2 text-[13.5px]">{{ privacyText(current.view) }}</p>
+          <p v-if="cardSources(current.view.card, overview?.sources ?? []).length > 0" class="text-[12.5px] text-muted">
             Fonti della scheda, scritta a mano:
             <template v-for="(source, index) in cardSources(current.view.card, overview?.sources ?? [])" :key="source.id">
               <template v-if="index > 0">; </template>
@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
             </template>
           </p>
           <div v-if="currentRow !== undefined" class="flex flex-wrap items-center gap-2.5 border-t border-line pt-3">
-            <label class="flex items-center gap-2 text-[13px]">
+            <label class="flex items-center gap-2 text-[14px]">
               <input v-model="currentRow.enabled" type="checkbox" role="switch" class="switch" :aria-label="`${current.name} acceso`" />
               {{ currentRow.enabled ? 'Acceso' : 'Spento' }}
             </label>
@@ -721,10 +721,10 @@ onBeforeUnmount(() => {
         <h2 id="models-roles" class="hud-title">Ruoli dei modelli locali</h2>
         <div class="flex flex-col">
           <div v-for="role in MODEL_ROLES" :key="role" class="grid grid-cols-1 items-center gap-1 border-t border-line py-2 first:border-t-0 first:pt-0 sm:grid-cols-[130px_minmax(0,1fr)] sm:gap-3">
-            <label :for="`models-role-${role}`" class="text-[13px] font-medium">
-              {{ ROLE_TEXT[role].title }}<small class="block text-[11.5px] font-normal text-muted">{{ ROLE_TEXT[role].hint }}</small>
+            <label :for="`models-role-${role}`" class="text-[14px] font-medium">
+              {{ ROLE_TEXT[role].title }}<small class="block text-[12.5px] font-normal text-muted">{{ ROLE_TEXT[role].hint }}</small>
             </label>
-            <select :id="`models-role-${role}`" v-model="form.roles[role]" class="field min-w-0 px-2 py-1 text-[13px]">
+            <select :id="`models-role-${role}`" v-model="form.roles[role]" class="field min-w-0 px-2 py-1 text-[14px]">
               <option :value="undefined">— nessuno —</option>
               <option v-for="model in roleOptions(catalog, role)" :key="model.id" :value="model.id">{{ model.id }}{{ model.present ? '' : ' (da scaricare)' }}</option>
               <!-- A model of the file the catalog no longer has stays visible. -->
@@ -735,8 +735,8 @@ onBeforeUnmount(() => {
           </div>
           <!-- D-123: the model that draws a character; Claude Opus unless the user chooses (D-132) -->
           <div class="grid grid-cols-1 items-center gap-1 border-t border-line pt-2 sm:grid-cols-[130px_minmax(0,1fr)] sm:gap-3">
-            <label for="models-role-sprites" class="text-[13px] font-medium">Personaggi<small class="block text-[11.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
-            <select id="models-role-sprites" v-model="form.sprites" class="field min-w-0 px-2 py-1 text-[13px]">
+            <label for="models-role-sprites" class="text-[14px] font-medium">Personaggi<small class="block text-[12.5px] font-normal text-muted">disegna l’aspetto degli agenti</small></label>
+            <select id="models-role-sprites" v-model="form.sprites" class="field min-w-0 px-2 py-1 text-[14px]">
               <option value="sonnet">Claude Sonnet</option>
               <option value="opus">Claude Opus (predefinito)</option>
               <option value="local">modello locale (quello dell’orchestratore)</option>
@@ -754,7 +754,7 @@ onBeforeUnmount(() => {
         <div class="flex flex-col">
           <div v-for="row in form.cloudModels.rows" :key="row.alias" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-t border-line py-2 first:border-t-0 first:pt-0 sm:grid-cols-[auto_120px_minmax(0,1fr)]" :class="{ 'text-muted': !row.enabled }">
             <input v-model="row.enabled" type="checkbox" role="switch" class="switch" :aria-label="`${row.alias} acceso`" />
-            <span class="text-[13px] whitespace-nowrap">{{ entries.find((entry) => entry.key === `cloud:${row.alias}`)?.name ?? row.alias }}</span>
+            <span class="text-[14px] whitespace-nowrap">{{ entries.find((entry) => entry.key === `cloud:${row.alias}`)?.name ?? row.alias }}</span>
             <input v-model="row.name" class="field col-span-2 min-w-0 px-2 py-1 font-mono text-xs sm:col-span-1" :disabled="!row.enabled" placeholder="il più recente" :aria-label="`Nome esatto di ${row.alias}`" />
           </div>
         </div>
@@ -770,11 +770,11 @@ onBeforeUnmount(() => {
     <!-- The confirmation of an action: what happens, how much, where -->
     <div v-if="confirming" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="model-action-title">
       <form class="hud-card flex max-w-lg flex-col gap-3 p-4" @submit.prevent="confirmAction">
-        <h2 id="model-action-title" class="font-hud text-[12px] font-semibold tracking-[0.14em] uppercase break-all">{{ confirming.title }}</h2>
-        <p v-for="line in confirming.lines" :key="line" class="text-[13px]">{{ line }}</p>
+        <h2 id="model-action-title" class="font-hud text-[13px] font-semibold tracking-[0.14em] uppercase break-all">{{ confirming.title }}</h2>
+        <p v-for="line in confirming.lines" :key="line" class="text-[14px]">{{ line }}</p>
         <label v-if="confirming.typed !== undefined" class="flex flex-col gap-1 text-xs text-muted">
           Per confermare scrivi l’id del modello
-          <input v-model="typed" class="field px-2 py-1.5 font-mono text-[13px] text-ink" :placeholder="confirming.typed" autocomplete="off" spellcheck="false" />
+          <input v-model="typed" class="field px-2 py-1.5 font-mono text-[14px] text-ink" :placeholder="confirming.typed" autocomplete="off" spellcheck="false" />
         </label>
         <p v-if="actionError !== null" class="text-xs text-danger" role="alert">{{ actionError }}</p>
         <div class="flex justify-end gap-2">
@@ -791,15 +791,15 @@ onBeforeUnmount(() => {
       :class="error ? 'border-danger' : 'border-accent'"
       role="status"
     >
-      <span class="min-w-0 text-[13px]" :class="{ 'text-danger': error }">
+      <span class="min-w-0 text-[14px]" :class="{ 'text-danger': error }">
         <template v-if="error">{{ error }}</template>
         <template v-else-if="working || busy">Salvo…</template>
         <template v-else-if="dirty">Modifiche non salvate ai modelli</template>
         <template v-else>Salvato</template>
       </span>
       <template v-if="dirty">
-        <button type="button" class="btn px-3 py-1 text-[13px]" :disabled="working || busy" @click="emit('cancel')">Annulla</button>
-        <button type="button" class="btn btn-primary px-3 py-1 text-[13px]" :disabled="working || busy" @click="saveAll">Salva</button>
+        <button type="button" class="btn px-3 py-1 text-[14px]" :disabled="working || busy" @click="emit('cancel')">Annulla</button>
+        <button type="button" class="btn btn-primary px-3 py-1 text-[14px]" :disabled="working || busy" @click="saveAll">Salva</button>
       </template>
     </div>
   </div>

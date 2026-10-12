@@ -149,11 +149,11 @@ function indexOf(row: SearchRow): number {
           class="min-w-0 flex-1 bg-transparent py-1 text-[15px] outline-none placeholder:text-muted"
           @keydown="onKey"
         />
-        <span class="font-mono text-[10.5px] text-muted" role="status" aria-live="polite">{{ announce }}</span>
+        <span class="font-mono text-[12px] text-muted" role="status" aria-live="polite">{{ announce }}</span>
         <button type="button" class="rounded-md p-1 text-muted hover:text-ink" aria-label="Chiudi" @click="emit('close')"><Icon name="close" :size="16" /></button>
       </header>
 
-      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-2 py-2.5 text-[13.5px]">
+      <div class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-2 py-2.5 text-[14.5px]">
         <p v-if="!ready" class="px-2 py-4 text-center text-muted">Scrivi almeno 2 caratteri. Fino a Privato, come la chat privata.</p>
         <p v-else-if="problem !== null" role="alert" class="px-2 text-warn">Non riesco a cercare: {{ problem }}</p>
         <p v-else-if="result !== null && rows.length === 0 && !loading" class="px-2 py-4 text-center text-muted">Nessun risultato.</p>
@@ -177,10 +177,10 @@ function indexOf(row: SearchRow): number {
               <span class="min-w-0 flex-1">
                 <span class="flex items-center gap-2">
                   <span class="min-w-0 flex-1 truncate font-medium">{{ row.title }}</span>
-                  <span v-if="row.meta !== null" class="shrink-0 font-mono text-[10.5px] text-muted">{{ row.meta }}</span>
+                  <span v-if="row.meta !== null" class="shrink-0 font-mono text-[12px] text-muted">{{ row.meta }}</span>
                   <LabelBadge class="shrink-0" :label="row.label" />
                 </span>
-                <span v-if="row.snippet !== null" class="mt-0.5 line-clamp-2 block text-[12.5px] leading-snug text-muted">
+                <span v-if="row.snippet !== null" class="mt-0.5 line-clamp-2 block text-[13.5px] leading-snug text-muted">
                   <template v-for="(part, index) in highlightParts(row.snippet, row.highlight)" :key="index">
                     <mark v-if="part.mark" class="rounded-[3px] bg-accent/25 px-px text-ink">{{ part.text }}</mark>
                     <template v-else>{{ part.text }}</template>
@@ -192,8 +192,8 @@ function indexOf(row: SearchRow): number {
         </div>
       </div>
 
-      <footer class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-[15px] py-2 font-mono text-[10.5px] text-muted">
-        <span v-if="footnote !== null" class="min-w-0 flex-1 font-sans text-[11.5px]">{{ footnote }}</span>
+      <footer class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-[15px] py-2 font-mono text-[12px] text-muted">
+        <span v-if="footnote !== null" class="min-w-0 flex-1 font-sans text-[12.5px]">{{ footnote }}</span>
         <span v-else class="flex-1" />
         <span>↑↓ scegli · Invio apri · Esc chiudi</span>
       </footer>

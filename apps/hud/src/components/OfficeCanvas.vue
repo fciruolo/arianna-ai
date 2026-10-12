@@ -570,19 +570,19 @@ defineExpose({ goTo, focus });
         <span
           v-for="(tag, index) in tags"
           :key="index"
-          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[11px] leading-[14px] whitespace-nowrap"
+          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/85 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
           :class="tag.muted ? 'text-muted' : 'text-ink'"
           :style="{ transform: `translate(${String(tag.x * scale)}px, ${String(tag.y * scale)}px) translateY(-100%)` }"
-        >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[10px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
+        >{{ tag.text }}<span v-if="tag.label !== null" class="ml-1 inline-flex items-center gap-1 text-[12px] font-semibold" :class="labelClass[tag.label]"><i class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ LABEL_TEXT[tag.label] }}</span></span>
         <span
           v-for="agent in snapshot.agents"
           :key="agent.id"
           :ref="(element) => { setNameTag(agent.id, element); }"
-          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[11px] leading-[14px] whitespace-nowrap"
+          class="absolute top-0 left-0 rounded border border-line-strong bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap"
         />
-        <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[11px] leading-[14px] whitespace-nowrap">Tu</span>
+        <span ref="youTag" class="absolute top-0 left-0 rounded border border-warn bg-surface/90 px-1.5 text-[12.5px] leading-[14px] whitespace-nowrap">Tu</span>
         <span ref="hint" hidden class="absolute top-0 left-0 rounded bg-accent px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-accent-ink">
-          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[11px]">E</kbd><span />
+          <kbd class="mr-1 rounded border border-current px-1 font-mono text-[12.5px]">E</kbd><span />
         </span>
       </div>
     </div>

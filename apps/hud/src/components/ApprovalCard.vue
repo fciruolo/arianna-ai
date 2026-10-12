@@ -87,7 +87,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
       <h3 class="min-w-0 flex-1 truncate font-semibold">{{ title }}</h3>
       <span v-if="labels" class="lab text-warn">{{ labels }}</span>
       <LabelBadge :label="approval.label" />
-      <span class="font-mono text-[10.5px] tracking-[0.08em] whitespace-nowrap text-warn uppercase">In attesa</span>
+      <span class="font-mono text-[12px] tracking-[0.08em] whitespace-nowrap text-warn uppercase">In attesa</span>
     </header>
 
     <div class="flex min-w-0 flex-col gap-2 px-[15px] py-3">
@@ -101,7 +101,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
           esse, sul branch corrente; rifiutando, Arianna lo saprà. Oppure committa prima e riprendi il task.
         </p>
         <ul class="flex max-h-40 flex-wrap gap-1.5 overflow-auto">
-          <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px]">{{ file }}</li>
+          <li v-for="file in workspace.files" :key="file" class="rounded-md border border-line bg-surface-2 px-2 py-1 font-mono text-[12.5px]">{{ file }}</li>
         </ul>
       </template>
       <template v-else-if="plan !== undefined">
@@ -112,12 +112,12 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         <ol class="flex flex-col gap-1.5">
           <li v-for="row in plan.rows" :key="row.number" class="rounded-lg border border-line bg-bg px-3 py-2">
             <p class="flex flex-wrap items-baseline gap-x-2 break-words">
-              <span class="font-mono text-[11.5px] text-muted">{{ row.number }}.</span>
+              <span class="font-mono text-[12.5px] text-muted">{{ row.number }}.</span>
               <strong class="min-w-0 flex-1">{{ row.title }}</strong>
-              <span class="chip text-[11.5px]">{{ row.who }}</span>
+              <span class="chip text-[12.5px]">{{ row.who }}</span>
             </p>
-            <p v-if="row.goal !== ''" class="mt-0.5 text-[12.5px] break-words text-muted">{{ row.goal }}</p>
-            <p v-if="row.blockedBy !== undefined" class="mt-0.5 text-[12px] text-warn">{{ row.blockedBy }}</p>
+            <p v-if="row.goal !== ''" class="mt-0.5 text-[13.5px] break-words text-muted">{{ row.goal }}</p>
+            <p v-if="row.blockedBy !== undefined" class="mt-0.5 text-[13px] text-warn">{{ row.blockedBy }}</p>
           </li>
         </ol>
       </template>
@@ -125,7 +125,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
         <p>
           <strong>{{ executor.title }}</strong>: con chi lavora {{ executor.agent }}? Scegli tu per questo lavoro.
         </p>
-        <ul v-if="executor.excluded.length > 0" class="flex flex-col gap-0.5 text-[12.5px] text-muted">
+        <ul v-if="executor.excluded.length > 0" class="flex flex-col gap-0.5 text-[13.5px] text-muted">
           <li v-for="item in executor.excluded" :key="item.executor">{{ item.executor }}: {{ item.why }}.</li>
         </ul>
       </template>
@@ -136,7 +136,7 @@ async function choose(state: 'approved' | 'rejected'): Promise<void> {
             <p class="break-words">
               {{ entry.text }}<span class="text-xs text-muted"> · {{ entry.dayText }}<template v-if="entry.time !== null">, alle {{ entry.time }}</template></span>
             </p>
-            <p class="text-[13px]" :class="entry.outcome === 'done' ? 'text-ok' : entry.outcome === 'not_done' ? 'text-warn' : ''">
+            <p class="text-[14px]" :class="entry.outcome === 'done' ? 'text-ok' : entry.outcome === 'not_done' ? 'text-warn' : ''">
               <strong>{{ outcomeText(entry) }}</strong>
             </p>
             <p v-if="entry.reason !== null" class="text-xs break-words text-muted">Perché: {{ entry.reason }}</p>

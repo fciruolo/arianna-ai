@@ -41,7 +41,7 @@ watch(
   <section v-if="carry !== null" class="hud-card px-3 py-2.5" aria-label="Contesto di GOD">
     <div class="flex flex-wrap items-center gap-2">
       <Icon name="god" :size="14" />
-      <span class="min-w-0 flex-1 text-[12.5px]">
+      <span class="min-w-0 flex-1 text-[13.5px]">
         {{ carryOriginText(carry) }}
         <button type="button" class="text-info hover:underline" @click="shown = !shown">{{ shown ? 'Nascondi il contesto' : 'Mostra il contesto' }}</button>
         <template v-if="carry.from !== null">
@@ -50,6 +50,6 @@ watch(
         </template>
       </span>
     </div>
-    <pre v-if="shown" class="mt-2 max-h-72 overflow-y-auto font-mono text-[11.5px] whitespace-pre-wrap text-muted">{{ carry.body }}</pre>
+    <pre v-if="shown" class="mt-2 max-h-72 overflow-y-auto font-mono text-[12.5px] whitespace-pre-wrap text-muted">{{ carry.body }}</pre>
   </section>
 </template>

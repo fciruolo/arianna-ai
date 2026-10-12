@@ -31,9 +31,9 @@ test('a broken storage or an unexpected value means both bars open, never an err
 });
 
 test('a collapsed bar takes no column: the page takes the whole width', () => {
-  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[264px_minmax(0,1fr)] 3xl:grid-cols-[264px_minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[minmax(0,1fr)] 3xl:grid-cols-[minmax(0,1fr)_300px]');
-  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[264px_minmax(0,1fr)] 3xl:grid-cols-[264px_minmax(0,1fr)]');
+  assert.equal(gridColumns({ sidebar: false, panel: false }), 'md:grid-cols-[288px_minmax(0,1fr)] 3xl:grid-cols-[288px_minmax(0,1fr)_320px]');
+  assert.equal(gridColumns({ sidebar: true, panel: false }), 'md:grid-cols-[minmax(0,1fr)] 3xl:grid-cols-[minmax(0,1fr)_320px]');
+  assert.equal(gridColumns({ sidebar: false, panel: true }), 'md:grid-cols-[288px_minmax(0,1fr)] 3xl:grid-cols-[288px_minmax(0,1fr)]');
   assert.equal(gridColumns({ sidebar: true, panel: true }), 'md:grid-cols-[minmax(0,1fr)] 3xl:grid-cols-[minmax(0,1fr)]');
 });
 

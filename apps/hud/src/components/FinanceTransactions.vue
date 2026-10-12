@@ -88,22 +88,22 @@ async function choose(row: Tx, value: string): Promise<void> {
     <div class="flex flex-wrap items-end gap-2">
       <label class="flex flex-col gap-1 text-xs text-muted">
         Conto
-        <select v-model="filter.account" class="field px-2 py-1.5 text-[13px]">
+        <select v-model="filter.account" class="field px-2 py-1.5 text-[14px]">
           <option value="">Tutti i conti</option>
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.name }}{{ account.archived ? ' (archiviato)' : '' }}</option>
         </select>
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Dal
-        <input v-model="filter.from" type="date" class="field px-2 py-1 text-[13px]" />
+        <input v-model="filter.from" type="date" class="field px-2 py-1 text-[14px]" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Al
-        <input v-model="filter.to" type="date" class="field px-2 py-1 text-[13px]" />
+        <input v-model="filter.to" type="date" class="field px-2 py-1 text-[14px]" />
       </label>
       <label class="flex flex-col gap-1 text-xs text-muted">
         Categoria
-        <select v-model="filter.category" class="field px-2 py-1.5 text-[13px]" :disabled="filter.uncategorized">
+        <select v-model="filter.category" class="field px-2 py-1.5 text-[14px]" :disabled="filter.uncategorized">
           <option value="">Tutte</option>
           <option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option>
         </select>
@@ -114,7 +114,7 @@ async function choose(row: Tx, value: string): Promise<void> {
       </label>
       <label class="flex h-[34px] min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-2.5 text-muted sm:max-w-xs">
         <Icon name="search" :size="14" />
-        <input v-model="filter.q" type="search" class="w-full bg-transparent text-[13px] text-ink outline-none" placeholder="Cerca nella descrizione" aria-label="Cerca nella descrizione" />
+        <input v-model="filter.q" type="search" class="w-full bg-transparent text-[14px] text-ink outline-none" placeholder="Cerca nella descrizione" aria-label="Cerca nella descrizione" />
       </label>
       <button v-if="filtered" type="button" class="rounded-md px-2 py-1.5 text-xs text-muted hover:text-ink" @click="clearFilters">Togli i filtri</button>
     </div>
@@ -132,7 +132,7 @@ async function choose(row: Tx, value: string): Promise<void> {
     <template v-if="rows !== null && rows.length > 0">
       <p class="text-xs text-muted">{{ total === 1 ? '1 movimento' : `${total.toLocaleString('it-IT')} movimenti` }}, dal più recente</p>
       <div class="overflow-x-auto rounded-xl border border-line">
-        <table class="w-full min-w-[720px] text-left text-[13px]">
+        <table class="w-full min-w-[720px] text-left text-[14px]">
           <thead class="bg-surface-2 text-xs text-muted">
             <tr>
               <th class="px-3 py-2 font-medium">Data</th>
@@ -146,13 +146,13 @@ async function choose(row: Tx, value: string): Promise<void> {
             <tr v-for="row in rows" :key="row.id" class="border-t border-line align-top">
               <td class="px-3 py-2 whitespace-nowrap">
                 {{ formatDay(row.booked) }}
-                <span v-if="row.value && row.value !== row.booked" class="block text-[11px] text-muted">valuta {{ formatDay(row.value) }}</span>
+                <span v-if="row.value && row.value !== row.booked" class="block text-[12.5px] text-muted">valuta {{ formatDay(row.value) }}</span>
               </td>
               <td v-if="showAccount" class="px-3 py-2 text-muted">{{ names.account(row.account) }}</td>
               <td class="px-3 py-2 break-words">{{ row.description }}</td>
               <td class="px-3 py-2">
                 <div class="flex flex-col gap-1">
-                  <select class="field max-w-[200px] px-2 py-1 text-[12.5px]" :value="row.category ?? ''" :disabled="saving === row.id" :aria-label="`Categoria del movimento del ${formatDay(row.booked)}`" @change="choose(row, ($event.target as HTMLSelectElement).value)">
+                  <select class="field max-w-[200px] px-2 py-1 text-[13.5px]" :value="row.category ?? ''" :disabled="saving === row.id" :aria-label="`Categoria del movimento del ${formatDay(row.booked)}`" @change="choose(row, ($event.target as HTMLSelectElement).value)">
                     <option value="">Senza categoria</option>
                     <optgroup v-if="outCategories.length > 0" label="Uscite">
                       <option v-for="category in outCategories" :key="category.id" :value="category.id">{{ category.name }}</option>
@@ -161,7 +161,7 @@ async function choose(row: Tx, value: string): Promise<void> {
                       <option v-for="category in inCategories" :key="category.id" :value="category.id">{{ category.name }}</option>
                     </optgroup>
                   </select>
-                  <span class="flex items-center gap-2 text-[11px] text-muted">
+                  <span class="flex items-center gap-2 text-[12.5px] text-muted">
                     <label class="flex items-center gap-1" title="Con la prossima scelta, crea anche una regola per gli altri movimenti dello stesso esercente">
                       <input v-model="ruleFor[row.id]" type="checkbox" />
                       crea una regola
@@ -176,7 +176,7 @@ async function choose(row: Tx, value: string): Promise<void> {
           </tbody>
         </table>
       </div>
-      <button v-if="rows.length < total" type="button" class="btn self-start px-3 py-1.5 text-[13px]" :disabled="loading" @click="load(true)">Mostra altri {{ Math.min(100, total - rows.length) }}</button>
+      <button v-if="rows.length < total" type="button" class="btn self-start px-3 py-1.5 text-[14px]" :disabled="loading" @click="load(true)">Mostra altri {{ Math.min(100, total - rows.length) }}</button>
     </template>
   </div>
 </template>

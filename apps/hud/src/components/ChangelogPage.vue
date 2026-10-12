@@ -107,7 +107,7 @@ function reload(): void {
         <div class="flex flex-wrap items-center gap-2">
           <Icon name="history" :size="16" />
           <h1 id="changelog-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Novità</h1>
-          <span class="ml-auto font-mono text-[10.5px] tracking-[0.06em] text-muted">da CHANGELOG.md</span>
+          <span class="ml-auto font-mono text-[12px] tracking-[0.06em] text-muted">da CHANGELOG.md</span>
           <button type="button" class="rounded-md p-1.5 text-muted hover:text-ink" title="Rileggi il registro" aria-label="Rileggi il registro" @click="reload">
             <Icon name="retry" :size="15" />
           </button>
@@ -136,21 +136,21 @@ function reload(): void {
             {{ versionTitle(entry) }}
           </h2>
           <span v-if="versionDate(entry) !== null" class="text-sm text-muted">{{ versionDate(entry) }}</span>
-          <span v-if="entry.version !== null && entry.version === changelog?.current" class="rounded-[5px] border border-accent/50 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] text-accent uppercase">attuale</span>
+          <span v-if="entry.version !== null && entry.version === changelog?.current" class="rounded-[5px] border border-accent/50 px-1.5 py-0.5 font-mono text-[12px] tracking-[0.1em] text-accent uppercase">attuale</span>
         </header>
-        <MarkdownText v-if="entry.summary !== null" class="mb-3 text-[13.5px] text-muted" :source="entry.summary" />
+        <MarkdownText v-if="entry.summary !== null" class="mb-3 text-[14.5px] text-muted" :source="entry.summary" />
         <p v-if="entry.sections.length === 0" class="text-sm text-muted">Nessuna voce.</p>
         <div v-for="section in entry.sections" :key="section.title" class="mt-3 first:mt-0">
           <h3 class="mb-1.5">
-            <span class="rounded-[5px] border px-1.5 py-0.5 font-mono text-[10.5px] tracking-[0.08em] uppercase" :class="BADGE_CLASS[sectionTone(section.title)]">{{ section.title }}</span>
+            <span class="rounded-[5px] border px-1.5 py-0.5 font-mono text-[12px] tracking-[0.08em] uppercase" :class="BADGE_CLASS[sectionTone(section.title)]">{{ section.title }}</span>
           </h3>
-          <ul class="flex flex-col gap-1 text-[13.5px]">
+          <ul class="flex flex-col gap-1 text-[14.5px]">
             <li v-for="(item, index) in section.items" :key="index" class="flex gap-2.5">
               <span class="mt-[0.55em] size-[6px] shrink-0 rounded-full" :class="DOT_CLASS[sectionTone(section.title)]" aria-hidden="true" />
               <MarkdownText class="min-w-0 flex-1" :source="item" />
               <button
                 type="button"
-                class="inline-flex shrink-0 items-center gap-1 self-start rounded-md border border-line px-1.5 py-0.5 text-[11.5px] text-muted hover:border-line-strong hover:text-ink disabled:opacity-50 disabled:hover:border-line disabled:hover:text-muted"
+                class="inline-flex shrink-0 items-center gap-1 self-start rounded-md border border-line px-1.5 py-0.5 text-[12.5px] text-muted hover:border-line-strong hover:text-ink disabled:opacity-50 disabled:hover:border-line disabled:hover:text-muted"
                 :disabled="godOff !== null || opening !== null"
                 :title="discussTitle(godOff, entry.unreleased)"
                 :aria-label="`Parlane con GOD: ${plainItem(item)}`"

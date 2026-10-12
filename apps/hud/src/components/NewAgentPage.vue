@@ -243,7 +243,7 @@ function another(): void {
           <h1 id="new-agent-title" class="font-hud text-[15px] font-semibold tracking-[0.12em] uppercase">Nuovo agente</h1>
           <a href="/impostazioni/agenti" class="ml-auto text-xs text-accent hover:underline" @click.prevent="emit('done')">Torna agli agenti</a>
         </div>
-        <p class="mt-2 text-[13px] text-muted">
+        <p class="mt-2 text-[14px] text-muted">
           Un agente nuovo nasce disattivato in <code class="font-mono">data/agents</code>, fuori da git. Finché resta lì vede al massimo dati di lavoro (Interno) e agisce solo nella sandbox (A1),
           qualunque cosa dica la sua scheda. Lo attivi tu, qui alla fine o dalla pagina Agenti.
         </p>
@@ -256,7 +256,7 @@ function another(): void {
           <PixelAgent :choice="preview" pose="idle" :scale="2" :version="sheetVersion" />
           <div class="flex flex-col gap-1">
             <h2 id="created-title" class="hud-title font-mono">{{ created.name }}</h2>
-            <p class="text-[13px]">{{ created.state === 'active' ? 'Creato e attivo.' : 'Creato, disattivato.' }} {{ created.description }}</p>
+            <p class="text-[14px]">{{ created.state === 'active' ? 'Creato e attivo.' : 'Creato, disattivato.' }} {{ created.description }}</p>
             <p class="text-xs text-muted">{{ created.state === 'active' ? `Da ora ${workText(created.works)}.` : `Quando lo attivi, ${workText(created.works)}.` }}</p>
           </div>
         </div>
@@ -300,7 +300,7 @@ function another(): void {
             <label
               v-for="id in presets"
               :key="id"
-              class="flex cursor-pointer flex-col gap-1.5 rounded-[10px] border p-3 text-[13px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
+              class="flex cursor-pointer flex-col gap-1.5 rounded-[10px] border p-3 text-[14px] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
               :class="form.preset === id ? 'border-accent bg-accent/10' : 'border-line bg-surface-2 hover:border-line-strong'"
             >
               <input type="radio" name="preset" :value="id" :checked="form.preset === id" class="sr-only" @change="choosePreset(id)" />
@@ -322,18 +322,18 @@ function another(): void {
           <div class="grid grid-cols-1 gap-x-3.5 gap-y-2.5 sm:grid-cols-2">
             <label class="flex flex-col gap-1 text-xs text-muted">
               Nome (si usa anche per i file)
-              <input v-model.trim="form.name" class="field px-2 py-1.5 font-mono text-[13px] text-ink" maxlength="40" :placeholder="text?.example.name" autocomplete="off" />
+              <input v-model.trim="form.name" class="field px-2 py-1.5 font-mono text-[14px] text-ink" maxlength="40" :placeholder="text?.example.name" autocomplete="off" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-muted">
               Descrizione (una riga: Arianna la legge per scegliere a chi passare un lavoro)
-              <input v-model="form.description" class="field px-2 py-1.5 text-[13px] text-ink" maxlength="200" :placeholder="text?.example.description" />
+              <input v-model="form.description" class="field px-2 py-1.5 text-[14px] text-ink" maxlength="200" :placeholder="text?.example.description" />
             </label>
           </div>
           <label class="flex flex-col gap-1 text-xs text-muted">
             <span class="flex gap-2"
               >Prompt: cosa fa e come<span class="ml-auto font-mono" :class="form.prompt.length > MAX_USER_PROMPT ? 'text-danger' : ''">{{ form.prompt.length }}/{{ MAX_USER_PROMPT }}</span></span
             >
-            <textarea v-model="form.prompt" rows="9" class="field px-2 py-1.5 text-[13px] text-ink" :maxlength="MAX_USER_PROMPT" :placeholder="text?.example.prompt" />
+            <textarea v-model="form.prompt" rows="9" class="field px-2 py-1.5 text-[14px] text-ink" :maxlength="MAX_USER_PROMPT" :placeholder="text?.example.prompt" />
           </label>
           <p class="text-xs text-muted">
             Scrivi il prompt come istruzioni a un collega: cosa riceve, cosa deve fare, come deve rispondere. Arianna gli passa ogni volta un incarico con quello che serve; lui non vede la chat.
@@ -366,7 +366,7 @@ function another(): void {
           />
           <CharacterUpload :agent-label="form.name || 'il nuovo agente'" keep="si tiene con «Crea disattivato»" @uploaded="onUploaded" />
 
-          <div class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 p-3 text-[13px]">
+          <div class="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface-2 p-3 text-[14px]">
             <p class="text-xs text-muted">Cosa verrà creato</p>
             <p><span class="font-mono">{{ form.name }}</span> · {{ form.description.trim() }}</p>
             <p class="text-xs text-muted">«Crea disattivato» ti mostra prima i permessi, la trifecta e cosa esce verso il cloud.</p>
