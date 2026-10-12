@@ -18,7 +18,7 @@ import LabelBadge from './LabelBadge.vue';
  * never from a model. Private (L2): it stays on this computer.
  */
 const props = defineProps<{ clientId: string }>();
-const emit = defineEmits<{ project: [name: string] }>();
+const emit = defineEmits<{ project: [name: string]; invoice: [project: string, invoice: string] }>();
 
 const dashboard = ref<ClientDashboard | null>(null);
 const problem = ref<string | null>(null);
@@ -72,10 +72,12 @@ const shownProjects = computed(() => (dashboard.value?.projects ?? []).filter((i
 const noPrice = computed(() => shownProjects.value.flatMap((item) => item.noPrice.map((im) => ({ project: item.name, ...im }))));
 const notBilled = computed(() => shownProjects.value.flatMap((item) => item.notBilled.map((im) => ({ project: item.name, ...im }))));
 const invoices = computed(() => (dashboard.value?.invoices ?? []).filter((invoice) => project.value === 'all' || invoice.project === project.value));
-const withoutDocument = computed(() => invoices.value.filter((invoice) => invoice.documentCents === null).length);
+/** Invoices registered before the total of the document (D-170): they count without VAT until it is written. */
+const withoutDocument = computed(() => invoices.value.filter((invoice) => invoice.documentCents === null));
 
 // --- The chart: one bar per month (per year with "Tutto"), stacked in competenza
-const CHART = { width: 640, height: 210, left: 52, bottom: 22, top: 8 };
+// Left wide enough for "10.000 €" on the axis (D-190).
+const CHART = { width: 640, height: 210, left: 68, bottom: 22, top: 8 };
 const scale = computed(() => chartScale(summary.value?.chart ?? []));
 const plotHeight = CHART.height - CHART.bottom - CHART.top;
 const slot = computed(() => (CHART.width - CHART.left) / Math.max(1, summary.value?.chart.length ?? 1));
@@ -220,14 +222,19 @@ watch(
       </div>
 
       <!-- Warnings -->
-      <div v-if="noPrice.length > 0 || notBilled.length > 0 || dashboard.missing.length > 0 || summary.others.length > 0 || summary.othersWaiting.length > 0 || withoutDocument > 0" class="flex flex-col gap-1.5 rounded-xl border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
+      <div v-if="noPrice.length > 0 || notBilled.length > 0 || dashboard.missing.length > 0 || summary.others.length > 0 || summary.othersWaiting.length > 0 || withoutDocument.length > 0" class="flex flex-col gap-1.5 rounded-xl border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
         <p v-if="noPrice.length > 0" class="flex flex-wrap items-center gap-1.5">
           <Icon name="warning" :size="14" class="text-warn" />
           {{ noPrice.length }} IM chius{{ noPrice.length === 1 ? 'o' : 'i' }} senza prezzo ({{ noPrice.map((im) => `${im.project} IM-${String(im.number)}${im.date ? ` del ${imDay(im.date)}` : ''}`).join(', ') }}): non entrano nei totali finché non gli dai un prezzo.
           <button type="button" class="btn px-2 py-0.5 text-xs" @click="emit('project', noPrice[0]?.project ?? '')">Metti il prezzo</button>
         </p>
         <p v-if="notBilled.length > 0" class="text-muted">{{ notBilled.length }} IM segnat{{ notBilled.length === 1 ? 'o' : 'i' }} non fatturat{{ notBilled.length === 1 ? 'o' : 'i' }} ({{ notBilled.map((im) => `${im.project} IM-${String(im.number)}`).join(', ') }}): contano zero.</p>
-        <p v-if="withoutDocument > 0" class="text-muted">{{ withoutDocument }} fattur{{ withoutDocument === 1 ? 'a registrata' : 'e registrate' }} prima del totale documento: {{ withoutDocument === 1 ? 'conta' : 'contano' }} all'imponibile finché non lo scrivi (“Totale e scadenza…” nella scheda IM del progetto).</p>
+        <!-- In plain words (D-190): which invoice, what it counts now, a button to the place where the total is written. -->
+        <p v-for="invoice in withoutDocument" :key="invoice.id" class="flex flex-wrap items-center gap-1.5">
+          <Icon name="warning" :size="14" class="text-warn" />
+          <span><b class="font-medium">{{ invoice.number }}</b> non ha il totale con IVA: qui conta {{ moneyText(invoice.totalCents, invoice.currency) }} senza IVA, quindi i guadagni risultano più bassi.</span>
+          <button type="button" class="btn px-2 py-0.5 text-xs" :title="`Apre la scheda IM di ${invoice.project} su «Totale e scadenza…» di questa fattura`" @click="emit('invoice', invoice.project, invoice.id)">Scrivi il totale</button>
+        </p>
         <p v-if="summary.others.length > 0" class="text-muted">Fuori dal guadagno, in un'altra valuta: {{ summary.others.map((item) => moneyText(item.cents, item.currency)).join(' · ') }}.</p>
         <p v-if="summary.othersWaiting.length > 0" class="text-muted">Da fatturare o in attesa in un'altra valuta, fuori dai riquadri: {{ summary.othersWaiting.map((item) => moneyText(item.cents, item.currency)).join(' · ') }}.</p>
         <p v-if="dashboard.missing.length > 0" class="text-muted">Progetti del cliente non più fra quelli approvati, non contati: {{ dashboard.missing.join(', ') }}.</p>
@@ -243,12 +250,12 @@ watch(
           <svg :viewBox="`0 0 ${String(CHART.width)} ${String(CHART.height)}`" class="block h-auto w-full" role="img" :aria-label="`Grafico dei guadagni ${periodText}`">
             <g v-for="tick in ticks" :key="tick.y">
               <line :x1="CHART.left" :x2="CHART.width" :y1="tick.y" :y2="tick.y" class="stroke-line" stroke-dasharray="2 4" />
-              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted font-mono text-[12px]">{{ tick.text }}</text>
+              <text :x="CHART.left - 6" :y="tick.y + 3" text-anchor="end" class="fill-muted text-[11px]">{{ tick.text }}</text>
             </g>
             <g v-for="(bar, index) in summary.chart" :key="bar.key">
               <title>{{ bar.label }}: {{ money(bar.paid + bar.invoiced + bar.toInvoice) }}</title>
               <rect v-for="segment in segments(bar)" :key="segment.kind" :x="CHART.left + slot * index + slot * 0.2" :width="slot * 0.6" :y="segment.y" :height="segment.h" rx="2" :class="SEGMENT_CLASS[segment.kind]" />
-              <text :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted font-mono text-[12px]">{{ bar.label }}</text>
+              <text :x="CHART.left + slot * index + slot / 2" :y="CHART.height - 6" text-anchor="middle" class="fill-muted text-[11px]">{{ bar.label }}</text>
             </g>
           </svg>
           <div class="mt-1.5 flex flex-wrap gap-3 text-xs text-muted">

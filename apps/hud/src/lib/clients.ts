@@ -477,6 +477,44 @@ export function billingGaps(form: ClientForm): string[] {
   return gaps;
 }
 
+/**
+ * The fields behind `billingGaps`, as the ids of the registry (`cl-<id>`):
+ * the page marks them and "Completa" goes to the first (D-190). Same rules,
+ * field by field; "codice SDI o PEC" marks both.
+ */
+export function gapFields(form: ClientForm): string[] {
+  const fields: string[] = [];
+  const italian = form.country === 'IT';
+  const area = areaOf(form.country);
+  const person = form.kind === 'individual';
+  if (form.kind !== 'individual' && clean(form.legalName) === '' && form.kind !== 'freelancer') fields.push('legalName');
+  if (form.kind === 'freelancer') {
+    if (clean(form.firstName) === '') fields.push('firstName');
+    if (clean(form.lastName) === '') fields.push('lastName');
+  }
+  if (italian) {
+    if (form.kind === 'public_administration') {
+      if (clean(form.taxCode) === '' && clean(form.vatNumber) === '') fields.push('taxCode');
+      if (clean(form.ipaCode) === '') fields.push('ipaCode');
+    } else if (person) {
+      if (clean(form.taxCode) === '') fields.push('taxCode');
+    } else {
+      if (clean(form.vatNumber) === '') fields.push('vatNumber');
+      if (clean(form.sdiCode) === '' && clean(form.pec) === '') fields.push('sdiCode', 'pec');
+    }
+  } else if (area === 'EU' && !person) {
+    if (clean(form.euVatNumber) === '') fields.push('euVatNumber');
+  }
+  if (form.vatRate === 0 && clean(form.vatNature) === '') fields.push('vatNature');
+  const office = form.registeredAddress;
+  const officeIt = (office?.country ?? form.country) === 'IT';
+  if (office === null || clean(office.street) === '') fields.push('registeredAddress.street');
+  if (office === null || clean(office.city) === '') fields.push('registeredAddress.city');
+  if (officeIt && (office === null || clean(office.postalCode) === '')) fields.push('registeredAddress.postalCode');
+  if (officeIt && (office === null || clean(office.province) === '')) fields.push('registeredAddress.province');
+  return fields;
+}
+
 export type StatusFilter = 'current' | ClientStatus | 'all';
 
 export const STATUS_FILTER_TEXT: Record<StatusFilter, string> = { current: 'Attivi e potenziali', active: 'Attivi', prospect: 'Potenziali', archived: 'Archiviati', all: 'Tutti' };

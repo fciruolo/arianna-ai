@@ -62,6 +62,30 @@
   .head { display: grid; grid-template-columns: 40px minmax(0, 1.4fr) minmax(0, 1fr) repeat(3, 130px) 20px; gap: 14px; padding: 0 14px 4px; font-size: 12.5px; color: var(--muted); }
   .head span.r { text-align: right; }
 
+  /* cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .ccard { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .ccard:hover { border-color: var(--accent); box-shadow: 0 6px 20px #0000000f; }
+  .ccard header { display: flex; gap: 12px; align-items: center; }
+  .ccard .name { font-weight: 600; font-size: 16px; line-height: 1.3; }
+  .ccard .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .logo.big { width: 52px; height: 52px; border-radius: 12px; font-size: 12px; }
+  .ccard .contact { display: flex; flex-direction: column; font-size: 14px; }
+  .ccard .contact span { font-size: 13px; color: var(--muted); }
+  .ccard .projects { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+  .ccard .money { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); margin-top: auto; }
+  .ccard .money div { display: flex; flex-direction: column; }
+  .ccard .money span { font-size: 12px; color: var(--muted); }
+  .ccard .money b { font-size: 18px; }
+  .ccard .money .late b { color: var(--danger); }
+  .ccard .money .late small { font-size: 12px; color: var(--danger); }
+  .ccard .money.empty { display: block; font-size: 13px; color: var(--muted); }
+  .ccard .warn { font-size: 12.5px; color: var(--warn); }
+  .badge-late { position: absolute; top: 12px; right: 12px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 12px; font-weight: 600; }
+  .ccard.due { box-shadow: inset 3px 0 0 var(--danger); }
+  .ccard.add { align-items: center; justify-content: center; min-height: 220px; border-style: dashed; color: var(--muted); font-weight: 600; background: none; }
+  .ccard.add:hover { color: var(--accent); }
+
   /* client */
   .top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
   .top h1 { margin: 0; font-size: 22px; font-weight: 600; }
@@ -123,37 +147,30 @@
       <button class="btn p">+ Cliente</button>
       <input class="field" style="max-width:340px" placeholder="Cerca per nome, partita IVA, contatto, progetto">
       <select class="field" style="max-width:190px"><option>Attivi e potenziali</option></select>
+      <select class="field" style="max-width:190px"><option>Ordina: da incassare</option><option>Nome</option><option>Guadagno</option><option>Ultima modifica</option></select>
       <span class="muted" style="margin-left:auto;font-size:13px">3 clienti · numeri del 2026</span>
     </div>
-    <div class="head"><span></span><span>Cliente</span><span>Contatto principale</span><span class="r">Guadagno</span><span class="r">Da fatturare</span><span class="r">In attesa</span><span></span></div>
-    <div class="list">
-      <div class="row">
-        <div class="logo" style="background:#b0204d">ROSSI</div>
-        <div><div class="name">Pasticceria Finta Rossi Srl</div><div class="sub"><span class="chip ok">Attivo</span> Società · Italia · demo, progetto-test</div></div>
-        <div class="sub">Mario Rossi<br>mario@rossi.example</div>
-        <div class="k num"><b>999 €</b><span>2 IM chiusi</span></div>
-        <div class="k num"><b>0 €</b><span>niente</span></div>
-        <div class="k num"><b>549 €</b><span style="color:var(--danger)">1 scaduta</span></div>
-        <div class="muted">›</div>
-      </div>
-      <div class="row">
-        <div class="logo" style="background:#3f6fa8">VB</div>
-        <div><div class="name">Studio Verdi &amp; Bianchi</div><div class="sub"><span class="chip ok">Attivo</span> Studio professionale · Italia · sito-verdi</div></div>
-        <div class="sub">Laura Verdi<br>laura@verdi.example</div>
-        <div class="k num"><b>2.400 €</b><span>4 IM chiusi</span></div>
-        <div class="k num"><b>600 €</b><span>1 IM</span></div>
-        <div class="k num"><b>0 €</b><span>tutto pagato</span></div>
-        <div class="muted">›</div>
-      </div>
-      <div class="row">
-        <div class="logo" style="background:#8a8f8c">NG</div>
-        <div><div class="name">Nuova Gelateria Gialli</div><div class="sub"><span class="chip">Potenziale</span> Società · Italia · nessun progetto</div></div>
-        <div class="sub">—</div>
-        <div class="k num"><b class="muted">—</b><span>nessun IM</span></div>
-        <div class="k num"><b class="muted">—</b><span></span></div>
-        <div class="k num"><b class="muted">—</b><span></span></div>
-        <div class="muted">›</div>
-      </div>
+    <div class="cards">
+      <article class="ccard due">
+        <header><div class="logo big" style="background:#b0204d">ROSSI</div><div><div class="name">Pasticceria Finta Rossi Srl</div><div class="sub"><span class="chip ok">Attivo</span> Società · Italia</div></div></header>
+        <div class="contact"><b>Mario Rossi</b><span>mario@rossi.example · 329 666 0000</span></div>
+        <div class="projects"><span class="chip">demo</span><span class="chip">progetto-test</span></div>
+        <div class="money"><div><span>Guadagno 2026</span><b class="num">999 €</b></div><div><span>Da fatturare</span><b class="num">0 €</b></div><div class="late"><span>In attesa</span><b class="num">549 €</b><small>1 scaduta</small></div></div>
+        <div class="warn">⚠ Dati per la fattura elettronica incompleti</div>
+      </article>
+      <article class="ccard">
+        <header><div class="logo big" style="background:#3f6fa8">VB</div><div><div class="name">Studio Verdi &amp; Bianchi</div><div class="sub"><span class="chip ok">Attivo</span> Studio professionale · Italia</div></div></header>
+        <div class="contact"><b>Laura Verdi</b><span>laura@verdi.example</span></div>
+        <div class="projects"><span class="chip">sito-verdi</span></div>
+        <div class="money"><div><span>Guadagno 2026</span><b class="num">2.400 €</b></div><div><span>Da fatturare</span><b class="num">600 €</b></div><div><span>In attesa</span><b class="num">0 €</b></div></div>
+      </article>
+      <article class="ccard">
+        <header><div class="logo big" style="background:#8a8f8c">NG</div><div><div class="name">Nuova Gelateria Gialli</div><div class="sub"><span class="chip">Potenziale</span> Società · Italia</div></div></header>
+        <div class="contact"><b class="muted">Nessun contatto</b><span>&nbsp;</span></div>
+        <div class="projects"><span class="muted" style="font-size:13px">Nessun progetto</span></div>
+        <div class="money empty"><span>Ancora nessun IM: i numeri compaiono con il primo lavoro chiuso.</span></div>
+      </article>
+      <article class="ccard add"><span>+ Nuovo cliente</span></article>
     </div>
     <p class="muted" style="font-size:13px;margin-top:14px">🔒 Privato: i clienti restano su questo computer. Claude, Codex e Telegram non li vedono.</p>
   </section>
@@ -254,10 +271,11 @@
     const l = document.createElement('span'); l.textContent = m; labels.appendChild(l);
   });
   const notes = {
-    elenco: `<p><b>Elenco con i numeri.</b></p><ul>
-      <li>Ogni cliente è una riga ordinata: logo, nome, stato, tipo, paese e progetti; poi il contatto principale e tre numeri dell'anno: <b>guadagno</b>, <b>da fatturare</b>, <b>in attesa</b> (con «1 scaduta» in rosso).</li>
-      <li>Esempio: a colpo d'occhio vedi che Pasticceria Rossi ti deve 549 € e una fattura è scaduta, senza aprire la scheda.</li>
-      <li>Stessa larghezza massima delle Finanze.</li></ul>`,
+    elenco: `<p><b>Ogni cliente è una card</b> (richiesta dell'utente), in una griglia che si adatta alla larghezza: tre o quattro per riga sullo schermo grande, una sul telefono.</p><ul>
+      <li><b>In alto</b> logo grande, nome, stato, tipo e paese; un filo rosso sul bordo sinistro quando c'è una fattura scaduta.</li>
+      <li><b>In mezzo</b> il contatto principale con email e telefono, poi i progetti come pillole.</li>
+      <li><b>In fondo</b> tre numeri dell'anno: guadagno, da fatturare, in attesa (rosso se c'è una scaduta); l'avviso se mancano i dati della fattura elettronica.</li>
+      <li>Esempio: vedi subito che Pasticceria Rossi ti deve 549 € con una fattura scaduta. Ultima card tratteggiata «+ Nuovo cliente»; nuovo menu «Ordina» (da incassare, nome, guadagno, ultima modifica).</li></ul>`,
     dashboard: `<p><b>Il cliente si apre sulla Dashboard</b> (prima scheda; Anagrafica seconda).</p><ul>
       <li>In testa, sotto il nome, i fatti che servono subito: stato, tipo, paese, contatto principale con email e telefono.</li>
       <li>L'avviso della fattura elettronica ha <b>«Completa»</b>: porta all'Anagrafica con i campi mancanti evidenziati.</li>

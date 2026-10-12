@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { archiveClient, linkClientProject, listClients, readClient, removeClientLogo, unlinkClientProject, uploadClientLogo } from '../lib/api.ts';
+import { archiveClient, linkClientProject, listClients, readClient, readClientDashboard, removeClientLogo, unlinkClientProject, uploadClientLogo } from '../lib/api.ts';
+import { CARD_ORDER_TEXT, cardMoney, sortCards, type CardMoney, type CardOrder } from '../lib/client-cards.ts';
+import { roundMoneyText, summarize } from '../lib/client-dashboard.ts';
 import {
   AREA_TEXT,
   billingGaps,
@@ -10,6 +12,7 @@ import {
   filterClients,
   formOf,
   freeProjects,
+  gapFields,
   initialsOf,
   KIND_TEXT,
   logoFileProblem,
@@ -30,14 +33,15 @@ import ClientRegistry from './ClientRegistry.vue';
 import Icon from './Icon.vue';
 
 /**
- * "Clienti" (I-16, D-168, tappa C1): the list with logo, name, area and
- * projects; a client in full with "Anagrafica", "Contatti", "Progetti", and
- * "Documenti" (tappa C2, D-171) and "Dashboard" (tappa C3, D-170). Everything is
- * private (L2): it stays between this page and the core of this Mac.
+ * "Clienti" (I-16, D-168, tappa C1): the list as cards (D-190) with logo,
+ * name, contact, projects and three numbers of the year; a client in full
+ * with "Dashboard" first (tappa C3, D-170), "Anagrafica", "Contatti",
+ * "Progetti" and "Documenti" (tappa C2, D-171). Everything is private (L2): it
+ * stays between this page and the core of this Mac.
  * `client` comes from the address (`/clienti/<id>`); "new" writes a new one.
  */
 const props = defineProps<{ client: string | null }>();
-const emit = defineEmits<{ open: [id: string | null]; project: [name: string] }>();
+const emit = defineEmits<{ open: [id: string | null]; project: [name: string, invoice?: string] }>();
 
 const clients = ref<ClientSummary[] | null>(null);
 const approved = ref<string[]>([]);
@@ -46,7 +50,64 @@ const status = ref<StatusFilter>('current');
 const query = ref('');
 const creating = ref(false);
 
-const shown = computed(() => filterClients(clients.value ?? [], status.value, query.value));
+/** The order of the cards, remembered in this browser only. */
+const ORDER_KEY = 'arianna.clients-order';
+function readOrder(): CardOrder {
+  try {
+    const value = localStorage.getItem(ORDER_KEY);
+    return value !== null && value in CARD_ORDER_TEXT ? (value as CardOrder) : 'due';
+  } catch {
+    return 'due';
+  }
+}
+const order = ref<CardOrder>(readOrder());
+watch(order, (value) => {
+  try {
+    localStorage.setItem(ORDER_KEY, value);
+  } catch {
+    // Without storage the order lasts until the page reloads.
+  }
+});
+const orders = Object.entries(CARD_ORDER_TEXT) as [CardOrder, string][];
+
+/** The three numbers of each card, read from its dashboard after the list; missing while not read. */
+const money = ref(new Map<string, CardMoney>());
+/** The cards whose dashboard could not be read: "Numeri non disponibili", not "not read yet". */
+const moneyFailed = ref(new Set<string>());
+const thisYear = new Date().getFullYear();
+let moneyRead = 0;
+async function loadMoney(list: readonly ClientSummary[]): Promise<void> {
+  const request = ++moneyRead;
+  // Every client, archived too: changing the filter later finds its numbers already read.
+  const found = await Promise.all(
+    list.map(async (item) => {
+      try {
+        const dashboard = await readClientDashboard(item.id);
+        return [item.id, cardMoney(summarize(dashboard, { year: thisYear, project: 'all', basis: 'accrual' }), dashboard.currency)] as const;
+      } catch {
+        return [item.id, null] as const;
+      }
+    }),
+  );
+  if (request !== moneyRead) return;
+  money.value = new Map(found.flatMap(([id, value]) => (value === null ? [] : [[id, value] as const])));
+  moneyFailed.value = new Set(found.flatMap(([id, value]) => (value === null ? [id] : [])));
+}
+
+const shown = computed(() => sortCards(filterClients(clients.value ?? [], status.value, query.value), order.value, money.value));
+
+function euros(cents: number, currency: string): string {
+  return roundMoneyText(cents, currency);
+}
+
+/** What the bottom of a card shows: still reading, not readable, nothing yet, or the three numbers. */
+type CardFoot = { kind: 'reading' } | { kind: 'failed' } | { kind: 'empty' } | { kind: 'money'; value: CardMoney };
+function footOf(id: string): CardFoot {
+  const value = money.value.get(id);
+  if (value === undefined) return moneyFailed.value.has(id) ? { kind: 'failed' } : { kind: 'reading' };
+  if (value.closed === 0 && value.awaiting === 0 && value.toInvoice === 0) return { kind: 'empty' };
+  return { kind: 'money', value };
+}
 
 async function loadList(): Promise<void> {
   try {
@@ -54,6 +115,7 @@ async function loadList(): Promise<void> {
     clients.value = found.clients;
     approved.value = found.projects;
     listProblem.value = null;
+    void loadMoney(found.clients);
   } catch (cause) {
     listProblem.value = clientErrorText(cause);
   }
@@ -62,7 +124,8 @@ async function loadList(): Promise<void> {
 // One client
 const detail = ref<Client | null>(null);
 const detailProblem = ref<string | null>(null);
-const tab = ref<'registry' | 'contacts' | 'projects' | 'documents' | 'dashboard'>('registry');
+// The dashboard first (D-190): the money of a client is what one opens it for most often.
+const tab = ref<'registry' | 'contacts' | 'projects' | 'documents' | 'dashboard'>('dashboard');
 const actionProblem = ref<string | null>(null);
 const busy = ref(false);
 
@@ -86,7 +149,7 @@ watch(
     actionProblem.value = null;
     if (id !== null) {
       creating.value = false;
-      tab.value = 'registry';
+      tab.value = 'dashboard';
       void loadDetail(id);
     } else void loadList();
   },
@@ -195,14 +258,27 @@ async function unlink(linkId: string): Promise<void> {
 }
 
 const gaps = computed(() => (detail.value === null ? [] : billingGaps(formOf(detail.value))));
+const primary = computed(() => detail.value?.contacts.find((contact) => contact.primary) ?? detail.value?.contacts[0] ?? null);
 const payment = computed(() => (detail.value === null ? null : paymentText(detail.value.paymentMethod, detail.value.paymentDays, detail.value.paymentEndOfMonth)));
 const tabs = computed(() => [
+  { id: 'dashboard', text: 'Dashboard' },
   { id: 'registry', text: 'Anagrafica' },
   { id: 'contacts', text: `Contatti${detail.value !== null && detail.value.contacts.length > 0 ? ` · ${String(detail.value.contacts.length)}` : ''}` },
   { id: 'projects', text: `Progetti${detail.value !== null && detail.value.projects.length > 0 ? ` · ${String(detail.value.projects.length)}` : ''}` },
   { id: 'documents', text: 'Documenti' },
-  { id: 'dashboard', text: 'Dashboard' },
 ] as const);
+
+/** "Completa": the registry, on the first field the electronic invoice still needs. */
+async function complete(): Promise<void> {
+  if (detail.value === null) return;
+  const first = gapFields(formOf(detail.value))[0];
+  tab.value = 'registry';
+  await nextTick();
+  if (first === undefined) return;
+  const field = document.getElementById(`cl-${first}`);
+  field?.scrollIntoView({ block: 'center' });
+  field?.focus({ preventScroll: true });
+}
 
 const areaClass: Record<ClientArea, string> = { IT: 'text-ok', EU: 'text-info', 'extra-EU': 'text-warn' };
 const statusClass: Record<ClientStatus, string> = { active: 'text-ok', prospect: 'text-info', archived: 'text-muted' };
@@ -210,7 +286,9 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-4 md:px-6" aria-label="Clienti">
+  <!-- One width with the finances (D-189, D-190). -->
+  <section class="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-4 md:px-6" aria-label="Clienti">
+    <div class="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4">
     <!-- A NEW CLIENT -->
     <template v-if="creating && client === null">
       <header class="flex flex-wrap items-center gap-3">
@@ -231,7 +309,10 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
         <select v-model="status" class="field px-2 py-1.5 text-[14px]" aria-label="Quali clienti">
           <option v-for="[value, text] in filters" :key="value" :value="value">{{ text }}</option>
         </select>
-        <span v-if="clients" class="ml-auto text-xs text-muted">{{ shown.length === 1 ? '1 cliente' : `${String(shown.length)} clienti` }}</span>
+        <select v-model="order" class="field px-2 py-1.5 text-[14px]" aria-label="Ordine dei clienti">
+          <option v-for="[value, text] in orders" :key="value" :value="value">Ordina: {{ text.toLowerCase() }}</option>
+        </select>
+        <span v-if="clients" class="ml-auto text-xs text-muted">{{ shown.length === 1 ? '1 cliente' : `${String(shown.length)} clienti` }} · numeri del {{ thisYear }}</span>
       </div>
       <p v-if="listProblem" class="text-sm text-danger" role="alert">{{ listProblem }}</p>
       <p v-else-if="clients === null" class="text-sm text-muted">Carico i clienti…</p>
@@ -239,26 +320,61 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
         Nessun cliente. Con <b>+ Cliente</b> scrivi l’anagrafica, poi aggiungi contatti e progetti. Tutto resta privato su questo computer.
       </div>
       <p v-else-if="shown.length === 0" class="text-sm text-muted">Nessun cliente con questi filtri.</p>
-      <ul v-else class="grid gap-2">
-        <li v-for="item in shown" :key="item.id">
-          <button type="button" class="grid w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-left hover:border-line-strong md:grid-cols-[44px_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]" @click="emit('open', item.id)">
-            <img v-if="item.logo" :src="logoUrl(item.id, item.logo) ?? ''" alt="" class="size-11 rounded-lg border border-line bg-white object-contain p-0.5" />
-            <span v-else class="grid size-11 place-items-center rounded-lg border border-accent/40 bg-accent/15 font-hud text-[15px] font-semibold text-accent" aria-hidden="true">{{ initialsOf(item.displayName) }}</span>
-            <span class="min-w-0">
-              <b class="block truncate text-[14px] font-semibold">{{ item.displayName }}</b>
-              <span class="block truncate text-[13px] text-muted">{{ KIND_TEXT[item.kind] }}<template v-if="item.legalName && item.legalName !== item.displayName"> · {{ item.legalName }}</template><template v-if="item.vatNumber"> · P.IVA {{ item.vatNumber }}</template></span>
+      <!-- Each client a card (D-190), as many per row as the width holds. -->
+      <ul v-else class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+        <li v-for="item in shown" :key="item.id" class="flex">
+          <button
+            type="button"
+            class="flex w-full flex-col gap-3 rounded-2xl border border-line bg-surface-2 p-4 text-left transition-colors hover:border-accent"
+            :class="(money.get(item.id)?.overdue ?? 0) > 0 ? 'shadow-[inset_3px_0_0_var(--danger)]' : ''"
+            @click="emit('open', item.id)"
+          >
+            <span class="flex items-center gap-3">
+              <img v-if="item.logo" :src="logoUrl(item.id, item.logo) ?? ''" alt="" class="size-[52px] shrink-0 rounded-xl border border-line bg-white object-contain p-0.5" />
+              <span v-else class="grid size-[52px] shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15 font-hud text-[17px] font-semibold text-accent" aria-hidden="true">{{ initialsOf(item.displayName) }}</span>
+              <span class="min-w-0">
+                <b class="block truncate text-[16px] leading-snug font-semibold">{{ item.displayName }}</b>
+                <span class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
+                  <span class="lab" :class="statusClass[item.status]">{{ STATUS_TEXT[item.status] }}</span>
+                  {{ KIND_TEXT[item.kind] }} · <span :title="AREA_TEXT[item.area]">{{ countryName(item.country) }}</span>
+                </span>
+              </span>
             </span>
-            <span class="col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 md:col-start-auto">
-              <span class="lab" :class="areaClass[item.area]" :title="countryName(item.country)">{{ AREA_TEXT[item.area] }}</span>
-              <span v-if="item.status !== 'active'" class="lab" :class="statusClass[item.status]">{{ STATUS_TEXT[item.status] }}</span>
-              <span v-for="name in item.projects.slice(0, 3)" :key="name" class="chip inline-flex items-center gap-1"><Icon name="project" :size="11" />{{ name }}</span>
-              <span v-if="item.projects.length > 3" class="chip">+{{ item.projects.length - 3 }}</span>
+            <span class="flex min-h-[42px] flex-col text-[14px]">
+              <template v-if="item.primaryContact">
+                <b class="truncate font-medium">{{ item.primaryContact.name }}</b>
+                <span class="truncate text-[13px] text-muted">{{ [item.primaryContact.email, item.primaryContact.phone].filter((part) => part).join(' · ') || 'nessun recapito' }}</span>
+              </template>
+              <template v-else-if="item.email">
+                <b class="font-medium text-muted">Nessun contatto</b>
+                <span class="truncate text-[13px] text-muted">{{ item.email }}</span>
+              </template>
+              <span v-else class="text-muted">Nessun contatto</span>
             </span>
-            <span class="col-start-2 min-w-0 truncate text-[13.5px] text-muted md:col-start-auto">
-              <template v-if="item.primaryContact">{{ item.primaryContact.name }}<template v-if="item.primaryContact.email"> · {{ item.primaryContact.email }}</template></template>
-              <template v-else-if="item.email">{{ item.email }}</template>
+            <span class="flex min-h-[24px] flex-wrap gap-1.5">
+              <span v-for="name in item.projects.slice(0, 4)" :key="name" class="chip inline-flex items-center gap-1"><Icon name="project" :size="11" />{{ name }}</span>
+              <span v-if="item.projects.length > 4" class="chip">+{{ item.projects.length - 4 }}</span>
+              <span v-if="item.projects.length === 0" class="text-[13px] text-muted">Nessun progetto</span>
             </span>
-            <span class="hidden text-muted md:block"><Icon name="expand" :size="15" /></span>
+            <span v-for="foot in [footOf(item.id)]" :key="foot.kind" class="mt-auto border-t border-line pt-3">
+              <span v-if="foot.kind === 'reading'" class="text-[13px] text-muted">Leggo i numeri del {{ thisYear }}…</span>
+              <span v-else-if="foot.kind === 'failed'" class="text-[13px] text-warn">Numeri non disponibili: apri il cliente per vederli.</span>
+              <span v-else-if="foot.kind === 'empty'" class="text-[13px] text-muted">Nessun IM chiuso nel {{ thisYear }}: i numeri compaiono con il primo lavoro chiuso.</span>
+              <span v-else class="grid grid-cols-3 gap-2">
+                <span class="flex flex-col"><span class="text-xs text-muted">Guadagno {{ thisYear }}</span><b class="text-[18px] tabular-nums">{{ euros(foot.value.earned, foot.value.currency) }}</b></span>
+                <span class="flex flex-col"><span class="text-xs text-muted">Da fatturare</span><b class="text-[18px] tabular-nums">{{ euros(foot.value.toInvoice, foot.value.currency) }}</b></span>
+                <span class="flex flex-col">
+                  <span class="text-xs text-muted">In attesa</span>
+                  <b class="text-[18px] tabular-nums" :class="foot.value.overdue > 0 ? 'text-danger' : ''">{{ euros(foot.value.awaiting, foot.value.currency) }}</b>
+                  <span v-if="foot.value.overdue > 0" class="text-xs text-danger">{{ foot.value.overdue === 1 ? '1 scaduta' : `${String(foot.value.overdue)} scadute` }}</span>
+                </span>
+              </span>
+            </span>
+          </button>
+        </li>
+        <li class="flex">
+          <button type="button" class="grid min-h-[220px] w-full place-items-center rounded-2xl border border-dashed border-line-strong text-[15px] font-semibold text-muted hover:border-accent hover:text-accent" @click="creating = true">
+            <span class="flex items-center gap-2"><Icon name="new" :size="16" />Nuovo cliente</span>
           </button>
         </li>
       </ul>
@@ -287,6 +403,10 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
               <span v-if="payment">· {{ payment }}</span>
               <span class="lab text-warn" title="Privato: resta su questo computer">L2</span>
             </p>
+            <!-- The primary contact, at hand on every tab (D-190). -->
+            <p v-if="primary" class="mt-1 truncate text-[13.5px]">
+              <b class="font-medium">{{ primary.name }}</b><span class="text-muted">{{ [primary.role, primary.email, primary.phone ?? primary.mobile].filter((part) => part).map((part) => ` · ${part}`).join('') }}</span>
+            </p>
           </div>
           <div class="flex flex-wrap items-center gap-1.5">
             <template v-if="detail.status !== 'archived'">
@@ -299,9 +419,10 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </div>
         </header>
         <p v-if="actionProblem" class="text-sm text-danger" role="alert">{{ actionProblem }}</p>
-        <p v-if="gaps.length > 0 && detail.status !== 'archived'" class="flex items-start gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
+        <p v-if="gaps.length > 0 && detail.status !== 'archived'" class="flex flex-wrap items-center gap-2 rounded-lg border border-warn/50 bg-warn/10 px-3 py-2 text-[13.5px]">
           <span class="text-warn"><Icon name="warning" :size="14" /></span>
-          <span>Per la fattura elettronica mancano: {{ gaps.join(', ') }}.</span>
+          <span class="flex-1">Per la fattura elettronica mancano: {{ gaps.join(', ') }}.</span>
+          <button type="button" class="btn px-2.5 py-1 text-xs" title="Apre l’Anagrafica sul primo campo da riempire; i campi mancanti hanno il bordo ambra" @click="complete">Completa</button>
         </p>
 
         <nav class="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line" aria-label="Schede del cliente">
@@ -318,7 +439,8 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </button>
         </nav>
 
-        <ClientRegistry v-if="tab === 'registry'" :client="detail" @saved="saved" />
+        <ClientDashboard v-if="tab === 'dashboard'" :client-id="detail.id" @project="emit('project', $event)" @invoice="(name, invoice) => emit('project', name, invoice)" />
+        <ClientRegistry v-else-if="tab === 'registry'" :client="detail" @saved="saved" />
         <ClientContacts v-else-if="tab === 'contacts'" :client="detail" @changed="refresh" />
 
         <div v-else-if="tab === 'projects'" class="grid max-w-3xl gap-3">
@@ -344,9 +466,9 @@ const filters = Object.entries(STATUS_FILTER_TEXT) as [StatusFilter, string][];
           </form>
         </div>
 
-        <ClientDocuments v-else-if="tab === 'documents'" :client="detail" />
-        <ClientDashboard v-else :client-id="detail.id" @project="emit('project', $event)" />
+        <ClientDocuments v-else :client="detail" />
       </template>
     </template>
+    </div>
   </section>
 </template>
