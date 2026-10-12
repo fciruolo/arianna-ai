@@ -1044,7 +1044,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
             :direct-agents="directAgents"
             @send="(body) => store.send(body, messageDesign(studioDesign))"
             :studio-file="studioAddress.file"
-            @restarted="(id) => store.open(id)"
+            @restarted="(id) => store.reloadConversation(id)"
             @remove-participant="store.removeParticipant"
             @call-when-done="store.callWhenDone"
             @cancel-call="store.cancelScheduled"
@@ -1124,7 +1124,7 @@ const labelClass: Record<string, string> = { L0: 'text-l0', L1: 'text-l1', L2: '
         @god-dashboard="openGod"
         studio-link
         @studio="openStudioOf"
-        @restarted="openConversation"
+        @restarted="(id) => store.reloadConversation(id)"
       />
       </template>
       <div v-else class="flex flex-1 items-center justify-center p-8 text-center">

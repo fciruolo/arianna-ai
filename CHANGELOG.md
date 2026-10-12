@@ -12,7 +12,7 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 - Studio: «Apri in Progetti» apre il progetto con la cartella dei mockup aperta nella scheda File; in Progetti «Apri nello Studio»; nella chat col Designer su un progetto il pulsante «Apri nello Studio» (I-20, D-185).
 - Chat col Designer: pulsante «Nuova sessione» e, quando la sessione supera metà del contesto, la proposta dopo una risposta: la conversazione resta intera con la riga «Nuova sessione · il Designer ricorda solo da qui», e il Designer smette di rileggere la sessione di prima e riparte da un breve riassunto scritto dal codice (ultime richieste, ultima risposta, variante aperta nello Studio); «No» ripropone più avanti (I-20, D-185).
 - Studio: nella finestra di stile e skill «Genera esempio» (o «Genera i mancanti») fa scrivere a Claude Opus una landing e una presentazione in quello stile, salvate e mai rifatte finché lo stile non cambia, con «Vedi esempio» in una cornice isolata; le descrizioni delle skill in italiano, tradotte una volta da Sonnet (I-20, D-185).
-- Studio: stile e skill sotto la barra sono collegamenti al loro testo completo; nella finestra di scelta un secondo clic sullo stile scelto lo toglie (I-20, D-185).
+- Studio: stile e skill sotto la barra sono collegamenti: lo stile mostra prima i suoi esempi (landing e presentazione), poi la descrizione; nella finestra di scelta un secondo clic sullo stile scelto lo toglie (I-20, D-185).
 - Progetti → File: «Sposta o rinomina», «Elimina» (per sempre) e, nei file di `eliminati/`, «Ripristina», ognuno con una finestra di conferma; niente su collegamenti, file nascosti, `node_modules` né mentre un agente lavora sul progetto (I-20, D-185).
 
 ## [0.76.0] - 2026-10-12
