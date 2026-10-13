@@ -5,7 +5,7 @@
 | Decisione | Proposta | Entro |
 | --- | --- | --- |
 | ~~Linguaggio del nucleo~~ | **Deciso: TypeScript** (D-003) | |
-| Conferma delle decisioni "Proposta, applicata" (D-004, D-013…D-021, D-024) | Rileggerle in `DECISIONS.md` e confermarle o rifiutarle; insieme le altre decisioni di base ancora "Proposta, applicata" (D-025…D-029) e D-030 (cartella di sviluppo separata da quella dei dati veri, proposta da applicare a fine Fase 1A) | Task 0.6 |
+| ~~Conferma delle decisioni "Proposta, applicata" (D-004, D-013…D-030)~~ | **Chiusa:** confermate dall'utente il 2026-10-14 a gruppi per tema (privacy, codice e test, motore, metodo), insieme a D-032, D-033, D-035, D-036, D-038, D-039, D-047, D-048 e D-034 | |
 | ~~Dove gira il server~~ | **Deciso: Mac Studio** (chiarito dall'utente il 2026-10-02: è la macchina di lavoro dove andrà l'installazione con i dati veri; `HANDOFF.md`, "Dove siamo"), dietro interfaccia sostituibile | |
 | Conteggio di `claude -p` e `codex exec` negli abbonamenti | `claude -p` (task 1.5, D-049): con il login dell'abbonamento (`apiKeySource: none`) ogni run riporta un `rate_limit_event` con le finestre `five_hour` e `seven_day` dell'abbonamento; non è verificato se esista un credito separato. Da guardare nel tuo account dopo qualche run. `codex exec` (task 1.16, D-138): con il login ChatGPT i run contano nella quota di ChatGPT (2026-10-07: circa 60 run della sessione, fra prove ed eval, hanno portato Codex al 14% secondo la barra dell'utente); lo stream non porta finestre di quota né crediti, quindi la barra resta l'unica misura | Quando vuoi: Codex lavora già nelle deleghe dalla 0.29.0 (D-140) |
 | ~~Nomi esatti dei flag di confinamento (`--strict-mcp-config`, sorgenti delle impostazioni, sandbox)~~ | **Deciso:** fissati per `claude` 2.1.288, sandbox compresa (D-049, D-050, `packages/executors/src/claude/profile.ts`), e per `codex` 0.160.0 (D-138, `packages/executors/src/codex/profile.ts`), con i test di contratto e del canarino | |
@@ -88,15 +88,6 @@ Scelta dell'utente: **non ancora fatta**.
 Contesto, opzioni ed esempio delle domande che non hanno posto sotto di sé (righe delle tabelle qui sopra, conferme delle decisioni di `DECISIONS.md`, righe "In attesa dell'utente" di `HANDOFF.md`), letti dalla pagina "Sviluppo di Arianna" (D-122). Un blocco per domanda, con la sua chiave come titolo: `conf-D-0NN` per una conferma, `oq-...` e `ho-...` per una riga (la chiave nasce dal testo della prima cella: se la riga cambia, cambia anche il titolo qui). Le domande di `PROPOSTE.md` hanno le stesse righe sotto la domanda. Quando una domanda si chiude, si toglie anche il suo blocco: un blocco senza domanda la pagina lo conta fra le righe saltate. Rilette il 2026-10-10: chiuse quelle già decise (righe barrate qui sopra, "(storico)" in `HANDOFF.md`, sezioni "Domande chiuse" in `PROPOSTE.md`, ciascuna con la sua fonte).
 
 Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a Claude o Codex passando dal gateway; **L2** = privato, resta sul Mac; **L3** = delicatissimo, nessun modello lo legge. Il **gateway** è il filtro unico di tutto ciò che esce verso il cloud; il **core** è il programma sempre acceso di Arianna; una **D-NNN** è una decisione scritta in `DECISIONS.md`.
-
-### oq-conferma-delle-decisioni-proposta-applicata-d-00
-
-- Contesto: All'inizio del progetto Claude ha preso alcune decisioni di base e le ha già messe in pratica, segnandole "Proposta, applicata": per esempio la coda dei lavori nel database (D-004), le regole su come tenere i documenti (D-013…D-021, D-024) e gli strumenti di sviluppo (D-025…D-029). Restano provvisorie finché non le confermi tu. Insieme si può decidere D-030 (tenere separate la cartella di sviluppo, con dati finti, e quella con i dati veri), che è ancora solo una proposta da applicare a fine Fase 1A. Si tratta di dire se ti vanno bene come sono o se qualcuna va cambiata.
-- Opzione consigliata: Le rileggo e le confermo — diventano "accettate" e Claude non le rimette in discussione; se ne vuoi cambiare una la indichi nella risposta e Claude prepara la modifica.
-- Opzione: Confermale tutte senza rileggerle — più veloce: diventano accettate subito; il rischio è scoprire più avanti una scelta che non ti piace e doverla rifare.
-- Opzione: Rivediamole una alla volta — Claude te le presenta in conversazione con una domanda ciascuna: più lento, ma ogni scelta è spiegata.
-- Opzione: Rimandiamo — restano provvisorie; nulla si ferma, ma la barra dello sviluppo le conta ancora "in corso".
-- Esempio: Rileggi D-004 ("coda dei lavori in PostgreSQL invece di un servizio esterno") e rispondi "Confermo tutte tranne D-018: la CI remota non mi serve". Claude segna le altre come accettate e apre una proposta solo per D-018.
 
 ### oq-conteggio-di-claude-p-e-codex-exec-negli-abbonam
 
@@ -235,27 +226,6 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Voglio una versione diversa — scrivi cosa permettere o vietare; Claude prepara il testo da incollare.
 - Esempio: Con la proposta, Claude modifica apps/hud/src/style.css senza chiedere, ma per "pnpm add lodash" compare comunque la tua conferma.
 
-### ho-conferma-di-d-034
-
-- Contesto: D-034 riguarda le schede degli agenti, i file che dicono a ogni agente cosa può fare. Il punto da confermare: quando un agente passa un lavoro a un altro (una delega), l'altro parte con un contesto separato e non può comunicare con l'esterno solo perché chi delega poteva farlo.
-- Opzione consigliata: Confermo — la regola diventa definitiva: una delega non allarga mai i permessi.
-- Opzione: Voglio eccezioni — scrivi quali; Claude propone una decisione nuova, valutando il rischio di fughe di dati.
-- Esempio: Arianna può scriverti sul telefono; se delega al Coder la sistemazione di un file, il Coder non ottiene per questo il diritto di mandarti messaggi.
-
-### ho-conferma-di-d-047
-
-- Contesto: D-047 è l'installer (pnpm arianna:install), il comando che prepara Arianna su un Mac. Due scelte da confermare: rende privata la cartella data/ anche se esisteva già, ed esce con errore finché il controllo dell'installazione (doctor) non è tutto verde, anche quando l'installazione in sé è riuscita.
-- Opzione consigliata: Confermo — l'installer resta severo: non dice "pronto" finché ci sono password di sviluppo o pezzi mancanti.
-- Opzione: Successo se l'installazione riesce — più comodo, ma un "tutto ok" potrebbe nascondere che non è pronto per i dati veri.
-- Esempio: Dopo un'installazione nuova con le password di prova, l'installer finisce con "installato, ma non pronto per i dati veri" ed esce con errore.
-
-### ho-conferma-di-d-048
-
-- Contesto: D-048 è il wizard (le domande in italiano che scrivono la configurazione config/arianna.toml) con il catalogo dei modelli. Le scelte di fondo le hai già fatte; restano da confermare tre dettagli: oMLX sulla porta 7001, il controllo che fallisce se i modelli scelti superano la memoria del Mac, la rilettura della configurazione ogni secondo.
-- Opzione consigliata: Confermo — i dettagli restano come sono e D-048 diventa accettata.
-- Opzione: Cambio un dettaglio — scrivi quale; Claude lo modifica.
-- Esempio: Se scegli modelli che insieme chiedono 80 GB su un Mac da 64 GB, pnpm arianna:doctor fallisce e lo dice.
-
 ### ho-conferma-di-d-052
 
 - Contesto: D-052 ha chiuso il test 1.4 scegliendo il modello locale da 27B come orchestratore (il "cervello" di Arianna), con due accorgimenti: una regola sulle virgolette nei pensieri del modello e un secondo tentativo quando la risposta non è nel formato richiesto (JSON). Durante lo sviluppo oggi gira il 9B, più leggero, per non mandare il Mac in affanno; il 27B resta la scelta per l'uso vero.
@@ -307,9 +277,3 @@ Parole che tornano spesso: **L0** = pubblico; **L1** = di lavoro, può andare a 
 - Opzione: Rinvio — restano tutte da decidere.
 - Esempio: Idea 10, "Fatture dall'XML FatturaPA": raccomandata sì, perché leggere il file XML della fattura elettronica è più affidabile che leggere una scansione.
 
-### ho-conferma-di-d-039
-
-- Contesto: D-039 è la chat e le sue API (task 1.11), cioè le porte da cui la pagina parla con il core. Due punti da confermare: un messaggio di lavoro viene rifiutato se il controllo di privacy ci trova dati sensibili, e le API non chiedono login fino al task 1.13 (oggi rispondono solo al Mac stesso).
-- Opzione consigliata: Confermo — le due regole restano; il login arriva con il task 1.13.
-- Opzione: Voglio il login subito — Claude anticipa una parte del 1.13; più lavoro adesso.
-- Esempio: Se in una conversazione di lavoro incolli un IBAN inventato, il messaggio non parte e la chat ti dice perché.
