@@ -1,6 +1,6 @@
 {
   "name": "arianna",
-  "version": "0.89.2",
+  "version": "0.89.3",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",
