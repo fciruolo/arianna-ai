@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 
 import {
   activationAsk,
@@ -7,6 +7,8 @@ import {
   gateText,
   highlight,
   metaText,
+  pendingPartsText,
+  readText,
   reasonText,
   retriesByItself,
   safetyDot,
@@ -16,6 +18,7 @@ import {
   type SafetyFinding,
   type SafetyReport,
 } from '../src/lib/safety-report.ts';
+import { SAFETY_POLL_MS, safetyPoll } from '../src/lib/safety-poll.ts';
 
 const finding: SafetyFinding = {
   doc: 'role',
@@ -106,5 +109,54 @@ describe('the safety report on the page', () => {
     assert.equal(retriesByItself('quota'), true);
     assert.equal(retriesByItself('unreadable'), false);
     assert.equal(gateText('L0'), 'L’agente vedrà al massimo solo dati pubblici (L0) con i permessi che hai scelto.');
+  });
+});
+
+describe('the reports of the catalog, per text', () => {
+  it('says which texts of an agent are still read or have no report', () => {
+    assert.equal(
+      pendingPartsText([
+        { kind: 'role', id: 'a/b/r', name: 'r.md', state: 'ok' },
+        { kind: 'skill', id: 'a/s/x', name: 'x', state: 'running' },
+        { kind: 'skill', id: 'a/s/y', name: 'y', state: 'unavailable' },
+      ]),
+      'la skill x: ancora in lettura · la skill y: senza rapporto',
+    );
+    assert.equal(pendingPartsText(undefined), '');
+    assert.equal(readText({ path: '' }, [{ name: 'commit' }]), 'skill: commit');
+  });
+
+  it('reads a text again while its report is made, and stops when another one is on screen', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      let reads = 0;
+      let shown = 'r1';
+      const poll = safetyPoll(
+        () => {
+          reads += 1;
+          return Promise.resolve({ id: 'r1', safety: { state: reads < 2 ? ('running' as const) : ('ok' as const) } });
+        },
+        (value) => value.id === shown,
+      );
+      poll.follow({ id: 'r1', safety: { state: 'running' } });
+      mock.timers.tick(SAFETY_POLL_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(reads, 1);
+      mock.timers.tick(SAFETY_POLL_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(reads, 2);
+      // Done: no more reading.
+      mock.timers.tick(SAFETY_POLL_MS * 3);
+      assert.equal(reads, 2);
+      shown = 'r2';
+      poll.follow({ id: 'r1', safety: { state: 'running' } });
+      mock.timers.tick(SAFETY_POLL_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+      mock.timers.tick(SAFETY_POLL_MS);
+      assert.equal(reads, 3);
+      poll.stop();
+    } finally {
+      mock.timers.reset();
+    }
   });
 });

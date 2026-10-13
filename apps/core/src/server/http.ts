@@ -104,7 +104,7 @@ import { DesignCatalogError, type DesignCatalog } from '../design-catalog.ts';
 import { createSampleCache } from '../style-sample.ts';
 import { StyleExampleError, type StyleExamples } from '../style-examples.ts';
 import type { SkillTranslations } from '../skill-translations.ts';
-import type { SafetyReports, SafetyView } from '../safety-reports.ts';
+import { roleSafetyText, skillSafetyText, type SafetyReports, type SafetyView } from '../safety-reports.ts';
 import { openMockup, startDesignerSession } from '../designer-session.ts';
 import { deleteProjectPath, moveProjectPath, PROJECT_FILE_STATUS, ProjectFileError } from '../project-files.ts';
 import type { GodApi } from '../god/api.ts';
@@ -1228,7 +1228,7 @@ function godRoutes(god: GodApi | undefined): Route[] {
   }
 }
 
-function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
+function skillsCatalogRoutes(catalog: SkillsCatalog | undefined, reports?: SafetyReports): Route[] {
   const need = (): SkillsCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
@@ -1261,7 +1261,20 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
       return { body: need().discard(body.source) };
     }),
     route('GET', '/api/skills-catalog/skills', () => Promise.resolve({ body: need().list() })),
-    route('GET', '/api/skills-catalog/skill', (_request, url) => Promise.resolve({ body: { skill: need().text(url.searchParams.get('id') ?? '') } })),
+    // D-196: the safety report of this version of the skill travels with its text; a GET never starts a reading.
+    route('GET', '/api/skills-catalog/skill', (_request, url) => {
+      const skill = need().text(url.searchParams.get('id') ?? '');
+      const safety = reports?.textView(skillSafetyText(skill));
+      return Promise.resolve({ body: { skill: safety === undefined ? skill : { ...skill, safety } } });
+    }),
+    // Opening a skill makes its report, once per version (a POST: a page elsewhere cannot spend the quota); `redo` is «Rifai il rapporto».
+    route('POST', '/api/skills-catalog/skill/safety', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['id', 'redo']);
+      if (reports === undefined) throw new HttpError(404, 'not found');
+      const text = skillSafetyText(need().text(body.id));
+      return { body: { safety: body.redo === true ? reports.redoText(text) : reports.ensureText(text) } };
+    }),
   ];
 }
 
@@ -1270,7 +1283,7 @@ function skillsCatalogRoutes(catalog: SkillsCatalog | undefined): Route[] {
  * of the versions in use. A role's text is third-party data (L0), shown to
  * the user as it is, its hidden characters out; nothing here makes a card.
  */
-function agentsCatalogRoutes(catalog: AgentsCatalog | undefined): Route[] {
+function agentsCatalogRoutes(catalog: AgentsCatalog | undefined, reports?: SafetyReports): Route[] {
   const need = (): AgentsCatalog => {
     if (catalog === undefined) throw new HttpError(404, 'not found');
     return catalog;
@@ -1303,8 +1316,20 @@ function agentsCatalogRoutes(catalog: AgentsCatalog | undefined): Route[] {
       return { body: need().discard(body.source) };
     }),
     route('GET', '/api/agents-catalog/agents', () => Promise.resolve({ body: need().list() })),
+    // D-196: opening a role (here or in «Nuovo agente → Dal catalogo») makes its safety report, once per version;
+    // a POST, so that a page elsewhere cannot spend the quota; `redo` is «Rifai il rapporto».
+    route('POST', '/api/agents-catalog/agent/safety', async (request) => {
+      const body = await readJson(request);
+      onlyFields(body, ['id', 'redo']);
+      if (reports === undefined) throw new HttpError(404, 'not found');
+      const text = roleSafetyText(need().role(body.id));
+      return { body: { safety: body.redo === true ? reports.redoText(text) : reports.ensureText(text) } };
+    }),
+    // The role with the report of its version, when there is one; a GET never starts a reading.
     route('GET', '/api/agents-catalog/agent', (_request, url) => {
-      const { id, source, entry, origin } = need().role(url.searchParams.get('id') ?? '');
+      const role = need().role(url.searchParams.get('id') ?? '');
+      const { id, source, entry, origin } = role;
+      const safety = reports?.textView(roleSafetyText(role));
       return Promise.resolve({
         body: {
           agent: {
@@ -1321,6 +1346,7 @@ function agentsCatalogRoutes(catalog: AgentsCatalog | undefined): Route[] {
             license: origin.license.name,
             licenseFile: origin.license.file,
             text: cleanBody(entry.body),
+            ...(safety === undefined ? {} : { safety }),
           },
         },
       });
@@ -3202,7 +3228,7 @@ function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyRep
     route('POST', '/api/agents/:id/safety', async (request, _url, params) => {
       onlyFields(await readJson(request), []);
       return answer(() => {
-        const safety = reports?.start(name(params));
+        const safety = reports?.redo(name(params));
         if (safety === undefined) throw new HttpError(404, 'no safety report for this agent');
         return { body: { safety } };
       });
@@ -3228,8 +3254,7 @@ function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyRep
         onlyFields(body, ['from', 'name', 'permissions', 'licenseAccepted', 'confirmation']);
         return answer(() => {
           const agent = service.createFromCatalog(body as unknown as CatalogNewUserAgent);
-          // D-196: Opus reads the whole role in the background; the answer does not wait for it.
-          reports?.start(agent.name);
+          // D-196: the report of the role is the catalog's (made when the role was opened); missing, it starts now.
           return { status: 201, body: { agent: withSafety(agent) } };
         });
       }
@@ -3250,8 +3275,11 @@ function userAgentRoutes(userAgents: UserAgents | undefined, reports?: SafetyRep
       return answer(() => {
         const previous = service.catalogRole(name(params));
         const agent = service.reapply(name(params), body);
-        // D-196: after a re-adoption Opus reads only the changed lines, with the role before as reference.
-        reports?.start(agent.name, previous === undefined ? {} : { previous: { text: previous.text, sha256: previous.sha256 } });
+        // D-196: the new version of the role, read only in the lines that changed (once: another agent of the same role shares it).
+        const now = service.catalogRole(agent.name);
+        if (reports !== undefined && previous !== undefined && now !== undefined) {
+          reports.changed({ kind: 'role', id: now.id, name: now.path, text: now.text, commit: now.commit }, { text: previous.text });
+        }
         return { body: { agent: withSafety(agent) } };
       });
     }),
@@ -3675,8 +3703,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
   table.push(...modelActionRoutes(options.modelActions));
   table.push(...designCatalogRoutes(options.designCatalog));
   table.push(...exampleRoutes(options.styleExamples, options.skillTranslations));
-  table.push(...skillsCatalogRoutes(options.skillsCatalog));
-  table.push(...agentsCatalogRoutes(options.agentsCatalog));
+  table.push(...skillsCatalogRoutes(options.skillsCatalog, options.safetyReports));
+  table.push(...agentsCatalogRoutes(options.agentsCatalog, options.safetyReports));
   table.push(...godRoutes(options.god));
   table.push(...studioRoutes(sql, options.approvedProjects ?? (() => []), options.studioPptx));
   const sockets = new Set<WebSocket>();

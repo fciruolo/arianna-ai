@@ -9,11 +9,13 @@
  * goes into [characters] of arianna.toml right after the card: if that
  * fails, the agent exists anyway and the page says where to add it again.
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { catalogPresetOf, roleCardName, roleUnlicensed, type AgentRoleSummary, type AgentRoleText } from '../lib/agents-catalog.ts';
 import { lengthText } from '../lib/agents-page.ts';
-import { loadCharacters, loadSettings, saveSettings, type UploadedCharacter } from '../lib/api.ts';
+import { loadAgentRole, loadCharacters, loadSettings, saveSettings, type UploadedCharacter } from '../lib/api.ts';
+import { activationAsk, redoSafetyReport } from '../lib/safety-report.ts';
+import { safetyPoll } from '../lib/safety-poll.ts';
 import type { CharacterChoice, CharacterListing } from '../lib/types.ts';
 import {
   activateUserAgent,
@@ -37,6 +39,7 @@ import {
   type UserPermissions,
 } from '../lib/user-agents.ts';
 import CatalogRolePicker from './CatalogRolePicker.vue';
+import SafetyReportCard from './SafetyReportCard.vue';
 import CharacterGenerate from './CharacterGenerate.vue';
 import CharacterUpload from './CharacterUpload.vue';
 import FormField from './FormField.vue';
@@ -281,9 +284,53 @@ async function create(): Promise<void> {
   busy.value = false;
 }
 
+/**
+ * «Accendi ora» of an agent made from a role (D-196): the report of its role
+ * is the one shown at step 1; with something to look at, still being read or
+ * missing, one more confirmation first, never a block.
+ */
+const activating = ref<NonNullable<ReturnType<typeof activationAsk>> | null>(null);
+const createdSafety = computed(() => (fromCatalog.value ? roleText.value?.safety : undefined));
+const reportError = ref('');
+function askActivation(): void {
+  const ask = activationAsk(createdSafety.value, 'new');
+  if (ask === undefined) void activate();
+  else activating.value = ask;
+}
+// The report may still be read when the agent is created: read again until it arrives.
+const poll = safetyPoll(
+  () => loadAgentRole(roleId.value ?? ''),
+  (read) => {
+    if (roleId.value !== read.id) return false;
+    roleText.value = read;
+    return true;
+  },
+);
+watch(created, (agent) => {
+  if (agent !== null) poll.follow(roleText.value);
+});
+onBeforeUnmount(poll.stop);
+const redoing = ref(false);
+async function redo(): Promise<void> {
+  const current = roleText.value;
+  if (current === null || redoing.value) return;
+  redoing.value = true;
+  reportError.value = '';
+  try {
+    roleText.value = { ...current, safety: await redoSafetyReport({ role: current.id }) };
+    poll.follow(roleText.value);
+  } catch {
+    // Its own line: the error of «Accendi ora» stays for turning it on.
+    reportError.value = 'Il rapporto non è ripartito: riprova fra poco.';
+  } finally {
+    redoing.value = false;
+  }
+}
+
 async function activate(): Promise<void> {
   const agent = created.value;
   if (agent === null || busy.value) return;
+  activating.value = null;
   busy.value = true;
   error.value = '';
   try {
@@ -340,12 +387,17 @@ function another(): void {
             <p class="text-[13px] text-muted">{{ created.state === 'active' ? `Da ora ${workText(created.works)}.` : `Quando lo accendi, ${workText(created.works)}.` }}</p>
           </div>
         </div>
+        <!-- The safety report of its role (D-196) beside the choice of turning it on now -->
+        <SafetyReportCard v-if="createdSafety" :safety="createdSafety" :redoing="redoing" @redo="redo" />
+        <p v-if="reportError" class="text-[13px] text-warn" role="alert">{{ reportError }}</p>
         <p v-if="characterNote" class="text-[13px] text-warn" role="alert">{{ characterNote }}</p>
         <p v-if="error" class="text-[13px] text-danger" role="alert">{{ error }}</p>
         <div class="flex flex-wrap justify-end gap-2">
           <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="another">Crea un altro</button>
           <button type="button" class="btn px-3 py-1.5 text-[14px]" @click="emit('done')">Torna agli agenti</button>
-          <button v-if="created.state === 'disabled'" type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy" @click="activate">{{ error ? 'Riprova ad accenderlo' : 'Accendi ora' }}</button>
+          <button v-if="created.state === 'disabled'" type="button" class="btn btn-primary px-3 py-1.5 text-[14px]" :disabled="busy" @click="askActivation">
+            {{ error ? 'Riprova ad accenderlo' : activationAsk(createdSafety, 'new') === undefined ? 'Accendi ora' : `${activationAsk(createdSafety, 'new')?.action}…` }}
+          </button>
         </div>
       </section>
 
@@ -527,6 +579,17 @@ function another(): void {
         </div>
         <PermissionConfirm v-if="proposal" :proposal="proposal" :busy="busy" :error="error" action="Conferma e crea" @confirm="create" @cancel="proposal = null; error = ''" />
       </template>
+    </div>
+    <!-- Turning on an agent whose role has something to look at, is still read or has no report (D-196): one more confirmation, never a block -->
+    <div v-if="activating" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="new-activate-title">
+      <div class="flex max-w-lg flex-col gap-3 rounded-xl border border-warn bg-surface-2 p-4">
+        <h2 id="new-activate-title" class="text-[16px] font-semibold">{{ activating.title }}</h2>
+        <p class="text-[14px]">{{ activating.text }}</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn px-2.5 py-1 text-[13px]" @click="activating = null">Annulla</button>
+          <button type="button" class="btn btn-warn px-2.5 py-1 text-[13px]" :disabled="busy" @click="activate">{{ activating.action }}</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

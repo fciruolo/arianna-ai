@@ -1,9 +1,12 @@
 /**
- * The safety report of an agent made from the catalog (D-196): Opus reads
- * the text of the role and of the skills assigned and the page shows it
- * above «Accendi». Types of `/api/agents/:id/safety` and the Italian texts of
- * the four states; turning the agent on stays the user's choice, with one
- * more confirmation when the report is not «nessun problema».
+ * The safety reports of the catalog (D-196): Opus reads a role of the
+ * catalog of agents, or a skill, once per version (choice of the user,
+ * 2026-10-13: «non è relativo al catalogo stesso?»), and the report of an
+ * agent is made of the reports of its role and its skills. Shown with the
+ * role in the catalog, in «Nuovo agente → Dal catalogo» and above «Accendi».
+ * Types and the Italian texts of the four states; turning the agent on stays
+ * the user's choice, with one more confirmation when the report is not
+ * «nessun problema».
  */
 
 export type SafetyCategory = 'data' | 'external' | 'override' | 'permissions' | 'other';
@@ -39,19 +42,42 @@ export interface SafetyReport {
   reason?: { code: SafetyReason; message: string };
 }
 
+export type SafetyState = 'ok' | 'warn' | 'running' | 'unavailable';
+
+/** One text of an agent (its role, or a skill) and where its own report stands. */
+export interface SafetyPart {
+  kind: 'role' | 'skill';
+  id: string;
+  name: string;
+  state: SafetyState;
+}
+
 export interface SafetyView {
-  state: 'ok' | 'warn' | 'running' | 'unavailable';
+  state: SafetyState;
   report?: SafetyReport;
   running?: { since: string; scope: 'whole' | 'changes'; role: string; skills: number };
+  /** For an agent: its role and each skill. */
+  parts?: SafetyPart[];
 }
 
 export class SafetyApiError extends Error {
   override name = 'SafetyApiError';
 }
 
-/** «Rifai il rapporto»: the core starts it in the background, never two for one agent. */
-export async function redoSafetyReport(name: string): Promise<SafetyView> {
-  const response = await fetch(`/api/agents/${encodeURIComponent(name)}/safety`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
+/**
+ * The report of a role or a skill opened: made the first time, once per
+ * version (a POST: the core never starts a reading on a GET). With `redo`,
+ * «Rifai il rapporto»; for an agent always that. The core reads again only
+ * what has no report available.
+ */
+export async function redoSafetyReport(target: { agent: string } | { role: string } | { skill: string }, redo = true): Promise<SafetyView> {
+  const [path, body] =
+    'agent' in target
+      ? [`/api/agents/${encodeURIComponent(target.agent)}/safety`, {}]
+      : 'role' in target
+        ? ['/api/agents-catalog/agent/safety', { id: target.role, ...(redo ? { redo: true } : {}) }]
+        : ['/api/skills-catalog/skill/safety', { id: target.skill, ...(redo ? { redo: true } : {}) }];
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = (await response.json().catch(() => ({}))) as { safety?: SafetyView; error?: string };
   if (!response.ok || data.safety === undefined) throw new SafetyApiError(typeof data.error === 'string' ? data.error : `HTTP ${String(response.status)}`);
   return data.safety;
@@ -93,8 +119,24 @@ const fileOf = (path: string): string => path.split('/').at(-1) ?? path;
 export function readText(role: { path: string; commit?: string }, skills: readonly { name: string }[] | number): string {
   const count = typeof skills === 'number' ? skills : skills.length;
   const names = typeof skills === 'number' ? '' : `: ${skills.map((skill) => skill.name).join(', ')}`;
+  // The report of a skill alone (opened in Skill e stili): no role.
+  if (role.path === '') return count === 0 ? 'il testo' : typeof skills === 'number' ? `${String(count)} skill` : `skill${names}`;
   const commit = role.commit === undefined || role.commit === '' ? '' : ` (commit ${role.commit.slice(0, 7)})`;
   return `ruolo ${fileOf(role.path)}${commit}${count === 0 ? '' : ` e ${String(count)} skill${names}`}`;
+}
+
+/**
+ * The texts of an agent whose report is not there yet: «la skill commit è
+ * ancora in lettura», shown under a report already made of the others.
+ */
+export function pendingPartsText(parts: readonly SafetyPart[] | undefined): string {
+  const name = (part: SafetyPart): string => (part.kind === 'role' ? 'il ruolo' : `la skill ${part.name}`);
+  const running = (parts ?? []).filter((part) => part.state === 'running').map(name);
+  const missing = (parts ?? []).filter((part) => part.state === 'unavailable').map(name);
+  const lines: string[] = [];
+  if (running.length > 0) lines.push(`${running.join(', ')}: ancora in lettura`);
+  if (missing.length > 0) lines.push(`${missing.join(', ')}: senza rapporto`);
+  return lines.join(' · ');
 }
 
 /** The line under the title of a report. */
@@ -177,7 +219,7 @@ export function gateText(maxLabel: string): string {
  * What turning the agent on asks first: nothing with «nessun problema»;
  * otherwise one more confirmation, never a block.
  */
-export function activationAsk(safety: SafetyView | undefined): { title: string; text: string; action: string } | undefined {
+export function activationAsk(safety: SafetyView | undefined, where: 'agent' | 'new' = 'agent'): { title: string; text: string; action: string } | undefined {
   if (safety === undefined || safety.state === 'ok') return undefined;
   if (safety.state === 'warn') {
     const count = safety.report?.findings.length ?? 0;
@@ -196,7 +238,7 @@ export function activationAsk(safety: SafetyView | undefined): { title: string; 
   }
   return {
     title: 'Accendere senza rapporto?',
-    text: 'Nessuno ha controllato il testo di questo ruolo: leggilo tu in «Scheda e prompt» prima di accenderlo.',
+    text: `Nessuno ha controllato il testo di questo ruolo: leggilo tu ${where === 'new' ? 'al passo 1 («Cosa fa»)' : 'in «Scheda e prompt»'} prima di accenderlo.`,
     action: 'Accendi senza rapporto',
   };
 }

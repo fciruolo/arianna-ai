@@ -4,6 +4,7 @@
  * "Skill" of an agent. Skills are public text of third parties: the page
  * shows them, an agent reads them as data, never as an instruction.
  */
+import type { SafetyView } from './safety-report.ts';
 import { ApiError } from './api.ts';
 import { dayText, jobErrorText as designJobErrorText, type CatalogJob, type KindChanges } from './design-catalog.ts';
 import { errorText } from './italian.ts';
@@ -60,6 +61,8 @@ export interface SkillText {
   license: string | null;
   notice: string;
   text: string;
+  /** The safety report of Opus on this version of the skill (D-196), made the first time it is opened. */
+  safety?: SafetyView;
 }
 
 /** `https://github.com/<owner>/<repo>`, as the core accepts it (a final `/` or `.git` is dropped there). */

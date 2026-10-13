@@ -7,6 +7,7 @@
 import { ApiError } from './api.ts';
 import { dayText, jobErrorText as designJobErrorText, type CatalogJob, type KindChanges } from './design-catalog.ts';
 import { errorText } from './italian.ts';
+import type { SafetyView } from './safety-report.ts';
 
 export interface AgentVersion {
   commit: string;
@@ -72,6 +73,8 @@ export interface AgentRoleText {
   license: string | null;
   licenseFile: string | null;
   text: string;
+  /** The safety report of Opus on this version of the role (D-196), made the first time the role is opened. */
+  safety?: SafetyView;
 }
 
 function plural(count: number, one: string, many: string): string {

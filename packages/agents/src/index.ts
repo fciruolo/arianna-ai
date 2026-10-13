@@ -80,6 +80,7 @@ export {
   parseAgencyFile,
   parseDivisions,
   proposeCard,
+  roleText,
   sanitizeForTerminal,
   slugFromPath,
   sourceLicensed,

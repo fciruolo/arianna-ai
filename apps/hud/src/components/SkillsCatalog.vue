@@ -13,7 +13,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { addSkillSource, adoptSkillSource, discardSkillSource, listSkills, loadSkill, loadSkillsCatalog, removeSkillSource, updateSkillSource } from '../lib/api.ts';
 import { useSkillTranslations } from '../lib/skill-translations.ts';
 import { filterSkills, otherFilesText, shouldPollSkills, skillLicenseText, skillsErrorText, translationsNoteText, type SkillListing, type SkillsStatus, type SkillText } from '../lib/skills-catalog.ts';
+import { redoSafetyReport } from '../lib/safety-report.ts';
+import { safetyPoll } from '../lib/safety-poll.ts';
 import { skillSourceRow } from '../lib/source-list.ts';
+import SafetyReportCard from './SafetyReportCard.vue';
 import SettingsCard from './SettingsCard.vue';
 import SourceList from './SourceList.vue';
 
@@ -118,10 +121,45 @@ async function choose(id: string): Promise<void> {
   skillError.value = '';
   try {
     const text = await loadSkill(id);
-    if (selected.value === id) skill.value = text;
+    if (selected.value === id) {
+      skill.value = text;
+      void openReport(text);
+    }
   } catch (cause) {
     if (selected.value === id) skillError.value = skillsErrorText(cause);
   }
+}
+// The safety report of the skill opened (D-196): made the first time, once per version; an agent it is assigned to reads the same.
+const poll = safetyPoll(
+  () => loadSkill(selected.value ?? ''),
+  (text) => {
+    if (selected.value !== text.id) return false;
+    skill.value = text;
+    return true;
+  },
+);
+onBeforeUnmount(poll.stop);
+const redoing = ref(false);
+const reportError = ref('');
+/** The skill opened: its report is made now if this version has none (once); `redo` is «Rifai il rapporto». */
+async function openReport(current: SkillText, redo = false): Promise<void> {
+  reportError.value = '';
+  try {
+    const safety = await redoSafetyReport({ skill: current.id }, redo);
+    if (selected.value === current.id) {
+      skill.value = { ...current, safety };
+      poll.follow(skill.value);
+    }
+  } catch (cause) {
+    if (selected.value === current.id) reportError.value = `Rapporto di sicurezza: ${skillsErrorText(cause)}`;
+  }
+}
+async function redo(): Promise<void> {
+  const current = skill.value;
+  if (current === null || redoing.value) return;
+  redoing.value = true;
+  await openReport(current, true);
+  redoing.value = false;
 }
 </script>
 
@@ -179,6 +217,8 @@ async function choose(id: string): Promise<void> {
                 Testo di terzi, {{ skillLicenseText(item.license) }}. Prima di assegnarla controlla che la licenza ti consenta l’uso che ne farai.
               </p>
               <p v-if="otherFilesText(item.otherFiles)" class="text-[13px] text-muted">{{ otherFilesText(item.otherFiles) }}</p>
+              <SafetyReportCard v-if="skill?.safety" :safety="skill.safety" :redoing="redoing" @redo="redo" />
+              <p v-if="reportError" class="text-[13px] text-warn" role="alert">{{ reportError }}</p>
               <p v-if="skillError" class="text-[13px] text-warn">{{ skillError }}</p>
               <p v-else-if="skill === null" class="text-[13px] text-muted">Leggo la skill…</p>
               <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface-2 px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ skill.text }}</pre>

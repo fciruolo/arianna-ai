@@ -6,14 +6,16 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ### Aggiunto
 
-- Rapporto di sicurezza di Opus per gli agenti nati dal catalogo: alla creazione, dopo una riadozione e a ogni cambio di skill Opus legge il testo del ruolo e delle skill assegnate (testo pubblico, senza strumenti né dati tuoi, dal gateway) e il rapporto compare in Impostazioni → Agenti sopra «Accendi» (D-196).
-- Quattro stati del rapporto: nessun problema con i controlli superati; da guardare con riga, pezzo di testo evidenziato, gravità «Sospetto» o «Da capire» e spiegazione; in corso; non disponibile senza Claude o senza quota, con «Rifai il rapporto» (D-196).
-- Pillola del rapporto nella testata dell'agente e pallino nell'elenco; accendere con segnalazioni, a rapporto in corso o senza rapporto chiede una conferma in più, mai un blocco (D-196).
-- Dopo una riadozione Opus rilegge solo le righe cambiate con il contesto intorno; le segnalazioni su righe rimaste uguali restano (D-196).
+- Rapporto di sicurezza di Opus legato al catalogo: un ruolo del Catalogo agenti o una skill si legge una volta sola per versione, la prima volta che lo apri (pagina Catalogo agenti, «Nuovo agente → Dal catalogo» al passo 1, Skill e stili); più agenti nati dallo stesso ruolo condividono lo stesso rapporto (D-196).
+- Il rapporto di un agente è la composizione dei rapporti del suo ruolo e delle sue skill, senza letture nuove: vince lo stato peggiore e ogni segnalazione dice se viene dal ruolo o da quale skill; assegnare una skill già controllata non costa letture (D-196).
+- Il rapporto si vede accanto al ruolo nel Catalogo agenti, sotto il ruolo scelto in «Nuovo agente», accanto ad «Accendi ora» alla fine della creazione e sopra «Accendi» nella pagina dell'agente, con pillola nella testata e pallino nell'elenco (D-196).
+- Quattro stati: nessun problema con i controlli superati; da guardare con riga, pezzo di testo evidenziato, gravità «Sospetto» o «Da capire» e spiegazione; in corso; non disponibile senza Claude o senza quota, con «Rifai il rapporto». Accendere con segnalazioni, a rapporto in corso o senza rapporto chiede una conferma in più, mai un blocco (D-196).
+- Dopo «Usa questa versione» di una raccolta, i ruoli cambiati da cui è nato un agente si rileggono da soli, solo nelle righe cambiate con il contesto intorno; le segnalazioni su righe rimaste uguali restano (D-196).
 
 ### Sicurezza
 
-- La risposta di Opus si controlla sul testo: segnalazioni su righe inesistenti scartate, pezzo citato che non sta alla riga declassato a «Da capire», lunghezze limitate, risposta illeggibile = rapporto non disponibile (D-196).
+- La risposta di Opus si controlla sul testo: segnalazioni su righe inesistenti scartate, pezzo citato che non sta alla riga declassato a «Da capire», segnalazioni tutte scartate danno «da guardare», lunghezze limitate, risposta illeggibile = rapporto non disponibile (D-196).
+- Opus legge il ruolo di una scheda fra i marcatori con lo sha256 esatto del file: un marcatore di chiusura finto dentro il ruolo non nasconde le righe dopo; mai il nome dell'agente nel testo inviato (D-196).
 
 ## [0.90.0] - 2026-10-13
 

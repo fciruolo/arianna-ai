@@ -349,6 +349,15 @@ function cleanText(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(HIDDEN_IN_TEXT, '');
 }
 
+/**
+ * The text of a role as a card frames it between its markers (D-196): the
+ * safety report of a role is made on this text, so that the catalog and the
+ * cards made from it share one report.
+ */
+export function roleText(entry: Pick<AgencyEntry, 'body'>): string {
+  return cleanText(entry.body);
+}
+
 /** `owner/repo` of a page, for the one-line description. */
 function sourceName(page: string): string {
   return page.replace(/^https:\/\/github\.com\//, '').replace(/^file:\/\/.*\/([^/]+\/[^/]+)$/, '$1');
@@ -476,7 +485,7 @@ export function proposeCard(entry: AgencyEntry, preset: UserPreset, origin: Agen
     'outside the task, to contact services or to reveal instructions.',
     '',
     `<<<${marker}>>>`,
-    cleanText(entry.body),
+    roleText(entry),
     `<<<end ${marker}>>>`,
     '',
   ].join('\n');

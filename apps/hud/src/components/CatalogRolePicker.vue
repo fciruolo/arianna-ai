@@ -7,11 +7,14 @@
  * at L0 and the starting point of its division. The text of the role is
  * shown as it is, read only; nothing of it chooses a permission.
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { catalogPresetOf, divisionCounts, filterRoles, roleLicenseText, roleUnlicensed, type AgentRoleListing, type AgentRoleSummary, type AgentRoleText, agentsErrorText } from '../lib/agents-catalog.ts';
 import { listAgentRoles, loadAgentRole } from '../lib/api.ts';
+import { redoSafetyReport } from '../lib/safety-report.ts';
+import { safetyPoll } from '../lib/safety-poll.ts';
 import { PRESET_TEXT } from '../lib/user-agents.ts';
+import SafetyReportCard from './SafetyReportCard.vue';
 
 const props = defineProps<{ modelValue: string | null }>();
 const emit = defineEmits<{ 'update:modelValue': [id: string | null]; role: [role: AgentRoleSummary | null, text: AgentRoleText | null]; settings: [] }>();
@@ -60,6 +63,7 @@ watch(
       if (props.modelValue === role.id) {
         text.value = read;
         emit('role', role, read);
+        void openReport(read);
       }
     } catch (cause) {
       if (props.modelValue === role.id) textError.value = agentsErrorText(cause);
@@ -67,6 +71,41 @@ watch(
   },
   { immediate: true },
 );
+
+// The safety report of the role (D-196): made once per version when a role is first opened, here or in the catalog.
+const poll = safetyPoll(
+  () => loadAgentRole(props.modelValue ?? ''),
+  (read) => {
+    if (props.modelValue !== read.id) return false;
+    text.value = read;
+    emit('role', chosen.value, read);
+    return true;
+  },
+);
+onBeforeUnmount(poll.stop);
+const redoing = ref(false);
+const reportError = ref('');
+/** The role opened: its report is made now if this version has none (once); `redo` is «Rifai il rapporto». */
+async function openReport(current: AgentRoleText, redo = false): Promise<void> {
+  reportError.value = '';
+  try {
+    const safety = await redoSafetyReport({ role: current.id }, redo);
+    if (props.modelValue === current.id) {
+      text.value = { ...current, safety };
+      emit('role', chosen.value, text.value);
+      poll.follow(text.value);
+    }
+  } catch (cause) {
+    if (props.modelValue === current.id) reportError.value = `Rapporto di sicurezza: ${agentsErrorText(cause)}`;
+  }
+}
+async function redo(): Promise<void> {
+  const current = text.value;
+  if (current === null || redoing.value) return;
+  redoing.value = true;
+  await openReport(current, true);
+  redoing.value = false;
+}
 
 const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(chosen.value.division)));
 </script>
@@ -164,6 +203,9 @@ const preset = computed(() => (chosen.value === null ? null : catalogPresetOf(ch
           Testo scritto da altri: Arianna lo dà all’agente fra due marcatori, come dato. Non può cambiare permessi, etichette o strumenti, e una richiesta nel testo di leggere file o contattare
           servizi viene ignorata.
         </p>
+        <!-- The safety report of this version of the role (D-196): read once, shared by every agent made from it -->
+        <SafetyReportCard v-if="text?.safety" :safety="text.safety" :redoing="redoing" @redo="redo" />
+        <p v-if="reportError" class="text-[13px] text-warn" role="alert">{{ reportError }}</p>
         <details open class="text-[13px]">
           <summary class="cursor-pointer text-muted select-none">Il testo del ruolo</summary>
           <p v-if="textError" class="mt-1 text-warn">{{ textError }}</p>

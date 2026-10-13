@@ -248,7 +248,7 @@ export interface UserAgents {
    * The role in the card of an agent made from the catalog (D-196): the text between its markers,
    * with the provenance; undefined for any other agent. Third-party text, L0.
    */
-  catalogRole(name: string): { text: string; sha256: string; path: string; commit: string } | undefined;
+  catalogRole(name: string): { text: string; sha256: string; path: string; commit: string; id: string } | undefined;
   activate(name: string): UserAgentView;
   deactivate(name: string): UserAgentView;
   promote(name: string, confirm: unknown): UserAgentView;
@@ -848,7 +848,14 @@ export function createUserAgents(options: {
       if (from === -1 || to < from + open.length) return undefined;
       const role = prompt.slice(from + open.length, to);
       // The fingerprint of the text read, not of the file: a change by hand between the markers makes the report again.
-      return { text: role, sha256: createHash('sha256').update(role).digest('hex'), path: provenance.path, commit: provenance.commit };
+      // The id of the role in the catalog it comes from; empty when the catalog no longer follows its source.
+      let id = '';
+      try {
+        id = options.catalog?.adoptedRole(provenance.page, provenance.path).id ?? '';
+      } catch {
+        // Not followed or unreadable: the report is the text's, the id only names it.
+      }
+      return { text: role, sha256: createHash('sha256').update(role).digest('hex'), path: provenance.path, commit: provenance.commit, id };
     },
 
     activate(name) {

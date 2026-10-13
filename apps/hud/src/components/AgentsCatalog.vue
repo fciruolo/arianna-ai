@@ -20,7 +20,10 @@ import {
   updateAgentSource,
 } from '../lib/api.ts';
 import { agentsErrorText, divisionCounts, filterRoles, limitsText, roleLicenseText, shouldPollAgents, type AgentRoleListing, type AgentRoleText, type AgentsStatus } from '../lib/agents-catalog.ts';
+import { redoSafetyReport } from '../lib/safety-report.ts';
+import { safetyPoll } from '../lib/safety-poll.ts';
 import { agentSourceRow } from '../lib/source-list.ts';
+import SafetyReportCard from './SafetyReportCard.vue';
 import SettingsCard from './SettingsCard.vue';
 import SourceList from './SourceList.vue';
 
@@ -50,6 +53,7 @@ onMounted(refresh);
 onBeforeUnmount(() => {
   mounted = false;
   window.clearTimeout(timer);
+  poll.stop();
 });
 
 /** One action at a time; `key` marks the source (or the form) that waits. */
@@ -114,10 +118,44 @@ async function choose(id: string): Promise<void> {
   roleError.value = '';
   try {
     const text = await loadAgentRole(id);
-    if (selected.value === id) role.value = text;
+    if (selected.value === id) {
+      role.value = text;
+      void openReport(text);
+    }
   } catch (cause) {
     if (selected.value === id) roleError.value = agentsErrorText(cause);
   }
+}
+// The safety report of the role opened (D-196): made the first time, once per version; read again while it is made.
+const poll = safetyPoll(
+  () => loadAgentRole(selected.value ?? ''),
+  (text) => {
+    if (selected.value !== text.id) return false;
+    role.value = text;
+    return true;
+  },
+);
+const redoing = ref(false);
+const reportError = ref('');
+/** The role opened: its report is made now if this version has none (once); `redo` is «Rifai il rapporto». */
+async function openReport(current: AgentRoleText, redo = false): Promise<void> {
+  reportError.value = '';
+  try {
+    const safety = await redoSafetyReport({ role: current.id }, redo);
+    if (selected.value === current.id) {
+      role.value = { ...current, safety };
+      poll.follow(role.value);
+    }
+  } catch (cause) {
+    if (selected.value === current.id) reportError.value = `Rapporto di sicurezza: ${agentsErrorText(cause)}`;
+  }
+}
+async function redo(): Promise<void> {
+  const current = role.value;
+  if (current === null || redoing.value) return;
+  redoing.value = true;
+  await openReport(current, true);
+  redoing.value = false;
 }
 </script>
 
@@ -188,6 +226,8 @@ async function choose(id: string): Promise<void> {
                 Testo scritto da altri ({{ roleLicenseText(item) }}): qui si legge e basta. Quando potrai farne un agente, lo riceverà come dato: non deciderà permessi, etichette né
                 strumenti.
               </p>
+              <SafetyReportCard v-if="role?.safety" :safety="role.safety" :redoing="redoing" @redo="redo" />
+              <p v-if="reportError" class="text-[13px] text-warn" role="alert">{{ reportError }}</p>
               <p v-if="roleError" class="text-[13px] text-warn">{{ roleError }}</p>
               <p v-else-if="role === null" class="text-[13px] text-muted">Leggo il ruolo…</p>
               <pre v-else class="max-h-[360px] overflow-auto rounded border border-line bg-surface-2 px-2.5 py-2 font-mono text-[12.5px] leading-[1.45] whitespace-pre-wrap">{{ role.text }}</pre>

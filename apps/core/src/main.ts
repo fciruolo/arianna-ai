@@ -57,7 +57,7 @@ import { createGithubClient } from './github-api.ts';
 import { CloudTextError, createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
-import { createSafetyReports } from './safety-reports.ts';
+import { createSafetyReports, roleSafetyText, skillSafetyText } from './safety-reports.ts';
 import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
@@ -682,8 +682,9 @@ const styleExamples = createStyleExamples({
   onEvent: catalogEvent,
 });
 const skillTranslations = createSkillTranslations({ dir: join(config.paths.data, 'catalogs'), list: () => skillsCatalog.list().skills, ask: askCloudText, onEvent: catalogEvent });
-// The safety report of the agents made from the catalog (D-196): Opus reads the role and the skills
-// assigned (public text, L0, never a datum of the user) through the gateway, in the background, one at a time.
+// The safety reports of the catalog (D-196): Opus reads a role or a skill once per version (public text, L0,
+// never a datum of the user) through the gateway, in the background, one at a time; an agent's report is made
+// of the reports of its role and its skills (choice of the user, 2026-10-13).
 const safetyReports = createSafetyReports({
   dir: join(config.paths.data, 'agents'),
   ask: (request) => {
@@ -697,9 +698,8 @@ const safetyReports = createSafetyReports({
     const ids = Object.hasOwn(all, name) ? (all[name]?.skills ?? []) : [];
     const skills = ids.flatMap((id) => {
       try {
-        const found = skillsCatalog.text(id);
-        const head = `${found.notice}\n\n---\n\n`;
-        return [{ id, name: found.name, text: found.text.startsWith(head) ? found.text.slice(head.length) : found.text }];
+        const text = skillSafetyText(skillsCatalog.text(id));
+        return [{ id, name: text.name, text: text.text }];
       } catch {
         // A skill no longer in the catalog reaches nobody: nothing to read.
         return [];
@@ -713,6 +713,34 @@ const safetyReports = createSafetyReports({
 });
 safetyRefresh = () => {
   safetyReports.refresh();
+};
+/**
+ * After a version of a source is adopted (D-196): the roles that changed and from which an agent was made are
+ * read again by Opus, only in the lines that changed; never the whole catalog.
+ */
+function safetyAfterAdopt(): void {
+  // Never a failure of the adoption, which is done: a card that cannot be read only goes in the log.
+  try {
+    for (const agent of userAgents.list().user) {
+      if (agent.catalog?.state !== 'update') continue;
+      try {
+        const before = userAgents.catalogRole(agent.name);
+        if (before !== undefined) safetyReports.changed(roleSafetyText(agentsCatalog.role(agent.catalog.id)), { text: before.text });
+      } catch (error) {
+        report(error);
+      }
+    }
+  } catch (error) {
+    report(error);
+  }
+}
+const agentsCatalogApi: typeof agentsCatalog = {
+  ...agentsCatalog,
+  adopt: (source, commit) => {
+    const status = agentsCatalog.adopt(source, commit);
+    safetyAfterAdopt();
+    return status;
+  },
 };
 const dist = join(config.home, 'apps', 'hud', 'dist');
 // The last notice pushed (I-1): the service worker asks for its kind and conversation.
@@ -862,7 +890,7 @@ const server = await startApiServer({
   services,
   designCatalog,
   skillsCatalog,
-  agentsCatalog,
+  agentsCatalog: agentsCatalogApi,
   styleExamples,
   skillTranslations,
   // Without the adapter no delegation runs: the selector offers nothing.
