@@ -57,7 +57,7 @@ import { createGithubClient } from './github-api.ts';
 import { createCloudText } from './cloud-text.ts';
 import { createStyleExamples } from './style-examples.ts';
 import { createSkillTranslations } from './skill-translations.ts';
-import { createSkillsCatalog, skillRefusalOf } from './skills-catalog.ts';
+import { createSkillsCatalog, skillRefusalOf, skillRefusals } from './skills-catalog.ts';
 import { createAgentsCatalog } from './agents-catalog.ts';
 import { createModelActions } from './model-actions.ts';
 import { createModelEvals, trialOpen } from './model-evals.ts';
@@ -138,6 +138,10 @@ const userAgents = createUserAgents({
   agents,
   official: new Set(agents.keys()),
   catalog: { role: (id) => agentsCatalog.role(id), adoptedRole: (page, path) => agentsCatalog.adoptedRole(page, path) },
+  // Deleting an agent drops its [agents.<id>] (model and skills) from arianna.toml (D-161), through the settings page made further below.
+  forget: (name) => {
+    settingsPage.forgetAgent(name);
+  },
 });
 // Only the name: the reason may quote a line of a card edited by hand; the Agents page shows it.
 for (const { name } of userAgents.load()) console.error(`user agent ${name} not loaded (see Impostazioni → Agenti)`);
@@ -520,7 +524,8 @@ const settingsPage = createSettingsPage({
   running: () => settings.current(),
   agentModels: () => Object.fromEntries([...agents].map(([id, agent]) => [id, agentModels(id, agent.card)])),
   // Who may read skills (D-161): never Arianna, never a card that closes untrusted_content.
-  agentSkills: () => Object.fromEntries([...agents].map(([id, agent]) => [id, skillRefusalOf(id, agent.card)])),
+  // Computed at each request, with the disabled cards too: skills are assigned before turning an agent on.
+  agentSkills: () => skillRefusals(agents, userAgents.disabled()),
   onChanged: (change) => {
     console.log(`arianna.toml: written from the settings page (${change.sections.join(', ')})`);
     // Applied at once: an export or a delegation right after "Salva" reads the new text, not the one of a second ago.

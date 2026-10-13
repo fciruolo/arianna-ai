@@ -21,6 +21,7 @@ import {
   parseSourceUrl,
   planSkills,
   skillRefusalOf,
+  skillRefusals,
   SKILLS_PREAMBLE,
   STYLE_PREAMBLE,
   type SkillIndex,
@@ -429,6 +430,21 @@ describe('texts and deliveries', () => {
     assert.match(skillRefusalOf('vault', { trifecta: { untrusted_content: false } }) ?? '', /untrusted_content/);
     assert.equal(skillRefusalOf('missing', undefined), 'no such agent');
     assert.equal(skillRefusalOf('coder', { trifecta: { untrusted_content: true } }), null);
+  });
+
+  it('judges the disabled cards with the same rule, a running card counting first', () => {
+    const open = { card: { trifecta: { untrusted_content: true } } };
+    const closed = { card: { trifecta: { untrusted_content: false } } };
+    const refusals = skillRefusals(
+      new Map([['arianna', open], ['coder', open], ['shared', closed]]),
+      new Map([['translator', open], ['vault', closed], ['arianna', open], ['shared', open]]),
+    );
+    assert.equal(refusals.translator, null, 'a disabled card that reads third-party text may receive skills');
+    assert.match(refusals.vault ?? '', /untrusted_content/, 'a disabled card closing untrusted_content may not');
+    assert.match(refusals.arianna ?? '', /^Arianna/, 'never Arianna');
+    assert.match(refusals.shared ?? '', /untrusted_content/, 'the running card counts over the disabled one');
+    assert.equal(refusals.coder, null);
+    assert.equal(Object.hasOwn(refusals, 'missing'), false, 'an agent neither running nor disabled is absent, so refused');
   });
 });
 

@@ -3,7 +3,7 @@
 // confirmation bound to the exact change.
 import assert from 'node:assert/strict';
 import { createECDH, randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
 
@@ -21,9 +21,12 @@ import {
   settingsFingerprint,
   type Settings,
 } from '@arianna/config';
+import { loadAgent, type LoadedAgent } from '@arianna/agents';
 import { Secret } from '@arianna/vault';
 
 import { changedSections, createSettingsPage, SettingsError, type SettingsChange, type SettingsPage } from '../src/settings-page.ts';
+import { skillRefusals } from '../src/skills-catalog.ts';
+import { createUserAgents } from '../src/user-agents.ts';
 
 const REPO = resolveHome({});
 const root = join(REPO, DATA_DIR, 'test-tmp', randomUUID());
@@ -212,6 +215,107 @@ describe('update (ordinary)', () => {
     assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { coder: 'a/b/c' } } }), refused('invalid', /skills\.coder/));
     assert.throws(() => page.update({ fingerprint: fingerprint(), values: { skills: { coder: ['a/b/c'] } } }), refused('invalid', /no such agent/), 'without the cards nobody takes skills');
     assert.equal(text(), before);
+  });
+
+  it('the skills of a disabled agent (D-161): assigned before it is turned on, still valid once on', () => {
+    mkdirSync(join(home, 'agents'), { recursive: true });
+    const coder = loadAgent(join(REPO, 'agents'), 'coder');
+    const agents = new Map<string, LoadedAgent>([['coder', coder]]);
+    const users = createUserAgents({ home, dataDir: join(home, DATA_DIR), agents, official: new Set(['coder']) });
+    const agent = { name: 'traduttore', description: 'Translates the release notes', prompt: 'You translate text into Italian.', permissions: { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 } } as const;
+    users.create({ ...agent, confirmation: users.prepareCreate(agent).confirmation });
+    // A card closing untrusted_content, written by hand among the disabled ones: refused by the loader, so unknown.
+    const disabledDir = join(home, DATA_DIR, 'agents', 'disattivati');
+    writeFileSync(join(disabledDir, 'chiuso.md'), 'You read nothing from outside.\n');
+    writeFileSync(join(disabledDir, 'chiuso.yaml'), readFileSync(join(disabledDir, 'traduttore.yaml'), 'utf8').replace(/name: traduttore/, 'name: chiuso').replace(/prompt: traduttore\.md/, 'prompt: chiuso.md').replace(/untrusted_content: true/, 'untrusted_content: false'));
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => skillRefusals(agents, users.disabled()) });
+    assert.equal(skilled.read().agentSkills.traduttore, null, 'a disabled agent of the user may receive skills');
+    assert.equal(Object.hasOwn(skilled.read().agentSkills, 'chiuso'), false);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['anthropics/skills/pdf'] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.traduttore?.skills, ['anthropics/skills/pdf']);
+    const before = text();
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { chiuso: ['a/b/c'] } } }), refused('invalid', /skills\.chiuso: no such agent/));
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { nessuno: ['a/b/c'] } } }), refused('invalid', /skills\.nessuno: no such agent/));
+    assert.equal(text(), before);
+    // Turned on without a restart: the same answer, read at each request, and the skills stay in arianna.toml.
+    users.activate('traduttore');
+    assert.equal(skilled.read().agentSkills.traduttore, null);
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['anthropics/skills/pdf', 'anthropics/skills/docx'] } } });
+    assert.deepEqual(parseConfig(text(), home, loadCatalog(home), userHome).agents.traduttore?.skills, ['anthropics/skills/pdf', 'anthropics/skills/docx']);
+    // Off and deleted: no longer known, so a new assignment is refused.
+    users.deactivate('traduttore');
+    assert.equal(skilled.read().agentSkills.traduttore, null);
+    users.remove('traduttore', 'traduttore');
+    assert.equal(Object.hasOwn(skilled.read().agentSkills, 'traduttore'), false);
+    assert.throws(() => skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['a/b/c'] } } }), refused('invalid', /skills\.traduttore: no such agent/));
+  });
+
+  it('deleting an agent drops its model and skills from arianna.toml (D-161), and only its own', () => {
+    mkdirSync(join(home, 'agents'), { recursive: true });
+    const agents = new Map<string, LoadedAgent>([['coder', loadAgent(join(REPO, 'agents'), 'coder')]]);
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => skillRefusals(agents, users.disabled()), onChanged: (change) => changes.push(change) });
+    const users = createUserAgents({ home, dataDir: join(home, DATA_DIR), agents, official: new Set(['coder']), forget: (name) => skilled.forgetAgent(name) });
+    const permissions = { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 } as const;
+    const make = (name: string) => {
+      const agent = { name, description: 'Translates the release notes', prompt: 'You translate text into Italian.', permissions };
+      return users.create({ ...agent, confirmation: users.prepareCreate(agent).confirmation });
+    };
+    make('traduttore');
+    make('riassunti');
+    skilled.update({ fingerprint: fingerprint(), values: { skills: { traduttore: ['anthropics/skills/pdf'], riassunti: ['anthropics/skills/docx'] } } });
+    writeFileSync(file, text().replace('[agents.traduttore]\n', '[agents.traduttore]\nmodel = "opus"\n'));
+    const agentsOf = () => parseConfig(text(), home, loadCatalog(home), userHome).agents;
+    assert.deepEqual(agentsOf().traduttore, { model: 'opus', skills: ['anthropics/skills/pdf'] });
+    // A refused deletion touches nothing.
+    const before = text();
+    assert.throws(() => users.remove('traduttore', 'altro'));
+    users.activate('traduttore');
+    assert.throws(() => users.remove('traduttore', 'traduttore'), /deactivate/);
+    users.deactivate('traduttore');
+    assert.equal(text(), before);
+    // Deleted: its model and skills go, the other agent keeps its own.
+    users.remove('traduttore', 'traduttore');
+    assert.equal(Object.hasOwn(agentsOf(), 'traduttore'), false);
+    assert.deepEqual(agentsOf().riassunti, { skills: ['anthropics/skills/docx'] });
+    assert.deepEqual(changes.at(-1), { sections: ['agents', 'skills'], privacy: false });
+    // A new agent with the same name starts without them.
+    make('traduttore');
+    assert.equal(Object.hasOwn(agentsOf(), 'traduttore'), false);
+    assert.equal(skilled.read().agentSkills.traduttore, null);
+    // An agent with nothing in arianna.toml: deleted without writing the file.
+    const unchanged = text();
+    users.remove('traduttore', 'traduttore');
+    assert.equal(text(), unchanged);
+  });
+
+  it('a deletion whose settings cannot be written is refused and moves nothing (D-161)', () => {
+    mkdirSync(join(home, 'agents'), { recursive: true });
+    const agents = new Map<string, LoadedAgent>();
+    const users = createUserAgents({ home, dataDir: join(home, DATA_DIR), agents, official: new Set(), forget: () => {
+      throw new Error('arianna.toml changed');
+    } });
+    const agent = { name: 'traduttore', description: 'Translates the release notes', prompt: 'You translate text into Italian.', permissions: { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 } } as const;
+    users.create({ ...agent, confirmation: users.prepareCreate(agent).confirmation });
+    assert.throws(() => users.remove('traduttore', 'traduttore'), /was not deleted/);
+    assert.deepEqual([...users.disabled().keys()], ['traduttore']);
+    assert.deepEqual(readdirSync(join(home, DATA_DIR, 'agents', 'eliminati')), []);
+  });
+
+  it('deleting with the real settings page: a broken arianna.toml refuses it, a missing one does not (D-161)', () => {
+    mkdirSync(join(home, 'agents'), { recursive: true });
+    const agents = new Map<string, LoadedAgent>();
+    const skilled = createSettingsPage({ home, userHome, dataDir: join(home, DATA_DIR), running, agentModels: () => AGENT_MODELS, agentSkills: () => skillRefusals(agents, users.disabled()) });
+    const users = createUserAgents({ home, dataDir: join(home, DATA_DIR), agents, official: new Set(), forget: (name) => skilled.forgetAgent(name) });
+    const agent = { name: 'traduttore', description: 'Translates the release notes', prompt: 'You translate text into Italian.', permissions: { executor: 'local', tools: [], autonomy: 'A0', maxSteps: 10, maxMinutes: 10 } } as const;
+    users.create({ ...agent, confirmation: users.prepareCreate(agent).confirmation });
+    writeFileSync(file, `${text()}\n[agents.traduttore\n`);
+    const broken = text();
+    assert.throws(() => users.remove('traduttore', 'traduttore'), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'invalid' && /was not deleted/.test(error.message));
+    assert.equal(text(), broken);
+    assert.deepEqual([...users.disabled().keys()], ['traduttore']);
+    rmSync(file);
+    assert.equal(users.remove('traduttore', 'traduttore').name, 'traduttore', 'no arianna.toml: nothing to drop');
+    assert.deepEqual([...users.disabled().keys()], []);
   });
 
   it('an agent without a card keeps its model; a model the card no longer allows is kept while unchanged', () => {

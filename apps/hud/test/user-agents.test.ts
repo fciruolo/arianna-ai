@@ -74,6 +74,8 @@ describe('tappa T3 (D-119)', () => {
   });
   it('turns the errors of edit, delete and demote into Italian', () => {
     assert.equal(userAgentErrorText(new UserAgentApiError(409, 'deactivate x before deleting it')), 'Disattiva l’agente prima di eliminarlo.');
+    assert.match(userAgentErrorText(new UserAgentApiError(409, 'x was not deleted: arianna.toml could not be updated (changed)')), /cambiato nel frattempo/);
+    assert.match(userAgentErrorText(new UserAgentApiError(400, 'x was not deleted: arianna.toml could not be updated (bad)')), /non si legge/);
     assert.equal(userAgentErrorText(new UserAgentApiError(409, 'data/agents already has x')), 'In data/agents c’è già una scheda con questo nome: spostala o eliminala prima.');
     assert.equal(userAgentErrorText(new UserAgentApiError(400, 'x was not created from the Agents page')), 'Questo agente non è nato da questa pagina: resta ufficiale.');
     assert.equal(

@@ -2,6 +2,13 @@
 
 Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `vX.Y.Z` sul commit di `main` che lo porta. Le versioni seguono [SemVer](https://semver.org/lang/it/) in 0.x finché Arianna non è pronta per i dati veri: **minor** (0.X.0) per una funzione nuova, cioè una decisione o un task chiuso; **patch** (0.x.Y) per correzioni e ritocchi. La 1.0.0 arriva quando `pnpm arianna:doctor` dà l'installazione pronta per i dati veri. I dettagli di ogni voce stanno in `docs/DECISIONS.md` (gli id D-NNN) e in `docs/PHASE-0-1-TASKS.md`. La chat web mostra questo file nella pagina "Novità" delle Impostazioni.
 
+## [Non rilasciato]
+
+### Corretto
+
+- Impostazioni → Agenti: la scheda «Skill» di un agente spento permette di assegnare le skill prima di accenderlo (stessa regola: mai Arianna, mai una scheda con `untrusted_content` chiuso), i motivi di rifiuto sono tutti in italiano e la descrizione del Catalogo agenti non dice più «presto» per «+ Nuovo agente» (D-161).
+- Eliminare un agente toglie da `arianna.toml` anche il suo modello e le sue skill (`[agents.<id>]`): un agente nuovo con lo stesso nome parte senza modello né skill; se il file non si può aggiornare l'eliminazione è rifiutata e non sposta nulla (D-161).
+
 ## [0.89.0] - 2026-10-13
 
 ### Aggiunto

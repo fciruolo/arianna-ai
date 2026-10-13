@@ -83,6 +83,8 @@ describe('skills', () => {
     assert.match(skillRefusalText('Arianna reads no skills: third-party text is never an instruction to her') ?? '', /^Arianna non riceve skill/);
     assert.match(skillRefusalText('the card of this agent closes untrusted_content: it reads no third-party text') ?? '', /untrusted_content chiuso/);
     assert.match(skillRefusalText(undefined) ?? '', /non conosce questo agente/);
+    assert.match(skillRefusalText('no such agent') ?? '', /non trova la scheda/);
+    assert.equal(skillRefusalText('a reason added later'), 'Questo agente non riceve skill.', 'never the English reason of the core');
   });
 
   it('turns the refusals of the core into Italian', () => {

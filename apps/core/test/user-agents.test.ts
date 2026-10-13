@@ -81,6 +81,18 @@ describe('user agents', () => {
     );
   });
 
+  it('disabled lists the valid disabled cards, never one also active (D-161)', () => {
+    make();
+    make({ ...input, name: 'riassunti' });
+    assert.deepEqual([...service.disabled().keys()].sort(), ['riassunti', 'traduttore']);
+    service.activate('traduttore');
+    // The same card copied back among the disabled ones: the active one counts.
+    for (const file of ['traduttore.md', 'traduttore.yaml']) {
+      writeFileSync(join(home, 'data', 'agents', 'disattivati', file), readFileSync(join(home, 'data', 'agents', 'attivi', file)));
+    }
+    assert.deepEqual([...service.disabled().keys()], ['riassunti']);
+  });
+
   it('load adds the active cards at start', () => {
     make();
     service.activate('traduttore');

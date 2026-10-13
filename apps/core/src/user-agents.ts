@@ -227,6 +227,11 @@ export interface UserAgents {
   /** Adds the active cards to the running agents; called once at start. */
   load(): RefusedUserAgent[];
   list(): UserAgentListing;
+  /**
+   * The valid disabled cards, read now from `data/agents/disattivati` (D-161: skills are assigned
+   * before an agent is turned on); a name that is also active or official is left out.
+   */
+  disabled(): Map<string, LoadedAgent>;
   sources(): UserAgentSources;
   /** What a new card would be, with the confirmation id that `create` needs. */
   prepareCreate(input: NewUserAgent): AgentProposal;
@@ -387,6 +392,11 @@ export function createUserAgents(options: {
   official: ReadonlySet<string>;
   /** The catalog of agents (D-079); without it no card is made from a role. */
   catalog?: CatalogRoles;
+  /**
+   * Drops what arianna.toml keeps for an agent being deleted (`[agents.<id>]`: model and skills,
+   * D-161), before its files move; when it throws, the deletion is refused and nothing moves.
+   */
+  forget?: (name: string) => void;
   now?: () => number;
   confirmMs?: number;
 }): UserAgents {
@@ -699,6 +709,13 @@ export function createUserAgents(options: {
       return listing;
     },
 
+    disabled() {
+      const active = read('active').agents;
+      const found = read('disabled').agents;
+      for (const name of found.keys()) if (active.has(name) || official.has(name) || agents.has(name)) found.delete(name);
+      return found;
+    },
+
     sources() {
       // The roles of the catalog of agents come from their own routes (D-079); here only whether they can be used.
       const claudeTools = Object.fromEntries(USER_TOOLS.claude.map((tool) => [tool, claudeToolsOf([tool])]));
@@ -884,6 +901,16 @@ export function createUserAgents(options: {
       const folder = `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}`;
       const to = join(bin, folder);
       mkdirSync(to, { mode: 0o700 });
+      // The settings before the files (choice of the user, 2026-10-13): a new agent with the same name starts without the old model and skills.
+      try {
+        options.forget?.(name);
+      } catch (error) {
+        rmSync(to, { recursive: true, force: true });
+        // Written meanwhile by someone else: a conflict, to try again; unreadable or refused: invalid.
+        const changed = error instanceof Error && 'code' in error && error.code === 'changed';
+        throw new UserAgentError(changed ? 'conflict' : 'invalid', `${name} was not deleted: arianna.toml could not be updated (${error instanceof Error ? error.message : String(error)})`);
+      }
+      // A move that fails past this point leaves the agent among the disabled ones without its model and skills (rare; accepted).
       for (const file of [`${name}.md`, `${name}.yaml`]) {
         const from = join(dirOf('disabled'), file);
         if (!existsSync(from) && !isLink(from)) continue;

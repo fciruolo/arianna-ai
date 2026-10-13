@@ -237,6 +237,14 @@ export interface SettingsPage {
   prepare(body: Record<string, unknown>): PrivacyProposal;
   /** `{ id }`. */
   confirm(body: Record<string, unknown>): SettingsView;
+  /**
+   * Drops `[agents.<id>]` (its model and skills) from arianna.toml, written as the page writes:
+   * for an agent being deleted (D-161), so that a new one with the same name starts without them.
+   * The sections it changed; none when the file is missing or names nothing for `agent`. A file that
+   * cannot be read or parsed throws ('unreadable'), as a change made meanwhile does ('changed'):
+   * without it Arianna cannot tell whether the agent is named there.
+   */
+  forgetAgent(agent: string): Section[];
 }
 
 // --- Input checks: strict shapes before rendering; the file's rules come after, from parseConfig.
@@ -881,6 +889,23 @@ export function createSettingsPage(options: SettingsPageOptions): SettingsPage {
 
   return {
     read,
+
+    forgetAgent(agent) {
+      if (!existsSync(path)) return [];
+      const file = load();
+      const settings = parse(file.text, file.catalog);
+      if (settings.agents === undefined || !Object.hasOwn(settings.agents, agent)) return [];
+      const next: Settings = structuredClone(settings);
+      const agents = Object.fromEntries(Object.entries(next.agents ?? {}).filter(([id]) => id !== agent));
+      if (Object.keys(agents).length === 0) delete next.agents;
+      else next.agents = agents;
+      const sections = check(settings, next, file.catalog, ORDINARY_SECTIONS);
+      if (sections.length > 0) {
+        write(next, file.catalog, file.fingerprint);
+        changed({ sections, privacy: false });
+      }
+      return sections;
+    },
 
     update(body) {
       const given = values(body, ORDINARY_SECTIONS);
