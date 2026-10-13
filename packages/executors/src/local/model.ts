@@ -40,11 +40,18 @@ export interface ChatRequest {
   signal?: AbortSignal;
   /**
    * The text as the model writes it (D-070): the request is streamed and each
-   * new piece comes here; the result still carries the whole text. Not with a
-   * schema. Once a piece has come, a failing server is not replaced by the
-   * next one: the caller already has part of an answer.
+   * new piece comes here; the result still carries the whole text. With a
+   * schema too (D-199: a trial of a model times its first word), the JSON is
+   * parsed once the stream ends. Once a piece has come, a failing server is
+   * not replaced by the next one: the caller already has part of an answer.
    */
   onText?: (piece: string) => void;
+  /**
+   * With `onText`: asks the server for the token counts at the end of the
+   * stream (OpenAI `stream_options.include_usage`, D-199). A server that
+   * does not send them leaves `usage` absent.
+   */
+  streamUsage?: boolean;
 }
 
 export interface ChatResult {
@@ -53,6 +60,14 @@ export interface ChatResult {
   value?: unknown;
   finishReason: string;
   usage?: { promptTokens: number; completionTokens: number };
+  /** Streamed requests only: ms from the request to the first piece of text (D-199). */
+  firstTextMs?: number;
+  /**
+   * Streamed requests only: ms from the request to the first token of any
+   * kind, the reasoning a server sends apart (`reasoning_content`) included:
+   * where the writing starts, for the tokens per second (D-199).
+   */
+  firstTokenMs?: number;
   /** Endpoint that answered and model name used there. */
   endpoint: string;
   model: string;
@@ -114,8 +129,9 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
   const body: Record<string, unknown> = {
     model,
     messages: request.messages.map(({ role, content }) => ({ role, content })),
-    stream: request.onText !== undefined && request.schema === undefined,
+    stream: request.onText !== undefined,
   };
+  if (body.stream === true && request.streamUsage === true) body.stream_options = { include_usage: true };
   if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
   if (request.temperature !== undefined) body.temperature = request.temperature;
   if (request.schema !== undefined) {
@@ -127,14 +143,33 @@ async function chatOnce(endpoint: LocalEndpoint, request: ChatRequest): Promise<
 
   const started = performance.now();
   if (body.stream === true && request.onText !== undefined) {
-    const onText = request.onText;
+    const given = request.onText;
+    let firstTextMs: number | undefined;
+    let firstTokenMs: number | undefined;
+    const onText = (piece: string): void => {
+      firstTextMs ??= Math.round(performance.now() - started);
+      given(piece);
+    };
+    const onToken = (): void => {
+      firstTokenMs ??= Math.round(performance.now() - started);
+    };
     let result: Pick<ChatResult, 'text' | 'finishReason' | 'usage'>;
     try {
-      result = await streamCompletion(endpoint, body, signal, onText);
+      result = await streamCompletion(endpoint, body, signal, onText, onToken);
     } catch (error) {
       throw toModelError(error, endpoint.id, request.signal, timeout);
     }
-    return { ...result, endpoint: endpoint.id, model, durationMs: Math.round(performance.now() - started) };
+    const streamed: ChatResult = { ...result, endpoint: endpoint.id, model, durationMs: Math.round(performance.now() - started) };
+    if (firstTextMs !== undefined) streamed.firstTextMs = firstTextMs;
+    if (firstTokenMs !== undefined) streamed.firstTokenMs = firstTokenMs;
+    if (request.schema !== undefined) {
+      try {
+        streamed.value = JSON.parse(result.text) as unknown;
+      } catch {
+        throw new LocalModelError('bad-response', `${endpoint.id}: content is not JSON`, { endpoint: endpoint.id });
+      }
+    }
+    return streamed;
   }
   let raw: unknown;
   try {
@@ -165,6 +200,7 @@ async function streamCompletion(
   body: Record<string, unknown>,
   signal: AbortSignal,
   onText: (piece: string) => void,
+  onToken: () => void = () => undefined,
 ): Promise<Pick<ChatResult, 'text' | 'finishReason' | 'usage'>> {
   const bad = (what: string) => new LocalModelError('bad-response', `${endpoint.id}: ${what}`, { endpoint: endpoint.id });
   const decoder = new StringDecoder('utf8');
@@ -193,6 +229,9 @@ async function streamCompletion(
     const choice = Array.isArray(event.choices) ? (event.choices[0] as unknown) : undefined;
     if (isRecord(choice)) {
       const delta = isRecord(choice.delta) ? choice.delta.content : undefined;
+      // The reasoning a server sends apart counts as written tokens too (usage counts it).
+      const reasoning = isRecord(choice.delta) ? (choice.delta.reasoning_content ?? choice.delta.reasoning) : undefined;
+      if ((typeof delta === 'string' && delta !== '') || (typeof reasoning === 'string' && reasoning !== '')) onToken();
       if (typeof delta === 'string' && delta !== '') {
         text += delta;
         onText(delta);

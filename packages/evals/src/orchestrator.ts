@@ -27,6 +27,20 @@ export interface OrchestratorActual {
   /** The text of a reply or the reason of a refusal, kept only when the evaluator asks (the finance group checks the figures). */
   text?: string;
   schemaOk: boolean;
+  /** How fast the model answered, when the evaluator times it (D-199): numbers only. */
+  speed?: CaseSpeed;
+}
+
+/**
+ * The timing of the call that gave the answer (D-199), from the stream and the
+ * token counts of the local server: ms to the first piece of text, tokens
+ * written and ms spent writing them after the first piece. A server that sends
+ * no counts leaves `tokens` absent: the speed is never guessed.
+ */
+export interface CaseSpeed {
+  firstTextMs?: number;
+  tokens?: number;
+  generationMs?: number;
 }
 
 /** One acceptable (or forbidden) answer. */
@@ -91,7 +105,19 @@ export function matchesExpectation(actual: unknown, expect: unknown): boolean {
   return !(expectation.forbid ?? []).some((outcome) => matches(answer, outcome));
 }
 
-export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string, keepText = false): Evaluate {
+/** The speed of one answer from the result of the local model (D-199). */
+export function speedOf(result: { firstTextMs?: number; firstTokenMs?: number; durationMs: number; usage?: { completionTokens: number } }): CaseSpeed {
+  const speed: CaseSpeed = {};
+  if (result.firstTextMs !== undefined) speed.firstTextMs = result.firstTextMs;
+  // The writing starts at the first token of any kind: the reasoning a server sends apart is in the count too.
+  const writing = result.firstTokenMs ?? result.firstTextMs;
+  if (writing !== undefined) speed.generationMs = Math.max(0, result.durationMs - writing);
+  if (result.usage !== undefined) speed.tokens = result.usage.completionTokens;
+  return speed;
+}
+
+/** `timed`: the request is streamed with the token counts, and the answer carries its `speed` (D-199). */
+export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt: string, keepText = false, timed = false): Evaluate {
   const ask = async (input: OrchestratorInput, thought: boolean, signal: AbortSignal | undefined) => {
     const delegates = input.delegates ?? CODER_ONLY;
     const planner = input.planner ?? 'self';
@@ -106,8 +132,10 @@ export function createOrchestratorEvaluator(model: () => LocalModel, agentPrompt
       // Mac Studio are about three minutes.
       maxTokens: 2048,
       timeoutMs: 300_000,
+      ...(timed ? { onText: () => undefined, streamUsage: true } : {}),
     });
-    return summarize(result.value, input.tools, thought, delegates, planner, keepText);
+    const actual = summarize(result.value, input.tools, thought, delegates, planner, keepText);
+    return timed ? { ...actual, speed: speedOf(result) } : actual;
   };
   return async (raw, signal) => {
     const input = raw as OrchestratorInput;

@@ -31,6 +31,8 @@ export interface OrchestratorGroupOptions {
   model: LocalModel | (() => LocalModel);
   /** The orchestrator's prompt; default `agents/arianna.md` of ARIANNA_HOME, read at the first case. */
   prompt?: string | (() => string);
+  /** Streams each answer and keeps its speed in `actual` (D-199: the trials of the core). */
+  timed?: boolean;
 }
 
 /**
@@ -38,12 +40,12 @@ export interface OrchestratorGroupOptions {
  * candidate of the catalog, `GROUPS` on the configured model.
  */
 export function createOrchestratorGroup(options: OrchestratorGroupOptions): EvalGroup {
-  const { model: given, prompt: promptOption } = options;
+  const { model: given, prompt: promptOption, timed = false } = options;
   const model = typeof given === 'function' ? given : () => given;
   let prompt: string | undefined;
   const evaluate: Evaluate = (input, signal) => {
     prompt ??= typeof promptOption === 'string' ? promptOption : promptOption === undefined ? ariannaPrompt(resolveHome()) : promptOption();
-    return createOrchestratorEvaluator(model, prompt)(input, signal);
+    return createOrchestratorEvaluator(model, prompt, false, timed)(input, signal);
   };
   return {
     name: 'orchestrator',

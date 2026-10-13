@@ -13,6 +13,7 @@ import { createOrchestratorGroup } from '../src/orchestrator-group.ts';
 import {
   createOrchestratorEvaluator,
   matchesExpectation,
+  speedOf,
   summarize,
   type OrchestratorExpectation,
   type OrchestratorInput,
@@ -264,6 +265,37 @@ describe('createOrchestratorGroup (D-081)', () => {
     assert.equal(request.model, 'local-large');
     assert.match(request.messages[0]?.content ?? '', /You are a fake Arianna\./);
     assert.equal(request.signal?.aborted, false);
+  });
+
+  it('a timed group streams each answer with the token counts and keeps its speed, numbers only (D-199)', async () => {
+    const requests: ChatRequest[] = [];
+    const model: LocalModel = {
+      chat: (request) => {
+        requests.push(request);
+        request.onText?.('{');
+        const value = { thought: 'Cerco.', action: 'call', tool: 'kb.search', arguments: { query: 'caparra' } };
+        return Promise.resolve({ text: JSON.stringify(value), value, finishReason: 'stop', endpoint: 'fake', model: 'candidate', durationMs: 1500, firstTextMs: 500, usage: { promptTokens: 300, completionTokens: 40 } });
+      },
+    };
+    const report = await runGroup(createOrchestratorGroup({ model, prompt: 'P', timed: true }), [evalCase]);
+    assert.ok(report.status !== 'pending');
+    assert.equal(typeof requests[0]?.onText, 'function');
+    assert.equal(requests[0]?.streamUsage, true);
+    assert.deepEqual((report.results[0]?.actual as { speed?: unknown }).speed, { firstTextMs: 500, generationMs: 1000, tokens: 40 });
+    // Untimed (the CLI), nothing changes.
+    requests.length = 0;
+    const plain = await runGroup(createOrchestratorGroup({ model, prompt: 'P' }), [evalCase]);
+    assert.ok(plain.status !== 'pending');
+    assert.equal(requests.at(-1)?.onText, undefined);
+    assert.equal((plain.results[0]?.actual as { speed?: unknown }).speed, undefined);
+  });
+
+  it('the speed of an answer is never guessed: no counts, no tokens; no stream, no first word', () => {
+    assert.deepEqual(speedOf({ durationMs: 900, firstTextMs: 300 }), { firstTextMs: 300, generationMs: 600 });
+    // A reasoning sent apart before the first word: the writing time starts with it.
+    assert.deepEqual(speedOf({ durationMs: 900, firstTextMs: 700, firstTokenMs: 200 }), { firstTextMs: 700, generationMs: 700 });
+    assert.deepEqual(speedOf({ durationMs: 900, usage: { completionTokens: 12 } }), { tokens: 12 });
+    assert.deepEqual(speedOf({ durationMs: 900 }), {});
   });
 
   it('a cancelled answer is not asked again without the thought', async () => {

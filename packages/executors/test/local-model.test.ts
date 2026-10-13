@@ -246,15 +246,29 @@ describe('streaming (D-070)', () => {
     assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, true);
   });
 
-  it('does not stream without a reader, nor with a schema', async () => {
+  it('does not stream without a reader', async () => {
     const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
-    await model.chat({ model: 'local-large', messages: USER('hi') });
+    const result = await model.chat({ model: 'local-large', messages: USER('hi') });
     assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, false);
+    assert.equal(result.firstTextMs, undefined);
+  });
+
+  it('streams with a schema too, parses the JSON at the end and times the first piece (D-199)', async () => {
+    const model = createLocalModel({ endpoints: [endpoint('one', primary.url)] });
     const pieces: string[] = [];
-    const result = await model.chat({ model: 'local-large', messages: USER('check'), schema: { name: 'x', schema: {} }, onText: (piece) => pieces.push(piece) });
-    assert.equal((primary.requests.at(-1) as { stream: boolean }).stream, false);
+    const result = await model.chat({ model: 'local-large', messages: USER('check'), schema: { name: 'x', schema: {} }, onText: (piece) => pieces.push(piece), streamUsage: true });
+    const sent = primary.requests.at(-1) as { stream: boolean; stream_options?: unknown };
+    assert.equal(sent.stream, true);
+    assert.deepEqual(sent.stream_options, { include_usage: true });
     assert.deepEqual(result.value, { ok: true });
-    assert.deepEqual(pieces, []);
+    assert.deepEqual(pieces, ['{"ok":true}']);
+    assert.deepEqual(result.usage, { promptTokens: 7, completionTokens: 1 });
+    assert.ok(typeof result.firstTextMs === 'number' && result.firstTextMs >= 0 && result.firstTextMs <= result.durationMs);
+    // Without the flag the counts are not asked for.
+    await model.chat({ model: 'local-large', messages: USER('hi'), onText: () => undefined });
+    assert.equal((primary.requests.at(-1) as { stream_options?: unknown }).stream_options, undefined);
+    // A streamed answer that is not JSON is a bad response, like an unstreamed one.
+    await rejectsWith(model.chat({ model: 'local-large', messages: USER('!notjson'), schema: { name: 'x', schema: {} }, onText: () => undefined }), 'bad-response');
   });
 
   it('stops when the caller cancels in the middle', async () => {
