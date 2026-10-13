@@ -21,7 +21,7 @@ Aggiornato: 2026-10-14, 00:30 circa.
 - **Fase 0 chiusa** (2026-10-02). **Fase 1A in corso**: il criterio di uscita di `docs/ROADMAP.md` non è ancora stato superato dall'utente. Quasi tutti i task di 1A e molti di 1B sono su `main`; per lo stato dei singoli task vale `docs/PHASE-0-1-TASKS.md`, per le scelte `docs/DECISIONS.md`, per la storia `docs/HANDOFF-STORIA.md`.
 - `main` è alla 0.91.0 (rapporto di sicurezza legato al catalogo, D-196; descrizioni dei ruoli in italiano, D-185). Versioni e novità in `CHANGELOG.md`.
 - `pnpm check` passa. `pnpm test:db` il 13 sera: 657 test, l'unico fallito `telegram.test.ts` per timeout sotto carico (passa da solo).
-- Macchina di lavoro: Mac Studio con 32 GB; oMLX lo avvia il core (D-071), orchestratore `qwen3.8-35b-a3b-distill-mlx-4bit` dal 2026-10-14 (D-201; prima il 9B). Disco: circa 12 GiB liberi il 14 notte, dopo aver tolto l'uncensored e scaricato il 35B.
+- Macchina di lavoro: Mac Studio con 32 GB; oMLX lo avvia il core (D-071), orchestratore `qwen3.8-35b-a3b-distill-mlx-4bit` dal 2026-10-14 (D-201; prima il 9B). Disco: 21 GiB liberi il 14 notte (tolti dal disco l'uncensored e il 27B, che restano nel catalogo e nel Confronto; cache SSD di oMLX abbassata da 10 a 4 GB in `arianna.toml`, scelta dell'utente). **Memoria:** col 35B caricato lo swap è arrivato a 9 GB su 10 (sul Mac girano anche una ventina di container Docker di altri progetti): da guardare la pressione della memoria; se resta alta, valutare con l'utente il 9B per la voce o meno servizi accesi.
 
 ## Su una macchina nuova
 
