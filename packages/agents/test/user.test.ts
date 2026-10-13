@@ -6,6 +6,7 @@ import { after, describe, it } from 'node:test';
 
 import {
   AGENCY_CARD_MARK,
+  LEGACY_AGENCY_CARD_MARK,
   AgentCardError,
   checkUserCeiling,
   checkUserPermissions,
@@ -182,6 +183,10 @@ describe('userPresets and userCardOrigin', () => {
     assert.equal(userCardOrigin(`\uFEFF${AGENCY_CARD_MARK}: proposed.\nname: x\n`), 'agency');
     assert.equal(userCardOrigin('# Source: https://github.com/msitarzewski/agency-agents, commit abc\nname: x\n'), 'agency');
     assert.equal(userCardOrigin('# Created from the Agents page (D-119).\nname: x\n'), 'page');
+    // Cards proposed before the catalog of agents keep being a third party's (D-079, 2026-10-13).
+    assert.equal(userCardOrigin(`${LEGACY_AGENCY_CARD_MARK}: not active until the user approves it.\nname: x\n`), 'agency');
+    assert.equal(userCardOrigin(`# Source: https://github.com/someone/roles, commit ${'a'.repeat(40)}, file a/b.md\nname: x\n`), 'agency');
+    assert.equal(userCardOrigin('# Source: my notes\nname: x\n'), 'page');
     // Below the comments, the text is the card's, not its provenance.
     assert.equal(userCardOrigin('name: x\ndescription: pnpm agency:import\n'), 'page');
   });

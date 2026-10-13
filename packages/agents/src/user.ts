@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isAtMost } from '@arianna/policy';
 import { stringify as stringifyYaml } from 'yaml';
 
-import { AGENCY_CARD_MARK, AGENCY_REPOSITORY } from './agency-mark.ts';
+import { isThirdPartyLine, THIRD_PARTY_CARD_MARKS } from './agency-mark.ts';
 import { AgentCardError, parseAgentCard, type AgentCard } from './card.ts';
 import { loadAgent, USER_CARD_MARK, type LoadedAgent } from './load.ts';
 import { CARD_TEMPLATES } from './templates.ts';
@@ -85,17 +85,18 @@ export interface UserPermissions {
   maxMinutes: number;
 }
 
-/** A card written by the page, or proposed from agency-agents (its prompt is a third party's: L0). */
+/** A card written by the page, or proposed from the catalog of agents (its prompt is a third party's: L0). */
 export type UserCardOrigin = 'page' | 'agency';
 
 /**
  * The origin of a card from the comments at the top of its file: the mark of
- * the importer, or any of its provenance lines (a card whose first line was
- * removed by hand still holds a third party's prompt).
+ * the catalog (or of the importer before it), or any of its provenance lines
+ * (a card whose first line was removed by hand still holds a third party's
+ * prompt).
  */
 export function userCardOrigin(yamlText: string): UserCardOrigin {
   const header = leadingComments(yamlText.replace(/^\uFEFF/, ''));
-  return header.split('\n').some((line) => line.startsWith(AGENCY_CARD_MARK) || line.includes('pnpm agency:import') || line.includes(AGENCY_REPOSITORY)) ? 'agency' : 'page';
+  return header.split('\n').some(isThirdPartyLine) ? 'agency' : 'page';
 }
 
 /** The rules on the permissions alone; the message names the rule, in English like the other card errors. */
@@ -301,7 +302,7 @@ export function userCard(input: NewUserAgent, options: { origin?: UserCardOrigin
           '# While the card is in data/agents it stays at L1 and A1, with the tools',
           '# allowed to user cards, whatever is written here.',
         ].join('\n');
-  if (origin === 'agency' && !header.startsWith(AGENCY_CARD_MARK)) throw new AgentCardError('a card of agency-agents keeps its provenance');
+  if (origin === 'agency' && !THIRD_PARTY_CARD_MARKS.some((mark) => header.startsWith(mark))) throw new AgentCardError('a card from the catalog of agents keeps its provenance');
   const yaml = `${header}\n${stringifyYaml(card)}`;
   checkUserPermissions(parseAgentCard(parseYamlText(yaml, `${name}.yaml`), name), origin);
   return { name, yaml, md: `${prompt}\n` };

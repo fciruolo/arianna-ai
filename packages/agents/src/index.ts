@@ -66,43 +66,29 @@ export {
 export { validate, type JsonSchema } from './schema.ts';
 export {
   AGENCY_CARD_MARK,
-  AGENCY_COPYRIGHT,
   AGENCY_REPOSITORY,
   AgencyError,
   agencyPreset,
   buildIndex,
-  headMatchesLock,
+  divisionOf,
   indexRecord,
+  LEGACY_AGENCY_CARD_MARK,
   MAX_AGENCY_FILE_BYTES,
   MAX_FRONTMATTER_BYTES,
   parseAgencyFile,
-  parseAgencyLock,
   parseDivisions,
   proposeCard,
   sanitizeForTerminal,
   slugFromPath,
-  verifyCloneHead,
   type AgencyEntry,
   type AgencyIndexRecord,
   type AgencyOrigin,
+  type AgencyParseOptions,
   type AgencyRejection,
   type AgencyService,
   type CardProposal,
 } from './agency.ts';
-export {
-  AGENCY_CLONE_DIR,
-  AGENCY_INDEX_FILE,
-  AGENCY_LOCK_FILE,
-  AGENCY_PROPOSED_DIR,
-  readAgencyLock,
-  readCloneHead,
-  type ProposalResult,
-  scanCatalog,
-  writeAgencyIndex,
-  writeProposals,
-  type AgencyIndexFile,
-  type AgencyScan,
-} from './agency-catalog.ts';
+export { isThirdPartyLine, THIRD_PARTY_CARD_MARKS } from './agency-mark.ts';
 export { CARD_TEMPLATES, type CardTemplate } from './templates.ts';
 export {
   ACTING_TOOLS,

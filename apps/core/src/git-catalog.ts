@@ -397,6 +397,12 @@ export function releaseBusy(path: string, token: string): void {
   }
 }
 
+/** The files of a checkout, measured on the disk without `.git`: every file, rejected ones included. */
+export interface TreeSize {
+  files: number;
+  bytes: number;
+}
+
 /** What the source does with the names of the tree and the checkout. */
 export interface GitSourceSpec<I extends CatalogIndex, P> {
   /** `data/catalogs` or a folder in it. */
@@ -416,7 +422,7 @@ export interface GitSourceSpec<I extends CatalogIndex, P> {
    */
   plan: (names: readonly string[]) => P & { patterns: readonly string[] };
   /** The index of the checkout, without `.git`: throws to refuse the version. */
-  build: (root: string, plan: P, base: Omit<CatalogIndex, 'entries' | 'rejected'> & { links: string[] }) => I;
+  build: (root: string, plan: P, base: Omit<CatalogIndex, 'entries' | 'rejected'> & { links: string[] }, measured: TreeSize) => I;
   /** Numbers of an index for the events. */
   counts: (index: I) => Record<string, number>;
   maxTreeFiles: number;
@@ -570,14 +576,19 @@ export function createGitSource<I extends CatalogIndex, P>(spec: GitSourceSpec<I
     await rm(join(NEXT, '.git'), { recursive: true, force: true });
     if (job !== null) job.phase = 'index';
     const tree = await measureTree(NEXT, spec.maxTreeFiles);
-    const index = spec.build(NEXT, plan, {
-      version: 1,
-      repository: spec.repository,
-      commit,
-      committedAt: ISO_DATE.test(date) ? date : null,
-      fetchedAt: now().toISOString(),
-      links: tree.links,
-    });
+    const index = spec.build(
+      NEXT,
+      plan,
+      {
+        version: 1,
+        repository: spec.repository,
+        commit,
+        committedAt: ISO_DATE.test(date) ? date : null,
+        fetchedAt: now().toISOString(),
+        links: tree.links,
+      },
+      { files: tree.files, bytes: tree.bytes },
+    );
     const current = adopted();
     const same = current !== undefined && current.index.commit === commit && sameEntries(current.index.entries, index.entries);
     if (same) {

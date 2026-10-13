@@ -4,6 +4,19 @@ Ogni lavoro finito e provato dall'utente diventa una versione, con un tag git `v
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- Catalogo agenti da GitHub: `pnpm agents:catalog` segue fino a 100 raccolte di ruoli, scarica solo i `.md` dei ruoli e la licenza, un download alla volta, con confronto e «Usa»/«Scarta» come per le skill (D-079).
+
+### Cambiato
+
+- Il catalogo delle skill e quello degli agenti usano lo stesso motore delle sorgenti GitHub (D-079, D-161).
+- Una scheda nata da un ruolo di terzi riporta sorgente, commit, sha256 e la licenza della sua raccolta; senza licenza lo dice con un avviso (D-079).
+
+### Rimosso
+
+- `pnpm agency:import`, il clone a mano e `config/agency.lock`: le schede già proposte restano riconosciute come schede di terzi (D-079).
+
 ## [0.85.3] - 2026-10-13
 
 ### Cambiato
